@@ -1,6 +1,7 @@
 .{
     .name = .rift,
     .version = "0.0.0",
+    .fingerprint = 0xc3bb3ea03c7adf63,
     .paths = .{
         "build.zig",
         "build.zig.zon",
