@@ -227,43 +227,6 @@ impl Drop for GapBuffer {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_new() {
-        let buf = GapBuffer::new(10).unwrap();
-        assert_eq!(buf.len(), 0);
-        assert_eq!(buf.cursor(), 0);
-    }
-
-    #[test]
-    fn test_insert() {
-        let mut buf = GapBuffer::new(10).unwrap();
-        buf.insert(b'a').unwrap();
-        assert_eq!(buf.len(), 1);
-        assert_eq!(buf.cursor(), 1);
-    }
-
-    #[test]
-    fn test_move_and_insert() {
-        let mut buf = GapBuffer::new(10).unwrap();
-        buf.insert_str("hello").unwrap();
-        // Move to start
-        for _ in 0..5 {
-            buf.move_left();
-        }
-        buf.insert(b'X').unwrap();
-        assert_eq!(buf.to_string(), "Xhello");
-    }
-
-    #[test]
-    fn test_delete() {
-        let mut buf = GapBuffer::new(10).unwrap();
-        buf.insert_str("hello").unwrap();
-        buf.move_left();
-        assert!(buf.delete_backward());
-        assert_eq!(buf.to_string(), "hell");
-    }
-}
+#[path = "tests.rs"]
+mod tests;
 
