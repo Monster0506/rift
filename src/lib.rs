@@ -2,4 +2,5 @@
 
 pub mod key;
 pub mod mode;
+pub mod buffer;
 
