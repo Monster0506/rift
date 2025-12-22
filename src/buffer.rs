@@ -266,7 +266,7 @@ mod tests {
         let mut buf = GapBuffer::new(10).unwrap();
         buf.insert_str("hello").unwrap();
         buf.move_left();
-        buf.delete_backward().unwrap();
+        assert!(buf.delete_backward());
         assert_eq!(buf.to_string(), "hell");
     }
 }
