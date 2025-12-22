@@ -1,6 +1,6 @@
 [package]
 name = "rift"
 version = "0.1.0"
-edition = "2025"
+edition = "2021"
 
 [dependencies]

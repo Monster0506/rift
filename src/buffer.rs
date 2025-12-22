@@ -106,15 +106,11 @@ impl GapBuffer {
     }
 
     /// Delete the byte before the cursor (backspace)
+    /// This moves the gap left, effectively deleting the byte
     pub fn delete_backward(&mut self) -> bool {
         if self.gap_start > 0 {
-            // Move gap left by one
-            unsafe {
-                let byte = *self.buffer.add(self.gap_start - 1);
-                *self.buffer.add(self.gap_end - 1) = byte;
-            }
+            // Just move gap left - the byte is effectively deleted
             self.gap_start -= 1;
-            self.gap_end -= 1;
             true
         } else {
             false
