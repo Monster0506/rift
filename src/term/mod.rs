@@ -46,7 +46,5 @@ pub trait TerminalBackend {
 }
 
 pub mod ansi;
-
-#[cfg(windows)]
-pub mod windows;
+pub mod crossterm;
 

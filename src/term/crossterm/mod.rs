@@ -1,5 +1,5 @@
-//! Windows console terminal backend using crossterm
-//! Provides cross-platform terminal operations
+//! Crossterm-based terminal backend
+//! Cross-platform terminal operations using crossterm
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -12,20 +12,20 @@ use std::io::{Write, stdout};
 use crate::key::Key;
 use crate::term::{TerminalBackend, Size};
 
-/// Windows terminal backend implementation using crossterm
-pub struct WindowsTerminal {
+/// Crossterm-based terminal backend implementation
+pub struct CrosstermBackend {
     raw_mode_enabled: bool,
 }
 
-impl WindowsTerminal {
+impl CrosstermBackend {
     pub fn new() -> Result<Self, String> {
-        Ok(WindowsTerminal {
+        Ok(CrosstermBackend {
             raw_mode_enabled: false,
         })
     }
 }
 
-impl TerminalBackend for WindowsTerminal {
+impl TerminalBackend for CrosstermBackend {
     fn init(&mut self) -> Result<(), String> {
         terminal::enable_raw_mode()
             .map_err(|e| format!("Failed to enable raw mode: {}", e))?;
@@ -141,3 +141,4 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
