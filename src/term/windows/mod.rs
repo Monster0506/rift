@@ -1,0 +1,143 @@
+//! Windows console terminal backend using crossterm
+//! Provides cross-platform terminal operations
+
+use crossterm::{
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    execute,
+    terminal::{self, ClearType},
+    cursor,
+};
+use std::io::{Write, stdout};
+
+use crate::key::Key;
+use crate::term::{TerminalBackend, Size};
+
+/// Windows terminal backend implementation using crossterm
+pub struct WindowsTerminal {
+    raw_mode_enabled: bool,
+}
+
+impl WindowsTerminal {
+    pub fn new() -> Result<Self, String> {
+        Ok(WindowsTerminal {
+            raw_mode_enabled: false,
+        })
+    }
+}
+
+impl TerminalBackend for WindowsTerminal {
+    fn init(&mut self) -> Result<(), String> {
+        terminal::enable_raw_mode()
+            .map_err(|e| format!("Failed to enable raw mode: {}", e))?;
+        self.raw_mode_enabled = true;
+        Ok(())
+    }
+
+    fn deinit(&mut self) {
+        if self.raw_mode_enabled {
+            let _ = terminal::disable_raw_mode();
+            self.raw_mode_enabled = false;
+        }
+    }
+
+    fn read_key(&mut self) -> Result<Key, String> {
+        loop {
+            match event::read().map_err(|e| format!("Failed to read event: {}", e))? {
+                Event::Key(key_event) => {
+                    if key_event.kind == event::KeyEventKind::Press {
+                        return Ok(translate_key_event(key_event));
+                    }
+                    // Ignore key releases
+                }
+                _ => {
+                    // Ignore other events
+                }
+            }
+        }
+    }
+
+    fn write(&mut self, bytes: &[u8]) -> Result<(), String> {
+        stdout().write_all(bytes)
+            .map_err(|e| format!("Write failed: {}", e))?;
+        stdout().flush()
+            .map_err(|e| format!("Flush failed: {}", e))?;
+        Ok(())
+    }
+
+    fn get_size(&self) -> Result<Size, String> {
+        let (cols, rows) = terminal::size()
+            .map_err(|e| format!("Failed to get terminal size: {}", e))?;
+        Ok(Size {
+            rows: rows as u16,
+            cols: cols as u16,
+        })
+    }
+
+    fn clear_screen(&mut self) -> Result<(), String> {
+        execute!(stdout(), terminal::Clear(ClearType::All))
+            .map_err(|e| format!("Failed to clear screen: {}", e))?;
+        execute!(stdout(), cursor::MoveTo(0, 0))
+            .map_err(|e| format!("Failed to move cursor: {}", e))?;
+        Ok(())
+    }
+
+    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), String> {
+        execute!(stdout(), cursor::MoveTo(col as u16, row as u16))
+            .map_err(|e| format!("Failed to move cursor: {}", e))?;
+        Ok(())
+    }
+
+    fn hide_cursor(&mut self) -> Result<(), String> {
+        execute!(stdout(), cursor::Hide)
+            .map_err(|e| format!("Failed to hide cursor: {}", e))?;
+        Ok(())
+    }
+
+    fn show_cursor(&mut self) -> Result<(), String> {
+        execute!(stdout(), cursor::Show)
+            .map_err(|e| format!("Failed to show cursor: {}", e))?;
+        Ok(())
+    }
+
+    fn clear_to_end_of_line(&mut self) -> Result<(), String> {
+        execute!(stdout(), terminal::Clear(ClearType::UntilNewLine))
+            .map_err(|e| format!("Failed to clear to end of line: {}", e))?;
+        Ok(())
+    }
+}
+
+/// Translate crossterm KeyEvent to our Key enum
+pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
+    let modifiers = key_event.modifiers;
+    let ctrl = modifiers.contains(KeyModifiers::CONTROL);
+    let _shift = modifiers.contains(KeyModifiers::SHIFT);
+    let _alt = modifiers.contains(KeyModifiers::ALT);
+
+    match key_event.code {
+        KeyCode::Char(ch) => {
+            if ctrl {
+                Key::Ctrl(ch as u8)
+            } else {
+                Key::Char(ch as u8)
+            }
+        }
+        KeyCode::Backspace => Key::Backspace,
+        KeyCode::Enter => Key::Enter,
+        KeyCode::Esc => Key::Escape,
+        KeyCode::Tab => Key::Tab,
+        KeyCode::Up => Key::ArrowUp,
+        KeyCode::Down => Key::ArrowDown,
+        KeyCode::Left => Key::ArrowLeft,
+        KeyCode::Right => Key::ArrowRight,
+        KeyCode::Home => Key::Home,
+        KeyCode::End => Key::End,
+        KeyCode::PageUp => Key::PageUp,
+        KeyCode::PageDown => Key::PageDown,
+        KeyCode::Delete => Key::Delete,
+        _ => Key::Char(0), // Unknown key
+    }
+}
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;

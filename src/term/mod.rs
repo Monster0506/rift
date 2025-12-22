@@ -45,3 +45,8 @@ pub trait TerminalBackend {
     fn clear_to_end_of_line(&mut self) -> Result<(), String>;
 }
 
+pub mod ansi;
+
+#[cfg(windows)]
+pub mod windows;
+
