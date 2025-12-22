@@ -1,8 +1,10 @@
 .{
-    .name = "rift",
+    .name = .rift,
     .version = "0.0.0",
     .paths = .{
-        .root = "build.zig",
+        "build.zig",
+        "build.zig.zon",
+        "src",
     },
     .dependencies = .{},
 }
