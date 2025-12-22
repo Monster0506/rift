@@ -147,7 +147,7 @@ pub fn render(
 
             // Clear to end of line
             if (line.len < viewport.visible_cols) {
-                try term.write("\x1b[K");
+                try term.clearToEndOfLine();
             }
 
             display_row += 1;
@@ -164,7 +164,7 @@ pub fn render(
     // Clear remaining lines (except status bar)
     while (display_row < content_rows) {
         try term.moveCursor(display_row, 0);
-        try term.write("\x1b[K");
+        try term.clearToEndOfLine();
         display_row += 1;
     }
 

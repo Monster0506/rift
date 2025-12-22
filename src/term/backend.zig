@@ -46,6 +46,9 @@ pub const Terminal = struct {
     /// Show cursor
     showCursorFn: *const fn (ctx: *anyopaque) anyerror!void,
 
+    /// Clear from cursor to end of line
+    clearToEndOfLineFn: *const fn (ctx: *anyopaque) anyerror!void,
+
     /// Initialize terminal and enter raw mode
     pub fn init(self: *Terminal) !void {
         try self.initFn(self.ctx);
@@ -89,6 +92,11 @@ pub const Terminal = struct {
     /// Show cursor
     pub fn showCursor(self: *Terminal) !void {
         try self.showCursorFn(self.ctx);
+    }
+
+    /// Clear from cursor to end of line
+    pub fn clearToEndOfLine(self: *Terminal) !void {
+        try self.clearToEndOfLineFn(self.ctx);
     }
 };
 

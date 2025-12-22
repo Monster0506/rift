@@ -72,6 +72,39 @@ extern "kernel32" fn WriteFile(
     lpNumberOfBytesWritten: *windows.DWORD,
     lpOverlapped: ?*anyopaque,
 ) windows.BOOL;
+extern "kernel32" fn SetConsoleCursorPosition(
+    hConsoleOutput: windows.HANDLE,
+    dwCursorPosition: COORD,
+) windows.BOOL;
+extern "kernel32" fn FillConsoleOutputCharacterA(
+    hConsoleOutput: windows.HANDLE,
+    cCharacter: windows.CHAR,
+    nLength: windows.DWORD,
+    dwWriteCoord: COORD,
+    lpNumberOfCharsWritten: *windows.DWORD,
+) windows.BOOL;
+extern "kernel32" fn FillConsoleOutputAttribute(
+    hConsoleOutput: windows.HANDLE,
+    wAttribute: windows.WORD,
+    nLength: windows.DWORD,
+    dwWriteCoord: COORD,
+    lpNumberOfCharsWritten: *windows.DWORD,
+) windows.BOOL;
+extern "kernel32" fn GetConsoleCursorInfo(
+    hConsoleOutput: windows.HANDLE,
+    lpConsoleCursorInfo: *CONSOLE_CURSOR_INFO,
+) windows.BOOL;
+extern "kernel32" fn SetConsoleCursorInfo(
+    hConsoleOutput: windows.HANDLE,
+    lpConsoleCursorInfo: *const CONSOLE_CURSOR_INFO,
+) windows.BOOL;
+extern "kernel32" fn ScrollConsoleScreenBufferA(
+    hConsoleOutput: windows.HANDLE,
+    lpScrollRectangle: *const SMALL_RECT,
+    lpClipRectangle: ?*const SMALL_RECT,
+    dwDestinationOrigin: COORD,
+    lpFill: *const CHAR_INFO,
+) windows.BOOL;
 
 const INPUT_RECORD = extern struct {
     EventType: windows.WORD,
@@ -123,6 +156,19 @@ const SMALL_RECT = extern struct {
     Top: windows.SHORT,
     Right: windows.SHORT,
     Bottom: windows.SHORT,
+};
+
+const CONSOLE_CURSOR_INFO = extern struct {
+    dwSize: windows.DWORD,
+    bVisible: windows.BOOL,
+};
+
+const CHAR_INFO = extern struct {
+    Char: extern union {
+        UnicodeChar: windows.WCHAR,
+        AsciiChar: windows.CHAR,
+    },
+    Attributes: windows.WORD,
 };
 
 const CONTROL_KEY_STATE = struct {
@@ -208,6 +254,7 @@ pub const WindowsTerminal = struct {
                 .moveCursorFn = moveCursorImpl,
                 .hideCursorFn = hideCursorImpl,
                 .showCursorFn = showCursorImpl,
+                .clearToEndOfLineFn = clearToEndOfLineImpl,
             },
             .input_handle = input_handle,
             .output_handle = output_handle,
@@ -352,25 +399,165 @@ pub const WindowsTerminal = struct {
     }
 
     fn clearScreenImpl(ctx: *anyopaque) !void {
-        // Call writeImpl directly to avoid circular call through terminal wrapper
-        try writeImpl(ctx, ansi.CLEAR_SCREEN);
-        try writeImpl(ctx, ansi.RESET_CURSOR);
+        const self: *WindowsTerminal = @ptrCast(@alignCast(ctx));
+        
+        // Get screen buffer info to determine size
+        var info: CONSOLE_SCREEN_BUFFER_INFO = undefined;
+        if (GetConsoleScreenBufferInfo(self.output_handle, &info) == 0) {
+            // Fallback to ANSI if Windows API fails
+            try writeImpl(ctx, ansi.CLEAR_SCREEN);
+            try writeImpl(ctx, ansi.RESET_CURSOR);
+            return;
+        }
+        
+        // Only clear the visible window, not the entire buffer
+        // The visible window is defined by srWindow
+        const window_width = info.srWindow.Right - info.srWindow.Left + 1;
+        
+        // Clear each row of the visible window
+        // FillConsoleOutputCharacterA fills sequentially, so we need to clear row by row
+        var written: windows.DWORD = undefined;
+        var row: i16 = info.srWindow.Top;
+        while (row <= info.srWindow.Bottom) : (row += 1) {
+            const row_start = COORD{
+                .X = info.srWindow.Left,
+                .Y = row,
+            };
+            
+            // Fill this row with spaces
+            if (FillConsoleOutputCharacterA(
+                self.output_handle,
+                ' ',
+                @as(windows.DWORD, @intCast(window_width)),
+                row_start,
+                &written,
+            ) == 0) {
+                // If FillConsoleOutputCharacterA fails, fallback to ANSI
+                try writeImpl(ctx, ansi.CLEAR_SCREEN);
+                try writeImpl(ctx, ansi.RESET_CURSOR);
+                return;
+            }
+            
+            // Fill this row with default attributes
+            _ = FillConsoleOutputAttribute(
+                self.output_handle,
+                info.wAttributes,
+                @as(windows.DWORD, @intCast(window_width)),
+                row_start,
+                &written,
+            );
+        }
+        
+        // Move cursor to top-left of visible window
+        const start_coord = COORD{
+            .X = info.srWindow.Left,
+            .Y = info.srWindow.Top,
+        };
+        _ = SetConsoleCursorPosition(self.output_handle, start_coord);
     }
 
     fn moveCursorImpl(ctx: *anyopaque, row: u16, col: u16) !void {
         const self: *WindowsTerminal = @ptrCast(@alignCast(ctx));
-        const seq = try ansi.formatCursorPosition(&self.cursor_pos_buf, row, col);
-        // Call writeImpl directly to avoid circular call through terminal wrapper
-        try writeImpl(ctx, seq);
+        
+        // Get screen buffer info to convert relative coordinates to absolute buffer coordinates
+        // The renderer passes coordinates relative to the visible window (0,0 = top-left of window)
+        // But SetConsoleCursorPosition expects absolute buffer coordinates
+        var info: CONSOLE_SCREEN_BUFFER_INFO = undefined;
+        if (GetConsoleScreenBufferInfo(self.output_handle, &info) == 0) {
+            // Fallback to ANSI if we can't get buffer info
+            const seq = try ansi.formatCursorPosition(&self.cursor_pos_buf, row, col);
+            try writeImpl(ctx, seq);
+            return;
+        }
+        
+        // Convert relative window coordinates to absolute buffer coordinates
+        const abs_coord = COORD{
+            .X = @as(windows.SHORT, @intCast(info.srWindow.Left + @as(i16, @intCast(col)))),
+            .Y = @as(windows.SHORT, @intCast(info.srWindow.Top + @as(i16, @intCast(row)))),
+        };
+        
+        // Use Windows Console API for reliable cursor positioning
+        if (SetConsoleCursorPosition(self.output_handle, abs_coord) == 0) {
+            // Fallback to ANSI if Windows API fails
+            const seq = try ansi.formatCursorPosition(&self.cursor_pos_buf, row, col);
+            try writeImpl(ctx, seq);
+        }
+    }
+
+    fn clearToEndOfLineImpl(ctx: *anyopaque) !void {
+        const self: *WindowsTerminal = @ptrCast(@alignCast(ctx));
+        
+        // Get current cursor position and buffer info
+        var info: CONSOLE_SCREEN_BUFFER_INFO = undefined;
+        if (GetConsoleScreenBufferInfo(self.output_handle, &info) == 0) {
+            // Fallback to ANSI if Windows API fails
+            try writeImpl(ctx, ansi.CLEAR_TO_EOL);
+            return;
+        }
+        
+        // Calculate number of characters to clear (from cursor to end of buffer line)
+        // dwCursorPosition is in absolute buffer coordinates
+        // We clear to the end of the buffer line (dwSize.X), not just the visible window
+        const current_col = info.dwCursorPosition.X;
+        const buffer_width = info.dwSize.X;
+        const chars_to_clear = @as(windows.DWORD, @intCast(buffer_width - current_col));
+        
+        if (chars_to_clear > 0) {
+            var written: windows.DWORD = undefined;
+            
+            // Fill from cursor position to end of buffer line with spaces
+            if (FillConsoleOutputCharacterA(
+                self.output_handle,
+                ' ',
+                chars_to_clear,
+                info.dwCursorPosition,
+                &written,
+            ) == 0) {
+                // If FillConsoleOutputCharacterA fails, fallback to ANSI
+                try writeImpl(ctx, ansi.CLEAR_TO_EOL);
+                return;
+            }
+            
+            // Fill with current attributes
+            _ = FillConsoleOutputAttribute(
+                self.output_handle,
+                info.wAttributes,
+                chars_to_clear,
+                info.dwCursorPosition,
+                &written,
+            );
+        }
     }
 
     fn hideCursorImpl(ctx: *anyopaque) !void {
-        // Call writeImpl directly to avoid circular call through terminal wrapper
+        const self: *WindowsTerminal = @ptrCast(@alignCast(ctx));
+        
+        // Use Windows Console API for cursor visibility
+        var cursor_info: CONSOLE_CURSOR_INFO = undefined;
+        if (GetConsoleCursorInfo(self.output_handle, &cursor_info) != 0) {
+            cursor_info.bVisible = 0; // Hide cursor
+            if (SetConsoleCursorInfo(self.output_handle, &cursor_info) != 0) {
+                return; // Success
+            }
+        }
+        
+        // Fallback to ANSI if Windows API fails
         try writeImpl(ctx, ansi.HIDE_CURSOR);
     }
 
     fn showCursorImpl(ctx: *anyopaque) !void {
-        // Call writeImpl directly to avoid circular call through terminal wrapper
+        const self: *WindowsTerminal = @ptrCast(@alignCast(ctx));
+        
+        // Use Windows Console API for cursor visibility
+        var cursor_info: CONSOLE_CURSOR_INFO = undefined;
+        if (GetConsoleCursorInfo(self.output_handle, &cursor_info) != 0) {
+            cursor_info.bVisible = 1; // Show cursor
+            if (SetConsoleCursorInfo(self.output_handle, &cursor_info) != 0) {
+                return; // Success
+            }
+        }
+        
+        // Fallback to ANSI if Windows API fails
         try writeImpl(ctx, ansi.SHOW_CURSOR);
     }
 };

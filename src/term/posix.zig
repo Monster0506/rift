@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const backend = @import("backend.zig");
+const ansi = @import("ansi.zig");
 const Key = @import("../key.zig").Key;
 
 pub const PosixTerminal = struct {
@@ -57,6 +58,11 @@ pub const PosixTerminal = struct {
     }
 
     fn showCursorImpl(ctx: *anyopaque) !void {
+        _ = ctx;
+        return error.NotImplemented;
+    }
+
+    fn clearToEndOfLineImpl(ctx: *anyopaque) !void {
         _ = ctx;
         return error.NotImplemented;
     }
