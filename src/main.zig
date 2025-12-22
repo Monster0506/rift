@@ -1,10 +1,10 @@
 const std = @import("std");
-const git_history = @import("git_history");
+const rift = @import("rift");
 
 pub fn main() !void {
     // Prints to stderr, ignoring potential errors.
     std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-    try git_history.bufferedPrint();
+    try rift.bufferedPrint();
 }
 
 test "simple test" {
