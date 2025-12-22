@@ -149,16 +149,16 @@ pub fn execute_command(cmd: Command, buf: &mut GapBuffer, key: Option<Key>) {
             buf.move_right();
         }
         Command::MoveUp => {
-            // TODO: Implement move_up
+            buf.move_up();
         }
         Command::MoveDown => {
-            // TODO: Implement move_down
+            buf.move_down();
         }
         Command::MoveToLineStart => {
-            // TODO: Implement move_to_line_start
+            buf.move_to_line_start();
         }
         Command::MoveToLineEnd => {
-            // TODO: Implement move_to_line_end
+            buf.move_to_line_end();
         }
         Command::MoveToBufferStart => {
             // Move to start of buffer

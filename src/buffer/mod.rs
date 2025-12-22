@@ -173,6 +173,213 @@ impl GapBuffer {
         }
     }
 
+    /// Move cursor up one line
+    pub fn move_up(&mut self) -> bool {
+        let line_start = self.get_line_start(self.gap_start);
+        if line_start == 0 {
+            return false; // Already at first line
+        }
+
+        // Find start of previous line
+        let mut prev_line_start = line_start;
+        if prev_line_start > 0 {
+            prev_line_start -= 1;
+            let before = self.get_before_gap();
+            while prev_line_start > 0 && before[prev_line_start - 1] != b'\n' {
+                prev_line_start -= 1;
+            }
+        }
+
+        // Calculate column position in current line
+        let current_col = self.gap_start - line_start;
+
+        // Find target position in previous line
+        let mut target_pos = prev_line_start;
+        let mut col_count = 0;
+        let before = self.get_before_gap();
+        while target_pos < line_start && col_count < current_col {
+            if target_pos < before.len() && before[target_pos] == b'\n' {
+                break;
+            }
+            target_pos += 1;
+            col_count += 1;
+        }
+
+        // Move gap to target position
+        self.move_gap_to(target_pos)
+    }
+
+    /// Move cursor down one line
+    pub fn move_down(&mut self) -> bool {
+        let line_end = self.get_line_end(self.gap_start);
+        let content_end = self.len();
+        if line_end >= content_end {
+            return false; // Already at last line
+        }
+
+        // Find start of next line
+        let next_line_start = line_end + 1;
+        if next_line_start >= content_end {
+            return false;
+        }
+
+        // Calculate column position in current line
+        let line_start = self.get_line_start(self.gap_start);
+        let current_col = self.gap_start - line_start;
+
+        // Find target position in next line
+        let mut target_pos = next_line_start;
+        let mut col_count = 0;
+        let next_line_end = self.get_line_end(next_line_start);
+        
+        // Get byte at position (handling gap)
+        while target_pos < next_line_end && col_count < current_col {
+            let byte = self.get_byte_at(target_pos);
+            if byte == Some(b'\n') {
+                break;
+            }
+            if byte.is_none() {
+                break;
+            }
+            target_pos += 1;
+            col_count += 1;
+        }
+
+        // Move gap to target position
+        self.move_gap_to(target_pos)
+    }
+
+    /// Get byte at a specific position (handles gap)
+    fn get_byte_at(&self, pos: usize) -> Option<u8> {
+        if pos < self.gap_start {
+            // Before gap
+            unsafe {
+                Some(*self.buffer.add(pos))
+            }
+        } else if pos >= self.gap_end {
+            // After gap - need to adjust for gap size
+            let adjusted_pos = pos - (self.gap_end - self.gap_start);
+            if adjusted_pos < self.capacity {
+                unsafe {
+                    Some(*self.buffer.add(adjusted_pos))
+                }
+            } else {
+                None
+            }
+        } else {
+            // In gap - invalid position
+            None
+        }
+    }
+
+    /// Move to start of buffer
+    pub fn move_to_start(&mut self) {
+        let _ = self.move_gap_to(0);
+    }
+
+    /// Move to end of buffer
+    pub fn move_to_end(&mut self) {
+        let end = self.len();
+        let _ = self.move_gap_to(end);
+    }
+
+    /// Move to start of current line
+    pub fn move_to_line_start(&mut self) {
+        let line_start = self.get_line_start(self.gap_start);
+        let _ = self.move_gap_to(line_start);
+    }
+
+    /// Move to end of current line
+    pub fn move_to_line_end(&mut self) {
+        let line_end = self.get_line_end(self.gap_start);
+        let _ = self.move_gap_to(line_end);
+    }
+
+    /// Get the start of the line containing position
+    fn get_line_start(&self, pos: usize) -> usize {
+        if pos == 0 {
+            return 0;
+        }
+        
+        let before = self.get_before_gap();
+        let mut line_start = pos.min(before.len());
+        
+        // Search backwards for newline
+        while line_start > 0 && before[line_start - 1] != b'\n' {
+            line_start -= 1;
+        }
+        
+        line_start
+    }
+
+    /// Get the end of the line containing position (position of newline or end of buffer)
+    fn get_line_end(&self, pos: usize) -> usize {
+        let before = self.get_before_gap();
+        let after = self.get_after_gap();
+        let total_len = self.len();
+        
+        // Start searching from position
+        let mut search_pos = pos;
+        
+        // Check before gap
+        if search_pos < before.len() {
+            for i in search_pos..before.len() {
+                if before[i] == b'\n' {
+                    return i;
+                }
+            }
+            search_pos = before.len();
+        }
+        
+        // Check after gap
+        let after_start = self.gap_end;
+        let after_offset = search_pos - before.len();
+        if after_offset < after.len() {
+            for i in after_offset..after.len() {
+                if after[i] == b'\n' {
+                    return before.len() + i;
+                }
+            }
+        }
+        
+        // No newline found, return end of buffer
+        total_len
+    }
+
+    /// Move gap to a specific position
+    fn move_gap_to(&mut self, target_pos: usize) -> bool {
+        let current_pos = self.gap_start;
+        
+        if target_pos == current_pos {
+            return true; // Already at target
+        }
+        
+        if target_pos > self.len() {
+            return false; // Invalid position
+        }
+        
+        // Move gap to target by shifting bytes
+        if target_pos < current_pos {
+            // Move gap left (move bytes from before_gap to after_gap)
+            let bytes_to_move = current_pos - target_pos;
+            for _ in 0..bytes_to_move {
+                if !self.move_left() {
+                    return false;
+                }
+            }
+        } else {
+            // Move gap right (move bytes from after_gap to before_gap)
+            let bytes_to_move = target_pos - current_pos;
+            for _ in 0..bytes_to_move {
+                if !self.move_right() {
+                    return false;
+                }
+            }
+        }
+        
+        true
+    }
+
     /// Grow the buffer when gap is exhausted
     fn grow(&mut self) -> Result<(), String> {
         let new_capacity = self.capacity * 2;
@@ -229,4 +436,3 @@ impl Drop for GapBuffer {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-
