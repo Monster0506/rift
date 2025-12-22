@@ -203,3 +203,7 @@ pub fn execute_command(cmd: Command, buf: &mut GapBuffer, key: Option<Key>) {
     }
 }
 
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
+
