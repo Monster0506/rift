@@ -1,10 +1,27 @@
 const std = @import("std");
-const rift = @import("rift");
+const editor = @import("editor.zig");
 
 pub fn main() !void {
-    // Prints to stderr, ignoring potential errors.
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-    try rift.bufferedPrint();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // Parse command line arguments
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    const file_path = if (args.len > 1) args[1] else null;
+
+    // Initialize editor
+    var ed = try editor.Editor.init(allocator, file_path);
+    defer ed.deinit();
+
+    // Run editor
+    // Note: ed.deinit() is already deferred above, so it will be called on error or success
+    ed.run() catch |err| {
+        // Terminal will be restored by defer ed.deinit() above
+        return err;
+    };
 }
 
 test "simple test" {
