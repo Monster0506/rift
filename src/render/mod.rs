@@ -17,23 +17,30 @@ pub fn render<T: TerminalBackend>(
     pending_key: Option<Key>,
     state: &State,
 ) -> Result<(), String> {
+    // Hide cursor during rendering to reduce flicker
+    term.hide_cursor()?;
+    
     // Update viewport based on cursor position
     let cursor_line = buf.get_line();
     let total_lines = buf.get_total_lines();
-    viewport.update(cursor_line, total_lines);
+    let needs_clear = viewport.update(cursor_line, total_lines);
 
-    // Clear screen and move cursor to top-left
-    term.clear_screen()?;
-
-    // Render content (content rendering positions cursor for each line)
+    // Clear screen if viewport scrolled or on first render
+    // This reduces flicker when just moving cursor within visible area
+    if needs_clear {
+        term.clear_screen()?;
+    }
+    
+    // Always render content (it handles positioning efficiently)
     render_content(term, buf, viewport)?;
 
-    // Render status bar
+    // Always render status bar (it may have changed)
     render_status_bar(term, viewport, current_mode, pending_key, state)?;
 
-    // Position cursor at the correct location
+    // Show cursor and position it at the correct location
+    term.show_cursor()?;
     let cursor_line_in_viewport = if cursor_line >= viewport.top_line() 
-        && cursor_line < viewport.top_line() + viewport.visible_rows() {
+        && cursor_line < viewport.top_line() + viewport.visible_rows().saturating_sub(1) {
         cursor_line - viewport.top_line()
     } else {
         0
