@@ -3,6 +3,7 @@
 
 use crate::mode::Mode;
 use crate::key::Key;
+use crate::command::Command;
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
 use crate::state::State;
@@ -41,7 +42,7 @@ impl StatusBar {
         
         // Debug information (if debug mode is enabled)
         let debug_str = if state.debug_mode {
-            Self::format_debug_info(state)
+            Self::format_debug_info(state, current_mode)
         } else {
             String::new()
         };
@@ -121,12 +122,28 @@ impl StatusBar {
     }
     
     /// Format debug information string
-    fn format_debug_info(state: &State) -> String {
+    fn format_debug_info(state: &State, current_mode: Mode) -> String {
         let mut parts = Vec::new();
         
         // Last keypress
         if let Some(key) = state.last_keypress {
             parts.push(format!("Last: {}", Self::format_key(key)));
+        }
+        
+        // In insert mode, show the byte being inserted
+        if current_mode == Mode::Insert {
+            if let Some(Command::InsertByte(b)) = state.last_command {
+                let byte_str = if b == b'\t' {
+                    "\\t".to_string()
+                } else if b == b'\n' {
+                    "\\n".to_string()
+                } else if b >= 32 && b < 127 {
+                    format!("'{}'", b as char)
+                } else {
+                    format!("\\x{:02x}", b)
+                };
+                parts.push(format!("Insert: {} (0x{:02x})", byte_str, b));
+            }
         }
         
         // Cursor position (1-indexed for display)

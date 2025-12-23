@@ -2,6 +2,7 @@
 //! Centralized state for editor settings, debug mode, and runtime information
 
 use crate::key::Key;
+use crate::command::Command;
 
 /// Editor state containing settings and runtime information
 pub struct State {
@@ -9,6 +10,8 @@ pub struct State {
     pub debug_mode: bool,
     /// Last keypress received
     pub last_keypress: Option<Key>,
+    /// Last command that will be executed
+    pub last_command: Option<Command>,
     /// Current cursor position (line, column)
     pub cursor_pos: (usize, usize),
     /// Total number of lines in buffer
@@ -23,6 +26,7 @@ impl State {
         State {
             debug_mode: false,
             last_keypress: None,
+            last_command: None,
             cursor_pos: (0, 0),
             total_lines: 1,
             buffer_size: 0,
@@ -37,6 +41,11 @@ impl State {
     /// Update last keypress
     pub fn update_keypress(&mut self, key: Key) {
         self.last_keypress = Some(key);
+    }
+
+    /// Update last command
+    pub fn update_command(&mut self, cmd: Command) {
+        self.last_command = Some(cmd);
     }
 
     /// Update cursor position

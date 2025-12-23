@@ -122,6 +122,7 @@ impl Dispatcher {
             }
             Key::Backspace => Command::DeleteBackward,
             Key::Enter => Command::InsertByte(b'\n'),
+            Key::Tab => Command::InsertByte(b'\t'),
             Key::Escape => Command::EnterInsertMode, // Exit insert mode (returns to normal)
             _ => Command::Noop,
         }

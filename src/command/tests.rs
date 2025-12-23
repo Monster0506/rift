@@ -47,6 +47,7 @@ fn test_translate_insert_mode() {
     assert_eq!(dispatcher.translate_key(Key::Char(b'\t')), Command::InsertByte(b'\t'));
     assert_eq!(dispatcher.translate_key(Key::Backspace), Command::DeleteBackward);
     assert_eq!(dispatcher.translate_key(Key::Enter), Command::InsertByte(b'\n'));
+    assert_eq!(dispatcher.translate_key(Key::Tab), Command::InsertByte(b'\t'));
     assert_eq!(dispatcher.translate_key(Key::Escape), Command::EnterInsertMode);
 }
 

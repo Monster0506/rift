@@ -111,6 +111,9 @@ impl<T: TerminalBackend> Editor<T> {
 
             // Translate key to command
             let cmd = self.dispatcher.translate_key(key_press);
+            
+            // Track command in state for debug display
+            self.state.update_command(cmd);
 
             // Handle mode transitions
             match cmd {
@@ -163,44 +166,96 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.update_buffer_stats(total_lines, buffer_size);
     }
 
-    /// Calculate cursor column for a given line
+    /// Calculate cursor column for a given line (accounting for tab width)
     fn calculate_cursor_column(&self, line: usize) -> usize {
+        // Tab width (hardcoded for now, should be a setting later)
+        const TAB_WIDTH: usize = 4;
+        
         let before_gap = self.buf.get_before_gap();
         let mut current_line = 0;
+        let mut line_start = 0;
         let mut col = 0;
         
-        for &byte in before_gap {
+        // Find the start of the target line and calculate visual column
+        for (i, &byte) in before_gap.iter().enumerate() {
             if byte == b'\n' {
                 if current_line == line {
+                    // Found the line, calculate visual column up to gap position
+                    let line_bytes = &before_gap[line_start..i];
+                    for &b in line_bytes {
+                        if b == b'\t' {
+                            col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
+                        } else {
+                            col += 1;
+                        }
+                    }
                     return col;
                 }
                 current_line += 1;
+                line_start = i + 1;
                 col = 0;
-            } else {
-                col += 1;
             }
         }
         
         // If we're at the gap position on the target line
         if current_line == line {
+            let line_bytes = &before_gap[line_start..];
+            for &b in line_bytes {
+                if b == b'\t' {
+                    col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
+                } else {
+                    col += 1;
+                }
+            }
             return col;
         }
         
-        // Check after_gap
+        // Check after_gap - need to include before_gap bytes from line_start
         let after_gap = self.buf.get_after_gap();
-        for &byte in after_gap {
-            if byte == b'\n' {
-                if current_line == line {
-                    return col;
-                }
-                current_line += 1;
-                col = 0;
+        // First, calculate column for before_gap portion of this line
+        let before_line_bytes = &before_gap[line_start..];
+        for &b in before_line_bytes {
+            if b == b'\t' {
+                col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
             } else {
                 col += 1;
             }
         }
         
-        col
+        // Now process after_gap bytes
+        for (i, &byte) in after_gap.iter().enumerate() {
+            if byte == b'\n' {
+                if current_line == line {
+                    // Found the line in after_gap, include bytes up to this newline
+                    let after_line_bytes = &after_gap[..i];
+                    for &b in after_line_bytes {
+                        if b == b'\t' {
+                            col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
+                        } else {
+                            col += 1;
+                        }
+                    }
+                    return col;
+                }
+                current_line += 1;
+                col = 0;
+            }
+        }
+        
+        // If we're at the end of the target line (after gap, no newline found)
+        if current_line == line {
+            // Include all remaining after_gap bytes
+            for &b in after_gap {
+                if b == b'\t' {
+                    col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
+                } else {
+                    col += 1;
+                }
+            }
+            return col;
+        }
+        
+        0
     }
 }
 

@@ -134,46 +134,78 @@ pub(crate) fn format_key(key: Key) -> String {
     StatusBar::format_key(key)
 }
 
+// Tab width (hardcoded for now, should be a setting later)
+const TAB_WIDTH: usize = 8;
+
+/// Calculate the visual column position accounting for tab width
+/// If start_col is provided, continues from that column position
+fn calculate_visual_column(line_bytes: &[u8], start_col: usize) -> usize {
+    let mut col = start_col;
+    for &byte in line_bytes {
+        if byte == b'\t' {
+            // Move to next tab stop
+            col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
+        } else {
+            col += 1;
+        }
+    }
+    col
+}
+
 pub(crate) fn calculate_cursor_column(buf: &GapBuffer, line: usize) -> usize {
     let before_gap = buf.get_before_gap();
     let mut current_line = 0;
-    let mut col = 0;
+    let mut line_start = 0;
     
-    for &byte in before_gap {
+    // Find the start of the target line
+    for (i, &byte) in before_gap.iter().enumerate() {
         if byte == b'\n' {
             if current_line == line {
-                return col;
+                // Found the line, calculate visual column up to gap position
+                let line_bytes = &before_gap[line_start..i];
+                return calculate_visual_column(line_bytes, 0);
             }
             current_line += 1;
-            col = 0;
-        } else {
-            col += 1;
+            line_start = i + 1;
         }
     }
     
     // If we're at the gap position on the target line
     if current_line == line {
-        return col;
+        let line_bytes = &before_gap[line_start..];
+        return calculate_visual_column(line_bytes, 0);
     }
     
-    // Check after_gap
+    // Check after_gap - need to include before_gap bytes from line_start
     let after_gap = buf.get_after_gap();
-    for &byte in after_gap {
+    // First, calculate column for before_gap portion of this line
+    let before_line_bytes = &before_gap[line_start..];
+    let mut col = calculate_visual_column(before_line_bytes, 0);
+    
+    // Now process after_gap bytes
+    for (i, &byte) in after_gap.iter().enumerate() {
         if byte == b'\n' {
             if current_line == line {
-                return col;
+                // Found the line in after_gap, include bytes up to this newline
+                let after_line_bytes = &after_gap[..i];
+                return calculate_visual_column(after_line_bytes, col);
             }
             current_line += 1;
             col = 0;
-        } else {
-            col += 1;
         }
     }
     
-    col
+    // If we're at the end of the target line (after gap, no newline found)
+    if current_line == line {
+        // Include all remaining after_gap bytes, continuing from col
+        return calculate_visual_column(after_gap, col);
+    }
+    
+    0
 }
 
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
 
