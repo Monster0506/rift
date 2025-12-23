@@ -65,7 +65,8 @@ impl FloatingWindow {
     }
 
     /// Calculate the actual position of the window given terminal dimensions
-    fn calculate_position(&self, term_rows: u16, term_cols: u16) -> (u16, u16) {
+    /// Returns (row, col) where the window should be positioned
+    pub fn calculate_position(&self, term_rows: u16, term_cols: u16) -> (u16, u16) {
         let width = self.width.min(term_cols as usize) as u16;
         let height = self.height.min(term_rows as usize) as u16;
 
