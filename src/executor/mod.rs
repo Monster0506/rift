@@ -2,11 +2,10 @@
 //! Executes editor commands on the buffer
 
 use crate::command::Command;
-use crate::key::Key;
 use crate::buffer::GapBuffer;
 
 /// Execute a command on the editor buffer
-pub fn execute_command(cmd: Command, buf: &mut GapBuffer, key: Option<Key>) {
+pub fn execute_command(cmd: Command, buf: &mut GapBuffer) {
     match cmd {
         Command::MoveLeft => {
             buf.move_left();
@@ -43,21 +42,8 @@ pub fn execute_command(cmd: Command, buf: &mut GapBuffer, key: Option<Key>) {
         Command::DeleteLine => {
             // TODO: Implement delete_line
         }
-        Command::InsertChar => {
-            if let Some(Key::Char(ch)) = key {
-                let _ = buf.insert(ch);
-            } else if let Some(Key::Ctrl(ch)) = key {
-                // Insert Ctrl character (e.g., Ctrl+A = 0x01)
-                let ctrl_char = if ch >= b'a' && ch <= b'z' {
-                    ch - b'a' + 1
-                } else {
-                    ch
-                };
-                let _ = buf.insert(ctrl_char);
-            }
-        }
-        Command::InsertNewline => {
-            let _ = buf.insert(b'\n');
+        Command::InsertByte(b) => {
+            let _ = buf.insert(b);
         }
         Command::EnterInsertMode | Command::EnterInsertModeAfter => {
             // Mode change handled by editor

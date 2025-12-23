@@ -42,11 +42,11 @@ fn test_translate_normal_mode_arrows() {
 fn test_translate_insert_mode() {
     let mut dispatcher = Dispatcher::new(Mode::Insert);
     
-    assert_eq!(dispatcher.translate_key(Key::Char(b'a')), Command::InsertChar);
-    assert_eq!(dispatcher.translate_key(Key::Char(b' ')), Command::InsertChar);
-    assert_eq!(dispatcher.translate_key(Key::Char(b'\t')), Command::InsertChar);
+    assert_eq!(dispatcher.translate_key(Key::Char(b'a')), Command::InsertByte(b'a'));
+    assert_eq!(dispatcher.translate_key(Key::Char(b' ')), Command::InsertByte(b' '));
+    assert_eq!(dispatcher.translate_key(Key::Char(b'\t')), Command::InsertByte(b'\t'));
     assert_eq!(dispatcher.translate_key(Key::Backspace), Command::DeleteBackward);
-    assert_eq!(dispatcher.translate_key(Key::Enter), Command::InsertNewline);
+    assert_eq!(dispatcher.translate_key(Key::Enter), Command::InsertByte(b'\n'));
     assert_eq!(dispatcher.translate_key(Key::Escape), Command::EnterInsertMode);
 }
 
@@ -54,8 +54,9 @@ fn test_translate_insert_mode() {
 fn test_translate_insert_mode_ctrl() {
     let mut dispatcher = Dispatcher::new(Mode::Insert);
     
-    assert_eq!(dispatcher.translate_key(Key::Ctrl(b'a')), Command::InsertChar);
-    assert_eq!(dispatcher.translate_key(Key::Ctrl(b'c')), Command::InsertChar);
+    // Ctrl+A should map to 0x01, Ctrl+C should map to 0x03
+    assert_eq!(dispatcher.translate_key(Key::Ctrl(b'a')), Command::InsertByte(1));
+    assert_eq!(dispatcher.translate_key(Key::Ctrl(b'c')), Command::InsertByte(3));
 }
 
 #[test]

@@ -23,8 +23,7 @@ pub enum Command {
     DeleteForward,
     DeleteBackward,
     DeleteLine,
-    InsertChar,
-    InsertNewline,
+    InsertByte(u8),
 
     // Control
     Quit,
@@ -106,18 +105,23 @@ impl Dispatcher {
         match key {
             Key::Char(ch) => {
                 if ch == b'\t' || (ch >= 32 && ch < 127) {
-                    Command::InsertChar
+                    Command::InsertByte(ch)
                 } else {
                     Command::Noop
                 }
             }
-            Key::Ctrl(_) => {
+            Key::Ctrl(ch) => {
                 // Handle Ctrl key combinations in insert mode
-                // For now, we'll insert them as characters (Ctrl+A = 0x01, etc.)
-                Command::InsertChar
+                // Convert to control character (Ctrl+A = 0x01, etc.)
+                let ctrl_char = if ch >= b'a' && ch <= b'z' {
+                    ch - b'a' + 1
+                } else {
+                    ch
+                };
+                Command::InsertByte(ctrl_char)
             }
             Key::Backspace => Command::DeleteBackward,
-            Key::Enter => Command::InsertNewline,
+            Key::Enter => Command::InsertByte(b'\n'),
             Key::Escape => Command::EnterInsertMode, // Exit insert mode (returns to normal)
             _ => Command::Noop,
         }

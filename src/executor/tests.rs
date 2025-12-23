@@ -1,7 +1,6 @@
 //! Tests for command executor
 
 use crate::command::Command;
-use crate::key::Key;
 use crate::buffer::GapBuffer;
 use crate::executor::execute_command;
 
@@ -11,7 +10,7 @@ fn test_execute_move_left() {
     buf.insert_str("hello").unwrap();
     assert_eq!(buf.cursor(), 5);
     
-    execute_command(Command::MoveLeft, &mut buf, None);
+    execute_command(Command::MoveLeft, &mut buf);
     assert_eq!(buf.cursor(), 4);
 }
 
@@ -25,14 +24,14 @@ fn test_execute_move_right() {
     }
     assert_eq!(buf.cursor(), 0);
     
-    execute_command(Command::MoveRight, &mut buf, None);
+    execute_command(Command::MoveRight, &mut buf);
     assert_eq!(buf.cursor(), 1);
 }
 
 #[test]
-fn test_execute_insert_char() {
+fn test_execute_insert_byte() {
     let mut buf = GapBuffer::new(10).unwrap();
-    execute_command(Command::InsertChar, &mut buf, Some(Key::Char(b'a')));
+    execute_command(Command::InsertByte(b'a'), &mut buf);
     assert_eq!(buf.to_string(), "a");
 }
 
@@ -40,7 +39,7 @@ fn test_execute_insert_char() {
 fn test_execute_insert_newline() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
-    execute_command(Command::InsertNewline, &mut buf, None);
+    execute_command(Command::InsertByte(b'\n'), &mut buf);
     assert_eq!(buf.to_string(), "hello\n");
 }
 
@@ -48,7 +47,7 @@ fn test_execute_insert_newline() {
 fn test_execute_delete_backward() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
-    execute_command(Command::DeleteBackward, &mut buf, None);
+    execute_command(Command::DeleteBackward, &mut buf);
     assert_eq!(buf.to_string(), "hell");
 }
 
@@ -60,7 +59,7 @@ fn test_execute_delete_forward() {
     for _ in 0..5 {
         buf.move_left();
     }
-    execute_command(Command::DeleteForward, &mut buf, None);
+    execute_command(Command::DeleteForward, &mut buf);
     assert_eq!(buf.to_string(), "ello");
 }
 
@@ -70,7 +69,7 @@ fn test_execute_move_to_buffer_start() {
     buf.insert_str("hello").unwrap();
     assert_eq!(buf.cursor(), 5);
     
-    execute_command(Command::MoveToBufferStart, &mut buf, None);
+    execute_command(Command::MoveToBufferStart, &mut buf);
     assert_eq!(buf.cursor(), 0);
 }
 
@@ -84,7 +83,7 @@ fn test_execute_move_to_buffer_end() {
     }
     assert_eq!(buf.cursor(), 0);
     
-    execute_command(Command::MoveToBufferEnd, &mut buf, None);
+    execute_command(Command::MoveToBufferEnd, &mut buf);
     assert_eq!(buf.cursor(), 5);
 }
 
@@ -92,7 +91,7 @@ fn test_execute_move_to_buffer_end() {
 fn test_execute_insert_ctrl_char() {
     let mut buf = GapBuffer::new(10).unwrap();
     // Ctrl+A should insert 0x01
-    execute_command(Command::InsertChar, &mut buf, Some(Key::Ctrl(b'a')));
+    execute_command(Command::InsertByte(1), &mut buf);
     let text = buf.to_string();
     assert_eq!(text.as_bytes()[0], 1); // Ctrl+A = 0x01
 }
