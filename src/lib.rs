@@ -12,6 +12,7 @@ pub mod editor;
 pub mod state;
 pub mod status;
 pub mod key_handler;
+pub mod floating_window;
 
 #[cfg(test)]
 pub mod test_utils;
