@@ -74,13 +74,26 @@ impl<T: TerminalBackend> Editor<T> {
             self.state.update_keypress(key_press);
 
             // Process keypress through key handler
-            let action = KeyHandler::process_key(key_press, self.current_mode, &mut self.state);
+            let action = KeyHandler::process_key(key_press, self.current_mode);
 
             // Handle special actions that skip command processing
             match action {
                 KeyAction::ExitInsertMode => {
                     self.current_mode = Mode::Normal;
                     self.dispatcher.set_mode(Mode::Normal);
+                    self.update_state();
+                    render::render(
+                        &mut self.terminal,
+                        &self.buf,
+                        &mut self.viewport,
+                        self.current_mode,
+                        self.dispatcher.pending_key(),
+                        &self.state,
+                    )?;
+                    continue;
+                }
+                KeyAction::ToggleDebug => {
+                    self.state.toggle_debug();
                     self.update_state();
                     render::render(
                         &mut self.terminal,

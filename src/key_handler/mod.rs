@@ -4,7 +4,6 @@
 
 use crate::key::Key;
 use crate::mode::Mode;
-use crate::state::State;
 
 /// Result of processing a keypress
 /// Indicates what action the editor should take
@@ -12,10 +11,12 @@ use crate::state::State;
 pub enum KeyAction {
     /// Continue with normal command processing
     Continue,
-    /// Skip command processing and re-render (e.g., debug toggle, escape to clear)
+    /// Skip command processing and re-render (e.g., escape to clear)
     SkipAndRender,
     /// Exit insert mode and re-render
     ExitInsertMode,
+    /// Toggle debug mode and re-render
+    ToggleDebug,
 }
 
 /// Key handler for processing special keypresses
@@ -23,25 +24,23 @@ pub struct KeyHandler;
 
 impl KeyHandler {
     /// Process a keypress and determine what action to take
-    /// Returns the action and whether state was modified
+    /// Returns the action the editor should take
     pub fn process_key(
         key: Key,
         current_mode: Mode,
-        state: &mut State,
     ) -> KeyAction {
         match current_mode {
-            Mode::Normal => Self::process_normal_mode_key(key, state),
+            Mode::Normal => Self::process_normal_mode_key(key),
             Mode::Insert => Self::process_insert_mode_key(key),
         }
     }
 
     /// Process keypress in normal mode
-    fn process_normal_mode_key(key: Key, state: &mut State) -> KeyAction {
+    fn process_normal_mode_key(key: Key) -> KeyAction {
         match key {
             // Debug mode toggle
             Key::Char(b'?') => {
-                state.toggle_debug();
-                KeyAction::SkipAndRender
+                KeyAction::ToggleDebug
             }
             // Escape - clear pending keys
             Key::Escape => {
