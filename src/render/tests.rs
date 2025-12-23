@@ -1,7 +1,8 @@
 //! Tests for rendering system
 
-use crate::render::{render, render_content, format_key, calculate_cursor_column};
-use crate::status::StatusBar;
+use crate::render::{render, render_content, calculate_cursor_column};
+use crate::status::{StatusBar};
+use crate::render::_format_key as format_key;
 use crate::buffer::GapBuffer;
 use crate::mode::Mode;
 use crate::key::Key;
@@ -150,7 +151,7 @@ fn test_render_content_line_truncation() {
     render_content(&mut term, &buf, &viewport).unwrap();
     
     // Check that lines are truncated to viewport width
-    let written = term.get_written_bytes();
+    let _written = term.get_written_bytes();
     // Find the line content (excluding \r\n)
     for write in &term.writes {
         if write.len() >= 10 && write[0] != b'\r' {
@@ -270,7 +271,7 @@ fn test_render_status_bar_reverse_video() {
     
     StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
     
-    let _written = term.get_written_bytes();
+    let _written: Vec<u8> = term.get_written_bytes();
     // Should contain reverse video escape sequence
     assert!(!term.writes.is_empty());
     let written_str = term.get_written_string();
@@ -281,7 +282,7 @@ fn test_render_status_bar_reverse_video() {
 #[test]
 fn test_render_clears_screen() {
     let mut term = MockTerminal::new(10, 80);
-    let mut buf = GapBuffer::new(100).unwrap();
+    let buf = GapBuffer::new(100).unwrap();
     let mut viewport = Viewport::new(10, 80);
     let state = State::new();
     

@@ -139,7 +139,7 @@ fn render_content<T: TerminalBackend>(
 }
 
 // Re-export format_key for backward compatibility with tests
-pub(crate) fn format_key(key: Key) -> String {
+pub(crate) fn _format_key(key: Key) -> String {
     StatusBar::format_key(key)
 }
 
