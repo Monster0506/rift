@@ -8,6 +8,8 @@ use crate::command::Command;
 pub struct State {
     /// Whether debug mode is enabled
     pub debug_mode: bool,
+    /// Whether to expand tabs to spaces when inserting
+    pub expand_tabs: bool,
     /// Last keypress received
     pub last_keypress: Option<Key>,
     /// Last command that will be executed
@@ -25,6 +27,7 @@ impl State {
     pub fn new() -> Self {
         State {
             debug_mode: false,
+            expand_tabs: true, // Default to expanding tabs to spaces
             last_keypress: None,
             last_command: None,
             cursor_pos: (0, 0),
@@ -36,6 +39,11 @@ impl State {
     /// Toggle debug mode
     pub fn toggle_debug(&mut self) {
         self.debug_mode = !self.debug_mode;
+    }
+
+    /// Set whether to expand tabs to spaces
+    pub fn set_expand_tabs(&mut self, expand: bool) {
+        self.expand_tabs = expand;
     }
 
     /// Update last keypress

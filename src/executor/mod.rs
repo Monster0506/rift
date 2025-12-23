@@ -1,11 +1,18 @@
 //! Command executor
 //! Executes editor commands on the buffer
+//! Invariants:
+//! - Executor mutates buffer only
+//! - Mode changes are handled by editor
+//! - All commands are editor-level, not key-level
 
 use crate::command::Command;
 use crate::buffer::GapBuffer;
 
+// Tab width (hardcoded for now, should be a setting later)
+const TAB_WIDTH: usize = 8;
+
 /// Execute a command on the editor buffer
-pub fn execute_command(cmd: Command, buf: &mut GapBuffer) {
+pub fn execute_command(cmd: Command, buf: &mut GapBuffer, expand_tabs: bool) {
     match cmd {
         Command::MoveLeft => {
             buf.move_left();
@@ -43,7 +50,14 @@ pub fn execute_command(cmd: Command, buf: &mut GapBuffer) {
             // TODO: Implement delete_line
         }
         Command::InsertByte(b) => {
-            let _ = buf.insert(b);
+            if b == b'\t' && expand_tabs {
+                // Expand tab to spaces
+                for _ in 0..TAB_WIDTH {
+                    let _ = buf.insert(b' ');
+                }
+            } else {
+                let _ = buf.insert(b);
+            }
         }
         Command::EnterInsertMode | Command::EnterInsertModeAfter => {
             // Mode change handled by editor

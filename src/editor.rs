@@ -124,7 +124,7 @@ impl<T: TerminalBackend> Editor<T> {
                 Command::EnterInsertModeAfter => {
                     self.current_mode = Mode::Insert;
                     self.dispatcher.set_mode(Mode::Insert);
-                    execute_command(cmd, &mut self.buf);
+                    execute_command(cmd, &mut self.buf, self.state.expand_tabs);
                 }
                 Command::Quit => {
                     self.should_quit = true;
@@ -135,7 +135,7 @@ impl<T: TerminalBackend> Editor<T> {
 
             // Execute command
             if cmd != Command::EnterInsertMode && cmd != Command::EnterInsertModeAfter {
-                execute_command(cmd, &mut self.buf);
+                execute_command(cmd, &mut self.buf, self.state.expand_tabs);
             }
 
             // Update state before rendering
