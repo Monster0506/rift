@@ -17,6 +17,7 @@ use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
 use crate::state::State;
 use crate::status::StatusBar;
+use crate::floating_window::{FloatingWindow, WindowPosition};
 
 /// Render the editor interface
 pub fn render<T: TerminalBackend>(
@@ -44,22 +45,46 @@ pub fn render<T: TerminalBackend>(
     // Always render content (it handles positioning efficiently)
     render_content(term, buf, viewport)?;
 
-    // Always render status bar (it may have changed)
-    StatusBar::render(term, viewport, current_mode, pending_key, state)?;
+    // Render command line floating window if in command mode
+    if current_mode == Mode::Command {
+        // Use a reasonable width for the command line (e.g., 60% of terminal width)
+        let cmd_width = (viewport.visible_cols() * 3 / 5).max(40).min(viewport.visible_cols());
+        let cmd_window = FloatingWindow::new(WindowPosition::Center, cmd_width, 1)
+            .with_border(false)
+            .with_reverse_video(true);
+        cmd_window.render_single_line(term, ":", &state.command_line)?;
+    } else {
+        // Always render status bar (it may have changed)
+        StatusBar::render(term, viewport, current_mode, pending_key, state)?;
+    }
 
     // Show cursor and position it at the correct location
     term.show_cursor()?;
-    let cursor_line_in_viewport = if cursor_line >= viewport.top_line() 
-        && cursor_line < viewport.top_line() + viewport.visible_rows().saturating_sub(1) {
-        cursor_line - viewport.top_line()
+    
+    if current_mode == Mode::Command {
+        // Position cursor in the centered command line window
+        let size = term.get_size()?;
+        // Calculate window width (same as render)
+        let cmd_width = (viewport.visible_cols() * 3 / 5).max(40).min(viewport.visible_cols());
+        // Match the window's center calculation exactly (height = 1)
+        let center_row = (size.rows.saturating_sub(1)) / 2;
+        let start_col = (size.cols.saturating_sub(cmd_width as u16)) / 2;
+        // Cursor position: after the colon prompt + length of command line
+        let cursor_col = (start_col as usize + 1 + state.command_line.len()).min(size.cols as usize - 1);
+        term.move_cursor(center_row, cursor_col as u16)?;
     } else {
-        0
-    };
-    
-    let cursor_col = calculate_cursor_column(buf, cursor_line);
-    let display_col = cursor_col.min(viewport.visible_cols().saturating_sub(1));
-    
-    term.move_cursor(cursor_line_in_viewport as u16, display_col as u16)?;
+        let cursor_line_in_viewport = if cursor_line >= viewport.top_line() 
+            && cursor_line < viewport.top_line() + viewport.visible_rows().saturating_sub(1) {
+            cursor_line - viewport.top_line()
+        } else {
+            0
+        };
+        
+        let cursor_col = calculate_cursor_column(buf, cursor_line);
+        let display_col = cursor_col.min(viewport.visible_cols().saturating_sub(1));
+        
+        term.move_cursor(cursor_line_in_viewport as u16, display_col as u16)?;
+    }
     
     Ok(())
 }

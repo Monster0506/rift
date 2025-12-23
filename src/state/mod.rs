@@ -30,6 +30,8 @@ pub struct State {
     pub total_lines: usize,
     /// Buffer size
     pub buffer_size: usize,
+    /// Command line input (for command mode)
+    pub command_line: String,
 }
 
 impl State {
@@ -44,6 +46,7 @@ impl State {
             cursor_pos: (0, 0),
             total_lines: 1,
             buffer_size: 0,
+            command_line: String::new(),
         }
     }
 
@@ -81,6 +84,21 @@ impl State {
     pub fn update_buffer_stats(&mut self, total_lines: usize, buffer_size: usize) {
         self.total_lines = total_lines;
         self.buffer_size = buffer_size;
+    }
+
+    /// Append a character to the command line
+    pub fn append_to_command_line(&mut self, ch: char) {
+        self.command_line.push(ch);
+    }
+
+    /// Remove the last character from the command line (backspace)
+    pub fn remove_from_command_line(&mut self) {
+        self.command_line.pop();
+    }
+
+    /// Clear the command line
+    pub fn clear_command_line(&mut self) {
+        self.command_line.clear();
     }
 }
 

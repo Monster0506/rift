@@ -36,6 +36,11 @@ pub enum Command {
     // Mode transitions
     EnterCommandMode,
 
+    // Command line editing
+    AppendToCommandLine(u8),
+    DeleteFromCommandLine,
+    ExecuteCommandLine,
+
     // Control
     Quit,
     Noop,
@@ -142,9 +147,17 @@ impl Dispatcher {
     }
 
     fn translate_command_mode(&self, key: Key) -> Command {
-        // In command mode, Escape exits back to Normal mode
-        // For now, all other keys are Noop (we'll add command input later)
         match key {
+            Key::Char(ch) => {
+                // Allow printable ASCII characters
+                if ch >= 32 && ch < 127 {
+                    Command::AppendToCommandLine(ch)
+                } else {
+                    Command::Noop
+                }
+            }
+            Key::Backspace => Command::DeleteFromCommandLine,
+            Key::Enter => Command::ExecuteCommandLine,
             Key::Escape => Command::Noop, // Exit handled by key handler
             _ => Command::Noop,
         }

@@ -123,8 +123,19 @@ fn test_translate_command_mode() {
     // In command mode, Escape should be Noop (handled by key handler)
     assert_eq!(dispatcher.translate_key(Key::Escape), Command::Noop);
     
-    // Other keys should also be Noop for now
-    assert_eq!(dispatcher.translate_key(Key::Char(b'a')), Command::Noop);
-    assert_eq!(dispatcher.translate_key(Key::Char(b'q')), Command::Noop);
+    // Printable characters should append to command line
+    assert_eq!(dispatcher.translate_key(Key::Char(b'a')), Command::AppendToCommandLine(b'a'));
+    assert_eq!(dispatcher.translate_key(Key::Char(b'q')), Command::AppendToCommandLine(b'q'));
+    assert_eq!(dispatcher.translate_key(Key::Char(b' ')), Command::AppendToCommandLine(b' '));
+    
+    // Backspace should delete from command line
+    assert_eq!(dispatcher.translate_key(Key::Backspace), Command::DeleteFromCommandLine);
+    
+    // Enter should execute command line
+    assert_eq!(dispatcher.translate_key(Key::Enter), Command::ExecuteCommandLine);
+    
+    // Non-printable characters should be Noop
+    assert_eq!(dispatcher.translate_key(Key::Char(0)), Command::Noop);
+    assert_eq!(dispatcher.translate_key(Key::Char(127)), Command::Noop);
 }
 

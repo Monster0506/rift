@@ -120,6 +120,7 @@ impl<T: TerminalBackend> Editor<T> {
                     continue;
                 }
                 KeyAction::ExitCommandMode => {
+                    self.state.clear_command_line();
                     self.set_mode(Mode::Normal);
                     self.update_and_render()?;
                     continue;
@@ -163,10 +164,38 @@ impl<T: TerminalBackend> Editor<T> {
                 _ => {}
             }
 
-            // Execute command
-            if cmd != Command::EnterInsertMode 
-                && cmd != Command::EnterInsertModeAfter 
-                && cmd != Command::EnterCommandMode {
+            // Handle command line editing commands
+            match cmd {
+                Command::AppendToCommandLine(ch) => {
+                    // ch is guaranteed to be valid ASCII (32-126) from translate_command_mode
+                    self.state.append_to_command_line(ch as char);
+                }
+                Command::DeleteFromCommandLine => {
+                    self.state.remove_from_command_line();
+                }
+                Command::ExecuteCommandLine => {
+                    // For now, just exit command mode
+                    // TODO: Parse and execute the command
+                    self.state.clear_command_line();
+                    self.set_mode(Mode::Normal);
+                    self.update_and_render()?;
+                    continue;
+                }
+                _ => {}
+            }
+
+            // Execute command (skip mode transitions and command line editing)
+            let should_execute = match cmd {
+                Command::EnterInsertMode 
+                | Command::EnterInsertModeAfter 
+                | Command::EnterCommandMode
+                | Command::AppendToCommandLine(_)
+                | Command::DeleteFromCommandLine
+                | Command::ExecuteCommandLine => false,
+                _ => true,
+            };
+            
+            if should_execute {
                 execute_command(cmd, &mut self.buf, self.state.expand_tabs);
             }
 

@@ -165,6 +165,15 @@ pub fn execute_command(cmd: Command, buf: &mut GapBuffer, expand_tabs: bool) {
         Command::EnterCommandMode => {
             // Mode change handled by editor
         }
+        Command::AppendToCommandLine(_) => {
+            // Command line editing handled by editor
+        }
+        Command::DeleteFromCommandLine => {
+            // Command line editing handled by editor
+        }
+        Command::ExecuteCommandLine => {
+            // Command execution handled by editor
+        }
         Command::Quit => {
             // Quit handled by editor
         }
