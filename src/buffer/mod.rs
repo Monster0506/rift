@@ -1,5 +1,18 @@
 //! Gap buffer implementation for efficient text editing
 
+
+/// ## buffer/ Invariants
+///
+/// - The buffer owns both text storage and cursor position.
+/// - The cursor is always located at the gap.
+/// - `gap_start <= gap_end` at all times.
+/// - All text before the gap is logically before the cursor.
+/// - All text after the gap is logically after the cursor.
+/// - Buffer contents are treated consistently as either UTF-8 or raw bytes.
+/// - Movement operations never mutate text.
+/// - Insert and delete operations never leave the buffer in an invalid state.
+/// - Buffer methods either succeed fully or perform no mutation.
+/// - The buffer never emits or interprets commands.
 use std::alloc::{alloc, dealloc, Layout};
 
 /// Gap buffer for efficient insertion and deletion
@@ -24,7 +37,7 @@ impl GapBuffer {
 
         let layout = Layout::from_size_align(initial_capacity, 1)
             .map_err(|e| format!("Invalid layout: {}", e))?;
-        
+
         let buffer = unsafe { alloc(layout) };
         if buffer.is_null() {
             return Err("Failed to allocate buffer".to_string());
@@ -130,9 +143,7 @@ impl GapBuffer {
 
     /// Get the text before the gap as a string
     pub fn get_before_gap(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(self.buffer, self.gap_start)
-        }
+        unsafe { std::slice::from_raw_parts(self.buffer, self.gap_start) }
     }
 
     /// Get the text after the gap as a string
@@ -231,7 +242,7 @@ impl GapBuffer {
         let mut target_pos = next_line_start;
         let mut col_count = 0;
         let next_line_end = self.get_line_end(next_line_start);
-        
+
         // Get byte at position (handling gap)
         while target_pos < next_line_end && col_count < current_col {
             let byte = self.get_byte_at(target_pos);
@@ -253,16 +264,12 @@ impl GapBuffer {
     fn get_byte_at(&self, pos: usize) -> Option<u8> {
         if pos < self.gap_start {
             // Before gap
-            unsafe {
-                Some(*self.buffer.add(pos))
-            }
+            unsafe { Some(*self.buffer.add(pos)) }
         } else if pos >= self.gap_end {
             // After gap - need to adjust for gap size
             let adjusted_pos = pos - (self.gap_end - self.gap_start);
             if adjusted_pos < self.capacity {
-                unsafe {
-                    Some(*self.buffer.add(adjusted_pos))
-                }
+                unsafe { Some(*self.buffer.add(adjusted_pos)) }
             } else {
                 None
             }
@@ -300,15 +307,15 @@ impl GapBuffer {
         if pos == 0 {
             return 0;
         }
-        
+
         let before = self.get_before_gap();
         let mut line_start = pos.min(before.len());
-        
+
         // Search backwards for newline
         while line_start > 0 && before[line_start - 1] != b'\n' {
             line_start -= 1;
         }
-        
+
         line_start
     }
 
@@ -317,10 +324,10 @@ impl GapBuffer {
         let before = self.get_before_gap();
         let after = self.get_after_gap();
         let total_len = self.len();
-        
+
         // Start searching from position
         let mut search_pos = pos;
-        
+
         // Check before gap
         if search_pos < before.len() {
             for i in search_pos..before.len() {
@@ -330,7 +337,7 @@ impl GapBuffer {
             }
             search_pos = before.len();
         }
-        
+
         // Check after gap
         let _after_start = self.gap_end;
         let after_offset = search_pos - before.len();
@@ -341,7 +348,7 @@ impl GapBuffer {
                 }
             }
         }
-        
+
         // No newline found, return end of buffer
         total_len
     }
@@ -349,15 +356,15 @@ impl GapBuffer {
     /// Move gap to a specific position
     fn move_gap_to(&mut self, target_pos: usize) -> bool {
         let current_pos = self.gap_start;
-        
+
         if target_pos == current_pos {
             return true; // Already at target
         }
-        
+
         if target_pos > self.len() {
             return false; // Invalid position
         }
-        
+
         // Move gap to target by shifting bytes
         if target_pos < current_pos {
             // Move gap left (move bytes from before_gap to after_gap)
@@ -376,7 +383,7 @@ impl GapBuffer {
                 }
             }
         }
-        
+
         true
     }
 
@@ -393,11 +400,7 @@ impl GapBuffer {
 
         // Copy before_gap
         unsafe {
-            std::ptr::copy_nonoverlapping(
-                self.buffer,
-                new_buffer,
-                self.gap_start,
-            );
+            std::ptr::copy_nonoverlapping(self.buffer, new_buffer, self.gap_start);
         }
 
         // Copy after_gap to the end

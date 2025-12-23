@@ -1,9 +1,14 @@
 //! Command executor
 //! Executes editor commands on the buffer
-//! Invariants:
-//! - Executor mutates buffer only
-//! - Mode changes are handled by editor
-//! - All commands are editor-level, not key-level
+
+/// ## executor/ Invariants
+///
+/// - The executor mutates buffer and editor state only.
+/// - Each command application is atomic.
+/// - Mode changes are not handled here unless explicitly documented.
+/// - Executor behavior is independent of key bindings.
+/// - Executor never inspects raw input or terminal state.
+/// - Commands are applied strictly in sequence.
 
 use crate::command::Command;
 use crate::buffer::GapBuffer;

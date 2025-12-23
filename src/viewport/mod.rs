@@ -1,6 +1,15 @@
 //! Viewport management
 //! Handles the visible portion of the text buffer
 
+/// ## viewport/ Invariants
+///
+/// - The viewport represents a window into buffer content.
+/// - The viewport never mutates buffer contents.
+/// - The cursor is always visible within the viewport.
+/// - Viewport dimensions reflect the current terminal size.
+/// - Viewport updates are explicit and predictable.
+/// - Viewport logic is independent of rendering mechanics.
+
 /// Viewport manages which portion of the buffer is visible
 pub struct Viewport {
     /// Top line of the visible area (0-indexed)

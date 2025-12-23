@@ -1,6 +1,14 @@
 //! Command dispatch and keybindings
 //! Translates keys into editor commands based on current mode
 
+
+/// ## command/ Invariants
+///
+/// - `Command` represents editor-level intent, not key-level input.
+/// - Commands contain no terminal- or platform-specific concepts.
+/// - All data required to apply a command is contained within the command.
+/// - Commands are immutable once created.
+/// - Adding a new command requires explicit executor support.
 use crate::key::Key;
 use crate::mode::Mode;
 

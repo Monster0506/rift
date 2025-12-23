@@ -1,6 +1,15 @@
 //! Rendering system
 //! Handles drawing the editor UI to the terminal
 
+
+/// ## render/ Invariants
+///
+/// - Rendering reads editor state and buffer contents only.
+/// - Rendering never mutates editor, buffer, or cursor state.
+/// - Rendering performs no input handling.
+/// - Rendering tolerates invalid state but never corrects it.
+/// - Displayed cursor position always matches buffer cursor position.
+/// - A full redraw is always safe.
 use crate::buffer::GapBuffer;
 use crate::mode::Mode;
 use crate::key::Key;

@@ -41,6 +41,13 @@
 //! - Nested test modules: `use super::super::test_utils::MockTerminal;` or `use crate::test_utils::MockTerminal;`
 //! - Integration tests: `use rift::test_utils::MockTerminal;` (if exposed)
 
+
+/// ## test_utils/ Invariants
+///
+/// - Test utilities introduce no production-only behavior.
+/// - Tests assert invariants, not implementation details.
+/// - Buffer and executor logic are testable without a terminal.
+/// - Boundary and edge cases are explicitly tested.
 use crate::key::Key;
 use crate::term::{TerminalBackend, Size};
 

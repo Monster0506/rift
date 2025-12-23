@@ -1,6 +1,14 @@
 //! Terminal backend abstraction
 //! Provides platform-agnostic interface for terminal operations
 
+
+/// ## term/ Invariants
+///
+/// - Terminal handling is isolated behind a strict abstraction boundary.
+/// - Raw mode is enabled before input processing begins.
+/// - Terminal state is restored on normal exit and on panic.
+/// - Terminal size queries are accurate at the time of use.
+/// - Terminal code never depends on editor internals.
 use crate::key::Key;
 
 /// Terminal size information

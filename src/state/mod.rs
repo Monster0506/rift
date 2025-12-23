@@ -1,6 +1,14 @@
 //! Editor state management
 //! Centralized state for editor settings, debug mode, and runtime information
 
+
+/// ## state/ Invariants
+///
+/// - Editor mode is explicit and globally consistent.
+/// - State transitions occur only through well-defined control flow.
+/// - There is exactly one active buffer at a time in v0.
+/// - Editor state is never partially updated.
+/// - State changes are observable by the renderer but never influenced by it.
 use crate::key::Key;
 use crate::command::Command;
 

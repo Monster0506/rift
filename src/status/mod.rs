@@ -1,6 +1,14 @@
 //! Status bar management
 //! Handles rendering and formatting of the editor status bar
 
+
+/// ## status/ Invariants
+///
+/// - Status content is derived entirely from editor state.
+/// - Status rendering does not influence editor behavior.
+/// - Status display is optional and failure-tolerant.
+/// - Status never consumes input or commands.
+
 use crate::mode::Mode;
 use crate::key::Key;
 use crate::command::Command;
