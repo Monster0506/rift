@@ -115,6 +115,10 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
 
     match key_event.code {
         KeyCode::Char(ch) => {
+            // Handle Enter key that comes through as character (some terminals send '\r' or '\n')
+            if ch == '\r' || ch == '\n' {
+                return Key::Enter;
+            }
             if ctrl {
                 Key::Ctrl(ch as u8)
             } else {
