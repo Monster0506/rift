@@ -6,6 +6,7 @@ use crate::mode::Mode;
 use crate::key::Key;
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
+use crate::state::State;
 
 /// Render the editor interface
 pub fn render<T: TerminalBackend>(
@@ -14,6 +15,7 @@ pub fn render<T: TerminalBackend>(
     viewport: &mut Viewport,
     current_mode: Mode,
     pending_key: Option<Key>,
+    state: &State,
 ) -> Result<(), String> {
     // Clear screen
     term.clear_screen()?;
@@ -27,7 +29,7 @@ pub fn render<T: TerminalBackend>(
     render_content(term, buf, viewport)?;
 
     // Render status bar
-    render_status_bar(term, viewport, current_mode, pending_key)?;
+    render_status_bar(term, viewport, current_mode, pending_key, state)?;
 
     // Position cursor
     let cursor_line_in_viewport = if cursor_line >= viewport.top_line() 
@@ -119,6 +121,7 @@ fn render_status_bar<T: TerminalBackend>(
     viewport: &Viewport,
     current_mode: Mode,
     pending_key: Option<Key>,
+    state: &State,
 ) -> Result<(), String> {
     let status_row = viewport.visible_rows().saturating_sub(1);
     term.move_cursor(status_row as u16, 0)?;
@@ -142,10 +145,74 @@ fn render_status_bar<T: TerminalBackend>(
         term.write(b"]")?;
     }
     
+    // Debug information (if debug mode is enabled)
+    if state.debug_mode {
+        let mut debug_parts = Vec::new();
+        
+        // Last keypress
+        if let Some(key) = state.last_keypress {
+            debug_parts.push(format!("Last: {}", format_key(key)));
+        }
+        
+        // Cursor position
+        debug_parts.push(format!("Pos: {}:{}", state.cursor_pos.0 + 1, state.cursor_pos.1 + 1));
+        
+        // Buffer stats
+        debug_parts.push(format!("Lines: {}", state.total_lines));
+        debug_parts.push(format!("Size: {}B", state.buffer_size));
+        
+        // Join debug parts
+        let debug_str = debug_parts.join(" | ");
+        
+        // Calculate available space
+        let mode_len = mode_str.len();
+        let pending_len = if pending_key.is_some() { 
+            format_key(pending_key.unwrap()).len() + 3 // "[key]"
+        } else { 
+            0 
+        };
+        let used_cols = mode_len + pending_len;
+        let available_cols = viewport.visible_cols().saturating_sub(used_cols);
+        
+        // Truncate debug string if needed
+        let debug_display = if debug_str.len() <= available_cols {
+            debug_str
+        } else {
+            format!("{}...", &debug_str[..available_cols.saturating_sub(3)])
+        };
+        
+        // Add spacing before debug info
+        let spacing = available_cols.saturating_sub(debug_display.len());
+        for _ in 0..spacing {
+            term.write(b" ")?;
+        }
+        
+        term.write(debug_display.as_bytes())?;
+    }
+    
     // Fill rest of line with spaces
     let mode_len = mode_str.len();
-    let pending_len = if pending_key.is_some() { 5 } else { 0 }; // "[key]"
-    let used_cols = mode_len + pending_len;
+    let pending_len = if pending_key.is_some() { 
+        format_key(pending_key.unwrap()).len() + 3 // "[key]"
+    } else { 
+        0 
+    };
+    let debug_len = if state.debug_mode {
+        // Calculate actual debug length
+        let mut debug_parts = Vec::new();
+        if let Some(key) = state.last_keypress {
+            debug_parts.push(format!("Last: {}", format_key(key)));
+        }
+        debug_parts.push(format!("Pos: {}:{}", state.cursor_pos.0 + 1, state.cursor_pos.1 + 1));
+        debug_parts.push(format!("Lines: {}", state.total_lines));
+        debug_parts.push(format!("Size: {}B", state.buffer_size));
+        let debug_str = debug_parts.join(" | ");
+        let available_cols = viewport.visible_cols().saturating_sub(mode_len + pending_len);
+        debug_str.len().min(available_cols)
+    } else {
+        0
+    };
+    let used_cols = mode_len + pending_len + debug_len;
     let remaining_cols = viewport.visible_cols().saturating_sub(used_cols);
     
     for _ in 0..remaining_cols {

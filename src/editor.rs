@@ -8,6 +8,7 @@ use crate::key::Key;
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
 use crate::render;
+use crate::state::State;
 
 /// Main editor struct
 pub struct Editor<T: TerminalBackend> {
@@ -17,6 +18,7 @@ pub struct Editor<T: TerminalBackend> {
     dispatcher: Dispatcher,
     current_mode: Mode,
     should_quit: bool,
+    state: State,
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -45,33 +47,49 @@ impl<T: TerminalBackend> Editor<T> {
             dispatcher,
             current_mode: Mode::Normal,
             should_quit: false,
+            state: State::new(),
         })
     }
 
     /// Run the editor main loop
     pub fn run(&mut self) -> Result<(), String> {
         // Initial render
+        self.update_state();
         render::render(
             &mut self.terminal,
             &self.buf,
             &mut self.viewport,
             self.current_mode,
             self.dispatcher.pending_key(),
+            &self.state,
         )?;
 
         // Main event loop
         while !self.should_quit {
             // Read key
             let key_press = self.terminal.read_key()?;
+            
+            // Update state with last keypress
+            self.state.update_keypress(key_press);
 
-            // Handle debug mode toggle (?)
-            match key_press {
-                Key::Char(b'?') => {
-                    // Toggle debug mode - for now just continue
-                    // TODO: Add debug mode support
-                    continue;
+            // Handle debug mode toggle (?) in normal mode
+            if self.current_mode == Mode::Normal {
+                match key_press {
+                    Key::Char(b'?') => {
+                        self.state.toggle_debug();
+                        self.update_state();
+                        render::render(
+                            &mut self.terminal,
+                            &self.buf,
+                            &mut self.viewport,
+                            self.current_mode,
+                            self.dispatcher.pending_key(),
+                            &self.state,
+                        )?;
+                        continue;
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
 
             // Handle insert mode exit first (before command translation)
@@ -80,12 +98,14 @@ impl<T: TerminalBackend> Editor<T> {
                     Key::Escape => {
                         self.current_mode = Mode::Normal;
                         self.dispatcher.set_mode(Mode::Normal);
+                        self.update_state();
                         render::render(
                             &mut self.terminal,
                             &self.buf,
                             &mut self.viewport,
                             self.current_mode,
                             self.dispatcher.pending_key(),
+                            &self.state,
                         )?;
                         continue;
                     }
@@ -99,24 +119,28 @@ impl<T: TerminalBackend> Editor<T> {
                     Key::Escape => {
                         // Clear pending key if any
                         // Note: Dispatcher doesn't expose clear_pending, so we'll handle it in translate
+                        self.update_state();
                         render::render(
                             &mut self.terminal,
                             &self.buf,
                             &mut self.viewport,
                             self.current_mode,
                             self.dispatcher.pending_key(),
+                            &self.state,
                         )?;
                         continue;
                     }
                     Key::Ctrl(ch) => {
                         if ch == b']' {
                             // Clear pending key
+                            self.update_state();
                             render::render(
                                 &mut self.terminal,
                                 &self.buf,
                                 &mut self.viewport,
                                 self.current_mode,
                                 self.dispatcher.pending_key(),
+                                &self.state,
                             )?;
                             continue;
                         }
@@ -151,6 +175,9 @@ impl<T: TerminalBackend> Editor<T> {
                 execute_command(cmd, &mut self.buf, Some(key_press));
             }
 
+            // Update state before rendering
+            self.update_state();
+
             // Render
             render::render(
                 &mut self.terminal,
@@ -158,10 +185,62 @@ impl<T: TerminalBackend> Editor<T> {
                 &mut self.viewport,
                 self.current_mode,
                 self.dispatcher.pending_key(),
+                &self.state,
             )?;
         }
 
         Ok(())
+    }
+
+    /// Update editor state with current buffer and cursor information
+    fn update_state(&mut self) {
+        let cursor_line = self.buf.get_line();
+        let cursor_col = self.calculate_cursor_column(cursor_line);
+        self.state.update_cursor(cursor_line, cursor_col);
+        
+        let total_lines = self.buf.get_total_lines();
+        let buffer_size = self.buf.get_before_gap().len() + self.buf.get_after_gap().len();
+        self.state.update_buffer_stats(total_lines, buffer_size);
+    }
+
+    /// Calculate cursor column for a given line
+    fn calculate_cursor_column(&self, line: usize) -> usize {
+        let before_gap = self.buf.get_before_gap();
+        let mut current_line = 0;
+        let mut col = 0;
+        
+        for &byte in before_gap {
+            if byte == b'\n' {
+                if current_line == line {
+                    return col;
+                }
+                current_line += 1;
+                col = 0;
+            } else {
+                col += 1;
+            }
+        }
+        
+        // If we're at the gap position on the target line
+        if current_line == line {
+            return col;
+        }
+        
+        // Check after_gap
+        let after_gap = self.buf.get_after_gap();
+        for &byte in after_gap {
+            if byte == b'\n' {
+                if current_line == line {
+                    return col;
+                }
+                current_line += 1;
+                col = 0;
+            } else {
+                col += 1;
+            }
+        }
+        
+        col
     }
 }
 

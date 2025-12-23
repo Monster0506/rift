@@ -332,7 +332,7 @@ impl GapBuffer {
         }
         
         // Check after gap
-        let after_start = self.gap_end;
+        let _after_start = self.gap_end;
         let after_offset = search_pos - before.len();
         if after_offset < after.len() {
             for i in after_offset..after.len() {

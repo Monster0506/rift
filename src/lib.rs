@@ -8,4 +8,5 @@ pub mod term;
 pub mod viewport;
 pub mod render;
 pub mod editor;
+pub mod state;
 
