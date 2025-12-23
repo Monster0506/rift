@@ -34,8 +34,11 @@ pub fn execute_command(cmd: Command, buf: &mut GapBuffer, key: Option<Key>) {
             // Move to end of buffer
             while buf.move_right() {}
         }
-        Command::DeleteChar => {
+        Command::DeleteForward => {
             buf.delete_forward();
+        }
+        Command::DeleteBackward => {
+            buf.delete_backward();
         }
         Command::DeleteLine => {
             // TODO: Implement delete_line
@@ -55,9 +58,6 @@ pub fn execute_command(cmd: Command, buf: &mut GapBuffer, key: Option<Key>) {
         }
         Command::InsertNewline => {
             let _ = buf.insert(b'\n');
-        }
-        Command::Backspace => {
-            buf.delete_backward();
         }
         Command::EnterInsertMode | Command::EnterInsertModeAfter => {
             // Mode change handled by editor

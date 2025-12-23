@@ -20,11 +20,11 @@ pub enum Command {
     // Editing
     EnterInsertMode,
     EnterInsertModeAfter,
-    DeleteChar,
+    DeleteForward,
+    DeleteBackward,
     DeleteLine,
     InsertChar,
     InsertNewline,
-    Backspace,
 
     // Control
     Quit,
@@ -69,7 +69,7 @@ impl Dispatcher {
                 b'$' => Command::MoveToLineEnd,
                 b'i' => Command::EnterInsertMode,
                 b'a' => Command::EnterInsertModeAfter,
-                b'x' => Command::DeleteChar,
+                b'x' => Command::DeleteForward,
                 b'q' => Command::Quit,
                 b'd' => {
                     // Start sequence for 'dd'
@@ -116,7 +116,7 @@ impl Dispatcher {
                 // For now, we'll insert them as characters (Ctrl+A = 0x01, etc.)
                 Command::InsertChar
             }
-            Key::Backspace => Command::Backspace,
+            Key::Backspace => Command::DeleteBackward,
             Key::Enter => Command::InsertNewline,
             Key::Escape => Command::EnterInsertMode, // Exit insert mode (returns to normal)
             _ => Command::Noop,

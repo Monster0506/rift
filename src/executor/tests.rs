@@ -45,22 +45,22 @@ fn test_execute_insert_newline() {
 }
 
 #[test]
-fn test_execute_backspace() {
+fn test_execute_delete_backward() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
-    execute_command(Command::Backspace, &mut buf, None);
+    execute_command(Command::DeleteBackward, &mut buf, None);
     assert_eq!(buf.to_string(), "hell");
 }
 
 #[test]
-fn test_execute_delete_char() {
+fn test_execute_delete_forward() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
     // Move to start
     for _ in 0..5 {
         buf.move_left();
     }
-    execute_command(Command::DeleteChar, &mut buf, None);
+    execute_command(Command::DeleteForward, &mut buf, None);
     assert_eq!(buf.to_string(), "ello");
 }
 

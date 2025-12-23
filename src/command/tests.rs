@@ -21,7 +21,7 @@ fn test_translate_normal_mode_simple() {
     assert_eq!(dispatcher.translate_key(Key::Char(b'l')), Command::MoveRight);
     assert_eq!(dispatcher.translate_key(Key::Char(b'i')), Command::EnterInsertMode);
     assert_eq!(dispatcher.translate_key(Key::Char(b'a')), Command::EnterInsertModeAfter);
-    assert_eq!(dispatcher.translate_key(Key::Char(b'x')), Command::DeleteChar);
+    assert_eq!(dispatcher.translate_key(Key::Char(b'x')), Command::DeleteForward);
     assert_eq!(dispatcher.translate_key(Key::Char(b'q')), Command::Quit);
     assert_eq!(dispatcher.translate_key(Key::Char(b'G')), Command::MoveToBufferEnd);
 }
@@ -45,7 +45,7 @@ fn test_translate_insert_mode() {
     assert_eq!(dispatcher.translate_key(Key::Char(b'a')), Command::InsertChar);
     assert_eq!(dispatcher.translate_key(Key::Char(b' ')), Command::InsertChar);
     assert_eq!(dispatcher.translate_key(Key::Char(b'\t')), Command::InsertChar);
-    assert_eq!(dispatcher.translate_key(Key::Backspace), Command::Backspace);
+    assert_eq!(dispatcher.translate_key(Key::Backspace), Command::DeleteBackward);
     assert_eq!(dispatcher.translate_key(Key::Enter), Command::InsertNewline);
     assert_eq!(dispatcher.translate_key(Key::Escape), Command::EnterInsertMode);
 }
