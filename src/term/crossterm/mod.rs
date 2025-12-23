@@ -15,28 +15,50 @@ use crate::term::{TerminalBackend, Size};
 /// Crossterm-based terminal backend implementation
 pub struct CrosstermBackend {
     raw_mode_enabled: bool,
+    alternate_screen_enabled: bool,
 }
 
 impl CrosstermBackend {
     pub fn new() -> Result<Self, String> {
         Ok(CrosstermBackend {
             raw_mode_enabled: false,
+            alternate_screen_enabled: false,
         })
     }
 }
 
 impl TerminalBackend for CrosstermBackend {
     fn init(&mut self) -> Result<(), String> {
+        // Enable alternate screen buffer (prevents scrolling in main buffer)
+        execute!(stdout(), terminal::EnterAlternateScreen)
+            .map_err(|e| format!("Failed to enter alternate screen: {}", e))?;
+        self.alternate_screen_enabled = true;
+        
+        // Enable raw mode
         terminal::enable_raw_mode()
             .map_err(|e| format!("Failed to enable raw mode: {}", e))?;
         self.raw_mode_enabled = true;
+        
+        // Hide cursor during rendering
+        execute!(stdout(), cursor::Hide)
+            .map_err(|e| format!("Failed to hide cursor: {}", e))?;
+        
         Ok(())
     }
 
     fn deinit(&mut self) {
+        // Show cursor before exiting
+        let _ = execute!(stdout(), cursor::Show);
+        
         if self.raw_mode_enabled {
             let _ = terminal::disable_raw_mode();
             self.raw_mode_enabled = false;
+        }
+        
+        // Exit alternate screen buffer
+        if self.alternate_screen_enabled {
+            let _ = execute!(stdout(), terminal::LeaveAlternateScreen);
+            self.alternate_screen_enabled = false;
         }
     }
 

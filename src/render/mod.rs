@@ -17,21 +17,21 @@ pub fn render<T: TerminalBackend>(
     pending_key: Option<Key>,
     state: &State,
 ) -> Result<(), String> {
-    // Clear screen
-    term.clear_screen()?;
-
     // Update viewport based on cursor position
     let cursor_line = buf.get_line();
     let total_lines = buf.get_total_lines();
     viewport.update(cursor_line, total_lines);
 
-    // Render content
+    // Clear screen and move cursor to top-left
+    term.clear_screen()?;
+
+    // Render content (content rendering positions cursor for each line)
     render_content(term, buf, viewport)?;
 
     // Render status bar
     render_status_bar(term, viewport, current_mode, pending_key, state)?;
 
-    // Position cursor
+    // Position cursor at the correct location
     let cursor_line_in_viewport = if cursor_line >= viewport.top_line() 
         && cursor_line < viewport.top_line() + viewport.visible_rows() {
         cursor_line - viewport.top_line()
@@ -89,6 +89,9 @@ fn render_content<T: TerminalBackend>(
     let visible_cols = viewport.visible_cols();
     
     for i in 0..visible_rows {
+        // Position cursor at the start of this line
+        term.move_cursor(i as u16, 0)?;
+        
         let line_num = top_line + i;
         if line_num < lines.len() {
             let line = &lines[line_num];
@@ -104,13 +107,15 @@ fn render_content<T: TerminalBackend>(
                 padded_line.push(b' ');
             }
             
+            // Write the line content
             term.write(&padded_line)?;
-            term.write(b"\r\n")?;
         } else {
-            // Empty line
+            // Empty line - fill with spaces
             term.write(&vec![b' '; visible_cols])?;
-            term.write(b"\r\n")?;
         }
+        
+        // Clear to end of line to remove any leftover content
+        term.clear_to_end_of_line()?;
     }
     
     Ok(())
@@ -225,7 +230,7 @@ fn render_status_bar<T: TerminalBackend>(
     Ok(())
 }
 
-fn format_key(key: Key) -> String {
+pub(crate) fn format_key(key: Key) -> String {
     match key {
         Key::Char(ch) => {
             if ch >= 32 && ch < 127 {
@@ -251,7 +256,7 @@ fn format_key(key: Key) -> String {
     }
 }
 
-fn calculate_cursor_column(buf: &GapBuffer, line: usize) -> usize {
+pub(crate) fn calculate_cursor_column(buf: &GapBuffer, line: usize) -> usize {
     let before_gap = buf.get_before_gap();
     let mut current_line = 0;
     let mut col = 0;
@@ -289,4 +294,8 @@ fn calculate_cursor_column(buf: &GapBuffer, line: usize) -> usize {
     
     col
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
 
