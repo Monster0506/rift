@@ -2,13 +2,14 @@
 //! Main editor logic that ties everything together
 
 use crate::buffer::GapBuffer;
-use crate::command::{Command, Dispatcher, execute_command};
+use crate::command::{Command, Dispatcher};
+use crate::executor::execute_command;
 use crate::mode::Mode;
-use crate::key::Key;
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
 use crate::render;
 use crate::state::State;
+use crate::key_handler::{KeyHandler, KeyAction};
 
 /// Main editor struct
 pub struct Editor<T: TerminalBackend> {
@@ -72,80 +73,39 @@ impl<T: TerminalBackend> Editor<T> {
             // Update state with last keypress
             self.state.update_keypress(key_press);
 
-            // Handle debug mode toggle (?) in normal mode
-            if self.current_mode == Mode::Normal {
-                match key_press {
-                    Key::Char(b'?') => {
-                        self.state.toggle_debug();
-                        self.update_state();
-                        render::render(
-                            &mut self.terminal,
-                            &self.buf,
-                            &mut self.viewport,
-                            self.current_mode,
-                            self.dispatcher.pending_key(),
-                            &self.state,
-                        )?;
-                        continue;
-                    }
-                    _ => {}
-                }
-            }
+            // Process keypress through key handler
+            let action = KeyHandler::process_key(key_press, self.current_mode, &mut self.state);
 
-            // Handle insert mode exit first (before command translation)
-            if self.current_mode == Mode::Insert {
-                match key_press {
-                    Key::Escape => {
-                        self.current_mode = Mode::Normal;
-                        self.dispatcher.set_mode(Mode::Normal);
-                        self.update_state();
-                        render::render(
-                            &mut self.terminal,
-                            &self.buf,
-                            &mut self.viewport,
-                            self.current_mode,
-                            self.dispatcher.pending_key(),
-                            &self.state,
-                        )?;
-                        continue;
-                    }
-                    _ => {}
+            // Handle special actions that skip command processing
+            match action {
+                KeyAction::ExitInsertMode => {
+                    self.current_mode = Mode::Normal;
+                    self.dispatcher.set_mode(Mode::Normal);
+                    self.update_state();
+                    render::render(
+                        &mut self.terminal,
+                        &self.buf,
+                        &mut self.viewport,
+                        self.current_mode,
+                        self.dispatcher.pending_key(),
+                        &self.state,
+                    )?;
+                    continue;
                 }
-            }
-
-            // Also handle escape in normal mode to clear pending keys
-            if self.current_mode == Mode::Normal {
-                match key_press {
-                    Key::Escape => {
-                        // Clear pending key if any
-                        // Note: Dispatcher doesn't expose clear_pending, so we'll handle it in translate
-                        self.update_state();
-                        render::render(
-                            &mut self.terminal,
-                            &self.buf,
-                            &mut self.viewport,
-                            self.current_mode,
-                            self.dispatcher.pending_key(),
-                            &self.state,
-                        )?;
-                        continue;
-                    }
-                    Key::Ctrl(ch) => {
-                        if ch == b']' {
-                            // Clear pending key
-                            self.update_state();
-                            render::render(
-                                &mut self.terminal,
-                                &self.buf,
-                                &mut self.viewport,
-                                self.current_mode,
-                                self.dispatcher.pending_key(),
-                                &self.state,
-                            )?;
-                            continue;
-                        }
-                    }
-                    _ => {}
+                KeyAction::SkipAndRender => {
+                    self.update_state();
+                    render::render(
+                        &mut self.terminal,
+                        &self.buf,
+                        &mut self.viewport,
+                        self.current_mode,
+                        self.dispatcher.pending_key(),
+                        &self.state,
+                    )?;
+                    continue;
+                }
+                KeyAction::Continue => {
+                    // Continue to command processing
                 }
             }
 
