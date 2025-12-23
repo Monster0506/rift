@@ -1,11 +1,67 @@
 //! Test utilities
 //! Shared testing helpers and mocks
+//!
+//! # Usage
+//!
+//! Import `MockTerminal` in any test file (including nested test modules):
+//!
+//! ```rust,no_run
+//! use crate::test_utils::MockTerminal;
+//! use crate::term::TerminalBackend;
+//!
+//! #[test]
+//! fn my_test() {
+//!     let mut term = MockTerminal::new(10, 80);
+//!     // Use term as a TerminalBackend
+//!     term.write(b"hello").unwrap();
+//!     
+//!     // Check what was written
+//!     let written = term.get_written_string();
+//!     assert!(written.contains("hello"));
+//!     
+//!     // Check cursor moves
+//!     term.move_cursor(5, 10).unwrap();
+//!     assert_eq!(term.cursor_moves.len(), 1);
+//!     assert_eq!(term.cursor_moves[0], (5, 10));
+//!     
+//!     // Check clear screen calls
+//!     term.clear_screen().unwrap();
+//!     assert_eq!(term.clear_screen_calls, 1);
+//!     
+//!     // Reset for multiple test operations
+//!     term.clear();
+//! }
+//! ```
+//!
+//! # Available from any test module
+//!
+//! The `test_utils` module is available to all test modules in the crate.
+//! You can import it from:
+//! - Top-level test modules: `use crate::test_utils::MockTerminal;`
+//! - Nested test modules: `use super::super::test_utils::MockTerminal;` or `use crate::test_utils::MockTerminal;`
+//! - Integration tests: `use rift::test_utils::MockTerminal;` (if exposed)
 
 use crate::key::Key;
 use crate::term::{TerminalBackend, Size};
 
 /// Mock terminal backend for testing
-/// Records all operations for verification
+/// 
+/// Records all terminal operations for verification in tests.
+/// Implements `TerminalBackend` trait and tracks:
+/// - All write operations
+/// - Cursor movements
+/// - Clear screen calls
+/// 
+/// # Example
+/// 
+/// ```rust,no_run
+/// use crate::test_utils::MockTerminal;
+/// use crate::term::TerminalBackend;
+/// 
+/// let mut term = MockTerminal::new(24, 80);
+/// term.write(b"test").unwrap();
+/// assert_eq!(term.get_written_string(), "test");
+/// ```
 pub struct MockTerminal {
     pub writes: Vec<Vec<u8>>,
     pub cursor_moves: Vec<(u16, u16)>,
@@ -87,4 +143,8 @@ impl TerminalBackend for MockTerminal {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
 
