@@ -7,6 +7,7 @@ use crate::key::Key;
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
 use crate::state::State;
+use crate::status::StatusBar;
 
 /// Render the editor interface
 pub fn render<T: TerminalBackend>(
@@ -35,7 +36,7 @@ pub fn render<T: TerminalBackend>(
     render_content(term, buf, viewport)?;
 
     // Always render status bar (it may have changed)
-    render_status_bar(term, viewport, current_mode, pending_key, state)?;
+    StatusBar::render(term, viewport, current_mode, pending_key, state)?;
 
     // Show cursor and position it at the correct location
     term.show_cursor()?;
@@ -128,139 +129,9 @@ fn render_content<T: TerminalBackend>(
     Ok(())
 }
 
-fn render_status_bar<T: TerminalBackend>(
-    term: &mut T,
-    viewport: &Viewport,
-    current_mode: Mode,
-    pending_key: Option<Key>,
-    state: &State,
-) -> Result<(), String> {
-    let status_row = viewport.visible_rows().saturating_sub(1);
-    term.move_cursor(status_row as u16, 0)?;
-    
-    // Invert colors for status bar (reverse video)
-    term.write(b"\x1b[7m")?;
-    
-    // Mode indicator
-    let mode_str = match current_mode {
-        Mode::Normal => "NORMAL",
-        Mode::Insert => "INSERT",
-    };
-    
-    term.write(mode_str.as_bytes())?;
-    
-    // Pending key indicator
-    if let Some(key) = pending_key {
-        term.write(b" [")?;
-        let key_str = format_key(key);
-        term.write(key_str.as_bytes())?;
-        term.write(b"]")?;
-    }
-    
-    // Debug information (if debug mode is enabled)
-    if state.debug_mode {
-        let mut debug_parts = Vec::new();
-        
-        // Last keypress
-        if let Some(key) = state.last_keypress {
-            debug_parts.push(format!("Last: {}", format_key(key)));
-        }
-        
-        // Cursor position
-        debug_parts.push(format!("Pos: {}:{}", state.cursor_pos.0 + 1, state.cursor_pos.1 + 1));
-        
-        // Buffer stats
-        debug_parts.push(format!("Lines: {}", state.total_lines));
-        debug_parts.push(format!("Size: {}B", state.buffer_size));
-        
-        // Join debug parts
-        let debug_str = debug_parts.join(" | ");
-        
-        // Calculate available space
-        let mode_len = mode_str.len();
-        let pending_len = if pending_key.is_some() { 
-            format_key(pending_key.unwrap()).len() + 3 // "[key]"
-        } else { 
-            0 
-        };
-        let used_cols = mode_len + pending_len;
-        let available_cols = viewport.visible_cols().saturating_sub(used_cols);
-        
-        // Truncate debug string if needed
-        let debug_display = if debug_str.len() <= available_cols {
-            debug_str
-        } else {
-            format!("{}...", &debug_str[..available_cols.saturating_sub(3)])
-        };
-        
-        // Add spacing before debug info
-        let spacing = available_cols.saturating_sub(debug_display.len());
-        for _ in 0..spacing {
-            term.write(b" ")?;
-        }
-        
-        term.write(debug_display.as_bytes())?;
-    }
-    
-    // Fill rest of line with spaces
-    let mode_len = mode_str.len();
-    let pending_len = if pending_key.is_some() { 
-        format_key(pending_key.unwrap()).len() + 3 // "[key]"
-    } else { 
-        0 
-    };
-    let debug_len = if state.debug_mode {
-        // Calculate actual debug length
-        let mut debug_parts = Vec::new();
-        if let Some(key) = state.last_keypress {
-            debug_parts.push(format!("Last: {}", format_key(key)));
-        }
-        debug_parts.push(format!("Pos: {}:{}", state.cursor_pos.0 + 1, state.cursor_pos.1 + 1));
-        debug_parts.push(format!("Lines: {}", state.total_lines));
-        debug_parts.push(format!("Size: {}B", state.buffer_size));
-        let debug_str = debug_parts.join(" | ");
-        let available_cols = viewport.visible_cols().saturating_sub(mode_len + pending_len);
-        debug_str.len().min(available_cols)
-    } else {
-        0
-    };
-    let used_cols = mode_len + pending_len + debug_len;
-    let remaining_cols = viewport.visible_cols().saturating_sub(used_cols);
-    
-    for _ in 0..remaining_cols {
-        term.write(b" ")?;
-    }
-    
-    // Reset colors
-    term.write(b"\x1b[0m")?;
-    
-    Ok(())
-}
-
+// Re-export format_key for backward compatibility with tests
 pub(crate) fn format_key(key: Key) -> String {
-    match key {
-        Key::Char(ch) => {
-            if ch >= 32 && ch < 127 {
-                format!("{}", ch as char)
-            } else {
-                format!("\\x{:02x}", ch)
-            }
-        }
-        Key::Ctrl(ch) => format!("Ctrl+{}", (ch as char).to_uppercase()),
-        Key::ArrowUp => "↑".to_string(),
-        Key::ArrowDown => "↓".to_string(),
-        Key::ArrowLeft => "←".to_string(),
-        Key::ArrowRight => "→".to_string(),
-        Key::Backspace => "Backspace".to_string(),
-        Key::Delete => "Delete".to_string(),
-        Key::Enter => "Enter".to_string(),
-        Key::Escape => "Esc".to_string(),
-        Key::Tab => "Tab".to_string(),
-        Key::Home => "Home".to_string(),
-        Key::End => "End".to_string(),
-        Key::PageUp => "PageUp".to_string(),
-        Key::PageDown => "PageDown".to_string(),
-    }
+    StatusBar::format_key(key)
 }
 
 pub(crate) fn calculate_cursor_column(buf: &GapBuffer, line: usize) -> usize {

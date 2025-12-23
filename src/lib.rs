@@ -9,4 +9,8 @@ pub mod viewport;
 pub mod render;
 pub mod editor;
 pub mod state;
+pub mod status;
+
+#[cfg(test)]
+pub mod test_utils;
 

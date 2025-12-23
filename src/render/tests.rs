@@ -1,86 +1,13 @@
 //! Tests for rendering system
 
-use crate::render::{render, render_content, render_status_bar, format_key, calculate_cursor_column};
+use crate::render::{render, render_content, format_key, calculate_cursor_column};
+use crate::status::StatusBar;
 use crate::buffer::GapBuffer;
 use crate::mode::Mode;
 use crate::key::Key;
-use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
 use crate::state::State;
-
-/// Mock terminal backend for testing
-/// Records all operations for verification
-pub struct MockTerminal {
-    pub writes: Vec<Vec<u8>>,
-    pub cursor_moves: Vec<(u16, u16)>,
-    pub clear_screen_calls: usize,
-    pub size: (u16, u16),
-}
-
-impl MockTerminal {
-    pub fn new(rows: u16, cols: u16) -> Self {
-        MockTerminal {
-            writes: Vec::new(),
-            cursor_moves: Vec::new(),
-            clear_screen_calls: 0,
-            size: (rows, cols),
-        }
-    }
-
-    pub fn get_written_bytes(&self) -> Vec<u8> {
-        self.writes.iter().flatten().cloned().collect()
-    }
-
-    pub fn get_written_string(&self) -> String {
-        String::from_utf8_lossy(&self.get_written_bytes()).to_string()
-    }
-}
-
-impl TerminalBackend for MockTerminal {
-    fn init(&mut self) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn deinit(&mut self) {}
-
-    fn read_key(&mut self) -> Result<Key, String> {
-        Err("Not implemented in mock".to_string())
-    }
-
-    fn write(&mut self, bytes: &[u8]) -> Result<(), String> {
-        self.writes.push(bytes.to_vec());
-        Ok(())
-    }
-
-    fn get_size(&self) -> Result<crate::term::Size, String> {
-        Ok(crate::term::Size {
-            rows: self.size.0,
-            cols: self.size.1,
-        })
-    }
-
-    fn clear_screen(&mut self) -> Result<(), String> {
-        self.clear_screen_calls += 1;
-        Ok(())
-    }
-
-    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), String> {
-        self.cursor_moves.push((row, col));
-        Ok(())
-    }
-
-    fn hide_cursor(&mut self) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn show_cursor(&mut self) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn clear_to_end_of_line(&mut self) -> Result<(), String> {
-        Ok(())
-    }
-}
+use crate::test_utils::MockTerminal;
 
 #[test]
 fn test_format_key_char() {
@@ -254,7 +181,7 @@ fn test_render_status_bar_normal_mode() {
     let viewport = Viewport::new(10, 80);
     let state = State::new();
     
-    render_status_bar(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
     
     let written = term.get_written_string();
     assert!(written.contains("NORMAL"));
@@ -267,7 +194,7 @@ fn test_render_status_bar_insert_mode() {
     let viewport = Viewport::new(10, 80);
     let state = State::new();
     
-    render_status_bar(&mut term, &viewport, Mode::Insert, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Insert, None, &state).unwrap();
     
     let written = term.get_written_string();
     assert!(written.contains("INSERT"));
@@ -280,7 +207,7 @@ fn test_render_status_bar_pending_key() {
     let viewport = Viewport::new(10, 80);
     let state = State::new();
     
-    render_status_bar(&mut term, &viewport, Mode::Normal, Some(Key::Char(b'd')), &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, Some(Key::Char(b'd')), &state).unwrap();
     
     let written = term.get_written_string();
     assert!(written.contains("[d]"));
@@ -296,7 +223,7 @@ fn test_render_status_bar_debug_mode() {
     state.update_cursor(5, 10);
     state.update_buffer_stats(10, 100);
     
-    render_status_bar(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
     
     let written = term.get_written_string();
     assert!(written.contains("Last: a"));
@@ -313,7 +240,7 @@ fn test_render_status_bar_debug_mode_with_pending_key() {
     state.toggle_debug();
     state.update_keypress(Key::ArrowUp);
     
-    render_status_bar(&mut term, &viewport, Mode::Normal, Some(Key::Char(b'd')), &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, Some(Key::Char(b'd')), &state).unwrap();
     
     let written = term.get_written_string();
     assert!(written.contains("NORMAL"));
@@ -327,7 +254,7 @@ fn test_render_status_bar_fills_line() {
     let viewport = Viewport::new(10, 80);
     let state = State::new();
     
-    render_status_bar(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
     
     // Status bar should fill the entire line width
     let total_written: usize = term.writes.iter().map(|w| w.len()).sum();
@@ -341,7 +268,7 @@ fn test_render_status_bar_reverse_video() {
     let viewport = Viewport::new(10, 80);
     let state = State::new();
     
-    render_status_bar(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
     
     let _written = term.get_written_bytes();
     // Should contain reverse video escape sequence
@@ -441,7 +368,7 @@ fn test_render_status_bar_debug_truncation() {
     state.update_cursor(100, 200);
     state.update_buffer_stats(1000, 50000);
     
-    render_status_bar(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
     
     // Debug info should be truncated if too long
     let written = term.get_written_string();
@@ -511,13 +438,13 @@ fn test_render_status_bar_all_modes() {
     let state = State::new();
     
     // Test Normal mode
-    render_status_bar(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
     let written_normal = term.get_written_string();
     assert!(written_normal.contains("NORMAL"));
     
     // Reset and test Insert mode
     term.writes.clear();
-    render_status_bar(&mut term, &viewport, Mode::Insert, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Insert, None, &state).unwrap();
     let written_insert = term.get_written_string();
     assert!(written_insert.contains("INSERT"));
 }
@@ -538,7 +465,7 @@ fn test_render_status_bar_various_keys() {
     
     for key in keys {
         term.writes.clear();
-        render_status_bar(&mut term, &viewport, Mode::Normal, Some(key), &state).unwrap();
+        StatusBar::render(&mut term, &viewport, Mode::Normal, Some(key), &state).unwrap();
         let written = term.get_written_string();
         assert!(written.contains("["));
         assert!(written.contains("]"));
