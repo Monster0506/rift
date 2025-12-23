@@ -7,5 +7,7 @@ pub enum Mode {
     Normal,
     /// Insert mode (text editing)
     Insert,
+    /// Command mode (ex command line, entered with :)
+    Command,
 }
 

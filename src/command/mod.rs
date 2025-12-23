@@ -33,6 +33,9 @@ pub enum Command {
     DeleteLine,
     InsertByte(u8),
 
+    // Mode transitions
+    EnterCommandMode,
+
     // Control
     Quit,
     Noop,
@@ -57,6 +60,7 @@ impl Dispatcher {
         match self.mode {
             Mode::Normal => self.translate_normal_mode(key),
             Mode::Insert => self.translate_insert_mode(key),
+            Mode::Command => self.translate_command_mode(key),
         }
     }
 
@@ -78,6 +82,7 @@ impl Dispatcher {
                 b'a' => Command::EnterInsertModeAfter,
                 b'x' => Command::DeleteForward,
                 b'q' => Command::Quit,
+                b':' => Command::EnterCommandMode,
                 b'd' => {
                     // Start sequence for 'dd'
                     self.pending_key = Some(key);
@@ -132,6 +137,15 @@ impl Dispatcher {
             Key::Enter => Command::InsertByte(b'\n'),
             Key::Tab => Command::InsertByte(b'\t'),
             Key::Escape => Command::EnterInsertMode, // Exit insert mode (returns to normal)
+            _ => Command::Noop,
+        }
+    }
+
+    fn translate_command_mode(&self, key: Key) -> Command {
+        // In command mode, Escape exits back to Normal mode
+        // For now, all other keys are Noop (we'll add command input later)
+        match key {
+            Key::Escape => Command::Noop, // Exit handled by key handler
             _ => Command::Noop,
         }
     }

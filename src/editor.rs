@@ -119,6 +119,11 @@ impl<T: TerminalBackend> Editor<T> {
                     self.update_and_render()?;
                     continue;
                 }
+                KeyAction::ExitCommandMode => {
+                    self.set_mode(Mode::Normal);
+                    self.update_and_render()?;
+                    continue;
+                }
                 KeyAction::ToggleDebug => {
                     self.state.toggle_debug();
                     self.update_and_render()?;
@@ -148,6 +153,9 @@ impl<T: TerminalBackend> Editor<T> {
                     self.set_mode(Mode::Insert);
                     execute_command(cmd, &mut self.buf, self.state.expand_tabs);
                 }
+                Command::EnterCommandMode => {
+                    self.set_mode(Mode::Command);
+                }
                 Command::Quit => {
                     self.should_quit = true;
                     continue;
@@ -156,7 +164,9 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             // Execute command
-            if cmd != Command::EnterInsertMode && cmd != Command::EnterInsertModeAfter {
+            if cmd != Command::EnterInsertMode 
+                && cmd != Command::EnterInsertModeAfter 
+                && cmd != Command::EnterCommandMode {
                 execute_command(cmd, &mut self.buf, self.state.expand_tabs);
             }
 

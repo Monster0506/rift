@@ -34,58 +34,70 @@ impl StatusBar {
         // Invert colors for status bar (reverse video)
         term.write(b"\x1b[7m")?;
         
-        // Mode indicator
-        let mode_str = Self::format_mode(current_mode);
-        term.write(mode_str.as_bytes())?;
-        
-        // Pending key indicator
-        let pending_str = if let Some(key) = pending_key {
-            format!(" [{}]", Self::format_key(key))
+        // In command mode, show colon prompt and fill rest with spaces
+        if current_mode == Mode::Command {
+            let mode_str = Self::format_mode(current_mode);
+            term.write(mode_str.as_bytes())?;
+            
+            // Fill rest of line with spaces
+            let remaining_cols = viewport.visible_cols().saturating_sub(mode_str.len());
+            for _ in 0..remaining_cols {
+                term.write(b" ")?;
+            }
         } else {
-            String::new()
-        };
-        if !pending_str.is_empty() {
-            term.write(pending_str.as_bytes())?;
-        }
-        
-        // Debug information (if debug mode is enabled)
-        let debug_str = if state.debug_mode {
-            Self::format_debug_info(state, current_mode)
-        } else {
-            String::new()
-        };
-        
-        // Calculate layout
-        let mode_len = mode_str.len();
-        let pending_len = pending_str.len();
-        let used_cols = mode_len + pending_len;
-        let available_cols = viewport.visible_cols().saturating_sub(used_cols);
-        
-        // Format debug info with proper spacing
-        let (debug_display, debug_len) = if !debug_str.is_empty() {
-            let truncated = if debug_str.len() <= available_cols {
-                debug_str
+            // Mode indicator
+            let mode_str = Self::format_mode(current_mode);
+            term.write(mode_str.as_bytes())?;
+            
+            // Pending key indicator
+            let pending_str = if let Some(key) = pending_key {
+                format!(" [{}]", Self::format_key(key))
             } else {
-                format!("{}...", &debug_str[..available_cols.saturating_sub(3)])
+                String::new()
             };
-            let spacing = available_cols.saturating_sub(truncated.len());
-            let spaced = format!("{}{}", " ".repeat(spacing), truncated);
-            (spaced, truncated.len() + spacing)
-        } else {
-            (String::new(), 0)
-        };
-        
-        // Write debug info
-        if !debug_display.is_empty() {
-            term.write(debug_display.as_bytes())?;
-        }
-        
-        // Fill rest of line with spaces
-        let total_used = mode_len + pending_len + debug_len;
-        let remaining_cols = viewport.visible_cols().saturating_sub(total_used);
-        
-        for _ in 0..remaining_cols {
-            term.write(b" ")?;
+            if !pending_str.is_empty() {
+                term.write(pending_str.as_bytes())?;
+            }
+            
+            // Debug information (if debug mode is enabled)
+            let debug_str = if state.debug_mode {
+                Self::format_debug_info(state, current_mode)
+            } else {
+                String::new()
+            };
+            
+            // Calculate layout
+            let mode_len = mode_str.len();
+            let pending_len = pending_str.len();
+            let used_cols = mode_len + pending_len;
+            let available_cols = viewport.visible_cols().saturating_sub(used_cols);
+            
+            // Format debug info with proper spacing
+            let (debug_display, debug_len) = if !debug_str.is_empty() {
+                let truncated = if debug_str.len() <= available_cols {
+                    debug_str
+                } else {
+                    format!("{}...", &debug_str[..available_cols.saturating_sub(3)])
+                };
+                let spacing = available_cols.saturating_sub(truncated.len());
+                let spaced = format!("{}{}", " ".repeat(spacing), truncated);
+                (spaced, truncated.len() + spacing)
+            } else {
+                (String::new(), 0)
+            };
+            
+            // Write debug info
+            if !debug_display.is_empty() {
+                term.write(debug_display.as_bytes())?;
+            }
+            
+            // Fill rest of line with spaces
+            let total_used = mode_len + pending_len + debug_len;
+            let remaining_cols = viewport.visible_cols().saturating_sub(total_used);
+            
+            for _ in 0..remaining_cols {
+                term.write(b" ")?;
+            }
         }
         
         // Reset colors
@@ -99,6 +111,7 @@ impl StatusBar {
         match mode {
             Mode::Normal => "NORMAL",
             Mode::Insert => "INSERT",
+            Mode::Command => ":",
         }
     }
     

@@ -26,6 +26,8 @@ pub enum KeyAction {
     ExitInsertMode,
     /// Toggle debug mode and re-render
     ToggleDebug,
+    /// Exit command mode and re-render
+    ExitCommandMode,
 }
 
 /// Key handler for processing special keypresses
@@ -41,6 +43,7 @@ impl KeyHandler {
         match current_mode {
             Mode::Normal => Self::process_normal_mode_key(key),
             Mode::Insert => Self::process_insert_mode_key(key),
+            Mode::Command => Self::process_command_mode_key(key),
         }
     }
 
@@ -72,6 +75,18 @@ impl KeyHandler {
                 KeyAction::ExitInsertMode
             }
             // All other keys continue to command processing
+            _ => KeyAction::Continue,
+        }
+    }
+
+    /// Process keypress in command mode
+    fn process_command_mode_key(key: Key) -> KeyAction {
+        match key {
+            // Escape - exit command mode back to normal
+            Key::Escape => {
+                KeyAction::ExitCommandMode
+            }
+            // All other keys continue to command processing (for now)
             _ => KeyAction::Continue,
         }
     }

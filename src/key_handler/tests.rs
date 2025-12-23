@@ -89,3 +89,17 @@ fn test_process_normal_mode_ctrl_keys() {
     assert_eq!(action, KeyAction::Continue);
 }
 
+#[test]
+fn test_process_command_mode_escape() {
+    // Escape should exit command mode
+    let action = KeyHandler::process_key(Key::Escape, Mode::Command);
+    assert_eq!(action, KeyAction::ExitCommandMode);
+}
+
+#[test]
+fn test_process_command_mode_regular_key() {
+    // Regular keys should continue in command mode (for future command input)
+    let action = KeyHandler::process_key(Key::Char(b'a'), Mode::Command);
+    assert_eq!(action, KeyAction::Continue);
+}
+

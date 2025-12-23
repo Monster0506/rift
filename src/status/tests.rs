@@ -11,6 +11,27 @@ use crate::test_utils::MockTerminal;
 fn test_format_mode() {
     assert_eq!(StatusBar::format_mode(Mode::Normal), "NORMAL");
     assert_eq!(StatusBar::format_mode(Mode::Insert), "INSERT");
+    assert_eq!(StatusBar::format_mode(Mode::Command), ":");
+}
+
+#[test]
+fn test_status_bar_render_command_mode() {
+    use crate::test_utils::MockTerminal;
+    use crate::viewport::Viewport;
+    use crate::state::State;
+    
+    let mut term = MockTerminal::new(24, 80);
+    let viewport = Viewport::new(24, 80);
+    let state = State::new();
+    
+    StatusBar::render(&mut term, &viewport, Mode::Command, None, &state).unwrap();
+    
+    let written = term.get_written_string();
+    // Command mode should show colon prompt
+    assert!(written.contains(":"));
+    // Should not show NORMAL or INSERT
+    assert!(!written.contains("NORMAL"));
+    assert!(!written.contains("INSERT"));
 }
 
 #[test]

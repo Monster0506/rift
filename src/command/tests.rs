@@ -23,6 +23,7 @@ fn test_translate_normal_mode_simple() {
     assert_eq!(dispatcher.translate_key(Key::Char(b'a')), Command::EnterInsertModeAfter);
     assert_eq!(dispatcher.translate_key(Key::Char(b'x')), Command::DeleteForward);
     assert_eq!(dispatcher.translate_key(Key::Char(b'q')), Command::Quit);
+    assert_eq!(dispatcher.translate_key(Key::Char(b':')), Command::EnterCommandMode);
     assert_eq!(dispatcher.translate_key(Key::Char(b'G')), Command::MoveToBufferEnd);
 }
 
@@ -113,5 +114,17 @@ fn test_mode_switching() {
     dispatcher.set_mode(Mode::Insert);
     // Pending key should be cleared after mode switch
     assert_eq!(dispatcher.pending_key(), None);
+}
+
+#[test]
+fn test_translate_command_mode() {
+    let mut dispatcher = Dispatcher::new(Mode::Command);
+    
+    // In command mode, Escape should be Noop (handled by key handler)
+    assert_eq!(dispatcher.translate_key(Key::Escape), Command::Noop);
+    
+    // Other keys should also be Noop for now
+    assert_eq!(dispatcher.translate_key(Key::Char(b'a')), Command::Noop);
+    assert_eq!(dispatcher.translate_key(Key::Char(b'q')), Command::Noop);
 }
 

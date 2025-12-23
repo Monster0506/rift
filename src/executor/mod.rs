@@ -162,6 +162,9 @@ pub fn execute_command(cmd: Command, buf: &mut GapBuffer, expand_tabs: bool) {
         Command::EnterInsertMode | Command::EnterInsertModeAfter => {
             // Mode change handled by editor
         }
+        Command::EnterCommandMode => {
+            // Mode change handled by editor
+        }
         Command::Quit => {
             // Quit handled by editor
         }
