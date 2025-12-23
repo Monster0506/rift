@@ -12,6 +12,18 @@
 
 use crate::term::TerminalBackend;
 
+// ANSI escape sequences
+const REVERSE_VIDEO_ON: &[u8] = b"\x1b[7m";
+const RESET: &[u8] = b"\x1b[0m";
+
+// Border characters
+const BORDER_TOP_LEFT: &[u8] = b"+";
+const BORDER_TOP_RIGHT: &[u8] = b"+";
+const BORDER_BOTTOM_LEFT: &[u8] = b"+";
+const BORDER_BOTTOM_RIGHT: &[u8] = b"+";
+const BORDER_HORIZONTAL: &[u8] = b"-";
+const BORDER_VERTICAL: &[u8] = b"|";
+
 /// Position for floating window
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowPosition {
@@ -95,6 +107,81 @@ impl FloatingWindow {
         }
     }
 
+    /// Render a single line of content with padding
+    /// If `move_cursor` is true, moves cursor to (row, col) first
+    fn render_content_line<T: TerminalBackend>(
+        term: &mut T,
+        row: u16,
+        col: u16,
+        line: Option<&Vec<u8>>,
+        width: usize,
+        move_cursor: bool,
+    ) -> Result<(), String> {
+        if move_cursor {
+            term.move_cursor(row, col)?;
+        }
+        
+        if let Some(line) = line {
+            // Truncate line to fit
+            let display_line: Vec<u8> = line.iter()
+                .take(width)
+                .copied()
+                .collect();
+            
+            // Write content
+            term.write(&display_line)?;
+            
+            // Pad with spaces if needed
+            let padding = width.saturating_sub(display_line.len());
+            for _ in 0..padding {
+                term.write(b" ")?;
+            }
+        } else {
+            // Empty line - fill with spaces
+            for _ in 0..width {
+                term.write(b" ")?;
+            }
+        }
+        
+        Ok(())
+    }
+
+    /// Render the top border of the window
+    fn render_top_border<T: TerminalBackend>(
+        term: &mut T,
+        row: u16,
+        col: u16,
+        width: usize,
+    ) -> Result<(), String> {
+        term.move_cursor(row, col)?;
+        term.write(BORDER_TOP_LEFT)?;
+        for _ in 0..width.saturating_sub(2) {
+            term.write(BORDER_HORIZONTAL)?;
+        }
+        if width > 1 {
+            term.write(BORDER_TOP_RIGHT)?;
+        }
+        Ok(())
+    }
+
+    /// Render the bottom border of the window
+    fn render_bottom_border<T: TerminalBackend>(
+        term: &mut T,
+        row: u16,
+        col: u16,
+        width: usize,
+    ) -> Result<(), String> {
+        term.move_cursor(row, col)?;
+        term.write(BORDER_BOTTOM_LEFT)?;
+        for _ in 0..width.saturating_sub(2) {
+            term.write(BORDER_HORIZONTAL)?;
+        }
+        if width > 1 {
+            term.write(BORDER_BOTTOM_RIGHT)?;
+        }
+        Ok(())
+    }
+
     /// Render the floating window with content
     /// 
     /// `content` is a vector of lines, where each line is a byte vector.
@@ -119,108 +206,51 @@ impl FloatingWindow {
 
         // Apply reverse video if enabled
         if self.reverse_video {
-            term.write(b"\x1b[7m")?;
+            term.write(REVERSE_VIDEO_ON)?;
         }
 
         // Render border and content
         if self.border {
             // Top border
-            term.move_cursor(start_row, start_col)?;
-            term.write(b"+")?;
-            for _ in 0..width.saturating_sub(2) {
-                term.write(b"-")?;
-            }
-            if width > 1 {
-                term.write(b"+")?;
-            }
+            Self::render_top_border(term, start_row, start_col, width)?;
             
             // Content rows with side borders
             let content_height = height.saturating_sub(2); // Subtract top and bottom borders
+            let content_width = width.saturating_sub(2);
+            
             for content_row in 0..content_height {
                 let row = start_row + 1 + content_row as u16;
                 term.move_cursor(row, start_col)?;
+                term.write(BORDER_VERTICAL)?;
                 
-                // Left border
-                term.write(b"|")?;
-                
-                // Content area (width - 2 for borders)
-                let content_width = width.saturating_sub(2);
-                if content_row < content.len() {
-                    let line = &content[content_row];
-                    // Truncate line to fit
-                    let display_line: Vec<u8> = line.iter()
-                        .take(content_width)
-                        .copied()
-                        .collect();
-                    
-                    // Write content
-                    term.write(&display_line)?;
-                    
-                    // Pad with spaces if needed
-                    let padding = content_width.saturating_sub(display_line.len());
-                    for _ in 0..padding {
-                        term.write(b" ")?;
-                    }
-                } else {
-                    // Empty line - fill with spaces
-                    for _ in 0..content_width {
-                        term.write(b" ")?;
-                    }
-                }
+                // Render content line (cursor already positioned after left border)
+                let line = content.get(content_row);
+                Self::render_content_line(term, row, start_col + 1, line, content_width, false)?;
                 
                 // Right border
                 if width > 1 {
-                    term.write(b"|")?;
+                    term.move_cursor(row, start_col + content_width as u16 + 1)?;
+                    term.write(BORDER_VERTICAL)?;
                 }
             }
             
             // Bottom border
             if height > 1 {
                 let bottom_row = start_row + height as u16 - 1;
-                term.move_cursor(bottom_row, start_col)?;
-                term.write(b"+")?;
-                for _ in 0..width.saturating_sub(2) {
-                    term.write(b"-")?;
-                }
-                if width > 1 {
-                    term.write(b"+")?;
-                }
+                Self::render_bottom_border(term, bottom_row, start_col, width)?;
             }
         } else {
             // No border - just render content
             for row_offset in 0..height {
                 let row = start_row + row_offset as u16;
-                term.move_cursor(row, start_col)?;
-                
-                let content_row = row_offset;
-                if content_row < content.len() {
-                    let line = &content[content_row];
-                    // Truncate line to fit
-                    let display_line: Vec<u8> = line.iter()
-                        .take(width)
-                        .copied()
-                        .collect();
-                    
-                    // Write content
-                    term.write(&display_line)?;
-                    
-                    // Pad with spaces if needed
-                    let padding = width.saturating_sub(display_line.len());
-                    for _ in 0..padding {
-                        term.write(b" ")?;
-                    }
-                } else {
-                    // Empty line - fill with spaces
-                    for _ in 0..width {
-                        term.write(b" ")?;
-                    }
-                }
+                let line = content.get(row_offset);
+                Self::render_content_line(term, row, start_col, line, width, true)?;
             }
         }
 
         // Reset colors
         if self.reverse_video {
-            term.write(b"\x1b[0m")?;
+            term.write(RESET)?;
         }
 
         Ok(())
