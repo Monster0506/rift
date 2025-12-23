@@ -135,3 +135,47 @@ fn test_gap_expansion() {
     assert_eq!(buf.len(), 5);
 }
 
+#[test]
+fn test_insert_bytes() {
+    let mut buf = GapBuffer::new(10).unwrap();
+    buf.insert_bytes(b"hello").unwrap();
+    assert_eq!(buf.to_string(), "hello");
+    assert_eq!(buf.len(), 5);
+    assert_eq!(buf.cursor(), 5);
+}
+
+#[test]
+fn test_insert_bytes_empty() {
+    let mut buf = GapBuffer::new(10).unwrap();
+    buf.insert_bytes(b"").unwrap();
+    assert_eq!(buf.len(), 0);
+    assert_eq!(buf.cursor(), 0);
+}
+
+#[test]
+fn test_insert_bytes_large() {
+    let mut buf = GapBuffer::new(10).unwrap();
+    let large_text = "a".repeat(1000);
+    buf.insert_bytes(large_text.as_bytes()).unwrap();
+    assert_eq!(buf.len(), 1000);
+    assert_eq!(buf.to_string(), large_text);
+}
+
+#[test]
+fn test_insert_bytes_with_newlines() {
+    let mut buf = GapBuffer::new(10).unwrap();
+    buf.insert_bytes(b"hello\nworld\n").unwrap();
+    assert_eq!(buf.to_string(), "hello\nworld\n");
+    assert_eq!(buf.len(), 12);
+}
+
+#[test]
+fn test_insert_bytes_binary_data() {
+    let mut buf = GapBuffer::new(10).unwrap();
+    // Insert bytes including null bytes and non-UTF-8 sequences
+    let binary_data = &[0x00, 0x01, 0xFF, 0xFE, b'a', b'b'];
+    buf.insert_bytes(binary_data).unwrap();
+    let result = buf.get_before_gap();
+    assert_eq!(result, binary_data);
+}
+

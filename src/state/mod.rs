@@ -18,6 +18,8 @@ pub struct State {
     pub debug_mode: bool,
     /// Whether to expand tabs to spaces when inserting
     pub expand_tabs: bool,
+    /// Current file path (None if no file loaded)
+    pub file_path: Option<String>,
     /// Last keypress received
     pub last_keypress: Option<Key>,
     /// Last command that will be executed
@@ -36,12 +38,18 @@ impl State {
         State {
             debug_mode: false,
             expand_tabs: true, // Default to expanding tabs to spaces
+            file_path: None,
             last_keypress: None,
             last_command: None,
             cursor_pos: (0, 0),
             total_lines: 1,
             buffer_size: 0,
         }
+    }
+
+    /// Set the current file path
+    pub fn set_file_path(&mut self, path: Option<String>) {
+        self.file_path = path;
     }
 
     /// Toggle debug mode

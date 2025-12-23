@@ -24,22 +24,35 @@ pub struct Editor<T: TerminalBackend> {
 
 impl<T: TerminalBackend> Editor<T> {
     /// Create a new editor instance
-    pub fn new(mut terminal: T) -> Result<Self, String> {
+    pub fn new(terminal: T) -> Result<Self, String> {
+        Self::with_file(terminal, None)
+    }
+
+    /// Create a new editor instance with an optional file to load
+    pub fn with_file(mut terminal: T, file_path: Option<String>) -> Result<Self, String> {
         // Initialize terminal
         terminal.init()?;
         
         // Get terminal size
         let size = terminal.get_size()?;
         
-        // Create buffer
-        let buf = GapBuffer::new(1024)
+        // Create buffer with larger initial capacity for file loading
+        let mut buf = GapBuffer::new(4096)
             .map_err(|e| format!("Failed to create buffer: {}", e))?;
+        
+        // Load file if provided
+        if let Some(ref path) = file_path {
+            Self::load_file_into_buffer(&mut buf, path)?;
+        }
         
         // Create viewport
         let viewport = Viewport::new(size.rows as usize, size.cols as usize);
         
         // Create dispatcher
         let dispatcher = Dispatcher::new(Mode::Normal);
+        
+        let mut state = State::new();
+        state.set_file_path(file_path);
         
         Ok(Editor {
             terminal,
@@ -48,8 +61,39 @@ impl<T: TerminalBackend> Editor<T> {
             dispatcher,
             current_mode: Mode::Normal,
             should_quit: false,
-            state: State::new(),
+            state,
         })
+    }
+
+    /// Load file contents into the buffer
+    fn load_file_into_buffer(buf: &mut GapBuffer, file_path: &str) -> Result<(), String> {
+        use std::fs;
+        use std::path::Path;
+        
+        let path = Path::new(file_path);
+        
+        // Check if file exists
+        if !path.exists() {
+            return Err(format!("File not found: {}", file_path));
+        }
+        
+        // Check if it's a file (not a directory)
+        if !path.is_file() {
+            return Err(format!("Path is not a file: {}", file_path));
+        }
+        
+        // Read file contents as bytes (preserves all data, including invalid UTF-8)
+        let contents = fs::read(path)
+            .map_err(|e| format!("Failed to read file {}: {}", file_path, e))?;
+
+        // Insert contents into buffer using batch insertion
+        buf.insert_bytes(&contents)
+            .map_err(|e| format!("Failed to load file into buffer: {}", e))?;
+        
+        // Move cursor to start of buffer
+        buf.move_to_start();
+        
+        Ok(())
     }
 
     /// Run the editor main loop

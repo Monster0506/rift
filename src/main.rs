@@ -20,6 +20,14 @@ use rift::editor::Editor;
 use rift::term::crossterm::CrosstermBackend;
 
 fn main() {
+    // Parse command line arguments
+    let args: Vec<String> = std::env::args().collect();
+    let file_path = if args.len() > 1 {
+        Some(args[1].clone())
+    } else {
+        None
+    };
+
     // Create terminal backend
     let backend = match CrosstermBackend::new() {
         Ok(b) => b,
@@ -29,8 +37,8 @@ fn main() {
         }
     };
 
-    // Create editor
-    let mut editor = match Editor::new(backend) {
+    // Create editor with optional file
+    let mut editor = match Editor::with_file(backend, file_path) {
         Ok(e) => e,
         Err(e) => {
             eprintln!("Failed to initialize editor: {}", e);

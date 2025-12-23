@@ -110,12 +110,39 @@ impl GapBuffer {
         Ok(())
     }
 
+    /// Insert bytes at the cursor position (batch insertion)
+    /// More efficient than inserting byte-by-byte
+    pub fn insert_bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
+        if bytes.is_empty() {
+            return Ok(());
+        }
+
+        let needed = bytes.len();
+        let mut available = self.gap_end - self.gap_start;
+
+        // Grow buffer if needed to fit all bytes
+        while available < needed {
+            self.grow()?;
+            // Recalculate available after growth
+            available = self.gap_end - self.gap_start;
+        }
+
+        // Copy all bytes at once
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                self.buffer.add(self.gap_start),
+                needed,
+            );
+        }
+        self.gap_start += needed;
+
+        Ok(())
+    }
+
     /// Insert a string at the cursor position
     pub fn insert_str(&mut self, s: &str) -> Result<(), String> {
-        for byte in s.bytes() {
-            self.insert(byte)?;
-        }
-        Ok(())
+        self.insert_bytes(s.as_bytes())
     }
 
     /// Delete the byte before the cursor (backspace)

@@ -338,6 +338,36 @@ fn test_render_multiline_buffer() {
 }
 
 #[test]
+fn test_render_file_loaded_at_start() {
+    // Simulate file loading: content inserted, then cursor moved to start
+    let mut term = MockTerminal::new(10, 80);
+    let mut buf = GapBuffer::new(100).unwrap();
+    // Insert content (simulating file load)
+    buf.insert_bytes(b"line1\nline2\nline3\n").unwrap();
+    // Move cursor to start (as load_file_into_buffer does)
+    buf.move_to_start();
+    
+    let mut viewport = Viewport::new(10, 80);
+    let state = State::new();
+    
+    // First render (simulating initial render after file load)
+    render(&mut term, &buf, &mut viewport, Mode::Normal, None, &state).unwrap();
+    
+    // Should clear screen on first render
+    assert!(term.clear_screen_calls >= 1);
+    
+    // Should render all lines
+    let written = term.get_written_string();
+    assert!(written.contains("line1"));
+    assert!(written.contains("line2"));
+    assert!(written.contains("line3"));
+    
+    // Verify cursor is at start (line 0, column 0)
+    assert_eq!(buf.get_line(), 0);
+    assert_eq!(buf.cursor(), 0);
+}
+
+#[test]
 fn test_render_viewport_scrolling() {
     let mut term = MockTerminal::new(5, 80); // Small viewport
     let mut buf = GapBuffer::new(100).unwrap();
