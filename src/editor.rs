@@ -55,15 +55,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// Run the editor main loop
     pub fn run(&mut self) -> Result<(), String> {
         // Initial render
-        self.update_state();
-        render::render(
-            &mut self.terminal,
-            &self.buf,
-            &mut self.viewport,
-            self.current_mode,
-            self.dispatcher.pending_key(),
-            &self.state,
-        )?;
+        self.update_and_render()?;
 
         // Main event loop
         while !self.should_quit {
@@ -79,42 +71,17 @@ impl<T: TerminalBackend> Editor<T> {
             // Handle special actions that skip command processing
             match action {
                 KeyAction::ExitInsertMode => {
-                    self.current_mode = Mode::Normal;
-                    self.dispatcher.set_mode(Mode::Normal);
-                    self.update_state();
-                    render::render(
-                        &mut self.terminal,
-                        &self.buf,
-                        &mut self.viewport,
-                        self.current_mode,
-                        self.dispatcher.pending_key(),
-                        &self.state,
-                    )?;
+                    self.set_mode(Mode::Normal);
+                    self.update_and_render()?;
                     continue;
                 }
                 KeyAction::ToggleDebug => {
                     self.state.toggle_debug();
-                    self.update_state();
-                    render::render(
-                        &mut self.terminal,
-                        &self.buf,
-                        &mut self.viewport,
-                        self.current_mode,
-                        self.dispatcher.pending_key(),
-                        &self.state,
-                    )?;
+                    self.update_and_render()?;
                     continue;
                 }
                 KeyAction::SkipAndRender => {
-                    self.update_state();
-                    render::render(
-                        &mut self.terminal,
-                        &self.buf,
-                        &mut self.viewport,
-                        self.current_mode,
-                        self.dispatcher.pending_key(),
-                        &self.state,
-                    )?;
+                    self.update_and_render()?;
                     continue;
                 }
                 KeyAction::Continue => {
@@ -131,12 +98,10 @@ impl<T: TerminalBackend> Editor<T> {
             // Handle mode transitions
             match cmd {
                 Command::EnterInsertMode => {
-                    self.current_mode = Mode::Insert;
-                    self.dispatcher.set_mode(Mode::Insert);
+                    self.set_mode(Mode::Insert);
                 }
                 Command::EnterInsertModeAfter => {
-                    self.current_mode = Mode::Insert;
-                    self.dispatcher.set_mode(Mode::Insert);
+                    self.set_mode(Mode::Insert);
                     execute_command(cmd, &mut self.buf, self.state.expand_tabs);
                 }
                 Command::Quit => {
@@ -151,18 +116,8 @@ impl<T: TerminalBackend> Editor<T> {
                 execute_command(cmd, &mut self.buf, self.state.expand_tabs);
             }
 
-            // Update state before rendering
-            self.update_state();
-
-            // Render
-            render::render(
-                &mut self.terminal,
-                &self.buf,
-                &mut self.viewport,
-                self.current_mode,
-                self.dispatcher.pending_key(),
-                &self.state,
-            )?;
+            // Update state and render
+            self.update_and_render()?;
         }
 
         Ok(())
@@ -171,7 +126,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// Update editor state with current buffer and cursor information
     fn update_state(&mut self) {
         let cursor_line = self.buf.get_line();
-        let cursor_col = self.calculate_cursor_column(cursor_line);
+        let cursor_col = render::calculate_cursor_column(&self.buf, cursor_line);
         self.state.update_cursor(cursor_line, cursor_col);
         
         let total_lines = self.buf.get_total_lines();
@@ -179,97 +134,30 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.update_buffer_stats(total_lines, buffer_size);
     }
 
-    /// Calculate cursor column for a given line (accounting for tab width)
-    fn calculate_cursor_column(&self, line: usize) -> usize {
-        // Tab width (hardcoded for now, should be a setting later)
-        const TAB_WIDTH: usize = 4;
-        
-        let before_gap = self.buf.get_before_gap();
-        let mut current_line = 0;
-        let mut line_start = 0;
-        let mut col = 0;
-        
-        // Find the start of the target line and calculate visual column
-        for (i, &byte) in before_gap.iter().enumerate() {
-            if byte == b'\n' {
-                if current_line == line {
-                    // Found the line, calculate visual column up to gap position
-                    let line_bytes = &before_gap[line_start..i];
-                    for &b in line_bytes {
-                        if b == b'\t' {
-                            col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
-                        } else {
-                            col += 1;
-                        }
-                    }
-                    return col;
-                }
-                current_line += 1;
-                line_start = i + 1;
-                col = 0;
-            }
-        }
-        
-        // If we're at the gap position on the target line
-        if current_line == line {
-            let line_bytes = &before_gap[line_start..];
-            for &b in line_bytes {
-                if b == b'\t' {
-                    col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
-                } else {
-                    col += 1;
-                }
-            }
-            return col;
-        }
-        
-        // Check after_gap - need to include before_gap bytes from line_start
-        let after_gap = self.buf.get_after_gap();
-        // First, calculate column for before_gap portion of this line
-        let before_line_bytes = &before_gap[line_start..];
-        for &b in before_line_bytes {
-            if b == b'\t' {
-                col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
-            } else {
-                col += 1;
-            }
-        }
-        
-        // Now process after_gap bytes
-        for (i, &byte) in after_gap.iter().enumerate() {
-            if byte == b'\n' {
-                if current_line == line {
-                    // Found the line in after_gap, include bytes up to this newline
-                    let after_line_bytes = &after_gap[..i];
-                    for &b in after_line_bytes {
-                        if b == b'\t' {
-                            col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
-                        } else {
-                            col += 1;
-                        }
-                    }
-                    return col;
-                }
-                current_line += 1;
-                col = 0;
-            }
-        }
-        
-        // If we're at the end of the target line (after gap, no newline found)
-        if current_line == line {
-            // Include all remaining after_gap bytes
-            for &b in after_gap {
-                if b == b'\t' {
-                    col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
-                } else {
-                    col += 1;
-                }
-            }
-            return col;
-        }
-        
-        0
+    /// Update state and render the editor
+    fn update_and_render(&mut self) -> Result<(), String> {
+        self.update_state();
+        self.render()
     }
+
+    /// Render the editor interface
+    fn render(&mut self) -> Result<(), String> {
+        render::render(
+            &mut self.terminal,
+            &self.buf,
+            &mut self.viewport,
+            self.current_mode,
+            self.dispatcher.pending_key(),
+            &self.state,
+        )
+    }
+
+    /// Set editor mode and update dispatcher
+    fn set_mode(&mut self, mode: Mode) {
+        self.current_mode = mode;
+        self.dispatcher.set_mode(mode);
+    }
+
 }
 
 impl<T: TerminalBackend> Drop for Editor<T> {
