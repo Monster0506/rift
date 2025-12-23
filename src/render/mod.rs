@@ -81,7 +81,9 @@ fn render_content<T: TerminalBackend>(
         if byte == b'\n' {
             lines.push(current_line);
             current_line = Vec::new();
-        } else {
+        } else if byte != b'\r' {
+            // Skip carriage return (Windows line endings: \r\n)
+            // We only care about \n for line breaks
             current_line.push(byte);
         }
     }
@@ -91,7 +93,9 @@ fn render_content<T: TerminalBackend>(
         if byte == b'\n' {
             lines.push(current_line);
             current_line = Vec::new();
-        } else {
+        } else if byte != b'\r' {
+            // Skip carriage return (Windows line endings: \r\n)
+            // We only care about \n for line breaks
             current_line.push(byte);
         }
     }
