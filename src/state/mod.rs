@@ -13,6 +13,34 @@ use crate::key::Key;
 use crate::command::Command;
 use crate::floating_window::BorderChars;
 
+/// Command line window settings
+#[derive(Debug, Clone)]
+pub struct CommandLineWindowSettings {
+    /// Width as a ratio of terminal width (0.0 to 1.0)
+    pub width_ratio: f64,
+    /// Minimum width in columns
+    pub min_width: usize,
+    /// Height in rows (including borders)
+    pub height: usize,
+    /// Whether to draw a border around the window
+    pub border: bool,
+    /// Whether to use reverse video (inverted colors)
+    pub reverse_video: bool,
+}
+
+impl CommandLineWindowSettings {
+    /// Create default command line window settings
+    pub fn default() -> Self {
+        CommandLineWindowSettings {
+            width_ratio: 0.6, // 60% of terminal width
+            min_width: 40,
+            height: 3, // top border (1) + content (1) + bottom border (1)
+            border: true,
+            reverse_video: true,
+        }
+    }
+}
+
 /// Editor state containing settings and runtime information
 pub struct State {
     /// Whether debug mode is enabled
@@ -35,6 +63,8 @@ pub struct State {
     pub command_line: String,
     /// Default border characters for floating windows
     pub default_border_chars: Option<BorderChars>,
+    /// Command line window settings
+    pub command_line_window: CommandLineWindowSettings,
 }
 
 impl State {
@@ -51,6 +81,7 @@ impl State {
             buffer_size: 0,
             command_line: String::new(),
             default_border_chars: None, // None means use FloatingWindow defaults
+            command_line_window: CommandLineWindowSettings::default(),
         }
     }
 

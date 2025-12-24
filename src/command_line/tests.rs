@@ -3,13 +3,15 @@
 use crate::command_line::CommandLine;
 use crate::test_utils::MockTerminal;
 use crate::viewport::Viewport;
+use crate::state::CommandLineWindowSettings;
 
 #[test]
 fn test_command_line_render() {
     let mut term = MockTerminal::new(24, 80);
     let viewport = Viewport::new(24, 80);
+    let window_settings = CommandLineWindowSettings::default();
     
-    let result = CommandLine::render(&mut term, &viewport, "test command", None).unwrap();
+    let result = CommandLine::render(&mut term, &viewport, "test command", None, &window_settings).unwrap();
     assert!(result.is_some());
     
     let written = term.get_written_string();

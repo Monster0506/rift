@@ -11,6 +11,7 @@
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
 use crate::floating_window::{FloatingWindow, WindowPosition, BorderChars};
+use crate::state::CommandLineWindowSettings;
 
 /// Command line renderer
 pub struct CommandLine;
@@ -26,8 +27,9 @@ impl CommandLine {
         viewport: &Viewport,
         command_line: &str,
         default_border_chars: Option<BorderChars>,
+        window_settings: &CommandLineWindowSettings,
     ) -> Result<Option<(u16, u16, usize)>, String> {
-        Self::render_with_border_chars(term, viewport, command_line, default_border_chars, None)
+        Self::render_with_border_chars(term, viewport, command_line, default_border_chars, None, window_settings)
     }
 
     /// Render the command line window with optional border character override
@@ -39,13 +41,15 @@ impl CommandLine {
         command_line: &str,
         default_border_chars: Option<BorderChars>,
         border_chars_override: Option<BorderChars>,
+        window_settings: &CommandLineWindowSettings,
     ) -> Result<Option<(u16, u16, usize)>, String> {
-        // Use a reasonable width for the command line (e.g., 60% of terminal width)
-        let cmd_width = (viewport.visible_cols() * 3 / 5).max(40).min(viewport.visible_cols());
-        // Height 3: top border (1) + content (1) + bottom border (1)
-        let cmd_window = FloatingWindow::new(WindowPosition::Center, cmd_width, 3)
-            .with_border(true)
-            .with_reverse_video(true);
+        // Calculate width based on settings: ratio of terminal width, clamped to min/max
+        let cmd_width = ((viewport.visible_cols() as f64 * window_settings.width_ratio) as usize)
+            .max(window_settings.min_width)
+            .min(viewport.visible_cols());
+        let cmd_window = FloatingWindow::new(WindowPosition::Center, cmd_width, window_settings.height)
+            .with_border(window_settings.border)
+            .with_reverse_video(window_settings.reverse_video);
         
         // Calculate window position for cursor positioning
         let size = term.get_size()?;

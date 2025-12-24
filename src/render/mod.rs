@@ -46,7 +46,7 @@ pub fn render<T: TerminalBackend>(
 
     // Render command line floating window if in command mode
     let cmd_window_info = if current_mode == Mode::Command {
-        CommandLine::render(term, viewport, &state.command_line, state.default_border_chars.clone())?
+        CommandLine::render(term, viewport, &state.command_line, state.default_border_chars.clone(), &state.command_line_window)?
     } else {
         // Always render status bar (it may have changed)
         StatusBar::render(term, viewport, current_mode, pending_key, state)?;
