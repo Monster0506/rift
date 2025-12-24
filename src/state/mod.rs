@@ -60,7 +60,7 @@ impl UserSettings {
     pub fn new() -> Self {
         UserSettings {
             expand_tabs: true, // Default to expanding tabs to spaces
-            tab_width: 8, // Default tab width
+            tab_width: 4, // Default tab width
             default_border_chars: None, // None means use FloatingWindow defaults
             command_line_window: CommandLineWindowSettings::default(),
         }
