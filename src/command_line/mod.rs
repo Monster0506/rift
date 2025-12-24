@@ -1,5 +1,5 @@
 //! Command line management
-//! Handles rendering and cursor positioning for the command line input window
+//! Handles rendering, cursor positioning, and command parsing for the command line input window
 
 /// ## command_line/ Invariants
 ///
@@ -12,6 +12,9 @@ use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
 use crate::floating_window::{FloatingWindow, WindowPosition, BorderChars};
 use crate::state::CommandLineWindowSettings;
+
+pub mod registry;
+pub mod parser;
 
 /// Command line renderer
 pub struct CommandLine;
