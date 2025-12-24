@@ -58,7 +58,7 @@ fn test_calculate_cursor_column_single_line() {
     let mut buf = GapBuffer::new(100).unwrap();
     buf.insert_str("hello").unwrap();
     // Cursor is at position 5 (after "hello")
-    assert_eq!(calculate_cursor_column(&buf, 0), 5);
+    assert_eq!(calculate_cursor_column(&buf, 0, 8), 5);
 }
 
 #[test]
@@ -70,23 +70,23 @@ fn test_calculate_cursor_column_multiline() {
         buf.move_left();
     }
     // Now cursor is at start of line 0
-    assert_eq!(calculate_cursor_column(&buf, 0), 0);
+    assert_eq!(calculate_cursor_column(&buf, 0, 8), 0);
     
     // Move to line 1
     buf.move_down();
-    assert_eq!(calculate_cursor_column(&buf, 1), 0);
+    assert_eq!(calculate_cursor_column(&buf, 1, 8), 0);
     
     // Move right 3 times on line 1
     buf.move_right();
     buf.move_right();
     buf.move_right();
-    assert_eq!(calculate_cursor_column(&buf, 1), 3);
+    assert_eq!(calculate_cursor_column(&buf, 1, 8), 3);
 }
 
 #[test]
 fn test_calculate_cursor_column_empty_buffer() {
     let buf = GapBuffer::new(100).unwrap();
-    assert_eq!(calculate_cursor_column(&buf, 0), 0);
+    assert_eq!(calculate_cursor_column(&buf, 0, 8), 0);
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn test_calculate_cursor_column_at_gap() {
         buf.move_left();
     }
     // Cursor should be at column 2
-    assert_eq!(calculate_cursor_column(&buf, 0), 2);
+    assert_eq!(calculate_cursor_column(&buf, 0, 8), 2);
 }
 
 #[test]
@@ -449,23 +449,23 @@ fn test_calculate_cursor_column_multiline_complex() {
     for _ in 0..17 {
         buf.move_left();
     }
-    assert_eq!(calculate_cursor_column(&buf, 0), 0);
+    assert_eq!(calculate_cursor_column(&buf, 0, 8), 0);
     
     // Move to end of first line
     for _ in 0..5 {
         buf.move_right();
     }
-    assert_eq!(calculate_cursor_column(&buf, 0), 5);
+    assert_eq!(calculate_cursor_column(&buf, 0, 8), 5);
     
     // Move to next line
     buf.move_right(); // Move past newline
-    assert_eq!(calculate_cursor_column(&buf, 1), 0);
+    assert_eq!(calculate_cursor_column(&buf, 1, 8), 0);
     
     // Move to middle of second line
     for _ in 0..3 {
         buf.move_right();
     }
-    assert_eq!(calculate_cursor_column(&buf, 1), 3);
+    assert_eq!(calculate_cursor_column(&buf, 1, 8), 3);
 }
 
 #[test]

@@ -13,12 +13,9 @@
 use crate::command::Command;
 use crate::buffer::GapBuffer;
 
-// Tab width (hardcoded for now, should be a setting later)
-const TAB_WIDTH: usize = 8;
-
 /// Calculate the current visual column position on the current line
 /// Accounts for tab width when calculating visual position
-fn calculate_current_column(buf: &GapBuffer) -> usize {
+fn calculate_current_column(buf: &GapBuffer, tab_width: usize) -> usize {
     let line = buf.get_line();
     let before_gap = buf.get_before_gap();
     let mut current_line = 0;
@@ -33,7 +30,7 @@ fn calculate_current_column(buf: &GapBuffer) -> usize {
                 let line_bytes = &before_gap[line_start..i];
                 for &b in line_bytes {
                     if b == b'\t' {
-                        col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
+                        col = ((col / tab_width) + 1) * tab_width;
                     } else {
                         col += 1;
                     }
@@ -51,7 +48,7 @@ fn calculate_current_column(buf: &GapBuffer) -> usize {
         let line_bytes = &before_gap[line_start..];
         for &b in line_bytes {
             if b == b'\t' {
-                col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
+                col = ((col / tab_width) + 1) * tab_width;
             } else {
                 col += 1;
             }
@@ -65,7 +62,7 @@ fn calculate_current_column(buf: &GapBuffer) -> usize {
     let before_line_bytes = &before_gap[line_start..];
     for &b in before_line_bytes {
         if b == b'\t' {
-            col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
+            col = ((col / tab_width) + 1) * tab_width;
         } else {
             col += 1;
         }
@@ -79,7 +76,7 @@ fn calculate_current_column(buf: &GapBuffer) -> usize {
                 let after_line_bytes = &after_gap[..i];
                 for &b in after_line_bytes {
                     if b == b'\t' {
-                        col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
+                        col = ((col / tab_width) + 1) * tab_width;
                     } else {
                         col += 1;
                     }
@@ -96,7 +93,7 @@ fn calculate_current_column(buf: &GapBuffer) -> usize {
         // Include all remaining after_gap bytes
         for &b in after_gap {
             if b == b'\t' {
-                col = ((col / TAB_WIDTH) + 1) * TAB_WIDTH;
+                col = ((col / tab_width) + 1) * tab_width;
             } else {
                 col += 1;
             }
@@ -108,7 +105,7 @@ fn calculate_current_column(buf: &GapBuffer) -> usize {
 }
 
 /// Execute a command on the editor buffer
-pub fn execute_command(cmd: Command, buf: &mut GapBuffer, expand_tabs: bool) {
+pub fn execute_command(cmd: Command, buf: &mut GapBuffer, expand_tabs: bool, tab_width: usize) {
     match cmd {
         Command::MoveLeft => {
             buf.move_left();
@@ -148,9 +145,9 @@ pub fn execute_command(cmd: Command, buf: &mut GapBuffer, expand_tabs: bool) {
         Command::InsertByte(b) => {
             if b == b'\t' && expand_tabs {
                 // Calculate current column position
-                let current_col = calculate_current_column(buf);
+                let current_col = calculate_current_column(buf, tab_width);
                 // Calculate spaces needed to reach next tab stop
-                let spaces_needed = TAB_WIDTH - (current_col % TAB_WIDTH);
+                let spaces_needed = tab_width - (current_col % tab_width);
                 // Insert that many spaces
                 for _ in 0..spaces_needed {
                     let _ = buf.insert(b' ');

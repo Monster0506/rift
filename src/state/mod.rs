@@ -47,6 +47,8 @@ pub struct State {
     pub debug_mode: bool,
     /// Whether to expand tabs to spaces when inserting
     pub expand_tabs: bool,
+    /// Tab width in spaces (for display and expansion)
+    pub tab_width: usize,
     /// Current file path (None if no file loaded)
     pub file_path: Option<String>,
     /// Last keypress received
@@ -73,6 +75,7 @@ impl State {
         State {
             debug_mode: false,
             expand_tabs: true, // Default to expanding tabs to spaces
+            tab_width: 8, // Default tab width
             file_path: None,
             last_keypress: None,
             last_command: None,
