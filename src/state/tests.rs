@@ -1,6 +1,6 @@
 //! Tests for state management
 
-use crate::state::State;
+use crate::state::{State, UserSettings};
 use crate::key::Key;
 
 #[test]
@@ -195,5 +195,65 @@ fn test_buffer_stats_updates() {
     state.update_buffer_stats(3, 15);
     assert_eq!(state.total_lines, 3);
     assert_eq!(state.buffer_size, 15);
+}
+
+#[test]
+fn test_user_settings_default() {
+    let settings = UserSettings::default();
+    assert_eq!(settings.expand_tabs, true);
+    assert_eq!(settings.tab_width, 8);
+    assert_eq!(settings.default_border_chars, None);
+    assert_eq!(settings.command_line_window.width_ratio, 0.6);
+    assert_eq!(settings.command_line_window.min_width, 40);
+    assert_eq!(settings.command_line_window.height, 3);
+    assert_eq!(settings.command_line_window.border, true);
+    assert_eq!(settings.command_line_window.reverse_video, true);
+}
+
+#[test]
+fn test_state_with_custom_settings() {
+    let mut custom_settings = UserSettings::new();
+    custom_settings.expand_tabs = false;
+    custom_settings.tab_width = 4;
+    
+    let state = State::with_settings(custom_settings);
+    assert_eq!(state.settings.expand_tabs, false);
+    assert_eq!(state.settings.tab_width, 4);
+    assert_eq!(state.debug_mode, false); // Runtime state should still be default
+}
+
+#[test]
+fn test_set_expand_tabs() {
+    let mut state = State::new();
+    assert_eq!(state.settings.expand_tabs, true);
+    
+    state.set_expand_tabs(false);
+    assert_eq!(state.settings.expand_tabs, false);
+    
+    state.set_expand_tabs(true);
+    assert_eq!(state.settings.expand_tabs, true);
+}
+
+#[test]
+fn test_set_default_border_chars() {
+    use crate::floating_window::BorderChars;
+    
+    let mut state = State::new();
+    assert_eq!(state.settings.default_border_chars, None);
+    
+    let border_chars = BorderChars {
+        top_left: vec![b'+'],
+        top_right: vec![b'+'],
+        bottom_left: vec![b'+'],
+        bottom_right: vec![b'+'],
+        horizontal: vec![b'-'],
+        vertical: vec![b'|'],
+    };
+    
+    state.set_default_border_chars(Some(border_chars));
+    assert!(state.settings.default_border_chars.is_some());
+    
+    state.set_default_border_chars(None);
+    assert_eq!(state.settings.default_border_chars, None);
 }
 

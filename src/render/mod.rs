@@ -46,7 +46,7 @@ pub fn render<T: TerminalBackend>(
 
     // Render command line floating window if in command mode
     let cmd_window_info = if current_mode == Mode::Command {
-        CommandLine::render(term, viewport, &state.command_line, state.default_border_chars.clone(), &state.command_line_window)?
+        CommandLine::render(term, viewport, &state.command_line, state.settings.default_border_chars.clone(), &state.settings.command_line_window)?
     } else {
         // Always render status bar (it may have changed)
         StatusBar::render(term, viewport, current_mode, pending_key, state)?;
@@ -75,7 +75,7 @@ pub fn render<T: TerminalBackend>(
             0
         };
         
-        let cursor_col = calculate_cursor_column(buf, cursor_line, state.tab_width);
+        let cursor_col = calculate_cursor_column(buf, cursor_line, state.settings.tab_width);
         let display_col = cursor_col.min(viewport.visible_cols().saturating_sub(1));
         
         term.move_cursor(cursor_line_in_viewport as u16, display_col as u16)?;

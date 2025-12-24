@@ -159,7 +159,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
             
             if should_execute_buffer {
-                execute_command(cmd, &mut self.buf, self.state.expand_tabs, self.state.tab_width);
+                execute_command(cmd, &mut self.buf, self.state.settings.expand_tabs, self.state.settings.tab_width);
             }
 
             // Handle quit command (special case - exits loop)
@@ -239,7 +239,7 @@ impl<T: TerminalBackend> Editor<T> {
         
         // Update buffer and cursor state
         let cursor_line = self.buf.get_line();
-        let cursor_col = render::calculate_cursor_column(&self.buf, cursor_line, self.state.tab_width);
+        let cursor_col = render::calculate_cursor_column(&self.buf, cursor_line, self.state.settings.tab_width);
         self.state.update_cursor(cursor_line, cursor_col);
         
         let total_lines = self.buf.get_total_lines();
@@ -257,7 +257,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn update_and_render(&mut self) -> Result<(), String> {
         // Update buffer and cursor state only (no input tracking on initial render)
         let cursor_line = self.buf.get_line();
-        let cursor_col = render::calculate_cursor_column(&self.buf, cursor_line, self.state.tab_width);
+        let cursor_col = render::calculate_cursor_column(&self.buf, cursor_line, self.state.settings.tab_width);
         self.state.update_cursor(cursor_line, cursor_col);
         
         let total_lines = self.buf.get_total_lines();

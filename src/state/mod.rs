@@ -41,14 +41,44 @@ impl CommandLineWindowSettings {
     }
 }
 
-/// Editor state containing settings and runtime information
-pub struct State {
-    /// Whether debug mode is enabled
-    pub debug_mode: bool,
+/// User settings that persist across sessions
+/// These are preferences that should be saved and loaded from a config file
+#[derive(Debug, Clone)]
+pub struct UserSettings {
     /// Whether to expand tabs to spaces when inserting
     pub expand_tabs: bool,
     /// Tab width in spaces (for display and expansion)
     pub tab_width: usize,
+    /// Default border characters for floating windows
+    pub default_border_chars: Option<BorderChars>,
+    /// Command line window settings
+    pub command_line_window: CommandLineWindowSettings,
+}
+
+impl UserSettings {
+    /// Create default user settings
+    pub fn new() -> Self {
+        UserSettings {
+            expand_tabs: true, // Default to expanding tabs to spaces
+            tab_width: 8, // Default tab width
+            default_border_chars: None, // None means use FloatingWindow defaults
+            command_line_window: CommandLineWindowSettings::default(),
+        }
+    }
+}
+
+impl Default for UserSettings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Editor runtime state (session-specific, not persisted)
+pub struct State {
+    /// User settings (persistent preferences)
+    pub settings: UserSettings,
+    /// Whether debug mode is enabled (session-only, does not persist)
+    pub debug_mode: bool,
     /// Current file path (None if no file loaded)
     pub file_path: Option<String>,
     /// Last keypress received
@@ -63,19 +93,14 @@ pub struct State {
     pub buffer_size: usize,
     /// Command line input (for command mode)
     pub command_line: String,
-    /// Default border characters for floating windows
-    pub default_border_chars: Option<BorderChars>,
-    /// Command line window settings
-    pub command_line_window: CommandLineWindowSettings,
 }
 
 impl State {
     /// Create a new state instance with default values
     pub fn new() -> Self {
         State {
+            settings: UserSettings::new(),
             debug_mode: false,
-            expand_tabs: true, // Default to expanding tabs to spaces
-            tab_width: 8, // Default tab width
             file_path: None,
             last_keypress: None,
             last_command: None,
@@ -83,14 +108,27 @@ impl State {
             total_lines: 1,
             buffer_size: 0,
             command_line: String::new(),
-            default_border_chars: None, // None means use FloatingWindow defaults
-            command_line_window: CommandLineWindowSettings::default(),
+        }
+    }
+
+    /// Create a new state instance with custom user settings
+    pub fn with_settings(settings: UserSettings) -> Self {
+        State {
+            settings,
+            debug_mode: false,
+            file_path: None,
+            last_keypress: None,
+            last_command: None,
+            cursor_pos: (0, 0),
+            total_lines: 1,
+            buffer_size: 0,
+            command_line: String::new(),
         }
     }
 
     /// Set default border characters for floating windows
     pub fn set_default_border_chars(&mut self, border_chars: Option<BorderChars>) {
-        self.default_border_chars = border_chars;
+        self.settings.default_border_chars = border_chars;
     }
 
     /// Set the current file path
@@ -105,7 +143,7 @@ impl State {
 
     /// Set whether to expand tabs to spaces
     pub fn set_expand_tabs(&mut self, expand: bool) {
-        self.expand_tabs = expand;
+        self.settings.expand_tabs = expand;
     }
 
     /// Update last keypress
