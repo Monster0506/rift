@@ -121,111 +121,123 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Main event loop
         while !self.should_quit {
+            // ============================================================
+            // INPUT HANDLING PHASE (Pure - no mutations)
+            // ============================================================
+            
             // Read key
             let key_press = self.terminal.read_key()?;
-            
-            // Update state with last keypress
-            self.state.update_keypress(key_press);
 
             // Process keypress through key handler
             let action = KeyHandler::process_key(key_press, self.current_mode);
 
-            // Handle special actions that skip command processing
-            match action {
-                KeyAction::ExitInsertMode => {
-                    self.set_mode(Mode::Normal);
-                    self.update_and_render()?;
-                    continue;
+            // Translate key to command (skip if action indicates special handling)
+            let cmd = match action {
+                KeyAction::ExitInsertMode | KeyAction::ExitCommandMode | KeyAction::ToggleDebug => {
+                    // Skip command translation for special actions
+                    Command::Noop
                 }
-                KeyAction::ExitCommandMode => {
-                    self.state.clear_command_line();
-                    self.set_mode(Mode::Normal);
-                    self.update_and_render()?;
-                    continue;
+                _ => {
+                    self.dispatcher.translate_key(key_press)
                 }
-                KeyAction::ToggleDebug => {
-                    self.state.toggle_debug();
-                    self.update_and_render()?;
-                    continue;
-                }
-                KeyAction::SkipAndRender => {
-                    self.update_and_render()?;
-                    continue;
-                }
-                KeyAction::Continue => {
-                    // Continue to command processing
-                }
-            }
+            };
 
-            // Translate key to command
-            let cmd = self.dispatcher.translate_key(key_press);
+            // ============================================================
+            // COMMAND EXECUTION PHASE (Buffer mutations only)
+            // ============================================================
             
-            // Track command in state for debug display
-            self.state.update_command(cmd);
-
-            // Handle mode transitions
-            match cmd {
-                Command::EnterInsertMode => {
-                    self.set_mode(Mode::Insert);
-                }
-                Command::EnterInsertModeAfter => {
-                    self.set_mode(Mode::Insert);
-                    execute_command(cmd, &mut self.buf, self.state.expand_tabs);
-                }
-                Command::EnterCommandMode => {
-                    self.set_mode(Mode::Command);
-                }
-                Command::Quit => {
-                    self.should_quit = true;
-                    continue;
-                }
-                _ => {}
-            }
-
-            // Handle command line editing commands
-            match cmd {
-                Command::AppendToCommandLine(ch) => {
-                    // ch is guaranteed to be valid ASCII (32-126) from translate_command_mode
-                    self.state.append_to_command_line(ch as char);
-                }
-                Command::DeleteFromCommandLine => {
-                    self.state.remove_from_command_line();
-                }
-                Command::ExecuteCommandLine => {
-                    // For now, just exit command mode
-                    // TODO: Parse and execute the command
-                    self.state.clear_command_line();
-                    self.set_mode(Mode::Normal);
-                    self.update_and_render()?;
-                    continue;
-                }
-                _ => {}
-            }
-
-            // Execute command (skip mode transitions and command line editing)
-            let should_execute = match cmd {
+            // Execute command if it affects the buffer
+            let should_execute_buffer = match cmd {
                 Command::EnterInsertMode 
-                | Command::EnterInsertModeAfter 
                 | Command::EnterCommandMode
                 | Command::AppendToCommandLine(_)
                 | Command::DeleteFromCommandLine
-                | Command::ExecuteCommandLine => false,
+                | Command::ExecuteCommandLine
+                | Command::Quit
+                | Command::Noop => false,
                 _ => true,
             };
             
-            if should_execute {
+            if should_execute_buffer {
                 execute_command(cmd, &mut self.buf, self.state.expand_tabs);
             }
 
-            // Update state and render
-            self.update_and_render()?;
+            // Handle quit command (special case - exits loop)
+            if cmd == Command::Quit {
+                self.should_quit = true;
+                continue;
+            }
+
+            // ============================================================
+            // STATE UPDATE PHASE (All state mutations happen here)
+            // ============================================================
+            
+            self.update_state_and_render(key_press, action, cmd)?;
         }
 
         Ok(())
     }
 
-    /// Update editor state with current buffer and cursor information
-    fn update_state(&mut self) {
+    /// Update editor state and render
+    /// This is where ALL state mutations happen - input handling phase is pure
+    fn update_state_and_render(
+        &mut self,
+        keypress: crate::key::Key,
+        action: crate::key_handler::KeyAction,
+        command: crate::command::Command,
+    ) -> Result<(), String> {
+        // Handle special actions (mutations happen here, not during input handling)
+        match action {
+            KeyAction::ExitInsertMode => {
+                self.set_mode(Mode::Normal);
+            }
+            KeyAction::ExitCommandMode => {
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+            }
+            KeyAction::ToggleDebug => {
+                self.state.toggle_debug();
+            }
+            KeyAction::SkipAndRender | KeyAction::Continue => {
+                // No special action needed
+            }
+        }
+
+        // Handle mode transitions from commands (mutations happen here)
+        match command {
+            Command::EnterInsertMode => {
+                self.set_mode(Mode::Insert);
+            }
+            Command::EnterInsertModeAfter => {
+                self.set_mode(Mode::Insert);
+            }
+            Command::EnterCommandMode => {
+                self.set_mode(Mode::Command);
+            }
+            Command::ExecuteCommandLine => {
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+            }
+            _ => {}
+        }
+
+        // Handle command line editing (mutations happen here)
+        match command {
+            Command::AppendToCommandLine(ch) => {
+                // ch is guaranteed to be valid ASCII (32-126) from translate_command_mode
+                self.state.append_to_command_line(ch as char);
+            }
+            Command::DeleteFromCommandLine => {
+                self.state.remove_from_command_line();
+            }
+            _ => {}
+        }
+
+        // Update input tracking (happens during state update, not input handling)
+        self.state.update_keypress(keypress);
+        self.state.update_command(command);
+        
+        // Update buffer and cursor state
         let cursor_line = self.buf.get_line();
         let cursor_col = render::calculate_cursor_column(&self.buf, cursor_line);
         self.state.update_cursor(cursor_line, cursor_col);
@@ -233,11 +245,22 @@ impl<T: TerminalBackend> Editor<T> {
         let total_lines = self.buf.get_total_lines();
         let buffer_size = self.buf.get_before_gap().len() + self.buf.get_after_gap().len();
         self.state.update_buffer_stats(total_lines, buffer_size);
+
+        // Render
+        self.render()
     }
 
-    /// Update state and render the editor
+    /// Update state and render the editor (for initial render)
     fn update_and_render(&mut self) -> Result<(), String> {
-        self.update_state();
+        // Update buffer and cursor state only (no input tracking on initial render)
+        let cursor_line = self.buf.get_line();
+        let cursor_col = render::calculate_cursor_column(&self.buf, cursor_line);
+        self.state.update_cursor(cursor_line, cursor_col);
+        
+        let total_lines = self.buf.get_total_lines();
+        let buffer_size = self.buf.get_before_gap().len() + self.buf.get_after_gap().len();
+        self.state.update_buffer_stats(total_lines, buffer_size);
+
         self.render()
     }
 
