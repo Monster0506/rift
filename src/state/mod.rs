@@ -93,6 +93,8 @@ pub struct State {
     pub buffer_size: usize,
     /// Command line input (for command mode)
     pub command_line: String,
+    /// Command execution error message (if any)
+    pub command_error: Option<String>,
 }
 
 impl State {
@@ -108,6 +110,7 @@ impl State {
             total_lines: 1,
             buffer_size: 0,
             command_line: String::new(),
+            command_error: None,
         }
     }
 
@@ -123,6 +126,7 @@ impl State {
             total_lines: 1,
             buffer_size: 0,
             command_line: String::new(),
+            command_error: None,
         }
     }
 
@@ -180,6 +184,11 @@ impl State {
     /// Clear the command line
     pub fn clear_command_line(&mut self) {
         self.command_line.clear();
+    }
+
+    /// Set command error message
+    pub fn set_command_error(&mut self, error: Option<String>) {
+        self.command_error = error;
     }
 }
 

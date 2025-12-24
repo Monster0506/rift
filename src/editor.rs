@@ -10,6 +10,9 @@ use crate::viewport::Viewport;
 use crate::render;
 use crate::state::State;
 use crate::key_handler::{KeyHandler, KeyAction};
+use crate::command_line::registry::{CommandRegistry, CommandDef};
+use crate::command_line::parser::CommandParser;
+use crate::command_line::executor::{CommandExecutor, ExecutionResult};
 
 /// Main editor struct
 pub struct Editor<T: TerminalBackend> {
@@ -20,6 +23,7 @@ pub struct Editor<T: TerminalBackend> {
     current_mode: Mode,
     should_quit: bool,
     state: State,
+    command_parser: CommandParser,
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -57,6 +61,12 @@ impl<T: TerminalBackend> Editor<T> {
         // Create dispatcher
         let dispatcher = Dispatcher::new(Mode::Normal);
         
+        // Create command registry and parser
+        let registry = CommandRegistry::new()
+            .register(CommandDef::new("quit").with_alias("q"))
+            .register(CommandDef::new("set").with_alias("se"));
+        let command_parser = CommandParser::new(registry);
+        
         let mut state = State::new();
         state.set_file_path(file_path);
         
@@ -68,6 +78,7 @@ impl<T: TerminalBackend> Editor<T> {
             current_mode: Mode::Normal,
             should_quit: false,
             state,
+            command_parser,
         })
     }
 
@@ -215,8 +226,30 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Command);
             }
             Command::ExecuteCommandLine => {
-                self.state.clear_command_line();
-                self.set_mode(Mode::Normal);
+                // Parse and execute the command
+                let command_line = self.state.command_line.clone();
+                let parsed_command = self.command_parser.parse(&command_line);
+                let execution_result = CommandExecutor::execute(parsed_command, &mut self.state);
+                
+                // Handle execution result
+                match execution_result {
+                    ExecutionResult::Quit => {
+                        self.should_quit = true;
+                        self.state.clear_command_line();
+                        self.state.set_command_error(None);
+                        self.set_mode(Mode::Normal);
+                    }
+                    ExecutionResult::Success => {
+                        self.state.clear_command_line();
+                        self.state.set_command_error(None);
+                        self.set_mode(Mode::Normal);
+                    }
+                    ExecutionResult::Error(error_msg) => {
+                        // Keep command line visible so user can see the error and fix it
+                        // Don't clear command line or exit command mode
+                        self.state.set_command_error(Some(error_msg));
+                    }
+                }
             }
             _ => {}
         }
