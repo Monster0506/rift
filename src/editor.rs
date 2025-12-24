@@ -30,7 +30,13 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Create a new editor instance with an optional file to load
     pub fn with_file(mut terminal: T, file_path: Option<String>) -> Result<Self, String> {
-        // Initialize terminal
+        // Validate file BEFORE initializing terminal or creating buffer
+        // This ensures we don't clear the screen or allocate resources if the file is invalid
+        if let Some(ref path) = file_path {
+            Self::validate_file(path)?;
+        }
+        
+        // Initialize terminal (clears screen, enters raw mode, etc.)
         terminal.init()?;
         
         // Get terminal size
@@ -40,7 +46,7 @@ impl<T: TerminalBackend> Editor<T> {
         let mut buf = GapBuffer::new(4096)
             .map_err(|e| format!("Failed to create buffer: {}", e))?;
         
-        // Load file if provided
+        // Load file if provided (already validated above)
         if let Some(ref path) = file_path {
             Self::load_file_into_buffer(&mut buf, path)?;
         }
@@ -65,9 +71,10 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
-    /// Load file contents into the buffer
-    fn load_file_into_buffer(buf: &mut GapBuffer, file_path: &str) -> Result<(), String> {
-        use std::fs;
+    /// Validate that a file exists and is a valid file (not a directory)
+    /// This should be called BEFORE terminal initialization to avoid clearing the screen
+    /// if the file is invalid.
+    fn validate_file(file_path: &str) -> Result<(), String> {
         use std::path::Path;
         
         let path = Path::new(file_path);
@@ -81,6 +88,17 @@ impl<T: TerminalBackend> Editor<T> {
         if !path.is_file() {
             return Err(format!("Path is not a file: {}", file_path));
         }
+        
+        Ok(())
+    }
+
+    /// Load file contents into the buffer
+    /// File should already be validated before calling this function
+    fn load_file_into_buffer(buf: &mut GapBuffer, file_path: &str) -> Result<(), String> {
+        use std::fs;
+        use std::path::Path;
+        
+        let path = Path::new(file_path);
         
         // Read file contents as bytes (preserves all data, including invalid UTF-8)
         let contents = fs::read(path)
