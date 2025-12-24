@@ -266,29 +266,30 @@ fn test_parse_set_value_with_spaces() {
     // Let me verify the behavior is correct
 }
 
-#[test]
-fn test_parse_set_case_insensitive() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
-    
-    let result = parser.parse(":SET expandtabs");
-    assert_eq!(
-        result,
-        ParsedCommand::Set {
-            option: "expandtabs".to_string(),
-            value: Some("true".to_string()),
-        }
-    );
-    
-    let result = parser.parse(":Set EXPANDTABS");
-    assert_eq!(
-        result,
-        ParsedCommand::Set {
-            option: "EXPANDTABS".to_string(),
-            value: Some("true".to_string()),
-        }
-    );
-}
+    #[test]
+    fn test_parse_set_case_insensitive() {
+        let registry = create_test_registry();
+        let parser = CommandParser::new(registry);
+        
+        let result = parser.parse(":SET expandtabs");
+        assert_eq!(
+            result,
+            ParsedCommand::Set {
+                option: "expandtabs".to_string(),
+                value: Some("true".to_string()),
+            }
+        );
+        
+        // Option names are normalized to canonical lowercase via registry matching
+        let result = parser.parse(":Set EXPANDTABS");
+        assert_eq!(
+            result,
+            ParsedCommand::Set {
+                option: "expandtabs".to_string(),
+                value: Some("true".to_string()),
+            }
+        );
+    }
 
 #[test]
 fn test_parse_set_complex_value() {
@@ -427,4 +428,196 @@ fn test_parse_explicit_alias_overrides_ambiguity() {
     // "q" should match "quit" via alias, not be ambiguous with "query"
     let result = parser.parse(":q");
     assert_eq!(result, ParsedCommand::Quit);
+}
+
+#[test]
+fn test_parse_set_option_prefix_expandtabs() {
+    let registry = create_test_registry();
+    let parser = CommandParser::new(registry);
+    
+    // "expa" should match "expandtabs"
+    let result = parser.parse(":set expa");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "expandtabs".to_string(),
+            value: Some("true".to_string()),
+        }
+    );
+    
+    // "exp" should match "expandtabs" (unambiguous)
+    let result = parser.parse(":set exp");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "expandtabs".to_string(),
+            value: Some("true".to_string()),
+        }
+    );
+    
+    // "et" should match "expandtabs" via alias
+    let result = parser.parse(":set et");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "expandtabs".to_string(),
+            value: Some("true".to_string()),
+        }
+    );
+}
+
+#[test]
+fn test_parse_set_option_prefix_noexpandtabs() {
+    let registry = create_test_registry();
+    let parser = CommandParser::new(registry);
+    
+    // "noexpa" should match "noexpandtabs" -> "expandtabs" with false
+    let result = parser.parse(":set noexpa");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "expandtabs".to_string(),
+            value: Some("false".to_string()),
+        }
+    );
+    
+    // "noexp" should match "noexpandtabs"
+    let result = parser.parse(":set noexp");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "expandtabs".to_string(),
+            value: Some("false".to_string()),
+        }
+    );
+    
+    // "noet" should match "noexpandtabs" via alias
+    let result = parser.parse(":set noet");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "expandtabs".to_string(),
+            value: Some("false".to_string()),
+        }
+    );
+}
+
+#[test]
+fn test_parse_set_option_prefix_tabwidth() {
+    let registry = create_test_registry();
+    let parser = CommandParser::new(registry);
+    
+    // "tabw" should match "tabwidth"
+    let result = parser.parse(":set tabw=4");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "tabwidth".to_string(),
+            value: Some("4".to_string()),
+        }
+    );
+    
+    // "tab" should match "tabwidth" (unambiguous)
+    let result = parser.parse(":set tab 8");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "tabwidth".to_string(),
+            value: Some("8".to_string()),
+        }
+    );
+    
+    // "tw" should match "tabwidth" via alias
+    let result = parser.parse(":set tw=16");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "tabwidth".to_string(),
+            value: Some("16".to_string()),
+        }
+    );
+}
+
+#[test]
+fn test_parse_set_option_prefix_assignment() {
+    let registry = create_test_registry();
+    let parser = CommandParser::new(registry);
+    
+    // Prefix matching with assignment syntax
+    let result = parser.parse(":set expa=true");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "expandtabs".to_string(),
+            value: Some("true".to_string()),
+        }
+    );
+    
+    let result = parser.parse(":set tabw=4");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "tabwidth".to_string(),
+            value: Some("4".to_string()),
+        }
+    );
+}
+
+#[test]
+fn test_parse_set_option_prefix_space_separated() {
+    let registry = create_test_registry();
+    let parser = CommandParser::new(registry);
+    
+    // Prefix matching with space-separated value
+    let result = parser.parse(":set expa false");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "expandtabs".to_string(),
+            value: Some("false".to_string()),
+        }
+    );
+    
+    let result = parser.parse(":set tabw 4");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "tabwidth".to_string(),
+            value: Some("4".to_string()),
+        }
+    );
+}
+
+#[test]
+fn test_parse_set_option_case_insensitive_prefix() {
+    let registry = create_test_registry();
+    let parser = CommandParser::new(registry);
+    
+    // Case-insensitive prefix matching
+    let result = parser.parse(":set EXPA");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "expandtabs".to_string(),
+            value: Some("true".to_string()),
+        }
+    );
+    
+    let result = parser.parse(":set NOEXPA");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "expandtabs".to_string(),
+            value: Some("false".to_string()),
+        }
+    );
+    
+    let result = parser.parse(":set TABW=4");
+    assert_eq!(
+        result,
+        ParsedCommand::Set {
+            option: "tabwidth".to_string(),
+            value: Some("4".to_string()),
+        }
+    );
 }
