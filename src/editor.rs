@@ -246,8 +246,11 @@ impl<T: TerminalBackend> Editor<T> {
         let buffer_size = self.buf.get_before_gap().len() + self.buf.get_after_gap().len();
         self.state.update_buffer_stats(total_lines, buffer_size);
 
-        // Render
-        self.render()
+        // Update viewport based on cursor position (state mutation happens here)
+        let needs_clear = self.viewport.update(cursor_line, total_lines);
+
+        // Render (pure read - no mutations)
+        self.render(needs_clear)
     }
 
     /// Update state and render the editor (for initial render)
@@ -261,18 +264,22 @@ impl<T: TerminalBackend> Editor<T> {
         let buffer_size = self.buf.get_before_gap().len() + self.buf.get_after_gap().len();
         self.state.update_buffer_stats(total_lines, buffer_size);
 
-        self.render()
+        // Update viewport based on cursor position (state mutation happens here)
+        let needs_clear = self.viewport.update(cursor_line, total_lines);
+
+        self.render(needs_clear)
     }
 
-    /// Render the editor interface
-    fn render(&mut self) -> Result<(), String> {
+    /// Render the editor interface (pure read - no mutations)
+    fn render(&mut self, needs_clear: bool) -> Result<(), String> {
         render::render(
             &mut self.terminal,
             &self.buf,
-            &mut self.viewport,
+            &self.viewport,
             self.current_mode,
             self.dispatcher.pending_key(),
             &self.state,
+            needs_clear,
         )
     }
 

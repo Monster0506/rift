@@ -286,7 +286,8 @@ fn test_render_clears_screen() {
     let mut viewport = Viewport::new(10, 80);
     let state = State::new();
     
-    render(&mut term, &buf, &mut viewport, Mode::Normal, None, &state).unwrap();
+    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    render(&mut term, &buf, &viewport, Mode::Normal, None, &state, needs_clear).unwrap();
     
     // First render should clear screen
     assert!(term.clear_screen_calls >= 1);
@@ -300,7 +301,8 @@ fn test_render_cursor_positioning() {
     let mut viewport = Viewport::new(10, 80);
     let state = State::new();
     
-    render(&mut term, &buf, &mut viewport, Mode::Normal, None, &state).unwrap();
+    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    render(&mut term, &buf, &viewport, Mode::Normal, None, &state, needs_clear).unwrap();
     
     // Should have moved cursor
     assert!(!term.cursor_moves.is_empty());
@@ -313,7 +315,8 @@ fn test_render_empty_buffer() {
     let mut viewport = Viewport::new(10, 80);
     let state = State::new();
     
-    render(&mut term, &buf, &mut viewport, Mode::Normal, None, &state).unwrap();
+    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    render(&mut term, &buf, &viewport, Mode::Normal, None, &state, needs_clear).unwrap();
     
     // First render should clear screen
     assert!(term.clear_screen_calls >= 1);
@@ -329,7 +332,8 @@ fn test_render_multiline_buffer() {
     let mut viewport = Viewport::new(10, 80);
     let state = State::new();
     
-    render(&mut term, &buf, &mut viewport, Mode::Normal, None, &state).unwrap();
+    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    render(&mut term, &buf, &viewport, Mode::Normal, None, &state, needs_clear).unwrap();
     
     let written = term.get_written_string();
     assert!(written.contains("line1"));
@@ -351,7 +355,8 @@ fn test_render_file_loaded_at_start() {
     let state = State::new();
     
     // First render (simulating initial render after file load)
-    render(&mut term, &buf, &mut viewport, Mode::Normal, None, &state).unwrap();
+    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    render(&mut term, &buf, &viewport, Mode::Normal, None, &state, needs_clear).unwrap();
     
     // Should clear screen on first render
     assert!(term.clear_screen_calls >= 1);
@@ -382,7 +387,8 @@ fn test_render_viewport_scrolling() {
     let mut viewport = Viewport::new(5, 80);
     let state = State::new();
     
-    render(&mut term, &buf, &mut viewport, Mode::Normal, None, &state).unwrap();
+    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    render(&mut term, &buf, &viewport, Mode::Normal, None, &state, needs_clear).unwrap();
     
     // Viewport should scroll to show cursor
     // Top line should be adjusted
@@ -525,7 +531,8 @@ fn test_render_viewport_edge_cases() {
     let state = State::new();
     
     // Should not panic with minimal viewport
-    render(&mut term, &buf, &mut viewport, Mode::Normal, None, &state).unwrap();
+    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    render(&mut term, &buf, &viewport, Mode::Normal, None, &state, needs_clear).unwrap();
 }
 
 #[test]
@@ -539,7 +546,8 @@ fn test_render_large_buffer() {
     let mut viewport = Viewport::new(10, 80);
     let state = State::new();
     
-    render(&mut term, &buf, &mut viewport, Mode::Normal, None, &state).unwrap();
+    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    render(&mut term, &buf, &viewport, Mode::Normal, None, &state, needs_clear).unwrap();
     
     // Should render successfully - first render clears screen
     assert!(term.clear_screen_calls >= 1);
@@ -561,7 +569,8 @@ fn test_render_cursor_at_viewport_boundaries() {
     for _ in 0..20 {
         buf.move_up();
     }
-    render(&mut term, &buf, &mut viewport, Mode::Normal, None, &state).unwrap();
+    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    render(&mut term, &buf, &viewport, Mode::Normal, None, &state, needs_clear).unwrap();
     // First render clears screen (viewport scrolls to show cursor at top)
     assert!(term.clear_screen_calls >= 1);
     
@@ -574,7 +583,8 @@ fn test_render_cursor_at_viewport_boundaries() {
     for _ in 0..20 {
         buf.move_down();
     }
-    render(&mut term, &buf, &mut viewport, Mode::Normal, None, &state).unwrap();
+    let needs_clear2 = viewport.update(buf.get_line(), buf.get_total_lines());
+    render(&mut term, &buf, &viewport, Mode::Normal, None, &state, needs_clear2).unwrap();
     // Should clear when scrolling to show cursor at bottom
     assert!(term.clear_screen_calls >= 1);
 }

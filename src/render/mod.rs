@@ -5,11 +5,13 @@
 /// ## render/ Invariants
 ///
 /// - Rendering reads editor state and buffer contents only.
-/// - Rendering never mutates editor, buffer, or cursor state.
+/// - Rendering never mutates editor, buffer, cursor, or viewport state.
 /// - Rendering performs no input handling.
 /// - Rendering tolerates invalid state but never corrects it.
 /// - Displayed cursor position always matches buffer cursor position.
 /// - A full redraw is always safe.
+/// - Viewport must be updated before calling render() (viewport updates happen
+///   in the state update phase, not during rendering).
 use crate::buffer::GapBuffer;
 use crate::mode::Mode;
 use crate::key::Key;
@@ -20,22 +22,19 @@ use crate::status::StatusBar;
 use crate::command_line::CommandLine;
 
 /// Render the editor interface
+/// Viewport should already be updated before calling this function
 pub fn render<T: TerminalBackend>(
     term: &mut T,
     buf: &GapBuffer,
-    viewport: &mut Viewport,
+    viewport: &Viewport,
     current_mode: Mode,
     pending_key: Option<Key>,
     state: &State,
+    needs_clear: bool,
 ) -> Result<(), String> {
     // Hide cursor during rendering to reduce flicker
     term.hide_cursor()?;
     
-    // Update viewport based on cursor position
-    let cursor_line = buf.get_line();
-    let total_lines = buf.get_total_lines();
-    let needs_clear = viewport.update(cursor_line, total_lines);
-
     // Clear screen if viewport scrolled or on first render
     // This reduces flicker when just moving cursor within visible area
     if needs_clear {
@@ -56,6 +55,9 @@ pub fn render<T: TerminalBackend>(
 
     // Show cursor and position it at the correct location
     term.show_cursor()?;
+    
+    // Calculate cursor position for rendering
+    let cursor_line = buf.get_line();
     
     if let Some((window_row, window_col, cmd_width)) = cmd_window_info {
         // Position cursor in the centered command line window
