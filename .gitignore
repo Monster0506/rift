@@ -6,9 +6,6 @@ zig-out/
 *.exe
 *.pdb
 
-# Zig folder (old implementation)
-zig/
-
 # IDE files
 .vscode/
 .idea/
