@@ -21,7 +21,6 @@ fn test_insert() {
 fn test_move_and_insert() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
-    // Move to start
     for _ in 0..5 {
         buf.move_left();
     }
@@ -34,16 +33,13 @@ fn test_delete() {
     // Test deleting at cursor position (backspace)
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
-    // Cursor at end, delete_backward should delete 'o'
     assert!(buf.delete_backward());
     assert_eq!(buf.to_string(), "hell");
     
     // Test deleting after moving cursor
     let mut buf2 = GapBuffer::new(10).unwrap();
     buf2.insert_str("hello").unwrap();
-    // Move cursor left (before 'o')
     assert!(buf2.move_left());
-    // delete_backward deletes byte before cursor ('l')
     assert!(buf2.delete_backward());
     assert_eq!(buf2.to_string(), "helo");
 }
@@ -52,11 +48,9 @@ fn test_delete() {
 fn test_delete_at_start() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
-    // Move to start
     for _ in 0..5 {
         buf.move_left();
     }
-    // Can't delete at start
     assert!(!buf.delete_backward());
     assert_eq!(buf.to_string(), "hello");
 }
@@ -65,11 +59,9 @@ fn test_delete_at_start() {
 fn test_delete_forward() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
-    // Move to start
     for _ in 0..5 {
         buf.move_left();
     }
-    // Delete forward should delete 'h'
     assert!(buf.delete_forward());
     assert_eq!(buf.to_string(), "ello");
 }
@@ -78,11 +70,9 @@ fn test_delete_forward() {
 fn test_move_right() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
-    // Move to start
     for _ in 0..5 {
         buf.move_left();
     }
-    // Move right once
     assert!(buf.move_right());
     assert_eq!(buf.cursor(), 1);
     assert_eq!(buf.to_string(), "hello");
@@ -126,12 +116,9 @@ fn test_delete_backward_multiple() {
 #[test]
 fn test_gap_expansion() {
     let mut buf = GapBuffer::new(4).unwrap();
-    // Fill the gap
     buf.insert_str("abcd").unwrap();
-    // This should trigger growth
     buf.insert(b'e').unwrap();
     assert_eq!(buf.to_string(), "abcde");
-    // Capacity is private, just verify it works
     assert_eq!(buf.len(), 5);
 }
 
@@ -172,7 +159,6 @@ fn test_insert_bytes_with_newlines() {
 #[test]
 fn test_insert_bytes_binary_data() {
     let mut buf = GapBuffer::new(10).unwrap();
-    // Insert bytes including null bytes and non-UTF-8 sequences
     let binary_data = &[0x00, 0x01, 0xFF, 0xFE, b'a', b'b'];
     buf.insert_bytes(binary_data).unwrap();
     let result = buf.get_before_gap();

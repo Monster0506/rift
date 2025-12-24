@@ -46,19 +46,15 @@ fn test_update_keypress() {
     let mut state = State::new();
     assert_eq!(state.last_keypress, None);
     
-    // Update with a character key
     state.update_keypress(Key::Char(b'a'));
     assert_eq!(state.last_keypress, Some(Key::Char(b'a')));
     
-    // Update with another key
     state.update_keypress(Key::Char(b'b'));
     assert_eq!(state.last_keypress, Some(Key::Char(b'b')));
     
-    // Update with arrow key
     state.update_keypress(Key::ArrowUp);
     assert_eq!(state.last_keypress, Some(Key::ArrowUp));
     
-    // Update with Ctrl key
     state.update_keypress(Key::Ctrl(b'c'));
     assert_eq!(state.last_keypress, Some(Key::Ctrl(b'c')));
 }
@@ -68,15 +64,12 @@ fn test_update_cursor() {
     let mut state = State::new();
     assert_eq!(state.cursor_pos, (0, 0));
     
-    // Update cursor position
     state.update_cursor(5, 10);
     assert_eq!(state.cursor_pos, (5, 10));
     
-    // Update to different position
     state.update_cursor(0, 0);
     assert_eq!(state.cursor_pos, (0, 0));
     
-    // Update to large values
     state.update_cursor(100, 200);
     assert_eq!(state.cursor_pos, (100, 200));
 }
@@ -87,17 +80,14 @@ fn test_update_buffer_stats() {
     assert_eq!(state.total_lines, 1);
     assert_eq!(state.buffer_size, 0);
     
-    // Update buffer stats
     state.update_buffer_stats(10, 500);
     assert_eq!(state.total_lines, 10);
     assert_eq!(state.buffer_size, 500);
     
-    // Update to different values
     state.update_buffer_stats(1, 0);
     assert_eq!(state.total_lines, 1);
     assert_eq!(state.buffer_size, 0);
     
-    // Update to large values
     state.update_buffer_stats(1000, 50000);
     assert_eq!(state.total_lines, 1000);
     assert_eq!(state.buffer_size, 50000);
@@ -107,7 +97,6 @@ fn test_update_buffer_stats() {
 fn test_state_operations_together() {
     let mut state = State::new();
     
-    // Set up initial state
     state.update_keypress(Key::Char(b'h'));
     state.update_cursor(2, 5);
     state.update_buffer_stats(3, 100);
@@ -117,11 +106,9 @@ fn test_state_operations_together() {
     assert_eq!(state.total_lines, 3);
     assert_eq!(state.buffer_size, 100);
     
-    // Toggle debug mode
     state.toggle_debug();
     assert_eq!(state.debug_mode, true);
     
-    // Update all fields
     state.update_keypress(Key::ArrowDown);
     state.update_cursor(10, 20);
     state.update_buffer_stats(15, 200);
@@ -160,7 +147,6 @@ fn test_multiple_keypress_updates() {
 fn test_cursor_position_updates() {
     let mut state = State::new();
     
-    // Simulate cursor movement
     state.update_cursor(0, 0);
     assert_eq!(state.cursor_pos, (0, 0));
     
@@ -170,7 +156,6 @@ fn test_cursor_position_updates() {
     state.update_cursor(0, 2);
     assert_eq!(state.cursor_pos, (0, 2));
     
-    // Move to next line
     state.update_cursor(1, 0);
     assert_eq!(state.cursor_pos, (1, 0));
 }

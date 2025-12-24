@@ -353,17 +353,14 @@ fn test_execute_setting_boolean() {
     let registry = create_test_registry();
     let mut settings = UserSettings::new();
     
-    // Set to false
     let result = registry.execute_setting("expandtabs", Some("false".to_string()), &mut settings);
     assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
     assert_eq!(settings.expand_tabs, false);
     
-    // Set to true
     let result = registry.execute_setting("expandtabs", Some("true".to_string()), &mut settings);
     assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
     assert_eq!(settings.expand_tabs, true);
     
-    // Use alias
     let result = registry.execute_setting("et", Some("false".to_string()), &mut settings);
     assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
     assert_eq!(settings.expand_tabs, false);
@@ -374,17 +371,14 @@ fn test_execute_setting_integer() {
     let registry = create_test_registry();
     let mut settings = UserSettings::new();
     
-    // Set tabwidth
     let result = registry.execute_setting("tabwidth", Some("4".to_string()), &mut settings);
     assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
     assert_eq!(settings.tab_width, 4);
     
-    // Use alias
     let result = registry.execute_setting("tw", Some("8".to_string()), &mut settings);
     assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
     assert_eq!(settings.tab_width, 8);
     
-    // Use prefix
     let result = registry.execute_setting("tabw", Some("2".to_string()), &mut settings);
     assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
     assert_eq!(settings.tab_width, 2);
@@ -395,12 +389,10 @@ fn test_execute_setting_float() {
     let registry = create_test_registry();
     let mut settings = UserSettings::new();
     
-    // Set width_ratio
     let result = registry.execute_setting("command_line_window.width_ratio", Some("0.6".to_string()), &mut settings);
     assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
     assert_eq!(settings.command_line_window.width_ratio, 0.6);
     
-    // Use alias
     let result = registry.execute_setting("cmdwidth", Some("0.8".to_string()), &mut settings);
     assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
     assert_eq!(settings.command_line_window.width_ratio, 0.8);
@@ -411,15 +403,12 @@ fn test_execute_setting_enum() {
     let registry = create_test_registry();
     let mut settings = UserSettings::new();
     
-    // Set borderstyle (just verify it parses correctly, actual setting logic is in setter)
     let result = registry.execute_setting("borderstyle", Some("unicode".to_string()), &mut settings);
     assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
     
-    // Case insensitive
     let result = registry.execute_setting("borderstyle", Some("ASCII".to_string()), &mut settings);
     assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
     
-    // Use alias
     let result = registry.execute_setting("bs", Some("none".to_string()), &mut settings);
     assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
 }

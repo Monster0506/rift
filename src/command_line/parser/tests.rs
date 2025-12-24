@@ -156,12 +156,7 @@ fn test_parse_set_with_alias() {
 fn test_parse_set_prefix() {
     let parser = create_test_parser();
     
-    // "set" should match via prefix (or explicit alias if defined)
-    // Test that "set" matches via alias to "settings", but we're parsing "set" command
-    // Actually, in create_test_registry, "set" is registered as a command with alias "se"
-    // And "settings" has alias "set"
-    // So ":set" would match "settings" via alias, not the "set" command
-    // Let's test with the actual "set" command using its alias "se"
+    // Test that "se" (alias for "set") correctly parses a set command
     let result = parser.parse(":se expandtabs");
     assert_eq!(
         result,
@@ -185,14 +180,7 @@ fn test_parse_unknown_command() {
 
 #[test]
 fn test_parse_ambiguous() {
-    
-    // "se" is ambiguous between "set" and "settings" (if both exist)
-    // Actually, wait - "set" is an alias for "settings", so "set" should match "settings"
-    // But "se" as a prefix could match both "set" (via alias) and "settings"
-    // Let me check: "se" starts with "set"? No. "se" starts with "settings"? Yes.
-    // So "se" would match "settings" unambiguously
-    
-    // Let's create a better ambiguous case
+    // Create a registry where "se" is ambiguous between "setup" and "settings"
     let registry = CommandRegistry::new()
         .register(CommandDef::new("setup"))
         .register(CommandDef::new("settings"));
@@ -244,18 +232,15 @@ fn test_parse_set_multiple_spaces() {
 fn test_parse_set_value_with_spaces() {
     let parser = create_test_parser();
     
-    // Assignment syntax preserves spaces in value
+    // Assignment syntax only takes the value up to the first space
     let result = parser.parse(":set option=value with spaces");
     assert_eq!(
         result,
         ParsedCommand::Set {
             option: "option".to_string(),
-            value: Some("value".to_string()), // Only up to first space in assignment
+            value: Some("value".to_string()),
         }
     );
-    
-    // Actually, with current implementation, assignment only takes up to '='
-    // Let me verify the behavior is correct
 }
 
     #[test]
@@ -395,20 +380,14 @@ fn test_parse_ambiguous_with_prefix() {
 
 #[test]
 fn test_parse_explicit_alias_overrides_ambiguity() {
-    // If "set" is an explicit alias for "settings", it should work even with "setup" present
-    // "set" should match "settings" via explicit alias
-    // ":set" without args returns Unknown (expected behavior)
-    // The key is that "set" matched "settings" via alias, not "setup"
-    // But since "set" command needs args, it returns Unknown
-    
-    // Let's test with a command that takes no args to verify alias matching works
+    // Test that explicit aliases take precedence over prefix matching
+    // "q" should match "quit" via explicit alias, not be ambiguous with "query"
     let registry = CommandRegistry::new()
         .register(CommandDef::new("quit").with_alias("q"))
         .register(CommandDef::new("query"));
     let settings_registry = create_settings_registry();
     let parser = CommandParser::new(registry, settings_registry);
     
-    // "q" should match "quit" via alias, not be ambiguous with "query"
     let result = parser.parse(":q");
     assert_eq!(result, ParsedCommand::Quit);
 }

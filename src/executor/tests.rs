@@ -18,7 +18,6 @@ fn test_execute_move_left() {
 fn test_execute_move_right() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
-    // Move to start
     for _ in 0..5 {
         buf.move_left();
     }
@@ -55,7 +54,6 @@ fn test_execute_delete_backward() {
 fn test_execute_delete_forward() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
-    // Move to start
     for _ in 0..5 {
         buf.move_left();
     }
@@ -77,7 +75,6 @@ fn test_execute_move_to_buffer_start() {
 fn test_execute_move_to_buffer_end() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
-    // Move to start
     for _ in 0..5 {
         buf.move_left();
     }
@@ -99,7 +96,6 @@ fn test_execute_insert_ctrl_char() {
 #[test]
 fn test_execute_insert_tab_expanded_at_column_0() {
     let mut buf = GapBuffer::new(100).unwrap();
-    // Tab at column 0 should expand to 8 spaces (to reach column 8)
     execute_command(Command::InsertByte(b'\t'), &mut buf, true, 8);
     let text = buf.to_string();
     assert_eq!(text, "        "); // 8 spaces
@@ -109,8 +105,7 @@ fn test_execute_insert_tab_expanded_at_column_0() {
 #[test]
 fn test_execute_insert_tab_expanded_at_column_1() {
     let mut buf = GapBuffer::new(100).unwrap();
-    buf.insert_str("a").unwrap(); // Column 1
-    // Tab at column 1 should expand to 7 spaces (to reach column 8)
+    buf.insert_str("a").unwrap();
     execute_command(Command::InsertByte(b'\t'), &mut buf, true, 8);
     let text = buf.to_string();
     assert_eq!(text, "a       "); // 1 char + 7 spaces
@@ -120,8 +115,7 @@ fn test_execute_insert_tab_expanded_at_column_1() {
 #[test]
 fn test_execute_insert_tab_expanded_at_column_7() {
     let mut buf = GapBuffer::new(100).unwrap();
-    buf.insert_str("abcdefg").unwrap(); // Column 7
-    // Tab at column 7 should expand to 1 space (to reach column 8)
+    buf.insert_str("abcdefg").unwrap();
     execute_command(Command::InsertByte(b'\t'), &mut buf, true, 8);
     let text = buf.to_string();
     assert_eq!(text, "abcdefg "); // 7 chars + 1 space
@@ -131,8 +125,7 @@ fn test_execute_insert_tab_expanded_at_column_7() {
 #[test]
 fn test_execute_insert_tab_expanded_at_column_8() {
     let mut buf = GapBuffer::new(100).unwrap();
-    buf.insert_str("abcdefgh").unwrap(); // Column 8
-    // Tab at column 8 should expand to 8 spaces (to reach column 16)
+    buf.insert_str("abcdefgh").unwrap();
     execute_command(Command::InsertByte(b'\t'), &mut buf, true, 8);
     let text = buf.to_string();
     assert_eq!(text, "abcdefgh        "); // 8 chars + 8 spaces
@@ -142,7 +135,6 @@ fn test_execute_insert_tab_expanded_at_column_8() {
 #[test]
 fn test_execute_insert_tab_not_expanded() {
     let mut buf = GapBuffer::new(100).unwrap();
-    // Tab should remain as tab character when expand_tabs is false
     execute_command(Command::InsertByte(b'\t'), &mut buf, false, 8);
     let text = buf.to_string();
     assert_eq!(text, "\t");
