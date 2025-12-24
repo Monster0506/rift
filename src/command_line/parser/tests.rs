@@ -1,5 +1,6 @@
 use super::*;
 use crate::command_line::registry::CommandDef;
+use crate::command_line::settings::create_settings_registry;
 
 fn create_test_registry() -> CommandRegistry {
     CommandRegistry::new()
@@ -9,10 +10,15 @@ fn create_test_registry() -> CommandRegistry {
         .register(CommandDef::new("setup"))
 }
 
+fn create_test_parser() -> CommandParser {
+    let registry = create_test_registry();
+    let settings_registry = create_settings_registry();
+    CommandParser::new(registry, settings_registry)
+}
+
 #[test]
 fn test_parse_empty() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     let result = parser.parse("");
     assert!(matches!(result, ParsedCommand::Unknown { name } if name.is_empty()));
@@ -26,8 +32,7 @@ fn test_parse_empty() {
 
 #[test]
 fn test_parse_quit_exact() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     let result = parser.parse(":quit");
     assert_eq!(result, ParsedCommand::Quit);
@@ -38,8 +43,7 @@ fn test_parse_quit_exact() {
 
 #[test]
 fn test_parse_quit_alias() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     let result = parser.parse(":q");
     assert_eq!(result, ParsedCommand::Quit);
@@ -50,8 +54,7 @@ fn test_parse_quit_alias() {
 
 #[test]
 fn test_parse_quit_prefix() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     let result = parser.parse(":qui");
     assert_eq!(result, ParsedCommand::Quit);
@@ -62,8 +65,7 @@ fn test_parse_quit_prefix() {
 
 #[test]
 fn test_parse_set_boolean_on() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     let result = parser.parse(":set expandtabs");
     assert_eq!(
@@ -77,8 +79,7 @@ fn test_parse_set_boolean_on() {
 
 #[test]
 fn test_parse_set_boolean_off() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     let result = parser.parse(":set noexpandtabs");
     assert_eq!(
@@ -92,8 +93,7 @@ fn test_parse_set_boolean_off() {
 
 #[test]
 fn test_parse_set_assignment() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     let result = parser.parse(":set tabwidth=4");
     assert_eq!(
@@ -116,8 +116,7 @@ fn test_parse_set_assignment() {
 
 #[test]
 fn test_parse_set_space_separated() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     let result = parser.parse(":set tabwidth 4");
     assert_eq!(
@@ -140,8 +139,7 @@ fn test_parse_set_space_separated() {
 
 #[test]
 fn test_parse_set_with_alias() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     // "se" is an alias for "set"
     let result = parser.parse(":se expandtabs");
@@ -156,8 +154,7 @@ fn test_parse_set_with_alias() {
 
 #[test]
 fn test_parse_set_prefix() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     // "set" should match via prefix (or explicit alias if defined)
     // Test that "set" matches via alias to "settings", but we're parsing "set" command
@@ -177,8 +174,7 @@ fn test_parse_set_prefix() {
 
 #[test]
 fn test_parse_unknown_command() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     let result = parser.parse(":nonexistent");
     assert!(matches!(
@@ -189,8 +185,6 @@ fn test_parse_unknown_command() {
 
 #[test]
 fn test_parse_ambiguous() {
-    let registry = create_test_registry();
-    let _parser = CommandParser::new(registry);
     
     // "se" is ambiguous between "set" and "settings" (if both exist)
     // Actually, wait - "set" is an alias for "settings", so "set" should match "settings"
@@ -202,19 +196,19 @@ fn test_parse_ambiguous() {
     let registry = CommandRegistry::new()
         .register(CommandDef::new("setup"))
         .register(CommandDef::new("settings"));
-    let _parser = CommandParser::new(registry);
+    let settings_registry = create_settings_registry();
+    let parser = CommandParser::new(registry, settings_registry);
     
-    let _result = _parser.parse(":se");
+    let result = parser.parse(":se");
     assert!(matches!(
-        _result,
+        result,
         ParsedCommand::Ambiguous { .. }
     ));
 }
 
 #[test]
 fn test_parse_set_no_args() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     let result = parser.parse(":set");
     assert!(matches!(
@@ -225,8 +219,7 @@ fn test_parse_set_no_args() {
 
 #[test]
 fn test_parse_set_multiple_spaces() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     let result = parser.parse(":set   expandtabs");
     assert_eq!(
@@ -249,8 +242,7 @@ fn test_parse_set_multiple_spaces() {
 
 #[test]
 fn test_parse_set_value_with_spaces() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     // Assignment syntax preserves spaces in value
     let result = parser.parse(":set option=value with spaces");
@@ -268,8 +260,7 @@ fn test_parse_set_value_with_spaces() {
 
     #[test]
     fn test_parse_set_case_insensitive() {
-        let registry = create_test_registry();
-        let parser = CommandParser::new(registry);
+        let parser = create_test_parser();
         
         let result = parser.parse(":SET expandtabs");
         assert_eq!(
@@ -293,8 +284,7 @@ fn test_parse_set_value_with_spaces() {
 
 #[test]
 fn test_parse_set_complex_value() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     let result = parser.parse(":set tabwidth=16");
     assert_eq!(
@@ -308,8 +298,7 @@ fn test_parse_set_complex_value() {
 
 #[test]
 fn test_parse_whitespace_handling() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     let result = parser.parse("  :quit  ");
     assert_eq!(result, ParsedCommand::Quit);
@@ -320,8 +309,7 @@ fn test_parse_whitespace_handling() {
 
 #[test]
 fn test_parse_set_no_prefix_handling() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     // "no" by itself should be treated as an option name, not a prefix
     let result = parser.parse(":set no");
@@ -346,8 +334,7 @@ fn test_parse_set_no_prefix_handling() {
 
 #[test]
 fn test_parse_set_assignment_vs_space() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     // Assignment takes precedence
     let result = parser.parse(":set option=value");
@@ -372,8 +359,7 @@ fn test_parse_set_assignment_vs_space() {
 
 #[test]
 fn test_parse_set_multiple_values() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     // Only first value is used
     let result = parser.parse(":set option value1 value2 value3");
@@ -392,7 +378,8 @@ fn test_parse_ambiguous_with_prefix() {
     let registry = CommandRegistry::new()
         .register(CommandDef::new("setup"))
         .register(CommandDef::new("settings"));
-    let parser = CommandParser::new(registry);
+    let settings_registry = create_settings_registry();
+    let parser = CommandParser::new(registry, settings_registry);
     
     let result = parser.parse(":se");
     match result {
@@ -412,7 +399,7 @@ fn test_parse_explicit_alias_overrides_ambiguity() {
     let registry = CommandRegistry::new()
         .register(CommandDef::new("settings").with_alias("set"))
         .register(CommandDef::new("setup"));
-    let _parser = CommandParser::new(registry);
+    let _parser = create_test_parser();
     
     // "set" should match "settings" via explicit alias
     // ":set" without args returns Unknown (expected behavior)
@@ -423,7 +410,8 @@ fn test_parse_explicit_alias_overrides_ambiguity() {
     let registry = CommandRegistry::new()
         .register(CommandDef::new("quit").with_alias("q"))
         .register(CommandDef::new("query"));
-    let parser = CommandParser::new(registry);
+    let settings_registry = create_settings_registry();
+    let parser = CommandParser::new(registry, settings_registry);
     
     // "q" should match "quit" via alias, not be ambiguous with "query"
     let result = parser.parse(":q");
@@ -432,8 +420,7 @@ fn test_parse_explicit_alias_overrides_ambiguity() {
 
 #[test]
 fn test_parse_set_option_prefix_expandtabs() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     // "expa" should match "expandtabs"
     let result = parser.parse(":set expa");
@@ -468,8 +455,7 @@ fn test_parse_set_option_prefix_expandtabs() {
 
 #[test]
 fn test_parse_set_option_prefix_noexpandtabs() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     // "noexpa" should match "noexpandtabs" -> "expandtabs" with false
     let result = parser.parse(":set noexpa");
@@ -504,8 +490,7 @@ fn test_parse_set_option_prefix_noexpandtabs() {
 
 #[test]
 fn test_parse_set_option_prefix_tabwidth() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     // "tabw" should match "tabwidth"
     let result = parser.parse(":set tabw=4");
@@ -540,8 +525,7 @@ fn test_parse_set_option_prefix_tabwidth() {
 
 #[test]
 fn test_parse_set_option_prefix_assignment() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     // Prefix matching with assignment syntax
     let result = parser.parse(":set expa=true");
@@ -565,8 +549,7 @@ fn test_parse_set_option_prefix_assignment() {
 
 #[test]
 fn test_parse_set_option_prefix_space_separated() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     // Prefix matching with space-separated value
     let result = parser.parse(":set expa false");
@@ -590,8 +573,7 @@ fn test_parse_set_option_prefix_space_separated() {
 
 #[test]
 fn test_parse_set_option_case_insensitive_prefix() {
-    let registry = create_test_registry();
-    let parser = CommandParser::new(registry);
+    let parser = create_test_parser();
     
     // Case-insensitive prefix matching
     let result = parser.parse(":set EXPA");

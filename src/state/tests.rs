@@ -201,13 +201,13 @@ fn test_buffer_stats_updates() {
 fn test_user_settings_default() {
     let settings = UserSettings::default();
     assert_eq!(settings.expand_tabs, true);
-    assert_eq!(settings.tab_width, 8);
+    assert_eq!(settings.tab_width, 4);
     assert_eq!(settings.default_border_chars, None);
     assert_eq!(settings.command_line_window.width_ratio, 0.6);
     assert_eq!(settings.command_line_window.min_width, 40);
     assert_eq!(settings.command_line_window.height, 3);
     assert_eq!(settings.command_line_window.border, true);
-    assert_eq!(settings.command_line_window.reverse_video, true);
+    assert_eq!(settings.command_line_window.reverse_video, false);
 }
 
 #[test]

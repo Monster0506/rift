@@ -13,6 +13,7 @@ use crate::key_handler::{KeyHandler, KeyAction};
 use crate::command_line::registry::{CommandRegistry, CommandDef};
 use crate::command_line::parser::CommandParser;
 use crate::command_line::executor::{CommandExecutor, ExecutionResult};
+use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 
 /// Main editor struct
 pub struct Editor<T: TerminalBackend> {
@@ -24,6 +25,7 @@ pub struct Editor<T: TerminalBackend> {
     should_quit: bool,
     state: State,
     command_parser: CommandParser,
+    settings_registry: SettingsRegistry,
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -61,11 +63,12 @@ impl<T: TerminalBackend> Editor<T> {
         // Create dispatcher
         let dispatcher = Dispatcher::new(Mode::Normal);
         
-        // Create command registry and parser
+        // Create command registry and settings registry
         let registry = CommandRegistry::new()
             .register(CommandDef::new("quit").with_alias("q"))
             .register(CommandDef::new("set").with_alias("se"));
-        let command_parser = CommandParser::new(registry);
+        let settings_registry = create_settings_registry();
+        let command_parser = CommandParser::new(registry, settings_registry);
         
         let mut state = State::new();
         state.set_file_path(file_path);
@@ -79,6 +82,7 @@ impl<T: TerminalBackend> Editor<T> {
             should_quit: false,
             state,
             command_parser,
+            settings_registry,
         })
     }
 
@@ -229,7 +233,7 @@ impl<T: TerminalBackend> Editor<T> {
                 // Parse and execute the command
                 let command_line = self.state.command_line.clone();
                 let parsed_command = self.command_parser.parse(&command_line);
-                let execution_result = CommandExecutor::execute(parsed_command, &mut self.state);
+                let execution_result = CommandExecutor::execute(parsed_command, &mut self.state, &self.settings_registry);
                 
                 // Handle execution result
                 match execution_result {

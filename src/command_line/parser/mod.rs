@@ -1,7 +1,8 @@
 //! Command parser
 //! Parses command line input into structured command data
 
-use crate::command_line::registry::{CommandRegistry, CommandDef, MatchResult};
+use crate::command_line::registry::{CommandRegistry, MatchResult};
+use crate::command_line::settings::SettingsRegistry;
 
 /// Parsed command representation
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,19 +28,18 @@ pub enum ParsedCommand {
 /// Command parser
 pub struct CommandParser {
     registry: CommandRegistry,
+    settings_registry: SettingsRegistry,
 }
 
 impl CommandParser {
-    /// Create a new parser with the given registry
-    pub fn new(registry: CommandRegistry) -> Self {
-        CommandParser { registry }
+    /// Create a new parser with the given command registry and settings registry
+    pub fn new(registry: CommandRegistry, settings_registry: SettingsRegistry) -> Self {
+        CommandParser { registry, settings_registry }
     }
 
     /// Get the option registry for :set command options
-    fn get_option_registry() -> CommandRegistry {
-        CommandRegistry::new()
-            .register(CommandDef::new("expandtabs").with_alias("et"))
-            .register(CommandDef::new("tabwidth").with_alias("tw"))
+    fn get_option_registry(&self) -> CommandRegistry {
+        self.settings_registry.build_option_registry()
     }
 
     /// Parse a command line string
@@ -112,7 +112,7 @@ impl CommandParser {
         }
 
         let option_str = args[0];
-        let option_registry = Self::get_option_registry();
+        let option_registry = self.get_option_registry();
         
         // Check for "no" prefix (boolean off) - case insensitive
         let option_lower = option_str.to_lowercase();

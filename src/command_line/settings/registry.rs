@@ -11,6 +11,7 @@ use super::descriptor::{SettingDescriptor, SettingType, SettingValue, SettingErr
 /// Holds static setting descriptors and provides:
 /// - Option registry building (for parser)
 /// - Setting execution (for executor)
+#[derive(Clone, Copy)]
 pub struct SettingsRegistry {
     /// Static array of setting descriptors
     settings: &'static [SettingDescriptor],

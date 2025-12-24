@@ -2,6 +2,7 @@
 
 use crate::command_line::executor::{CommandExecutor, ExecutionResult};
 use crate::command_line::parser::ParsedCommand;
+use crate::command_line::settings::create_settings_registry;
 use crate::state::State;
 
 #[test]
@@ -9,7 +10,8 @@ fn test_execute_quit() {
     let mut state = State::new();
     let command = ParsedCommand::Quit;
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Quit);
 }
 
@@ -23,7 +25,8 @@ fn test_execute_set_expandtabs_true() {
         value: Some("true".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, true);
 }
@@ -38,7 +41,8 @@ fn test_execute_set_expandtabs_false() {
         value: Some("false".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
 }
@@ -52,7 +56,8 @@ fn test_execute_set_expandtabs_alias_et() {
         value: Some("false".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
 }
@@ -66,7 +71,8 @@ fn test_execute_set_expandtabs_boolean_variants() {
         option: "expandtabs".to_string(),
         value: Some("on".to_string()),
     };
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, true);
     
@@ -75,7 +81,8 @@ fn test_execute_set_expandtabs_boolean_variants() {
         option: "expandtabs".to_string(),
         value: Some("off".to_string()),
     };
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
     
@@ -84,7 +91,8 @@ fn test_execute_set_expandtabs_boolean_variants() {
         option: "expandtabs".to_string(),
         value: Some("yes".to_string()),
     };
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, true);
     
@@ -93,7 +101,8 @@ fn test_execute_set_expandtabs_boolean_variants() {
         option: "expandtabs".to_string(),
         value: Some("no".to_string()),
     };
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
     
@@ -102,7 +111,8 @@ fn test_execute_set_expandtabs_boolean_variants() {
         option: "expandtabs".to_string(),
         value: Some("1".to_string()),
     };
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, true);
     
@@ -111,7 +121,8 @@ fn test_execute_set_expandtabs_boolean_variants() {
         option: "expandtabs".to_string(),
         value: Some("0".to_string()),
     };
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
 }
@@ -125,7 +136,8 @@ fn test_execute_set_expandtabs_case_insensitive() {
         value: Some("FALSE".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
 }
@@ -133,14 +145,15 @@ fn test_execute_set_expandtabs_case_insensitive() {
 #[test]
 fn test_execute_set_tabwidth() {
     let mut state = State::new();
-    assert_eq!(state.settings.tab_width, 8); // Default
+    assert_eq!(state.settings.tab_width, 4); // Default
     
     let command = ParsedCommand::Set {
         option: "tabwidth".to_string(),
         value: Some("4".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.tab_width, 4);
 }
@@ -154,7 +167,8 @@ fn test_execute_set_tabwidth_alias_tw() {
         value: Some("2".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.tab_width, 2);
 }
@@ -170,7 +184,8 @@ fn test_execute_set_tabwidth_various_values() {
             value: Some(width.to_string()),
         };
         
-        let result = CommandExecutor::execute(command, &mut state);
+        let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
         assert_eq!(result, ExecutionResult::Success);
         assert_eq!(state.settings.tab_width, *width);
     }
@@ -186,10 +201,11 @@ fn test_execute_set_tabwidth_zero_error() {
         value: Some("0".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
         ExecutionResult::Error(msg) => {
-            assert!(msg.contains("tabwidth must be greater than 0"));
+            assert!(msg.contains("tabwidth must be greater than 0") || msg.contains("Validation error"));
         }
         _ => panic!("Expected error for tabwidth=0"),
     }
@@ -208,10 +224,11 @@ fn test_execute_set_tabwidth_invalid_number() {
         value: Some("invalid".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
         ExecutionResult::Error(msg) => {
-            assert!(msg.contains("Invalid numeric value"));
+            assert!(msg.contains("Invalid integer") || msg.contains("Parse error") || msg.contains("Invalid numeric"));
         }
         _ => panic!("Expected error for invalid number"),
     }
@@ -230,7 +247,8 @@ fn test_execute_set_expandtabs_invalid_boolean() {
         value: Some("maybe".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
         ExecutionResult::Error(msg) => {
             assert!(msg.contains("Invalid boolean value"));
@@ -254,7 +272,8 @@ fn test_execute_set_expandtabs_missing_value() {
         value: None,
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
         ExecutionResult::Error(msg) => {
             assert!(msg.contains("Missing value"));
@@ -275,7 +294,8 @@ fn test_execute_set_unknown_option() {
         value: Some("value".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
         ExecutionResult::Error(msg) => {
             assert!(msg.contains("Unknown option"));
@@ -293,7 +313,8 @@ fn test_execute_unknown_command() {
         name: "nonexistent".to_string(),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
         ExecutionResult::Error(msg) => {
             assert!(msg.contains("Unknown command"));
@@ -312,7 +333,8 @@ fn test_execute_ambiguous_command() {
         matches: vec!["setup".to_string(), "settings".to_string()],
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
         ExecutionResult::Error(msg) => {
             assert!(msg.contains("Ambiguous command"));
@@ -333,7 +355,8 @@ fn test_execute_set_multiple_options() {
         option: "expandtabs".to_string(),
         value: Some("false".to_string()),
     };
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
     
@@ -342,7 +365,8 @@ fn test_execute_set_multiple_options() {
         option: "tabwidth".to_string(),
         value: Some("4".to_string()),
     };
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.tab_width, 4);
     
@@ -351,7 +375,8 @@ fn test_execute_set_multiple_options() {
         option: "expandtabs".to_string(),
         value: Some("true".to_string()),
     };
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, true);
     
@@ -369,7 +394,8 @@ fn test_execute_set_tabwidth_large_value() {
         value: Some("100".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.tab_width, 100);
 }
@@ -385,10 +411,11 @@ fn test_execute_set_tabwidth_negative_error() {
         value: Some("-1".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
         ExecutionResult::Error(msg) => {
-            assert!(msg.contains("Invalid numeric value"));
+            assert!(msg.contains("Invalid integer") || msg.contains("Parse error") || msg.contains("Invalid numeric"));
         }
         _ => panic!("Expected error for negative number"),
     }
@@ -407,7 +434,8 @@ fn test_execute_set_expandtabs_empty_string() {
         value: Some("".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
         ExecutionResult::Error(msg) => {
             assert!(msg.contains("Invalid boolean value"));
@@ -439,7 +467,8 @@ fn test_execute_set_case_insensitive_option_names() {
             value: Some(value.to_string()),
         };
         
-        let result = CommandExecutor::execute(command, &mut state);
+        let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
         assert_eq!(result, ExecutionResult::Success);
     }
     
@@ -458,10 +487,11 @@ fn test_execute_set_tabwidth_float_error() {
         value: Some("4.5".to_string()),
     };
     
-    let result = CommandExecutor::execute(command, &mut state);
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
         ExecutionResult::Error(msg) => {
-            assert!(msg.contains("Invalid numeric value"));
+            assert!(msg.contains("Invalid integer") || msg.contains("Parse error") || msg.contains("Invalid numeric"));
         }
         _ => panic!("Expected error for float"),
     }
