@@ -10,7 +10,7 @@
 
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
-use crate::floating_window::{FloatingWindow, WindowPosition};
+use crate::floating_window::{FloatingWindow, WindowPosition, BorderChars};
 
 /// Command line renderer
 pub struct CommandLine;
@@ -20,10 +20,25 @@ impl CommandLine {
     /// Returns Some((window_pos, cmd_width)) if rendered, None otherwise
     /// 
     /// Uses FloatingWindow's optimized batched rendering to minimize flicker.
+    /// Uses border characters from state if available, or defaults.
     pub fn render<T: TerminalBackend>(
         term: &mut T,
         viewport: &Viewport,
         command_line: &str,
+        default_border_chars: Option<BorderChars>,
+    ) -> Result<Option<(u16, u16, usize)>, String> {
+        Self::render_with_border_chars(term, viewport, command_line, default_border_chars, None)
+    }
+
+    /// Render the command line window with optional border character override
+    /// 
+    /// `border_chars_override` takes precedence over `default_border_chars` from state.
+    pub fn render_with_border_chars<T: TerminalBackend>(
+        term: &mut T,
+        viewport: &Viewport,
+        command_line: &str,
+        default_border_chars: Option<BorderChars>,
+        border_chars_override: Option<BorderChars>,
     ) -> Result<Option<(u16, u16, usize)>, String> {
         // Use a reasonable width for the command line (e.g., 60% of terminal width)
         let cmd_width = (viewport.visible_cols() * 3 / 5).max(40).min(viewport.visible_cols());
@@ -41,8 +56,11 @@ impl CommandLine {
         content_line.push(b':');
         content_line.extend_from_slice(command_line.as_bytes());
         
-        // Render using FloatingWindow's optimized batched rendering
-        cmd_window.render(term, &[content_line])?;
+        // Determine which border chars to use: override > state defaults > FloatingWindow defaults
+        let border_chars_to_use = border_chars_override.or(default_border_chars);
+        
+        // Render using FloatingWindow's optimized batched rendering with border chars
+        cmd_window.render_with_border_chars(term, &[content_line], border_chars_to_use)?;
         
         // Return (row, col, width) for cursor positioning
         Ok(Some((window_pos.0, window_pos.1, cmd_width)))

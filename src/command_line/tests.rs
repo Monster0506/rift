@@ -9,12 +9,14 @@ fn test_command_line_render() {
     let mut term = MockTerminal::new(24, 80);
     let viewport = Viewport::new(24, 80);
     
-    let result = CommandLine::render(&mut term, &viewport, "test command").unwrap();
+    let result = CommandLine::render(&mut term, &viewport, "test command", None).unwrap();
     assert!(result.is_some());
     
     let written = term.get_written_string();
-    // Should contain border characters
-    assert!(written.contains("+") || written.contains("-") || written.contains("|"));
+    // Should contain border characters (Unicode box drawing by default)
+    assert!(written.contains("╭") || written.contains("╮") || written.contains("╰") || 
+            written.contains("╯") || written.contains("─") || written.contains("│") ||
+            written.contains("+") || written.contains("-") || written.contains("|"));
     // Should contain prompt and content
     assert!(written.contains(":test command"));
 }

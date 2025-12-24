@@ -16,13 +16,88 @@ use crate::term::TerminalBackend;
 const REVERSE_VIDEO_ON: &[u8] = b"\x1b[7m";
 const RESET: &[u8] = b"\x1b[0m";
 
-// Border characters
-const BORDER_TOP_LEFT: &[u8] = b"+";
-const BORDER_TOP_RIGHT: &[u8] = b"+";
-const BORDER_BOTTOM_LEFT: &[u8] = b"+";
-const BORDER_BOTTOM_RIGHT: &[u8] = b"+";
-const BORDER_HORIZONTAL: &[u8] = b"-";
-const BORDER_VERTICAL: &[u8] = b"|";
+// Default border characters
+const DEFAULT_BORDER_TOP_LEFT: &[u8] = "╭".as_bytes();
+const DEFAULT_BORDER_TOP_RIGHT: &[u8] = "╮".as_bytes();
+const DEFAULT_BORDER_BOTTOM_LEFT: &[u8] = "╰".as_bytes();
+const DEFAULT_BORDER_BOTTOM_RIGHT: &[u8] = "╯".as_bytes();
+const DEFAULT_BORDER_HORIZONTAL: &[u8] = "─".as_bytes();
+const DEFAULT_BORDER_VERTICAL: &[u8] = "│".as_bytes();
+
+/// Border characters for floating windows
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BorderChars {
+    /// Top-left corner character
+    pub top_left: Vec<u8>,
+    /// Top-right corner character
+    pub top_right: Vec<u8>,
+    /// Bottom-left corner character
+    pub bottom_left: Vec<u8>,
+    /// Bottom-right corner character
+    pub bottom_right: Vec<u8>,
+    /// Horizontal line character
+    pub horizontal: Vec<u8>,
+    /// Vertical line character
+    pub vertical: Vec<u8>,
+}
+
+impl BorderChars {
+    /// Create default border characters (Unicode box drawing)
+    pub fn default() -> Self {
+        BorderChars {
+            top_left: DEFAULT_BORDER_TOP_LEFT.to_vec(),
+            top_right: DEFAULT_BORDER_TOP_RIGHT.to_vec(),
+            bottom_left: DEFAULT_BORDER_BOTTOM_LEFT.to_vec(),
+            bottom_right: DEFAULT_BORDER_BOTTOM_RIGHT.to_vec(),
+            horizontal: DEFAULT_BORDER_HORIZONTAL.to_vec(),
+            vertical: DEFAULT_BORDER_VERTICAL.to_vec(),
+        }
+    }
+
+    /// Create border characters from byte slices
+    pub fn new(
+        top_left: &[u8],
+        top_right: &[u8],
+        bottom_left: &[u8],
+        bottom_right: &[u8],
+        horizontal: &[u8],
+        vertical: &[u8],
+    ) -> Self {
+        BorderChars {
+            top_left: top_left.to_vec(),
+            top_right: top_right.to_vec(),
+            bottom_left: bottom_left.to_vec(),
+            bottom_right: bottom_right.to_vec(),
+            horizontal: horizontal.to_vec(),
+            vertical: vertical.to_vec(),
+        }
+    }
+
+    /// Create border characters from single-byte ASCII characters
+    pub fn from_ascii(
+        top_left: u8,
+        top_right: u8,
+        bottom_left: u8,
+        bottom_right: u8,
+        horizontal: u8,
+        vertical: u8,
+    ) -> Self {
+        BorderChars {
+            top_left: vec![top_left],
+            top_right: vec![top_right],
+            bottom_left: vec![bottom_left],
+            bottom_right: vec![bottom_right],
+            horizontal: vec![horizontal],
+            vertical: vec![vertical],
+        }
+    }
+}
+
+impl Default for BorderChars {
+    fn default() -> Self {
+        BorderChars::default()
+    }
+}
 
 /// Position for floating window
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +125,8 @@ pub struct FloatingWindow {
     border: bool,
     /// Whether to use reverse video (inverted colors) for the window
     reverse_video: bool,
+    /// Custom border characters (None uses defaults)
+    border_chars: Option<BorderChars>,
 }
 
 impl FloatingWindow {
@@ -61,6 +138,7 @@ impl FloatingWindow {
             height,
             border: true,
             reverse_video: true,
+            border_chars: None,
         }
     }
 
@@ -73,6 +151,12 @@ impl FloatingWindow {
     /// Set whether to use reverse video
     pub fn with_reverse_video(mut self, reverse: bool) -> Self {
         self.reverse_video = reverse;
+        self
+    }
+
+    /// Set custom border characters
+    pub fn with_border_chars(mut self, border_chars: BorderChars) -> Self {
+        self.border_chars = Some(border_chars);
         self
     }
 
@@ -152,6 +236,9 @@ impl FloatingWindow {
     /// Lines will be truncated to fit within the window width.
     /// If there are more lines than the window height, they will be truncated.
     /// 
+    /// `border_chars_override` allows overriding border characters for this render call.
+    /// If None, uses the window's configured border_chars or defaults.
+    /// 
     /// This method batches all writes to minimize flicker by building the entire
     /// window in memory before writing it all at once.
     pub fn render<T: TerminalBackend>(
@@ -159,6 +246,23 @@ impl FloatingWindow {
         term: &mut T,
         content: &[Vec<u8>],
     ) -> Result<(), String> {
+        self.render_with_border_chars(term, content, None)
+    }
+
+    /// Render the floating window with content and optional border character override
+    /// 
+    /// `border_chars_override` allows overriding border characters for this render call.
+    /// If Some, uses those characters. If None, uses the window's configured border_chars or defaults.
+    pub fn render_with_border_chars<T: TerminalBackend>(
+        &self,
+        term: &mut T,
+        content: &[Vec<u8>],
+        border_chars_override: Option<BorderChars>,
+    ) -> Result<(), String> {
+        // Determine which border chars to use: override > window config > defaults
+        let border_chars = border_chars_override
+            .or(self.border_chars.clone())
+            .unwrap_or_else(BorderChars::default);
         // Get terminal size
         let size = term.get_size()?;
         let term_rows = size.rows;
@@ -187,17 +291,21 @@ impl FloatingWindow {
             // Top border: +----+
             // ANSI positions are 1-indexed, so add 1 to row/col
             Self::write_cursor_position(&mut output, start_row + 1, start_col + 1);
-            output.extend_from_slice(BORDER_TOP_LEFT);
-            output.extend(std::iter::repeat(BORDER_HORIZONTAL[0]).take(content_width));
+            output.extend_from_slice(&border_chars.top_left);
+            // Repeat horizontal character for content width
+            // Note: This assumes horizontal is a single display character (may be multi-byte)
+            for _ in 0..content_width {
+                output.extend_from_slice(&border_chars.horizontal);
+            }
             if width > 1 {
-                output.extend_from_slice(BORDER_TOP_RIGHT);
+                output.extend_from_slice(&border_chars.top_right);
             }
             
             // Content rows with side borders: |content|
             for content_row in 0..content_height {
                 let row = start_row + 1 + content_row as u16;
                 Self::write_cursor_position(&mut output, row + 1, start_col + 1);
-                output.extend_from_slice(BORDER_VERTICAL);
+                output.extend_from_slice(&border_chars.vertical);
                 
                 // Content
                 let line = content.get(content_row);
@@ -219,7 +327,7 @@ impl FloatingWindow {
                 
                 // Right border
                 if width > 1 {
-                    output.extend_from_slice(BORDER_VERTICAL);
+                    output.extend_from_slice(&border_chars.vertical);
                 }
             }
             
@@ -227,10 +335,13 @@ impl FloatingWindow {
             if height > 1 {
                 let bottom_row = start_row + height as u16;
                 Self::write_cursor_position(&mut output, bottom_row, start_col + 1);
-                output.extend_from_slice(BORDER_BOTTOM_LEFT);
-                output.extend(std::iter::repeat(BORDER_HORIZONTAL[0]).take(content_width));
+                output.extend_from_slice(&border_chars.bottom_left);
+                // Repeat horizontal character for content width
+                for _ in 0..content_width {
+                    output.extend_from_slice(&border_chars.horizontal);
+                }
                 if width > 1 {
-                    output.extend_from_slice(BORDER_BOTTOM_RIGHT);
+                    output.extend_from_slice(&border_chars.bottom_right);
                 }
             }
         } else {

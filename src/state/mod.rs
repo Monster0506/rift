@@ -11,6 +11,7 @@
 /// - State changes are observable by the renderer but never influenced by it.
 use crate::key::Key;
 use crate::command::Command;
+use crate::floating_window::BorderChars;
 
 /// Editor state containing settings and runtime information
 pub struct State {
@@ -32,6 +33,8 @@ pub struct State {
     pub buffer_size: usize,
     /// Command line input (for command mode)
     pub command_line: String,
+    /// Default border characters for floating windows
+    pub default_border_chars: Option<BorderChars>,
 }
 
 impl State {
@@ -47,7 +50,13 @@ impl State {
             total_lines: 1,
             buffer_size: 0,
             command_line: String::new(),
+            default_border_chars: None, // None means use FloatingWindow defaults
         }
+    }
+
+    /// Set default border characters for floating windows
+    pub fn set_default_border_chars(&mut self, border_chars: Option<BorderChars>) {
+        self.default_border_chars = border_chars;
     }
 
     /// Set the current file path

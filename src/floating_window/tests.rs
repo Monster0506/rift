@@ -47,8 +47,10 @@ fn test_floating_window_render_multiline() {
     window.render(&mut term, &content).unwrap();
     
     let written = term.get_written_string();
-    // Should contain border characters
-    assert!(written.contains("+") || written.contains("-") || written.contains("|"));
+    // Should contain border characters (Unicode box drawing by default)
+    assert!(written.contains("╭") || written.contains("╮") || written.contains("╰") || 
+            written.contains("╯") || written.contains("─") || written.contains("│") ||
+            written.contains("+") || written.contains("-") || written.contains("|"));
     // Should contain content
     assert!(written.contains("Line 1"));
 }
