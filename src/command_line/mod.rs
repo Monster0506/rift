@@ -16,6 +16,7 @@ use crate::state::CommandLineWindowSettings;
 pub mod registry;
 pub mod parser;
 pub mod executor;
+pub mod settings;
 
 /// Command line renderer
 pub struct CommandLine;
