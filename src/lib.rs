@@ -11,6 +11,7 @@ pub mod render;
 pub mod editor;
 pub mod state;
 pub mod status;
+pub mod command_line;
 pub mod key_handler;
 pub mod floating_window;
 
