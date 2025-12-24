@@ -49,8 +49,9 @@ pub fn render<T: TerminalBackend>(
     let cmd_window_pos = if current_mode == Mode::Command {
         // Use a reasonable width for the command line (e.g., 60% of terminal width)
         let cmd_width = (viewport.visible_cols() * 3 / 5).max(40).min(viewport.visible_cols());
-        let cmd_window = FloatingWindow::new(WindowPosition::Center, cmd_width, 1)
-            .with_border(false)
+        // Height 3: top border (1) + content (1) + bottom border (1)
+        let cmd_window = FloatingWindow::new(WindowPosition::Center, cmd_width, 3)
+            .with_border(true)
             .with_reverse_video(true);
         
         // Calculate window position for cursor positioning
@@ -71,10 +72,19 @@ pub fn render<T: TerminalBackend>(
     if let Some((window_pos, cmd_width)) = cmd_window_pos {
         // Position cursor in the centered command line window
         let (window_row, window_col) = window_pos;
-        // Cursor position: after the colon prompt + length of command line
-        let cursor_col = (window_col as usize + 1 + state.command_line.len())
-            .min((window_col as usize + cmd_width).saturating_sub(1));
-        term.move_cursor(window_row, cursor_col as u16)?;
+        // With border and height=3:
+        // Row 0: top border
+        // Row 1: content row (left border | content | right border)
+        // Row 2: bottom border
+        // Content area: window_col + 1 to window_col + cmd_width - 2 (inclusive)
+        // Prompt ":" is at window_col + 1, command line starts at window_col + 2
+        // Right border is at window_col + cmd_width - 1
+        let content_row = window_row + 1; // Content is on the middle row
+        let content_start_col = window_col as usize + 1; // After left border
+        let content_end_col = window_col as usize + cmd_width - 2; // Before right border
+        let cursor_col = (content_start_col + 1 + state.command_line.len())
+            .min(content_end_col);
+        term.move_cursor(content_row, cursor_col as u16)?;
     } else {
         let cursor_line_in_viewport = if cursor_line >= viewport.top_line() 
             && cursor_line < viewport.top_line() + viewport.visible_rows().saturating_sub(1) {
