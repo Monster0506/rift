@@ -36,7 +36,7 @@ impl CommandLineWindowSettings {
             min_width: 40,
             height: 3, // top border (1) + content (1) + bottom border (1)
             border: true,
-            reverse_video: true,
+            reverse_video: false,
         }
     }
 }
