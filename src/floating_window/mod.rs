@@ -107,79 +107,43 @@ impl FloatingWindow {
         }
     }
 
-    /// Render a single line of content with padding
-    /// If `move_cursor` is true, moves cursor to (row, col) first
-    fn render_content_line<T: TerminalBackend>(
-        term: &mut T,
-        row: u16,
-        col: u16,
-        line: Option<&Vec<u8>>,
-        width: usize,
-        move_cursor: bool,
-    ) -> Result<(), String> {
-        if move_cursor {
-            term.move_cursor(row, col)?;
-        }
+    /// Write ANSI cursor positioning escape sequence to buffer
+    /// Row and col are 1-indexed (ANSI standard)
+    fn write_cursor_position(buf: &mut Vec<u8>, row: u16, col: u16) {
+        buf.push(0x1b); // ESC
+        buf.push(b'[');
         
-        if let Some(line) = line {
-            // Truncate line to fit
-            let display_line: Vec<u8> = line.iter()
-                .take(width)
-                .copied()
-                .collect();
-            
-            // Write content
-            term.write(&display_line)?;
-            
-            // Pad with spaces if needed
-            let padding = width.saturating_sub(display_line.len());
-            for _ in 0..padding {
-                term.write(b" ")?;
-            }
+        // Convert row to decimal string
+        let mut row_digits = Vec::new();
+        let mut r = row;
+        if r == 0 {
+            row_digits.push(b'1'); // ANSI is 1-indexed, 0 means row 1
         } else {
-            // Empty line - fill with spaces
-            for _ in 0..width {
-                term.write(b" ")?;
+            while r > 0 {
+                row_digits.push(b'0' + (r % 10) as u8);
+                r /= 10;
             }
+            row_digits.reverse();
         }
+        buf.extend_from_slice(&row_digits);
         
-        Ok(())
-    }
-
-    /// Render the top border of the window
-    fn render_top_border<T: TerminalBackend>(
-        term: &mut T,
-        row: u16,
-        col: u16,
-        width: usize,
-    ) -> Result<(), String> {
-        term.move_cursor(row, col)?;
-        term.write(BORDER_TOP_LEFT)?;
-        for _ in 0..width.saturating_sub(2) {
-            term.write(BORDER_HORIZONTAL)?;
+        buf.push(b';');
+        
+        // Convert col to decimal string
+        let mut col_digits = Vec::new();
+        let mut c = col;
+        if c == 0 {
+            col_digits.push(b'1'); // ANSI is 1-indexed, 0 means col 1
+        } else {
+            while c > 0 {
+                col_digits.push(b'0' + (c % 10) as u8);
+                c /= 10;
+            }
+            col_digits.reverse();
         }
-        if width > 1 {
-            term.write(BORDER_TOP_RIGHT)?;
-        }
-        Ok(())
-    }
-
-    /// Render the bottom border of the window
-    fn render_bottom_border<T: TerminalBackend>(
-        term: &mut T,
-        row: u16,
-        col: u16,
-        width: usize,
-    ) -> Result<(), String> {
-        term.move_cursor(row, col)?;
-        term.write(BORDER_BOTTOM_LEFT)?;
-        for _ in 0..width.saturating_sub(2) {
-            term.write(BORDER_HORIZONTAL)?;
-        }
-        if width > 1 {
-            term.write(BORDER_BOTTOM_RIGHT)?;
-        }
-        Ok(())
+        buf.extend_from_slice(&col_digits);
+        
+        buf.push(b'H');
     }
 
     /// Render the floating window with content
@@ -187,6 +151,9 @@ impl FloatingWindow {
     /// `content` is a vector of lines, where each line is a byte vector.
     /// Lines will be truncated to fit within the window width.
     /// If there are more lines than the window height, they will be truncated.
+    /// 
+    /// This method batches all writes to minimize flicker by building the entire
+    /// window in memory before writing it all at once.
     pub fn render<T: TerminalBackend>(
         &self,
         term: &mut T,
@@ -204,54 +171,100 @@ impl FloatingWindow {
         let width = self.width.min(term_cols as usize);
         let height = self.height.min(term_rows as usize);
 
+        // Build entire window in memory to minimize writes and reduce flicker
+        let mut output = Vec::new();
+
         // Apply reverse video if enabled
         if self.reverse_video {
-            term.write(REVERSE_VIDEO_ON)?;
+            output.extend_from_slice(REVERSE_VIDEO_ON);
         }
 
         // Render border and content
         if self.border {
-            // Top border
-            Self::render_top_border(term, start_row, start_col, width)?;
-            
-            // Content rows with side borders
             let content_height = height.saturating_sub(2); // Subtract top and bottom borders
             let content_width = width.saturating_sub(2);
             
+            // Top border: +----+
+            // ANSI positions are 1-indexed, so add 1 to row/col
+            Self::write_cursor_position(&mut output, start_row + 1, start_col + 1);
+            output.extend_from_slice(BORDER_TOP_LEFT);
+            output.extend(std::iter::repeat(BORDER_HORIZONTAL[0]).take(content_width));
+            if width > 1 {
+                output.extend_from_slice(BORDER_TOP_RIGHT);
+            }
+            
+            // Content rows with side borders: |content|
             for content_row in 0..content_height {
                 let row = start_row + 1 + content_row as u16;
-                term.move_cursor(row, start_col)?;
-                term.write(BORDER_VERTICAL)?;
+                Self::write_cursor_position(&mut output, row + 1, start_col + 1);
+                output.extend_from_slice(BORDER_VERTICAL);
                 
-                // Render content line (cursor already positioned after left border)
+                // Content
                 let line = content.get(content_row);
-                Self::render_content_line(term, row, start_col + 1, line, content_width, false)?;
+                if let Some(line) = line {
+                    // Truncate line to fit
+                    let display_line: Vec<u8> = line.iter()
+                        .take(content_width)
+                        .copied()
+                        .collect();
+                    output.extend_from_slice(&display_line);
+                    
+                    // Pad with spaces if needed
+                    let padding = content_width.saturating_sub(display_line.len());
+                    output.extend(std::iter::repeat(b' ').take(padding));
+                } else {
+                    // Empty line - fill with spaces
+                    output.extend(std::iter::repeat(b' ').take(content_width));
+                }
                 
                 // Right border
                 if width > 1 {
-                    term.move_cursor(row, start_col + content_width as u16 + 1)?;
-                    term.write(BORDER_VERTICAL)?;
+                    output.extend_from_slice(BORDER_VERTICAL);
                 }
             }
             
-            // Bottom border
+            // Bottom border: +----+
             if height > 1 {
-                let bottom_row = start_row + height as u16 - 1;
-                Self::render_bottom_border(term, bottom_row, start_col, width)?;
+                let bottom_row = start_row + height as u16;
+                Self::write_cursor_position(&mut output, bottom_row, start_col + 1);
+                output.extend_from_slice(BORDER_BOTTOM_LEFT);
+                output.extend(std::iter::repeat(BORDER_HORIZONTAL[0]).take(content_width));
+                if width > 1 {
+                    output.extend_from_slice(BORDER_BOTTOM_RIGHT);
+                }
             }
         } else {
             // No border - just render content
             for row_offset in 0..height {
                 let row = start_row + row_offset as u16;
+                Self::write_cursor_position(&mut output, row + 1, start_col + 1);
+                
                 let line = content.get(row_offset);
-                Self::render_content_line(term, row, start_col, line, width, true)?;
+                if let Some(line) = line {
+                    // Truncate line to fit
+                    let display_line: Vec<u8> = line.iter()
+                        .take(width)
+                        .copied()
+                        .collect();
+                    output.extend_from_slice(&display_line);
+                    
+                    // Pad with spaces if needed
+                    let padding = width.saturating_sub(display_line.len());
+                    output.extend(std::iter::repeat(b' ').take(padding));
+                } else {
+                    // Empty line - fill with spaces
+                    output.extend(std::iter::repeat(b' ').take(width));
+                }
             }
         }
 
         // Reset colors
         if self.reverse_video {
-            term.write(RESET)?;
+            output.extend_from_slice(RESET);
         }
+
+        // Write everything at once
+        term.write(&output)?;
 
         Ok(())
     }

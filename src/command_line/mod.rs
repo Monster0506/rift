@@ -18,6 +18,8 @@ pub struct CommandLine;
 impl CommandLine {
     /// Render the command line window and return cursor position information
     /// Returns Some((window_pos, cmd_width)) if rendered, None otherwise
+    /// 
+    /// Uses FloatingWindow's optimized batched rendering to minimize flicker.
     pub fn render<T: TerminalBackend>(
         term: &mut T,
         viewport: &Viewport,
@@ -34,7 +36,13 @@ impl CommandLine {
         let size = term.get_size()?;
         let window_pos = cmd_window.calculate_position(size.rows, size.cols);
         
-        cmd_window.render_single_line(term, ":", command_line)?;
+        // Prepare content: prompt + command line
+        let mut content_line = Vec::new();
+        content_line.push(b':');
+        content_line.extend_from_slice(command_line.as_bytes());
+        
+        // Render using FloatingWindow's optimized batched rendering
+        cmd_window.render(term, &[content_line])?;
         
         // Return (row, col, width) for cursor positioning
         Ok(Some((window_pos.0, window_pos.1, cmd_width)))
