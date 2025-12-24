@@ -396,11 +396,6 @@ fn test_parse_ambiguous_with_prefix() {
 #[test]
 fn test_parse_explicit_alias_overrides_ambiguity() {
     // If "set" is an explicit alias for "settings", it should work even with "setup" present
-    let registry = CommandRegistry::new()
-        .register(CommandDef::new("settings").with_alias("set"))
-        .register(CommandDef::new("setup"));
-    let _parser = create_test_parser();
-    
     // "set" should match "settings" via explicit alias
     // ":set" without args returns Unknown (expected behavior)
     // The key is that "set" matched "settings" via alias, not "setup"
