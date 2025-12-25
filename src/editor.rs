@@ -224,6 +224,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Insert);
             }
             Command::EnterInsertModeAfter => {
+                self.buf.move_right();
                 self.set_mode(Mode::Insert);
             }
             Command::EnterCommandMode => {
