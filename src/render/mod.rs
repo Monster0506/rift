@@ -292,12 +292,6 @@ fn render_content<T: TerminalBackend>(
         lines.push(current_line);
     }
     
-    // Apply editor colors if set (before rendering)
-    // Colors will persist for the entire rendering session
-    if editor_bg.is_some() || editor_fg.is_some() {
-        apply_editor_colors_to_terminal(term, editor_bg, editor_fg)?;
-    }
-    
     // Render visible lines
     let top_line = viewport.top_line();
     let visible_rows = viewport.visible_rows().saturating_sub(1); // Reserve one row for status bar
