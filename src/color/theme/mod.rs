@@ -5,7 +5,7 @@ use super::Color;
 use crate::state::UserSettings;
 
 /// Theme handler trait for applying themes
-/// 
+///
 /// This trait allows themes to be extended to apply more than just background/foreground colors.
 /// In the future, themes can include:
 /// - Status bar colors
@@ -17,17 +17,17 @@ use crate::state::UserSettings;
 /// - etc.
 pub trait ThemeHandler {
     /// Apply a theme to the given settings
-    /// 
+    ///
     /// This is called whenever a theme is changed via `:set theme <name>`.
     /// The handler is responsible for applying all theme properties to the settings.
     fn apply_theme(&self, theme: &Theme, settings: &mut UserSettings);
 }
 
 /// Default theme handler implementation
-/// 
+///
 /// Currently applies background and foreground colors, but can be extended
 /// to handle additional theme properties as they are added to the Theme struct.
-/// 
+///
 /// Example of future extension:
 /// ```rust,ignore
 /// impl ThemeHandler for DefaultThemeHandler {
@@ -49,11 +49,11 @@ impl ThemeHandler for DefaultThemeHandler {
     fn apply_theme(&self, theme: &Theme, settings: &mut UserSettings) {
         // Store theme name
         settings.theme = Some(theme.name.to_string());
-        
+
         // Apply background and foreground colors
         settings.editor_bg = Some(theme.background);
         settings.editor_fg = Some(theme.foreground);
-        
+
         // Future: When Theme struct is extended with more properties,
         // add them here. For example:
         // settings.status_bar_bg = Some(theme.status_bar_bg);
@@ -91,8 +91,13 @@ pub enum ThemeVariant {
 
 impl Theme {
     /// Create a new theme
-    #[must_use] 
-    pub fn new(name: &'static str, variant: ThemeVariant, background: Color, foreground: Color) -> Self {
+    #[must_use]
+    pub fn new(
+        name: &'static str,
+        variant: ThemeVariant,
+        background: Color,
+        foreground: Color,
+    ) -> Self {
         Theme {
             name,
             variant,
@@ -102,51 +107,79 @@ impl Theme {
     }
 
     /// Get the light theme
-    #[must_use] 
+    #[must_use]
     pub fn light() -> Self {
         Theme::new(
             "light",
             ThemeVariant::Light,
-            Color::Rgb { r: 255, g: 255, b: 255 }, // #FFFFFF - Pure white
-            Color::Rgb { r: 0, g: 0, b: 0 },       // #000000 - Pure black
+            Color::Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            }, // #FFFFFF - Pure white
+            Color::Rgb { r: 0, g: 0, b: 0 }, // #000000 - Pure black
         )
     }
 
     /// Get the dark theme
-    #[must_use] 
+    #[must_use]
     pub fn dark() -> Self {
         Theme::new(
             "dark",
             ThemeVariant::Dark,
-            Color::Rgb { r: 30, g: 30, b: 30 },    // #1E1E1E - Dark gray
-            Color::Rgb { r: 224, g: 224, b: 224 }, // #E0E0E0 - Light gray
+            Color::Rgb {
+                r: 30,
+                g: 30,
+                b: 30,
+            }, // #1E1E1E - Dark gray
+            Color::Rgb {
+                r: 224,
+                g: 224,
+                b: 224,
+            }, // #E0E0E0 - Light gray
         )
     }
 
     /// Get the gruvbox theme (dark variant)
-    #[must_use] 
+    #[must_use]
     pub fn gruvbox() -> Self {
         Theme::new(
             "gruvbox",
             ThemeVariant::Dark,
-            Color::Rgb { r: 40, g: 40, b: 32 },    // #282828 - Gruvbox dark background
-            Color::Rgb { r: 235, g: 219, b: 178 }, // #EBDBB2 - Gruvbox beige foreground
+            Color::Rgb {
+                r: 40,
+                g: 40,
+                b: 32,
+            }, // #282828 - Gruvbox dark background
+            Color::Rgb {
+                r: 235,
+                g: 219,
+                b: 178,
+            }, // #EBDBB2 - Gruvbox beige foreground
         )
     }
 
     /// Get the nordic theme (Nord)
-    #[must_use] 
+    #[must_use]
     pub fn nordic() -> Self {
         Theme::new(
             "nordic",
             ThemeVariant::Dark,
-            Color::Rgb { r: 46, g: 52, b: 64 },    // #2E3440 - Nord polar night
-            Color::Rgb { r: 216, g: 222, b: 233 }, // #D8DEE9 - Nord snow storm
+            Color::Rgb {
+                r: 46,
+                g: 52,
+                b: 64,
+            }, // #2E3440 - Nord polar night
+            Color::Rgb {
+                r: 216,
+                g: 222,
+                b: 233,
+            }, // #D8DEE9 - Nord snow storm
         )
     }
 
     /// Get theme by name
-    #[must_use] 
+    #[must_use]
     pub fn by_name(name: &str) -> Option<Self> {
         match name.to_lowercase().as_str() {
             "light" => Some(Theme::light()),
@@ -158,7 +191,7 @@ impl Theme {
     }
 
     /// Get all available theme names
-    #[must_use] 
+    #[must_use]
     pub fn available_themes() -> Vec<&'static str> {
         vec!["light", "dark", "gruvbox", "nordic"]
     }

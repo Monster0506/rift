@@ -25,7 +25,7 @@ pub struct Viewport {
 }
 
 impl Viewport {
-    #[must_use] 
+    #[must_use]
     pub fn new(rows: usize, cols: usize) -> Self {
         Viewport {
             top_line: 0,
@@ -44,19 +44,19 @@ impl Viewport {
         self.prev_top_line = self.top_line;
         let was_first = self.first_update;
         self.first_update = false;
-        
+
         // Calculate content rows (excluding status bar)
         let content_rows = self.visible_rows.saturating_sub(1);
-        
+
         // Calculate the last visible content line (0-indexed)
         // If top_line = 0 and content_rows = 9, we show lines 0-8, so bottom = 8
         let bottom_content_line = self.top_line + content_rows.saturating_sub(1);
-        
+
         // If cursor is above visible area, scroll up to show it
         if cursor_line < self.top_line {
             self.top_line = cursor_line;
         }
-        
+
         // If cursor is below visible area, scroll down to show it
         // We want the cursor to be visible, so we position it near the bottom of the viewport
         if cursor_line > bottom_content_line {
@@ -67,7 +67,7 @@ impl Viewport {
             let new_top = cursor_line.saturating_sub(content_rows.saturating_sub(1));
             self.top_line = new_top;
         }
-        
+
         // Ensure we don't scroll past the end of the buffer
         // If total_lines is less than content_rows, start at 0
         if total_lines > 0 && total_lines <= content_rows {
@@ -76,33 +76,33 @@ impl Viewport {
             // If we're showing past the end, scroll back
             self.top_line = total_lines.saturating_sub(content_rows);
         }
-        
+
         // Ensure top_line doesn't go negative (shouldn't happen with usize, but be safe)
         if self.top_line > total_lines.saturating_sub(1) && total_lines > 0 {
             self.top_line = total_lines.saturating_sub(1).max(0);
         }
-        
+
         // Return true if viewport scrolled or if this is the first update
         self.top_line != self.prev_top_line || was_first
     }
-    
+
     /// Get the previous top line (before last update)
-    #[must_use] 
+    #[must_use]
     pub fn prev_top_line(&self) -> usize {
         self.prev_top_line
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn top_line(&self) -> usize {
         self.top_line
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn visible_rows(&self) -> usize {
         self.visible_rows
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn visible_cols(&self) -> usize {
         self.visible_cols
     }
@@ -116,4 +116,3 @@ impl Viewport {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-

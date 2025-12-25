@@ -1,7 +1,6 @@
 //! Command dispatch and keybindings
 //! Translates keys into editor commands based on current mode
 
-
 /// ## command/ Invariants
 ///
 /// - `Command` represents editor-level intent, not key-level input.
@@ -53,7 +52,7 @@ pub struct Dispatcher {
 }
 
 impl Dispatcher {
-    #[must_use] 
+    #[must_use]
     pub fn new(mode: Mode) -> Self {
         Dispatcher {
             mode,
@@ -164,7 +163,7 @@ impl Dispatcher {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn mode(&self) -> Mode {
         self.mode
     }
@@ -175,7 +174,7 @@ impl Dispatcher {
         self.pending_key = None;
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn pending_key(&self) -> Option<Key> {
         self.pending_key
     }
@@ -184,4 +183,3 @@ impl Dispatcher {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-

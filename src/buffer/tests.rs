@@ -35,7 +35,7 @@ fn test_delete() {
     buf.insert_str("hello").unwrap();
     assert!(buf.delete_backward());
     assert_eq!(buf.to_string(), "hell");
-    
+
     // Test deleting after moving cursor
     let mut buf2 = GapBuffer::new(10).unwrap();
     buf2.insert_str("hello").unwrap();
@@ -164,4 +164,3 @@ fn test_insert_bytes_binary_data() {
     let result = buf.get_before_gap();
     assert_eq!(result, binary_data);
 }
-

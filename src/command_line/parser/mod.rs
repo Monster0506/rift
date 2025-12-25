@@ -15,9 +15,7 @@ pub enum ParsedCommand {
         value: Option<String>,
     },
     /// Unknown command
-    Unknown {
-        name: String,
-    },
+    Unknown { name: String },
     /// Ambiguous command (multiple matches)
     Ambiguous {
         prefix: String,
@@ -33,9 +31,12 @@ pub struct CommandParser {
 
 impl CommandParser {
     /// Create a new parser with the given command registry and settings registry
-    #[must_use] 
+    #[must_use]
     pub fn new(registry: CommandRegistry, settings_registry: SettingsRegistry) -> Self {
-        CommandParser { registry, settings_registry }
+        CommandParser {
+            registry,
+            settings_registry,
+        }
     }
 
     /// Get the option registry for :set command options
@@ -44,22 +45,22 @@ impl CommandParser {
     }
 
     /// Parse a command line string
-    /// 
+    ///
     /// Input format: `:command [args...]`
     /// The leading colon is optional but typically present in ex-style commands
-    #[must_use] 
+    #[must_use]
     pub fn parse(&self, input: &str) -> ParsedCommand {
         let input = input.trim();
-        
+
         // Remove leading colon if present
         let input = if input.starts_with(':') {
             &input[1..]
         } else {
             input
         };
-        
+
         let input = input.trim();
-        
+
         if input.is_empty() {
             return ParsedCommand::Unknown {
                 name: String::new(),
@@ -73,14 +74,9 @@ impl CommandParser {
 
         // Match command name using registry
         match self.registry.match_command(command_name) {
-            MatchResult::Exact(name) | MatchResult::Prefix(name) => {
-                self.parse_command(&name, args)
-            }
+            MatchResult::Exact(name) | MatchResult::Prefix(name) => self.parse_command(&name, args),
             MatchResult::Ambiguous { prefix, matches } => {
-                ParsedCommand::Ambiguous {
-                    prefix,
-                    matches,
-                }
+                ParsedCommand::Ambiguous { prefix, matches }
             }
             MatchResult::Unknown(_) => ParsedCommand::Unknown {
                 name: command_name.to_string(),
@@ -100,7 +96,7 @@ impl CommandParser {
     }
 
     /// Parse :set command arguments with prefix matching
-    /// 
+    ///
     /// Supports:
     /// - `:set option` (boolean on)
     /// - `:set nooption` (boolean off)
@@ -115,7 +111,7 @@ impl CommandParser {
 
         let option_str = args[0];
         let option_registry = self.get_option_registry();
-        
+
         // Check for "no" prefix (boolean off) - case insensitive
         let option_lower = option_str.to_lowercase();
         if option_lower.starts_with("no") && option_lower.len() > 2 {
@@ -143,7 +139,7 @@ impl CommandParser {
         if let Some(equals_pos) = option_str.find('=') {
             let option_part = &option_str[..equals_pos];
             let value = option_str[equals_pos + 1..].to_string();
-            
+
             match option_registry.match_command(option_part) {
                 MatchResult::Exact(name) | MatchResult::Prefix(name) => {
                     return ParsedCommand::Set {
@@ -171,7 +167,7 @@ impl CommandParser {
         // Check for space-separated value
         if args.len() > 1 {
             let value = args[1].to_string();
-            
+
             match option_registry.match_command(option_str) {
                 MatchResult::Exact(name) | MatchResult::Prefix(name) => {
                     return ParsedCommand::Set {
@@ -198,18 +194,14 @@ impl CommandParser {
 
         // Boolean on (no value specified) - use prefix matching
         match option_registry.match_command(option_str) {
-            MatchResult::Exact(name) | MatchResult::Prefix(name) => {
-                ParsedCommand::Set {
-                    option: name,
-                    value: Some("true".to_string()),
-                }
-            }
-            MatchResult::Ambiguous { prefix, matches } => {
-                ParsedCommand::Ambiguous {
-                    prefix: prefix.clone(),
-                    matches,
-                }
-            }
+            MatchResult::Exact(name) | MatchResult::Prefix(name) => ParsedCommand::Set {
+                option: name,
+                value: Some("true".to_string()),
+            },
+            MatchResult::Ambiguous { prefix, matches } => ParsedCommand::Ambiguous {
+                prefix: prefix.clone(),
+                matches,
+            },
             MatchResult::Unknown(_) => {
                 // Unknown option, but still return Set command
                 // Executor will handle the error

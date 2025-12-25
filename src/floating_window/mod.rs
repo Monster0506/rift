@@ -43,7 +43,7 @@ pub struct BorderChars {
 
 impl BorderChars {
     /// Create default border characters (Unicode box drawing)
-    #[must_use] 
+    #[must_use]
     pub fn default() -> Self {
         BorderChars {
             top_left: DEFAULT_BORDER_TOP_LEFT.to_vec(),
@@ -56,7 +56,7 @@ impl BorderChars {
     }
 
     /// Create border characters from byte slices
-    #[must_use] 
+    #[must_use]
     pub fn new(
         top_left: &[u8],
         top_right: &[u8],
@@ -76,7 +76,7 @@ impl BorderChars {
     }
 
     /// Create border characters from single-byte ASCII characters
-    #[must_use] 
+    #[must_use]
     pub fn from_ascii(
         top_left: u8,
         top_right: u8,
@@ -134,7 +134,7 @@ pub struct FloatingWindow {
 
 impl FloatingWindow {
     /// Create a new floating window
-    #[must_use] 
+    #[must_use]
     pub fn new(position: WindowPosition, width: usize, height: usize) -> Self {
         FloatingWindow {
             position,
@@ -147,21 +147,21 @@ impl FloatingWindow {
     }
 
     /// Set whether to draw a border
-    #[must_use] 
+    #[must_use]
     pub fn with_border(mut self, border: bool) -> Self {
         self.border = border;
         self
     }
 
     /// Set whether to use reverse video
-    #[must_use] 
+    #[must_use]
     pub fn with_reverse_video(mut self, reverse: bool) -> Self {
         self.reverse_video = reverse;
         self
     }
 
     /// Set custom border characters
-    #[must_use] 
+    #[must_use]
     pub fn with_border_chars(mut self, border_chars: BorderChars) -> Self {
         self.border_chars = Some(border_chars);
         self
@@ -169,7 +169,7 @@ impl FloatingWindow {
 
     /// Calculate the actual position of the window given terminal dimensions
     /// Returns (row, col) where the window should be positioned
-    #[must_use] 
+    #[must_use]
     pub fn calculate_position(&self, term_rows: u16, term_cols: u16) -> (u16, u16) {
         let width = self.width.min(term_cols as usize) as u16;
         let height = self.height.min(term_rows as usize) as u16;
@@ -204,7 +204,7 @@ impl FloatingWindow {
     fn write_cursor_position(buf: &mut Vec<u8>, row: u16, col: u16) {
         buf.push(0x1b); // ESC
         buf.push(b'[');
-        
+
         // Convert row to decimal string
         let mut row_digits = Vec::new();
         let mut r = row;
@@ -218,9 +218,9 @@ impl FloatingWindow {
             row_digits.reverse();
         }
         buf.extend_from_slice(&row_digits);
-        
+
         buf.push(b';');
-        
+
         // Convert col to decimal string
         let mut col_digits = Vec::new();
         let mut c = col;
@@ -234,19 +234,19 @@ impl FloatingWindow {
             col_digits.reverse();
         }
         buf.extend_from_slice(&col_digits);
-        
+
         buf.push(b'H');
     }
 
     /// Render the floating window with content
-    /// 
+    ///
     /// `content` is a vector of lines, where each line is a byte vector.
     /// Lines will be truncated to fit within the window width.
     /// If there are more lines than the window height, they will be truncated.
-    /// 
+    ///
     /// `border_chars_override` allows overriding border characters for this render call.
     /// If None, uses the window's configured `border_chars` or defaults.
-    /// 
+    ///
     /// This method batches all writes to minimize flicker by building the entire
     /// window in memory before writing it all at once.
     pub fn render<T: TerminalBackend>(
@@ -258,7 +258,7 @@ impl FloatingWindow {
     }
 
     /// Render the floating window with content and optional border character override
-    /// 
+    ///
     /// `border_chars_override` allows overriding border characters for this render call.
     /// If Some, uses those characters. If None, uses the window's configured `border_chars` or defaults.
     pub fn render_with_border_chars<T: TerminalBackend>(
@@ -278,7 +278,7 @@ impl FloatingWindow {
 
         // Calculate actual position
         let (start_row, start_col) = self.calculate_position(term_rows, term_cols);
-        
+
         // Clamp dimensions to terminal size
         let width = self.width.min(term_cols as usize);
         let height = self.height.min(term_rows as usize);
@@ -295,7 +295,7 @@ impl FloatingWindow {
         if self.border {
             let content_height = height.saturating_sub(2); // Subtract top and bottom borders
             let content_width = width.saturating_sub(2);
-            
+
             // Top border: +----+
             // ANSI positions are 1-indexed, so add 1 to row/col
             Self::write_cursor_position(&mut output, start_row + 1, start_col + 1);
@@ -308,23 +308,20 @@ impl FloatingWindow {
             if width > 1 {
                 output.extend_from_slice(&border_chars.top_right);
             }
-            
+
             // Content rows with side borders: |content|
             for content_row in 0..content_height {
                 let row = start_row + 1 + content_row as u16;
                 Self::write_cursor_position(&mut output, row + 1, start_col + 1);
                 output.extend_from_slice(&border_chars.vertical);
-                
+
                 // Content
                 let line = content.get(content_row);
                 if let Some(line) = line {
                     // Truncate line to fit
-                    let display_line: Vec<u8> = line.iter()
-                        .take(content_width)
-                        .copied()
-                        .collect();
+                    let display_line: Vec<u8> = line.iter().take(content_width).copied().collect();
                     output.extend_from_slice(&display_line);
-                    
+
                     // Pad with spaces if needed
                     let padding = content_width.saturating_sub(display_line.len());
                     output.extend(std::iter::repeat_n(b' ', padding));
@@ -332,13 +329,13 @@ impl FloatingWindow {
                     // Empty line - fill with spaces
                     output.extend(std::iter::repeat_n(b' ', content_width));
                 }
-                
+
                 // Right border
                 if width > 1 {
                     output.extend_from_slice(&border_chars.vertical);
                 }
             }
-            
+
             // Bottom border: +----+
             if height > 1 {
                 let bottom_row = start_row + height as u16;
@@ -357,16 +354,13 @@ impl FloatingWindow {
             for row_offset in 0..height {
                 let row = start_row + row_offset as u16;
                 Self::write_cursor_position(&mut output, row + 1, start_col + 1);
-                
+
                 let line = content.get(row_offset);
                 if let Some(line) = line {
                     // Truncate line to fit
-                    let display_line: Vec<u8> = line.iter()
-                        .take(width)
-                        .copied()
-                        .collect();
+                    let display_line: Vec<u8> = line.iter().take(width).copied().collect();
                     output.extend_from_slice(&display_line);
-                    
+
                     // Pad with spaces if needed
                     let padding = width.saturating_sub(display_line.len());
                     output.extend(std::iter::repeat_n(b' ', padding));
@@ -389,7 +383,7 @@ impl FloatingWindow {
     }
 
     /// Render a single-line floating window (useful for command line)
-    /// 
+    ///
     /// `prompt` is displayed at the start, followed by `content`
     pub fn render_single_line<T: TerminalBackend>(
         &self,
@@ -401,18 +395,18 @@ impl FloatingWindow {
         let mut line = Vec::new();
         line.extend_from_slice(prompt.as_bytes());
         line.extend_from_slice(content.as_bytes());
-        
+
         self.render(term, &[line])
     }
 
     /// Get the width of the window
-    #[must_use] 
+    #[must_use]
     pub fn width(&self) -> usize {
         self.width
     }
 
     /// Get the height of the window
-    #[must_use] 
+    #[must_use]
     pub fn height(&self) -> usize {
         self.height
     }
@@ -421,4 +415,3 @@ impl FloatingWindow {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-

@@ -3,8 +3,8 @@
 
 use crossterm::style::Color as CrosstermColor;
 
-pub mod styled;
 pub mod buffer;
+pub mod styled;
 pub mod theme;
 
 pub use theme::{Theme, ThemeVariant};
@@ -35,12 +35,16 @@ pub enum Color {
     /// 256-color palette (0-255)
     Ansi256(u8),
     /// RGB color (r, g, b) where each component is 0-255
-    Rgb { r: u8, g: u8, b: u8 },
+    Rgb {
+        r: u8,
+        g: u8,
+        b: u8,
+    },
 }
 
 impl Color {
     /// Convert to crossterm Color
-    #[must_use] 
+    #[must_use]
     pub fn to_crossterm(self) -> CrosstermColor {
         match self {
             Color::Reset => CrosstermColor::Reset,
@@ -66,7 +70,7 @@ impl Color {
     }
 
     /// Create from crossterm Color
-    #[must_use] 
+    #[must_use]
     pub fn from_crossterm(color: CrosstermColor) -> Self {
         match color {
             CrosstermColor::Reset => Color::Reset,
@@ -103,16 +107,13 @@ pub struct ColorStyle {
 
 impl ColorStyle {
     /// Create a new color style
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
-        ColorStyle {
-            fg: None,
-            bg: None,
-        }
+        ColorStyle { fg: None, bg: None }
     }
 
     /// Create with foreground color only
-    #[must_use] 
+    #[must_use]
     pub fn fg(fg: Color) -> Self {
         ColorStyle {
             fg: Some(fg),
@@ -121,7 +122,7 @@ impl ColorStyle {
     }
 
     /// Create with background color only
-    #[must_use] 
+    #[must_use]
     pub fn bg(bg: Color) -> Self {
         ColorStyle {
             fg: None,
@@ -130,7 +131,7 @@ impl ColorStyle {
     }
 
     /// Create with both foreground and background colors
-    #[must_use] 
+    #[must_use]
     pub fn new_colors(fg: Color, bg: Color) -> Self {
         ColorStyle {
             fg: Some(fg),
@@ -139,21 +140,21 @@ impl ColorStyle {
     }
 
     /// Set foreground color
-    #[must_use] 
+    #[must_use]
     pub fn with_fg(mut self, fg: Color) -> Self {
         self.fg = Some(fg);
         self
     }
 
     /// Set background color
-    #[must_use] 
+    #[must_use]
     pub fn with_bg(mut self, bg: Color) -> Self {
         self.bg = Some(bg);
         self
     }
 
     /// Check if style has any colors set
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.fg.is_none() && self.bg.is_none()
     }
@@ -169,12 +170,12 @@ impl Default for ColorStyle {
 /// Future syntax highlighters can implement this trait
 pub trait SyntaxHighlighter {
     /// Get the color style for a character at the given position
-    /// 
+    ///
     /// Returns None if no special styling should be applied
     fn get_style(&self, line: usize, column: usize) -> Option<ColorStyle>;
 
     /// Get color spans for an entire line
-    /// 
+    ///
     /// This is more efficient than calling `get_style` for each character
     /// Returns a vector of (`start_col`, `end_col`, style) tuples
     fn get_line_spans(&self, line: usize, line_length: usize) -> Vec<(usize, usize, ColorStyle)> {
@@ -184,13 +185,13 @@ pub trait SyntaxHighlighter {
 
         for col in 0..line_length {
             let style = self.get_style(line, col);
-            
+
             if style != current_style {
                 // End current span if it exists
                 if let Some(style) = current_style {
                     spans.push((current_start, col, style));
                 }
-                
+
                 // Start new span
                 current_start = col;
                 current_style = style;
@@ -209,5 +210,3 @@ pub trait SyntaxHighlighter {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-
-

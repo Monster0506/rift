@@ -1,8 +1,8 @@
 //! Tests for test utilities
 //! These tests verify that MockTerminal works correctly
 
-use crate::test_utils::MockTerminal;
 use crate::term::TerminalBackend;
+use crate::test_utils::MockTerminal;
 
 #[test]
 fn test_mock_terminal_new() {
@@ -18,7 +18,7 @@ fn test_mock_terminal_write() {
     let mut term = MockTerminal::new(10, 80);
     term.write(b"hello").unwrap();
     term.write(b" world").unwrap();
-    
+
     assert_eq!(term.writes.len(), 2);
     assert_eq!(term.writes[0], b"hello");
     assert_eq!(term.writes[1], b" world");
@@ -29,7 +29,7 @@ fn test_mock_terminal_write() {
 fn test_mock_terminal_get_written_bytes() {
     let mut term = MockTerminal::new(10, 80);
     term.write(b"test").unwrap();
-    
+
     let bytes = term.get_written_bytes();
     assert_eq!(bytes, b"test");
 }
@@ -39,7 +39,7 @@ fn test_mock_terminal_get_written_string() {
     let mut term = MockTerminal::new(10, 80);
     term.write(b"hello").unwrap();
     term.write(b" world").unwrap();
-    
+
     let written = term.get_written_string();
     assert_eq!(written, "hello world");
 }
@@ -49,7 +49,7 @@ fn test_mock_terminal_move_cursor() {
     let mut term = MockTerminal::new(10, 80);
     term.move_cursor(5, 10).unwrap();
     term.move_cursor(3, 20).unwrap();
-    
+
     assert_eq!(term.cursor_moves.len(), 2);
     assert_eq!(term.cursor_moves[0], (5, 10));
     assert_eq!(term.cursor_moves[1], (3, 20));
@@ -60,7 +60,7 @@ fn test_mock_terminal_clear_screen() {
     let mut term = MockTerminal::new(10, 80);
     term.clear_screen().unwrap();
     term.clear_screen().unwrap();
-    
+
     assert_eq!(term.clear_screen_calls, 2);
 }
 
@@ -70,13 +70,13 @@ fn test_mock_terminal_clear() {
     term.write(b"test").unwrap();
     term.move_cursor(1, 1).unwrap();
     term.clear_screen().unwrap();
-    
+
     assert_eq!(term.writes.len(), 1);
     assert_eq!(term.cursor_moves.len(), 1);
     assert_eq!(term.clear_screen_calls, 1);
-    
+
     term.clear();
-    
+
     assert_eq!(term.writes.len(), 0);
     assert_eq!(term.cursor_moves.len(), 0);
     assert_eq!(term.clear_screen_calls, 0);
@@ -118,16 +118,15 @@ fn test_mock_terminal_cursor_operations() {
 #[test]
 fn test_mock_terminal_multiple_operations() {
     let mut term = MockTerminal::new(10, 80);
-    
+
     term.write(b"line1").unwrap();
     term.move_cursor(1, 0).unwrap();
     term.write(b"line2").unwrap();
     term.clear_screen().unwrap();
     term.move_cursor(0, 0).unwrap();
-    
+
     assert_eq!(term.writes.len(), 2);
     assert_eq!(term.cursor_moves.len(), 2);
     assert_eq!(term.clear_screen_calls, 1);
     assert_eq!(term.get_written_string(), "line1line2");
 }
-

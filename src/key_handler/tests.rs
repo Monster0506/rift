@@ -1,7 +1,7 @@
 //! Tests for key handler
 
-use crate::key_handler::{KeyHandler, KeyAction};
 use crate::key::Key;
+use crate::key_handler::{KeyAction, KeyHandler};
 use crate::mode::Mode;
 
 #[test]
@@ -56,7 +56,7 @@ fn test_process_normal_mode_arrow_keys() {
         Key::ArrowLeft,
         Key::ArrowRight,
     ];
-    
+
     for key in keys {
         let action = KeyHandler::process_key(key, Mode::Normal);
         assert_eq!(action, KeyAction::Continue);
@@ -66,13 +66,8 @@ fn test_process_normal_mode_arrow_keys() {
 #[test]
 fn test_process_insert_mode_special_keys() {
     // Most special keys should continue in insert mode
-    let keys = vec![
-        Key::Backspace,
-        Key::Delete,
-        Key::Enter,
-        Key::Tab,
-    ];
-    
+    let keys = vec![Key::Backspace, Key::Delete, Key::Enter, Key::Tab];
+
     for key in keys {
         let action = KeyHandler::process_key(key, Mode::Insert);
         assert_eq!(action, KeyAction::Continue);
@@ -84,7 +79,7 @@ fn test_process_normal_mode_ctrl_keys() {
     // Ctrl+] should skip, other Ctrl keys should continue
     let action = KeyHandler::process_key(Key::Ctrl(b']'), Mode::Normal);
     assert_eq!(action, KeyAction::SkipAndRender);
-    
+
     let action = KeyHandler::process_key(Key::Ctrl(b'c'), Mode::Normal);
     assert_eq!(action, KeyAction::Continue);
 }
@@ -102,4 +97,3 @@ fn test_process_command_mode_regular_key() {
     let action = KeyHandler::process_key(Key::Char(b'a'), Mode::Command);
     assert_eq!(action, KeyAction::Continue);
 }
-

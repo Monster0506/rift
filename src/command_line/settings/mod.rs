@@ -1,15 +1,14 @@
 //! Settings registry
 //! Configuration-driven registry for :set command options
 
+pub mod definitions;
 pub mod descriptor;
 pub mod registry;
-pub mod definitions;
 
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
 
-pub use descriptor::{SettingDescriptor, SettingType, SettingValue, SettingError, SettingSetter};
-pub use registry::SettingsRegistry;
 pub use definitions::create_settings_registry;
-
+pub use descriptor::{SettingDescriptor, SettingError, SettingSetter, SettingType, SettingValue};
+pub use registry::SettingsRegistry;

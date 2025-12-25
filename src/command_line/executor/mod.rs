@@ -21,9 +21,13 @@ pub struct CommandExecutor;
 
 impl CommandExecutor {
     /// Execute a parsed command
-    /// 
+    ///
     /// Modifies state as needed and returns the execution result
-    pub fn execute(command: ParsedCommand, state: &mut State, settings_registry: &SettingsRegistry) -> ExecutionResult {
+    pub fn execute(
+        command: ParsedCommand,
+        state: &mut State,
+        settings_registry: &SettingsRegistry,
+    ) -> ExecutionResult {
         match command {
             ParsedCommand::Quit => ExecutionResult::Quit,
             ParsedCommand::Set { option, value } => {

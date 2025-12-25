@@ -10,8 +10,8 @@
 //! - Executor never inspects raw input or terminal state.
 //! - Commands are applied strictly in sequence.
 
-use crate::command::Command;
 use crate::buffer::GapBuffer;
+use crate::command::Command;
 
 /// Calculate the current visual column position on the current line
 /// Accounts for tab width when calculating visual position
@@ -21,7 +21,7 @@ fn calculate_current_column(buf: &GapBuffer, tab_width: usize) -> usize {
     let mut current_line = 0;
     let mut line_start = 0;
     let mut col = 0;
-    
+
     // Find the start of the current line
     for (i, &byte) in before_gap.iter().enumerate() {
         if byte == b'\n' {
@@ -42,7 +42,7 @@ fn calculate_current_column(buf: &GapBuffer, tab_width: usize) -> usize {
             col = 0;
         }
     }
-    
+
     // If we're at the gap position on the current line
     if current_line == line {
         let line_bytes = &before_gap[line_start..];
@@ -55,7 +55,7 @@ fn calculate_current_column(buf: &GapBuffer, tab_width: usize) -> usize {
         }
         return col;
     }
-    
+
     // Check after_gap - need to include before_gap bytes from line_start
     let after_gap = buf.get_after_gap();
     // First, calculate column for before_gap portion of this line
@@ -67,7 +67,7 @@ fn calculate_current_column(buf: &GapBuffer, tab_width: usize) -> usize {
             col += 1;
         }
     }
-    
+
     // Now process after_gap bytes
     for (i, &byte) in after_gap.iter().enumerate() {
         if byte == b'\n' {
@@ -87,7 +87,7 @@ fn calculate_current_column(buf: &GapBuffer, tab_width: usize) -> usize {
             col = 0;
         }
     }
-    
+
     // If we're at the end of the current line (after gap, no newline found)
     if current_line == line {
         // Include all remaining after_gap bytes
@@ -100,7 +100,7 @@ fn calculate_current_column(buf: &GapBuffer, tab_width: usize) -> usize {
         }
         return col;
     }
-    
+
     0
 }
 
@@ -183,4 +183,3 @@ pub fn execute_command(cmd: Command, buf: &mut GapBuffer, expand_tabs: bool, tab
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-

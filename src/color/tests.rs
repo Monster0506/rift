@@ -2,7 +2,6 @@
 
 use super::{Color, ColorStyle};
 
-
 #[test]
 fn test_color_basic() {
     let red = Color::Red;
@@ -13,7 +12,11 @@ fn test_color_basic() {
 
 #[test]
 fn test_color_rgb() {
-    let rgb = Color::Rgb { r: 255, g: 128, b: 64 };
+    let rgb = Color::Rgb {
+        r: 255,
+        g: 128,
+        b: 64,
+    };
     let crossterm_color = rgb.to_crossterm();
     let back = Color::from_crossterm(crossterm_color);
     assert_eq!(rgb, back);
@@ -45,4 +48,3 @@ fn test_color_style() {
     assert_eq!(style.fg, Some(Color::Red));
     assert_eq!(style.bg, Some(Color::Blue));
 }
-

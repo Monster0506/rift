@@ -1,11 +1,11 @@
 //! Tests for status bar
 
-use crate::status::StatusBar;
-use crate::mode::Mode;
 use crate::key::Key;
-use crate::viewport::Viewport;
+use crate::mode::Mode;
 use crate::state::State;
+use crate::status::StatusBar;
 use crate::test_utils::MockTerminal;
+use crate::viewport::Viewport;
 
 #[test]
 fn test_format_mode() {
@@ -16,16 +16,16 @@ fn test_format_mode() {
 
 #[test]
 fn test_status_bar_render_command_mode() {
+    use crate::state::State;
     use crate::test_utils::MockTerminal;
     use crate::viewport::Viewport;
-    use crate::state::State;
-    
+
     let mut term = MockTerminal::new(24, 80);
     let viewport = Viewport::new(24, 80);
     let state = State::new();
-    
+
     StatusBar::render(&mut term, &viewport, Mode::Command, None, &state).unwrap();
-    
+
     let written = term.get_written_string();
     // Command mode should show colon prompt
     assert!(written.contains(":"));
@@ -68,9 +68,9 @@ fn test_status_bar_render_normal_mode() {
     let mut term = MockTerminal::new(10, 80);
     let viewport = Viewport::new(10, 80);
     let state = State::new();
-    
+
     StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
-    
+
     let written = term.get_written_string();
     assert!(written.contains("NORMAL"));
     assert!(!written.contains("INSERT"));
@@ -81,9 +81,9 @@ fn test_status_bar_render_insert_mode() {
     let mut term = MockTerminal::new(10, 80);
     let viewport = Viewport::new(10, 80);
     let state = State::new();
-    
+
     StatusBar::render(&mut term, &viewport, Mode::Insert, None, &state).unwrap();
-    
+
     let written = term.get_written_string();
     assert!(written.contains("INSERT"));
     assert!(!written.contains("NORMAL"));
@@ -94,9 +94,16 @@ fn test_status_bar_render_pending_key() {
     let mut term = MockTerminal::new(10, 80);
     let viewport = Viewport::new(10, 80);
     let state = State::new();
-    
-    StatusBar::render(&mut term, &viewport, Mode::Normal, Some(Key::Char(b'd')), &state).unwrap();
-    
+
+    StatusBar::render(
+        &mut term,
+        &viewport,
+        Mode::Normal,
+        Some(Key::Char(b'd')),
+        &state,
+    )
+    .unwrap();
+
     let written = term.get_written_string();
     assert!(written.contains("[d]"));
 }
@@ -110,9 +117,9 @@ fn test_status_bar_render_debug_mode() {
     state.update_keypress(Key::Char(b'a'));
     state.update_cursor(5, 10);
     state.update_buffer_stats(10, 100);
-    
+
     StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
-    
+
     let written = term.get_written_string();
     assert!(written.contains("Last: a"));
     assert!(written.contains("Pos: 6:11")); // 1-indexed
@@ -127,9 +134,16 @@ fn test_status_bar_render_debug_with_pending() {
     let mut state = State::new();
     state.toggle_debug();
     state.update_keypress(Key::ArrowUp);
-    
-    StatusBar::render(&mut term, &viewport, Mode::Normal, Some(Key::Char(b'd')), &state).unwrap();
-    
+
+    StatusBar::render(
+        &mut term,
+        &viewport,
+        Mode::Normal,
+        Some(Key::Char(b'd')),
+        &state,
+    )
+    .unwrap();
+
     let written = term.get_written_string();
     assert!(written.contains("NORMAL"));
     assert!(written.contains("[d]"));
@@ -141,9 +155,9 @@ fn test_status_bar_render_fills_line() {
     let mut term = MockTerminal::new(10, 80);
     let viewport = Viewport::new(10, 80);
     let state = State::new();
-    
+
     StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
-    
+
     // Status bar should fill the entire line width
     let total_written: usize = term.writes.iter().map(|w| w.len()).sum();
     // Should write at least the viewport width
@@ -155,9 +169,9 @@ fn test_status_bar_render_reverse_video() {
     let mut term = MockTerminal::new(10, 80);
     let viewport = Viewport::new(10, 80);
     let state = State::new();
-    
+
     StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
-    
+
     let written = term.get_written_bytes();
     // Should contain reverse video escape sequence
     assert!(written.contains(&b'\x1b'));
@@ -175,9 +189,9 @@ fn test_status_bar_debug_truncation() {
     state.update_keypress(Key::Char(b'a'));
     state.update_cursor(100, 200);
     state.update_buffer_stats(1000, 50000);
-    
+
     StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
-    
+
     // Debug info should be truncated if too long
     let written = term.get_written_string();
     // Should still contain mode
@@ -189,15 +203,10 @@ fn test_status_bar_various_keys() {
     let mut term = MockTerminal::new(10, 80);
     let viewport = Viewport::new(10, 80);
     let state = State::new();
-    
+
     // Test various pending keys
-    let keys = vec![
-        Key::Char(b'a'),
-        Key::ArrowUp,
-        Key::Ctrl(b'c'),
-        Key::Escape,
-    ];
-    
+    let keys = vec![Key::Char(b'a'), Key::ArrowUp, Key::Ctrl(b'c'), Key::Escape];
+
     for key in keys {
         term.writes.clear();
         StatusBar::render(&mut term, &viewport, Mode::Normal, Some(key), &state).unwrap();

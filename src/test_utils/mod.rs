@@ -41,7 +41,6 @@
 //! - Nested test modules: `use super::super::test_utils::MockTerminal;` or `use crate::test_utils::MockTerminal;`
 //! - Integration tests: `use rift::test_utils::MockTerminal;` (if exposed)
 
-
 /// ## test_utils/ Invariants
 ///
 /// - Test utilities introduce no production-only behavior.
@@ -49,22 +48,22 @@
 /// - Buffer and executor logic are testable without a terminal.
 /// - Boundary and edge cases are explicitly tested.
 use crate::key::Key;
-use crate::term::{TerminalBackend, Size};
+use crate::term::{Size, TerminalBackend};
 
 /// Mock terminal backend for testing
-/// 
+///
 /// Records all terminal operations for verification in tests.
 /// Implements `TerminalBackend` trait and tracks:
 /// - All write operations
 /// - Cursor movements
 /// - Clear screen calls
-/// 
+///
 /// # Example
-/// 
+///
 /// ```rust,no_run
 /// use crate::test_utils::MockTerminal;
 /// use crate::term::TerminalBackend;
-/// 
+///
 /// let mut term = MockTerminal::new(24, 80);
 /// term.write(b"test").unwrap();
 /// assert_eq!(term.get_written_string(), "test");
@@ -154,4 +153,3 @@ impl TerminalBackend for MockTerminal {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-

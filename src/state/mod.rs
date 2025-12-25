@@ -1,7 +1,9 @@
 //! Editor state management
 //! Centralized state for editor settings, debug mode, and runtime information
 
-
+use crate::color::{Color, Theme};
+use crate::command::Command;
+use crate::floating_window::BorderChars;
 /// ## state/ Invariants
 ///
 /// - Editor mode is explicit and globally consistent.
@@ -10,9 +12,6 @@
 /// - Editor state is never partially updated.
 /// - State changes are observable by the renderer but never influenced by it.
 use crate::key::Key;
-use crate::command::Command;
-use crate::floating_window::BorderChars;
-use crate::color::{Color, Theme};
 
 /// Command line window settings
 #[derive(Debug, Clone)]
@@ -29,10 +28,9 @@ pub struct CommandLineWindowSettings {
     pub reverse_video: bool,
 }
 
-impl CommandLineWindowSettings {
+impl Default for CommandLineWindowSettings {
     /// Create default command line window settings
-    #[must_use] 
-    pub fn default() -> Self {
+    fn default() -> Self {
         CommandLineWindowSettings {
             width_ratio: 0.6, // 60% of terminal width
             min_width: 40,
@@ -42,6 +40,7 @@ impl CommandLineWindowSettings {
         }
     }
 }
+impl CommandLineWindowSettings {}
 
 /// User settings that persist across sessions
 /// These are preferences that should be saved and loaded from a config file
@@ -65,11 +64,11 @@ pub struct UserSettings {
 
 impl UserSettings {
     /// Create default user settings
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         UserSettings {
-            expand_tabs: true, // Default to expanding tabs to spaces
-            tab_width: 4, // Default tab width
+            expand_tabs: true,          // Default to expanding tabs to spaces
+            tab_width: 4,               // Default tab width
             default_border_chars: None, // None means use FloatingWindow defaults
             command_line_window: CommandLineWindowSettings::default(),
             editor_bg: None,
@@ -85,7 +84,7 @@ impl UserSettings {
     }
 
     /// Get the current theme name
-    #[must_use] 
+    #[must_use]
     pub fn get_theme_name(&self) -> Option<&str> {
         self.theme.as_deref()
     }
@@ -123,7 +122,7 @@ pub struct State {
 
 impl State {
     /// Create a new state instance with default values
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         State {
             settings: UserSettings::new(),
@@ -140,7 +139,7 @@ impl State {
     }
 
     /// Create a new state instance with custom user settings
-    #[must_use] 
+    #[must_use]
     pub fn with_settings(settings: UserSettings) -> Self {
         State {
             settings,
@@ -227,4 +226,3 @@ impl Default for State {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-

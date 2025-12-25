@@ -24,4 +24,3 @@ pub enum Key {
     Escape,
     Tab,
 }
-

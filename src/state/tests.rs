@@ -1,7 +1,7 @@
 //! Tests for state management
 
-use crate::state::{State, UserSettings};
 use crate::key::Key;
+use crate::state::{State, UserSettings};
 
 #[test]
 fn test_state_new() {
@@ -27,15 +27,15 @@ fn test_state_default() {
 fn test_toggle_debug() {
     let mut state = State::new();
     assert_eq!(state.debug_mode, false);
-    
+
     // Toggle on
     state.toggle_debug();
     assert_eq!(state.debug_mode, true);
-    
+
     // Toggle off
     state.toggle_debug();
     assert_eq!(state.debug_mode, false);
-    
+
     // Toggle on again
     state.toggle_debug();
     assert_eq!(state.debug_mode, true);
@@ -45,16 +45,16 @@ fn test_toggle_debug() {
 fn test_update_keypress() {
     let mut state = State::new();
     assert_eq!(state.last_keypress, None);
-    
+
     state.update_keypress(Key::Char(b'a'));
     assert_eq!(state.last_keypress, Some(Key::Char(b'a')));
-    
+
     state.update_keypress(Key::Char(b'b'));
     assert_eq!(state.last_keypress, Some(Key::Char(b'b')));
-    
+
     state.update_keypress(Key::ArrowUp);
     assert_eq!(state.last_keypress, Some(Key::ArrowUp));
-    
+
     state.update_keypress(Key::Ctrl(b'c'));
     assert_eq!(state.last_keypress, Some(Key::Ctrl(b'c')));
 }
@@ -63,13 +63,13 @@ fn test_update_keypress() {
 fn test_update_cursor() {
     let mut state = State::new();
     assert_eq!(state.cursor_pos, (0, 0));
-    
+
     state.update_cursor(5, 10);
     assert_eq!(state.cursor_pos, (5, 10));
-    
+
     state.update_cursor(0, 0);
     assert_eq!(state.cursor_pos, (0, 0));
-    
+
     state.update_cursor(100, 200);
     assert_eq!(state.cursor_pos, (100, 200));
 }
@@ -79,15 +79,15 @@ fn test_update_buffer_stats() {
     let mut state = State::new();
     assert_eq!(state.total_lines, 1);
     assert_eq!(state.buffer_size, 0);
-    
+
     state.update_buffer_stats(10, 500);
     assert_eq!(state.total_lines, 10);
     assert_eq!(state.buffer_size, 500);
-    
+
     state.update_buffer_stats(1, 0);
     assert_eq!(state.total_lines, 1);
     assert_eq!(state.buffer_size, 0);
-    
+
     state.update_buffer_stats(1000, 50000);
     assert_eq!(state.total_lines, 1000);
     assert_eq!(state.buffer_size, 50000);
@@ -96,7 +96,7 @@ fn test_update_buffer_stats() {
 #[test]
 fn test_state_operations_together() {
     let mut state = State::new();
-    
+
     state.update_keypress(Key::Char(b'h'));
     state.update_cursor(2, 5);
     state.update_buffer_stats(3, 100);
@@ -105,14 +105,14 @@ fn test_state_operations_together() {
     assert_eq!(state.cursor_pos, (2, 5));
     assert_eq!(state.total_lines, 3);
     assert_eq!(state.buffer_size, 100);
-    
+
     state.toggle_debug();
     assert_eq!(state.debug_mode, true);
-    
+
     state.update_keypress(Key::ArrowDown);
     state.update_cursor(10, 20);
     state.update_buffer_stats(15, 200);
-    
+
     assert_eq!(state.debug_mode, true);
     assert_eq!(state.last_keypress, Some(Key::ArrowDown));
     assert_eq!(state.cursor_pos, (10, 20));
@@ -123,7 +123,7 @@ fn test_state_operations_together() {
 #[test]
 fn test_multiple_keypress_updates() {
     let mut state = State::new();
-    
+
     // Simulate a sequence of keypresses
     let keys = vec![
         Key::Char(b'i'),
@@ -134,11 +134,11 @@ fn test_multiple_keypress_updates() {
         Key::Char(b't'),
         Key::Escape,
     ];
-    
+
     for key in keys {
         state.update_keypress(key);
     }
-    
+
     // Last keypress should be Escape
     assert_eq!(state.last_keypress, Some(Key::Escape));
 }
@@ -146,16 +146,16 @@ fn test_multiple_keypress_updates() {
 #[test]
 fn test_cursor_position_updates() {
     let mut state = State::new();
-    
+
     state.update_cursor(0, 0);
     assert_eq!(state.cursor_pos, (0, 0));
-    
+
     state.update_cursor(0, 1);
     assert_eq!(state.cursor_pos, (0, 1));
-    
+
     state.update_cursor(0, 2);
     assert_eq!(state.cursor_pos, (0, 2));
-    
+
     state.update_cursor(1, 0);
     assert_eq!(state.cursor_pos, (1, 0));
 }
@@ -163,20 +163,20 @@ fn test_cursor_position_updates() {
 #[test]
 fn test_buffer_stats_updates() {
     let mut state = State::new();
-    
+
     // Simulate buffer growth
     state.update_buffer_stats(1, 0);
     assert_eq!(state.total_lines, 1);
     assert_eq!(state.buffer_size, 0);
-    
+
     state.update_buffer_stats(1, 5);
     assert_eq!(state.total_lines, 1);
     assert_eq!(state.buffer_size, 5);
-    
+
     state.update_buffer_stats(2, 10);
     assert_eq!(state.total_lines, 2);
     assert_eq!(state.buffer_size, 10);
-    
+
     state.update_buffer_stats(3, 15);
     assert_eq!(state.total_lines, 3);
     assert_eq!(state.buffer_size, 15);
@@ -200,7 +200,7 @@ fn test_state_with_custom_settings() {
     let mut custom_settings = UserSettings::new();
     custom_settings.expand_tabs = false;
     custom_settings.tab_width = 4;
-    
+
     let state = State::with_settings(custom_settings);
     assert_eq!(state.settings.expand_tabs, false);
     assert_eq!(state.settings.tab_width, 4);
@@ -211,10 +211,10 @@ fn test_state_with_custom_settings() {
 fn test_set_expand_tabs() {
     let mut state = State::new();
     assert_eq!(state.settings.expand_tabs, true);
-    
+
     state.set_expand_tabs(false);
     assert_eq!(state.settings.expand_tabs, false);
-    
+
     state.set_expand_tabs(true);
     assert_eq!(state.settings.expand_tabs, true);
 }
@@ -222,10 +222,10 @@ fn test_set_expand_tabs() {
 #[test]
 fn test_set_default_border_chars() {
     use crate::floating_window::BorderChars;
-    
+
     let mut state = State::new();
     assert_eq!(state.settings.default_border_chars, None);
-    
+
     let border_chars = BorderChars {
         top_left: vec![b'+'],
         top_right: vec![b'+'],
@@ -234,11 +234,10 @@ fn test_set_default_border_chars() {
         horizontal: vec![b'-'],
         vertical: vec![b'|'],
     };
-    
+
     state.set_default_border_chars(Some(border_chars));
     assert!(state.settings.default_border_chars.is_some());
-    
+
     state.set_default_border_chars(None);
     assert_eq!(state.settings.default_border_chars, None);
 }
-

@@ -69,13 +69,13 @@ impl std::fmt::Display for SettingError {
 }
 
 /// Setter function signature
-/// 
+///
 /// Function pointers (not trait objects) for static dispatch.
 /// Receives parsed and validated `SettingValue`, never raw strings.
 pub type SettingSetter = fn(&mut UserSettings, SettingValue) -> Result<(), SettingError>;
 
 /// Setting descriptor
-/// 
+///
 /// Minimal configuration: name, aliases, type, and setter function.
 /// Name encodes path (e.g., "`command_line_window.width_ratio`" for nested settings).
 /// Setter handles mutation - no separate path information needed.
@@ -90,4 +90,3 @@ pub struct SettingDescriptor {
     /// Setter function pointer
     pub set: SettingSetter,
 }
-

@@ -1,6 +1,5 @@
 //! Gap buffer implementation for efficient text editing
 
-
 /// ## buffer/ Invariants
 ///
 /// - The buffer owns both text storage and cursor position.
@@ -52,19 +51,19 @@ impl GapBuffer {
     }
 
     /// Get the current cursor position (same as `gap_start`)
-    #[must_use] 
+    #[must_use]
     pub fn cursor(&self) -> usize {
         self.gap_start
     }
 
     /// Get the total length of text (excluding gap)
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.gap_start + (self.capacity - self.gap_end)
     }
 
     /// Check if buffer is empty
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -132,11 +131,7 @@ impl GapBuffer {
 
         // Copy all bytes at once
         unsafe {
-            std::ptr::copy_nonoverlapping(
-                bytes.as_ptr(),
-                self.buffer.add(self.gap_start),
-                needed,
-            );
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), self.buffer.add(self.gap_start), needed);
         }
         self.gap_start += needed;
 
@@ -172,13 +167,13 @@ impl GapBuffer {
     }
 
     /// Get the text before the gap as a string
-    #[must_use] 
+    #[must_use]
     pub fn get_before_gap(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.buffer, self.gap_start) }
     }
 
     /// Get the text after the gap as a string
-    #[must_use] 
+    #[must_use]
     pub fn get_after_gap(&self) -> &[u8] {
         unsafe {
             std::slice::from_raw_parts(self.buffer.add(self.gap_end), self.capacity - self.gap_end)
@@ -186,7 +181,7 @@ impl GapBuffer {
     }
 
     /// Get the entire text as a string (reconstructs by moving gap to end)
-    #[must_use] 
+    #[must_use]
     pub fn to_string(&self) -> String {
         let before = self.get_before_gap();
         let after = self.get_after_gap();
@@ -197,14 +192,14 @@ impl GapBuffer {
     }
 
     /// Get the line number at the cursor position
-    #[must_use] 
+    #[must_use]
     pub fn get_line(&self) -> usize {
         let before = self.get_before_gap();
         before.iter().filter(|&&b| b == b'\n').count()
     }
 
     /// Get the total number of lines
-    #[must_use] 
+    #[must_use]
     pub fn get_total_lines(&self) -> usize {
         let before = self.get_before_gap();
         let after = self.get_after_gap();
@@ -364,8 +359,8 @@ impl GapBuffer {
 
         // Check before gap
         if search_pos < before.len() {
-            for i in search_pos..before.len() {
-                if before[i] == b'\n' {
+            for (i, bf) in before.iter().enumerate().skip(search_pos) {
+                if *bf == b'\n' {
                     return i;
                 }
             }
@@ -376,8 +371,8 @@ impl GapBuffer {
         let _after_start = self.gap_end;
         let after_offset = search_pos - before.len();
         if after_offset < after.len() {
-            for i in after_offset..after.len() {
-                if after[i] == b'\n' {
+            for (i, af) in after.iter().enumerate().skip(after_offset) {
+                if *af == b'\n' {
                     return before.len() + i;
                 }
             }
@@ -424,8 +419,8 @@ impl GapBuffer {
     /// Grow the buffer when gap is exhausted
     fn grow(&mut self) -> Result<(), String> {
         let new_capacity = self.capacity * 2;
-        let new_layout = Layout::from_size_align(new_capacity, 1)
-            .map_err(|e| format!("Invalid layout: {e}"))?;
+        let new_layout =
+            Layout::from_size_align(new_capacity, 1).map_err(|e| format!("Invalid layout: {e}"))?;
 
         let new_buffer = unsafe { alloc(new_layout) };
         if new_buffer.is_null() {

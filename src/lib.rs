@@ -1,21 +1,20 @@
 //! Rift - A terminal-based text editor
 
-pub mod key;
-pub mod mode;
 pub mod buffer;
+pub mod color;
 pub mod command;
-pub mod executor;
-pub mod term;
-pub mod viewport;
-pub mod render;
+pub mod command_line;
 pub mod editor;
+pub mod executor;
+pub mod floating_window;
+pub mod key;
+pub mod key_handler;
+pub mod mode;
+pub mod render;
 pub mod state;
 pub mod status;
-pub mod command_line;
-pub mod key_handler;
-pub mod floating_window;
-pub mod color;
+pub mod term;
+pub mod viewport;
 
 #[cfg(test)]
 pub mod test_utils;
-

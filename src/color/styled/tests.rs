@@ -55,9 +55,7 @@ fn test_styled_line_per_span() {
 #[test]
 fn test_styled_line_conversion() {
     let text = b"hello".to_vec();
-    let spans = vec![
-        ColorSpan::new(0, 5, ColorStyle::fg(Color::Red)),
-    ];
+    let spans = vec![ColorSpan::new(0, 5, ColorStyle::fg(Color::Red))];
     let line = StyledLine::per_span(text, spans);
     let per_char = line.to_per_char();
     assert_eq!(per_char.len(), 5);

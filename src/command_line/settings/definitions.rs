@@ -1,10 +1,12 @@
 //! Settings definitions
 //! Declarative registry of all :set command options
 
-use crate::command_line::settings::descriptor::{SettingDescriptor, SettingType, SettingValue, SettingError};
+use crate::command_line::settings::descriptor::{
+    SettingDescriptor, SettingError, SettingType, SettingValue,
+};
 use crate::command_line::settings::registry::SettingsRegistry;
-use crate::state::UserSettings;
 use crate::floating_window::BorderChars;
+use crate::state::UserSettings;
 
 // Helper functions to create border presets
 fn create_unicode_border() -> BorderChars {
@@ -37,7 +39,9 @@ fn set_expand_tabs(settings: &mut UserSettings, value: SettingValue) -> Result<(
             settings.expand_tabs = b;
             Ok(())
         }
-        _ => Err(SettingError::ValidationError("Expected boolean".to_string())),
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
     }
 }
 
@@ -45,12 +49,16 @@ fn set_tab_width(settings: &mut UserSettings, value: SettingValue) -> Result<(),
     match value {
         SettingValue::Integer(n) => {
             if n == 0 {
-                return Err(SettingError::ValidationError("tabwidth must be greater than 0".to_string()));
+                return Err(SettingError::ValidationError(
+                    "tabwidth must be greater than 0".to_string(),
+                ));
             }
             settings.tab_width = n;
             Ok(())
         }
-        _ => Err(SettingError::ValidationError("Expected integer".to_string())),
+        _ => Err(SettingError::ValidationError(
+            "Expected integer".to_string(),
+        )),
     }
 }
 
@@ -61,7 +69,11 @@ fn set_border_style(settings: &mut UserSettings, value: SettingValue) -> Result<
                 "unicode" => Some(create_unicode_border()),
                 "ascii" => Some(create_ascii_border()),
                 "none" => None,
-                _ => return Err(SettingError::ValidationError(format!("Unknown border style: {style}"))),
+                _ => {
+                    return Err(SettingError::ValidationError(format!(
+                        "Unknown border style: {style}"
+                    )))
+                }
             };
             Ok(())
         }
@@ -69,7 +81,10 @@ fn set_border_style(settings: &mut UserSettings, value: SettingValue) -> Result<
     }
 }
 
-fn set_cmd_window_width_ratio(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_cmd_window_width_ratio(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
     match value {
         SettingValue::Float(f) => {
             settings.command_line_window.width_ratio = f;
@@ -79,46 +94,68 @@ fn set_cmd_window_width_ratio(settings: &mut UserSettings, value: SettingValue) 
     }
 }
 
-fn set_cmd_window_min_width(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_cmd_window_min_width(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
     match value {
         SettingValue::Integer(n) => {
             settings.command_line_window.min_width = n;
             Ok(())
         }
-        _ => Err(SettingError::ValidationError("Expected integer".to_string())),
+        _ => Err(SettingError::ValidationError(
+            "Expected integer".to_string(),
+        )),
     }
 }
 
-fn set_cmd_window_height(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_cmd_window_height(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
     match value {
         SettingValue::Integer(n) => {
             if n == 0 {
-                return Err(SettingError::ValidationError("height must be greater than 0".to_string()));
+                return Err(SettingError::ValidationError(
+                    "height must be greater than 0".to_string(),
+                ));
             }
             settings.command_line_window.height = n;
             Ok(())
         }
-        _ => Err(SettingError::ValidationError("Expected integer".to_string())),
+        _ => Err(SettingError::ValidationError(
+            "Expected integer".to_string(),
+        )),
     }
 }
 
-fn set_cmd_window_border(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_cmd_window_border(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
     match value {
         SettingValue::Bool(b) => {
             settings.command_line_window.border = b;
             Ok(())
         }
-        _ => Err(SettingError::ValidationError("Expected boolean".to_string())),
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
     }
 }
 
-fn set_cmd_window_reverse_video(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_cmd_window_reverse_video(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
     match value {
         SettingValue::Bool(b) => {
             settings.command_line_window.reverse_video = b;
             Ok(())
         }
-        _ => Err(SettingError::ValidationError("Expected boolean".to_string())),
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
     }
 }
 
@@ -159,14 +196,16 @@ fn set_theme(settings: &mut UserSettings, value: SettingValue) -> Result<(), Set
                 theme.apply_to_settings(settings);
                 Ok(())
             } else {
-                Err(SettingError::ValidationError(
-                    format!("Unknown theme: {}. Available themes: {}", 
-                        theme_name,
-                        crate::color::Theme::available_themes().join(", "))
-                ))
+                Err(SettingError::ValidationError(format!(
+                    "Unknown theme: {}. Available themes: {}",
+                    theme_name,
+                    crate::color::Theme::available_themes().join(", ")
+                )))
             }
         }
-        _ => Err(SettingError::ValidationError("Expected theme name".to_string())),
+        _ => Err(SettingError::ValidationError(
+            "Expected theme name".to_string(),
+        )),
     }
 }
 
@@ -181,31 +220,45 @@ pub const SETTINGS: &[SettingDescriptor] = &[
     SettingDescriptor {
         name: "tabwidth",
         aliases: &["tw"],
-        ty: SettingType::Integer { min: Some(1), max: None },
+        ty: SettingType::Integer {
+            min: Some(1),
+            max: None,
+        },
         set: set_tab_width,
     },
     SettingDescriptor {
         name: "borderstyle",
         aliases: &["bs"],
-        ty: SettingType::Enum { variants: &["unicode", "ascii", "none"] },
+        ty: SettingType::Enum {
+            variants: &["unicode", "ascii", "none"],
+        },
         set: set_border_style,
     },
     SettingDescriptor {
         name: "command_line.width_ratio",
         aliases: &["cmdwidth"],
-        ty: SettingType::Float { min: Some(0.0), max: Some(1.0) },
+        ty: SettingType::Float {
+            min: Some(0.0),
+            max: Some(1.0),
+        },
         set: set_cmd_window_width_ratio,
     },
     SettingDescriptor {
         name: "command_line.min_width",
         aliases: &["cmdminwidth"],
-        ty: SettingType::Integer { min: Some(1), max: None },
+        ty: SettingType::Integer {
+            min: Some(1),
+            max: None,
+        },
         set: set_cmd_window_min_width,
     },
     SettingDescriptor {
         name: "command_line.height",
         aliases: &["cmdheight"],
-        ty: SettingType::Integer { min: Some(1), max: None },
+        ty: SettingType::Integer {
+            min: Some(1),
+            max: None,
+        },
         set: set_cmd_window_height,
     },
     SettingDescriptor {
@@ -235,16 +288,15 @@ pub const SETTINGS: &[SettingDescriptor] = &[
     SettingDescriptor {
         name: "theme",
         aliases: &["colorscheme", "colors"],
-        ty: SettingType::Enum { 
-            variants: &["light", "dark", "gruvbox", "nordic", "nord"] 
+        ty: SettingType::Enum {
+            variants: &["light", "dark", "gruvbox", "nordic", "nord"],
         },
         set: set_theme,
     },
 ];
 
 /// Create the settings registry
-#[must_use] 
+#[must_use]
 pub fn create_settings_registry() -> SettingsRegistry {
     SettingsRegistry::new(SETTINGS)
 }
-

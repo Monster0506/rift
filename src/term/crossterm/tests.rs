@@ -1,8 +1,8 @@
 //! Tests for crossterm backend
 
-use crate::term::TerminalBackend;
-use crate::term::crossterm::CrosstermBackend;
 use crate::key::Key;
+use crate::term::crossterm::CrosstermBackend;
+use crate::term::TerminalBackend;
 
 #[test]
 fn test_crossterm_backend_new() {
@@ -25,7 +25,7 @@ fn test_get_size() {
 #[test]
 fn test_translate_key_event() {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-    
+
     // Test basic character
     let key_event = KeyEvent {
         code: KeyCode::Char('a'),

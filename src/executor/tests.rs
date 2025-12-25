@@ -1,7 +1,7 @@
 //! Tests for command executor
 
-use crate::command::Command;
 use crate::buffer::GapBuffer;
+use crate::command::Command;
 use crate::executor::execute_command;
 
 #[test]
@@ -9,7 +9,7 @@ fn test_execute_move_left() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
     assert_eq!(buf.cursor(), 5);
-    
+
     execute_command(Command::MoveLeft, &mut buf, false, 8);
     assert_eq!(buf.cursor(), 4);
 }
@@ -22,7 +22,7 @@ fn test_execute_move_right() {
         buf.move_left();
     }
     assert_eq!(buf.cursor(), 0);
-    
+
     execute_command(Command::MoveRight, &mut buf, false, 8);
     assert_eq!(buf.cursor(), 1);
 }
@@ -66,7 +66,7 @@ fn test_execute_move_to_buffer_start() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
     assert_eq!(buf.cursor(), 5);
-    
+
     execute_command(Command::MoveToBufferStart, &mut buf, false, 8);
     assert_eq!(buf.cursor(), 0);
 }
@@ -79,7 +79,7 @@ fn test_execute_move_to_buffer_end() {
         buf.move_left();
     }
     assert_eq!(buf.cursor(), 0);
-    
+
     execute_command(Command::MoveToBufferEnd, &mut buf, false, 8);
     assert_eq!(buf.cursor(), 5);
 }
@@ -141,4 +141,3 @@ fn test_execute_insert_tab_not_expanded() {
     assert_eq!(text.len(), 1);
     assert_eq!(text.as_bytes()[0], b'\t');
 }
-

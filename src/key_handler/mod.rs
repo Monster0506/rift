@@ -2,7 +2,6 @@
 //! Processes keypresses and determines what actions to take
 //! Handles special keys that need immediate processing before command translation
 
-
 /// ## `key_handler`/ Invariants
 ///
 /// - Key handlers translate input events into `Command`s.
@@ -36,11 +35,8 @@ pub struct KeyHandler;
 impl KeyHandler {
     /// Process a keypress and determine what action to take
     /// Returns the action the editor should take
-    #[must_use] 
-    pub fn process_key(
-        key: Key,
-        current_mode: Mode,
-    ) -> KeyAction {
+    #[must_use]
+    pub fn process_key(key: Key, current_mode: Mode) -> KeyAction {
         match current_mode {
             Mode::Normal => Self::process_normal_mode_key(key),
             Mode::Insert => Self::process_insert_mode_key(key),
@@ -52,17 +48,11 @@ impl KeyHandler {
     fn process_normal_mode_key(key: Key) -> KeyAction {
         match key {
             // Debug mode toggle
-            Key::Char(b'?') => {
-                KeyAction::ToggleDebug
-            }
+            Key::Char(b'?') => KeyAction::ToggleDebug,
             // Escape - clear pending keys
-            Key::Escape => {
-                KeyAction::SkipAndRender
-            }
+            Key::Escape => KeyAction::SkipAndRender,
             // Ctrl+] - clear pending keys (alternative)
-            Key::Ctrl(ch) if ch == b']' => {
-                KeyAction::SkipAndRender
-            }
+            Key::Ctrl(ch) if ch == b']' => KeyAction::SkipAndRender,
             // All other keys continue to command processing
             _ => KeyAction::Continue,
         }
@@ -72,9 +62,7 @@ impl KeyHandler {
     fn process_insert_mode_key(key: Key) -> KeyAction {
         match key {
             // Escape - exit insert mode
-            Key::Escape => {
-                KeyAction::ExitInsertMode
-            }
+            Key::Escape => KeyAction::ExitInsertMode,
             // All other keys continue to command processing
             _ => KeyAction::Continue,
         }
@@ -84,9 +72,7 @@ impl KeyHandler {
     fn process_command_mode_key(key: Key) -> KeyAction {
         match key {
             // Escape - exit command mode back to normal
-            Key::Escape => {
-                KeyAction::ExitCommandMode
-            }
+            Key::Escape => KeyAction::ExitCommandMode,
             // All other keys continue to command processing (for now)
             _ => KeyAction::Continue,
         }
@@ -96,4 +82,3 @@ impl KeyHandler {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-

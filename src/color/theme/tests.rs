@@ -104,7 +104,7 @@ fn test_theme_handler_applies_nordic() {
 fn test_theme_handler_overwrites_existing_theme() {
     let handler = DefaultThemeHandler;
     let mut settings = UserSettings::new();
-    
+
     // Apply light theme first
     let light = Theme::light();
     handler.apply_theme(&light, &mut settings);

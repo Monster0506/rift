@@ -10,4 +10,3 @@ pub enum Mode {
     /// Command mode (ex command line, entered with :)
     Command,
 }
-

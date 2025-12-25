@@ -9,7 +9,10 @@ pub enum MatchResult {
     /// Shortest unambiguous prefix match
     Prefix(String),
     /// Ambiguous - multiple commands match
-    Ambiguous { prefix: String, matches: Vec<String> },
+    Ambiguous {
+        prefix: String,
+        matches: Vec<String>,
+    },
     /// No match found
     Unknown(String),
 }
@@ -39,7 +42,7 @@ impl CommandDef {
     }
 
     /// Add multiple explicit aliases
-    #[must_use] 
+    #[must_use]
     pub fn with_aliases(mut self, aliases: Vec<impl Into<String>>) -> Self {
         for alias in aliases {
             self.aliases.push(alias.into());
@@ -55,7 +58,7 @@ pub struct CommandRegistry {
 
 impl CommandRegistry {
     /// Create a new empty registry
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         CommandRegistry {
             commands: Vec::new(),
@@ -63,31 +66,31 @@ impl CommandRegistry {
     }
 
     /// Register a command
-    #[must_use] 
+    #[must_use]
     pub fn register(mut self, cmd: CommandDef) -> Self {
         self.commands.push(cmd);
         self
     }
 
     /// Register multiple commands
-    #[must_use] 
+    #[must_use]
     pub fn register_all(mut self, cmds: Vec<CommandDef>) -> Self {
         self.commands.extend(cmds);
         self
     }
 
     /// Match an input string to a command
-    /// 
+    ///
     /// Matching order:
     /// 1. Exact match against command name or explicit alias
     /// 2. Check if input is an explicit alias
     /// 3. Shortest unambiguous prefix match
     /// 4. Return ambiguous if multiple matches
     /// 5. Return unknown if no match
-    #[must_use] 
+    #[must_use]
     pub fn match_command(&self, input: &str) -> MatchResult {
         let input = input.trim().to_lowercase();
-        
+
         if input.is_empty() {
             return MatchResult::Unknown(input);
         }
@@ -106,16 +109,16 @@ impl CommandRegistry {
 
         // Step 2: Check if input matches any explicit alias exactly
         // (This is redundant with step 1, but we'll keep it for clarity)
-        
+
         // Step 3: Find all commands that start with the input prefix
         let mut matches = Vec::new();
-        
+
         for cmd in &self.commands {
             let cmd_lower = cmd.name.to_lowercase();
             if cmd_lower.starts_with(&input) {
                 matches.push(cmd.name.clone());
             }
-            
+
             // Also check aliases
             for alias in &cmd.aliases {
                 let alias_lower = alias.to_lowercase();
@@ -152,7 +155,7 @@ impl CommandRegistry {
     }
 
     /// Get all registered command names
-    #[must_use] 
+    #[must_use]
     pub fn command_names(&self) -> Vec<&String> {
         self.commands.iter().map(|c| &c.name).collect()
     }

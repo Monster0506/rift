@@ -8,12 +8,12 @@
 //! - Status display is optional and failure-tolerant.
 //! - Status never consumes input or commands.
 
-use crate::mode::Mode;
-use crate::key::Key;
 use crate::command::Command;
+use crate::key::Key;
+use crate::mode::Mode;
+use crate::state::State;
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
-use crate::state::State;
 
 /// Status bar renderer
 pub struct StatusBar;
@@ -29,15 +29,15 @@ impl StatusBar {
     ) -> Result<(), String> {
         let status_row = viewport.visible_rows().saturating_sub(1);
         term.move_cursor(status_row as u16, 0)?;
-        
+
         // Invert colors for status bar (reverse video)
         term.write(b"\x1b[7m")?;
-        
+
         // In command mode, show colon prompt and fill rest with spaces
         if current_mode == Mode::Command {
             let mode_str = Self::format_mode(current_mode);
             term.write(mode_str.as_bytes())?;
-            
+
             // Fill rest of line with spaces
             let remaining_cols = viewport.visible_cols().saturating_sub(mode_str.len());
             for _ in 0..remaining_cols {
@@ -47,7 +47,7 @@ impl StatusBar {
             // Mode indicator
             let mode_str = Self::format_mode(current_mode);
             term.write(mode_str.as_bytes())?;
-            
+
             // Pending key indicator
             let pending_str = if let Some(key) = pending_key {
                 format!(" [{}]", Self::format_key(key))
@@ -57,20 +57,20 @@ impl StatusBar {
             if !pending_str.is_empty() {
                 term.write(pending_str.as_bytes())?;
             }
-            
+
             // Debug information (if debug mode is enabled)
             let debug_str = if state.debug_mode {
                 Self::format_debug_info(state, current_mode)
             } else {
                 String::new()
             };
-            
+
             // Calculate layout
             let mode_len = mode_str.len();
             let pending_len = pending_str.len();
             let used_cols = mode_len + pending_len;
             let available_cols = viewport.visible_cols().saturating_sub(used_cols);
-            
+
             // Format debug info with proper spacing
             let (debug_display, debug_len) = if debug_str.is_empty() {
                 (String::new(), 0)
@@ -84,29 +84,29 @@ impl StatusBar {
                 let spaced = format!("{}{}", " ".repeat(spacing), truncated);
                 (spaced, truncated.len() + spacing)
             };
-            
+
             // Write debug info
             if !debug_display.is_empty() {
                 term.write(debug_display.as_bytes())?;
             }
-            
+
             // Fill rest of line with spaces
             let total_used = mode_len + pending_len + debug_len;
             let remaining_cols = viewport.visible_cols().saturating_sub(total_used);
-            
+
             for _ in 0..remaining_cols {
                 term.write(b" ")?;
             }
         }
-        
+
         // Reset colors
         term.write(b"\x1b[0m")?;
-        
+
         Ok(())
     }
-    
+
     /// Format mode name for display
-    #[must_use] 
+    #[must_use]
     pub fn format_mode(mode: Mode) -> &'static str {
         match mode {
             Mode::Normal => "NORMAL",
@@ -114,9 +114,9 @@ impl StatusBar {
             Mode::Command => ":",
         }
     }
-    
+
     /// Format key for display
-    #[must_use] 
+    #[must_use]
     pub fn format_key(key: Key) -> String {
         match key {
             Key::Char(ch) => {
@@ -142,16 +142,16 @@ impl StatusBar {
             Key::PageDown => "PageDown".to_string(),
         }
     }
-    
+
     /// Format debug information string
     fn format_debug_info(state: &State, current_mode: Mode) -> String {
         let mut parts = Vec::new();
-        
+
         // Last keypress
         if let Some(key) = state.last_keypress {
             parts.push(format!("Last: {}", Self::format_key(key)));
         }
-        
+
         // In insert mode, show the byte being inserted
         if current_mode == Mode::Insert {
             if let Some(Command::InsertByte(b)) = state.last_command {
@@ -167,14 +167,18 @@ impl StatusBar {
                 parts.push(format!("Insert: {byte_str} (0x{b:02x})"));
             }
         }
-        
+
         // Cursor position (1-indexed for display)
-        parts.push(format!("Pos: {}:{}", state.cursor_pos.0 + 1, state.cursor_pos.1 + 1));
-        
+        parts.push(format!(
+            "Pos: {}:{}",
+            state.cursor_pos.0 + 1,
+            state.cursor_pos.1 + 1
+        ));
+
         // Buffer stats
         parts.push(format!("Lines: {}", state.total_lines));
         parts.push(format!("Size: {}B", state.buffer_size));
-        
+
         parts.join(" | ")
     }
 }
@@ -182,4 +186,3 @@ impl StatusBar {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-

@@ -3,17 +3,17 @@
 
 use crate::buffer::GapBuffer;
 use crate::command::{Command, Dispatcher};
+use crate::command_line::executor::{CommandExecutor, ExecutionResult};
+use crate::command_line::parser::CommandParser;
+use crate::command_line::registry::{CommandDef, CommandRegistry};
+use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::executor::execute_command;
+use crate::key_handler::{KeyAction, KeyHandler};
 use crate::mode::Mode;
-use crate::term::TerminalBackend;
-use crate::viewport::Viewport;
 use crate::render;
 use crate::state::State;
-use crate::key_handler::{KeyHandler, KeyAction};
-use crate::command_line::registry::{CommandRegistry, CommandDef};
-use crate::command_line::parser::CommandParser;
-use crate::command_line::executor::{CommandExecutor, ExecutionResult};
-use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
+use crate::term::TerminalBackend;
+use crate::viewport::Viewport;
 
 /// Main editor struct
 pub struct Editor<T: TerminalBackend> {
@@ -41,38 +41,37 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(ref path) = file_path {
             Self::validate_file(path)?;
         }
-        
+
         // Initialize terminal (clears screen, enters raw mode, etc.)
         terminal.init()?;
-        
+
         // Get terminal size
         let size = terminal.get_size()?;
-        
+
         // Create buffer with larger initial capacity for file loading
-        let mut buf = GapBuffer::new(4096)
-            .map_err(|e| format!("Failed to create buffer: {e}"))?;
-        
+        let mut buf = GapBuffer::new(4096).map_err(|e| format!("Failed to create buffer: {e}"))?;
+
         // Load file if provided (already validated above)
         if let Some(ref path) = file_path {
             Self::load_file_into_buffer(&mut buf, path)?;
         }
-        
+
         // Create viewport
         let viewport = Viewport::new(size.rows as usize, size.cols as usize);
-        
+
         // Create dispatcher
         let dispatcher = Dispatcher::new(Mode::Normal);
-        
+
         // Create command registry and settings registry
         let registry = CommandRegistry::new()
             .register(CommandDef::new("quit").with_alias("q"))
             .register(CommandDef::new("set").with_alias("se"));
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(registry, settings_registry);
-        
+
         let mut state = State::new();
         state.set_file_path(file_path);
-        
+
         Ok(Editor {
             terminal,
             buf,
@@ -91,19 +90,19 @@ impl<T: TerminalBackend> Editor<T> {
     /// if the file is invalid.
     fn validate_file(file_path: &str) -> Result<(), String> {
         use std::path::Path;
-        
+
         let path = Path::new(file_path);
-        
+
         // Check if file exists
         if !path.exists() {
             return Err(format!("File not found: {file_path}"));
         }
-        
+
         // Check if it's a file (not a directory)
         if !path.is_file() {
             return Err(format!("Path is not a file: {file_path}"));
         }
-        
+
         Ok(())
     }
 
@@ -112,20 +111,20 @@ impl<T: TerminalBackend> Editor<T> {
     fn load_file_into_buffer(buf: &mut GapBuffer, file_path: &str) -> Result<(), String> {
         use std::fs;
         use std::path::Path;
-        
+
         let path = Path::new(file_path);
-        
+
         // Read file contents as bytes (preserves all data, including invalid UTF-8)
-        let contents = fs::read(path)
-            .map_err(|e| format!("Failed to read file {file_path}: {e}"))?;
+        let contents =
+            fs::read(path).map_err(|e| format!("Failed to read file {file_path}: {e}"))?;
 
         // Insert contents into buffer using batch insertion
         buf.insert_bytes(&contents)
             .map_err(|e| format!("Failed to load file into buffer: {e}"))?;
-        
+
         // Move cursor to start of buffer
         buf.move_to_start();
-        
+
         Ok(())
     }
 
@@ -139,7 +138,7 @@ impl<T: TerminalBackend> Editor<T> {
             // ============================================================
             // INPUT HANDLING PHASE (Pure - no mutations)
             // ============================================================
-            
+
             // Read key
             let key_press = self.terminal.read_key()?;
 
@@ -152,29 +151,32 @@ impl<T: TerminalBackend> Editor<T> {
                     // Skip command translation for special actions
                     Command::Noop
                 }
-                _ => {
-                    self.dispatcher.translate_key(key_press)
-                }
+                _ => self.dispatcher.translate_key(key_press),
             };
 
             // ============================================================
             // COMMAND EXECUTION PHASE (Buffer mutations only)
             // ============================================================
-            
+
             // Execute command if it affects the buffer
-            let should_execute_buffer = match cmd {
-                Command::EnterInsertMode 
-                | Command::EnterCommandMode
-                | Command::AppendToCommandLine(_)
-                | Command::DeleteFromCommandLine
-                | Command::ExecuteCommandLine
-                | Command::Quit
-                | Command::Noop => false,
-                _ => true,
-            };
-            
+            let should_execute_buffer = !matches!(
+                cmd,
+                Command::EnterInsertMode
+                    | Command::EnterCommandMode
+                    | Command::AppendToCommandLine(_)
+                    | Command::DeleteFromCommandLine
+                    | Command::ExecuteCommandLine
+                    | Command::Quit
+                    | Command::Noop
+            );
+
             if should_execute_buffer {
-                execute_command(cmd, &mut self.buf, self.state.settings.expand_tabs, self.state.settings.tab_width);
+                execute_command(
+                    cmd,
+                    &mut self.buf,
+                    self.state.settings.expand_tabs,
+                    self.state.settings.tab_width,
+                );
             }
 
             // Handle quit command (special case - exits loop)
@@ -186,7 +188,7 @@ impl<T: TerminalBackend> Editor<T> {
             // ============================================================
             // STATE UPDATE PHASE (All state mutations happen here)
             // ============================================================
-            
+
             self.update_state_and_render(key_press, action, cmd)?;
         }
 
@@ -234,8 +236,12 @@ impl<T: TerminalBackend> Editor<T> {
                 // Parse and execute the command
                 let command_line = self.state.command_line.clone();
                 let parsed_command = self.command_parser.parse(&command_line);
-                let execution_result = CommandExecutor::execute(parsed_command, &mut self.state, &self.settings_registry);
-                
+                let execution_result = CommandExecutor::execute(
+                    parsed_command,
+                    &mut self.state,
+                    &self.settings_registry,
+                );
+
                 // Handle execution result
                 match execution_result {
                     ExecutionResult::Quit => {
@@ -274,12 +280,13 @@ impl<T: TerminalBackend> Editor<T> {
         // Update input tracking (happens during state update, not input handling)
         self.state.update_keypress(keypress);
         self.state.update_command(command);
-        
+
         // Update buffer and cursor state
         let cursor_line = self.buf.get_line();
-        let cursor_col = render::calculate_cursor_column(&self.buf, cursor_line, self.state.settings.tab_width);
+        let cursor_col =
+            render::calculate_cursor_column(&self.buf, cursor_line, self.state.settings.tab_width);
         self.state.update_cursor(cursor_line, cursor_col);
-        
+
         let total_lines = self.buf.get_total_lines();
         let buffer_size = self.buf.get_before_gap().len() + self.buf.get_after_gap().len();
         self.state.update_buffer_stats(total_lines, buffer_size);
@@ -295,9 +302,10 @@ impl<T: TerminalBackend> Editor<T> {
     fn update_and_render(&mut self) -> Result<(), String> {
         // Update buffer and cursor state only (no input tracking on initial render)
         let cursor_line = self.buf.get_line();
-        let cursor_col = render::calculate_cursor_column(&self.buf, cursor_line, self.state.settings.tab_width);
+        let cursor_col =
+            render::calculate_cursor_column(&self.buf, cursor_line, self.state.settings.tab_width);
         self.state.update_cursor(cursor_line, cursor_col);
-        
+
         let total_lines = self.buf.get_total_lines();
         let buffer_size = self.buf.get_before_gap().len() + self.buf.get_after_gap().len();
         self.state.update_buffer_stats(total_lines, buffer_size);
@@ -326,7 +334,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.current_mode = mode;
         self.dispatcher.set_mode(mode);
     }
-
 }
 
 impl<T: TerminalBackend> Drop for Editor<T> {
@@ -334,4 +341,3 @@ impl<T: TerminalBackend> Drop for Editor<T> {
         self.terminal.deinit();
     }
 }
-
