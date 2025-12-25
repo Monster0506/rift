@@ -197,4 +197,8 @@ pub trait SyntaxHighlighter {
     }
 }
 
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
+
 
