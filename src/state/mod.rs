@@ -12,6 +12,7 @@
 use crate::key::Key;
 use crate::command::Command;
 use crate::floating_window::BorderChars;
+use crate::color::Color;
 
 /// Command line window settings
 #[derive(Debug, Clone)]
@@ -53,6 +54,10 @@ pub struct UserSettings {
     pub default_border_chars: Option<BorderChars>,
     /// Command line window settings
     pub command_line_window: CommandLineWindowSettings,
+    /// Editor background color (None means use terminal default)
+    pub editor_bg: Option<Color>,
+    /// Editor foreground color (None means use terminal default)
+    pub editor_fg: Option<Color>,
 }
 
 impl UserSettings {
@@ -63,6 +68,8 @@ impl UserSettings {
             tab_width: 4, // Default tab width
             default_border_chars: None, // None means use FloatingWindow defaults
             command_line_window: CommandLineWindowSettings::default(),
+            editor_bg: None,
+            editor_fg: None,
         }
     }
 }

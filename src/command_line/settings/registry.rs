@@ -106,7 +106,105 @@ impl SettingsRegistry {
                     ))
                 }
             }
+            SettingType::Color => {
+                Self::parse_color(value)
+            }
         }
+    }
+    
+    /// Parse a color string to a Color value
+    /// Supports:
+    /// - Color names: black, red, green, yellow, blue, magenta, cyan, white, grey, darkred, etc.
+    /// - RGB: rgb(255,128,64) or #ff8040
+    /// - 256-color: ansi256(100) or just 100
+    /// - Reset: reset, default, none
+    fn parse_color(value: &str) -> Result<SettingValue, SettingError> {
+        use crate::color::Color;
+        let val_lower = value.to_lowercase().trim().to_string();
+        
+        // Handle reset/default/none
+        if val_lower == "reset" || val_lower == "default" || val_lower == "none" {
+            return Ok(SettingValue::Color(Color::Reset));
+        }
+        
+        // Handle RGB format: rgb(255,128,64) or #ff8040
+        if val_lower.starts_with("rgb(") && val_lower.ends_with(")") {
+            let rgb_str = &val_lower[4..val_lower.len()-1];
+            let parts: Vec<&str> = rgb_str.split(',').map(|s| s.trim()).collect();
+            if parts.len() == 3 {
+                let r = parts[0].parse::<u8>()
+                    .map_err(|_| SettingError::ParseError(format!("Invalid RGB red value: {}", parts[0])))?;
+                let g = parts[1].parse::<u8>()
+                    .map_err(|_| SettingError::ParseError(format!("Invalid RGB green value: {}", parts[1])))?;
+                let b = parts[2].parse::<u8>()
+                    .map_err(|_| SettingError::ParseError(format!("Invalid RGB blue value: {}", parts[2])))?;
+                return Ok(SettingValue::Color(Color::Rgb { r, g, b }));
+            }
+        }
+        
+        // Handle hex format: #ff8040 or #fff
+        if val_lower.starts_with("#") {
+            let hex = &val_lower[1..];
+            if hex.len() == 6 {
+                let r = u8::from_str_radix(&hex[0..2], 16)
+                    .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {}", value)))?;
+                let g = u8::from_str_radix(&hex[2..4], 16)
+                    .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {}", value)))?;
+                let b = u8::from_str_radix(&hex[4..6], 16)
+                    .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {}", value)))?;
+                return Ok(SettingValue::Color(Color::Rgb { r, g, b }));
+            } else if hex.len() == 3 {
+                // Short hex format: #fff -> #ffffff
+                let r = u8::from_str_radix(&hex[0..1], 16)
+                    .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {}", value)))?;
+                let g = u8::from_str_radix(&hex[1..2], 16)
+                    .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {}", value)))?;
+                let b = u8::from_str_radix(&hex[2..3], 16)
+                    .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {}", value)))?;
+                let r = (r << 4) | r;
+                let g = (g << 4) | g;
+                let b = (b << 4) | b;
+                return Ok(SettingValue::Color(Color::Rgb { r, g, b }));
+            }
+        }
+        
+        // Handle ansi256 format: ansi256(100) or just 100
+        if val_lower.starts_with("ansi256(") && val_lower.ends_with(")") {
+            let num_str = &val_lower[8..val_lower.len()-1];
+            let n = num_str.parse::<u8>()
+                .map_err(|_| SettingError::ParseError(format!("Invalid ANSI256 color index: {}", num_str)))?;
+            return Ok(SettingValue::Color(Color::Ansi256(n)));
+        }
+        
+        // Try parsing as a number (256-color index)
+        if let Ok(n) = val_lower.parse::<u8>() {
+            return Ok(SettingValue::Color(Color::Ansi256(n)));
+        }
+        
+        // Handle color names
+        let color = match val_lower.as_str() {
+            "black" => Color::Black,
+            "darkgrey" | "dark_grey" => Color::DarkGrey,
+            "red" => Color::Red,
+            "darkred" | "dark_red" => Color::DarkRed,
+            "green" => Color::Green,
+            "darkgreen" | "dark_green" => Color::DarkGreen,
+            "yellow" => Color::Yellow,
+            "darkyellow" | "dark_yellow" => Color::DarkYellow,
+            "blue" => Color::Blue,
+            "darkblue" | "dark_blue" => Color::DarkBlue,
+            "magenta" => Color::Magenta,
+            "darkmagenta" | "dark_magenta" => Color::DarkMagenta,
+            "cyan" => Color::Cyan,
+            "darkcyan" | "dark_cyan" => Color::DarkCyan,
+            "white" => Color::White,
+            "grey" | "gray" => Color::Grey,
+            _ => return Err(SettingError::ParseError(
+                format!("Unknown color name: {}. Use color names, rgb(r,g,b), #hex, or ansi256(n)", value)
+            )),
+        };
+        
+        Ok(SettingValue::Color(color))
     }
     
     /// Execute a setting by name with string value

@@ -107,7 +107,7 @@ fn test_render_content_empty_buffer() {
     let buf = GapBuffer::new(100).unwrap();
     let viewport = Viewport::new(10, 80);
     
-    render_content(&mut term, &buf, &viewport).unwrap();
+    render_content(&mut term, &buf, &viewport, None, None, None).unwrap();
     
     // Should write empty lines for visible rows
     assert!(term.writes.len() > 0);
@@ -120,7 +120,7 @@ fn test_render_content_single_line() {
     buf.insert_str("hello world").unwrap();
     let viewport = Viewport::new(10, 80);
     
-    render_content(&mut term, &buf, &viewport).unwrap();
+    render_content(&mut term, &buf, &viewport, None, None, None).unwrap();
     
     let written = term.get_written_string();
     assert!(written.contains("hello world"));
@@ -133,7 +133,7 @@ fn test_render_content_multiline() {
     buf.insert_str("line1\nline2\nline3").unwrap();
     let viewport = Viewport::new(10, 80);
     
-    render_content(&mut term, &buf, &viewport).unwrap();
+    render_content(&mut term, &buf, &viewport, None, None, None).unwrap();
     
     let written = term.get_written_string();
     assert!(written.contains("line1"));
@@ -148,7 +148,7 @@ fn test_render_content_line_truncation() {
     buf.insert_str("this is a very long line").unwrap();
     let viewport = Viewport::new(10, 10);
     
-    render_content(&mut term, &buf, &viewport).unwrap();
+    render_content(&mut term, &buf, &viewport, None, None, None).unwrap();
     
     // Check that lines are truncated to viewport width
     let _written = term.get_written_bytes();
@@ -168,7 +168,7 @@ fn test_render_content_line_padding() {
     buf.insert_str("short").unwrap();
     let viewport = Viewport::new(10, 20);
     
-    render_content(&mut term, &buf, &viewport).unwrap();
+    render_content(&mut term, &buf, &viewport, None, None, None).unwrap();
     
     // Check that short lines are padded with spaces
     let written = term.get_written_bytes();
@@ -420,7 +420,7 @@ fn test_render_content_empty_lines() {
     buf.insert_str("line1\n\nline3").unwrap();
     let viewport = Viewport::new(10, 80);
     
-    render_content(&mut term, &buf, &viewport).unwrap();
+    render_content(&mut term, &buf, &viewport, None, None, None).unwrap();
     
     let written = term.get_written_string();
     assert!(written.contains("line1"));
@@ -434,7 +434,7 @@ fn test_render_content_only_newlines() {
     buf.insert_str("\n\n\n").unwrap();
     let viewport = Viewport::new(10, 80);
     
-    render_content(&mut term, &buf, &viewport).unwrap();
+    render_content(&mut term, &buf, &viewport, None, None, None).unwrap();
     
     // Should render empty lines
     assert!(!term.writes.is_empty());
@@ -519,7 +519,7 @@ fn test_render_content_unicode_safety() {
     let viewport = Viewport::new(10, 80);
     
     // Should not panic
-    render_content(&mut term, &buf, &viewport).unwrap();
+    render_content(&mut term, &buf, &viewport, None, None, None).unwrap();
     assert!(!term.writes.is_empty());
 }
 

@@ -6,11 +6,13 @@ use crossterm::{
     execute,
     terminal::{self, ClearType},
     cursor,
+    style::{SetForegroundColor, SetBackgroundColor, ResetColor},
 };
 use std::io::{Write, stdout};
 
 use crate::key::Key;
-use crate::term::{TerminalBackend, Size};
+use crate::term::{TerminalBackend, Size, ColorTerminal};
+use crate::color::Color;
 
 /// Crossterm-based terminal backend implementation
 pub struct CrosstermBackend {
@@ -124,6 +126,26 @@ impl TerminalBackend for CrosstermBackend {
     fn clear_to_end_of_line(&mut self) -> Result<(), String> {
         execute!(stdout(), terminal::Clear(ClearType::UntilNewLine))
             .map_err(|e| format!("Failed to clear to end of line: {}", e))?;
+        Ok(())
+    }
+}
+
+impl ColorTerminal for CrosstermBackend {
+    fn set_foreground_color(&mut self, color: Color) -> Result<(), String> {
+        execute!(stdout(), SetForegroundColor(color.to_crossterm()))
+            .map_err(|e| format!("Failed to set foreground color: {}", e))?;
+        Ok(())
+    }
+
+    fn set_background_color(&mut self, color: Color) -> Result<(), String> {
+        execute!(stdout(), SetBackgroundColor(color.to_crossterm()))
+            .map_err(|e| format!("Failed to set background color: {}", e))?;
+        Ok(())
+    }
+
+    fn reset_colors(&mut self) -> Result<(), String> {
+        execute!(stdout(), ResetColor)
+            .map_err(|e| format!("Failed to reset colors: {}", e))?;
         Ok(())
     }
 }

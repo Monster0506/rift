@@ -15,6 +15,8 @@ pub enum SettingValue {
     Float(f64),
     /// Enum value (canonicalized identifier)
     Enum(String),
+    /// Color value
+    Color(crate::color::Color),
 }
 
 /// Setting type definition for parsing and validation
@@ -41,6 +43,8 @@ pub enum SettingType {
         /// Valid enum variants (static string slices)
         variants: &'static [&'static str],
     },
+    /// Color setting (supports color names, RGB, and 256-color indices)
+    Color,
 }
 
 /// Structured error for setting operations

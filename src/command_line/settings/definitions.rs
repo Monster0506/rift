@@ -122,6 +122,34 @@ fn set_cmd_window_reverse_video(settings: &mut UserSettings, value: SettingValue
     }
 }
 
+fn set_editor_bg(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Color(color) => {
+            settings.editor_bg = if color == crate::color::Color::Reset {
+                None
+            } else {
+                Some(color)
+            };
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError("Expected color".to_string())),
+    }
+}
+
+fn set_editor_fg(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Color(color) => {
+            settings.editor_fg = if color == crate::color::Color::Reset {
+                None
+            } else {
+                Some(color)
+            };
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError("Expected color".to_string())),
+    }
+}
+
 /// Static registry of all settings
 pub const SETTINGS: &[SettingDescriptor] = &[
     SettingDescriptor {
@@ -171,6 +199,18 @@ pub const SETTINGS: &[SettingDescriptor] = &[
         aliases: &["cmdreverse"],
         ty: SettingType::Boolean,
         set: set_cmd_window_reverse_video,
+    },
+    SettingDescriptor {
+        name: "editor.background",
+        aliases: &["edbg", "bg"],
+        ty: SettingType::Color,
+        set: set_editor_bg,
+    },
+    SettingDescriptor {
+        name: "editor.foreground",
+        aliases: &["edfg", "fg"],
+        ty: SettingType::Color,
+        set: set_editor_fg,
     },
 ];
 

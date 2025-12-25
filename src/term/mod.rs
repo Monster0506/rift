@@ -53,5 +53,18 @@ pub trait TerminalBackend {
     fn clear_to_end_of_line(&mut self) -> Result<(), String>;
 }
 
+/// Extension trait for color support
+/// Backends that support colors should implement this trait
+pub trait ColorTerminal: TerminalBackend {
+    /// Set foreground color
+    fn set_foreground_color(&mut self, color: crate::color::Color) -> Result<(), String>;
+    
+    /// Set background color
+    fn set_background_color(&mut self, color: crate::color::Color) -> Result<(), String>;
+    
+    /// Reset colors to default
+    fn reset_colors(&mut self) -> Result<(), String>;
+}
+
 pub mod crossterm;
 

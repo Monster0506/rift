@@ -14,6 +14,7 @@ pub mod status;
 pub mod command_line;
 pub mod key_handler;
 pub mod floating_window;
+pub mod color;
 
 #[cfg(test)]
 pub mod test_utils;

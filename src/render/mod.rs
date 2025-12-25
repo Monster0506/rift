@@ -15,11 +15,47 @@
 use crate::buffer::GapBuffer;
 use crate::mode::Mode;
 use crate::key::Key;
-use crate::term::TerminalBackend;
+use crate::term::{TerminalBackend, ColorTerminal};
 use crate::viewport::Viewport;
 use crate::state::State;
 use crate::status::StatusBar;
 use crate::command_line::CommandLine;
+use crate::color::{Color, ColorStyle};
+use crate::color::buffer::ColorMap;
+use crate::color::styled::StyledLine;
+
+/// Helper function to apply editor colors using crossterm
+/// Uses crossterm's command system to generate proper escape sequences
+fn apply_editor_colors_to_terminal<T: TerminalBackend>(
+    term: &mut T,
+    bg: Option<Color>,
+    fg: Option<Color>,
+) -> Result<(), String> {
+    use crossterm::style::{SetForegroundColor, SetBackgroundColor};
+    use crossterm::queue;
+    
+    // Use a Vec<u8> as a writer to collect the escape sequences
+    let mut buffer = Vec::new();
+    
+    // Apply foreground color if set
+    if let Some(fg_color) = fg {
+        queue!(buffer, SetForegroundColor(fg_color.to_crossterm()))
+            .map_err(|e| format!("Failed to queue foreground color: {}", e))?;
+    }
+    
+    // Apply background color if set
+    if let Some(bg_color) = bg {
+        queue!(buffer, SetBackgroundColor(bg_color.to_crossterm()))
+            .map_err(|e| format!("Failed to queue background color: {}", e))?;
+    }
+    
+    // Write the collected escape sequences to the terminal
+    if !buffer.is_empty() {
+        term.write(&buffer)?;
+    }
+    
+    Ok(())
+}
 
 /// Render the editor interface
 /// Viewport should already be updated before calling this function
@@ -42,7 +78,8 @@ pub fn render<T: TerminalBackend>(
     }
     
     // Always render content (it handles positioning efficiently)
-    render_content(term, buf, viewport)?;
+    // Pass editor colors so they can be applied
+    render_content(term, buf, viewport, None, state.settings.editor_bg, state.settings.editor_fg)?;
 
     // Render command line floating window if in command mode
     let cmd_window_info = if current_mode == Mode::Command {
@@ -84,10 +121,141 @@ pub fn render<T: TerminalBackend>(
     Ok(())
 }
 
+/// Render a styled line to the terminal
+/// Efficiently batches color changes to minimize ANSI escape sequences
+fn render_styled_line<T: TerminalBackend + ColorTerminal>(
+    term: &mut T,
+    line: &StyledLine,
+    visible_cols: usize,
+) -> Result<(), String> {
+    match line {
+        StyledLine::Plain(text) => {
+            // Plain text - just write it
+            let display_line: Vec<u8> = text.iter()
+                .take(visible_cols)
+                .copied()
+                .collect();
+            
+            let mut padded_line = display_line;
+            while padded_line.len() < visible_cols {
+                padded_line.push(b' ');
+            }
+            
+            term.write(&padded_line)?;
+        }
+        StyledLine::PerChar(chars) => {
+            // Per-character coloring
+            let mut current_style = ColorStyle::new();
+            let mut output = Vec::new();
+            
+            for styled_char in chars.iter().take(visible_cols) {
+                // Check if we need to change colors
+                if styled_char.style != current_style {
+                    // Reset colors first
+                    term.reset_colors()?;
+                    current_style = ColorStyle::new();
+                    
+                    // Apply new foreground color if set
+                    if let Some(fg) = styled_char.style.fg {
+                        term.set_foreground_color(fg)?;
+                        current_style.fg = Some(fg);
+                    }
+                    
+                    // Apply new background color if set
+                    if let Some(bg) = styled_char.style.bg {
+                        term.set_background_color(bg)?;
+                        current_style.bg = Some(bg);
+                    }
+                }
+                
+                output.push(styled_char.ch);
+            }
+            
+            // Write accumulated output
+            if !output.is_empty() {
+                // Pad with spaces if needed
+                while output.len() < visible_cols {
+                    output.push(b' ');
+                }
+                term.write(&output)?;
+            } else {
+                // Empty line - fill with spaces
+                term.write(&vec![b' '; visible_cols])?;
+            }
+            
+            // Reset colors at end of line
+            term.reset_colors()?;
+        }
+        StyledLine::PerSpan { text, spans } => {
+            // Per-span coloring - more efficient for large uniform spans
+            let mut current_style = ColorStyle::new();
+            let mut output = Vec::new();
+            let mut span_idx = 0;
+            
+            for (i, &ch) in text.iter().take(visible_cols).enumerate() {
+                // Check if we've moved past the current span
+                while span_idx < spans.len() && spans[span_idx].end <= i {
+                    span_idx += 1;
+                }
+                
+                // Determine style for this character
+                let char_style = if span_idx < spans.len() && spans[span_idx].start <= i && i < spans[span_idx].end {
+                    spans[span_idx].style
+                } else {
+                    ColorStyle::new()
+                };
+                
+                // Check if we need to change colors
+                if char_style != current_style {
+                    // Reset colors first
+                    term.reset_colors()?;
+                    current_style = ColorStyle::new();
+                    
+                    // Apply new foreground color if set
+                    if let Some(fg) = char_style.fg {
+                        term.set_foreground_color(fg)?;
+                        current_style.fg = Some(fg);
+                    }
+                    
+                    // Apply new background color if set
+                    if let Some(bg) = char_style.bg {
+                        term.set_background_color(bg)?;
+                        current_style.bg = Some(bg);
+                    }
+                }
+                
+                output.push(ch);
+            }
+            
+            // Write accumulated output
+            if !output.is_empty() {
+                // Pad with spaces if needed
+                while output.len() < visible_cols {
+                    output.push(b' ');
+                }
+                term.write(&output)?;
+            } else {
+                // Empty line - fill with spaces
+                term.write(&vec![b' '; visible_cols])?;
+            }
+            
+            // Reset colors at end of line
+            term.reset_colors()?;
+        }
+    }
+    
+    Ok(())
+}
+
+/// Render buffer content to terminal
+/// Optionally applies colors from ColorMap if terminal supports it
 fn render_content<T: TerminalBackend>(
     term: &mut T,
     buf: &GapBuffer,
     viewport: &Viewport,
+    color_map: Option<&ColorMap>,
+    editor_bg: Option<Color>,
+    editor_fg: Option<Color>,
 ) -> Result<(), String> {
     let before_gap = buf.get_before_gap();
     let after_gap = buf.get_after_gap();
@@ -124,32 +292,70 @@ fn render_content<T: TerminalBackend>(
         lines.push(current_line);
     }
     
+    // Apply editor colors if set (before rendering)
+    // Colors will persist for the entire rendering session
+    if editor_bg.is_some() || editor_fg.is_some() {
+        apply_editor_colors_to_terminal(term, editor_bg, editor_fg)?;
+    }
+    
     // Render visible lines
     let top_line = viewport.top_line();
     let visible_rows = viewport.visible_rows().saturating_sub(1); // Reserve one row for status bar
     let visible_cols = viewport.visible_cols();
     
+    // Check if terminal supports colors and we have a color map
+    let use_colors = color_map.is_some();
+    
+    // Apply editor colors if set (before rendering first line)
+    // Colors will persist for the entire rendering session
+    if editor_bg.is_some() || editor_fg.is_some() {
+        apply_editor_colors_to_terminal(term, editor_bg, editor_fg)?;
+    }
+    
     for i in 0..visible_rows {
         // Position cursor at the start of this line
         term.move_cursor(i as u16, 0)?;
         
-        let line_num = top_line + i;
+            let line_num = top_line + i;
         if line_num < lines.len() {
             let line = &lines[line_num];
-            // Truncate line to visible width
-            let display_line: Vec<u8> = line.iter()
-                .take(visible_cols)
-                .copied()
-                .collect();
             
-            // Pad with spaces if line is shorter than visible width
-            let mut padded_line = display_line;
-            while padded_line.len() < visible_cols {
-                padded_line.push(b' ');
+            // Try to render with colors if available
+            let rendered_with_colors = if use_colors {
+                if let Some(map) = color_map {
+                    let spans = map.get_line_spans(line_num);
+                    if !spans.is_empty() {
+                        // Try to render with colors - this requires ColorTerminal
+                        // For now, we'll render plain text and colors can be added
+                        // via a separate rendering path that requires ColorTerminal
+                        false
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            
+            if !rendered_with_colors {
+                // Plain text rendering
+                // Truncate line to visible width
+                let display_line: Vec<u8> = line.iter()
+                    .take(visible_cols)
+                    .copied()
+                    .collect();
+                
+                // Pad with spaces if line is shorter than visible width
+                let mut padded_line = display_line;
+                while padded_line.len() < visible_cols {
+                    padded_line.push(b' ');
+                }
+                
+                // Write the line content
+                term.write(&padded_line)?;
             }
-            
-            // Write the line content
-            term.write(&padded_line)?;
         } else {
             // Empty line - fill with spaces
             term.write(&vec![b' '; visible_cols])?;
