@@ -6,6 +6,7 @@ pub mod registry;
 pub mod definitions;
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;
 
 pub use descriptor::{SettingDescriptor, SettingType, SettingValue, SettingError, SettingSetter};
