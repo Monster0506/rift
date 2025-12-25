@@ -148,9 +148,11 @@ pub fn execute_command(cmd: Command, buf: &mut GapBuffer, expand_tabs: bool, tab
                 let current_col = calculate_current_column(buf, tab_width);
                 // Calculate spaces needed to reach next tab stop
                 let spaces_needed = tab_width - (current_col % tab_width);
-                // Insert that many spaces
+                // Insert that many spaces, stop on error
                 for _ in 0..spaces_needed {
-                    let _ = buf.insert(b' ');
+                    if buf.insert(b' ').is_err() {
+                        return; // Stop if insert fails
+                    }
                 }
             } else {
                 let _ = buf.insert(b);
