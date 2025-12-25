@@ -91,6 +91,7 @@ pub enum ThemeVariant {
 
 impl Theme {
     /// Create a new theme
+    #[must_use] 
     pub fn new(name: &'static str, variant: ThemeVariant, background: Color, foreground: Color) -> Self {
         Theme {
             name,
@@ -101,6 +102,7 @@ impl Theme {
     }
 
     /// Get the light theme
+    #[must_use] 
     pub fn light() -> Self {
         Theme::new(
             "light",
@@ -111,6 +113,7 @@ impl Theme {
     }
 
     /// Get the dark theme
+    #[must_use] 
     pub fn dark() -> Self {
         Theme::new(
             "dark",
@@ -121,6 +124,7 @@ impl Theme {
     }
 
     /// Get the gruvbox theme (dark variant)
+    #[must_use] 
     pub fn gruvbox() -> Self {
         Theme::new(
             "gruvbox",
@@ -131,6 +135,7 @@ impl Theme {
     }
 
     /// Get the nordic theme (Nord)
+    #[must_use] 
     pub fn nordic() -> Self {
         Theme::new(
             "nordic",
@@ -141,6 +146,7 @@ impl Theme {
     }
 
     /// Get theme by name
+    #[must_use] 
     pub fn by_name(name: &str) -> Option<Self> {
         match name.to_lowercase().as_str() {
             "light" => Some(Theme::light()),
@@ -152,6 +158,7 @@ impl Theme {
     }
 
     /// Get all available theme names
+    #[must_use] 
     pub fn available_themes() -> Vec<&'static str> {
         vec!["light", "dark", "gruvbox", "nordic"]
     }

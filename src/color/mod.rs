@@ -40,6 +40,7 @@ pub enum Color {
 
 impl Color {
     /// Convert to crossterm Color
+    #[must_use] 
     pub fn to_crossterm(self) -> CrosstermColor {
         match self {
             Color::Reset => CrosstermColor::Reset,
@@ -65,6 +66,7 @@ impl Color {
     }
 
     /// Create from crossterm Color
+    #[must_use] 
     pub fn from_crossterm(color: CrosstermColor) -> Self {
         match color {
             CrosstermColor::Reset => Color::Reset,
@@ -101,6 +103,7 @@ pub struct ColorStyle {
 
 impl ColorStyle {
     /// Create a new color style
+    #[must_use] 
     pub fn new() -> Self {
         ColorStyle {
             fg: None,
@@ -109,6 +112,7 @@ impl ColorStyle {
     }
 
     /// Create with foreground color only
+    #[must_use] 
     pub fn fg(fg: Color) -> Self {
         ColorStyle {
             fg: Some(fg),
@@ -117,6 +121,7 @@ impl ColorStyle {
     }
 
     /// Create with background color only
+    #[must_use] 
     pub fn bg(bg: Color) -> Self {
         ColorStyle {
             fg: None,
@@ -125,6 +130,7 @@ impl ColorStyle {
     }
 
     /// Create with both foreground and background colors
+    #[must_use] 
     pub fn new_colors(fg: Color, bg: Color) -> Self {
         ColorStyle {
             fg: Some(fg),
@@ -133,18 +139,21 @@ impl ColorStyle {
     }
 
     /// Set foreground color
+    #[must_use] 
     pub fn with_fg(mut self, fg: Color) -> Self {
         self.fg = Some(fg);
         self
     }
 
     /// Set background color
+    #[must_use] 
     pub fn with_bg(mut self, bg: Color) -> Self {
         self.bg = Some(bg);
         self
     }
 
     /// Check if style has any colors set
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.fg.is_none() && self.bg.is_none()
     }
@@ -166,8 +175,8 @@ pub trait SyntaxHighlighter {
 
     /// Get color spans for an entire line
     /// 
-    /// This is more efficient than calling get_style for each character
-    /// Returns a vector of (start_col, end_col, style) tuples
+    /// This is more efficient than calling `get_style` for each character
+    /// Returns a vector of (`start_col`, `end_col`, style) tuples
     fn get_line_spans(&self, line: usize, line_length: usize) -> Vec<(usize, usize, ColorStyle)> {
         let mut spans = Vec::new();
         let mut current_start = 0;

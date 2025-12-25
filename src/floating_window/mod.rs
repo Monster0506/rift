@@ -1,7 +1,7 @@
 //! Floating window component
 //! Reusable overlay window that can be rendered on top of existing content
 //!
-//! ## floating_window/ Invariants
+//! ## `floating_window`/ Invariants
 //!
 //! - Floating windows never mutate editor or buffer state.
 //! - Floating windows are positioned relative to terminal coordinates.
@@ -43,6 +43,7 @@ pub struct BorderChars {
 
 impl BorderChars {
     /// Create default border characters (Unicode box drawing)
+    #[must_use] 
     pub fn default() -> Self {
         BorderChars {
             top_left: DEFAULT_BORDER_TOP_LEFT.to_vec(),
@@ -55,6 +56,7 @@ impl BorderChars {
     }
 
     /// Create border characters from byte slices
+    #[must_use] 
     pub fn new(
         top_left: &[u8],
         top_right: &[u8],
@@ -74,6 +76,7 @@ impl BorderChars {
     }
 
     /// Create border characters from single-byte ASCII characters
+    #[must_use] 
     pub fn from_ascii(
         top_left: u8,
         top_right: u8,
@@ -131,6 +134,7 @@ pub struct FloatingWindow {
 
 impl FloatingWindow {
     /// Create a new floating window
+    #[must_use] 
     pub fn new(position: WindowPosition, width: usize, height: usize) -> Self {
         FloatingWindow {
             position,
@@ -143,18 +147,21 @@ impl FloatingWindow {
     }
 
     /// Set whether to draw a border
+    #[must_use] 
     pub fn with_border(mut self, border: bool) -> Self {
         self.border = border;
         self
     }
 
     /// Set whether to use reverse video
+    #[must_use] 
     pub fn with_reverse_video(mut self, reverse: bool) -> Self {
         self.reverse_video = reverse;
         self
     }
 
     /// Set custom border characters
+    #[must_use] 
     pub fn with_border_chars(mut self, border_chars: BorderChars) -> Self {
         self.border_chars = Some(border_chars);
         self
@@ -162,6 +169,7 @@ impl FloatingWindow {
 
     /// Calculate the actual position of the window given terminal dimensions
     /// Returns (row, col) where the window should be positioned
+    #[must_use] 
     pub fn calculate_position(&self, term_rows: u16, term_cols: u16) -> (u16, u16) {
         let width = self.width.min(term_cols as usize) as u16;
         let height = self.height.min(term_rows as usize) as u16;
@@ -237,7 +245,7 @@ impl FloatingWindow {
     /// If there are more lines than the window height, they will be truncated.
     /// 
     /// `border_chars_override` allows overriding border characters for this render call.
-    /// If None, uses the window's configured border_chars or defaults.
+    /// If None, uses the window's configured `border_chars` or defaults.
     /// 
     /// This method batches all writes to minimize flicker by building the entire
     /// window in memory before writing it all at once.
@@ -252,7 +260,7 @@ impl FloatingWindow {
     /// Render the floating window with content and optional border character override
     /// 
     /// `border_chars_override` allows overriding border characters for this render call.
-    /// If Some, uses those characters. If None, uses the window's configured border_chars or defaults.
+    /// If Some, uses those characters. If None, uses the window's configured `border_chars` or defaults.
     pub fn render_with_border_chars<T: TerminalBackend>(
         &self,
         term: &mut T,
@@ -319,10 +327,10 @@ impl FloatingWindow {
                     
                     // Pad with spaces if needed
                     let padding = content_width.saturating_sub(display_line.len());
-                    output.extend(std::iter::repeat(b' ').take(padding));
+                    output.extend(std::iter::repeat_n(b' ', padding));
                 } else {
                     // Empty line - fill with spaces
-                    output.extend(std::iter::repeat(b' ').take(content_width));
+                    output.extend(std::iter::repeat_n(b' ', content_width));
                 }
                 
                 // Right border
@@ -361,10 +369,10 @@ impl FloatingWindow {
                     
                     // Pad with spaces if needed
                     let padding = width.saturating_sub(display_line.len());
-                    output.extend(std::iter::repeat(b' ').take(padding));
+                    output.extend(std::iter::repeat_n(b' ', padding));
                 } else {
                     // Empty line - fill with spaces
-                    output.extend(std::iter::repeat(b' ').take(width));
+                    output.extend(std::iter::repeat_n(b' ', width));
                 }
             }
         }
@@ -398,11 +406,13 @@ impl FloatingWindow {
     }
 
     /// Get the width of the window
+    #[must_use] 
     pub fn width(&self) -> usize {
         self.width
     }
 
     /// Get the height of the window
+    #[must_use] 
     pub fn height(&self) -> usize {
         self.height
     }

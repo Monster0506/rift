@@ -50,7 +50,7 @@ impl<T: TerminalBackend> Editor<T> {
         
         // Create buffer with larger initial capacity for file loading
         let mut buf = GapBuffer::new(4096)
-            .map_err(|e| format!("Failed to create buffer: {}", e))?;
+            .map_err(|e| format!("Failed to create buffer: {e}"))?;
         
         // Load file if provided (already validated above)
         if let Some(ref path) = file_path {
@@ -96,12 +96,12 @@ impl<T: TerminalBackend> Editor<T> {
         
         // Check if file exists
         if !path.exists() {
-            return Err(format!("File not found: {}", file_path));
+            return Err(format!("File not found: {file_path}"));
         }
         
         // Check if it's a file (not a directory)
         if !path.is_file() {
-            return Err(format!("Path is not a file: {}", file_path));
+            return Err(format!("Path is not a file: {file_path}"));
         }
         
         Ok(())
@@ -117,11 +117,11 @@ impl<T: TerminalBackend> Editor<T> {
         
         // Read file contents as bytes (preserves all data, including invalid UTF-8)
         let contents = fs::read(path)
-            .map_err(|e| format!("Failed to read file {}: {}", file_path, e))?;
+            .map_err(|e| format!("Failed to read file {file_path}: {e}"))?;
 
         // Insert contents into buffer using batch insertion
         buf.insert_bytes(&contents)
-            .map_err(|e| format!("Failed to load file into buffer: {}", e))?;
+            .map_err(|e| format!("Failed to load file into buffer: {e}"))?;
         
         // Move cursor to start of buffer
         buf.move_to_start();

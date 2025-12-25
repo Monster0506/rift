@@ -61,7 +61,7 @@ fn set_border_style(settings: &mut UserSettings, value: SettingValue) -> Result<
                 "unicode" => Some(create_unicode_border()),
                 "ascii" => Some(create_ascii_border()),
                 "none" => None,
-                _ => return Err(SettingError::ValidationError(format!("Unknown border style: {}", style))),
+                _ => return Err(SettingError::ValidationError(format!("Unknown border style: {style}"))),
             };
             Ok(())
         }
@@ -243,6 +243,7 @@ pub const SETTINGS: &[SettingDescriptor] = &[
 ];
 
 /// Create the settings registry
+#[must_use] 
 pub fn create_settings_registry() -> SettingsRegistry {
     SettingsRegistry::new(SETTINGS)
 }

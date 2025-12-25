@@ -14,11 +14,13 @@ pub struct StyledChar {
 
 impl StyledChar {
     /// Create a new styled character
+    #[must_use] 
     pub fn new(ch: u8, style: ColorStyle) -> Self {
         StyledChar { ch, style }
     }
 
     /// Create with default (no color) style
+    #[must_use] 
     pub fn plain(ch: u8) -> Self {
         StyledChar {
             ch,
@@ -40,16 +42,19 @@ pub struct ColorSpan {
 
 impl ColorSpan {
     /// Create a new color span
+    #[must_use] 
     pub fn new(start: usize, end: usize, style: ColorStyle) -> Self {
         ColorSpan { start, end, style }
     }
 
     /// Check if span is empty (start >= end)
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.start >= self.end
     }
 
     /// Get the length of the span
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.end.saturating_sub(self.start)
     }
@@ -73,21 +78,25 @@ pub enum StyledLine {
 
 impl StyledLine {
     /// Create a plain unstyled line
+    #[must_use] 
     pub fn plain(text: Vec<u8>) -> Self {
         StyledLine::Plain(text)
     }
 
     /// Create a line with per-character coloring
+    #[must_use] 
     pub fn per_char(chars: Vec<StyledChar>) -> Self {
         StyledLine::PerChar(chars)
     }
 
     /// Create a line with per-span coloring
+    #[must_use] 
     pub fn per_span(text: Vec<u8>, spans: Vec<ColorSpan>) -> Self {
         StyledLine::PerSpan { text, spans }
     }
 
     /// Get the length of the line
+    #[must_use] 
     pub fn len(&self) -> usize {
         match self {
             StyledLine::Plain(text) => text.len(),
@@ -97,11 +106,13 @@ impl StyledLine {
     }
 
     /// Check if line is empty
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Get the plain text bytes (without color information)
+    #[must_use] 
     pub fn as_bytes(&self) -> Vec<u8> {
         match self {
             StyledLine::Plain(text) => text.clone(),
@@ -112,6 +123,7 @@ impl StyledLine {
 
     /// Convert to per-character representation
     /// Useful when you need uniform access to colors
+    #[must_use] 
     pub fn to_per_char(&self) -> Vec<StyledChar> {
         match self {
             StyledLine::Plain(text) => {
@@ -146,6 +158,7 @@ impl StyledLine {
     }
 
     /// Get color style for a specific column
+    #[must_use] 
     pub fn get_style_at(&self, column: usize) -> ColorStyle {
         match self {
             StyledLine::Plain(_) => ColorStyle::new(),

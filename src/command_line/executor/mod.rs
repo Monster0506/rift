@@ -30,13 +30,12 @@ impl CommandExecutor {
                 settings_registry.execute_setting(&option, value, &mut state.settings)
             }
             ParsedCommand::Unknown { name } => {
-                ExecutionResult::Error(format!("Unknown command: {}", name))
+                ExecutionResult::Error(format!("Unknown command: {name}"))
             }
             ParsedCommand::Ambiguous { prefix, matches } => {
                 let matches_str = matches.join(", ");
                 ExecutionResult::Error(format!(
-                    "Ambiguous command '{}': matches {}",
-                    prefix, matches_str
+                    "Ambiguous command '{prefix}': matches {matches_str}"
                 ))
             }
         }

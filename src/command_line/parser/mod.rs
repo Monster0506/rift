@@ -33,6 +33,7 @@ pub struct CommandParser {
 
 impl CommandParser {
     /// Create a new parser with the given command registry and settings registry
+    #[must_use] 
     pub fn new(registry: CommandRegistry, settings_registry: SettingsRegistry) -> Self {
         CommandParser { registry, settings_registry }
     }
@@ -46,6 +47,7 @@ impl CommandParser {
     /// 
     /// Input format: `:command [args...]`
     /// The leading colon is optional but typically present in ex-style commands
+    #[must_use] 
     pub fn parse(&self, input: &str) -> ParsedCommand {
         let input = input.trim();
         
@@ -127,8 +129,8 @@ impl CommandParser {
                 }
                 MatchResult::Ambiguous { prefix, matches } => {
                     return ParsedCommand::Ambiguous {
-                        prefix: format!("no{}", prefix),
-                        matches: matches.iter().map(|m| format!("no{}", m)).collect(),
+                        prefix: format!("no{prefix}"),
+                        matches: matches.iter().map(|m| format!("no{m}")).collect(),
                     };
                 }
                 MatchResult::Unknown(_) => {
@@ -151,7 +153,7 @@ impl CommandParser {
                 }
                 MatchResult::Ambiguous { prefix, matches } => {
                     return ParsedCommand::Ambiguous {
-                        prefix: format!("{}=", prefix),
+                        prefix: format!("{prefix}="),
                         matches,
                     };
                 }
@@ -179,7 +181,7 @@ impl CommandParser {
                 }
                 MatchResult::Ambiguous { prefix, matches } => {
                     return ParsedCommand::Ambiguous {
-                        prefix: prefix.to_string(),
+                        prefix: prefix.clone(),
                         matches,
                     };
                 }
@@ -204,7 +206,7 @@ impl CommandParser {
             }
             MatchResult::Ambiguous { prefix, matches } => {
                 ParsedCommand::Ambiguous {
-                    prefix: prefix.to_string(),
+                    prefix: prefix.clone(),
                     matches,
                 }
             }

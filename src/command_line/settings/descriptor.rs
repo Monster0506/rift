@@ -61,9 +61,9 @@ pub enum SettingError {
 impl std::fmt::Display for SettingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SettingError::ParseError(msg) => write!(f, "Parse error: {}", msg),
-            SettingError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
-            SettingError::UnknownOption(name) => write!(f, "Unknown option: {}", name),
+            SettingError::ParseError(msg) => write!(f, "Parse error: {msg}"),
+            SettingError::ValidationError(msg) => write!(f, "Validation error: {msg}"),
+            SettingError::UnknownOption(name) => write!(f, "Unknown option: {name}"),
         }
     }
 }
@@ -71,17 +71,17 @@ impl std::fmt::Display for SettingError {
 /// Setter function signature
 /// 
 /// Function pointers (not trait objects) for static dispatch.
-/// Receives parsed and validated SettingValue, never raw strings.
+/// Receives parsed and validated `SettingValue`, never raw strings.
 pub type SettingSetter = fn(&mut UserSettings, SettingValue) -> Result<(), SettingError>;
 
 /// Setting descriptor
 /// 
 /// Minimal configuration: name, aliases, type, and setter function.
-/// Name encodes path (e.g., "command_line_window.width_ratio" for nested settings).
+/// Name encodes path (e.g., "`command_line_window.width_ratio`" for nested settings).
 /// Setter handles mutation - no separate path information needed.
 #[derive(Debug, Clone)]
 pub struct SettingDescriptor {
-    /// Canonical setting name (e.g., "expandtabs" or "command_line_window.width_ratio")
+    /// Canonical setting name (e.g., "expandtabs" or "`command_line_window.width_ratio`")
     pub name: &'static str,
     /// Short aliases (e.g., &["et"])
     pub aliases: &'static [&'static str],

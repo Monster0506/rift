@@ -32,7 +32,7 @@ fn main() {
     let backend = match CrosstermBackend::new() {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("Failed to create terminal backend: {}", e);
+            eprintln!("Failed to create terminal backend: {e}");
             std::process::exit(1);
         }
     };
@@ -41,14 +41,14 @@ fn main() {
     let mut editor = match Editor::with_file(backend, file_path) {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("Failed to initialize editor: {}", e);
+            eprintln!("Failed to initialize editor: {e}");
             std::process::exit(1);
         }
     };
 
     // Run editor
     if let Err(e) = editor.run() {
-        eprintln!("Editor error: {}", e);
+        eprintln!("Editor error: {e}");
         std::process::exit(1);
     }
 }

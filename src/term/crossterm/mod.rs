@@ -33,17 +33,17 @@ impl TerminalBackend for CrosstermBackend {
     fn init(&mut self) -> Result<(), String> {
         // Enable alternate screen buffer (prevents scrolling in main buffer)
         execute!(stdout(), terminal::EnterAlternateScreen)
-            .map_err(|e| format!("Failed to enter alternate screen: {}", e))?;
+            .map_err(|e| format!("Failed to enter alternate screen: {e}"))?;
         self.alternate_screen_enabled = true;
         
         // Enable raw mode
         terminal::enable_raw_mode()
-            .map_err(|e| format!("Failed to enable raw mode: {}", e))?;
+            .map_err(|e| format!("Failed to enable raw mode: {e}"))?;
         self.raw_mode_enabled = true;
         
         // Hide cursor during rendering
         execute!(stdout(), cursor::Hide)
-            .map_err(|e| format!("Failed to hide cursor: {}", e))?;
+            .map_err(|e| format!("Failed to hide cursor: {e}"))?;
         
         Ok(())
     }
@@ -66,66 +66,63 @@ impl TerminalBackend for CrosstermBackend {
 
     fn read_key(&mut self) -> Result<Key, String> {
         loop {
-            match event::read().map_err(|e| format!("Failed to read event: {}", e))? {
-                Event::Key(key_event) => {
-                    if key_event.kind == event::KeyEventKind::Press {
-                        return Ok(translate_key_event(key_event));
-                    }
-                    // Ignore key releases
+            if let Event::Key(key_event) = event::read().map_err(|e| format!("Failed to read event: {e}"))? {
+                if key_event.kind == event::KeyEventKind::Press {
+                    return Ok(translate_key_event(key_event));
                 }
-                _ => {
-                    // Ignore other events
-                }
+                // Ignore key releases
+            } else {
+                // Ignore other events
             }
         }
     }
 
     fn write(&mut self, bytes: &[u8]) -> Result<(), String> {
         stdout().write_all(bytes)
-            .map_err(|e| format!("Write failed: {}", e))?;
+            .map_err(|e| format!("Write failed: {e}"))?;
         stdout().flush()
-            .map_err(|e| format!("Flush failed: {}", e))?;
+            .map_err(|e| format!("Flush failed: {e}"))?;
         Ok(())
     }
 
     fn get_size(&self) -> Result<Size, String> {
         let (cols, rows) = terminal::size()
-            .map_err(|e| format!("Failed to get terminal size: {}", e))?;
+            .map_err(|e| format!("Failed to get terminal size: {e}"))?;
         Ok(Size {
-            rows: rows as u16,
-            cols: cols as u16,
+            rows,
+            cols,
         })
     }
 
     fn clear_screen(&mut self) -> Result<(), String> {
         execute!(stdout(), terminal::Clear(ClearType::All))
-            .map_err(|e| format!("Failed to clear screen: {}", e))?;
+            .map_err(|e| format!("Failed to clear screen: {e}"))?;
         execute!(stdout(), cursor::MoveTo(0, 0))
-            .map_err(|e| format!("Failed to move cursor: {}", e))?;
+            .map_err(|e| format!("Failed to move cursor: {e}"))?;
         Ok(())
     }
 
     fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), String> {
-        execute!(stdout(), cursor::MoveTo(col as u16, row as u16))
-            .map_err(|e| format!("Failed to move cursor: {}", e))?;
+        execute!(stdout(), cursor::MoveTo(col, row))
+            .map_err(|e| format!("Failed to move cursor: {e}"))?;
         Ok(())
     }
 
     fn hide_cursor(&mut self) -> Result<(), String> {
         execute!(stdout(), cursor::Hide)
-            .map_err(|e| format!("Failed to hide cursor: {}", e))?;
+            .map_err(|e| format!("Failed to hide cursor: {e}"))?;
         Ok(())
     }
 
     fn show_cursor(&mut self) -> Result<(), String> {
         execute!(stdout(), cursor::Show)
-            .map_err(|e| format!("Failed to show cursor: {}", e))?;
+            .map_err(|e| format!("Failed to show cursor: {e}"))?;
         Ok(())
     }
 
     fn clear_to_end_of_line(&mut self) -> Result<(), String> {
         execute!(stdout(), terminal::Clear(ClearType::UntilNewLine))
-            .map_err(|e| format!("Failed to clear to end of line: {}", e))?;
+            .map_err(|e| format!("Failed to clear to end of line: {e}"))?;
         Ok(())
     }
 }
@@ -133,24 +130,24 @@ impl TerminalBackend for CrosstermBackend {
 impl ColorTerminal for CrosstermBackend {
     fn set_foreground_color(&mut self, color: Color) -> Result<(), String> {
         execute!(stdout(), SetForegroundColor(color.to_crossterm()))
-            .map_err(|e| format!("Failed to set foreground color: {}", e))?;
+            .map_err(|e| format!("Failed to set foreground color: {e}"))?;
         Ok(())
     }
 
     fn set_background_color(&mut self, color: Color) -> Result<(), String> {
         execute!(stdout(), SetBackgroundColor(color.to_crossterm()))
-            .map_err(|e| format!("Failed to set background color: {}", e))?;
+            .map_err(|e| format!("Failed to set background color: {e}"))?;
         Ok(())
     }
 
     fn reset_colors(&mut self) -> Result<(), String> {
         execute!(stdout(), ResetColor)
-            .map_err(|e| format!("Failed to reset colors: {}", e))?;
+            .map_err(|e| format!("Failed to reset colors: {e}"))?;
         Ok(())
     }
 }
 
-/// Translate crossterm KeyEvent to our Key enum
+/// Translate crossterm `KeyEvent` to our Key enum
 pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
     let modifiers = key_event.modifiers;
     let ctrl = modifiers.contains(KeyModifiers::CONTROL);

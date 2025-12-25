@@ -3,7 +3,7 @@
 //! Handles special keys that need immediate processing before command translation
 
 
-/// ## key_handler/ Invariants
+/// ## `key_handler`/ Invariants
 ///
 /// - Key handlers translate input events into `Command`s.
 /// - Key handlers never mutate buffer or editor state directly.
@@ -36,6 +36,7 @@ pub struct KeyHandler;
 impl KeyHandler {
     /// Process a keypress and determine what action to take
     /// Returns the action the editor should take
+    #[must_use] 
     pub fn process_key(
         key: Key,
         current_mode: Mode,

@@ -53,6 +53,7 @@ pub struct Dispatcher {
 }
 
 impl Dispatcher {
+    #[must_use] 
     pub fn new(mode: Mode) -> Self {
         Dispatcher {
             mode,
@@ -122,7 +123,7 @@ impl Dispatcher {
     fn translate_insert_mode(&self, key: Key) -> Command {
         match key {
             Key::Char(ch) => {
-                if ch == b'\t' || (ch >= 32 && ch < 127) {
+                if ch == b'\t' || (32..127).contains(&ch) {
                     Command::InsertByte(ch)
                 } else {
                     Command::Noop
@@ -131,7 +132,7 @@ impl Dispatcher {
             Key::Ctrl(ch) => {
                 // Handle Ctrl key combinations in insert mode
                 // Convert to control character (Ctrl+A = 0x01, etc.)
-                let ctrl_char = if ch >= b'a' && ch <= b'z' {
+                let ctrl_char = if ch.is_ascii_lowercase() {
                     ch - b'a' + 1
                 } else {
                     ch
@@ -150,7 +151,7 @@ impl Dispatcher {
         match key {
             Key::Char(ch) => {
                 // Allow printable ASCII characters
-                if ch >= 32 && ch < 127 {
+                if (32..127).contains(&ch) {
                     Command::AppendToCommandLine(ch)
                 } else {
                     Command::Noop
@@ -163,6 +164,7 @@ impl Dispatcher {
         }
     }
 
+    #[must_use] 
     pub fn mode(&self) -> Mode {
         self.mode
     }
@@ -173,6 +175,7 @@ impl Dispatcher {
         self.pending_key = None;
     }
 
+    #[must_use] 
     pub fn pending_key(&self) -> Option<Key> {
         self.pending_key
     }

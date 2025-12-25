@@ -39,6 +39,7 @@ impl CommandDef {
     }
 
     /// Add multiple explicit aliases
+    #[must_use] 
     pub fn with_aliases(mut self, aliases: Vec<impl Into<String>>) -> Self {
         for alias in aliases {
             self.aliases.push(alias.into());
@@ -54,6 +55,7 @@ pub struct CommandRegistry {
 
 impl CommandRegistry {
     /// Create a new empty registry
+    #[must_use] 
     pub fn new() -> Self {
         CommandRegistry {
             commands: Vec::new(),
@@ -61,12 +63,14 @@ impl CommandRegistry {
     }
 
     /// Register a command
+    #[must_use] 
     pub fn register(mut self, cmd: CommandDef) -> Self {
         self.commands.push(cmd);
         self
     }
 
     /// Register multiple commands
+    #[must_use] 
     pub fn register_all(mut self, cmds: Vec<CommandDef>) -> Self {
         self.commands.extend(cmds);
         self
@@ -80,6 +84,7 @@ impl CommandRegistry {
     /// 3. Shortest unambiguous prefix match
     /// 4. Return ambiguous if multiple matches
     /// 5. Return unknown if no match
+    #[must_use] 
     pub fn match_command(&self, input: &str) -> MatchResult {
         let input = input.trim().to_lowercase();
         
@@ -147,6 +152,7 @@ impl CommandRegistry {
     }
 
     /// Get all registered command names
+    #[must_use] 
     pub fn command_names(&self) -> Vec<&String> {
         self.commands.iter().map(|c| &c.name).collect()
     }

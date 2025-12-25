@@ -10,12 +10,13 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Default)]
 pub struct ColorMap {
     /// Map from line number to color spans for that line
-    /// Spans are stored as (start_col, end_col, style) tuples
+    /// Spans are stored as (`start_col`, `end_col`, style) tuples
     line_colors: HashMap<usize, Vec<ColorSpan>>,
 }
 
 impl ColorMap {
     /// Create a new empty color map
+    #[must_use] 
     pub fn new() -> Self {
         ColorMap {
             line_colors: HashMap::new(),
@@ -34,7 +35,7 @@ impl ColorMap {
             return; // Empty span
         }
 
-        let spans = self.line_colors.entry(line).or_insert_with(Vec::new);
+        let spans = self.line_colors.entry(line).or_default();
         
         // Insert span maintaining sorted order by start position
         let insert_pos = spans.binary_search_by_key(&start_col, |s| s.start)
@@ -47,6 +48,7 @@ impl ColorMap {
     }
 
     /// Get color style for a specific position
+    #[must_use] 
     pub fn get_style(&self, line: usize, column: usize) -> Option<ColorStyle> {
         self.line_colors
             .get(&line)
@@ -58,6 +60,7 @@ impl ColorMap {
     }
 
     /// Get all color spans for a line
+    #[must_use] 
     pub fn get_line_spans(&self, line: usize) -> Vec<ColorSpan> {
         self.line_colors
             .get(&line)
@@ -104,11 +107,13 @@ impl ColorMap {
     }
 
     /// Get the number of lines with colors
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.line_colors.len()
     }
 
     /// Check if color map is empty
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.line_colors.is_empty()
     }

@@ -31,6 +31,7 @@ pub struct CommandLineWindowSettings {
 
 impl CommandLineWindowSettings {
     /// Create default command line window settings
+    #[must_use] 
     pub fn default() -> Self {
         CommandLineWindowSettings {
             width_ratio: 0.6, // 60% of terminal width
@@ -64,6 +65,7 @@ pub struct UserSettings {
 
 impl UserSettings {
     /// Create default user settings
+    #[must_use] 
     pub fn new() -> Self {
         UserSettings {
             expand_tabs: true, // Default to expanding tabs to spaces
@@ -83,6 +85,7 @@ impl UserSettings {
     }
 
     /// Get the current theme name
+    #[must_use] 
     pub fn get_theme_name(&self) -> Option<&str> {
         self.theme.as_deref()
     }
@@ -120,6 +123,7 @@ pub struct State {
 
 impl State {
     /// Create a new state instance with default values
+    #[must_use] 
     pub fn new() -> Self {
         State {
             settings: UserSettings::new(),
@@ -136,6 +140,7 @@ impl State {
     }
 
     /// Create a new state instance with custom user settings
+    #[must_use] 
     pub fn with_settings(settings: UserSettings) -> Self {
         State {
             settings,

@@ -10,7 +10,7 @@
 /// - Rendering tolerates invalid state but never corrects it.
 /// - Displayed cursor position always matches buffer cursor position.
 /// - A full redraw is always safe.
-/// - Viewport must be updated before calling render() (viewport updates happen
+/// - Viewport must be updated before calling `render()` (viewport updates happen
 ///   in the state update phase, not during rendering).
 use crate::buffer::GapBuffer;
 use crate::mode::Mode;
@@ -40,13 +40,13 @@ fn apply_editor_colors_to_terminal<T: TerminalBackend>(
     // Apply foreground color if set
     if let Some(fg_color) = fg {
         queue!(buffer, SetForegroundColor(fg_color.to_crossterm()))
-            .map_err(|e| format!("Failed to queue foreground color: {}", e))?;
+            .map_err(|e| format!("Failed to queue foreground color: {e}"))?;
     }
     
     // Apply background color if set
     if let Some(bg_color) = bg {
         queue!(buffer, SetBackgroundColor(bg_color.to_crossterm()))
-            .map_err(|e| format!("Failed to queue background color: {}", e))?;
+            .map_err(|e| format!("Failed to queue background color: {e}"))?;
     }
     
     // Write the collected escape sequences to the terminal
@@ -172,15 +172,15 @@ fn render_styled_line<T: TerminalBackend + ColorTerminal>(
             }
             
             // Write accumulated output
-            if !output.is_empty() {
+            if output.is_empty() {
+                // Empty line - fill with spaces
+                term.write(&vec![b' '; visible_cols])?;
+            } else {
                 // Pad with spaces if needed
                 while output.len() < visible_cols {
                     output.push(b' ');
                 }
                 term.write(&output)?;
-            } else {
-                // Empty line - fill with spaces
-                term.write(&vec![b' '; visible_cols])?;
             }
             
             // Reset colors at end of line
@@ -228,15 +228,15 @@ fn render_styled_line<T: TerminalBackend + ColorTerminal>(
             }
             
             // Write accumulated output
-            if !output.is_empty() {
+            if output.is_empty() {
+                // Empty line - fill with spaces
+                term.write(&vec![b' '; visible_cols])?;
+            } else {
                 // Pad with spaces if needed
                 while output.len() < visible_cols {
                     output.push(b' ');
                 }
                 term.write(&output)?;
-            } else {
-                // Empty line - fill with spaces
-                term.write(&vec![b' '; visible_cols])?;
             }
             
             // Reset colors at end of line
@@ -248,7 +248,7 @@ fn render_styled_line<T: TerminalBackend + ColorTerminal>(
 }
 
 /// Render buffer content to terminal
-/// Optionally applies colors from ColorMap if terminal supports it
+/// Optionally applies colors from `ColorMap` if terminal supports it
 fn render_content<T: TerminalBackend>(
     term: &mut T,
     buf: &GapBuffer,
@@ -318,12 +318,12 @@ fn render_content<T: TerminalBackend>(
             let rendered_with_colors = if use_colors {
                 if let Some(map) = color_map {
                     let spans = map.get_line_spans(line_num);
-                    if !spans.is_empty() {
+                    if spans.is_empty() {
+                        false
+                    } else {
                         // Try to render with colors - this requires ColorTerminal
                         // For now, we'll render plain text and colors can be added
                         // via a separate rendering path that requires ColorTerminal
-                        false
-                    } else {
                         false
                     }
                 } else {
@@ -368,7 +368,7 @@ pub(crate) fn _format_key(key: Key) -> String {
 }
 
 /// Calculate the visual column position accounting for tab width
-/// If start_col is provided, continues from that column position
+/// If `start_col` is provided, continues from that column position
 fn calculate_visual_column(line_bytes: &[u8], start_col: usize, tab_width: usize) -> usize {
     let mut col = start_col;
     for &byte in line_bytes {

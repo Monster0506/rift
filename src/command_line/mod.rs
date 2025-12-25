@@ -1,7 +1,7 @@
 //! Command line management
 //! Handles rendering, cursor positioning, and command parsing for the command line input window
 
-/// ## command_line/ Invariants
+/// ## `command_line`/ Invariants
 ///
 /// - Command line rendering only displays state, never mutates it.
 /// - Command line is only rendered when in Command mode.
@@ -23,9 +23,9 @@ pub struct CommandLine;
 
 impl CommandLine {
     /// Render the command line window and return cursor position information
-    /// Returns Some((window_pos, cmd_width)) if rendered, None otherwise
+    /// Returns `Some((window_pos`, `cmd_width`)) if rendered, None otherwise
     /// 
-    /// Uses FloatingWindow's optimized batched rendering to minimize flicker.
+    /// Uses `FloatingWindow`'s optimized batched rendering to minimize flicker.
     /// Uses border characters from state if available, or defaults.
     pub fn render<T: TerminalBackend>(
         term: &mut T,
@@ -77,6 +77,7 @@ impl CommandLine {
 
     /// Calculate the cursor position within the command line window
     /// Returns (row, col) for cursor positioning
+    #[must_use] 
     pub fn calculate_cursor_position(
         window_pos: (u16, u16),
         cmd_width: usize,

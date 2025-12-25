@@ -1,13 +1,12 @@
 //! Status bar management
 //! Handles rendering and formatting of the editor status bar
-
-
-/// ## status/ Invariants
-///
-/// - Status content is derived entirely from editor state.
-/// - Status rendering does not influence editor behavior.
-/// - Status display is optional and failure-tolerant.
-/// - Status never consumes input or commands.
+//!
+//! ## status/ Invariants
+//!
+//! - Status content is derived entirely from editor state.
+//! - Status rendering does not influence editor behavior.
+//! - Status display is optional and failure-tolerant.
+//! - Status never consumes input or commands.
 
 use crate::mode::Mode;
 use crate::key::Key;
@@ -73,7 +72,9 @@ impl StatusBar {
             let available_cols = viewport.visible_cols().saturating_sub(used_cols);
             
             // Format debug info with proper spacing
-            let (debug_display, debug_len) = if !debug_str.is_empty() {
+            let (debug_display, debug_len) = if debug_str.is_empty() {
+                (String::new(), 0)
+            } else {
                 let truncated = if debug_str.len() <= available_cols {
                     debug_str
                 } else {
@@ -82,8 +83,6 @@ impl StatusBar {
                 let spacing = available_cols.saturating_sub(truncated.len());
                 let spaced = format!("{}{}", " ".repeat(spacing), truncated);
                 (spaced, truncated.len() + spacing)
-            } else {
-                (String::new(), 0)
             };
             
             // Write debug info
@@ -107,6 +106,7 @@ impl StatusBar {
     }
     
     /// Format mode name for display
+    #[must_use] 
     pub fn format_mode(mode: Mode) -> &'static str {
         match mode {
             Mode::Normal => "NORMAL",
@@ -116,13 +116,14 @@ impl StatusBar {
     }
     
     /// Format key for display
+    #[must_use] 
     pub fn format_key(key: Key) -> String {
         match key {
             Key::Char(ch) => {
-                if ch >= 32 && ch < 127 {
+                if (32..127).contains(&ch) {
                     format!("{}", ch as char)
                 } else {
-                    format!("\\x{:02x}", ch)
+                    format!("\\x{ch:02x}")
                 }
             }
             Key::Ctrl(ch) => format!("Ctrl+{}", (ch as char).to_uppercase()),
@@ -158,12 +159,12 @@ impl StatusBar {
                     "\\t".to_string()
                 } else if b == b'\n' {
                     "\\n".to_string()
-                } else if b >= 32 && b < 127 {
+                } else if (32..127).contains(&b) {
                     format!("'{}'", b as char)
                 } else {
-                    format!("\\x{:02x}", b)
+                    format!("\\x{b:02x}")
                 };
-                parts.push(format!("Insert: {} (0x{:02x})", byte_str, b));
+                parts.push(format!("Insert: {byte_str} (0x{b:02x})"));
             }
         }
         

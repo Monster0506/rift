@@ -1,14 +1,14 @@
 //! Viewport management
 //! Handles the visible portion of the text buffer
 
-/// ## viewport/ Invariants
-///
-/// - The viewport represents a window into buffer content.
-/// - The viewport never mutates buffer contents.
-/// - The cursor is always visible within the viewport.
-/// - Viewport dimensions reflect the current terminal size.
-/// - Viewport updates are explicit and predictable.
-/// - Viewport logic is independent of rendering mechanics.
+//! ## viewport/ Invariants
+//!
+//! - The viewport represents a window into buffer content.
+//! - The viewport never mutates buffer contents.
+//! - The cursor is always visible within the viewport.
+//! - Viewport dimensions reflect the current terminal size.
+//! - Viewport updates are explicit and predictable.
+//! - Viewport logic is independent of rendering mechanics.
 
 /// Viewport manages which portion of the buffer is visible
 pub struct Viewport {
@@ -25,6 +25,7 @@ pub struct Viewport {
 }
 
 impl Viewport {
+    #[must_use] 
     pub fn new(rows: usize, cols: usize) -> Self {
         Viewport {
             top_line: 0,
@@ -37,7 +38,7 @@ impl Viewport {
 
     /// Update viewport based on cursor position and total lines
     /// Ensures the cursor is always visible by scrolling when necessary
-    /// Returns true if the viewport scrolled (top_line changed) or if this is the first update
+    /// Returns true if the viewport scrolled (`top_line` changed) or if this is the first update
     pub fn update(&mut self, cursor_line: usize, total_lines: usize) -> bool {
         // Store previous top line
         self.prev_top_line = self.top_line;
@@ -86,18 +87,22 @@ impl Viewport {
     }
     
     /// Get the previous top line (before last update)
+    #[must_use] 
     pub fn prev_top_line(&self) -> usize {
         self.prev_top_line
     }
 
+    #[must_use] 
     pub fn top_line(&self) -> usize {
         self.top_line
     }
 
+    #[must_use] 
     pub fn visible_rows(&self) -> usize {
         self.visible_rows
     }
 
+    #[must_use] 
     pub fn visible_cols(&self) -> usize {
         self.visible_cols
     }
