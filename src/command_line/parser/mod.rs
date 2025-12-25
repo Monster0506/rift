@@ -53,11 +53,7 @@ impl CommandParser {
         let input = input.trim();
 
         // Remove leading colon if present
-        let input = if input.starts_with(':') {
-            &input[1..]
-        } else {
-            input
-        };
+        let input = input.strip_prefix(':').unwrap_or(input);
 
         let input = input.trim();
 

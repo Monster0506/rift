@@ -13,7 +13,7 @@
 /// - Buffer methods either succeed fully or perform no mutation.
 /// - The buffer never emits or interprets commands.
 use std::alloc::{alloc, dealloc, Layout};
-
+use std::fmt::{self, Display};
 /// Gap buffer for efficient insertion and deletion
 pub struct GapBuffer {
     /// Buffer containing text before gap, gap, and text after gap
@@ -178,17 +178,6 @@ impl GapBuffer {
         unsafe {
             std::slice::from_raw_parts(self.buffer.add(self.gap_end), self.capacity - self.gap_end)
         }
-    }
-
-    /// Get the entire text as a string (reconstructs by moving gap to end)
-    #[must_use]
-    pub fn to_string(&self) -> String {
-        let before = self.get_before_gap();
-        let after = self.get_after_gap();
-        let mut result = Vec::with_capacity(before.len() + after.len());
-        result.extend_from_slice(before);
-        result.extend_from_slice(after);
-        String::from_utf8_lossy(&result).to_string()
     }
 
     /// Get the line number at the cursor position
@@ -462,6 +451,17 @@ impl Drop for GapBuffer {
         unsafe {
             dealloc(self.buffer, layout);
         }
+    }
+}
+impl Display for GapBuffer {
+    /// Get the entire text as a string (reconstructs by moving gap to end)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let before = self.get_before_gap();
+        let after = self.get_after_gap();
+        let mut result = Vec::with_capacity(before.len() + after.len());
+        result.extend_from_slice(before);
+        result.extend_from_slice(after);
+        write!(f, "{}", String::from_utf8_lossy(&result))
     }
 }
 

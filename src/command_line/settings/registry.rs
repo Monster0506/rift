@@ -189,28 +189,29 @@ impl SettingsRegistry {
         }
 
         // Handle color names
-        let color =
-            match val_lower.as_str() {
-                "black" => Color::Black,
-                "darkgrey" | "dark_grey" => Color::DarkGrey,
-                "red" => Color::Red,
-                "darkred" | "dark_red" => Color::DarkRed,
-                "green" => Color::Green,
-                "darkgreen" | "dark_green" => Color::DarkGreen,
-                "yellow" => Color::Yellow,
-                "darkyellow" | "dark_yellow" => Color::DarkYellow,
-                "blue" => Color::Blue,
-                "darkblue" | "dark_blue" => Color::DarkBlue,
-                "magenta" => Color::Magenta,
-                "darkmagenta" | "dark_magenta" => Color::DarkMagenta,
-                "cyan" => Color::Cyan,
-                "darkcyan" | "dark_cyan" => Color::DarkCyan,
-                "white" => Color::White,
-                "grey" | "gray" => Color::Grey,
-                _ => return Err(SettingError::ParseError(format!(
+        let color = match val_lower.as_str() {
+            "black" => Color::Black,
+            "darkgrey" | "dark_grey" => Color::DarkGrey,
+            "red" => Color::Red,
+            "darkred" | "dark_red" => Color::DarkRed,
+            "green" => Color::Green,
+            "darkgreen" | "dark_green" => Color::DarkGreen,
+            "yellow" => Color::Yellow,
+            "darkyellow" | "dark_yellow" => Color::DarkYellow,
+            "blue" => Color::Blue,
+            "darkblue" | "dark_blue" => Color::DarkBlue,
+            "magenta" => Color::Magenta,
+            "darkmagenta" | "dark_magenta" => Color::DarkMagenta,
+            "cyan" => Color::Cyan,
+            "darkcyan" | "dark_cyan" => Color::DarkCyan,
+            "white" => Color::White,
+            "grey" | "gray" => Color::Grey,
+            _ => {
+                return Err(SettingError::ParseError(format!(
                     "Unknown color name: {value}. Use color names, rgb(r,g,b), #hex, or ansi256(n)"
-                ))),
-            };
+                )))
+            }
+        };
 
         Ok(SettingValue::Color(color))
     }

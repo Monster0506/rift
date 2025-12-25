@@ -52,7 +52,7 @@ impl KeyHandler {
             // Escape - clear pending keys
             Key::Escape => KeyAction::SkipAndRender,
             // Ctrl+] - clear pending keys (alternative)
-            Key::Ctrl(ch) if ch == b']' => KeyAction::SkipAndRender,
+            Key::Ctrl(b']') => KeyAction::SkipAndRender,
             // All other keys continue to command processing
             _ => KeyAction::Continue,
         }

@@ -41,10 +41,9 @@ pub struct BorderChars {
     pub vertical: Vec<u8>,
 }
 
-impl BorderChars {
+impl Default for BorderChars {
     /// Create default border characters (Unicode box drawing)
-    #[must_use]
-    pub fn default() -> Self {
+    fn default() -> Self {
         BorderChars {
             top_left: DEFAULT_BORDER_TOP_LEFT.to_vec(),
             top_right: DEFAULT_BORDER_TOP_RIGHT.to_vec(),
@@ -54,7 +53,9 @@ impl BorderChars {
             vertical: DEFAULT_BORDER_VERTICAL.to_vec(),
         }
     }
+}
 
+impl BorderChars {
     /// Create border characters from byte slices
     #[must_use]
     pub fn new(
@@ -93,12 +94,6 @@ impl BorderChars {
             horizontal: vec![horizontal],
             vertical: vec![vertical],
         }
-    }
-}
-
-impl Default for BorderChars {
-    fn default() -> Self {
-        BorderChars::default()
     }
 }
 
@@ -270,7 +265,7 @@ impl FloatingWindow {
         // Determine which border chars to use: override > window config > defaults
         let border_chars = border_chars_override
             .or(self.border_chars.clone())
-            .unwrap_or_else(BorderChars::default);
+            .unwrap_or_default();
         // Get terminal size
         let size = term.get_size()?;
         let term_rows = size.rows;
