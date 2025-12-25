@@ -11,10 +11,10 @@ fn create_unicode_border() -> BorderChars {
     BorderChars {
         top_left: vec![0xE2, 0x95, 0xAD],     // ╭
         top_right: vec![0xE2, 0x95, 0xAE],    // ╮
-        bottom_left: vec![0xE2, 0x95, 0xB0], // ╰
+        bottom_left: vec![0xE2, 0x95, 0xB0],  // ╰
         bottom_right: vec![0xE2, 0x95, 0xAF], // ╯
-        horizontal: vec![0xE2, 0x95, 0x90],   // ─
-        vertical: vec![0xE2, 0x95, 0x91],     // │
+        horizontal: vec![0xE2, 0x94, 0x80],   // ─
+        vertical: vec![0xE2, 0x94, 0x82],     // │
     }
 }
 
