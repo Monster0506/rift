@@ -150,6 +150,26 @@ fn set_editor_fg(settings: &mut UserSettings, value: SettingValue) -> Result<(),
     }
 }
 
+fn set_theme(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Enum(theme_name) => {
+            if let Some(theme) = crate::color::Theme::by_name(&theme_name) {
+                // Apply theme using the theme handler
+                // This allows themes to apply more than just background/foreground
+                theme.apply_to_settings(settings);
+                Ok(())
+            } else {
+                Err(SettingError::ValidationError(
+                    format!("Unknown theme: {}. Available themes: {}", 
+                        theme_name,
+                        crate::color::Theme::available_themes().join(", "))
+                ))
+            }
+        }
+        _ => Err(SettingError::ValidationError("Expected theme name".to_string())),
+    }
+}
+
 /// Static registry of all settings
 pub const SETTINGS: &[SettingDescriptor] = &[
     SettingDescriptor {
@@ -211,6 +231,14 @@ pub const SETTINGS: &[SettingDescriptor] = &[
         aliases: &["edfg", "fg"],
         ty: SettingType::Color,
         set: set_editor_fg,
+    },
+    SettingDescriptor {
+        name: "theme",
+        aliases: &["colorscheme", "colors"],
+        ty: SettingType::Enum { 
+            variants: &["light", "dark", "gruvbox", "nordic", "nord"] 
+        },
+        set: set_theme,
     },
 ];
 

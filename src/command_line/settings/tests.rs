@@ -2,6 +2,7 @@
 
 use crate::command_line::settings::descriptor::{SettingDescriptor, SettingType, SettingValue, SettingError};
 use crate::command_line::settings::registry::SettingsRegistry;
+use crate::command_line::settings::create_settings_registry;
 use crate::state::UserSettings;
 
 // Test setters for various types
@@ -494,5 +495,127 @@ fn test_execute_setting_ambiguous() {
     // But "expandtabs" is unambiguous
     let result = registry.execute_setting("expandtabs", Some("true".to_string()), &mut settings);
     assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
+}
+
+#[test]
+fn test_execute_setting_theme_light() {
+    let registry = create_settings_registry();
+    let mut settings = UserSettings::new();
+    
+    let result = registry.execute_setting("theme", Some("light".to_string()), &mut settings);
+    assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
+    assert_eq!(settings.theme, Some("light".to_string()));
+    assert_eq!(settings.editor_bg, Some(crate::color::Theme::light().background));
+    assert_eq!(settings.editor_fg, Some(crate::color::Theme::light().foreground));
+}
+
+#[test]
+fn test_execute_setting_theme_dark() {
+    let registry = create_settings_registry();
+    let mut settings = UserSettings::new();
+    
+    let result = registry.execute_setting("theme", Some("dark".to_string()), &mut settings);
+    assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
+    assert_eq!(settings.theme, Some("dark".to_string()));
+    assert_eq!(settings.editor_bg, Some(crate::color::Theme::dark().background));
+    assert_eq!(settings.editor_fg, Some(crate::color::Theme::dark().foreground));
+}
+
+#[test]
+fn test_execute_setting_theme_gruvbox() {
+    let registry = create_settings_registry();
+    let mut settings = UserSettings::new();
+    
+    let result = registry.execute_setting("theme", Some("gruvbox".to_string()), &mut settings);
+    assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
+    assert_eq!(settings.theme, Some("gruvbox".to_string()));
+    assert_eq!(settings.editor_bg, Some(crate::color::Theme::gruvbox().background));
+    assert_eq!(settings.editor_fg, Some(crate::color::Theme::gruvbox().foreground));
+}
+
+#[test]
+fn test_execute_setting_theme_nordic() {
+    let registry = create_settings_registry();
+    let mut settings = UserSettings::new();
+    
+    let result = registry.execute_setting("theme", Some("nordic".to_string()), &mut settings);
+    assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
+    assert_eq!(settings.theme, Some("nordic".to_string()));
+    assert_eq!(settings.editor_bg, Some(crate::color::Theme::nordic().background));
+    assert_eq!(settings.editor_fg, Some(crate::color::Theme::nordic().foreground));
+}
+
+#[test]
+fn test_execute_setting_theme_nord_alias() {
+    let registry = create_settings_registry();
+    let mut settings = UserSettings::new();
+    
+    let result = registry.execute_setting("theme", Some("nord".to_string()), &mut settings);
+    assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
+    assert_eq!(settings.theme, Some("nordic".to_string()));
+}
+
+#[test]
+fn test_execute_setting_theme_case_insensitive() {
+    let registry = create_settings_registry();
+    let mut settings = UserSettings::new();
+    
+    let result = registry.execute_setting("theme", Some("LIGHT".to_string()), &mut settings);
+    assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
+    assert_eq!(settings.theme, Some("light".to_string()));
+    
+    let result = registry.execute_setting("theme", Some("Dark".to_string()), &mut settings);
+    assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
+    assert_eq!(settings.theme, Some("dark".to_string()));
+}
+
+#[test]
+fn test_execute_setting_theme_unknown() {
+    let registry = create_settings_registry();
+    let mut settings = UserSettings::new();
+    
+    let result = registry.execute_setting("theme", Some("unknown_theme".to_string()), &mut settings);
+    assert!(matches!(result, crate::command_line::executor::ExecutionResult::Error(_)));
+}
+
+#[test]
+fn test_execute_setting_theme_overwrites_previous() {
+    let registry = create_settings_registry();
+    let mut settings = UserSettings::new();
+    
+    // Apply light theme
+    let result = registry.execute_setting("theme", Some("light".to_string()), &mut settings);
+    assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
+    assert_eq!(settings.theme, Some("light".to_string()));
+    let light_bg = settings.editor_bg;
+    
+    // Apply dark theme - should overwrite
+    let result = registry.execute_setting("theme", Some("dark".to_string()), &mut settings);
+    assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
+    assert_eq!(settings.theme, Some("dark".to_string()));
+    assert_ne!(settings.editor_bg, light_bg);
+    assert_eq!(settings.editor_bg, Some(crate::color::Theme::dark().background));
+}
+
+#[test]
+fn test_execute_setting_theme_alias_colorscheme() {
+    let registry = create_settings_registry();
+    let mut settings = UserSettings::new();
+    
+    // Test alias "colorscheme"
+    let result = registry.execute_setting("colorscheme", Some("light".to_string()), &mut settings);
+    assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
+    assert_eq!(settings.theme, Some("light".to_string()));
+}
+
+#[test]
+fn test_execute_setting_theme_alias_colors() {
+    let registry = create_settings_registry();
+    let mut settings = UserSettings::new();
+    
+    // Test alias "colors"
+    let result = registry.execute_setting("colors", Some("dark".to_string()), &mut settings);
+    assert!(matches!(result, crate::command_line::executor::ExecutionResult::Success));
+    assert_eq!(settings.theme, Some("dark".to_string()));
 }
 

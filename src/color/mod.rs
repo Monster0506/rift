@@ -5,9 +5,9 @@ use crossterm::style::Color as CrosstermColor;
 
 pub mod styled;
 pub mod buffer;
+pub mod theme;
 
-#[cfg(test)]
-mod tests;
+pub use theme::{Theme, ThemeVariant};
 
 /// Color representation wrapping crossterm's Color enum
 /// Supports 16 colors, 256 colors, and RGB colors

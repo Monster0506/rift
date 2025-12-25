@@ -12,7 +12,7 @@
 use crate::key::Key;
 use crate::command::Command;
 use crate::floating_window::BorderChars;
-use crate::color::Color;
+use crate::color::{Color, Theme};
 
 /// Command line window settings
 #[derive(Debug, Clone)]
@@ -58,6 +58,8 @@ pub struct UserSettings {
     pub editor_bg: Option<Color>,
     /// Editor foreground color (None means use terminal default)
     pub editor_fg: Option<Color>,
+    /// Current theme name (None means no theme applied)
+    pub theme: Option<String>,
 }
 
 impl UserSettings {
@@ -70,7 +72,19 @@ impl UserSettings {
             command_line_window: CommandLineWindowSettings::default(),
             editor_bg: None,
             editor_fg: None,
+            theme: None,
         }
+    }
+
+    /// Apply a theme to the settings using the theme handler
+    /// This delegates to the theme handler which can apply all theme properties
+    pub fn apply_theme(&mut self, theme: &Theme) {
+        theme.apply_to_settings(self);
+    }
+
+    /// Get the current theme name
+    pub fn get_theme_name(&self) -> Option<&str> {
+        self.theme.as_deref()
     }
 }
 
