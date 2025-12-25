@@ -288,21 +288,20 @@ impl GapBuffer {
     }
 
     /// Get byte at a specific position (handles gap)
+    /// pos is a logical position (0 to len()-1), not a physical buffer position
     fn get_byte_at(&self, pos: usize) -> Option<u8> {
-        if pos < self.gap_start {
-            // Before gap
-            unsafe { Some(*self.buffer.add(pos)) }
-        } else if pos >= self.gap_end {
-            // After gap - need to adjust for gap size
-            let adjusted_pos = pos - (self.gap_end - self.gap_start);
-            if adjusted_pos < self.capacity {
-                unsafe { Some(*self.buffer.add(adjusted_pos)) }
-            } else {
-                None
-            }
-        } else {
-            // In gap - invalid position
+        if pos >= self.len() {
+            // Position out of bounds
             None
+        } else if pos < self.gap_start {
+            // Before gap - physical position equals logical position
+            unsafe { Some(*self.buffer.add(pos)) }
+        } else {
+            // After gap - convert logical to physical position
+            // Physical = logical + gap_size
+            let gap_size = self.gap_end - self.gap_start;
+            let physical_pos = pos + gap_size;
+            unsafe { Some(*self.buffer.add(physical_pos)) }
         }
     }
 
