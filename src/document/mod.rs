@@ -43,12 +43,9 @@ impl Document {
         let path = path.as_ref();
         let bytes = std::fs::read(path)?;
 
-        let mut buffer = GapBuffer::new(bytes.len().max(4096))
-            .map_err(io::Error::other)?;
+        let mut buffer = GapBuffer::new(bytes.len().max(4096)).map_err(io::Error::other)?;
 
-        buffer
-            .insert_bytes(&bytes)
-            .map_err(io::Error::other)?;
+        buffer.insert_bytes(&bytes).map_err(io::Error::other)?;
 
         buffer.move_to_start();
 

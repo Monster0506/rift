@@ -30,6 +30,15 @@ impl StatusBar {
         let status_row = viewport.visible_rows().saturating_sub(1);
         term.move_cursor(status_row as u16, 0)?;
 
+        // If status line is disabled, just clear the line and return
+        if !state.settings.status_line.show_status_line {
+            // Clear the entire status line
+            for _ in 0..viewport.visible_cols() {
+                term.write(b" ")?;
+            }
+            return Ok(());
+        }
+
         // Invert colors for status bar (reverse video) if enabled
         if state.settings.status_line.reverse_video {
             term.write(b"\x1b[7m")?;

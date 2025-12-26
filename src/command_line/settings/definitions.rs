@@ -236,6 +236,21 @@ fn set_status_line_reverse_video(
     }
 }
 
+fn set_show_status_line(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Bool(b) => {
+            settings.status_line.show_status_line = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
+    }
+}
+
 /// Static registry of all settings
 pub const SETTINGS: &[SettingDescriptor] = &[
     SettingDescriptor {
@@ -331,6 +346,12 @@ pub const SETTINGS: &[SettingDescriptor] = &[
         aliases: &["slreverse"],
         ty: SettingType::Boolean,
         set: set_status_line_reverse_video,
+    },
+    SettingDescriptor {
+        name: "status_line.show_status_line",
+        aliases: &["sls"],
+        ty: SettingType::Boolean,
+        set: set_show_status_line,
     },
 ];
 

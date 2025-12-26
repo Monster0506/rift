@@ -369,9 +369,10 @@ impl<T: TerminalBackend> Editor<T> {
             self.document
                 .save()
                 .map_err(|e| format!("Failed to write {file_path}: {e}"))?;
-            
+
             // Update cached filename after save (handles save_as case)
-            self.state.update_filename(self.document.display_name().to_string());
+            self.state
+                .update_filename(self.document.display_name().to_string());
         } else {
             return Err("No file name".to_string());
         }
