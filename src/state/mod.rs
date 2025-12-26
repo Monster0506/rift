@@ -104,6 +104,8 @@ pub struct State {
     pub debug_mode: bool,
     /// Current file path (None if no file loaded)
     pub file_path: Option<String>,
+    /// Cached filename for display
+    pub file_name: String,
     /// Last keypress received
     pub last_keypress: Option<Key>,
     /// Last command that will be executed
@@ -128,6 +130,7 @@ impl State {
             settings: UserSettings::new(),
             debug_mode: false,
             file_path: None,
+            file_name: "[No Name]".to_string(),
             last_keypress: None,
             last_command: None,
             cursor_pos: (0, 0),
@@ -145,6 +148,7 @@ impl State {
             settings,
             debug_mode: false,
             file_path: None,
+            file_name: "[No Name]".to_string(),
             last_keypress: None,
             last_command: None,
             cursor_pos: (0, 0),
@@ -214,6 +218,11 @@ impl State {
     /// Set command error message
     pub fn set_command_error(&mut self, error: Option<String>) {
         self.command_error = error;
+    }
+
+    /// Update filename for display (should match Document's display_name)
+    pub fn update_filename(&mut self, filename: String) {
+        self.file_name = filename;
     }
 }
 

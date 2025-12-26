@@ -72,7 +72,9 @@ impl<T: TerminalBackend> Editor<T> {
         let command_parser = CommandParser::new(registry, settings_registry);
 
         let mut state = State::new();
-        state.set_file_path(file_path);
+        state.set_file_path(file_path.clone());
+        // Initialize filename from document
+        state.update_filename(document.display_name().to_string());
 
         Ok(Editor {
             terminal,
@@ -367,6 +369,9 @@ impl<T: TerminalBackend> Editor<T> {
             self.document
                 .save()
                 .map_err(|e| format!("Failed to write {file_path}: {e}"))?;
+            
+            // Update cached filename after save (handles save_as case)
+            self.state.update_filename(self.document.display_name().to_string());
         } else {
             return Err("No file name".to_string());
         }
