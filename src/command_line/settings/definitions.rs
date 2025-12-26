@@ -221,6 +221,21 @@ fn set_show_filename(settings: &mut UserSettings, value: SettingValue) -> Result
     }
 }
 
+fn set_show_dirty_indicator(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Bool(b) => {
+            settings.status_line.show_dirty_indicator = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
+    }
+}
+
 fn set_status_line_reverse_video(
     settings: &mut UserSettings,
     value: SettingValue,
@@ -352,6 +367,12 @@ pub const SETTINGS: &[SettingDescriptor] = &[
         aliases: &["sls"],
         ty: SettingType::Boolean,
         set: set_show_status_line,
+    },
+    SettingDescriptor {
+        name: "status_line.show_dirty",
+        aliases: &["sld"],
+        ty: SettingType::Boolean,
+        set: set_show_dirty_indicator,
     },
 ];
 

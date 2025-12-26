@@ -52,6 +52,8 @@ pub struct StatusLineSettings {
     pub show_status_line: bool,
     /// Whether to show filename in status bar (normal mode)
     pub show_filename: bool,
+    /// Whether to show dirty state indicator (*) in status bar
+    pub show_dirty_indicator: bool,
     /// Whether to use reverse video for status bar
     pub reverse_video: bool,
 }
@@ -62,6 +64,7 @@ impl Default for StatusLineSettings {
         StatusLineSettings {
             show_status_line: true,
             show_filename: true,
+            show_dirty_indicator: true,
             reverse_video: false,
         }
     }
@@ -146,6 +149,8 @@ pub struct State {
     pub buffer_size: usize,
     /// Command line input (for command mode)
     pub command_line: String,
+    /// Whether the current document has unsaved changes
+    pub is_dirty: bool,
     /// Error and notification manager
     pub error_manager: ErrorManager,
 }
@@ -165,6 +170,7 @@ impl State {
             total_lines: 1,
             buffer_size: 0,
             command_line: String::new(),
+            is_dirty: false,
             error_manager: ErrorManager::new(),
         }
     }
@@ -183,6 +189,7 @@ impl State {
             total_lines: 1,
             buffer_size: 0,
             command_line: String::new(),
+            is_dirty: false,
             error_manager: ErrorManager::new(),
         }
     }
@@ -265,6 +272,11 @@ impl State {
         self.error_manager
             .notifications_mut()
             .add(kind, message, ttl);
+    }
+
+    /// Update dirty state
+    pub fn update_dirty(&mut self, is_dirty: bool) {
+        self.is_dirty = is_dirty;
     }
 }
 

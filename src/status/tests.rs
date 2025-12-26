@@ -290,3 +290,34 @@ fn test_status_bar_no_name_display() {
     let written = term.get_written_string();
     assert!(written.contains("[No Name]"));
 }
+
+#[test]
+fn test_status_bar_dirty_indicator() {
+    let mut term = MockTerminal::new(10, 80);
+    let viewport = Viewport::new(10, 80);
+    let mut state = State::new();
+    state.update_filename("test.txt".to_string());
+    state.update_dirty(true);
+    // show_dirty_indicator defaults to true
+
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+
+    let written = term.get_written_string();
+    assert!(written.contains("test.txt*"));
+}
+
+#[test]
+fn test_status_bar_dirty_indicator_hidden_when_disabled() {
+    let mut term = MockTerminal::new(10, 80);
+    let viewport = Viewport::new(10, 80);
+    let mut state = State::new();
+    state.update_filename("test.txt".to_string());
+    state.update_dirty(true);
+    state.settings.status_line.show_dirty_indicator = false;
+
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+
+    let written = term.get_written_string();
+    assert!(written.contains("test.txt"));
+    assert!(!written.contains("test.txt*"));
+}

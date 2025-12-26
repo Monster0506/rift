@@ -81,7 +81,6 @@ impl StatusBar {
             // Calculate layout
             let mode_len = mode_str.len();
             let pending_len = pending_str.len();
-            let file_len = state.file_name.len();
             let used_cols = mode_len + pending_len;
             let available_cols = viewport.visible_cols().saturating_sub(used_cols);
 
@@ -116,20 +115,28 @@ impl StatusBar {
             } else {
                 // Normal mode: show filename on the right (if enabled in settings)
                 if state.settings.status_line.show_filename {
-                    if file_len <= available_cols {
+                    let display_name =
+                        if state.is_dirty && state.settings.status_line.show_dirty_indicator {
+                            format!("{}*", state.file_name)
+                        } else {
+                            state.file_name.clone()
+                        };
+                    let display_len = display_name.len();
+
+                    if display_len <= available_cols {
                         // Right-align filename
-                        let spacing = available_cols.saturating_sub(file_len);
+                        let spacing = available_cols.saturating_sub(display_len);
                         for _ in 0..spacing {
                             term.write(b" ")?;
                         }
-                        term.write(state.file_name.as_bytes())?;
+                        term.write(display_name.as_bytes())?;
                     } else {
                         // Filename too long, truncate it
                         let truncated = if available_cols > 3 {
                             format!(
                                 "...{}",
-                                &state.file_name
-                                    [state.file_name.len().saturating_sub(available_cols - 3)..]
+                                &display_name
+                                    [display_name.len().saturating_sub(available_cols - 3)..]
                             )
                         } else {
                             String::new()
@@ -330,10 +337,16 @@ impl StatusBar {
             }
         } else if state.settings.status_line.show_filename {
             // Normal mode: show filename on the right
-            let file_name = &state.file_name;
-            if file_name.len() <= available_cols {
+            let display_name = if state.is_dirty && state.settings.status_line.show_dirty_indicator
+            {
+                format!("{}*", state.file_name)
+            } else {
+                state.file_name.clone()
+            };
+
+            if display_name.len() <= available_cols {
                 // Right-align filename
-                let spacing = available_cols.saturating_sub(file_name.len() + 1);
+                let spacing = available_cols.saturating_sub(display_name.len() + 1);
                 for _ in 0..spacing {
                     layer.set_cell(
                         status_row,
@@ -342,13 +355,13 @@ impl StatusBar {
                     );
                     col += 1;
                 }
-                layer.write_bytes_colored(status_row, col, file_name.as_bytes(), fg, bg);
-                col += file_name.len();
+                layer.write_bytes_colored(status_row, col, display_name.as_bytes(), fg, bg);
+                col += display_name.len();
             } else if available_cols > 3 {
                 // Truncate filename
                 let truncated = format!(
                     "...{}",
-                    &file_name[file_name.len().saturating_sub(available_cols - 3)..]
+                    &display_name[display_name.len().saturating_sub(available_cols - 3)..]
                 );
                 let spacing = available_cols.saturating_sub(truncated.len());
                 for _ in 0..spacing {
