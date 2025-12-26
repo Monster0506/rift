@@ -11,7 +11,7 @@ pub enum ExecutionResult {
     /// Command executed successfully
     Success,
     /// Quit command - editor should exit
-    Quit,
+    Quit { bangs: usize },
     /// Write and quit - editor should save then exit
     WriteAndQuit,
     /// Error occurred during execution
@@ -35,7 +35,7 @@ impl CommandExecutor {
         settings_registry: &SettingsRegistry,
     ) -> ExecutionResult {
         match command {
-            ParsedCommand::Quit { bangs: _ } => ExecutionResult::Quit,
+            ParsedCommand::Quit { bangs } => ExecutionResult::Quit { bangs },
             ParsedCommand::Set {
                 option,
                 value,

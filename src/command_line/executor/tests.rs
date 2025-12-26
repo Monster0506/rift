@@ -12,7 +12,7 @@ fn test_execute_quit() {
 
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
-    assert_eq!(result, ExecutionResult::Quit);
+    assert_eq!(result, ExecutionResult::Quit { bangs: 0 });
 }
 
 #[test]

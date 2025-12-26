@@ -235,11 +235,17 @@ impl<T: TerminalBackend> Editor<T> {
 
                 // Handle execution result
                 match execution_result {
-                    ExecutionResult::Quit => {
-                        self.should_quit = true;
-                        self.state.clear_command_line();
-                        self.state.set_command_error(None);
-                        self.set_mode(Mode::Normal);
+                    ExecutionResult::Quit { bangs } => {
+                        if self.document.is_dirty() && bangs == 0 {
+                            self.state.set_command_error(Some(
+                                "No write since last change (add ! to override)".to_string(),
+                            ));
+                        } else {
+                            self.should_quit = true;
+                            self.state.clear_command_line();
+                            self.state.set_command_error(None);
+                            self.set_mode(Mode::Normal);
+                        }
                     }
                     ExecutionResult::Success => {
                         // Handle write command - save if file path exists
