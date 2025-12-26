@@ -253,17 +253,16 @@ impl<T: TerminalBackend> Editor<T> {
                 match execution_result {
                     ExecutionResult::Quit { bangs } => {
                         if self.document.is_dirty() && bangs == 0 {
-                            self.state.set_command_error(Some(RiftError {
+                            self.state.handle_error(RiftError {
                                 severity: ErrorSeverity::Warning,
                                 kind: ErrorType::Execution,
                                 code: "UNSAVED_CHANGES".to_string(),
                                 message: "No write since last change (add ! to override)"
                                     .to_string(),
-                            }));
+                            });
                         } else {
                             self.should_quit = true;
                             self.state.clear_command_line();
-                            self.state.set_command_error(None);
                             self.set_mode(Mode::Normal);
                         }
                     }
@@ -271,30 +270,27 @@ impl<T: TerminalBackend> Editor<T> {
                         // Handle write command - save if file path exists
                         if self.state.file_path.is_some() && self.document.is_dirty() {
                             if let Err(e) = self.save_document() {
-                                self.state.set_command_error(Some(e));
+                                self.state.handle_error(e);
                                 return Ok(()); // Don't clear command line on error
                             }
                         }
                         self.state.clear_command_line();
-                        self.state.set_command_error(None);
                         self.set_mode(Mode::Normal);
                     }
                     ExecutionResult::WriteAndQuit => {
                         // Save document, then quit if successful
                         if let Err(e) = self.save_document() {
-                            self.state.set_command_error(Some(e));
+                            self.state.handle_error(e);
                             return Ok(()); // Don't quit on save error
                         }
                         // Save successful, now quit
                         self.should_quit = true;
                         self.state.clear_command_line();
-                        self.state.set_command_error(None);
                         self.set_mode(Mode::Normal);
                     }
-                    ExecutionResult::Error(error_msg) => {
-                        // Keep command line visible so user can see the error and fix it
-                        // Don't clear command line or exit command mode
-                        self.state.set_command_error(Some(error_msg));
+                    ExecutionResult::Failure => {
+                        // Error already reported by executor to state/notification manager
+                        // Keep command line visible so user can see it
                     }
                 }
             }
@@ -330,6 +326,7 @@ impl<T: TerminalBackend> Editor<T> {
         let buffer_size = self.document.buffer.get_before_gap().len()
             + self.document.buffer.get_after_gap().len();
         self.state.update_buffer_stats(total_lines, buffer_size);
+        self.state.error_manager.notifications_mut().prune_expired();
 
         // Update viewport based on cursor position (state mutation happens here)
         let needs_clear = self.viewport.update(cursor_line, total_lines);
@@ -363,9 +360,6 @@ impl<T: TerminalBackend> Editor<T> {
     /// Render the editor interface (pure read - no mutations)
     /// Uses the layer compositor for composited rendering
     fn render(&mut self, needs_clear: bool) -> Result<(), RiftError> {
-        // Prune expired notifications before rendering
-        self.state.notification_manager.prune_expired();
-
         render::render(
             &mut self.terminal,
             &mut self.compositor,

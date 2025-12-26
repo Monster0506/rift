@@ -1,6 +1,7 @@
 //! Notification system
 //! Manages popup notifications for the user
 
+use crate::error::ErrorSeverity;
 use std::time::{Duration, Instant};
 
 /// Types of notifications
@@ -14,6 +15,17 @@ pub enum NotificationType {
     Error,
     /// Success message
     Success,
+}
+
+impl From<ErrorSeverity> for NotificationType {
+    fn from(severity: ErrorSeverity) -> Self {
+        match severity {
+            ErrorSeverity::Info => NotificationType::Info,
+            ErrorSeverity::Warning => NotificationType::Warning,
+            ErrorSeverity::Error => NotificationType::Error,
+            ErrorSeverity::Critical => NotificationType::Error,
+        }
+    }
 }
 
 /// A single notification

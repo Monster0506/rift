@@ -312,7 +312,8 @@ fn render_notifications(layer: &mut Layer, state: &State, term_rows: usize, term
     use crate::notification::NotificationType;
     let now = std::time::Instant::now();
     let notifications: Vec<_> = state
-        .notification_manager
+        .error_manager
+        .notifications()
         .iter_active()
         .filter(|n| !n.is_expired(now))
         .collect();

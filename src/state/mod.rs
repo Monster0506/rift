@@ -3,6 +3,7 @@
 
 use crate::color::{Color, Theme};
 use crate::command::Command;
+use crate::error::manager::ErrorManager;
 use crate::error::RiftError;
 use crate::floating_window::BorderChars;
 /// ## state/ Invariants
@@ -13,7 +14,7 @@ use crate::floating_window::BorderChars;
 /// - Editor state is never partially updated.
 /// - State changes are observable by the renderer but never influenced by it.
 use crate::key::Key;
-use crate::notification::{NotificationManager, NotificationType};
+use crate::notification::NotificationType;
 
 /// Command line window settings
 #[derive(Debug, Clone)]
@@ -145,10 +146,8 @@ pub struct State {
     pub buffer_size: usize,
     /// Command line input (for command mode)
     pub command_line: String,
-    /// Command execution error (if any)
-    pub command_error: Option<RiftError>,
-    /// Notification manager
-    pub notification_manager: NotificationManager,
+    /// Error and notification manager
+    pub error_manager: ErrorManager,
 }
 
 impl State {
@@ -166,8 +165,7 @@ impl State {
             total_lines: 1,
             buffer_size: 0,
             command_line: String::new(),
-            command_error: None,
-            notification_manager: NotificationManager::new(),
+            error_manager: ErrorManager::new(),
         }
     }
 
@@ -185,8 +183,7 @@ impl State {
             total_lines: 1,
             buffer_size: 0,
             command_line: String::new(),
-            command_error: None,
-            notification_manager: NotificationManager::new(),
+            error_manager: ErrorManager::new(),
         }
     }
 
@@ -246,9 +243,9 @@ impl State {
         self.command_line.clear();
     }
 
-    /// Set command error
-    pub fn set_command_error(&mut self, error: Option<RiftError>) {
-        self.command_error = error;
+    /// Handle a RiftError by delegating to the ErrorManager
+    pub fn handle_error(&mut self, err: RiftError) {
+        self.error_manager.handle(err);
     }
 
     /// Update filename for display (should match Document's display_name)
@@ -265,7 +262,9 @@ impl State {
             NotificationType::Info => Some(std::time::Duration::from_secs(5)),
             NotificationType::Success => Some(std::time::Duration::from_secs(3)),
         };
-        self.notification_manager.add(kind, message, ttl);
+        self.error_manager
+            .notifications_mut()
+            .add(kind, message, ttl);
     }
 }
 

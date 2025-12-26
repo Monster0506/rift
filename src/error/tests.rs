@@ -159,3 +159,23 @@ fn test_error_severity_extremes() {
         assert_eq!(s, s.clone());
     }
 }
+#[test]
+fn test_error_manager_handle_sets_ttl() {
+    let mut manager = manager::ErrorManager::new();
+    let err = RiftError::new(ErrorType::Io, "E1", "io error");
+
+    manager.handle(err);
+
+    let notifications: Vec<_> = manager.notifications().iter_active().collect();
+    assert_eq!(notifications.len(), 1);
+    // Standard error should have 10s TTL
+    assert!(notifications[0].ttl.is_some());
+    assert_eq!(notifications[0].ttl.unwrap().as_secs(), 10);
+
+    // Warning should have 8s TTL
+    let warn = RiftError::warning(ErrorType::Settings, "W1", "warn");
+    manager.handle(warn);
+    let notifications: Vec<_> = manager.notifications().iter_active().collect();
+    assert_eq!(notifications.len(), 2);
+    assert_eq!(notifications[1].ttl.unwrap().as_secs(), 8);
+}

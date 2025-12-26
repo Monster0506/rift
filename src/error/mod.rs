@@ -160,6 +160,8 @@ impl ToRiftError for String {
     }
 }
 
+pub mod manager;
+
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;

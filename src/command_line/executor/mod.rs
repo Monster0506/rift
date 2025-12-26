@@ -15,8 +15,8 @@ pub enum ExecutionResult {
     Quit { bangs: usize },
     /// Write and quit - editor should save then exit
     WriteAndQuit,
-    /// Error occurred during execution
-    Error(RiftError),
+    /// Error occurred during execution (already reported to manager)
+    Failure,
 }
 
 /// Command executor
@@ -41,7 +41,7 @@ impl CommandExecutor {
                 option,
                 value,
                 bangs: _,
-            } => settings_registry.execute_setting(&option, value, &mut state.settings),
+            } => settings_registry.execute_setting(&option, value, state),
             ParsedCommand::Write { path, bangs: _ } => {
                 // Set the path in state if provided (for :w filename)
                 if let Some(ref file_path) = path {
@@ -58,18 +58,22 @@ impl CommandExecutor {
                 // Editor will check if path exists, call Document::save(), then quit
                 ExecutionResult::WriteAndQuit
             }
-            ParsedCommand::Unknown { name } => ExecutionResult::Error(RiftError::new(
-                ErrorType::Parse,
-                "UNKNOWN_COMMAND",
-                format!("Unknown command: {name}"),
-            )),
+            ParsedCommand::Unknown { name } => {
+                state.handle_error(RiftError::new(
+                    ErrorType::Parse,
+                    "UNKNOWN_COMMAND",
+                    format!("Unknown command: {name}"),
+                ));
+                ExecutionResult::Failure
+            }
             ParsedCommand::Ambiguous { prefix, matches } => {
                 let matches_str = matches.join(", ");
-                ExecutionResult::Error(RiftError::new(
+                state.handle_error(RiftError::new(
                     ErrorType::Parse,
                     "AMBIGUOUS_COMMAND",
                     format!("Ambiguous command '{prefix}': matches {matches_str}"),
-                ))
+                ));
+                ExecutionResult::Failure
             }
             ParsedCommand::Notify {
                 kind,
@@ -83,11 +87,12 @@ impl CommandExecutor {
                     "error" => NotificationType::Error,
                     "success" => NotificationType::Success,
                     _ => {
-                        return ExecutionResult::Error(RiftError::new(
+                        state.handle_error(RiftError::new(
                             ErrorType::Execution,
                             "INVALID_NOTIFY_TYPE",
                             format!("Unknown notification type: {kind}"),
-                        ))
+                        ));
+                        return ExecutionResult::Failure;
                     }
                 };
 

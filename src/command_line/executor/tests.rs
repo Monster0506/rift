@@ -217,17 +217,17 @@ fn test_execute_set_tabwidth_zero_error() {
 
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
-    match result {
-        ExecutionResult::Error(err) => {
-            assert!(
-                err.contains_msg("tabwidth must be greater than 0")
-                    || err.contains_msg("is below minimum"),
-                "Actual message: '{}'",
-                err.message
-            );
-        }
-        _ => panic!("Expected error for tabwidth=0"),
-    }
+    assert_eq!(result, ExecutionResult::Failure);
+
+    // Check if error was reported to manager
+    let notifications: Vec<_> = state.error_manager.notifications().iter_active().collect();
+    assert_eq!(notifications.len(), 1);
+    assert!(
+        notifications[0]
+            .message
+            .contains("tabwidth must be greater than 0")
+            || notifications[0].message.contains("is below minimum")
+    );
 
     // State should not be modified
     assert_eq!(state.settings.tab_width, original_width);
@@ -246,16 +246,15 @@ fn test_execute_set_tabwidth_invalid_number() {
 
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
-    match result {
-        ExecutionResult::Error(err) => {
-            assert!(
-                err.contains_msg("Invalid integer")
-                    || err.contains_msg("Parse error")
-                    || err.contains_msg("Invalid numeric")
-            );
-        }
-        _ => panic!("Expected error for invalid number"),
-    }
+    assert_eq!(result, ExecutionResult::Failure);
+
+    let notifications: Vec<_> = state.error_manager.notifications().iter_active().collect();
+    assert_eq!(notifications.len(), 1);
+    assert!(
+        notifications[0].message.contains("Invalid integer")
+            || notifications[0].message.contains("Parse error")
+            || notifications[0].message.contains("Invalid numeric")
+    );
 
     // State should not be modified
     assert_eq!(state.settings.tab_width, original_width);
@@ -274,12 +273,11 @@ fn test_execute_set_expandtabs_invalid_boolean() {
 
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
-    match result {
-        ExecutionResult::Error(err) => {
-            assert!(err.contains_msg("Invalid boolean value"));
-        }
-        _ => panic!("Expected error for invalid boolean"),
-    }
+    assert_eq!(result, ExecutionResult::Failure);
+
+    let notifications: Vec<_> = state.error_manager.notifications().iter_active().collect();
+    assert_eq!(notifications.len(), 1);
+    assert!(notifications[0].message.contains("Invalid boolean value"));
 
     // State should not be modified
     assert_eq!(state.settings.expand_tabs, original_value);
@@ -301,8 +299,8 @@ fn test_execute_set_expandtabs_missing_value() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(err) => {
-            assert!(err.contains_msg("Missing value"));
+        ExecutionResult::Failure => {
+            assert!(state.error_manager.notifications().iter_active().any(|n| n.message.contains("Missing value")));
         }
         _ => panic!("Expected error for missing value"),
     }
@@ -324,9 +322,9 @@ fn test_execute_set_unknown_option() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(err) => {
-            assert!(err.contains_msg("Unknown option"));
-            assert!(err.contains_msg("unknownoption"));
+        ExecutionResult::Failure => {
+            assert!(state.error_manager.notifications().iter_active().any(|n| n.message.contains("Unknown option")));
+            assert!(state.error_manager.notifications().iter_active().any(|n| n.message.contains("unknownoption")));
         }
         _ => panic!("Expected error for unknown option"),
     }
@@ -343,9 +341,9 @@ fn test_execute_unknown_command() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(err) => {
-            assert!(err.contains_msg("Unknown command"));
-            assert!(err.contains_msg("nonexistent"));
+        ExecutionResult::Failure => {
+            assert!(state.error_manager.notifications().iter_active().any(|n| n.message.contains("Unknown command")));
+            assert!(state.error_manager.notifications().iter_active().any(|n| n.message.contains("nonexistent")));
         }
         _ => panic!("Expected error for unknown command"),
     }
@@ -363,11 +361,11 @@ fn test_execute_ambiguous_command() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(err) => {
-            assert!(err.contains_msg("Ambiguous command"));
-            assert!(err.contains_msg("se"));
-            assert!(err.contains_msg("setup"));
-            assert!(err.contains_msg("settings"));
+        ExecutionResult::Failure => {
+            assert!(state.error_manager.notifications().iter_active().any(|n| n.message.contains("Ambiguous command")));
+            assert!(state.error_manager.notifications().iter_active().any(|n| n.message.contains("se")));
+            assert!(state.error_manager.notifications().iter_active().any(|n| n.message.contains("setup")));
+            assert!(state.error_manager.notifications().iter_active().any(|n| n.message.contains("settings")));
         }
         _ => panic!("Expected error for ambiguous command"),
     }
@@ -446,11 +444,11 @@ fn test_execute_set_tabwidth_negative_error() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(err) => {
+        ExecutionResult::Failure => {
             assert!(
-                err.contains_msg("Invalid integer")
-                    || err.contains_msg("Parse error")
-                    || err.contains_msg("Invalid numeric")
+                state.error_manager.notifications().iter_active().any(|n| n.message.contains("Invalid integer"))
+                    || state.error_manager.notifications().iter_active().any(|n| n.message.contains("Parse error"))
+                    || state.error_manager.notifications().iter_active().any(|n| n.message.contains("Invalid numeric"))
             );
         }
         _ => panic!("Expected error for negative number"),
@@ -474,8 +472,8 @@ fn test_execute_set_expandtabs_empty_string() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(err) => {
-            assert!(err.contains_msg("Invalid boolean value"));
+        ExecutionResult::Failure => {
+            assert!(state.error_manager.notifications().iter_active().any(|n| n.message.contains("Invalid boolean value")));
         }
         _ => panic!("Expected error for empty string"),
     }
@@ -529,11 +527,11 @@ fn test_execute_set_tabwidth_float_error() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(err) => {
+        ExecutionResult::Failure => {
             assert!(
-                err.contains_msg("Invalid integer")
-                    || err.contains_msg("Parse error")
-                    || err.contains_msg("Invalid numeric")
+                state.error_manager.notifications().iter_active().any(|n| n.message.contains("Invalid integer"))
+                    || state.error_manager.notifications().iter_active().any(|n| n.message.contains("Parse error"))
+                    || state.error_manager.notifications().iter_active().any(|n| n.message.contains("Invalid numeric"))
             );
         }
         _ => panic!("Expected error for float"),
