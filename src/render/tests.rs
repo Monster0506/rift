@@ -281,7 +281,8 @@ fn test_render_status_bar_fills_line() {
 fn test_render_status_bar_reverse_video() {
     let mut term = MockTerminal::new(10, 80);
     let viewport = Viewport::new(10, 80);
-    let state = State::new();
+    let mut state = State::new();
+    state.settings.status_line.reverse_video = true;
 
     StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
 
@@ -293,6 +294,22 @@ fn test_render_status_bar_reverse_video() {
     assert!(written_str.contains("\x1b[0m")); // Reset
 }
 
+#[test]
+fn test_render_status_bar_reverse_video_off() {
+    let mut term = MockTerminal::new(10, 80);
+    let viewport = Viewport::new(10, 80);
+    let mut state = State::new();
+    state.settings.status_line.reverse_video = false;
+
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+
+    let _written: Vec<u8> = term.get_written_bytes();
+    // Should contain reverse video escape sequence
+    assert!(!term.writes.is_empty());
+    let written_str = term.get_written_string();
+    assert!(!written_str.contains("\x1b[7m")); // Reverse video
+    assert!(!written_str.contains("\x1b[0m")); // Reset
+}
 #[test]
 fn test_render_clears_screen() {
     let mut term = MockTerminal::new(10, 80);
