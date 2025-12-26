@@ -11,6 +11,7 @@ Implemented:
 - basic cursor movement
 - insert mode
 - command mode
+- various settings
 
 Todo:
 - LSP
@@ -18,9 +19,12 @@ Todo:
 - Multi-document support
 - :edit filename to open a new document (:e to reload from disk)
 - line numbers
-- undo+redo
+- undo + redo
 - search + replace
 - copy/paste (buffers)
 - macros
 - notification system
 - status bar to indicate filename, dirty
+- setting and command descriptions
+- make command pattern more like settings design pattern
+- help manual
