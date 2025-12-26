@@ -42,15 +42,16 @@ impl Document {
     pub fn from_file(id: DocumentId, path: impl AsRef<Path>) -> io::Result<Self> {
         let path = path.as_ref();
         let bytes = std::fs::read(path)?;
-        
+
         let mut buffer = GapBuffer::new(bytes.len().max(4096))
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        
-        buffer.insert_bytes(&bytes)
+
+        buffer
+            .insert_bytes(&bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        
+
         buffer.move_to_start();
-        
+
         Ok(Document {
             id,
             buffer,
@@ -63,9 +64,11 @@ impl Document {
 
     /// Save document to its current path
     pub fn save(&mut self) -> io::Result<()> {
-        let path = self.file_path.as_ref()
+        let path = self
+            .file_path
+            .as_ref()
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No file path"))?;
-        
+
         self.write_to_file(path)?;
         self.last_saved_revision = self.revision;
         Ok(())
@@ -82,9 +85,11 @@ impl Document {
 
     /// Reload document from disk
     pub fn reload_from_disk(&mut self) -> io::Result<()> {
-        let path = self.file_path.clone()
+        let path = self
+            .file_path
+            .clone()
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No file path"))?;
-        
+
         *self = Self::from_file(self.id, path)?;
         Ok(())
     }
@@ -136,18 +141,18 @@ impl Document {
     /// Atomic write to file
     fn write_to_file(&self, path: &Path) -> io::Result<()> {
         use std::fs;
-        
+
         // Get buffer contents
         let before = self.buffer.get_before_gap();
         let after = self.buffer.get_after_gap();
-        
+
         // Write atomically using a temporary file
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        let temp_path = parent.join(format!(".{}.tmp", 
-            path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("file")));
-        
+        let temp_path = parent.join(format!(
+            ".{}.tmp",
+            path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
+        ));
+
         // Write to temp file
         {
             let mut file = fs::File::create(&temp_path)?;
@@ -156,10 +161,10 @@ impl Document {
             file.write_all(after)?;
             file.sync_all()?;
         }
-        
+
         // Atomically rename
         fs::rename(&temp_path, path)?;
-        
+
         Ok(())
     }
 }
