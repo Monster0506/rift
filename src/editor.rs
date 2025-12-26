@@ -176,13 +176,15 @@ impl<T: TerminalBackend> Editor<T> {
             );
 
             if should_execute_buffer {
-                execute_command(
+                if let Err(e) = execute_command(
                     cmd,
                     &mut self.document.buffer,
                     self.state.settings.expand_tabs,
                     self.state.settings.tab_width,
-                );
-                // Mark document dirty after any buffer mutation
+                ) {
+                    self.state.handle_error(e);
+                }
+                // Mark document dirty after any buffer mutation (even if part of command failed)
                 self.document.mark_dirty();
             }
 
@@ -272,6 +274,12 @@ impl<T: TerminalBackend> Editor<T> {
                             if let Err(e) = self.save_document() {
                                 self.state.handle_error(e);
                                 return Ok(()); // Don't clear command line on error
+                            } else {
+                                let filename = self.state.file_name.clone();
+                                self.state.notify(
+                                    crate::notification::NotificationType::Success,
+                                    format!("Written to {filename}"),
+                                );
                             }
                         }
                         self.state.clear_command_line();
@@ -282,6 +290,12 @@ impl<T: TerminalBackend> Editor<T> {
                         if let Err(e) = self.save_document() {
                             self.state.handle_error(e);
                             return Ok(()); // Don't quit on save error
+                        } else {
+                            let filename = self.state.file_name.clone();
+                            self.state.notify(
+                                crate::notification::NotificationType::Success,
+                                format!("Written to {filename}"),
+                            );
                         }
                         // Save successful, now quit
                         self.should_quit = true;

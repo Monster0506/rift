@@ -12,6 +12,7 @@
 
 use crate::buffer::GapBuffer;
 use crate::command::Command;
+use crate::error::RiftError;
 
 /// Calculate the current visual column position on the current line
 /// Accounts for tab width when calculating visual position
@@ -105,7 +106,12 @@ fn calculate_current_column(buf: &GapBuffer, tab_width: usize) -> usize {
 }
 
 /// Execute a command on the editor buffer
-pub fn execute_command(cmd: Command, buf: &mut GapBuffer, expand_tabs: bool, tab_width: usize) {
+pub fn execute_command(
+    cmd: Command,
+    buf: &mut GapBuffer,
+    expand_tabs: bool,
+    tab_width: usize,
+) -> Result<(), RiftError> {
     match cmd {
         Command::MoveLeft => {
             buf.move_left();
@@ -150,12 +156,10 @@ pub fn execute_command(cmd: Command, buf: &mut GapBuffer, expand_tabs: bool, tab
                 let spaces_needed = tab_width - (current_col % tab_width);
                 // Insert that many spaces, stop on error
                 for _ in 0..spaces_needed {
-                    if buf.insert(b' ').is_err() {
-                        return; // Stop if insert fails
-                    }
+                    buf.insert(b' ')?;
                 }
             } else {
-                let _ = buf.insert(b);
+                buf.insert(b)?;
             }
         }
         Command::EnterInsertMode | Command::EnterInsertModeAfter => {
@@ -178,6 +182,7 @@ pub fn execute_command(cmd: Command, buf: &mut GapBuffer, expand_tabs: bool, tab
         }
         Command::Noop => {}
     }
+    Ok(())
 }
 
 #[cfg(test)]
