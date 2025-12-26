@@ -11,6 +11,7 @@ Implemented:
 - basic cursor movement
 - insert mode
 - command mode
+- layer system for rendering
 - various settings
 
 Todo:
@@ -28,3 +29,5 @@ Todo:
 - setting and command descriptions
 - make command pattern more like settings design pattern
 - help manual
+- double buffer rendering
+- buffer composition
