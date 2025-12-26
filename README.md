@@ -32,3 +32,4 @@ Todo:
 - make command pattern more like settings design pattern
 - help manual
 - hook notifications up to actual errors and warnings
+- parse bang commads and pass the number of bangs
