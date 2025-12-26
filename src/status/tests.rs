@@ -215,3 +215,61 @@ fn test_status_bar_various_keys() {
         assert!(written.contains("]"));
     }
 }
+
+#[test]
+fn test_status_bar_filename_shown_when_enabled() {
+    let mut term = MockTerminal::new(10, 80);
+    let viewport = Viewport::new(10, 80);
+    let mut state = State::new();
+    state.update_filename("test.txt".to_string());
+    // show_filename defaults to true
+
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+
+    let written = term.get_written_string();
+    assert!(written.contains("test.txt"));
+}
+
+#[test]
+fn test_status_bar_filename_hidden_when_disabled() {
+    let mut term = MockTerminal::new(10, 80);
+    let viewport = Viewport::new(10, 80);
+    let mut state = State::new();
+    state.update_filename("test.txt".to_string());
+    state.settings.status_line.show_filename = false;
+
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+
+    let written = term.get_written_string();
+    assert!(!written.contains("test.txt"));
+}
+
+#[test]
+fn test_status_bar_filename_always_shown_in_debug() {
+    let mut term = MockTerminal::new(10, 120);
+    let viewport = Viewport::new(10, 120);
+    let mut state = State::new();
+    state.set_file_path(Some("c:\\Users\\test\\file.txt".to_string()));
+    state.toggle_debug(); // Enable debug mode
+    state.settings.status_line.show_filename = false; // Disable filename setting
+
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+
+    let written = term.get_written_string();
+    // In debug mode, filepath should appear even when show_filename is false
+    assert!(written.contains("File:"));
+    assert!(written.contains("file.txt"));
+}
+
+#[test]
+fn test_status_bar_no_name_display() {
+    let mut term = MockTerminal::new(10, 80);
+    let viewport = Viewport::new(10, 80);
+    let state = State::new();
+    // file_name defaults to "[No Name]"
+
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+
+    let written = term.get_written_string();
+    assert!(written.contains("[No Name]"));
+}

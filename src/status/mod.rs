@@ -101,26 +101,37 @@ impl StatusBar {
                     term.write(b" ")?;
                 }
             } else {
-                // Normal mode: show filename on the right
-                if file_len <= available_cols {
-                    // Right-align filename
-                    let spacing = available_cols.saturating_sub(file_len);
-                    for _ in 0..spacing {
-                        term.write(b" ")?;
-                    }
-                    term.write(state.file_name.as_bytes())?;
-                } else {
-                    // Filename too long, truncate it
-                    let truncated = if available_cols > 3 {
-                        format!("...{}", &state.file_name[state.file_name.len().saturating_sub(available_cols - 3)..])
+                // Normal mode: show filename on the right (if enabled in settings)
+                if state.settings.status_line.show_filename {
+                    if file_len <= available_cols {
+                        // Right-align filename
+                        let spacing = available_cols.saturating_sub(file_len);
+                        for _ in 0..spacing {
+                            term.write(b" ")?;
+                        }
+                        term.write(state.file_name.as_bytes())?;
                     } else {
-                        String::new()
-                    };
-                    let spacing = available_cols.saturating_sub(truncated.len());
-                    for _ in 0..spacing {
+                        // Filename too long, truncate it
+                        let truncated = if available_cols > 3 {
+                            format!(
+                                "...{}",
+                                &state.file_name
+                                    [state.file_name.len().saturating_sub(available_cols - 3)..]
+                            )
+                        } else {
+                            String::new()
+                        };
+                        let spacing = available_cols.saturating_sub(truncated.len());
+                        for _ in 0..spacing {
+                            term.write(b" ")?;
+                        }
+                        term.write(truncated.as_bytes())?;
+                    }
+                } else {
+                    // Filename display disabled, fill with spaces
+                    for _ in 0..available_cols {
                         term.write(b" ")?;
                     }
-                    term.write(truncated.as_bytes())?;
                 }
             }
         }
