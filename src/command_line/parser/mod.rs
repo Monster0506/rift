@@ -8,16 +8,17 @@ use crate::command_line::settings::SettingsRegistry;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParsedCommand {
     /// Quit command
-    Quit,
+    Quit { bangs: usize },
     /// Set command with option and optional value
     Set {
         option: String,
         value: Option<String>,
+        bangs: usize,
     },
     /// Write command (save file)
-    Write { path: Option<String> },
+    Write { path: Option<String>, bangs: usize },
     /// Write and quit command
-    WriteQuit { path: Option<String> },
+    WriteQuit { path: Option<String>, bangs: usize },
     /// Unknown command
     Unknown { name: String },
     /// Ambiguous command (multiple matches)
@@ -26,7 +27,11 @@ pub enum ParsedCommand {
         matches: Vec<String>,
     },
     /// Notify command
-    Notify { kind: String, message: String },
+    Notify {
+        kind: String,
+        message: String,
+        bangs: usize,
+    },
 }
 
 /// Command parser
@@ -50,6 +55,13 @@ impl CommandParser {
         self.settings_registry.build_option_registry()
     }
 
+    /// Strip trailing bangs from a command name and count them
+    fn strip_bangs(input: &str) -> (&str, usize) {
+        let trimmed = input.trim_end_matches('!');
+        let bangs = input.len() - trimmed.len();
+        (trimmed, bangs)
+    }
+
     /// Parse a command line string
     ///
     /// Input format: `:command [args...]`
@@ -71,29 +83,40 @@ impl CommandParser {
 
         // Split into command and arguments
         let parts: Vec<&str> = input.split_whitespace().collect();
-        let command_name = parts[0];
+        let raw_command_name = parts[0];
         let args = &parts[1..];
+
+        let (command_name, bangs) = Self::strip_bangs(raw_command_name);
+
+        // Handle empty command name after stripping (e.g. just "!")
+        if command_name.is_empty() {
+            return ParsedCommand::Unknown {
+                name: raw_command_name.to_string(),
+            };
+        }
 
         // Match command name using registry
         match self.registry.match_command(command_name) {
-            MatchResult::Exact(name) | MatchResult::Prefix(name) => self.parse_command(&name, args),
+            MatchResult::Exact(name) | MatchResult::Prefix(name) => {
+                self.parse_command(&name, args, bangs)
+            }
             MatchResult::Ambiguous { prefix, matches } => {
                 ParsedCommand::Ambiguous { prefix, matches }
             }
             MatchResult::Unknown(_) => ParsedCommand::Unknown {
-                name: command_name.to_string(),
+                name: raw_command_name.to_string(),
             },
         }
     }
 
     /// Parse a matched command with its arguments
-    fn parse_command(&self, command_name: &str, args: &[&str]) -> ParsedCommand {
+    fn parse_command(&self, command_name: &str, args: &[&str], bangs: usize) -> ParsedCommand {
         match command_name {
-            "quit" => ParsedCommand::Quit,
-            "set" => self.parse_set_command(args),
-            "write" => self.parse_write_command(args),
-            "wq" => self.parse_write_quit_command(args),
-            "notify" => self.parse_notify_command(args),
+            "quit" => ParsedCommand::Quit { bangs },
+            "set" => self.parse_set_command(args, bangs),
+            "write" => self.parse_write_command(args, bangs),
+            "wq" => self.parse_write_quit_command(args, bangs),
+            "notify" => self.parse_notify_command(args, bangs),
             _ => ParsedCommand::Unknown {
                 name: command_name.to_string(),
             },
@@ -107,7 +130,7 @@ impl CommandParser {
     /// - `:set nooption` (boolean off)
     /// - `:set option=value` (assignment)
     /// - `:set option value` (space-separated)
-    fn parse_set_command(&self, args: &[&str]) -> ParsedCommand {
+    fn parse_set_command(&self, args: &[&str], bangs: usize) -> ParsedCommand {
         if args.is_empty() {
             return ParsedCommand::Unknown {
                 name: "set".to_string(),
@@ -126,6 +149,7 @@ impl CommandParser {
                     return ParsedCommand::Set {
                         option: name,
                         value: Some("false".to_string()),
+                        bangs,
                     };
                 }
                 MatchResult::Ambiguous { prefix, matches } => {
@@ -150,6 +174,7 @@ impl CommandParser {
                     return ParsedCommand::Set {
                         option: name,
                         value: Some(value),
+                        bangs,
                     };
                 }
                 MatchResult::Ambiguous { prefix, matches } => {
@@ -164,6 +189,7 @@ impl CommandParser {
                     return ParsedCommand::Set {
                         option: option_part.to_string(),
                         value: Some(value),
+                        bangs,
                     };
                 }
             }
@@ -178,6 +204,7 @@ impl CommandParser {
                     return ParsedCommand::Set {
                         option: name,
                         value: Some(value),
+                        bangs,
                     };
                 }
                 MatchResult::Ambiguous { prefix, matches } => {
@@ -192,6 +219,7 @@ impl CommandParser {
                     return ParsedCommand::Set {
                         option: option_str.to_string(),
                         value: Some(value),
+                        bangs,
                     };
                 }
             }
@@ -202,6 +230,7 @@ impl CommandParser {
             MatchResult::Exact(name) | MatchResult::Prefix(name) => ParsedCommand::Set {
                 option: name,
                 value: Some("true".to_string()),
+                bangs,
             },
             MatchResult::Ambiguous { prefix, matches } => ParsedCommand::Ambiguous {
                 prefix: prefix.clone(),
@@ -213,6 +242,7 @@ impl CommandParser {
                 ParsedCommand::Set {
                     option: option_str.to_string(),
                     value: Some("true".to_string()),
+                    bangs,
                 }
             }
         }
@@ -227,11 +257,12 @@ impl CommandParser {
     ///
     /// Error cases:
     /// - `:w file1 file2` (too many arguments)
-    fn parse_write_command(&self, args: &[&str]) -> ParsedCommand {
+    fn parse_write_command(&self, args: &[&str], bangs: usize) -> ParsedCommand {
         match args.len() {
-            0 => ParsedCommand::Write { path: None },
+            0 => ParsedCommand::Write { path: None, bangs },
             1 => ParsedCommand::Write {
                 path: Some(args[0].to_string()),
+                bangs,
             },
             _ => ParsedCommand::Unknown {
                 name: "write (too many arguments)".to_string(),
@@ -247,11 +278,12 @@ impl CommandParser {
     ///
     /// Error cases:
     /// - `:wq file1 file2` (too many arguments)
-    fn parse_write_quit_command(&self, args: &[&str]) -> ParsedCommand {
+    fn parse_write_quit_command(&self, args: &[&str], bangs: usize) -> ParsedCommand {
         match args.len() {
-            0 => ParsedCommand::WriteQuit { path: None },
+            0 => ParsedCommand::WriteQuit { path: None, bangs },
             1 => ParsedCommand::WriteQuit {
                 path: Some(args[0].to_string()),
+                bangs,
             },
             _ => ParsedCommand::Unknown {
                 name: "wq (too many arguments)".to_string(),
@@ -263,7 +295,7 @@ impl CommandParser {
     ///
     /// Supports:
     /// - `:notify <type> <message>`
-    fn parse_notify_command(&self, args: &[&str]) -> ParsedCommand {
+    fn parse_notify_command(&self, args: &[&str], bangs: usize) -> ParsedCommand {
         if args.len() < 2 {
             return ParsedCommand::Unknown {
                 name: "notify (usage: :notify <type> <message>)".to_string(),
@@ -273,7 +305,11 @@ impl CommandParser {
         let kind = args[0].to_string();
         let message = args[1..].join(" ");
 
-        ParsedCommand::Notify { kind, message }
+        ParsedCommand::Notify {
+            kind,
+            message,
+            bangs,
+        }
     }
 }
 

@@ -8,7 +8,7 @@ use crate::state::State;
 #[test]
 fn test_execute_quit() {
     let mut state = State::new();
-    let command = ParsedCommand::Quit;
+    let command = ParsedCommand::Quit { bangs: 0 };
 
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
@@ -23,6 +23,7 @@ fn test_execute_set_expandtabs_true() {
     let command = ParsedCommand::Set {
         option: "expandtabs".to_string(),
         value: Some("true".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -39,6 +40,7 @@ fn test_execute_set_expandtabs_false() {
     let command = ParsedCommand::Set {
         option: "expandtabs".to_string(),
         value: Some("false".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -54,6 +56,7 @@ fn test_execute_set_expandtabs_alias_et() {
     let command = ParsedCommand::Set {
         option: "et".to_string(),
         value: Some("false".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -70,6 +73,7 @@ fn test_execute_set_expandtabs_boolean_variants() {
     let command = ParsedCommand::Set {
         option: "expandtabs".to_string(),
         value: Some("on".to_string()),
+        bangs: 0,
     };
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
@@ -80,6 +84,7 @@ fn test_execute_set_expandtabs_boolean_variants() {
     let command = ParsedCommand::Set {
         option: "expandtabs".to_string(),
         value: Some("off".to_string()),
+        bangs: 0,
     };
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
@@ -90,6 +95,7 @@ fn test_execute_set_expandtabs_boolean_variants() {
     let command = ParsedCommand::Set {
         option: "expandtabs".to_string(),
         value: Some("yes".to_string()),
+        bangs: 0,
     };
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
@@ -100,6 +106,7 @@ fn test_execute_set_expandtabs_boolean_variants() {
     let command = ParsedCommand::Set {
         option: "expandtabs".to_string(),
         value: Some("no".to_string()),
+        bangs: 0,
     };
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
@@ -110,6 +117,7 @@ fn test_execute_set_expandtabs_boolean_variants() {
     let command = ParsedCommand::Set {
         option: "expandtabs".to_string(),
         value: Some("1".to_string()),
+        bangs: 0,
     };
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
@@ -120,6 +128,7 @@ fn test_execute_set_expandtabs_boolean_variants() {
     let command = ParsedCommand::Set {
         option: "expandtabs".to_string(),
         value: Some("0".to_string()),
+        bangs: 0,
     };
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
@@ -134,6 +143,7 @@ fn test_execute_set_expandtabs_case_insensitive() {
     let command = ParsedCommand::Set {
         option: "EXPANDTABS".to_string(),
         value: Some("FALSE".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -150,6 +160,7 @@ fn test_execute_set_tabwidth() {
     let command = ParsedCommand::Set {
         option: "tabwidth".to_string(),
         value: Some("4".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -165,6 +176,7 @@ fn test_execute_set_tabwidth_alias_tw() {
     let command = ParsedCommand::Set {
         option: "tw".to_string(),
         value: Some("2".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -182,6 +194,7 @@ fn test_execute_set_tabwidth_various_values() {
         let command = ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some(width.to_string()),
+            bangs: 0,
         };
 
         let settings_registry = create_settings_registry();
@@ -199,6 +212,7 @@ fn test_execute_set_tabwidth_zero_error() {
     let command = ParsedCommand::Set {
         option: "tabwidth".to_string(),
         value: Some("0".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -224,6 +238,7 @@ fn test_execute_set_tabwidth_invalid_number() {
     let command = ParsedCommand::Set {
         option: "tabwidth".to_string(),
         value: Some("invalid".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -251,6 +266,7 @@ fn test_execute_set_expandtabs_invalid_boolean() {
     let command = ParsedCommand::Set {
         option: "expandtabs".to_string(),
         value: Some("maybe".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -276,6 +292,7 @@ fn test_execute_set_expandtabs_missing_value() {
     let command = ParsedCommand::Set {
         option: "expandtabs".to_string(),
         value: None,
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -298,6 +315,7 @@ fn test_execute_set_unknown_option() {
     let command = ParsedCommand::Set {
         option: "unknownoption".to_string(),
         value: Some("value".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -360,6 +378,7 @@ fn test_execute_set_multiple_options() {
     let command = ParsedCommand::Set {
         option: "expandtabs".to_string(),
         value: Some("false".to_string()),
+        bangs: 0,
     };
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
@@ -370,6 +389,7 @@ fn test_execute_set_multiple_options() {
     let command = ParsedCommand::Set {
         option: "tabwidth".to_string(),
         value: Some("4".to_string()),
+        bangs: 0,
     };
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
@@ -380,6 +400,7 @@ fn test_execute_set_multiple_options() {
     let command = ParsedCommand::Set {
         option: "expandtabs".to_string(),
         value: Some("true".to_string()),
+        bangs: 0,
     };
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
@@ -398,6 +419,7 @@ fn test_execute_set_tabwidth_large_value() {
     let command = ParsedCommand::Set {
         option: "tabwidth".to_string(),
         value: Some("100".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -415,6 +437,7 @@ fn test_execute_set_tabwidth_negative_error() {
     let command = ParsedCommand::Set {
         option: "tabwidth".to_string(),
         value: Some("-1".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -442,6 +465,7 @@ fn test_execute_set_expandtabs_empty_string() {
     let command = ParsedCommand::Set {
         option: "expandtabs".to_string(),
         value: Some("".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -475,6 +499,7 @@ fn test_execute_set_case_insensitive_option_names() {
         let command = ParsedCommand::Set {
             option: option.to_string(),
             value: Some(value.to_string()),
+            bangs: 0,
         };
 
         let settings_registry = create_settings_registry();
@@ -495,6 +520,7 @@ fn test_execute_set_tabwidth_float_error() {
     let command = ParsedCommand::Set {
         option: "tabwidth".to_string(),
         value: Some("4.5".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -517,7 +543,10 @@ fn test_execute_set_tabwidth_float_error() {
 #[test]
 fn test_execute_write_no_path() {
     let mut state = State::new();
-    let command = ParsedCommand::Write { path: None };
+    let command = ParsedCommand::Write {
+        path: None,
+        bangs: 0,
+    };
 
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
@@ -530,6 +559,7 @@ fn test_execute_write_with_path() {
     let mut state = State::new();
     let command = ParsedCommand::Write {
         path: Some("test.txt".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -545,6 +575,7 @@ fn test_execute_write_updates_path() {
 
     let command = ParsedCommand::Write {
         path: Some("new.txt".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -556,7 +587,10 @@ fn test_execute_write_updates_path() {
 #[test]
 fn test_execute_write_quit_no_path() {
     let mut state = State::new();
-    let command = ParsedCommand::WriteQuit { path: None };
+    let command = ParsedCommand::WriteQuit {
+        path: None,
+        bangs: 0,
+    };
 
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
@@ -569,6 +603,7 @@ fn test_execute_write_quit_with_path() {
     let mut state = State::new();
     let command = ParsedCommand::WriteQuit {
         path: Some("test.txt".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();
@@ -584,6 +619,7 @@ fn test_execute_write_quit_updates_path() {
 
     let command = ParsedCommand::WriteQuit {
         path: Some("new.txt".to_string()),
+        bangs: 0,
     };
 
     let settings_registry = create_settings_registry();

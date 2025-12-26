@@ -35,11 +35,13 @@ impl CommandExecutor {
         settings_registry: &SettingsRegistry,
     ) -> ExecutionResult {
         match command {
-            ParsedCommand::Quit => ExecutionResult::Quit,
-            ParsedCommand::Set { option, value } => {
-                settings_registry.execute_setting(&option, value, &mut state.settings)
-            }
-            ParsedCommand::Write { path } => {
+            ParsedCommand::Quit { bangs: _ } => ExecutionResult::Quit,
+            ParsedCommand::Set {
+                option,
+                value,
+                bangs: _,
+            } => settings_registry.execute_setting(&option, value, &mut state.settings),
+            ParsedCommand::Write { path, bangs: _ } => {
                 // Set the path in state if provided (for :w filename)
                 if let Some(ref file_path) = path {
                     state.set_file_path(Some(file_path.clone()));
@@ -47,7 +49,7 @@ impl CommandExecutor {
                 // Editor will check if path exists and call Document::save()
                 ExecutionResult::Success
             }
-            ParsedCommand::WriteQuit { path } => {
+            ParsedCommand::WriteQuit { path, bangs: _ } => {
                 // Set the path in state if provided (for :wq filename)
                 if let Some(ref file_path) = path {
                     state.set_file_path(Some(file_path.clone()));
@@ -64,11 +66,15 @@ impl CommandExecutor {
                     "Ambiguous command '{prefix}': matches {matches_str}"
                 ))
             }
-            ParsedCommand::Notify { kind, message } => {
+            ParsedCommand::Notify {
+                kind,
+                message,
+                bangs: _,
+            } => {
                 use crate::notification::NotificationType;
-                let kind_enum = match kind.to_lowercase().as_str() {
+                let notification_kind = match kind.to_lowercase().as_str() {
                     "info" => NotificationType::Info,
-                    "warn" | "warning" => NotificationType::Warning,
+                    "warning" | "warn" => NotificationType::Warning,
                     "error" => NotificationType::Error,
                     "success" => NotificationType::Success,
                     _ => {
@@ -76,7 +82,7 @@ impl CommandExecutor {
                     }
                 };
 
-                state.notify(kind_enum, message);
+                state.notify(notification_kind, message);
                 ExecutionResult::Success
             }
         }

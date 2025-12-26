@@ -37,10 +37,10 @@ fn test_parse_quit_exact() {
     let parser = create_test_parser();
 
     let result = parser.parse(":quit");
-    assert_eq!(result, ParsedCommand::Quit);
+    assert_eq!(result, ParsedCommand::Quit { bangs: 0 });
 
     let result = parser.parse("quit");
-    assert_eq!(result, ParsedCommand::Quit);
+    assert_eq!(result, ParsedCommand::Quit { bangs: 0 });
 }
 
 #[test]
@@ -48,10 +48,10 @@ fn test_parse_quit_alias() {
     let parser = create_test_parser();
 
     let result = parser.parse(":q");
-    assert_eq!(result, ParsedCommand::Quit);
+    assert_eq!(result, ParsedCommand::Quit { bangs: 0 });
 
     let result = parser.parse("q");
-    assert_eq!(result, ParsedCommand::Quit);
+    assert_eq!(result, ParsedCommand::Quit { bangs: 0 });
 }
 
 #[test]
@@ -59,10 +59,87 @@ fn test_parse_quit_prefix() {
     let parser = create_test_parser();
 
     let result = parser.parse(":qui");
-    assert_eq!(result, ParsedCommand::Quit);
+    assert_eq!(result, ParsedCommand::Quit { bangs: 0 });
 
     let result = parser.parse("qui");
-    assert_eq!(result, ParsedCommand::Quit);
+    assert_eq!(result, ParsedCommand::Quit { bangs: 0 });
+}
+
+#[test]
+fn test_parse_quit_bangs() {
+    let parser = create_test_parser();
+
+    assert_eq!(parser.parse(":quit!"), ParsedCommand::Quit { bangs: 1 });
+    assert_eq!(parser.parse(":q!"), ParsedCommand::Quit { bangs: 1 });
+    assert_eq!(parser.parse(":q!!"), ParsedCommand::Quit { bangs: 2 });
+}
+
+#[test]
+fn test_parse_write() {
+    let parser = create_test_parser();
+
+    assert_eq!(
+        parser.parse(":write"),
+        ParsedCommand::Write {
+            path: None,
+            bangs: 0
+        }
+    );
+    assert_eq!(
+        parser.parse(":w"),
+        ParsedCommand::Write {
+            path: None,
+            bangs: 0
+        }
+    );
+    assert_eq!(
+        parser.parse(":w!"),
+        ParsedCommand::Write {
+            path: None,
+            bangs: 1
+        }
+    );
+    assert_eq!(
+        parser.parse(":write filename.txt"),
+        ParsedCommand::Write {
+            path: Some("filename.txt".to_string()),
+            bangs: 0
+        }
+    );
+    assert_eq!(
+        parser.parse(":w filename.txt"),
+        ParsedCommand::Write {
+            path: Some("filename.txt".to_string()),
+            bangs: 0
+        }
+    );
+}
+
+#[test]
+fn test_parse_write_quit() {
+    let parser = create_test_parser();
+
+    assert_eq!(
+        parser.parse(":wq"),
+        ParsedCommand::WriteQuit {
+            path: None,
+            bangs: 0
+        }
+    );
+    assert_eq!(
+        parser.parse(":wq!"),
+        ParsedCommand::WriteQuit {
+            path: None,
+            bangs: 1
+        }
+    );
+    assert_eq!(
+        parser.parse(":wq filename.txt"),
+        ParsedCommand::WriteQuit {
+            path: Some("filename.txt".to_string()),
+            bangs: 0
+        }
+    );
 }
 
 #[test]
@@ -75,6 +152,7 @@ fn test_parse_set_boolean_on() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("true".to_string()),
+            bangs: 0
         }
     );
 }
@@ -89,6 +167,7 @@ fn test_parse_set_boolean_off() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("false".to_string()),
+            bangs: 0
         }
     );
 }
@@ -103,6 +182,7 @@ fn test_parse_set_assignment() {
         ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some("4".to_string()),
+            bangs: 0
         }
     );
 
@@ -112,6 +192,7 @@ fn test_parse_set_assignment() {
         ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some("8".to_string()),
+            bangs: 0
         }
     );
 }
@@ -126,6 +207,7 @@ fn test_parse_set_space_separated() {
         ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some("4".to_string()),
+            bangs: 0
         }
     );
 
@@ -135,6 +217,7 @@ fn test_parse_set_space_separated() {
         ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some("8".to_string()),
+            bangs: 0
         }
     );
 }
@@ -150,6 +233,7 @@ fn test_parse_set_with_alias() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("true".to_string()),
+            bangs: 0
         }
     );
 }
@@ -165,6 +249,7 @@ fn test_parse_set_prefix() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("true".to_string()),
+            bangs: 0
         }
     );
 }
@@ -214,6 +299,7 @@ fn test_parse_set_multiple_spaces() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("true".to_string()),
+            bangs: 0
         }
     );
 
@@ -223,6 +309,7 @@ fn test_parse_set_multiple_spaces() {
         ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some("4".to_string()),
+            bangs: 0
         }
     );
 }
@@ -238,6 +325,7 @@ fn test_parse_set_value_with_spaces() {
         ParsedCommand::Set {
             option: "option".to_string(),
             value: Some("value".to_string()),
+            bangs: 0
         }
     );
 }
@@ -252,6 +340,7 @@ fn test_parse_set_case_insensitive() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("true".to_string()),
+            bangs: 0
         }
     );
 
@@ -262,6 +351,7 @@ fn test_parse_set_case_insensitive() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("true".to_string()),
+            bangs: 0
         }
     );
 }
@@ -276,6 +366,7 @@ fn test_parse_set_complex_value() {
         ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some("16".to_string()),
+            bangs: 0
         }
     );
 }
@@ -285,10 +376,10 @@ fn test_parse_whitespace_handling() {
     let parser = create_test_parser();
 
     let result = parser.parse("  :quit  ");
-    assert_eq!(result, ParsedCommand::Quit);
+    assert_eq!(result, ParsedCommand::Quit { bangs: 0 });
 
     let result = parser.parse("  quit  ");
-    assert_eq!(result, ParsedCommand::Quit);
+    assert_eq!(result, ParsedCommand::Quit { bangs: 0 });
 }
 
 #[test]
@@ -302,6 +393,7 @@ fn test_parse_set_no_prefix_handling() {
         ParsedCommand::Set {
             option: "no".to_string(),
             value: Some("true".to_string()),
+            bangs: 0
         }
     );
 
@@ -312,6 +404,7 @@ fn test_parse_set_no_prefix_handling() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("false".to_string()),
+            bangs: 0
         }
     );
 }
@@ -327,6 +420,7 @@ fn test_parse_set_assignment_vs_space() {
         ParsedCommand::Set {
             option: "option".to_string(),
             value: Some("value".to_string()),
+            bangs: 0
         }
     );
 
@@ -337,6 +431,7 @@ fn test_parse_set_assignment_vs_space() {
         ParsedCommand::Set {
             option: "option".to_string(),
             value: Some("value".to_string()),
+            bangs: 0
         }
     );
 }
@@ -352,6 +447,7 @@ fn test_parse_set_multiple_values() {
         ParsedCommand::Set {
             option: "option".to_string(),
             value: Some("value1".to_string()),
+            bangs: 0
         }
     );
 }
@@ -388,7 +484,7 @@ fn test_parse_explicit_alias_overrides_ambiguity() {
     let parser = CommandParser::new(registry, settings_registry);
 
     let result = parser.parse(":q");
-    assert_eq!(result, ParsedCommand::Quit);
+    assert_eq!(result, ParsedCommand::Quit { bangs: 0 });
 }
 
 #[test]
@@ -402,6 +498,7 @@ fn test_parse_set_option_prefix_expandtabs() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("true".to_string()),
+            bangs: 0
         }
     );
 
@@ -412,6 +509,7 @@ fn test_parse_set_option_prefix_expandtabs() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("true".to_string()),
+            bangs: 0
         }
     );
 
@@ -422,6 +520,7 @@ fn test_parse_set_option_prefix_expandtabs() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("true".to_string()),
+            bangs: 0
         }
     );
 }
@@ -437,6 +536,7 @@ fn test_parse_set_option_prefix_noexpandtabs() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("false".to_string()),
+            bangs: 0
         }
     );
 
@@ -447,6 +547,7 @@ fn test_parse_set_option_prefix_noexpandtabs() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("false".to_string()),
+            bangs: 0
         }
     );
 
@@ -457,6 +558,7 @@ fn test_parse_set_option_prefix_noexpandtabs() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("false".to_string()),
+            bangs: 0
         }
     );
 }
@@ -472,6 +574,7 @@ fn test_parse_set_option_prefix_tabwidth() {
         ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some("4".to_string()),
+            bangs: 0
         }
     );
 
@@ -482,6 +585,7 @@ fn test_parse_set_option_prefix_tabwidth() {
         ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some("8".to_string()),
+            bangs: 0
         }
     );
 
@@ -492,6 +596,7 @@ fn test_parse_set_option_prefix_tabwidth() {
         ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some("16".to_string()),
+            bangs: 0
         }
     );
 }
@@ -507,6 +612,7 @@ fn test_parse_set_option_prefix_assignment() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("true".to_string()),
+            bangs: 0
         }
     );
 
@@ -516,6 +622,7 @@ fn test_parse_set_option_prefix_assignment() {
         ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some("4".to_string()),
+            bangs: 0
         }
     );
 }
@@ -531,6 +638,7 @@ fn test_parse_set_option_prefix_space_separated() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("false".to_string()),
+            bangs: 0
         }
     );
 
@@ -540,6 +648,7 @@ fn test_parse_set_option_prefix_space_separated() {
         ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some("4".to_string()),
+            bangs: 0
         }
     );
 }
@@ -555,6 +664,7 @@ fn test_parse_set_option_case_insensitive_prefix() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("true".to_string()),
+            bangs: 0
         }
     );
 
@@ -564,6 +674,7 @@ fn test_parse_set_option_case_insensitive_prefix() {
         ParsedCommand::Set {
             option: "expandtabs".to_string(),
             value: Some("false".to_string()),
+            bangs: 0
         }
     );
 
@@ -573,6 +684,7 @@ fn test_parse_set_option_case_insensitive_prefix() {
         ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some("4".to_string()),
+            bangs: 0
         }
     );
 }
@@ -582,10 +694,22 @@ fn test_parse_write_no_args() {
     let parser = create_test_parser();
 
     let result = parser.parse(":w");
-    assert_eq!(result, ParsedCommand::Write { path: None });
+    assert_eq!(
+        result,
+        ParsedCommand::Write {
+            path: None,
+            bangs: 0
+        }
+    );
 
     let result = parser.parse(":write");
-    assert_eq!(result, ParsedCommand::Write { path: None });
+    assert_eq!(
+        result,
+        ParsedCommand::Write {
+            path: None,
+            bangs: 0
+        }
+    );
 }
 
 #[test]
@@ -596,7 +720,8 @@ fn test_parse_write_with_filename() {
     assert_eq!(
         result,
         ParsedCommand::Write {
-            path: Some("file.txt".to_string())
+            path: Some("file.txt".to_string()),
+            bangs: 0
         }
     );
 
@@ -604,7 +729,8 @@ fn test_parse_write_with_filename() {
     assert_eq!(
         result,
         ParsedCommand::Write {
-            path: Some("file.txt".to_string())
+            path: Some("file.txt".to_string()),
+            bangs: 0
         }
     );
 }
@@ -614,7 +740,13 @@ fn test_parse_write_alias() {
     let parser = create_test_parser();
 
     let result = parser.parse(":w");
-    assert_eq!(result, ParsedCommand::Write { path: None });
+    assert_eq!(
+        result,
+        ParsedCommand::Write {
+            path: None,
+            bangs: 0
+        }
+    );
 }
 
 #[test]
@@ -639,7 +771,13 @@ fn test_parse_write_quit_no_args() {
     let parser = create_test_parser();
 
     let result = parser.parse(":wq");
-    assert_eq!(result, ParsedCommand::WriteQuit { path: None });
+    assert_eq!(
+        result,
+        ParsedCommand::WriteQuit {
+            path: None,
+            bangs: 0
+        }
+    );
 }
 
 #[test]
@@ -650,7 +788,8 @@ fn test_parse_write_quit_with_filename() {
     assert_eq!(
         result,
         ParsedCommand::WriteQuit {
-            path: Some("file.txt".to_string())
+            path: Some("file.txt".to_string()),
+            bangs: 0
         }
     );
 }
@@ -672,13 +811,37 @@ fn test_parse_write_prefix() {
 
     // "wr" should match "write"
     let result = parser.parse(":wr");
-    assert_eq!(result, ParsedCommand::Write { path: None });
+    assert_eq!(
+        result,
+        ParsedCommand::Write {
+            path: None,
+            bangs: 0
+        }
+    );
 
     let result = parser.parse(":wri file.txt");
     assert_eq!(
         result,
         ParsedCommand::Write {
-            path: Some("file.txt".to_string())
+            path: Some("file.txt".to_string()),
+            bangs: 0
         }
     );
+}
+
+#[test]
+fn test_strip_bangs() {
+    // Basic cases
+    assert_eq!(CommandParser::strip_bangs("quit"), ("quit", 0));
+    assert_eq!(CommandParser::strip_bangs("quit!"), ("quit", 1));
+    assert_eq!(CommandParser::strip_bangs("quit!!"), ("quit", 2));
+
+    // Edge cases
+    assert_eq!(CommandParser::strip_bangs("!"), ("", 1));
+    assert_eq!(CommandParser::strip_bangs("!!"), ("", 2));
+    assert_eq!(CommandParser::strip_bangs(""), ("", 0));
+
+    // Intermixed (should only strip trailing)
+    assert_eq!(CommandParser::strip_bangs("qu!it"), ("qu!it", 0));
+    assert_eq!(CommandParser::strip_bangs("qu!it!"), ("qu!it", 1));
 }
