@@ -51,6 +51,8 @@ impl LayerPriority {
     pub const HOVER: LayerPriority = LayerPriority(40);
     /// Tooltips and hints
     pub const TOOLTIP: LayerPriority = LayerPriority(50);
+    /// Notifications (highest priority)
+    pub const NOTIFICATION: LayerPriority = LayerPriority(60);
 }
 
 /// A cell in the terminal buffer
