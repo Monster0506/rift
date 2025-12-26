@@ -4,6 +4,7 @@ pub mod buffer;
 pub mod color;
 pub mod command;
 pub mod command_line;
+pub mod document;
 pub mod editor;
 pub mod executor;
 pub mod floating_window;
