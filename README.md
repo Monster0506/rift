@@ -17,6 +17,7 @@ Implemented:
 - buffer composition
 - notification system
 - parse bang commads and pass the number of bangs
+- hook notifications up to actual errors and warnings
 
 
 Todo:
@@ -33,4 +34,3 @@ Todo:
 - setting and command descriptions
 - make command pattern more like settings design pattern
 - help manual
-- hook notifications up to actual errors and warnings
