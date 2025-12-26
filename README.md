@@ -22,4 +22,5 @@ Todo:
 - search + replace
 - copy/paste (buffers)
 - macros
+- notification system
 
