@@ -40,14 +40,14 @@ fn main() {
     let mut editor = match Editor::with_file(backend, file_path) {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("Failed to initialize editor: {e}");
+            eprintln!("Initialization Error [{}]: {}", e.code, e.message);
             std::process::exit(1);
         }
     };
 
     // Run editor
     if let Err(e) = editor.run() {
-        eprintln!("Editor error: {e}");
+        eprintln!("Editor Error [{}]: {}", e.code, e.message);
         std::process::exit(1);
     }
 }

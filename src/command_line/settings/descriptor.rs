@@ -68,6 +68,32 @@ impl std::fmt::Display for SettingError {
     }
 }
 
+impl From<SettingError> for crate::error::RiftError {
+    fn from(err: SettingError) -> Self {
+        use crate::error::{ErrorSeverity, ErrorType, RiftError};
+        match err {
+            SettingError::ParseError(msg) => RiftError {
+                severity: ErrorSeverity::Error,
+                kind: ErrorType::Parse,
+                code: "SETTING_PARSE_ERROR".to_string(),
+                message: msg,
+            },
+            SettingError::ValidationError(msg) => RiftError {
+                severity: ErrorSeverity::Error,
+                kind: ErrorType::Settings,
+                code: "SETTING_VALIDATION_ERROR".to_string(),
+                message: msg,
+            },
+            SettingError::UnknownOption(name) => RiftError {
+                severity: ErrorSeverity::Error,
+                kind: ErrorType::Settings,
+                code: "UNKNOWN_SETTING".to_string(),
+                message: format!("Unknown option: {name}"),
+            },
+        }
+    }
+}
+
 /// Setter function signature
 ///
 /// Function pointers (not trait objects) for static dispatch.

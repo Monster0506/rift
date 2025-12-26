@@ -1,5 +1,6 @@
 //! Gap buffer implementation for efficient text editing
 
+use crate::error::{ErrorType, RiftError};
 /// ## buffer/ Invariants
 ///
 /// - The buffer owns both text storage and cursor position.
@@ -29,17 +30,30 @@ pub struct GapBuffer {
 
 impl GapBuffer {
     /// Create a new gap buffer with initial capacity
-    pub fn new(initial_capacity: usize) -> Result<Self, String> {
+    pub fn new(initial_capacity: usize) -> Result<Self, RiftError> {
         if initial_capacity == 0 {
-            return Err("Capacity must be > 0".to_string());
+            return Err(RiftError::new(
+                ErrorType::Internal,
+                "INVALID_CAPACITY",
+                "Capacity must be > 0".to_string(),
+            ));
         }
 
-        let layout = Layout::from_size_align(initial_capacity, 1)
-            .map_err(|e| format!("Invalid layout: {e}"))?;
+        let layout = Layout::from_size_align(initial_capacity, 1).map_err(|e| {
+            RiftError::new(
+                ErrorType::Internal,
+                "INVALID_LAYOUT",
+                format!("Invalid layout: {e}"),
+            )
+        })?;
 
         let buffer = unsafe { alloc(layout) };
         if buffer.is_null() {
-            return Err("Failed to allocate buffer".to_string());
+            return Err(RiftError::new(
+                ErrorType::Internal,
+                "ALLOC_FAILED",
+                "Failed to allocate buffer".to_string(),
+            ));
         }
 
         Ok(GapBuffer {
@@ -99,7 +113,7 @@ impl GapBuffer {
     }
 
     /// Insert a byte at the cursor position
-    pub fn insert(&mut self, byte: u8) -> Result<(), String> {
+    pub fn insert(&mut self, byte: u8) -> Result<(), RiftError> {
         if self.gap_start >= self.gap_end {
             // Gap is exhausted, need to grow
             self.grow()?;
@@ -114,7 +128,7 @@ impl GapBuffer {
 
     /// Insert bytes at the cursor position (batch insertion)
     /// More efficient than inserting byte-by-byte
-    pub fn insert_bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
+    pub fn insert_bytes(&mut self, bytes: &[u8]) -> Result<(), RiftError> {
         if bytes.is_empty() {
             return Ok(());
         }
@@ -139,7 +153,7 @@ impl GapBuffer {
     }
 
     /// Insert a string at the cursor position
-    pub fn insert_str(&mut self, s: &str) -> Result<(), String> {
+    pub fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
         self.insert_bytes(s.as_bytes())
     }
 
@@ -406,14 +420,23 @@ impl GapBuffer {
     }
 
     /// Grow the buffer when gap is exhausted
-    fn grow(&mut self) -> Result<(), String> {
+    fn grow(&mut self) -> Result<(), RiftError> {
         let new_capacity = self.capacity * 2;
-        let new_layout =
-            Layout::from_size_align(new_capacity, 1).map_err(|e| format!("Invalid layout: {e}"))?;
+        let new_layout = Layout::from_size_align(new_capacity, 1).map_err(|e| {
+            RiftError::new(
+                ErrorType::Internal,
+                "INVALID_LAYOUT",
+                format!("Invalid layout: {e}"),
+            )
+        })?;
 
         let new_buffer = unsafe { alloc(new_layout) };
         if new_buffer.is_null() {
-            return Err("Failed to allocate new buffer".to_string());
+            return Err(RiftError::new(
+                ErrorType::Internal,
+                "ALLOC_FAILED",
+                "Failed to allocate new buffer".to_string(),
+            ));
         }
 
         // Copy before_gap

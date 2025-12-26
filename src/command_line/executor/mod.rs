@@ -3,6 +3,7 @@
 
 use crate::command_line::parser::ParsedCommand;
 use crate::command_line::settings::SettingsRegistry;
+use crate::error::{ErrorType, RiftError};
 use crate::state::State;
 
 /// Result of executing a command
@@ -15,7 +16,7 @@ pub enum ExecutionResult {
     /// Write and quit - editor should save then exit
     WriteAndQuit,
     /// Error occurred during execution
-    Error(String),
+    Error(RiftError),
 }
 
 /// Command executor
@@ -57,13 +58,17 @@ impl CommandExecutor {
                 // Editor will check if path exists, call Document::save(), then quit
                 ExecutionResult::WriteAndQuit
             }
-            ParsedCommand::Unknown { name } => {
-                ExecutionResult::Error(format!("Unknown command: {name}"))
-            }
+            ParsedCommand::Unknown { name } => ExecutionResult::Error(RiftError::new(
+                ErrorType::Parse,
+                "UNKNOWN_COMMAND",
+                format!("Unknown command: {name}"),
+            )),
             ParsedCommand::Ambiguous { prefix, matches } => {
                 let matches_str = matches.join(", ");
-                ExecutionResult::Error(format!(
-                    "Ambiguous command '{prefix}': matches {matches_str}"
+                ExecutionResult::Error(RiftError::new(
+                    ErrorType::Parse,
+                    "AMBIGUOUS_COMMAND",
+                    format!("Ambiguous command '{prefix}': matches {matches_str}"),
                 ))
             }
             ParsedCommand::Notify {
@@ -78,7 +83,11 @@ impl CommandExecutor {
                     "error" => NotificationType::Error,
                     "success" => NotificationType::Success,
                     _ => {
-                        return ExecutionResult::Error(format!("Unknown notification type: {kind}"))
+                        return ExecutionResult::Error(RiftError::new(
+                            ErrorType::Execution,
+                            "INVALID_NOTIFY_TYPE",
+                            format!("Unknown notification type: {kind}"),
+                        ))
                     }
                 };
 

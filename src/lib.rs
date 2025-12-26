@@ -6,6 +6,7 @@ pub mod command;
 pub mod command_line;
 pub mod document;
 pub mod editor;
+pub mod error;
 pub mod executor;
 pub mod floating_window;
 pub mod key;

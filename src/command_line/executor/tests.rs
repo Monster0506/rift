@@ -218,9 +218,12 @@ fn test_execute_set_tabwidth_zero_error() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(msg) => {
+        ExecutionResult::Error(err) => {
             assert!(
-                msg.contains("tabwidth must be greater than 0") || msg.contains("Validation error")
+                err.contains_msg("tabwidth must be greater than 0")
+                    || err.contains_msg("is below minimum"),
+                "Actual message: '{}'",
+                err.message
             );
         }
         _ => panic!("Expected error for tabwidth=0"),
@@ -244,11 +247,11 @@ fn test_execute_set_tabwidth_invalid_number() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(msg) => {
+        ExecutionResult::Error(err) => {
             assert!(
-                msg.contains("Invalid integer")
-                    || msg.contains("Parse error")
-                    || msg.contains("Invalid numeric")
+                err.contains_msg("Invalid integer")
+                    || err.contains_msg("Parse error")
+                    || err.contains_msg("Invalid numeric")
             );
         }
         _ => panic!("Expected error for invalid number"),
@@ -272,8 +275,8 @@ fn test_execute_set_expandtabs_invalid_boolean() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(msg) => {
-            assert!(msg.contains("Invalid boolean value"));
+        ExecutionResult::Error(err) => {
+            assert!(err.contains_msg("Invalid boolean value"));
         }
         _ => panic!("Expected error for invalid boolean"),
     }
@@ -298,8 +301,8 @@ fn test_execute_set_expandtabs_missing_value() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(msg) => {
-            assert!(msg.contains("Missing value"));
+        ExecutionResult::Error(err) => {
+            assert!(err.contains_msg("Missing value"));
         }
         _ => panic!("Expected error for missing value"),
     }
@@ -321,9 +324,9 @@ fn test_execute_set_unknown_option() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(msg) => {
-            assert!(msg.contains("Unknown option"));
-            assert!(msg.contains("unknownoption"));
+        ExecutionResult::Error(err) => {
+            assert!(err.contains_msg("Unknown option"));
+            assert!(err.contains_msg("unknownoption"));
         }
         _ => panic!("Expected error for unknown option"),
     }
@@ -340,9 +343,9 @@ fn test_execute_unknown_command() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(msg) => {
-            assert!(msg.contains("Unknown command"));
-            assert!(msg.contains("nonexistent"));
+        ExecutionResult::Error(err) => {
+            assert!(err.contains_msg("Unknown command"));
+            assert!(err.contains_msg("nonexistent"));
         }
         _ => panic!("Expected error for unknown command"),
     }
@@ -360,11 +363,11 @@ fn test_execute_ambiguous_command() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(msg) => {
-            assert!(msg.contains("Ambiguous command"));
-            assert!(msg.contains("se"));
-            assert!(msg.contains("setup"));
-            assert!(msg.contains("settings"));
+        ExecutionResult::Error(err) => {
+            assert!(err.contains_msg("Ambiguous command"));
+            assert!(err.contains_msg("se"));
+            assert!(err.contains_msg("setup"));
+            assert!(err.contains_msg("settings"));
         }
         _ => panic!("Expected error for ambiguous command"),
     }
@@ -443,11 +446,11 @@ fn test_execute_set_tabwidth_negative_error() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(msg) => {
+        ExecutionResult::Error(err) => {
             assert!(
-                msg.contains("Invalid integer")
-                    || msg.contains("Parse error")
-                    || msg.contains("Invalid numeric")
+                err.contains_msg("Invalid integer")
+                    || err.contains_msg("Parse error")
+                    || err.contains_msg("Invalid numeric")
             );
         }
         _ => panic!("Expected error for negative number"),
@@ -471,8 +474,8 @@ fn test_execute_set_expandtabs_empty_string() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(msg) => {
-            assert!(msg.contains("Invalid boolean value"));
+        ExecutionResult::Error(err) => {
+            assert!(err.contains_msg("Invalid boolean value"));
         }
         _ => panic!("Expected error for empty string"),
     }
@@ -526,11 +529,11 @@ fn test_execute_set_tabwidth_float_error() {
     let settings_registry = create_settings_registry();
     let result = CommandExecutor::execute(command, &mut state, &settings_registry);
     match result {
-        ExecutionResult::Error(msg) => {
+        ExecutionResult::Error(err) => {
             assert!(
-                msg.contains("Invalid integer")
-                    || msg.contains("Parse error")
-                    || msg.contains("Invalid numeric")
+                err.contains_msg("Invalid integer")
+                    || err.contains_msg("Parse error")
+                    || err.contains_msg("Invalid numeric")
             );
         }
         _ => panic!("Expected error for float"),

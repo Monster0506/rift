@@ -7,6 +7,7 @@ use crate::command_line::parser::CommandParser;
 use crate::command_line::registry::{CommandDef, CommandRegistry};
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::document::Document;
+use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::executor::execute_command;
 use crate::key_handler::{KeyAction, KeyHandler};
 use crate::layer::LayerCompositor;
@@ -32,12 +33,12 @@ pub struct Editor<T: TerminalBackend> {
 
 impl<T: TerminalBackend> Editor<T> {
     /// Create a new editor instance
-    pub fn new(terminal: T) -> Result<Self, String> {
+    pub fn new(terminal: T) -> Result<Self, RiftError> {
         Self::with_file(terminal, None)
     }
 
     /// Create a new editor instance with an optional file to load
-    pub fn with_file(mut terminal: T, file_path: Option<String>) -> Result<Self, String> {
+    pub fn with_file(mut terminal: T, file_path: Option<String>) -> Result<Self, RiftError> {
         // Validate file BEFORE initializing terminal or creating buffer
         // This ensures we don't clear the screen or allocate resources if the file is invalid
         if let Some(ref path) = file_path {
@@ -52,9 +53,16 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Create document (either from file or empty)
         let document = if let Some(ref path) = file_path {
-            Document::from_file(1, path).map_err(|e| format!("Failed to load file {path}: {e}"))?
+            Document::from_file(1, path).map_err(|e| {
+                RiftError::new(
+                    ErrorType::Io,
+                    "LOAD_FAILED",
+                    format!("Failed to load file {path}: {e}"),
+                )
+            })?
         } else {
-            Document::new(1)?
+            Document::new(1)
+                .map_err(|e| RiftError::new(ErrorType::Internal, "INTERNAL_ERROR", e.to_string()))?
         };
 
         // Create viewport
@@ -99,26 +107,34 @@ impl<T: TerminalBackend> Editor<T> {
     /// Validate that a file exists and is a valid file (not a directory)
     /// This should be called BEFORE terminal initialization to avoid clearing the screen
     /// if the file is invalid.
-    fn validate_file(file_path: &str) -> Result<(), String> {
+    fn validate_file(file_path: &str) -> Result<(), RiftError> {
         use std::path::Path;
 
         let path = Path::new(file_path);
 
         // Check if file exists
         if !path.exists() {
-            return Err(format!("File not found: {file_path}"));
+            return Err(RiftError::new(
+                ErrorType::Io,
+                "FILE_NOT_FOUND",
+                format!("File not found: {file_path}"),
+            ));
         }
 
         // Check if it's a file (not a directory)
         if !path.is_file() {
-            return Err(format!("Path is not a file: {file_path}"));
+            return Err(RiftError::new(
+                ErrorType::Io,
+                "NOT_A_FILE",
+                format!("Path is not a file: {file_path}"),
+            ));
         }
 
         Ok(())
     }
 
     /// Run the editor main loop
-    pub fn run(&mut self) -> Result<(), String> {
+    pub fn run(&mut self) -> Result<(), RiftError> {
         // Initial render
         self.update_and_render()?;
 
@@ -193,7 +209,7 @@ impl<T: TerminalBackend> Editor<T> {
         keypress: crate::key::Key,
         action: crate::key_handler::KeyAction,
         command: crate::command::Command,
-    ) -> Result<(), String> {
+    ) -> Result<(), RiftError> {
         // Handle special actions (mutations happen here, not during input handling)
         match action {
             KeyAction::ExitInsertMode => {
@@ -237,9 +253,13 @@ impl<T: TerminalBackend> Editor<T> {
                 match execution_result {
                     ExecutionResult::Quit { bangs } => {
                         if self.document.is_dirty() && bangs == 0 {
-                            self.state.set_command_error(Some(
-                                "No write since last change (add ! to override)".to_string(),
-                            ));
+                            self.state.set_command_error(Some(RiftError {
+                                severity: ErrorSeverity::Warning,
+                                kind: ErrorType::Execution,
+                                code: "UNSAVED_CHANGES".to_string(),
+                                message: "No write since last change (add ! to override)"
+                                    .to_string(),
+                            }));
                         } else {
                             self.should_quit = true;
                             self.state.clear_command_line();
@@ -319,7 +339,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Update state and render the editor (for initial render)
-    fn update_and_render(&mut self) -> Result<(), String> {
+    fn update_and_render(&mut self) -> Result<(), RiftError> {
         // Update buffer and cursor state only (no input tracking on initial render)
         let cursor_line = self.document.buffer.get_line();
         let cursor_col = render::calculate_cursor_column(
@@ -342,7 +362,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Render the editor interface (pure read - no mutations)
     /// Uses the layer compositor for composited rendering
-    fn render(&mut self, needs_clear: bool) -> Result<(), String> {
+    fn render(&mut self, needs_clear: bool) -> Result<(), RiftError> {
         // Prune expired notifications before rendering
         self.state.notification_manager.prune_expired();
 
@@ -368,8 +388,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Save document to file
+    ///
     /// Returns error message string if save fails
-    fn save_document(&mut self) -> Result<(), String> {
+    fn save_document(&mut self) -> Result<(), RiftError> {
         use std::path::PathBuf;
 
         // Get file path from state (executor may have updated it)
@@ -377,7 +398,7 @@ impl<T: TerminalBackend> Editor<T> {
             .state
             .file_path
             .as_ref()
-            .ok_or_else(|| "No file name".to_string())?;
+            .ok_or_else(|| RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))?;
 
         // Update document path if it changed in state
         if self.document.path() != Some(std::path::Path::new(file_path)) {
@@ -386,15 +407,19 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Save document
         if self.document.has_path() {
-            self.document
-                .save()
-                .map_err(|e| format!("Failed to write {file_path}: {e}"))?;
+            self.document.save().map_err(|e| {
+                RiftError::new(
+                    ErrorType::Io,
+                    "SAVE_FAILED",
+                    format!("Failed to write {file_path}: {e}"),
+                )
+            })?;
 
             // Update cached filename after save (handles save_as case)
             self.state
                 .update_filename(self.document.display_name().to_string());
         } else {
-            return Err("No file name".to_string());
+            return Err(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"));
         }
 
         Ok(())

@@ -108,7 +108,9 @@ fn test_document_save_without_path() {
 
     let result = doc.save();
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotFound);
+    let err = result.unwrap_err();
+    assert_eq!(err.kind, ErrorType::Io);
+    assert_eq!(err.code, "NO_PATH");
 }
 
 #[test]

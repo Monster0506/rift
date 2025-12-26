@@ -3,6 +3,7 @@
 
 use crate::color::{Color, Theme};
 use crate::command::Command;
+use crate::error::RiftError;
 use crate::floating_window::BorderChars;
 /// ## state/ Invariants
 ///
@@ -144,8 +145,8 @@ pub struct State {
     pub buffer_size: usize,
     /// Command line input (for command mode)
     pub command_line: String,
-    /// Command execution error message (if any)
-    pub command_error: Option<String>,
+    /// Command execution error (if any)
+    pub command_error: Option<RiftError>,
     /// Notification manager
     pub notification_manager: NotificationManager,
 }
@@ -245,8 +246,8 @@ impl State {
         self.command_line.clear();
     }
 
-    /// Set command error message
-    pub fn set_command_error(&mut self, error: Option<String>) {
+    /// Set command error
+    pub fn set_command_error(&mut self, error: Option<RiftError>) {
         self.command_error = error;
     }
 

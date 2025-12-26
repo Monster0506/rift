@@ -15,6 +15,7 @@
 use crate::buffer::GapBuffer;
 use crate::color::Color;
 use crate::command_line::CommandLine;
+use crate::error::RiftError;
 use crate::floating_window::{FloatingWindow, WindowPosition};
 use crate::key::Key;
 use crate::layer::{Cell, Layer, LayerCompositor, LayerPriority};
@@ -54,7 +55,7 @@ pub fn render<T: TerminalBackend>(
     term: &mut T,
     compositor: &mut LayerCompositor,
     ctx: RenderContext,
-) -> Result<CursorPosition, String> {
+) -> Result<CursorPosition, RiftError> {
     // Resize compositor if needed
     if compositor.rows() != ctx.viewport.visible_rows()
         || compositor.cols() != ctx.viewport.visible_cols()
