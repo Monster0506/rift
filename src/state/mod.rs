@@ -42,6 +42,22 @@ impl Default for CommandLineWindowSettings {
 }
 impl CommandLineWindowSettings {}
 
+/// Status line settings
+#[derive(Debug, Clone)]
+pub struct StatusLineSettings {
+    /// Whether to show filename in status bar (normal mode)
+    pub show_filename: bool,
+}
+
+impl Default for StatusLineSettings {
+    /// Create default status line settings
+    fn default() -> Self {
+        StatusLineSettings {
+            show_filename: true,
+        }
+    }
+}
+
 /// User settings that persist across sessions
 /// These are preferences that should be saved and loaded from a config file
 #[derive(Debug, Clone)]
@@ -54,6 +70,8 @@ pub struct UserSettings {
     pub default_border_chars: Option<BorderChars>,
     /// Command line window settings
     pub command_line_window: CommandLineWindowSettings,
+    /// Status line settings
+    pub status_line: StatusLineSettings,
     /// Editor background color (None means use terminal default)
     pub editor_bg: Option<Color>,
     /// Editor foreground color (None means use terminal default)
@@ -71,6 +89,7 @@ impl UserSettings {
             tab_width: 4,               // Default tab width
             default_border_chars: None, // None means use FloatingWindow defaults
             command_line_window: CommandLineWindowSettings::default(),
+            status_line: StatusLineSettings::default(),
             editor_bg: None,
             editor_fg: None,
             theme: None,
