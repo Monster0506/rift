@@ -385,7 +385,6 @@ fn test_execute_setting_boolean() {
         crate::command_line::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    settings = state.settings.clone();
     assert_eq!(settings.expand_tabs, false);
 
     let result = registry.execute_setting("expandtabs", Some("true".to_string()), &mut state);
@@ -394,7 +393,6 @@ fn test_execute_setting_boolean() {
         crate::command_line::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    settings = state.settings.clone();
     assert_eq!(settings.expand_tabs, true);
 
     let result = registry.execute_setting("et", Some("false".to_string()), &mut state);
@@ -402,7 +400,6 @@ fn test_execute_setting_boolean() {
         result,
         crate::command_line::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
     settings = state.settings.clone();
     assert_eq!(settings.expand_tabs, false);
 }
@@ -419,7 +416,6 @@ fn test_execute_setting_integer() {
         crate::command_line::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    settings = state.settings.clone();
     assert_eq!(settings.tab_width, 4);
 
     let result = registry.execute_setting("tw", Some("8".to_string()), &mut state);
@@ -428,7 +424,6 @@ fn test_execute_setting_integer() {
         crate::command_line::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    settings = state.settings.clone();
     assert_eq!(settings.tab_width, 8);
 
     let result = registry.execute_setting("tabw", Some("2".to_string()), &mut state);
@@ -436,7 +431,6 @@ fn test_execute_setting_integer() {
         result,
         crate::command_line::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
     settings = state.settings.clone();
     assert_eq!(settings.tab_width, 2);
 }
@@ -457,7 +451,6 @@ fn test_execute_setting_float() {
         crate::command_line::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    settings = state.settings.clone();
     assert_eq!(settings.command_line_window.width_ratio, 0.6);
 
     let result = registry.execute_setting("cmdwidth", Some("0.8".to_string()), &mut state);
@@ -466,14 +459,13 @@ fn test_execute_setting_float() {
         crate::command_line::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    settings = state.settings.clone();
     assert_eq!(settings.command_line_window.width_ratio, 0.8);
 }
 
 #[test]
 fn test_execute_setting_enum() {
     let registry = create_test_registry();
-    let mut settings = UserSettings::new();
+    let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
     let result =
@@ -499,7 +491,7 @@ fn test_execute_setting_enum() {
 #[test]
 fn test_execute_setting_missing_value() {
     let registry = create_test_registry();
-    let mut settings = UserSettings::new();
+    let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
     let result = registry.execute_setting("expandtabs", None, &mut state);
@@ -512,7 +504,7 @@ fn test_execute_setting_missing_value() {
 #[test]
 fn test_execute_setting_unknown_option() {
     let registry = create_test_registry();
-    let mut settings = UserSettings::new();
+    let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
     let result =
@@ -526,7 +518,7 @@ fn test_execute_setting_unknown_option() {
 #[test]
 fn test_execute_setting_invalid_value() {
     let registry = create_test_registry();
-    let mut settings = UserSettings::new();
+    let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
     // Invalid boolean
@@ -556,7 +548,7 @@ fn test_execute_setting_invalid_value() {
 #[test]
 fn test_execute_setting_validation_error() {
     let registry = create_test_registry();
-    let mut settings = UserSettings::new();
+    let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
     // tabwidth below minimum (0)
@@ -607,7 +599,7 @@ fn test_execute_setting_ambiguous() {
     ];
 
     let registry = SettingsRegistry::new(AMBIGUOUS_SETTINGS);
-    let mut settings = UserSettings::new();
+    let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
     // "expa" is ambiguous
@@ -637,7 +629,6 @@ fn test_execute_setting_theme_light() {
         crate::command_line::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
     assert_eq!(
         settings.editor_bg,
@@ -660,7 +651,6 @@ fn test_execute_setting_theme_dark() {
         result,
         crate::command_line::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("dark".to_string()));
     assert_eq!(
@@ -685,7 +675,6 @@ fn test_execute_setting_theme_gruvbox() {
         crate::command_line::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    settings = state.settings.clone();
     assert_eq!(settings.theme, Some("gruvbox".to_string()));
     assert_eq!(
         settings.editor_bg,
@@ -708,7 +697,6 @@ fn test_execute_setting_theme_nordic() {
         result,
         crate::command_line::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("nordic".to_string()));
     assert_eq!(
@@ -733,7 +721,6 @@ fn test_execute_setting_theme_nord_alias() {
         crate::command_line::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    settings = state.settings.clone();
     assert_eq!(settings.theme, Some("nordic".to_string()));
 }
 
@@ -749,7 +736,6 @@ fn test_execute_setting_theme_case_insensitive() {
         crate::command_line::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
 
     let result = registry.execute_setting("theme", Some("Dark".to_string()), &mut state);
@@ -758,14 +744,13 @@ fn test_execute_setting_theme_case_insensitive() {
         crate::command_line::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    settings = state.settings.clone();
     assert_eq!(settings.theme, Some("dark".to_string()));
 }
 
 #[test]
 fn test_execute_setting_theme_unknown() {
     let registry = create_settings_registry();
-    let mut settings = UserSettings::new();
+    let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
     let result =
@@ -789,7 +774,6 @@ fn test_execute_setting_theme_overwrites_previous() {
         crate::command_line::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
     let light_bg = settings.editor_bg;
 
@@ -799,7 +783,6 @@ fn test_execute_setting_theme_overwrites_previous() {
         result,
         crate::command_line::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("dark".to_string()));
     assert_ne!(settings.editor_bg, light_bg);
@@ -822,7 +805,6 @@ fn test_execute_setting_theme_alias_colorscheme() {
         crate::command_line::executor::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
 }
 
@@ -838,7 +820,6 @@ fn test_execute_setting_theme_alias_colors() {
         result,
         crate::command_line::executor::ExecutionResult::Success
     ));
-    settings = state.settings.clone();
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("dark".to_string()));
 }
