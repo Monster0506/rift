@@ -4,7 +4,7 @@ use crate::buffer::GapBuffer;
 use crate::key::Key;
 use crate::layer::{Layer, LayerCompositor, LayerPriority};
 use crate::mode::Mode;
-use crate::render::{_format_key as format_key, calculate_cursor_column, render};
+use crate::render::{_format_key as format_key, calculate_cursor_column, render, RenderContext};
 use crate::state::State;
 use crate::status::StatusBar;
 use crate::test_utils::MockTerminal;
@@ -205,12 +205,14 @@ fn test_render_clears_screen() {
     render(
         &mut term,
         &mut compositor,
-        &buf,
-        &viewport,
-        Mode::Normal,
-        None,
-        &state,
-        needs_clear,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear,
+        },
     )
     .unwrap();
 
@@ -231,12 +233,14 @@ fn test_render_cursor_positioning() {
     render(
         &mut term,
         &mut compositor,
-        &buf,
-        &viewport,
-        Mode::Normal,
-        None,
-        &state,
-        needs_clear,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear,
+        },
     )
     .unwrap();
 
@@ -256,12 +260,14 @@ fn test_render_empty_buffer() {
     render(
         &mut term,
         &mut compositor,
-        &buf,
-        &viewport,
-        Mode::Normal,
-        None,
-        &state,
-        needs_clear,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear,
+        },
     )
     .unwrap();
 
@@ -284,12 +290,14 @@ fn test_render_multiline_buffer() {
     render(
         &mut term,
         &mut compositor,
-        &buf,
-        &viewport,
-        Mode::Normal,
-        None,
-        &state,
-        needs_clear,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear,
+        },
     )
     .unwrap();
 
@@ -317,12 +325,14 @@ fn test_render_file_loaded_at_start() {
     render(
         &mut term,
         &mut compositor,
-        &buf,
-        &viewport,
-        Mode::Normal,
-        None,
-        &state,
-        needs_clear,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear,
+        },
     )
     .unwrap();
 
@@ -360,12 +370,14 @@ fn test_render_viewport_scrolling() {
     render(
         &mut term,
         &mut compositor,
-        &buf,
-        &viewport,
-        Mode::Normal,
-        None,
-        &state,
-        needs_clear,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear,
+        },
     )
     .unwrap();
 
@@ -387,12 +399,14 @@ fn test_render_viewport_edge_cases() {
     render(
         &mut term,
         &mut compositor,
-        &buf,
-        &viewport,
-        Mode::Normal,
-        None,
-        &state,
-        needs_clear,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear,
+        },
     )
     .unwrap();
 }
@@ -413,12 +427,14 @@ fn test_render_large_buffer() {
     render(
         &mut term,
         &mut compositor,
-        &buf,
-        &viewport,
-        Mode::Normal,
-        None,
-        &state,
-        needs_clear,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear,
+        },
     )
     .unwrap();
 
@@ -447,12 +463,14 @@ fn test_render_cursor_at_viewport_boundaries() {
     render(
         &mut term,
         &mut compositor,
-        &buf,
-        &viewport,
-        Mode::Normal,
-        None,
-        &state,
-        needs_clear,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear,
+        },
     )
     .unwrap();
     // First render clears screen (viewport scrolls to show cursor at top)
@@ -471,12 +489,14 @@ fn test_render_cursor_at_viewport_boundaries() {
     render(
         &mut term,
         &mut compositor,
-        &buf,
-        &viewport,
-        Mode::Normal,
-        None,
-        &state,
-        needs_clear2,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear: needs_clear2,
+        },
     )
     .unwrap();
     // Should clear when scrolling to show cursor at bottom

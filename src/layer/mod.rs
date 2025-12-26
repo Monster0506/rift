@@ -10,7 +10,29 @@
 //! - Layer modifications only affect that layer's buffer.
 
 use crate::color::Color;
+use crate::screen_buffer::{DoubleBuffer, FrameStats};
 use std::collections::BTreeMap;
+
+/// A rectangular region
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rect {
+    pub start_row: usize,
+    pub start_col: usize,
+    pub end_row: usize,
+    pub end_col: usize,
+}
+
+impl Rect {
+    /// Create a new rectangle
+    pub fn new(start_row: usize, start_col: usize, end_row: usize, end_col: usize) -> Self {
+        Self {
+            start_row,
+            start_col,
+            end_row,
+            end_col,
+        }
+    }
+}
 
 /// Layer priority - higher values render on top
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -223,20 +245,11 @@ impl Layer {
         }
     }
 
-    /// Fill a rectangular region with a character
-    pub fn fill_rect(
-        &mut self,
-        start_row: usize,
-        start_col: usize,
-        end_row: usize,
-        end_col: usize,
-        ch: u8,
-        fg: Option<Color>,
-        bg: Option<Color>,
-    ) {
-        for row in start_row..=end_row.min(self.rows.saturating_sub(1)) {
-            for col in start_col..=end_col.min(self.cols.saturating_sub(1)) {
-                self.set_cell(row, col, Cell::new(ch).with_colors(fg, bg));
+    /// Fill a rectangular region with a cell
+    pub fn fill_rect(&mut self, rect: Rect, cell: Cell) {
+        for row in rect.start_row..=rect.end_row.min(self.rows.saturating_sub(1)) {
+            for col in rect.start_col..=rect.end_col.min(self.cols.saturating_sub(1)) {
+                self.set_cell(row, col, cell.clone());
             }
         }
     }
@@ -283,8 +296,8 @@ pub struct LayerCompositor {
     /// Terminal dimensions
     rows: usize,
     cols: usize,
-    /// Composited output buffer
-    composited: Vec<Vec<Cell>>,
+    /// Double buffer for rendering
+    buffer: DoubleBuffer,
     /// Whether any layer is dirty and needs recompositing
     needs_composite: bool,
 }
@@ -292,12 +305,11 @@ pub struct LayerCompositor {
 impl LayerCompositor {
     /// Create a new compositor with the given terminal dimensions
     pub fn new(rows: usize, cols: usize) -> Self {
-        let composited = vec![vec![Cell::empty(); cols]; rows];
         Self {
             layers: BTreeMap::new(),
             rows,
             cols,
-            composited,
+            buffer: DoubleBuffer::new(rows, cols),
             needs_composite: true,
         }
     }
@@ -341,7 +353,7 @@ impl LayerCompositor {
     pub fn resize(&mut self, new_rows: usize, new_cols: usize) {
         self.rows = new_rows;
         self.cols = new_cols;
-        self.composited = vec![vec![Cell::empty(); new_cols]; new_rows];
+        self.buffer.resize(new_rows, new_cols);
 
         for layer in self.layers.values_mut() {
             layer.resize(new_rows, new_cols);
@@ -352,12 +364,9 @@ impl LayerCompositor {
     /// Composite all layers into the output buffer
     /// Layers are merged from lowest priority to highest
     pub fn composite(&mut self) {
-        // Clear the composited buffer
-        for row in &mut self.composited {
-            for cell in row.iter_mut() {
-                *cell = Cell::empty();
-            }
-        }
+        // Clear the current buffer
+        self.buffer.clear();
+        let buffer = self.buffer.current_mut();
 
         // Merge layers from lowest to highest priority
         // BTreeMap iterates in key order (ascending priority)
@@ -371,7 +380,7 @@ impl LayerCompositor {
                         break;
                     }
                     if let Some(cell) = cell {
-                        self.composited[r][c] = cell.clone();
+                        buffer[r][c] = cell.clone();
                     }
                 }
             }
@@ -384,96 +393,34 @@ impl LayerCompositor {
         self.needs_composite = false;
     }
 
-    /// Get the composited buffer
+    /// Get the composited buffer (read-only)
     /// Automatically composites if any layer is dirty
     pub fn get_composited(&mut self) -> &Vec<Vec<Cell>> {
         if self.needs_composite || self.layers.values().any(|l| l.is_dirty()) {
             self.composite();
         }
-        &self.composited
+        self.buffer.current()
     }
 
-    /// Render the composited output to the terminal
+    /// Render the composited output to the terminal using double buffering
+    /// Only cells that changed since the last frame are rendered
     pub fn render_to_terminal<T: crate::term::TerminalBackend>(
         &mut self,
         term: &mut T,
         needs_clear: bool,
-    ) -> Result<(), String> {
-        use crossterm::queue;
-        use crossterm::style::{ResetColor, SetBackgroundColor, SetForegroundColor};
-
+    ) -> Result<FrameStats, String> {
         // Composite if needed
         if self.needs_composite || self.layers.values().any(|l| l.is_dirty()) {
             self.composite();
         }
 
-        // Hide cursor during rendering
-        term.hide_cursor()?;
-
-        // Clear if needed
+        // Force full redraw if requested
         if needs_clear {
-            term.clear_screen()?;
+            self.buffer.invalidate();
         }
 
-        // Track current colors to minimize escape sequences
-        let mut current_fg: Option<Color> = None;
-        let mut current_bg: Option<Color> = None;
-
-        // Render each row
-        for (row_idx, row) in self.composited.iter().enumerate() {
-            term.move_cursor(row_idx as u16, 0)?;
-
-            let mut output = Vec::with_capacity(self.cols * 4); // Estimate for UTF-8
-
-            for cell in row {
-                // Check if we need to change colors
-                if cell.fg != current_fg || cell.bg != current_bg {
-                    // Flush current output before color change
-                    if !output.is_empty() {
-                        term.write(&output)?;
-                        output.clear();
-                    }
-
-                    // Build color commands
-                    let mut color_buf = Vec::new();
-
-                    // Reset and apply new colors
-                    queue!(color_buf, ResetColor)
-                        .map_err(|e| format!("Failed to reset colors: {e}"))?;
-
-                    if let Some(fg) = cell.fg {
-                        queue!(color_buf, SetForegroundColor(fg.to_crossterm()))
-                            .map_err(|e| format!("Failed to set fg: {e}"))?;
-                    }
-                    if let Some(bg) = cell.bg {
-                        queue!(color_buf, SetBackgroundColor(bg.to_crossterm()))
-                            .map_err(|e| format!("Failed to set bg: {e}"))?;
-                    }
-
-                    term.write(&color_buf)?;
-                    current_fg = cell.fg;
-                    current_bg = cell.bg;
-                }
-
-                // Add cell content to output buffer
-                output.extend_from_slice(&cell.content);
-            }
-
-            // Flush remaining output for this row
-            if !output.is_empty() {
-                term.write(&output)?;
-            }
-
-            // Clear to end of line
-            term.clear_to_end_of_line()?;
-        }
-
-        // Reset colors at end
-        let mut reset_buf = Vec::new();
-        queue!(reset_buf, ResetColor).map_err(|e| format!("Failed to reset colors: {e}"))?;
-        term.write(&reset_buf)?;
-
-        Ok(())
+        // Delegate to double buffer
+        self.buffer.render_to_terminal(term)
     }
 
     /// Get the number of rows

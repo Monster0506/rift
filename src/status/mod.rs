@@ -333,7 +333,7 @@ impl StatusBar {
             let file_name = &state.file_name;
             if file_name.len() <= available_cols {
                 // Right-align filename
-                let spacing = available_cols.saturating_sub(file_name.len()+1);
+                let spacing = available_cols.saturating_sub(file_name.len() + 1);
                 for _ in 0..spacing {
                     layer.set_cell(
                         status_row,

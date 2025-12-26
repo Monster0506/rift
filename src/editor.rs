@@ -338,12 +338,14 @@ impl<T: TerminalBackend> Editor<T> {
         render::render(
             &mut self.terminal,
             &mut self.compositor,
-            &self.document.buffer,
-            &self.viewport,
-            self.current_mode,
-            self.dispatcher.pending_key(),
-            &self.state,
-            needs_clear,
+            render::RenderContext {
+                buf: &self.document.buffer,
+                viewport: &self.viewport,
+                current_mode: self.current_mode,
+                pending_key: self.dispatcher.pending_key(),
+                state: &self.state,
+                needs_clear,
+            },
         )?;
         Ok(())
     }

@@ -11,7 +11,16 @@
 //! - Window position is validated to ensure it fits within bounds.
 
 use crate::color::Color;
+
 use crate::layer::{Cell, Layer};
+
+/// Internal layout context for rendering
+struct RenderLayout {
+    start_row: usize,
+    start_col: usize,
+    width: usize,
+    height: usize,
+}
 
 // Default border characters (Unicode box drawing)
 const DEFAULT_BORDER_TOP_LEFT: &[u8] = "╭".as_bytes();
@@ -365,16 +374,29 @@ impl FloatingWindow {
             self.render_with_border(
                 layer,
                 content,
-                start_row,
-                start_col,
-                width,
-                height,
+                RenderLayout {
+                    start_row,
+                    start_col,
+                    width,
+                    height,
+                },
                 fg,
                 bg,
                 &border_chars,
             );
         } else {
-            self.render_without_border(layer, content, start_row, start_col, width, height, fg, bg);
+            self.render_without_border(
+                layer,
+                content,
+                RenderLayout {
+                    start_row,
+                    start_col,
+                    width,
+                    height,
+                },
+                fg,
+                bg,
+            );
         }
     }
 
@@ -383,16 +405,17 @@ impl FloatingWindow {
         &self,
         layer: &mut Layer,
         content: &[Vec<u8>],
-        start_row: usize,
-        start_col: usize,
-        width: usize,
-        height: usize,
+        layout: RenderLayout,
         fg: Option<Color>,
         bg: Option<Color>,
         border_chars: &BorderChars,
     ) {
-        let content_height = height.saturating_sub(2);
-        let content_width = width.saturating_sub(2);
+        let content_height = layout.height.saturating_sub(2);
+        let content_width = layout.width.saturating_sub(2);
+        let start_row = layout.start_row;
+        let start_col = layout.start_col;
+        let width = layout.width;
+        let height = layout.height;
 
         // Top border
         layer.set_cell(
@@ -490,13 +513,15 @@ impl FloatingWindow {
         &self,
         layer: &mut Layer,
         content: &[Vec<u8>],
-        start_row: usize,
-        start_col: usize,
-        width: usize,
-        height: usize,
+        layout: RenderLayout,
         fg: Option<Color>,
         bg: Option<Color>,
     ) {
+        let start_row = layout.start_row;
+        let start_col = layout.start_col;
+        let height = layout.height;
+        let width = layout.width;
+
         for row_offset in 0..height {
             let row = start_row + row_offset;
 

@@ -13,6 +13,7 @@ pub mod key_handler;
 pub mod layer;
 pub mod mode;
 pub mod render;
+pub mod screen_buffer;
 pub mod state;
 pub mod status;
 pub mod term;
