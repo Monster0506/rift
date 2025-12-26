@@ -13,6 +13,8 @@ Implemented:
 - command mode
 - layer system for rendering
 - various settings
+- double buffer rendering
+- buffer composition
 
 Todo:
 - LSP
@@ -29,5 +31,3 @@ Todo:
 - setting and command descriptions
 - make command pattern more like settings design pattern
 - help manual
-- double buffer rendering
-- buffer composition
