@@ -10,7 +10,7 @@ fn test_execute_move_left() {
     buf.insert_str("hello").unwrap();
     assert_eq!(buf.cursor(), 5);
 
-    execute_command(Command::MoveLeft, &mut buf, false, 8);
+    execute_command(Command::MoveLeft, &mut buf, false, 8).unwrap();
     assert_eq!(buf.cursor(), 4);
 }
 
@@ -23,14 +23,14 @@ fn test_execute_move_right() {
     }
     assert_eq!(buf.cursor(), 0);
 
-    execute_command(Command::MoveRight, &mut buf, false, 8);
+    execute_command(Command::MoveRight, &mut buf, false, 8).unwrap();
     assert_eq!(buf.cursor(), 1);
 }
 
 #[test]
 fn test_execute_insert_byte() {
     let mut buf = GapBuffer::new(10).unwrap();
-    execute_command(Command::InsertByte(b'a'), &mut buf, false, 8);
+    execute_command(Command::InsertByte(b'a'), &mut buf, false, 8).unwrap();
     assert_eq!(buf.to_string(), "a");
 }
 
@@ -38,7 +38,7 @@ fn test_execute_insert_byte() {
 fn test_execute_insert_newline() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
-    execute_command(Command::InsertByte(b'\n'), &mut buf, false, 8);
+    execute_command(Command::InsertByte(b'\n'), &mut buf, false, 8).unwrap();
     assert_eq!(buf.to_string(), "hello\n");
 }
 
@@ -46,7 +46,7 @@ fn test_execute_insert_newline() {
 fn test_execute_delete_backward() {
     let mut buf = GapBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
-    execute_command(Command::DeleteBackward, &mut buf, false, 8);
+    execute_command(Command::DeleteBackward, &mut buf, false, 8).unwrap();
     assert_eq!(buf.to_string(), "hell");
 }
 
@@ -57,7 +57,7 @@ fn test_execute_delete_forward() {
     for _ in 0..5 {
         buf.move_left();
     }
-    execute_command(Command::DeleteForward, &mut buf, false, 8);
+    execute_command(Command::DeleteForward, &mut buf, false, 8).unwrap();
     assert_eq!(buf.to_string(), "ello");
 }
 
@@ -67,7 +67,7 @@ fn test_execute_move_to_buffer_start() {
     buf.insert_str("hello").unwrap();
     assert_eq!(buf.cursor(), 5);
 
-    execute_command(Command::MoveToBufferStart, &mut buf, false, 8);
+    execute_command(Command::MoveToBufferStart, &mut buf, false, 8).unwrap();
     assert_eq!(buf.cursor(), 0);
 }
 
@@ -80,7 +80,7 @@ fn test_execute_move_to_buffer_end() {
     }
     assert_eq!(buf.cursor(), 0);
 
-    execute_command(Command::MoveToBufferEnd, &mut buf, false, 8);
+    execute_command(Command::MoveToBufferEnd, &mut buf, false, 8).unwrap();
     assert_eq!(buf.cursor(), 5);
 }
 
@@ -88,7 +88,7 @@ fn test_execute_move_to_buffer_end() {
 fn test_execute_insert_ctrl_char() {
     let mut buf = GapBuffer::new(10).unwrap();
     // Ctrl+A should insert 0x01
-    execute_command(Command::InsertByte(1), &mut buf, false, 8);
+    execute_command(Command::InsertByte(1), &mut buf, false, 8).unwrap();
     let text = buf.to_string();
     assert_eq!(text.as_bytes()[0], 1); // Ctrl+A = 0x01
 }
@@ -96,7 +96,7 @@ fn test_execute_insert_ctrl_char() {
 #[test]
 fn test_execute_insert_tab_expanded_at_column_0() {
     let mut buf = GapBuffer::new(100).unwrap();
-    execute_command(Command::InsertByte(b'\t'), &mut buf, true, 8);
+    execute_command(Command::InsertByte(b'\t'), &mut buf, true, 8).unwrap();
     let text = buf.to_string();
     assert_eq!(text, "        "); // 8 spaces
     assert_eq!(text.len(), 8);
@@ -106,7 +106,7 @@ fn test_execute_insert_tab_expanded_at_column_0() {
 fn test_execute_insert_tab_expanded_at_column_1() {
     let mut buf = GapBuffer::new(100).unwrap();
     buf.insert_str("a").unwrap();
-    execute_command(Command::InsertByte(b'\t'), &mut buf, true, 8);
+    execute_command(Command::InsertByte(b'\t'), &mut buf, true, 8).unwrap();
     let text = buf.to_string();
     assert_eq!(text, "a       "); // 1 char + 7 spaces
     assert_eq!(text.len(), 8);
@@ -116,7 +116,7 @@ fn test_execute_insert_tab_expanded_at_column_1() {
 fn test_execute_insert_tab_expanded_at_column_7() {
     let mut buf = GapBuffer::new(100).unwrap();
     buf.insert_str("abcdefg").unwrap();
-    execute_command(Command::InsertByte(b'\t'), &mut buf, true, 8);
+    execute_command(Command::InsertByte(b'\t'), &mut buf, true, 8).unwrap();
     let text = buf.to_string();
     assert_eq!(text, "abcdefg "); // 7 chars + 1 space
     assert_eq!(text.len(), 8);
@@ -126,7 +126,7 @@ fn test_execute_insert_tab_expanded_at_column_7() {
 fn test_execute_insert_tab_expanded_at_column_8() {
     let mut buf = GapBuffer::new(100).unwrap();
     buf.insert_str("abcdefgh").unwrap();
-    execute_command(Command::InsertByte(b'\t'), &mut buf, true, 8);
+    execute_command(Command::InsertByte(b'\t'), &mut buf, true, 8).unwrap();
     let text = buf.to_string();
     assert_eq!(text, "abcdefgh        "); // 8 chars + 8 spaces
     assert_eq!(text.len(), 16);
@@ -135,7 +135,7 @@ fn test_execute_insert_tab_expanded_at_column_8() {
 #[test]
 fn test_execute_insert_tab_not_expanded() {
     let mut buf = GapBuffer::new(100).unwrap();
-    execute_command(Command::InsertByte(b'\t'), &mut buf, false, 8);
+    execute_command(Command::InsertByte(b'\t'), &mut buf, false, 8).unwrap();
     let text = buf.to_string();
     assert_eq!(text, "\t");
     assert_eq!(text.len(), 1);
