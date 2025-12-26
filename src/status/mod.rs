@@ -30,8 +30,10 @@ impl StatusBar {
         let status_row = viewport.visible_rows().saturating_sub(1);
         term.move_cursor(status_row as u16, 0)?;
 
-        // Invert colors for status bar (reverse video)
-        term.write(b"\x1b[7m")?;
+        // Invert colors for status bar (reverse video) if enabled
+        if state.settings.status_line.reverse_video {
+            term.write(b"\x1b[7m")?;
+        }
 
         // In command mode, show colon prompt and fill rest with spaces
         if current_mode == Mode::Command {
@@ -136,8 +138,10 @@ impl StatusBar {
             }
         }
 
-        // Reset colors
-        term.write(b"\x1b[0m")?;
+        // Reset colors (if reverse video was enabled)
+        if state.settings.status_line.reverse_video {
+            term.write(b"\x1b[0m")?;
+        }
 
         Ok(())
     }

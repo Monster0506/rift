@@ -47,6 +47,8 @@ impl CommandLineWindowSettings {}
 pub struct StatusLineSettings {
     /// Whether to show filename in status bar (normal mode)
     pub show_filename: bool,
+    /// Whether to use reverse video for status bar
+    pub reverse_video: bool,
 }
 
 impl Default for StatusLineSettings {
@@ -54,6 +56,7 @@ impl Default for StatusLineSettings {
     fn default() -> Self {
         StatusLineSettings {
             show_filename: true,
+            reverse_video: false,
         }
     }
 }
