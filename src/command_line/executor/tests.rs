@@ -513,3 +513,81 @@ fn test_execute_set_tabwidth_float_error() {
     // State should not be modified
     assert_eq!(state.settings.tab_width, original_width);
 }
+
+#[test]
+fn test_execute_write_no_path() {
+    let mut state = State::new();
+    let command = ParsedCommand::Write { path: None };
+
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    assert_eq!(result, ExecutionResult::Success);
+    assert!(state.file_path.is_none());
+}
+
+#[test]
+fn test_execute_write_with_path() {
+    let mut state = State::new();
+    let command = ParsedCommand::Write {
+        path: Some("test.txt".to_string()),
+    };
+
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(state.file_path, Some("test.txt".to_string()));
+}
+
+#[test]
+fn test_execute_write_updates_path() {
+    let mut state = State::new();
+    state.set_file_path(Some("old.txt".to_string()));
+
+    let command = ParsedCommand::Write {
+        path: Some("new.txt".to_string()),
+    };
+
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(state.file_path, Some("new.txt".to_string()));
+}
+
+#[test]
+fn test_execute_write_quit_no_path() {
+    let mut state = State::new();
+    let command = ParsedCommand::WriteQuit { path: None };
+
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    assert_eq!(result, ExecutionResult::WriteAndQuit);
+    assert!(state.file_path.is_none());
+}
+
+#[test]
+fn test_execute_write_quit_with_path() {
+    let mut state = State::new();
+    let command = ParsedCommand::WriteQuit {
+        path: Some("test.txt".to_string()),
+    };
+
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    assert_eq!(result, ExecutionResult::WriteAndQuit);
+    assert_eq!(state.file_path, Some("test.txt".to_string()));
+}
+
+#[test]
+fn test_execute_write_quit_updates_path() {
+    let mut state = State::new();
+    state.set_file_path(Some("old.txt".to_string()));
+
+    let command = ParsedCommand::WriteQuit {
+        path: Some("new.txt".to_string()),
+    };
+
+    let settings_registry = create_settings_registry();
+    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    assert_eq!(result, ExecutionResult::WriteAndQuit);
+    assert_eq!(state.file_path, Some("new.txt".to_string()));
+}

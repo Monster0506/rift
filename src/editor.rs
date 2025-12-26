@@ -65,7 +65,9 @@ impl<T: TerminalBackend> Editor<T> {
         // Create command registry and settings registry
         let registry = CommandRegistry::new()
             .register(CommandDef::new("quit").with_alias("q"))
-            .register(CommandDef::new("set").with_alias("se"));
+            .register(CommandDef::new("set").with_alias("se"))
+            .register(CommandDef::new("write").with_alias("w"))
+            .register(CommandDef::new("wq"));
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(registry, settings_registry);
 
@@ -254,6 +256,12 @@ impl<T: TerminalBackend> Editor<T> {
                         self.state.clear_command_line();
                         self.state.set_command_error(None);
                         self.set_mode(Mode::Normal);
+                    }
+                    ExecutionResult::WriteAndQuit => {
+                        // TODO: Implement when Document is integrated
+                        // For now, just error
+                        self.state
+                            .set_command_error(Some("Write not yet implemented".to_string()));
                     }
                     ExecutionResult::Error(error_msg) => {
                         // Keep command line visible so user can see the error and fix it

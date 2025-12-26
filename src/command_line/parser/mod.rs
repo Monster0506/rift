@@ -14,6 +14,10 @@ pub enum ParsedCommand {
         option: String,
         value: Option<String>,
     },
+    /// Write command (save file)
+    Write { path: Option<String> },
+    /// Write and quit command
+    WriteQuit { path: Option<String> },
     /// Unknown command
     Unknown { name: String },
     /// Ambiguous command (multiple matches)
@@ -85,6 +89,8 @@ impl CommandParser {
         match command_name {
             "quit" => ParsedCommand::Quit,
             "set" => self.parse_set_command(args),
+            "write" => self.parse_write_command(args),
+            "wq" => self.parse_write_quit_command(args),
             _ => ParsedCommand::Unknown {
                 name: command_name.to_string(),
             },
@@ -206,6 +212,47 @@ impl CommandParser {
                     value: Some("true".to_string()),
                 }
             }
+        }
+    }
+
+    /// Parse :write command arguments
+    ///
+    /// Supports:
+    /// - `:w` (write to current path)
+    /// - `:w filename` (write to new file)
+    /// - `:write filename` (write to new file)
+    ///
+    /// Error cases:
+    /// - `:w file1 file2` (too many arguments)
+    fn parse_write_command(&self, args: &[&str]) -> ParsedCommand {
+        match args.len() {
+            0 => ParsedCommand::Write { path: None },
+            1 => ParsedCommand::Write {
+                path: Some(args[0].to_string()),
+            },
+            _ => ParsedCommand::Unknown {
+                name: "write (too many arguments)".to_string(),
+            },
+        }
+    }
+
+    /// Parse :wq command arguments
+    ///
+    /// Supports:
+    /// - `:wq` (write and quit)
+    /// - `:wq filename` (write to new file and quit)
+    ///
+    /// Error cases:
+    /// - `:wq file1 file2` (too many arguments)
+    fn parse_write_quit_command(&self, args: &[&str]) -> ParsedCommand {
+        match args.len() {
+            0 => ParsedCommand::WriteQuit { path: None },
+            1 => ParsedCommand::WriteQuit {
+                path: Some(args[0].to_string()),
+            },
+            _ => ParsedCommand::Unknown {
+                name: "wq (too many arguments)".to_string(),
+            },
         }
     }
 }

@@ -8,6 +8,8 @@ fn create_test_registry() -> CommandRegistry {
         .register(CommandDef::new("set").with_alias("se"))
         .register(CommandDef::new("settings").with_alias("set"))
         .register(CommandDef::new("setup"))
+        .register(CommandDef::new("write").with_alias("w"))
+        .register(CommandDef::new("wq"))
 }
 
 fn create_test_parser() -> CommandParser {
@@ -571,6 +573,112 @@ fn test_parse_set_option_case_insensitive_prefix() {
         ParsedCommand::Set {
             option: "tabwidth".to_string(),
             value: Some("4".to_string()),
+        }
+    );
+}
+
+#[test]
+fn test_parse_write_no_args() {
+    let parser = create_test_parser();
+
+    let result = parser.parse(":w");
+    assert_eq!(result, ParsedCommand::Write { path: None });
+
+    let result = parser.parse(":write");
+    assert_eq!(result, ParsedCommand::Write { path: None });
+}
+
+#[test]
+fn test_parse_write_with_filename() {
+    let parser = create_test_parser();
+
+    let result = parser.parse(":w file.txt");
+    assert_eq!(
+        result,
+        ParsedCommand::Write {
+            path: Some("file.txt".to_string())
+        }
+    );
+
+    let result = parser.parse(":write file.txt");
+    assert_eq!(
+        result,
+        ParsedCommand::Write {
+            path: Some("file.txt".to_string())
+        }
+    );
+}
+
+#[test]
+fn test_parse_write_alias() {
+    let parser = create_test_parser();
+
+    let result = parser.parse(":w");
+    assert_eq!(result, ParsedCommand::Write { path: None });
+}
+
+#[test]
+fn test_parse_write_too_many_args() {
+    let parser = create_test_parser();
+
+    let result = parser.parse(":w file1 file2");
+    assert!(matches!(
+        result,
+        ParsedCommand::Unknown { name } if name.contains("too many arguments")
+    ));
+
+    let result = parser.parse(":write file1 file2 file3");
+    assert!(matches!(
+        result,
+        ParsedCommand::Unknown { name } if name.contains("too many arguments")
+    ));
+}
+
+#[test]
+fn test_parse_write_quit_no_args() {
+    let parser = create_test_parser();
+
+    let result = parser.parse(":wq");
+    assert_eq!(result, ParsedCommand::WriteQuit { path: None });
+}
+
+#[test]
+fn test_parse_write_quit_with_filename() {
+    let parser = create_test_parser();
+
+    let result = parser.parse(":wq file.txt");
+    assert_eq!(
+        result,
+        ParsedCommand::WriteQuit {
+            path: Some("file.txt".to_string())
+        }
+    );
+}
+
+#[test]
+fn test_parse_write_quit_too_many_args() {
+    let parser = create_test_parser();
+
+    let result = parser.parse(":wq file1 file2");
+    assert!(matches!(
+        result,
+        ParsedCommand::Unknown { name } if name.contains("too many arguments")
+    ));
+}
+
+#[test]
+fn test_parse_write_prefix() {
+    let parser = create_test_parser();
+
+    // "wr" should match "write"
+    let result = parser.parse(":wr");
+    assert_eq!(result, ParsedCommand::Write { path: None });
+
+    let result = parser.parse(":wri file.txt");
+    assert_eq!(
+        result,
+        ParsedCommand::Write {
+            path: Some("file.txt".to_string())
         }
     );
 }

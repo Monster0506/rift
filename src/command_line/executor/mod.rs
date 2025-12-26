@@ -12,6 +12,8 @@ pub enum ExecutionResult {
     Success,
     /// Quit command - editor should exit
     Quit,
+    /// Write and quit - editor should save then exit
+    WriteAndQuit,
     /// Error occurred during execution
     Error(String),
 }
@@ -23,6 +25,10 @@ impl CommandExecutor {
     /// Execute a parsed command
     ///
     /// Modifies state as needed and returns the execution result
+    ///
+    /// Note: Write commands do NOT perform file I/O here.
+    /// They return Success/WriteAndQuit, and the editor is responsible
+    /// for calling Document::save() or Document::save_as().
     pub fn execute(
         command: ParsedCommand,
         state: &mut State,
@@ -32,6 +38,22 @@ impl CommandExecutor {
             ParsedCommand::Quit => ExecutionResult::Quit,
             ParsedCommand::Set { option, value } => {
                 settings_registry.execute_setting(&option, value, &mut state.settings)
+            }
+            ParsedCommand::Write { path } => {
+                // Set the path in state if provided (for :w filename)
+                if let Some(ref file_path) = path {
+                    state.set_file_path(Some(file_path.clone()));
+                }
+                // Editor will check if path exists and call Document::save()
+                ExecutionResult::Success
+            }
+            ParsedCommand::WriteQuit { path } => {
+                // Set the path in state if provided (for :wq filename)
+                if let Some(ref file_path) = path {
+                    state.set_file_path(Some(file_path.clone()));
+                }
+                // Editor will check if path exists, call Document::save(), then quit
+                ExecutionResult::WriteAndQuit
             }
             ParsedCommand::Unknown { name } => {
                 ExecutionResult::Error(format!("Unknown command: {name}"))
