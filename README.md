@@ -23,4 +23,4 @@ Todo:
 - copy/paste (buffers)
 - macros
 - notification system
-
+- status bar to indicate filename, dirty
