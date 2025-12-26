@@ -10,6 +10,7 @@ pub mod executor;
 pub mod floating_window;
 pub mod key;
 pub mod key_handler;
+pub mod layer;
 pub mod mode;
 pub mod render;
 pub mod state;

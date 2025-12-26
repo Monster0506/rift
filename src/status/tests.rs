@@ -185,7 +185,7 @@ fn test_status_bar_render_reverse_video() {
 fn test_status_bar_render_reverse_video_off() {
     let mut term = MockTerminal::new(10, 80);
     let viewport = Viewport::new(10, 80);
-    let mut state = State::new();
+    let state = State::new();
 
     StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
 

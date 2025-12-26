@@ -9,6 +9,7 @@ use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::document::Document;
 use crate::executor::execute_command;
 use crate::key_handler::{KeyAction, KeyHandler};
+use crate::layer::LayerCompositor;
 use crate::mode::Mode;
 use crate::render;
 use crate::state::State;
@@ -19,7 +20,7 @@ use crate::viewport::Viewport;
 pub struct Editor<T: TerminalBackend> {
     terminal: T,
     document: Document,
-    next_document_id: u64,
+    compositor: LayerCompositor,
     viewport: Viewport,
     dispatcher: Dispatcher,
     current_mode: Mode,
@@ -76,10 +77,13 @@ impl<T: TerminalBackend> Editor<T> {
         // Initialize filename from document
         state.update_filename(document.display_name().to_string());
 
+        // Create layer compositor for layer-based rendering
+        let compositor = LayerCompositor::new(size.rows as usize, size.cols as usize);
+
         Ok(Editor {
             terminal,
             document,
-            next_document_id: 2,
+            compositor,
             viewport,
             dispatcher,
             current_mode: Mode::Normal,
@@ -329,16 +333,19 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Render the editor interface (pure read - no mutations)
+    /// Uses the layer compositor for composited rendering
     fn render(&mut self, needs_clear: bool) -> Result<(), String> {
         render::render(
             &mut self.terminal,
+            &mut self.compositor,
             &self.document.buffer,
             &self.viewport,
             self.current_mode,
             self.dispatcher.pending_key(),
             &self.state,
             needs_clear,
-        )
+        )?;
+        Ok(())
     }
 
     /// Set editor mode and update dispatcher

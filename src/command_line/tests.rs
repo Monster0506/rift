@@ -1,35 +1,41 @@
 //! Tests for command line
 
 use crate::command_line::CommandLine;
+use crate::layer::{Layer, LayerPriority};
 use crate::state::CommandLineWindowSettings;
-use crate::test_utils::MockTerminal;
 use crate::viewport::Viewport;
 
 #[test]
-fn test_command_line_render() {
-    let mut term = MockTerminal::new(24, 80);
+fn test_command_line_render_to_layer() {
+    let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
     let viewport = Viewport::new(24, 80);
     let window_settings = CommandLineWindowSettings::default();
 
-    let result =
-        CommandLine::render(&mut term, &viewport, "test command", None, &window_settings).unwrap();
-    assert!(result.is_some());
-
-    let written = term.get_written_string();
-    // Should contain border characters (Unicode box drawing by default)
-    assert!(
-        written.contains("╭")
-            || written.contains("╮")
-            || written.contains("╰")
-            || written.contains("╯")
-            || written.contains("─")
-            || written.contains("│")
-            || written.contains("+")
-            || written.contains("-")
-            || written.contains("|")
+    let (window_row, window_col, cmd_width) = CommandLine::render_to_layer(
+        &mut layer,
+        &viewport,
+        "test command",
+        None,
+        &window_settings,
     );
-    // Should contain prompt and content
-    assert!(written.contains(":test command"));
+
+    // Check window position is centered
+    // Default width ratio is 0.5, so width = 40, centered at (80-40)/2 = 20
+    // Default height is 3, so centered at (24-3)/2 = 10 (or close)
+    assert!(window_col >= 15 && window_col <= 25);
+    assert!(window_row >= 8 && window_row <= 12);
+    assert!(cmd_width >= 30);
+
+    // Check content was rendered to layer
+    // The `:` prompt should be at window_row+1 (content row), window_col+1 (after left border)
+    let cell = layer.get_cell(window_row as usize + 1, window_col as usize + 1);
+    assert!(cell.is_some());
+    assert_eq!(cell.unwrap().content, vec![b':']);
+
+    // The 't' from 'test' should be at window_col + 2
+    let cell = layer.get_cell(window_row as usize + 1, window_col as usize + 2);
+    assert!(cell.is_some());
+    assert_eq!(cell.unwrap().content, vec![b't']);
 }
 
 #[test]
@@ -66,4 +72,27 @@ fn test_command_line_cursor_position_clamped() {
     // Cursor should be clamped to content_end_col = window_col + cmd_width - 2
     // = 20 + 10 - 2 = 28
     assert_eq!(cursor_col, 28);
+}
+
+#[test]
+fn test_command_line_with_custom_border_chars() {
+    use crate::floating_window::BorderChars;
+
+    let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
+    let viewport = Viewport::new(24, 80);
+    let window_settings = CommandLineWindowSettings::default();
+    let custom_border = BorderChars::from_ascii(b'+', b'+', b'+', b'+', b'-', b'|');
+
+    let (window_row, window_col, _) = CommandLine::render_to_layer(
+        &mut layer,
+        &viewport,
+        "test",
+        Some(custom_border),
+        &window_settings,
+    );
+
+    // Check top-left corner has custom border character
+    let cell = layer.get_cell(window_row as usize, window_col as usize);
+    assert!(cell.is_some());
+    assert_eq!(cell.unwrap().content, vec![b'+']);
 }

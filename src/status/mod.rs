@@ -8,8 +8,10 @@
 //! - Status display is optional and failure-tolerant.
 //! - Status never consumes input or commands.
 
+use crate::color::Color;
 use crate::command::Command;
 use crate::key::Key;
+use crate::layer::Layer;
 use crate::mode::Mode;
 use crate::state::State;
 use crate::term::TerminalBackend;
@@ -235,6 +237,142 @@ impl StatusBar {
         parts.push(format!("Size: {}B", state.buffer_size));
 
         parts.join(" | ")
+    }
+
+    /// Render the status bar to a layer instead of directly to terminal
+    /// This allows the status bar to be composited with other layers
+    pub fn render_to_layer(
+        layer: &mut Layer,
+        viewport: &Viewport,
+        current_mode: Mode,
+        pending_key: Option<Key>,
+        state: &State,
+    ) {
+        let status_row = viewport.visible_rows().saturating_sub(1);
+        let visible_cols = viewport.visible_cols();
+
+        // If status line is disabled, clear the row and return
+        if !state.settings.status_line.show_status_line {
+            for col in 0..visible_cols {
+                layer.clear_cell(status_row, col);
+            }
+            return;
+        }
+
+        // Determine colors based on reverse video setting
+        let (fg, bg) = if state.settings.status_line.reverse_video {
+            // Reverse video: swap default fg/bg (use white on black or similar)
+            (Some(Color::Black), Some(Color::White))
+        } else {
+            (None, None)
+        };
+
+        // Build the status line content
+        let mode_str = Self::format_mode(current_mode);
+
+        // In command mode, just show the mode
+        if current_mode == Mode::Command {
+            // Write mode string
+            layer.write_bytes_colored(status_row, 0, mode_str.as_bytes(), fg, bg);
+            // Fill rest with spaces
+            for col in mode_str.len()..visible_cols {
+                layer.set_cell(
+                    status_row,
+                    col,
+                    crate::layer::Cell::new(b' ').with_colors(fg, bg),
+                );
+            }
+            return;
+        }
+
+        // Normal display: mode + pending key + (debug info or filename)
+        let mut col = 0;
+
+        // Write mode
+        layer.write_bytes_colored(status_row, col, mode_str.as_bytes(), fg, bg);
+        col += mode_str.len();
+
+        // Pending key indicator
+        if let Some(key) = pending_key {
+            let pending_str = format!(" [{}]", Self::format_key(key));
+            layer.write_bytes_colored(status_row, col, pending_str.as_bytes(), fg, bg);
+            col += pending_str.len();
+        }
+
+        // Calculate remaining space
+        let used_cols = col;
+        let available_cols = visible_cols.saturating_sub(used_cols);
+
+        if state.debug_mode {
+            // Debug mode: show debug info
+            let debug_str = Self::format_debug_info(state, current_mode);
+            if !debug_str.is_empty() {
+                let truncated = if debug_str.len() <= available_cols {
+                    debug_str
+                } else if available_cols > 3 {
+                    format!("{}...", &debug_str[..available_cols.saturating_sub(3)])
+                } else {
+                    String::new()
+                };
+
+                // Right-align debug info
+                let spacing = available_cols.saturating_sub(truncated.len());
+                for _ in 0..spacing {
+                    layer.set_cell(
+                        status_row,
+                        col,
+                        crate::layer::Cell::new(b' ').with_colors(fg, bg),
+                    );
+                    col += 1;
+                }
+                layer.write_bytes_colored(status_row, col, truncated.as_bytes(), fg, bg);
+                col += truncated.len();
+            }
+        } else if state.settings.status_line.show_filename {
+            // Normal mode: show filename on the right
+            let file_name = &state.file_name;
+            if file_name.len() <= available_cols {
+                // Right-align filename
+                let spacing = available_cols.saturating_sub(file_name.len());
+                for _ in 0..spacing {
+                    layer.set_cell(
+                        status_row,
+                        col,
+                        crate::layer::Cell::new(b' ').with_colors(fg, bg),
+                    );
+                    col += 1;
+                }
+                layer.write_bytes_colored(status_row, col, file_name.as_bytes(), fg, bg);
+                col += file_name.len();
+            } else if available_cols > 3 {
+                // Truncate filename
+                let truncated = format!(
+                    "...{}",
+                    &file_name[file_name.len().saturating_sub(available_cols - 3)..]
+                );
+                let spacing = available_cols.saturating_sub(truncated.len());
+                for _ in 0..spacing {
+                    layer.set_cell(
+                        status_row,
+                        col,
+                        crate::layer::Cell::new(b' ').with_colors(fg, bg),
+                    );
+                    col += 1;
+                }
+                layer.write_bytes_colored(status_row, col, truncated.as_bytes(), fg, bg);
+                col += truncated.len();
+            }
+        }
+
+        // Fill remaining space with spaces
+        while col < visible_cols {
+            layer.set_cell(
+                status_row,
+                col,
+                crate::layer::Cell::new(b' ').with_colors(fg, bg),
+            );
+            col += 1;
+        }
     }
 }
 

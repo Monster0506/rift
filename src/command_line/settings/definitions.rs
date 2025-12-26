@@ -311,7 +311,7 @@ pub const SETTINGS: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         name: "command_line.reverse_video",
-        aliases: &["cmdreverse"],
+        aliases: &["clr"],
         ty: SettingType::Boolean,
         set: set_cmd_window_reverse_video,
     },

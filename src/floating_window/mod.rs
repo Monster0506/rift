@@ -1,22 +1,19 @@
 //! Floating window component
-//! Reusable overlay window that can be rendered on top of existing content
+//! Reusable overlay window that renders to layers
 //!
 //! ## `floating_window`/ Invariants
 //!
 //! - Floating windows never mutate editor or buffer state.
-//! - Floating windows are positioned relative to terminal coordinates.
+//! - Floating windows are positioned relative to layer/terminal coordinates.
 //! - Window content is provided externally and rendered as-is.
-//! - Window rendering does not affect underlying content (caller must restore).
-//! - Window dimensions are constrained to terminal size.
-//! - Window position is validated to ensure it fits within terminal bounds.
+//! - Window rendering is layer-native - always renders to a Layer.
+//! - Window dimensions are constrained to layer/terminal size.
+//! - Window position is validated to ensure it fits within bounds.
 
-use crate::term::TerminalBackend;
+use crate::color::Color;
+use crate::layer::{Cell, Layer};
 
-// ANSI escape sequences
-const REVERSE_VIDEO_ON: &[u8] = b"\x1b[7m";
-const RESET: &[u8] = b"\x1b[0m";
-
-// Default border characters
+// Default border characters (Unicode box drawing)
 const DEFAULT_BORDER_TOP_LEFT: &[u8] = "╭".as_bytes();
 const DEFAULT_BORDER_TOP_RIGHT: &[u8] = "╮".as_bytes();
 const DEFAULT_BORDER_BOTTOM_LEFT: &[u8] = "╰".as_bytes();
@@ -110,48 +107,43 @@ pub enum WindowPosition {
     Top,
 }
 
-/// Floating window configuration
+/// Window style configuration
 #[derive(Debug, Clone)]
-pub struct FloatingWindow {
-    /// Window position
-    position: WindowPosition,
-    /// Window width in columns
-    width: usize,
-    /// Window height in rows
-    height: usize,
+pub struct WindowStyle {
     /// Whether to draw a border around the window
-    border: bool,
-    /// Whether to use reverse video (inverted colors) for the window
-    reverse_video: bool,
+    pub border: bool,
     /// Custom border characters (None uses defaults)
-    border_chars: Option<BorderChars>,
+    pub border_chars: Option<BorderChars>,
+    /// Foreground color for window content
+    pub fg: Option<Color>,
+    /// Background color for window content
+    pub bg: Option<Color>,
+    /// Whether to use reverse video (swap fg/bg to black/white)
+    pub reverse_video: bool,
 }
 
-impl FloatingWindow {
-    /// Create a new floating window
-    #[must_use]
-    pub fn new(position: WindowPosition, width: usize, height: usize) -> Self {
-        FloatingWindow {
-            position,
-            width,
-            height,
+impl Default for WindowStyle {
+    fn default() -> Self {
+        Self {
             border: true,
-            reverse_video: true,
             border_chars: None,
+            fg: None,
+            bg: None,
+            reverse_video: true,
         }
+    }
+}
+
+impl WindowStyle {
+    /// Create a new window style with defaults
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Set whether to draw a border
     #[must_use]
     pub fn with_border(mut self, border: bool) -> Self {
         self.border = border;
-        self
-    }
-
-    /// Set whether to use reverse video
-    #[must_use]
-    pub fn with_reverse_video(mut self, reverse: bool) -> Self {
-        self.reverse_video = reverse;
         self
     }
 
@@ -162,236 +154,105 @@ impl FloatingWindow {
         self
     }
 
-    /// Calculate the actual position of the window given terminal dimensions
-    /// Returns (row, col) where the window should be positioned
+    /// Set foreground color
     #[must_use]
-    pub fn calculate_position(&self, term_rows: u16, term_cols: u16) -> (u16, u16) {
-        let width = self.width.min(term_cols as usize) as u16;
-        let height = self.height.min(term_rows as usize) as u16;
-
-        match self.position {
-            WindowPosition::Center => {
-                let row = (term_rows.saturating_sub(height)) / 2;
-                let col = (term_cols.saturating_sub(width)) / 2;
-                (row, col)
-            }
-            WindowPosition::Absolute { row, col } => {
-                // Clamp to terminal bounds
-                let row = row.min(term_rows.saturating_sub(height));
-                let col = col.min(term_cols.saturating_sub(width));
-                (row, col)
-            }
-            WindowPosition::Bottom => {
-                let row = term_rows.saturating_sub(height);
-                let col = (term_cols.saturating_sub(width)) / 2;
-                (row, col)
-            }
-            WindowPosition::Top => {
-                let row = 0;
-                let col = (term_cols.saturating_sub(width)) / 2;
-                (row, col)
-            }
-        }
+    pub fn with_fg(mut self, fg: Color) -> Self {
+        self.fg = Some(fg);
+        self
     }
 
-    /// Write ANSI cursor positioning escape sequence to buffer
-    /// Row and col are 1-indexed (ANSI standard)
-    fn write_cursor_position(buf: &mut Vec<u8>, row: u16, col: u16) {
-        buf.push(0x1b); // ESC
-        buf.push(b'[');
-
-        // Convert row to decimal string
-        let mut row_digits = Vec::new();
-        let mut r = row;
-        if r == 0 {
-            row_digits.push(b'1'); // ANSI is 1-indexed, 0 means row 1
-        } else {
-            while r > 0 {
-                row_digits.push(b'0' + (r % 10) as u8);
-                r /= 10;
-            }
-            row_digits.reverse();
-        }
-        buf.extend_from_slice(&row_digits);
-
-        buf.push(b';');
-
-        // Convert col to decimal string
-        let mut col_digits = Vec::new();
-        let mut c = col;
-        if c == 0 {
-            col_digits.push(b'1'); // ANSI is 1-indexed, 0 means col 1
-        } else {
-            while c > 0 {
-                col_digits.push(b'0' + (c % 10) as u8);
-                c /= 10;
-            }
-            col_digits.reverse();
-        }
-        buf.extend_from_slice(&col_digits);
-
-        buf.push(b'H');
+    /// Set background color
+    #[must_use]
+    pub fn with_bg(mut self, bg: Color) -> Self {
+        self.bg = Some(bg);
+        self
     }
 
-    /// Render the floating window with content
-    ///
-    /// `content` is a vector of lines, where each line is a byte vector.
-    /// Lines will be truncated to fit within the window width.
-    /// If there are more lines than the window height, they will be truncated.
-    ///
-    /// `border_chars_override` allows overriding border characters for this render call.
-    /// If None, uses the window's configured `border_chars` or defaults.
-    ///
-    /// This method batches all writes to minimize flicker by building the entire
-    /// window in memory before writing it all at once.
-    pub fn render<T: TerminalBackend>(
-        &self,
-        term: &mut T,
-        content: &[Vec<u8>],
-    ) -> Result<(), String> {
-        self.render_with_border_chars(term, content, None)
+    /// Set reverse video mode
+    #[must_use]
+    pub fn with_reverse_video(mut self, reverse: bool) -> Self {
+        self.reverse_video = reverse;
+        self
     }
 
-    /// Render the floating window with content and optional border character override
-    ///
-    /// `border_chars_override` allows overriding border characters for this render call.
-    /// If Some, uses those characters. If None, uses the window's configured `border_chars` or defaults.
-    pub fn render_with_border_chars<T: TerminalBackend>(
-        &self,
-        term: &mut T,
-        content: &[Vec<u8>],
-        border_chars_override: Option<BorderChars>,
-    ) -> Result<(), String> {
-        // Determine which border chars to use: override > window config > defaults
-        let border_chars = border_chars_override
-            .or(self.border_chars.clone())
-            .unwrap_or_default();
-        // Get terminal size
-        let size = term.get_size()?;
-        let term_rows = size.rows;
-        let term_cols = size.cols;
-
-        // Calculate actual position
-        let (start_row, start_col) = self.calculate_position(term_rows, term_cols);
-
-        // Clamp dimensions to terminal size
-        let width = self.width.min(term_cols as usize);
-        let height = self.height.min(term_rows as usize);
-
-        // Build entire window in memory to minimize writes and reduce flicker
-        let mut output = Vec::new();
-
-        // Apply reverse video if enabled
+    /// Get the effective colors (applying reverse video if set)
+    fn effective_colors(&self) -> (Option<Color>, Option<Color>) {
         if self.reverse_video {
-            output.extend_from_slice(REVERSE_VIDEO_ON);
-        }
-
-        // Render border and content
-        if self.border {
-            let content_height = height.saturating_sub(2); // Subtract top and bottom borders
-            let content_width = width.saturating_sub(2);
-
-            // Top border: +----+
-            // ANSI positions are 1-indexed, so add 1 to row/col
-            Self::write_cursor_position(&mut output, start_row + 1, start_col + 1);
-            output.extend_from_slice(&border_chars.top_left);
-            // Repeat horizontal character for content width
-            // Note: This assumes horizontal is a single display character (may be multi-byte)
-            for _ in 0..content_width {
-                output.extend_from_slice(&border_chars.horizontal);
-            }
-            if width > 1 {
-                output.extend_from_slice(&border_chars.top_right);
-            }
-
-            // Content rows with side borders: |content|
-            for content_row in 0..content_height {
-                let row = start_row + 1 + content_row as u16;
-                Self::write_cursor_position(&mut output, row + 1, start_col + 1);
-                output.extend_from_slice(&border_chars.vertical);
-
-                // Content
-                let line = content.get(content_row);
-                if let Some(line) = line {
-                    // Truncate line to fit
-                    let display_line: Vec<u8> = line.iter().take(content_width).copied().collect();
-                    output.extend_from_slice(&display_line);
-
-                    // Pad with spaces if needed
-                    let padding = content_width.saturating_sub(display_line.len());
-                    output.extend(std::iter::repeat_n(b' ', padding));
-                } else {
-                    // Empty line - fill with spaces
-                    output.extend(std::iter::repeat_n(b' ', content_width));
-                }
-
-                // Right border
-                if width > 1 {
-                    output.extend_from_slice(&border_chars.vertical);
-                }
-            }
-
-            // Bottom border: +----+
-            if height > 1 {
-                let bottom_row = start_row + height as u16;
-                Self::write_cursor_position(&mut output, bottom_row, start_col + 1);
-                output.extend_from_slice(&border_chars.bottom_left);
-                // Repeat horizontal character for content width
-                for _ in 0..content_width {
-                    output.extend_from_slice(&border_chars.horizontal);
-                }
-                if width > 1 {
-                    output.extend_from_slice(&border_chars.bottom_right);
-                }
-            }
+            (Some(Color::Black), Some(Color::White))
         } else {
-            // No border - just render content
-            for row_offset in 0..height {
-                let row = start_row + row_offset as u16;
-                Self::write_cursor_position(&mut output, row + 1, start_col + 1);
-
-                let line = content.get(row_offset);
-                if let Some(line) = line {
-                    // Truncate line to fit
-                    let display_line: Vec<u8> = line.iter().take(width).copied().collect();
-                    output.extend_from_slice(&display_line);
-
-                    // Pad with spaces if needed
-                    let padding = width.saturating_sub(display_line.len());
-                    output.extend(std::iter::repeat_n(b' ', padding));
-                } else {
-                    // Empty line - fill with spaces
-                    output.extend(std::iter::repeat_n(b' ', width));
-                }
-            }
+            (self.fg, self.bg)
         }
-
-        // Reset colors
-        if self.reverse_video {
-            output.extend_from_slice(RESET);
-        }
-
-        // Write everything at once
-        term.write(&output)?;
-
-        Ok(())
     }
 
-    /// Render a single-line floating window (useful for command line)
-    ///
-    /// `prompt` is displayed at the start, followed by `content`
-    pub fn render_single_line<T: TerminalBackend>(
-        &self,
-        term: &mut T,
-        prompt: &str,
-        content: &str,
-    ) -> Result<(), String> {
-        // Combine prompt and content
-        let mut line = Vec::new();
-        line.extend_from_slice(prompt.as_bytes());
-        line.extend_from_slice(content.as_bytes());
+    /// Get border chars (use custom or default)
+    fn border_chars(&self) -> BorderChars {
+        self.border_chars.clone().unwrap_or_default()
+    }
+}
 
-        self.render(term, &[line])
+/// Floating window configuration
+///
+/// A floating window is a rectangular overlay that can be rendered on a layer.
+/// It supports optional borders, custom colors, and various positioning options.
+#[derive(Debug, Clone)]
+pub struct FloatingWindow {
+    /// Window position
+    position: WindowPosition,
+    /// Window width in columns (includes border if enabled)
+    width: usize,
+    /// Window height in rows (includes border if enabled)
+    height: usize,
+    /// Window styling
+    style: WindowStyle,
+}
+
+impl FloatingWindow {
+    /// Create a new floating window with default style
+    #[must_use]
+    pub fn new(position: WindowPosition, width: usize, height: usize) -> Self {
+        FloatingWindow {
+            position,
+            width,
+            height,
+            style: WindowStyle::default(),
+        }
+    }
+
+    /// Create a new floating window with custom style
+    #[must_use]
+    pub fn with_style(
+        position: WindowPosition,
+        width: usize,
+        height: usize,
+        style: WindowStyle,
+    ) -> Self {
+        FloatingWindow {
+            position,
+            width,
+            height,
+            style,
+        }
+    }
+
+    /// Set whether to draw a border (builder pattern for compatibility)
+    #[must_use]
+    pub fn with_border(mut self, border: bool) -> Self {
+        self.style.border = border;
+        self
+    }
+
+    /// Set whether to use reverse video (builder pattern for compatibility)
+    #[must_use]
+    pub fn with_reverse_video(mut self, reverse: bool) -> Self {
+        self.style.reverse_video = reverse;
+        self
+    }
+
+    /// Set custom border characters (builder pattern for compatibility)
+    #[must_use]
+    pub fn with_border_chars(mut self, border_chars: BorderChars) -> Self {
+        self.style.border_chars = Some(border_chars);
+        self
     }
 
     /// Get the width of the window
@@ -404,6 +265,290 @@ impl FloatingWindow {
     #[must_use]
     pub fn height(&self) -> usize {
         self.height
+    }
+
+    /// Get the content width (width minus border if enabled)
+    #[must_use]
+    pub fn content_width(&self) -> usize {
+        if self.style.border {
+            self.width.saturating_sub(2)
+        } else {
+            self.width
+        }
+    }
+
+    /// Get the content height (height minus border if enabled)
+    #[must_use]
+    pub fn content_height(&self) -> usize {
+        if self.style.border {
+            self.height.saturating_sub(2)
+        } else {
+            self.height
+        }
+    }
+
+    /// Calculate the actual position of the window given layer/terminal dimensions
+    /// Returns (row, col) where the window should be positioned (0-indexed)
+    #[must_use]
+    pub fn calculate_position(&self, rows: u16, cols: u16) -> (u16, u16) {
+        let width = self.width.min(cols as usize) as u16;
+        let height = self.height.min(rows as usize) as u16;
+
+        match self.position {
+            WindowPosition::Center => {
+                let row = (rows.saturating_sub(height)) / 2;
+                let col = (cols.saturating_sub(width)) / 2;
+                (row, col)
+            }
+            WindowPosition::Absolute { row, col } => {
+                // Clamp to bounds
+                let row = row.min(rows.saturating_sub(height));
+                let col = col.min(cols.saturating_sub(width));
+                (row, col)
+            }
+            WindowPosition::Bottom => {
+                let row = rows.saturating_sub(height);
+                let col = (cols.saturating_sub(width)) / 2;
+                (row, col)
+            }
+            WindowPosition::Top => {
+                let row = 0;
+                let col = (cols.saturating_sub(width)) / 2;
+                (row, col)
+            }
+        }
+    }
+
+    /// Render the floating window to a layer
+    ///
+    /// This is the primary rendering method. The window is rendered to the provided
+    /// layer at the calculated position based on the layer dimensions.
+    ///
+    /// # Arguments
+    /// * `layer` - The layer to render to
+    /// * `content` - Content lines (each line is a byte vector)
+    pub fn render(&self, layer: &mut Layer, content: &[Vec<u8>]) {
+        self.render_with_border_chars(layer, content, None)
+    }
+
+    /// Render the floating window to a layer with optional border character override
+    ///
+    /// # Arguments
+    /// * `layer` - The layer to render to
+    /// * `content` - Content lines (each line is a byte vector)
+    /// * `border_chars_override` - Optional override for border characters
+    pub fn render_with_border_chars(
+        &self,
+        layer: &mut Layer,
+        content: &[Vec<u8>],
+        border_chars_override: Option<BorderChars>,
+    ) {
+        let rows = layer.rows() as u16;
+        let cols = layer.cols() as u16;
+
+        // Calculate position
+        let (start_row, start_col) = self.calculate_position(rows, cols);
+        let start_row = start_row as usize;
+        let start_col = start_col as usize;
+
+        // Clamp dimensions to layer size
+        let width = self.width.min(cols as usize);
+        let height = self.height.min(rows as usize);
+
+        // Get colors
+        let (fg, bg) = self.style.effective_colors();
+
+        // Get border chars
+        let border_chars = border_chars_override.unwrap_or_else(|| self.style.border_chars());
+
+        if self.style.border {
+            self.render_with_border(
+                layer,
+                content,
+                start_row,
+                start_col,
+                width,
+                height,
+                fg,
+                bg,
+                &border_chars,
+            );
+        } else {
+            self.render_without_border(layer, content, start_row, start_col, width, height, fg, bg);
+        }
+    }
+
+    /// Render window content with border
+    fn render_with_border(
+        &self,
+        layer: &mut Layer,
+        content: &[Vec<u8>],
+        start_row: usize,
+        start_col: usize,
+        width: usize,
+        height: usize,
+        fg: Option<Color>,
+        bg: Option<Color>,
+        border_chars: &BorderChars,
+    ) {
+        let content_height = height.saturating_sub(2);
+        let content_width = width.saturating_sub(2);
+
+        // Top border
+        layer.set_cell(
+            start_row,
+            start_col,
+            Cell::from_bytes(&border_chars.top_left).with_colors(fg, bg),
+        );
+        for i in 0..content_width {
+            let col = start_col + 1 + i;
+            layer.set_cell(
+                start_row,
+                col,
+                Cell::from_bytes(&border_chars.horizontal).with_colors(fg, bg),
+            );
+        }
+        if width > 1 {
+            let col = start_col + width - 1;
+            layer.set_cell(
+                start_row,
+                col,
+                Cell::from_bytes(&border_chars.top_right).with_colors(fg, bg),
+            );
+        }
+
+        // Content rows with side borders
+        for content_row in 0..content_height {
+            let row = start_row + 1 + content_row;
+
+            // Left border
+            layer.set_cell(
+                row,
+                start_col,
+                Cell::from_bytes(&border_chars.vertical).with_colors(fg, bg),
+            );
+
+            // Content
+            if let Some(line) = content.get(content_row) {
+                for (i, &byte) in line.iter().take(content_width).enumerate() {
+                    let col = start_col + 1 + i;
+                    layer.set_cell(row, col, Cell::new(byte).with_colors(fg, bg));
+                }
+                // Pad with spaces
+                for i in line.len().min(content_width)..content_width {
+                    let col = start_col + 1 + i;
+                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                }
+            } else {
+                // Empty line - fill with spaces
+                for i in 0..content_width {
+                    let col = start_col + 1 + i;
+                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                }
+            }
+
+            // Right border
+            if width > 1 {
+                let col = start_col + width - 1;
+                layer.set_cell(
+                    row,
+                    col,
+                    Cell::from_bytes(&border_chars.vertical).with_colors(fg, bg),
+                );
+            }
+        }
+
+        // Bottom border
+        if height > 1 {
+            let row = start_row + height - 1;
+            layer.set_cell(
+                row,
+                start_col,
+                Cell::from_bytes(&border_chars.bottom_left).with_colors(fg, bg),
+            );
+            for i in 0..content_width {
+                let col = start_col + 1 + i;
+                layer.set_cell(
+                    row,
+                    col,
+                    Cell::from_bytes(&border_chars.horizontal).with_colors(fg, bg),
+                );
+            }
+            if width > 1 {
+                let col = start_col + width - 1;
+                layer.set_cell(
+                    row,
+                    col,
+                    Cell::from_bytes(&border_chars.bottom_right).with_colors(fg, bg),
+                );
+            }
+        }
+    }
+
+    /// Render window content without border
+    fn render_without_border(
+        &self,
+        layer: &mut Layer,
+        content: &[Vec<u8>],
+        start_row: usize,
+        start_col: usize,
+        width: usize,
+        height: usize,
+        fg: Option<Color>,
+        bg: Option<Color>,
+    ) {
+        for row_offset in 0..height {
+            let row = start_row + row_offset;
+
+            if let Some(line) = content.get(row_offset) {
+                for (i, &byte) in line.iter().take(width).enumerate() {
+                    let col = start_col + i;
+                    layer.set_cell(row, col, Cell::new(byte).with_colors(fg, bg));
+                }
+                // Pad with spaces
+                for i in line.len().min(width)..width {
+                    let col = start_col + i;
+                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                }
+            } else {
+                // Empty line - fill with spaces
+                for i in 0..width {
+                    let col = start_col + i;
+                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                }
+            }
+        }
+    }
+
+    /// Render a single-line content (convenience method)
+    ///
+    /// `prompt` is displayed at the start, followed by `content`
+    pub fn render_single_line(&self, layer: &mut Layer, prompt: &str, content: &str) {
+        let mut line = Vec::new();
+        line.extend_from_slice(prompt.as_bytes());
+        line.extend_from_slice(content.as_bytes());
+        self.render(layer, &[line]);
+    }
+
+    // ========================================================================
+    // Legacy compatibility methods (for direct terminal rendering)
+    // These methods are for backward compatibility during transition
+    // ========================================================================
+
+    /// Render the floating window to a layer (legacy compatibility method)
+    ///
+    /// This method signature matches the previous `render_to_layer` for compatibility.
+    /// Prefer using `render()` for new code.
+    #[deprecated(note = "Use render() instead - this is for backward compatibility")]
+    pub fn render_to_layer(
+        &self,
+        layer: &mut Layer,
+        content: &[Vec<u8>],
+        _term_rows: u16,
+        _term_cols: u16,
+        border_chars_override: Option<BorderChars>,
+    ) {
+        self.render_with_border_chars(layer, content, border_chars_override);
     }
 }
 
