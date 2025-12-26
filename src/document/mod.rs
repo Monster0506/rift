@@ -44,11 +44,11 @@ impl Document {
         let bytes = std::fs::read(path)?;
 
         let mut buffer = GapBuffer::new(bytes.len().max(4096))
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
 
         buffer
             .insert_bytes(&bytes)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
 
         buffer.move_to_start();
 
