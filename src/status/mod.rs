@@ -68,34 +68,60 @@ impl StatusBar {
             // Calculate layout
             let mode_len = mode_str.len();
             let pending_len = pending_str.len();
+            let file_len = state.file_name.len();
             let used_cols = mode_len + pending_len;
             let available_cols = viewport.visible_cols().saturating_sub(used_cols);
 
-            // Format debug info with proper spacing
-            let (debug_display, debug_len) = if debug_str.is_empty() {
-                (String::new(), 0)
-            } else {
-                let truncated = if debug_str.len() <= available_cols {
-                    debug_str
+            // In debug mode, show debug info. In normal mode, show filename on right
+            if state.debug_mode {
+                // Format debug info with proper spacing
+                let (debug_display, debug_len) = if debug_str.is_empty() {
+                    (String::new(), 0)
                 } else {
-                    format!("{}...", &debug_str[..available_cols.saturating_sub(3)])
+                    let truncated = if debug_str.len() <= available_cols {
+                        debug_str
+                    } else {
+                        format!("{}...", &debug_str[..available_cols.saturating_sub(3)])
+                    };
+                    let spacing = available_cols.saturating_sub(truncated.len());
+                    let spaced = format!("{}{}", " ".repeat(spacing), truncated);
+                    (spaced, truncated.len() + spacing)
                 };
-                let spacing = available_cols.saturating_sub(truncated.len());
-                let spaced = format!("{}{}", " ".repeat(spacing), truncated);
-                (spaced, truncated.len() + spacing)
-            };
 
-            // Write debug info
-            if !debug_display.is_empty() {
-                term.write(debug_display.as_bytes())?;
-            }
+                // Write debug info
+                if !debug_display.is_empty() {
+                    term.write(debug_display.as_bytes())?;
+                }
 
-            // Fill rest of line with spaces
-            let total_used = mode_len + pending_len + debug_len;
-            let remaining_cols = viewport.visible_cols().saturating_sub(total_used);
+                // Fill rest of line with spaces
+                let total_used = mode_len + pending_len + debug_len;
+                let remaining_cols = viewport.visible_cols().saturating_sub(total_used);
 
-            for _ in 0..remaining_cols {
-                term.write(b" ")?;
+                for _ in 0..remaining_cols {
+                    term.write(b" ")?;
+                }
+            } else {
+                // Normal mode: show filename on the right
+                if file_len <= available_cols {
+                    // Right-align filename
+                    let spacing = available_cols.saturating_sub(file_len);
+                    for _ in 0..spacing {
+                        term.write(b" ")?;
+                    }
+                    term.write(state.file_name.as_bytes())?;
+                } else {
+                    // Filename too long, truncate it
+                    let truncated = if available_cols > 3 {
+                        format!("...{}", &state.file_name[state.file_name.len().saturating_sub(available_cols - 3)..])
+                    } else {
+                        String::new()
+                    };
+                    let spacing = available_cols.saturating_sub(truncated.len());
+                    for _ in 0..spacing {
+                        term.write(b" ")?;
+                    }
+                    term.write(truncated.as_bytes())?;
+                }
             }
         }
 
@@ -146,6 +172,11 @@ impl StatusBar {
     /// Format debug information string
     fn format_debug_info(state: &State, current_mode: Mode) -> String {
         let mut parts = Vec::new();
+
+        // Filepath (in debug mode, show full path)
+        if let Some(path) = &state.file_path {
+            parts.push(format!("File: {}", path));
+        }
 
         // Last keypress
         if let Some(key) = state.last_keypress {
