@@ -68,7 +68,9 @@ impl<T: TerminalBackend> Editor<T> {
             .register(CommandDef::new("quit").with_alias("q"))
             .register(CommandDef::new("set").with_alias("se"))
             .register(CommandDef::new("write").with_alias("w"))
-            .register(CommandDef::new("wq"));
+            .register(CommandDef::new("write").with_alias("w"))
+            .register(CommandDef::new("wq"))
+            .register(CommandDef::new("notify"));
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(registry, settings_registry);
 
@@ -335,6 +337,9 @@ impl<T: TerminalBackend> Editor<T> {
     /// Render the editor interface (pure read - no mutations)
     /// Uses the layer compositor for composited rendering
     fn render(&mut self, needs_clear: bool) -> Result<(), String> {
+        // Prune expired notifications before rendering
+        self.state.notification_manager.prune_expired();
+
         render::render(
             &mut self.terminal,
             &mut self.compositor,

@@ -47,6 +47,7 @@ pub enum CursorPosition {
 /// 1. CONTENT layer - the text buffer
 /// 2. STATUS_BAR layer - the status line at bottom
 /// 3. FLOATING_WINDOW layer - command line and dialogs (when in command mode)
+/// 4. NOTIFICATION layer - notifications (when in command mode)
 ///
 /// Returns the cursor position for the terminal.
 pub fn render<T: TerminalBackend>(
@@ -139,6 +140,13 @@ pub fn render<T: TerminalBackend>(
 
         CursorPosition::Absolute(cursor_line_in_viewport as u16, display_col as u16)
     };
+
+    render_notifications(
+        compositor.get_layer_mut(LayerPriority::NOTIFICATION),
+        ctx.state,
+        ctx.viewport.visible_rows(),
+        ctx.viewport.visible_cols(),
+    );
 
     // 4. Render composited output to terminal
     term.hide_cursor()?;
@@ -297,3 +305,76 @@ pub(crate) fn _format_key(key: Key) -> String {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+/// Render active notifications
+fn render_notifications(layer: &mut Layer, state: &State, term_rows: usize, term_cols: usize) {
+    use crate::notification::NotificationType;
+    let now = std::time::Instant::now();
+    let notifications: Vec<_> = state
+        .notification_manager
+        .iter_active()
+        .filter(|n| !n.is_expired(now))
+        .collect();
+
+    let mut current_bottom = term_rows.saturating_sub(2); // Start above bottom status line
+
+    for notification in notifications.iter().rev() {
+        // Simple styling
+        let (_border_color, title_color) = match notification.kind {
+            NotificationType::Info => (Some(Color::Blue), Some(Color::Cyan)),
+            NotificationType::Warning => (Some(Color::Yellow), Some(Color::Yellow)),
+            NotificationType::Error => (Some(Color::Red), Some(Color::Red)),
+            NotificationType::Success => (Some(Color::Green), Some(Color::Green)),
+        };
+
+        // Format content
+        let prefix = match notification.kind {
+            NotificationType::Info => " [I] ",
+            NotificationType::Warning => " [W] ",
+            NotificationType::Error => " [E] ",
+            NotificationType::Success => " [S] ",
+        };
+        let content = format!("{}{}", prefix, notification.message);
+
+        // Calculate dimensions
+        let content_len = content.chars().count();
+        let width = (content_len + 4).clamp(20, 40);
+        let height = 3; // Border + content + border
+
+        // Skip if out of space
+        if current_bottom < height {
+            break;
+        }
+
+        let start_row = current_bottom.saturating_sub(height);
+
+        // Create window with style
+        let style = crate::floating_window::WindowStyle::default()
+            .with_border(true)
+            .with_reverse_video(false)
+            .with_fg(title_color.unwrap_or(Color::White));
+
+        let window = FloatingWindow::with_style(
+            WindowPosition::Absolute {
+                row: start_row as u16,
+                col: term_cols.saturating_sub(width + 2) as u16,
+            },
+            width,
+            height,
+            style,
+        );
+
+        // Render content
+        // Truncate if too long (simple handling for now)
+        let visible_content = if content.len() > width.saturating_sub(2) {
+            &content[..width.saturating_sub(3)]
+        } else {
+            &content
+        };
+
+        window.render(layer, &[visible_content.as_bytes().to_vec()]);
+
+        // Move up for next notification
+        current_bottom = start_row.saturating_sub(1);
+    }
+}

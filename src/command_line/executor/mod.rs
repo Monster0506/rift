@@ -64,6 +64,21 @@ impl CommandExecutor {
                     "Ambiguous command '{prefix}': matches {matches_str}"
                 ))
             }
+            ParsedCommand::Notify { kind, message } => {
+                use crate::notification::NotificationType;
+                let kind_enum = match kind.to_lowercase().as_str() {
+                    "info" => NotificationType::Info,
+                    "warn" | "warning" => NotificationType::Warning,
+                    "error" => NotificationType::Error,
+                    "success" => NotificationType::Success,
+                    _ => {
+                        return ExecutionResult::Error(format!("Unknown notification type: {kind}"))
+                    }
+                };
+
+                state.notify(kind_enum, message);
+                ExecutionResult::Success
+            }
         }
     }
 }

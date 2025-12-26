@@ -15,6 +15,7 @@ Implemented:
 - various settings
 - double buffer rendering
 - buffer composition
+- notification system
 
 Todo:
 - LSP
@@ -26,8 +27,8 @@ Todo:
 - search + replace
 - copy/paste (buffers)
 - macros
-- notification system
 - status bar to indicate filename, dirty
 - setting and command descriptions
 - make command pattern more like settings design pattern
 - help manual
+- hook notifications up to actual errors and warnings

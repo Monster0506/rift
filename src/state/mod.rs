@@ -12,6 +12,7 @@ use crate::floating_window::BorderChars;
 /// - Editor state is never partially updated.
 /// - State changes are observable by the renderer but never influenced by it.
 use crate::key::Key;
+use crate::notification::{NotificationManager, NotificationType};
 
 /// Command line window settings
 #[derive(Debug, Clone)]
@@ -145,6 +146,8 @@ pub struct State {
     pub command_line: String,
     /// Command execution error message (if any)
     pub command_error: Option<String>,
+    /// Notification manager
+    pub notification_manager: NotificationManager,
 }
 
 impl State {
@@ -163,6 +166,7 @@ impl State {
             buffer_size: 0,
             command_line: String::new(),
             command_error: None,
+            notification_manager: NotificationManager::new(),
         }
     }
 
@@ -181,6 +185,7 @@ impl State {
             buffer_size: 0,
             command_line: String::new(),
             command_error: None,
+            notification_manager: NotificationManager::new(),
         }
     }
 
@@ -248,6 +253,18 @@ impl State {
     /// Update filename for display (should match Document's display_name)
     pub fn update_filename(&mut self, filename: String) {
         self.file_name = filename;
+    }
+
+    /// Add a notification
+    pub fn notify(&mut self, kind: NotificationType, message: impl Into<String>) {
+        // Notifications are ephemeral by default unless error
+        let ttl = match kind {
+            NotificationType::Error => Some(std::time::Duration::from_secs(10)),
+            NotificationType::Warning => Some(std::time::Duration::from_secs(8)),
+            NotificationType::Info => Some(std::time::Duration::from_secs(5)),
+            NotificationType::Success => Some(std::time::Duration::from_secs(3)),
+        };
+        self.notification_manager.add(kind, message, ttl);
     }
 }
 

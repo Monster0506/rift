@@ -25,6 +25,8 @@ pub enum ParsedCommand {
         prefix: String,
         matches: Vec<String>,
     },
+    /// Notify command
+    Notify { kind: String, message: String },
 }
 
 /// Command parser
@@ -91,6 +93,7 @@ impl CommandParser {
             "set" => self.parse_set_command(args),
             "write" => self.parse_write_command(args),
             "wq" => self.parse_write_quit_command(args),
+            "notify" => self.parse_notify_command(args),
             _ => ParsedCommand::Unknown {
                 name: command_name.to_string(),
             },
@@ -254,6 +257,23 @@ impl CommandParser {
                 name: "wq (too many arguments)".to_string(),
             },
         }
+    }
+
+    /// Parse :notify command arguments
+    ///
+    /// Supports:
+    /// - `:notify <type> <message>`
+    fn parse_notify_command(&self, args: &[&str]) -> ParsedCommand {
+        if args.len() < 2 {
+            return ParsedCommand::Unknown {
+                name: "notify (usage: :notify <type> <message>)".to_string(),
+            };
+        }
+
+        let kind = args[0].to_string();
+        let message = args[1..].join(" ");
+
+        ParsedCommand::Notify { kind, message }
     }
 }
 
