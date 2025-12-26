@@ -398,7 +398,6 @@ fn test_render_file_loaded_at_start() {
     let mut buf = GapBuffer::new(100).unwrap();
     // Insert content (simulating file load)
     buf.insert_bytes(b"line1\nline2\nline3\n").unwrap();
-    // Move cursor to start (as load_file_into_buffer does)
     buf.move_to_start();
 
     let mut viewport = Viewport::new(10, 80);

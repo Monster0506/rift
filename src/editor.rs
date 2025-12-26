@@ -1,12 +1,12 @@
 //! Editor core
 //! Main editor logic that ties everything together
 
-use crate::buffer::GapBuffer;
 use crate::command::{Command, Dispatcher};
 use crate::command_line::executor::{CommandExecutor, ExecutionResult};
 use crate::command_line::parser::CommandParser;
 use crate::command_line::registry::{CommandDef, CommandRegistry};
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
+use crate::document::Document;
 use crate::executor::execute_command;
 use crate::key_handler::{KeyAction, KeyHandler};
 use crate::mode::Mode;
@@ -18,7 +18,8 @@ use crate::viewport::Viewport;
 /// Main editor struct
 pub struct Editor<T: TerminalBackend> {
     terminal: T,
-    buf: GapBuffer,
+    document: Document,
+    next_document_id: u64,
     viewport: Viewport,
     dispatcher: Dispatcher,
     current_mode: Mode,
@@ -48,13 +49,12 @@ impl<T: TerminalBackend> Editor<T> {
         // Get terminal size
         let size = terminal.get_size()?;
 
-        // Create buffer with larger initial capacity for file loading
-        let mut buf = GapBuffer::new(4096).map_err(|e| format!("Failed to create buffer: {e}"))?;
-
-        // Load file if provided (already validated above)
-        if let Some(ref path) = file_path {
-            Self::load_file_into_buffer(&mut buf, path)?;
-        }
+        // Create document (either from file or empty)
+        let document = if let Some(ref path) = file_path {
+            Document::from_file(1, path).map_err(|e| format!("Failed to load file {path}: {e}"))?
+        } else {
+            Document::new(1)?
+        };
 
         // Create viewport
         let viewport = Viewport::new(size.rows as usize, size.cols as usize);
@@ -76,7 +76,8 @@ impl<T: TerminalBackend> Editor<T> {
 
         Ok(Editor {
             terminal,
-            buf,
+            document,
+            next_document_id: 2,
             viewport,
             dispatcher,
             current_mode: Mode::Normal,
@@ -104,28 +105,6 @@ impl<T: TerminalBackend> Editor<T> {
         if !path.is_file() {
             return Err(format!("Path is not a file: {file_path}"));
         }
-
-        Ok(())
-    }
-
-    /// Load file contents into the buffer
-    /// File should already be validated before calling this function
-    fn load_file_into_buffer(buf: &mut GapBuffer, file_path: &str) -> Result<(), String> {
-        use std::fs;
-        use std::path::Path;
-
-        let path = Path::new(file_path);
-
-        // Read file contents as bytes (preserves all data, including invalid UTF-8)
-        let contents =
-            fs::read(path).map_err(|e| format!("Failed to read file {file_path}: {e}"))?;
-
-        // Insert contents into buffer using batch insertion
-        buf.insert_bytes(&contents)
-            .map_err(|e| format!("Failed to load file into buffer: {e}"))?;
-
-        // Move cursor to start of buffer
-        buf.move_to_start();
 
         Ok(())
     }
@@ -175,10 +154,12 @@ impl<T: TerminalBackend> Editor<T> {
             if should_execute_buffer {
                 execute_command(
                     cmd,
-                    &mut self.buf,
+                    &mut self.document.buffer,
                     self.state.settings.expand_tabs,
                     self.state.settings.tab_width,
                 );
+                // Mark document dirty after any buffer mutation
+                self.document.mark_dirty();
             }
 
             // Handle quit command (special case - exits loop)
@@ -228,7 +209,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Insert);
             }
             Command::EnterInsertModeAfter => {
-                self.buf.move_right();
+                self.document.buffer.move_right();
                 self.set_mode(Mode::Insert);
             }
             Command::EnterCommandMode => {
@@ -253,15 +234,28 @@ impl<T: TerminalBackend> Editor<T> {
                         self.set_mode(Mode::Normal);
                     }
                     ExecutionResult::Success => {
+                        // Handle write command - save if file path exists
+                        if self.state.file_path.is_some() && self.document.is_dirty() {
+                            if let Err(e) = self.save_document() {
+                                self.state.set_command_error(Some(e));
+                                return Ok(()); // Don't clear command line on error
+                            }
+                        }
                         self.state.clear_command_line();
                         self.state.set_command_error(None);
                         self.set_mode(Mode::Normal);
                     }
                     ExecutionResult::WriteAndQuit => {
-                        // TODO: Implement when Document is integrated
-                        // For now, just error
-                        self.state
-                            .set_command_error(Some("Write not yet implemented".to_string()));
+                        // Save document, then quit if successful
+                        if let Err(e) = self.save_document() {
+                            self.state.set_command_error(Some(e));
+                            return Ok(()); // Don't quit on save error
+                        }
+                        // Save successful, now quit
+                        self.should_quit = true;
+                        self.state.clear_command_line();
+                        self.state.set_command_error(None);
+                        self.set_mode(Mode::Normal);
                     }
                     ExecutionResult::Error(error_msg) => {
                         // Keep command line visible so user can see the error and fix it
@@ -290,13 +284,17 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.update_command(command);
 
         // Update buffer and cursor state
-        let cursor_line = self.buf.get_line();
-        let cursor_col =
-            render::calculate_cursor_column(&self.buf, cursor_line, self.state.settings.tab_width);
+        let cursor_line = self.document.buffer.get_line();
+        let cursor_col = render::calculate_cursor_column(
+            &self.document.buffer,
+            cursor_line,
+            self.state.settings.tab_width,
+        );
         self.state.update_cursor(cursor_line, cursor_col);
 
-        let total_lines = self.buf.get_total_lines();
-        let buffer_size = self.buf.get_before_gap().len() + self.buf.get_after_gap().len();
+        let total_lines = self.document.buffer.get_total_lines();
+        let buffer_size = self.document.buffer.get_before_gap().len()
+            + self.document.buffer.get_after_gap().len();
         self.state.update_buffer_stats(total_lines, buffer_size);
 
         // Update viewport based on cursor position (state mutation happens here)
@@ -309,13 +307,17 @@ impl<T: TerminalBackend> Editor<T> {
     /// Update state and render the editor (for initial render)
     fn update_and_render(&mut self) -> Result<(), String> {
         // Update buffer and cursor state only (no input tracking on initial render)
-        let cursor_line = self.buf.get_line();
-        let cursor_col =
-            render::calculate_cursor_column(&self.buf, cursor_line, self.state.settings.tab_width);
+        let cursor_line = self.document.buffer.get_line();
+        let cursor_col = render::calculate_cursor_column(
+            &self.document.buffer,
+            cursor_line,
+            self.state.settings.tab_width,
+        );
         self.state.update_cursor(cursor_line, cursor_col);
 
-        let total_lines = self.buf.get_total_lines();
-        let buffer_size = self.buf.get_before_gap().len() + self.buf.get_after_gap().len();
+        let total_lines = self.document.buffer.get_total_lines();
+        let buffer_size = self.document.buffer.get_before_gap().len()
+            + self.document.buffer.get_after_gap().len();
         self.state.update_buffer_stats(total_lines, buffer_size);
 
         // Update viewport based on cursor position (state mutation happens here)
@@ -328,7 +330,7 @@ impl<T: TerminalBackend> Editor<T> {
     fn render(&mut self, needs_clear: bool) -> Result<(), String> {
         render::render(
             &mut self.terminal,
-            &self.buf,
+            &self.document.buffer,
             &self.viewport,
             self.current_mode,
             self.dispatcher.pending_key(),
@@ -341,6 +343,35 @@ impl<T: TerminalBackend> Editor<T> {
     fn set_mode(&mut self, mode: Mode) {
         self.current_mode = mode;
         self.dispatcher.set_mode(mode);
+    }
+
+    /// Save document to file
+    /// Returns error message string if save fails
+    fn save_document(&mut self) -> Result<(), String> {
+        use std::path::PathBuf;
+
+        // Get file path from state (executor may have updated it)
+        let file_path = self
+            .state
+            .file_path
+            .as_ref()
+            .ok_or_else(|| "No file name".to_string())?;
+
+        // Update document path if it changed in state
+        if self.document.path() != Some(std::path::Path::new(file_path)) {
+            self.document.set_path(PathBuf::from(file_path));
+        }
+
+        // Save document
+        if self.document.has_path() {
+            self.document
+                .save()
+                .map_err(|e| format!("Failed to write {file_path}: {e}"))?;
+        } else {
+            return Err("No file name".to_string());
+        }
+
+        Ok(())
     }
 }
 
