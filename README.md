@@ -36,3 +36,6 @@ Todo:
 - setting and command descriptions
 - make command pattern more like settings design pattern
 - help manual
+- line indexing improvements to gap buffer
+- component level dirty flags to avoid clearing and repopulating full layers
+- dumb gutter to avoid recalcing unless total lines changes significantly.
