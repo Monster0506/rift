@@ -19,6 +19,8 @@ Implemented:
 - parse bang commads and pass the number of bangs
 - hook notifications up to actual errors and warnings
 - status bar to indicate filename, dirty
+- colorizing and themes
+- line numbers
 
 
 
@@ -27,7 +29,6 @@ Todo:
 - Syntax highlighting
 - Multi-document support
 - :edit filename to open a new document (:e to reload from disk)
-- line numbers
 - undo + redo
 - search + replace
 - copy/paste (buffers)
