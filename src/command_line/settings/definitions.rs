@@ -299,8 +299,8 @@ pub const SETTINGS: &[SettingDescriptor] = &[
         set: set_tab_width,
     },
     SettingDescriptor {
-        name: "borderstyle",
-        aliases: &["bs"],
+        name: "command_line.borderstyle",
+        aliases: &["clborderstyle"],
         ty: SettingType::Enum {
             variants: &["unicode", "ascii", "none"],
         },
@@ -308,7 +308,7 @@ pub const SETTINGS: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         name: "command_line.width_ratio",
-        aliases: &["cmdwidth"],
+        aliases: &["clwidthratio"],
         ty: SettingType::Float {
             min: Some(0.0),
             max: Some(1.0),
@@ -317,7 +317,7 @@ pub const SETTINGS: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         name: "command_line.min_width",
-        aliases: &["cmdminwidth"],
+        aliases: &["clminwidth"],
         ty: SettingType::Integer {
             min: Some(1),
             max: None,
@@ -326,7 +326,7 @@ pub const SETTINGS: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         name: "command_line.height",
-        aliases: &["cmdheight"],
+        aliases: &["clheight"],
         ty: SettingType::Integer {
             min: Some(1),
             max: None,
@@ -335,31 +335,31 @@ pub const SETTINGS: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         name: "command_line.border",
-        aliases: &["cmdborder"],
+        aliases: &["clborder"],
         ty: SettingType::Boolean,
         set: set_cmd_window_border,
     },
     SettingDescriptor {
         name: "command_line.reverse_video",
-        aliases: &["clr"],
+        aliases: &["clreverse"],
         ty: SettingType::Boolean,
         set: set_cmd_window_reverse_video,
     },
     SettingDescriptor {
-        name: "editor.background",
-        aliases: &["edbg", "bg"],
+        name: "appearence.background",
+        aliases: &["apbg", "bg"],
         ty: SettingType::Color,
         set: set_editor_bg,
     },
     SettingDescriptor {
-        name: "editor.foreground",
-        aliases: &["edfg", "fg"],
+        name: "appearence.foreground",
+        aliases: &["apfg", "fg"],
         ty: SettingType::Color,
         set: set_editor_fg,
     },
     SettingDescriptor {
-        name: "theme",
-        aliases: &["colorscheme", "colors"],
+        name: "appearence.theme",
+        aliases: &["aptheme", "colorscheme", "colors"],
         ty: SettingType::Enum {
             variants: &["light", "dark", "gruvbox", "nordic", "nord"],
         },
@@ -367,7 +367,7 @@ pub const SETTINGS: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         name: "status_line.show_filename",
-        aliases: &["sfn"],
+        aliases: &["slfilename"],
         ty: SettingType::Boolean,
         set: set_show_filename,
     },
@@ -379,19 +379,19 @@ pub const SETTINGS: &[SettingDescriptor] = &[
     },
     SettingDescriptor {
         name: "status_line.show_status_line",
-        aliases: &["sls"],
+        aliases: &["slshow"],
         ty: SettingType::Boolean,
         set: set_show_status_line,
     },
     SettingDescriptor {
         name: "status_line.show_dirty",
-        aliases: &["sld"],
+        aliases: &["sldirty"],
         ty: SettingType::Boolean,
         set: set_show_dirty_indicator,
     },
     SettingDescriptor {
         name: "number",
-        aliases: &["nu"],
+        aliases: &[],
         ty: SettingType::Boolean,
         set: set_show_line_numbers,
     },
