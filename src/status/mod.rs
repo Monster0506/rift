@@ -46,112 +46,99 @@ impl StatusBar {
             term.write(b"\x1b[7m")?;
         }
 
-        // In command mode, show colon prompt and fill rest with spaces
-        if current_mode == Mode::Command {
-            let mode_str = Self::format_mode(current_mode);
-            term.write(mode_str.as_bytes())?;
+        // Mode indicator
+        let mode_str = Self::format_mode(current_mode);
+        term.write(mode_str.as_bytes())?;
+
+        // Pending key indicator
+        let pending_str = if let Some(key) = pending_key {
+            format!(" [{}]", Self::format_key(key))
+        } else {
+            String::new()
+        };
+        if !pending_str.is_empty() {
+            term.write(pending_str.as_bytes())?;
+        }
+
+        // Debug information (if debug mode is enabled)
+        let debug_str = if state.debug_mode {
+            Self::format_debug_info(state, current_mode)
+        } else {
+            String::new()
+        };
+
+        // Calculate layout
+        let mode_len = mode_str.len();
+        let pending_len = pending_str.len();
+        let used_cols = mode_len + pending_len;
+        let available_cols = viewport.visible_cols().saturating_sub(used_cols);
+
+        // In debug mode, show debug info. In normal mode, show filename on right
+        if state.debug_mode {
+            // Format debug info with proper spacing
+            let (debug_display, debug_len) = if debug_str.is_empty() {
+                (String::new(), 0)
+            } else {
+                let truncated = if debug_str.len() <= available_cols {
+                    debug_str
+                } else {
+                    format!("{}...", &debug_str[..available_cols.saturating_sub(3)])
+                };
+                let spacing = available_cols.saturating_sub(truncated.len());
+                let spaced = format!("{}{}", " ".repeat(spacing), truncated);
+                (spaced, truncated.len() + spacing)
+            };
+
+            // Write debug info
+            if !debug_display.is_empty() {
+                term.write(debug_display.as_bytes())?;
+            }
 
             // Fill rest of line with spaces
-            let remaining_cols = viewport.visible_cols().saturating_sub(mode_str.len());
+            let total_used = mode_len + pending_len + debug_len;
+            let remaining_cols = viewport.visible_cols().saturating_sub(total_used);
+
             for _ in 0..remaining_cols {
                 term.write(b" ")?;
             }
         } else {
-            // Mode indicator
-            let mode_str = Self::format_mode(current_mode);
-            term.write(mode_str.as_bytes())?;
-
-            // Pending key indicator
-            let pending_str = if let Some(key) = pending_key {
-                format!(" [{}]", Self::format_key(key))
-            } else {
-                String::new()
-            };
-            if !pending_str.is_empty() {
-                term.write(pending_str.as_bytes())?;
-            }
-
-            // Debug information (if debug mode is enabled)
-            let debug_str = if state.debug_mode {
-                Self::format_debug_info(state, current_mode)
-            } else {
-                String::new()
-            };
-
-            // Calculate layout
-            let mode_len = mode_str.len();
-            let pending_len = pending_str.len();
-            let used_cols = mode_len + pending_len;
-            let available_cols = viewport.visible_cols().saturating_sub(used_cols);
-
-            // In debug mode, show debug info. In normal mode, show filename on right
-            if state.debug_mode {
-                // Format debug info with proper spacing
-                let (debug_display, debug_len) = if debug_str.is_empty() {
-                    (String::new(), 0)
-                } else {
-                    let truncated = if debug_str.len() <= available_cols {
-                        debug_str
+            // Normal mode: show filename on the right (if enabled in settings)
+            if state.settings.status_line.show_filename {
+                let display_name =
+                    if state.is_dirty && state.settings.status_line.show_dirty_indicator {
+                        format!("{}*", state.file_name)
                     } else {
-                        format!("{}...", &debug_str[..available_cols.saturating_sub(3)])
+                        state.file_name.clone()
                     };
-                    let spacing = available_cols.saturating_sub(truncated.len());
-                    let spaced = format!("{}{}", " ".repeat(spacing), truncated);
-                    (spaced, truncated.len() + spacing)
-                };
+                let display_len = display_name.len();
 
-                // Write debug info
-                if !debug_display.is_empty() {
-                    term.write(debug_display.as_bytes())?;
-                }
-
-                // Fill rest of line with spaces
-                let total_used = mode_len + pending_len + debug_len;
-                let remaining_cols = viewport.visible_cols().saturating_sub(total_used);
-
-                for _ in 0..remaining_cols {
-                    term.write(b" ")?;
-                }
-            } else {
-                // Normal mode: show filename on the right (if enabled in settings)
-                if state.settings.status_line.show_filename {
-                    let display_name =
-                        if state.is_dirty && state.settings.status_line.show_dirty_indicator {
-                            format!("{}*", state.file_name)
-                        } else {
-                            state.file_name.clone()
-                        };
-                    let display_len = display_name.len();
-
-                    if display_len <= available_cols {
-                        // Right-align filename
-                        let spacing = available_cols.saturating_sub(display_len);
-                        for _ in 0..spacing {
-                            term.write(b" ")?;
-                        }
-                        term.write(display_name.as_bytes())?;
-                    } else {
-                        // Filename too long, truncate it
-                        let truncated = if available_cols > 3 {
-                            format!(
-                                "...{}",
-                                &display_name
-                                    [display_name.len().saturating_sub(available_cols - 3)..]
-                            )
-                        } else {
-                            String::new()
-                        };
-                        let spacing = available_cols.saturating_sub(truncated.len());
-                        for _ in 0..spacing {
-                            term.write(b" ")?;
-                        }
-                        term.write(truncated.as_bytes())?;
-                    }
-                } else {
-                    // Filename display disabled, fill with spaces
-                    for _ in 0..available_cols {
+                if display_len <= available_cols {
+                    // Right-align filename
+                    let spacing = available_cols.saturating_sub(display_len);
+                    for _ in 0..spacing {
                         term.write(b" ")?;
                     }
+                    term.write(display_name.as_bytes())?;
+                } else {
+                    // Filename too long, truncate it
+                    let truncated = if available_cols > 3 {
+                        format!(
+                            "...{}",
+                            &display_name[display_name.len().saturating_sub(available_cols - 3)..]
+                        )
+                    } else {
+                        String::new()
+                    };
+                    let spacing = available_cols.saturating_sub(truncated.len());
+                    for _ in 0..spacing {
+                        term.write(b" ")?;
+                    }
+                    term.write(truncated.as_bytes())?;
+                }
+            } else {
+                // Filename display disabled, fill with spaces
+                for _ in 0..available_cols {
+                    term.write(b" ")?;
                 }
             }
         }
@@ -280,21 +267,6 @@ impl StatusBar {
 
         // Build the status line content
         let mode_str = Self::format_mode(current_mode);
-
-        // In command mode, just show the mode
-        if current_mode == Mode::Command {
-            // Write mode string
-            layer.write_bytes_colored(status_row, 0, mode_str.as_bytes(), fg, bg);
-            // Fill rest with spaces
-            for col in mode_str.len()..visible_cols {
-                layer.set_cell(
-                    status_row,
-                    col,
-                    crate::layer::Cell::new(b' ').with_colors(fg, bg),
-                );
-            }
-            return;
-        }
 
         // Normal display: mode + pending key + (debug info or filename)
         let mut col = 0;
