@@ -18,6 +18,8 @@ Implemented:
 - notification system
 - parse bang commads and pass the number of bangs
 - hook notifications up to actual errors and warnings
+- status bar to indicate filename, dirty
+
 
 
 Todo:
@@ -30,7 +32,6 @@ Todo:
 - search + replace
 - copy/paste (buffers)
 - macros
-- status bar to indicate filename, dirty
 - setting and command descriptions
 - make command pattern more like settings design pattern
 - help manual
