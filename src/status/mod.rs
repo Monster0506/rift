@@ -170,7 +170,7 @@ impl StatusBar {
         match mode {
             Mode::Normal => "NORMAL",
             Mode::Insert => "INSERT",
-            Mode::Command => ":",
+            Mode::Command => "COMMAND",
         }
     }
 
