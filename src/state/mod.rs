@@ -149,6 +149,10 @@ pub struct State {
     pub cursor_pos: (usize, usize),
     /// Total number of lines in buffer
     pub total_lines: usize,
+    /// Current gutter width (cached for optimization)
+    pub gutter_width: usize,
+    /// Threshold at which gutter width must increase
+    pub next_gutter_threshold: usize,
     /// Buffer size
     pub buffer_size: usize,
     /// Command line input (for command mode)
@@ -176,6 +180,8 @@ impl State {
             last_command: None,
             cursor_pos: (0, 0),
             total_lines: 1,
+            gutter_width: 2,
+            next_gutter_threshold: 10,
             buffer_size: 0,
             command_line: String::new(),
             command_line_cursor: 0,
@@ -197,6 +203,8 @@ impl State {
             last_command: None,
             cursor_pos: (0, 0),
             total_lines: 1,
+            gutter_width: 2,
+            next_gutter_threshold: 10,
             buffer_size: 0,
             command_line: String::new(),
             command_line_cursor: 0,
@@ -248,6 +256,24 @@ impl State {
         buffer_size: usize,
         line_ending: LineEnding,
     ) {
+        // If total lines crossed a threshold, update gutter width
+        if total_lines >= self.next_gutter_threshold
+            || (total_lines < self.next_gutter_threshold / 10 && self.gutter_width > 2)
+        {
+            // Recalculate gutter width: number of digits + 1
+            self.gutter_width = if total_lines == 0 {
+                0
+            } else {
+                total_lines.to_string().len() + 1
+            };
+            // Set next threshold to next power of 10
+            let mut threshold = 10;
+            while threshold <= total_lines {
+                threshold *= 10;
+            }
+            self.next_gutter_threshold = threshold;
+        }
+
         self.total_lines = total_lines;
         self.buffer_size = buffer_size;
         self.line_ending = line_ending;

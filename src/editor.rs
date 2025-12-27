@@ -399,7 +399,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Update viewport based on cursor position (state mutation happens here)
         let gutter_width = if self.state.settings.show_line_numbers {
-            render::calculate_gutter_width(total_lines)
+            self.state.gutter_width
         } else {
             0
         };
@@ -431,7 +431,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Update viewport based on cursor position (state mutation happens here)
         let gutter_width = if self.state.settings.show_line_numbers {
-            render::calculate_gutter_width(total_lines)
+            self.state.gutter_width
         } else {
             0
         };

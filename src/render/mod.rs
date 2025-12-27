@@ -39,9 +39,11 @@ pub struct ContentDrawState {
     pub top_line: usize,
     pub left_col: usize,
     pub rows: usize,
-    pub cols: usize,
     pub tab_width: usize,
+    /// Whether to show line numbers
     pub show_line_numbers: bool,
+    /// Current gutter width
+    pub gutter_width: usize,
 }
 
 /// Minimal state required to trigger a re-render of the status bar
@@ -179,9 +181,13 @@ pub fn render<T: TerminalBackend>(
         top_line: ctx.viewport.top_line(),
         left_col: ctx.viewport.left_col(),
         rows: ctx.viewport.visible_rows(),
-        cols: ctx.viewport.visible_cols(),
         tab_width: ctx.state.settings.tab_width,
         show_line_numbers: ctx.state.settings.show_line_numbers,
+        gutter_width: if ctx.state.settings.show_line_numbers {
+            ctx.state.gutter_width
+        } else {
+            0
+        },
     };
 
     if cache.content.as_ref() != Some(&current_content_state) {
@@ -352,16 +358,16 @@ pub fn render<T: TerminalBackend>(
         // Calculate normal cursor position
         let cursor_line = ctx.buf.get_line();
         let cursor_line_in_viewport = if cursor_line >= ctx.viewport.top_line()
-            && cursor_line < ctx.viewport.top_line() + ctx.viewport.visible_rows().saturating_sub(1)
+            && cursor_line < ctx.viewport.top_line() + ctx.viewport.visible_rows()
         {
             cursor_line - ctx.viewport.top_line()
         } else {
             0
         };
 
-        // Calculate gutter width
+        // Gutter width is cached in state
         let gutter_width = if ctx.state.settings.show_line_numbers {
-            calculate_gutter_width(ctx.state.total_lines)
+            ctx.state.gutter_width
         } else {
             0
         };
@@ -404,9 +410,9 @@ fn render_content_to_layer(
     editor_fg: Option<Color>,
     ctx: &RenderContext,
 ) {
-    // Calculate gutter width using helper function
+    // Use cached gutter width from state
     let gutter_width = if ctx.state.settings.show_line_numbers {
-        calculate_gutter_width(ctx.state.total_lines)
+        ctx.state.gutter_width
     } else {
         0
     };
@@ -501,14 +507,6 @@ fn render_content_to_layer(
             }
         }
     }
-}
-
-/// Calculate gutter width for a given number of lines
-pub fn calculate_gutter_width(total_lines: usize) -> usize {
-    if total_lines == 0 {
-        return 0;
-    }
-    total_lines.to_string().len() + 1
 }
 
 /// Calculate the visual column position accounting for tab width

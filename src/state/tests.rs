@@ -299,3 +299,44 @@ fn test_handle_error_severity_mapping() {
         NotificationType::Info
     );
 }
+
+#[test]
+fn test_gutter_thresholds() {
+    let mut state = State::new();
+    // gutter_width: 2 (for "1 "), threshold: 10
+    assert_eq!(state.gutter_width, 2);
+    assert_eq!(state.next_gutter_threshold, 10);
+
+    // Below threshold (9 lines)
+    state.update_buffer_stats(9, 100, crate::document::LineEnding::LF);
+    assert_eq!(state.gutter_width, 2);
+    assert_eq!(state.next_gutter_threshold, 10);
+
+    // Cross threshold (10 lines) -> width becomes 3 ("10 ")
+    state.update_buffer_stats(10, 100, crate::document::LineEnding::LF);
+    assert_eq!(state.gutter_width, 3);
+    assert_eq!(state.next_gutter_threshold, 100);
+
+    // Stay in bracket (99 lines)
+    state.update_buffer_stats(99, 100, crate::document::LineEnding::LF);
+    assert_eq!(state.gutter_width, 3);
+    assert_eq!(state.next_gutter_threshold, 100);
+
+    // Cross next threshold (100 lines) -> width becomes 4 ("100 ")
+    state.update_buffer_stats(100, 100, crate::document::LineEnding::LF);
+    assert_eq!(state.gutter_width, 4);
+    assert_eq!(state.next_gutter_threshold, 1000);
+
+    // Reversion logic: if < threshold / 10
+    // At 100, threshold is 1000. 1000/10 = 100.
+    // Drop to 99. 99 < 100 is true.
+    // Should revert to width 3.
+    state.update_buffer_stats(99, 100, crate::document::LineEnding::LF);
+    assert_eq!(state.gutter_width, 3);
+    assert_eq!(state.next_gutter_threshold, 100);
+
+    // Massive drop
+    state.update_buffer_stats(1, 100, crate::document::LineEnding::LF);
+    assert_eq!(state.gutter_width, 2);
+    assert_eq!(state.next_gutter_threshold, 10);
+}

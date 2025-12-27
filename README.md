@@ -26,7 +26,7 @@ Implemented:
 - add redraw command
 - crlf and lf support
 - setlocal for document-level settings
-
+- dumb gutter to avoid recalcing unless total lines changes significantly.
 
 Todo:
 - LSP
@@ -40,5 +40,4 @@ Todo:
 - setting and command descriptions
 - make command pattern more like settings design pattern
 - help manual
-- dumb gutter to avoid recalcing unless total lines changes significantly.
 - command history
