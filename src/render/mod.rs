@@ -362,6 +362,33 @@ pub(crate) fn _format_key(key: Key) -> String {
 #[path = "tests.rs"]
 mod tests;
 
+/// Helper to wrap text to a specific width
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+
+    for word in text.split_whitespace() {
+        if current_line.len() + word.len() + 1 > width {
+            if !current_line.is_empty() {
+                lines.push(current_line);
+                current_line = String::new();
+            }
+        }
+        if !current_line.is_empty() {
+            current_line.push(' ');
+        }
+        current_line.push_str(word);
+    }
+    if !current_line.is_empty() {
+        lines.push(current_line);
+    }
+    // Handle case where text is empty
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
 /// Render active notifications
 fn render_notifications(layer: &mut Layer, state: &State, term_rows: usize, term_cols: usize) {
     use crate::notification::NotificationType;
@@ -391,12 +418,15 @@ fn render_notifications(layer: &mut Layer, state: &State, term_rows: usize, term
             NotificationType::Error => " [E] ",
             NotificationType::Success => " [S] ",
         };
-        let content = format!("{}{}", prefix, notification.message);
+        let full_text = format!("{}{}", prefix, notification.message);
 
         // Calculate dimensions
-        let content_len = content.chars().count();
-        let width = (content_len + 4).clamp(20, 40);
-        let height = 3; // Border + content + border
+        // Fixed width for now, but wrapped
+        let width = 40;
+        let content_width = width - 2; // Subtract borders
+
+        let lines = wrap_text(&full_text, content_width - 2); // Subtract padding
+        let height = lines.len() + 2; // Content lines + top border + bottom border
 
         // Skip if out of space
         if current_bottom < height {
@@ -421,17 +451,13 @@ fn render_notifications(layer: &mut Layer, state: &State, term_rows: usize, term
             style,
         );
 
-        // Render content
-        // Truncate if too long (simple handling for now)
-        let visible_content = if content.len() > width.saturating_sub(2) {
-            &content[..width.saturating_sub(3)]
-        } else {
-            &content
-        };
+        // Render content lines
+        let content_bytes: Vec<Vec<u8>> =
+            lines.iter().map(|line| line.as_bytes().to_vec()).collect();
 
-        window.render(layer, &[visible_content.as_bytes().to_vec()]);
+        window.render(layer, &content_bytes);
 
-        // Move up for next notification
+        // Move up for next notification (preserve existing padding logic)
         current_bottom = start_row.saturating_sub(1);
     }
 }

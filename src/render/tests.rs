@@ -613,7 +613,7 @@ fn test_render_line_numbers_gutter_width() {
     let viewport = Viewport::new(10, 80);
     let mut state = State::new();
     state.settings.show_line_numbers = true;
-    state.update_buffer_stats(100, 0); // 100 lines -> 3 digits
+    state.update_buffer_stats(100, 0);
 
     let mut compositor = LayerCompositor::new(10, 80);
 
@@ -673,4 +673,57 @@ fn test_render_cursor_position_with_line_numbers() {
     let crate::render::CursorPosition::Absolute(row, col) = cursor_info;
     assert_eq!(row, 0);
     assert_eq!(col, 3);
+}
+
+// ============================================================================
+// Notification wrapping tests
+// ============================================================================
+
+#[test]
+fn test_wrap_text_simple() {
+    let text = "hello world";
+    let wrapped = crate::render::wrap_text(text, 20);
+    assert_eq!(wrapped, vec!["hello world".to_string()]);
+}
+
+#[test]
+fn test_wrap_text_needs_wrapping() {
+    let text = "hello world this is a test";
+    // "hello world " -> 12 chars
+    // "this is a " -> 10 chars
+    // "test" -> 4 chars
+    let wrapped = crate::render::wrap_text(text, 12);
+    assert_eq!(
+        wrapped,
+        vec![
+            "hello world".to_string(),
+            "this is a".to_string(), // "this is a " fits
+            "test".to_string()
+        ]
+    );
+}
+
+#[test]
+fn test_wrap_text_long_word() {
+    // If a word is longer than width, it should still be included (though layout might break visually,
+    // the wrapping function shouldn't infinite loop or panic)
+    // Current implementation will put it on its own line but won't split the word
+    let text = "a verylongword indeed";
+    let wrapped = crate::render::wrap_text(text, 5);
+    assert_eq!(
+        wrapped,
+        vec![
+            "a".to_string(),
+            "verylongword".to_string(),
+            "indeed".to_string()
+        ]
+    );
+}
+
+#[test]
+fn test_wrap_text_empty() {
+    let text = "";
+    let wrapped = crate::render::wrap_text(text, 10);
+    // Should return at least one empty line to preserve height
+    assert_eq!(wrapped, vec!["".to_string()]);
 }
