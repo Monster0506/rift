@@ -3,7 +3,7 @@
 use crate::command_line::executor::{CommandExecutor, ExecutionResult};
 use crate::command_line::parser::ParsedCommand;
 use crate::command_line::settings::create_settings_registry;
-use crate::document::settings::create_document_settings_registry;
+use crate::document::definitions::create_document_settings_registry;
 use crate::document::Document;
 use crate::state::State;
 
@@ -46,7 +46,7 @@ fn test_execute_set_expandtabs_true() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.expand_tabs, true);
 }
 
@@ -71,7 +71,7 @@ fn test_execute_set_expandtabs_false() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.expand_tabs, false);
 }
 
@@ -95,7 +95,7 @@ fn test_execute_set_expandtabs_alias_et() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.expand_tabs, false);
 }
 
@@ -119,7 +119,7 @@ fn test_execute_set_expandtabs_boolean_variants() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.expand_tabs, true);
 
     // Test "off"
@@ -138,7 +138,7 @@ fn test_execute_set_expandtabs_boolean_variants() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.expand_tabs, false);
 
     // Test "yes"
@@ -157,7 +157,7 @@ fn test_execute_set_expandtabs_boolean_variants() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.expand_tabs, true);
 
     // Test "no"
@@ -176,7 +176,7 @@ fn test_execute_set_expandtabs_boolean_variants() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.expand_tabs, false);
 
     // Test "1"
@@ -195,7 +195,7 @@ fn test_execute_set_expandtabs_boolean_variants() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.expand_tabs, true);
 
     // Test "0"
@@ -214,7 +214,7 @@ fn test_execute_set_expandtabs_boolean_variants() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.expand_tabs, false);
 }
 
@@ -238,7 +238,7 @@ fn test_execute_set_expandtabs_case_insensitive() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.expand_tabs, false);
 }
 
@@ -263,7 +263,7 @@ fn test_execute_set_tabwidth() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.tab_width, 4);
 }
 
@@ -287,7 +287,7 @@ fn test_execute_set_tabwidth_alias_tw() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.tab_width, 2);
 }
 
@@ -313,7 +313,7 @@ fn test_execute_set_tabwidth_various_values() {
             &settings_registry,
             &document_settings_registry,
         );
-        assert_eq!(result, ExecutionResult::Success);
+        assert_eq!(result, ExecutionResult::Redraw);
         assert_eq!(state.settings.tab_width, *width);
     }
 }
@@ -597,7 +597,7 @@ fn test_execute_set_multiple_options() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.expand_tabs, false);
 
     // Set tabwidth to 4
@@ -616,7 +616,7 @@ fn test_execute_set_multiple_options() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.tab_width, 4);
 
     // Set expandtabs back to true
@@ -635,7 +635,7 @@ fn test_execute_set_multiple_options() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.expand_tabs, true);
 
     // Verify both settings are correct
@@ -663,7 +663,7 @@ fn test_execute_set_tabwidth_large_value() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.tab_width, 100);
 }
 
@@ -783,7 +783,7 @@ fn test_execute_set_case_insensitive_option_names() {
             &settings_registry,
             &document_settings_registry,
         );
-        assert_eq!(result, ExecutionResult::Success);
+        assert_eq!(result, ExecutionResult::Redraw);
     }
 
     // Final state

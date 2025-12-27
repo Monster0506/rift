@@ -296,7 +296,13 @@ impl<T> SettingsRegistry<T> {
 
         // Apply setter
         match (desc.set)(target, typed_value) {
-            Ok(()) => ExecutionResult::Success,
+            Ok(()) => {
+                if desc.needs_full_redraw {
+                    ExecutionResult::Redraw
+                } else {
+                    ExecutionResult::Success
+                }
+            }
             Err(e) => {
                 error_handler(e.into());
                 ExecutionResult::Failure

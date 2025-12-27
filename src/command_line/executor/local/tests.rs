@@ -1,7 +1,7 @@
 use super::*;
 use crate::command_line::executor::ExecutionResult;
 use crate::command_line::parser::ParsedCommand;
-use crate::document::settings::create_document_settings_registry;
+use crate::document::definitions::create_document_settings_registry;
 use crate::document::Document;
 use crate::state::State;
 

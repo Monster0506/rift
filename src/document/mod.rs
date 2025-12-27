@@ -6,8 +6,8 @@ use crate::error::{ErrorType, RiftError};
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub mod settings;
-use settings::DocumentOptions;
+pub mod definitions;
+use definitions::DocumentOptions;
 
 /// Unique identifier for documents
 pub type DocumentId = u64;

@@ -1,7 +1,7 @@
 use crate::command_line::executor::ExecutionResult;
 use crate::command_line::parser::ParsedCommand;
 use crate::command_line::settings::SettingsRegistry;
-use crate::document::settings::DocumentOptions;
+use crate::document::definitions::DocumentOptions;
 use crate::document::Document;
 use crate::error::RiftError;
 use crate::state::State;

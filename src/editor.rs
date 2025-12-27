@@ -33,7 +33,7 @@ pub struct Editor<T: TerminalBackend> {
     state: State,
     command_parser: CommandParser,
     settings_registry: SettingsRegistry<UserSettings>,
-    document_settings_registry: SettingsRegistry<crate::document::settings::DocumentOptions>,
+    document_settings_registry: SettingsRegistry<crate::document::definitions::DocumentOptions>,
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -97,7 +97,7 @@ impl<T: TerminalBackend> Editor<T> {
         let compositor = LayerCompositor::new(size.rows as usize, size.cols as usize);
 
         // Create document settings registry
-        use crate::document::settings::create_document_settings_registry;
+        use crate::document::definitions::create_document_settings_registry;
         let document_settings_registry = create_document_settings_registry();
 
         Ok(Editor {

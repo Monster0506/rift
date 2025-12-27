@@ -77,6 +77,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         aliases: &["et"],
         ty: SettingType::Boolean,
         set: set_expand_tabs,
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "tabwidth",
@@ -86,6 +87,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: None,
         },
         set: set_tab_width,
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "command_line_window.width_ratio",
@@ -95,6 +97,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: Some(1.0),
         },
         set: set_width_ratio,
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "borderstyle",
@@ -103,6 +106,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             variants: &["unicode", "ascii", "none"],
         },
         set: set_border_style,
+        needs_full_redraw: false,
     },
 ];
 
@@ -683,12 +687,14 @@ fn test_execute_setting_ambiguous() {
             aliases: &[],
             ty: SettingType::Boolean,
             set: set_expand_tabs,
+            needs_full_redraw: false,
         },
         SettingDescriptor {
             name: "expandspaces",
             aliases: &[],
             ty: SettingType::Boolean,
             set: set_expand_tabs,
+            needs_full_redraw: false,
         },
     ];
 
@@ -740,7 +746,7 @@ fn test_execute_setting_theme_light() {
     );
     assert!(matches!(
         result,
-        crate::command_line::executor::ExecutionResult::Success
+        crate::command_line::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
@@ -770,7 +776,7 @@ fn test_execute_setting_theme_dark() {
     );
     assert!(matches!(
         result,
-        crate::command_line::executor::ExecutionResult::Success
+        crate::command_line::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("dark".to_string()));
@@ -800,7 +806,7 @@ fn test_execute_setting_theme_gruvbox() {
     );
     assert!(matches!(
         result,
-        crate::command_line::executor::ExecutionResult::Success
+        crate::command_line::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("gruvbox".to_string()));
@@ -830,7 +836,7 @@ fn test_execute_setting_theme_nordic() {
     );
     assert!(matches!(
         result,
-        crate::command_line::executor::ExecutionResult::Success
+        crate::command_line::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("nordic".to_string()));
@@ -860,7 +866,7 @@ fn test_execute_setting_theme_nord_alias() {
     );
     assert!(matches!(
         result,
-        crate::command_line::executor::ExecutionResult::Success
+        crate::command_line::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("nordic".to_string()));
@@ -882,7 +888,7 @@ fn test_execute_setting_theme_case_insensitive() {
     );
     assert!(matches!(
         result,
-        crate::command_line::executor::ExecutionResult::Success
+        crate::command_line::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
@@ -895,7 +901,7 @@ fn test_execute_setting_theme_case_insensitive() {
     );
     assert!(matches!(
         result,
-        crate::command_line::executor::ExecutionResult::Success
+        crate::command_line::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("dark".to_string()));
@@ -938,7 +944,7 @@ fn test_execute_setting_theme_overwrites_previous() {
     );
     assert!(matches!(
         result,
-        crate::command_line::executor::ExecutionResult::Success
+        crate::command_line::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
@@ -953,7 +959,7 @@ fn test_execute_setting_theme_overwrites_previous() {
     );
     assert!(matches!(
         result,
-        crate::command_line::executor::ExecutionResult::Success
+        crate::command_line::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("dark".to_string()));
@@ -981,7 +987,7 @@ fn test_execute_setting_theme_alias_colorscheme() {
     );
     assert!(matches!(
         result,
-        crate::command_line::executor::ExecutionResult::Success
+        crate::command_line::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
@@ -1004,7 +1010,7 @@ fn test_execute_setting_theme_alias_colors() {
     );
     assert!(matches!(
         result,
-        crate::command_line::executor::ExecutionResult::Success
+        crate::command_line::executor::ExecutionResult::Redraw
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("dark".to_string()));

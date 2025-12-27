@@ -3,7 +3,7 @@
 
 use crate::command_line::parser::ParsedCommand;
 use crate::command_line::settings::SettingsRegistry;
-use crate::document::{settings::DocumentOptions, Document};
+use crate::document::{definitions::DocumentOptions, Document};
 use crate::error::{ErrorType, RiftError};
 use crate::state::State;
 use crate::state::UserSettings;

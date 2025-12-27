@@ -113,4 +113,6 @@ pub struct SettingDescriptor<T> {
     pub ty: SettingType,
     /// Setter function pointer
     pub set: SettingSetter<T>,
+    /// Whether setting this option requires a full screen redraw
+    pub needs_full_redraw: bool,
 }

@@ -288,6 +288,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         aliases: &["et"],
         ty: SettingType::Boolean,
         set: set_expand_tabs,
+        needs_full_redraw: true,
     },
     SettingDescriptor {
         name: "tabwidth",
@@ -297,6 +298,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: None,
         },
         set: set_tab_width,
+        needs_full_redraw: true,
     },
     SettingDescriptor {
         name: "command_line.borderstyle",
@@ -305,6 +307,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             variants: &["unicode", "ascii", "none"],
         },
         set: set_border_style,
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "command_line.width_ratio",
@@ -314,6 +317,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: Some(1.0),
         },
         set: set_cmd_window_width_ratio,
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "command_line.min_width",
@@ -323,6 +327,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: None,
         },
         set: set_cmd_window_min_width,
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "command_line.height",
@@ -332,30 +337,35 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: None,
         },
         set: set_cmd_window_height,
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "command_line.border",
         aliases: &["clborder"],
         ty: SettingType::Boolean,
         set: set_cmd_window_border,
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "command_line.reverse_video",
         aliases: &["clreverse"],
         ty: SettingType::Boolean,
         set: set_cmd_window_reverse_video,
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "appearance.background",
         aliases: &["apbg", "bg"],
         ty: SettingType::Color,
         set: set_editor_bg,
+        needs_full_redraw: true,
     },
     SettingDescriptor {
         name: "appearance.foreground",
         aliases: &["apfg", "fg"],
         ty: SettingType::Color,
         set: set_editor_fg,
+        needs_full_redraw: true,
     },
     SettingDescriptor {
         name: "appearance.theme",
@@ -364,36 +374,42 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             variants: &["light", "dark", "gruvbox", "nordic", "nord"],
         },
         set: set_theme,
+        needs_full_redraw: true,
     },
     SettingDescriptor {
         name: "status_line.show_filename",
         aliases: &["slfilename"],
         ty: SettingType::Boolean,
         set: set_show_filename,
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "status_line.reverse_video",
         aliases: &["slreverse"],
         ty: SettingType::Boolean,
         set: set_status_line_reverse_video,
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "status_line.show_status_line",
         aliases: &["slshow"],
         ty: SettingType::Boolean,
         set: set_show_status_line,
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "status_line.show_dirty",
         aliases: &["sldirty"],
         ty: SettingType::Boolean,
         set: set_show_dirty_indicator,
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "number",
         aliases: &[],
         ty: SettingType::Boolean,
         set: set_show_line_numbers,
+        needs_full_redraw: true,
     },
 ];
 

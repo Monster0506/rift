@@ -49,6 +49,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[SettingDescri
         variants: &["lf", "crlf", "unix", "dos", "windows"],
     },
     set: set_line_ending,
+    needs_full_redraw: false,
 }];
 
 pub fn create_document_settings_registry() -> SettingsRegistry<DocumentOptions> {
