@@ -28,11 +28,11 @@ Implemented:
 - setlocal for document-level settings
 - dumb gutter to avoid recalcing unless total lines changes significantly.
 - Multi-document support
+- :edit filename to open a new document (:e to reload from disk)
 
 Todo:
 - LSP
 - Syntax highlighting
-- :edit filename to open a new document (:e to reload from disk)
 - undo + redo
 - search + replace
 - copy/paste (buffers)
