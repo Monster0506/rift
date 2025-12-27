@@ -40,6 +40,8 @@ fn set_line_ending(options: &mut DocumentOptions, value: SettingValue) -> Result
     }
 }
 
+/// Document-specific settings
+/// LOCAL_SETTINGS
 const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[SettingDescriptor {
     name: "line_ending",
     aliases: &["ff", "fileformat"], // mimicking vim's fileformat
