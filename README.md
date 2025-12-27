@@ -16,7 +16,7 @@ Implemented:
 - double buffer rendering
 - buffer composition
 - notification system
-- parse bang commads and pass the number of bangs
+- parse bang commands and pass the number of bangs
 - hook notifications up to actual errors and warnings
 - status bar to indicate filename, dirty
 - colorizing and themes
@@ -24,6 +24,7 @@ Implemented:
 - line indexing improvements to gap buffer
 - component level dirty flags to avoid clearing and repopulating full layers
 - add redraw command
+- crlf and lf support
 
 
 Todo:
@@ -39,3 +40,4 @@ Todo:
 - make command pattern more like settings design pattern
 - help manual
 - dumb gutter to avoid recalcing unless total lines changes significantly.
+- setlocal for document-level settings
