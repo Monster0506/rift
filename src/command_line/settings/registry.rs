@@ -12,15 +12,15 @@ use crate::error::{ErrorSeverity, ErrorType, RiftError};
 /// - Option registry building (for parser)
 /// - Setting execution (for executor)
 #[derive(Clone, Copy)]
-pub struct SettingsRegistry {
+pub struct SettingsRegistry<T: 'static> {
     /// Static array of setting descriptors
-    settings: &'static [SettingDescriptor],
+    settings: &'static [SettingDescriptor<T>],
 }
 
-impl SettingsRegistry {
+impl<T> SettingsRegistry<T> {
     /// Create a new registry from static descriptors
     #[must_use]
-    pub const fn new(descriptors: &'static [SettingDescriptor]) -> Self {
+    pub const fn new(descriptors: &'static [SettingDescriptor<T>]) -> Self {
         SettingsRegistry {
             settings: descriptors,
         }
@@ -228,7 +228,8 @@ impl SettingsRegistry {
         &self,
         name: &str,
         value: Option<String>,
-        state: &mut crate::state::State,
+        target: &mut T,
+        error_handler: &mut dyn FnMut(RiftError),
     ) -> ExecutionResult {
         // Build registry for name matching
         let registry = self.build_option_registry();
@@ -238,7 +239,7 @@ impl SettingsRegistry {
             MatchResult::Exact(n) | MatchResult::Prefix(n) => n,
             MatchResult::Ambiguous { prefix, matches } => {
                 let matches_str = matches.join(", ");
-                state.handle_error(RiftError {
+                error_handler(RiftError {
                     severity: ErrorSeverity::Error,
                     kind: ErrorType::Settings,
                     code: "AMBIGUOUS_SETTING".to_string(),
@@ -247,7 +248,7 @@ impl SettingsRegistry {
                 return ExecutionResult::Failure;
             }
             MatchResult::Unknown(_) => {
-                state.handle_error(RiftError {
+                error_handler(RiftError {
                     severity: ErrorSeverity::Error,
                     kind: ErrorType::Settings,
                     code: "UNKNOWN_SETTING".to_string(),
@@ -261,7 +262,7 @@ impl SettingsRegistry {
         let desc = match self.settings.iter().find(|d| d.name == matched_name) {
             Some(d) => d,
             None => {
-                state.handle_error(RiftError {
+                error_handler(RiftError {
                     severity: ErrorSeverity::Error,
                     kind: ErrorType::Settings,
                     code: "UNKNOWN_SETTING".to_string(),
@@ -275,7 +276,7 @@ impl SettingsRegistry {
         let value_str = match value.as_ref() {
             Some(v) => v,
             None => {
-                state.handle_error(RiftError {
+                error_handler(RiftError {
                     severity: ErrorSeverity::Error,
                     kind: ErrorType::Settings,
                     code: "MISSING_SETTING_VALUE".to_string(),
@@ -288,16 +289,16 @@ impl SettingsRegistry {
         let typed_value = match Self::parse_value(&desc.ty, value_str) {
             Ok(v) => v,
             Err(e) => {
-                state.handle_error(e.into());
+                error_handler(e.into());
                 return ExecutionResult::Failure;
             }
         };
 
         // Apply setter
-        match (desc.set)(&mut state.settings, typed_value) {
+        match (desc.set)(target, typed_value) {
             Ok(()) => ExecutionResult::Success,
             Err(e) => {
-                state.handle_error(e.into());
+                error_handler(e.into());
                 ExecutionResult::Failure
             }
         }

@@ -14,7 +14,7 @@ use crate::layer::LayerCompositor;
 use crate::mode::Mode;
 use crate::render;
 use crate::screen_buffer::FrameStats;
-use crate::state::State;
+use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
 
@@ -32,7 +32,8 @@ pub struct Editor<T: TerminalBackend> {
     should_quit: bool,
     state: State,
     command_parser: CommandParser,
-    settings_registry: SettingsRegistry,
+    settings_registry: SettingsRegistry<UserSettings>,
+    document_settings_registry: SettingsRegistry<crate::document::settings::DocumentOptions>,
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -78,14 +79,14 @@ impl<T: TerminalBackend> Editor<T> {
         // Create command registry and settings registry
         let registry = CommandRegistry::new()
             .register(CommandDef::new("quit").with_alias("q"))
-            .register(CommandDef::new("set").with_alias("se"))
-            .register(CommandDef::new("write").with_alias("w"))
+            .register(CommandDef::new("set"))
+            .register(CommandDef::new("setlocal"))
             .register(CommandDef::new("write").with_alias("w"))
             .register(CommandDef::new("wq"))
             .register(CommandDef::new("notify"))
             .register(CommandDef::new("redraw"));
         let settings_registry = create_settings_registry();
-        let command_parser = CommandParser::new(registry, settings_registry);
+        let command_parser = CommandParser::new(registry.clone(), settings_registry.clone());
 
         let mut state = State::new();
         state.set_file_path(file_path.clone());
@@ -94,6 +95,10 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Create layer compositor for layer-based rendering
         let compositor = LayerCompositor::new(size.rows as usize, size.cols as usize);
+
+        // Create document settings registry
+        use crate::document::settings::create_document_settings_registry;
+        let document_settings_registry = create_document_settings_registry();
 
         Ok(Editor {
             term: terminal,
@@ -107,6 +112,7 @@ impl<T: TerminalBackend> Editor<T> {
             state,
             command_parser,
             settings_registry,
+            document_settings_registry,
         })
     }
 
@@ -257,7 +263,9 @@ impl<T: TerminalBackend> Editor<T> {
                 let execution_result = CommandExecutor::execute(
                     parsed_command,
                     &mut self.state,
+                    &mut self.document,
                     &self.settings_registry,
+                    &self.document_settings_registry,
                 );
 
                 // Handle execution result
@@ -385,7 +393,7 @@ impl<T: TerminalBackend> Editor<T> {
         let buffer_size = self.document.buffer.get_before_gap().len()
             + self.document.buffer.get_after_gap().len();
         self.state
-            .update_buffer_stats(total_lines, buffer_size, self.document.line_ending);
+            .update_buffer_stats(total_lines, buffer_size, self.document.options.line_ending);
         self.state.update_dirty(self.document.is_dirty());
         self.state.error_manager.notifications_mut().prune_expired();
 
@@ -418,7 +426,7 @@ impl<T: TerminalBackend> Editor<T> {
         let buffer_size = self.document.buffer.get_before_gap().len()
             + self.document.buffer.get_after_gap().len();
         self.state
-            .update_buffer_stats(total_lines, buffer_size, self.document.line_ending);
+            .update_buffer_stats(total_lines, buffer_size, self.document.options.line_ending);
         self.state.update_dirty(self.document.is_dirty());
 
         // Update viewport based on cursor position (state mutation happens here)

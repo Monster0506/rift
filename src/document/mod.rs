@@ -6,6 +6,9 @@ use crate::error::{ErrorType, RiftError};
 use std::io;
 use std::path::{Path, PathBuf};
 
+pub mod settings;
+use settings::DocumentOptions;
+
 /// Unique identifier for documents
 pub type DocumentId = u64;
 
@@ -34,8 +37,8 @@ pub struct Document {
     pub id: DocumentId,
     /// Text buffer
     pub buffer: GapBuffer,
-    /// Detected line ending for this document
-    pub line_ending: LineEnding,
+    /// Document-specific options (line endings, etc.)
+    pub options: DocumentOptions,
     /// File path (None if new/unsaved)
     file_path: Option<PathBuf>,
     /// Current revision number (incremented on edits)
@@ -53,7 +56,7 @@ impl Document {
         Ok(Document {
             id,
             buffer,
-            line_ending: LineEnding::LF,
+            options: DocumentOptions::default(),
             file_path: None,
             revision: 0,
             last_saved_revision: 0,
@@ -93,7 +96,7 @@ impl Document {
         Ok(Document {
             id,
             buffer,
-            line_ending,
+            options: DocumentOptions { line_ending },
             file_path: Some(path.to_path_buf()),
             revision: 0,
             last_saved_revision: 0,
@@ -197,9 +200,9 @@ impl Document {
             let mut file = fs::File::create(&temp_path)?;
             use std::io::Write;
 
-            let line_ending_bytes = self.line_ending.as_bytes();
+            let line_ending_bytes = self.options.line_ending.as_bytes();
 
-            if self.line_ending == LineEnding::LF {
+            if self.options.line_ending == LineEnding::LF {
                 // Optimized write for LF
                 file.write_all(before)?;
                 file.write_all(after)?;

@@ -52,6 +52,7 @@ impl CommandDef {
 }
 
 /// Command registry
+#[derive(Debug, Clone)]
 pub struct CommandRegistry {
     commands: Vec<CommandDef>,
 }

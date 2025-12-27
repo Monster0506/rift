@@ -3,6 +3,8 @@
 use crate::command_line::executor::{CommandExecutor, ExecutionResult};
 use crate::command_line::parser::ParsedCommand;
 use crate::command_line::settings::create_settings_registry;
+use crate::document::settings::create_document_settings_registry;
+use crate::document::Document;
 use crate::state::State;
 
 #[test]
@@ -11,7 +13,15 @@ fn test_execute_quit() {
     let command = ParsedCommand::Quit { bangs: 0 };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Quit { bangs: 0 });
 }
 
@@ -27,7 +37,15 @@ fn test_execute_set_expandtabs_true() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, true);
 }
@@ -44,7 +62,15 @@ fn test_execute_set_expandtabs_false() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
 }
@@ -60,7 +86,15 @@ fn test_execute_set_expandtabs_alias_et() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
 }
@@ -76,7 +110,15 @@ fn test_execute_set_expandtabs_boolean_variants() {
         bangs: 0,
     };
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, true);
 
@@ -87,7 +129,15 @@ fn test_execute_set_expandtabs_boolean_variants() {
         bangs: 0,
     };
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
 
@@ -98,7 +148,15 @@ fn test_execute_set_expandtabs_boolean_variants() {
         bangs: 0,
     };
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, true);
 
@@ -109,7 +167,15 @@ fn test_execute_set_expandtabs_boolean_variants() {
         bangs: 0,
     };
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
 
@@ -120,7 +186,15 @@ fn test_execute_set_expandtabs_boolean_variants() {
         bangs: 0,
     };
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, true);
 
@@ -131,7 +205,15 @@ fn test_execute_set_expandtabs_boolean_variants() {
         bangs: 0,
     };
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
 }
@@ -147,7 +229,15 @@ fn test_execute_set_expandtabs_case_insensitive() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
 }
@@ -164,7 +254,15 @@ fn test_execute_set_tabwidth() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.tab_width, 4);
 }
@@ -180,7 +278,15 @@ fn test_execute_set_tabwidth_alias_tw() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.tab_width, 2);
 }
@@ -198,7 +304,15 @@ fn test_execute_set_tabwidth_various_values() {
         };
 
         let settings_registry = create_settings_registry();
-        let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+        let document_settings_registry = create_document_settings_registry();
+        let mut document = Document::new(1).unwrap();
+        let result = CommandExecutor::execute(
+            command,
+            &mut state,
+            &mut document,
+            &settings_registry,
+            &document_settings_registry,
+        );
         assert_eq!(result, ExecutionResult::Success);
         assert_eq!(state.settings.tab_width, *width);
     }
@@ -216,7 +330,15 @@ fn test_execute_set_tabwidth_zero_error() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Failure);
 
     // Check if error was reported to manager
@@ -245,7 +367,15 @@ fn test_execute_set_tabwidth_invalid_number() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Failure);
 
     let notifications: Vec<_> = state.error_manager.notifications().iter_active().collect();
@@ -272,7 +402,15 @@ fn test_execute_set_expandtabs_invalid_boolean() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Failure);
 
     let notifications: Vec<_> = state.error_manager.notifications().iter_active().collect();
@@ -297,7 +435,15 @@ fn test_execute_set_expandtabs_missing_value() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     match result {
         ExecutionResult::Failure => {
             assert!(state
@@ -324,7 +470,15 @@ fn test_execute_set_unknown_option() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     match result {
         ExecutionResult::Failure => {
             assert!(state
@@ -351,7 +505,15 @@ fn test_execute_unknown_command() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     match result {
         ExecutionResult::Failure => {
             assert!(state
@@ -379,7 +541,15 @@ fn test_execute_ambiguous_command() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     match result {
         ExecutionResult::Failure => {
             assert!(state
@@ -418,7 +588,15 @@ fn test_execute_set_multiple_options() {
         bangs: 0,
     };
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, false);
 
@@ -429,7 +607,15 @@ fn test_execute_set_multiple_options() {
         bangs: 0,
     };
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.tab_width, 4);
 
@@ -440,7 +626,15 @@ fn test_execute_set_multiple_options() {
         bangs: 0,
     };
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.expand_tabs, true);
 
@@ -460,7 +654,15 @@ fn test_execute_set_tabwidth_large_value() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.settings.tab_width, 100);
 }
@@ -478,7 +680,15 @@ fn test_execute_set_tabwidth_negative_error() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     match result {
         ExecutionResult::Failure => {
             assert!(
@@ -518,7 +728,15 @@ fn test_execute_set_expandtabs_empty_string() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     match result {
         ExecutionResult::Failure => {
             assert!(state
@@ -556,7 +774,15 @@ fn test_execute_set_case_insensitive_option_names() {
         };
 
         let settings_registry = create_settings_registry();
-        let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+        let document_settings_registry = create_document_settings_registry();
+        let mut document = Document::new(1).unwrap();
+        let result = CommandExecutor::execute(
+            command,
+            &mut state,
+            &mut document,
+            &settings_registry,
+            &document_settings_registry,
+        );
         assert_eq!(result, ExecutionResult::Success);
     }
 
@@ -577,7 +803,15 @@ fn test_execute_set_tabwidth_float_error() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     match result {
         ExecutionResult::Failure => {
             assert!(
@@ -614,7 +848,15 @@ fn test_execute_write_no_path() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert!(state.file_path.is_none());
 }
@@ -628,7 +870,15 @@ fn test_execute_write_with_path() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.file_path, Some("test.txt".to_string()));
 }
@@ -644,7 +894,15 @@ fn test_execute_write_updates_path() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::Success);
     assert_eq!(state.file_path, Some("new.txt".to_string()));
 }
@@ -658,7 +916,15 @@ fn test_execute_write_quit_no_path() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::WriteAndQuit);
     assert!(state.file_path.is_none());
 }
@@ -672,7 +938,15 @@ fn test_execute_write_quit_with_path() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::WriteAndQuit);
     assert_eq!(state.file_path, Some("test.txt".to_string()));
 }
@@ -688,7 +962,15 @@ fn test_execute_write_quit_updates_path() {
     };
 
     let settings_registry = create_settings_registry();
-    let result = CommandExecutor::execute(command, &mut state, &settings_registry);
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
     assert_eq!(result, ExecutionResult::WriteAndQuit);
     assert_eq!(state.file_path, Some("new.txt".to_string()));
 }

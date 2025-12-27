@@ -248,7 +248,7 @@ fn test_document_from_file_crlf() {
     let doc = Document::from_file(1, &file_path).unwrap();
 
     // In CRLF files, \r should now be normalized (removed)
-    assert_eq!(doc.line_ending, LineEnding::CRLF);
+    assert_eq!(doc.options.line_ending, LineEnding::CRLF);
 
     // Line 0 should be "line1" (no trailing \r)
     let line0 = doc.buffer.get_line_bytes(0);
@@ -267,7 +267,7 @@ fn test_document_save_crlf() {
     let file_path = temp_dir.path().join("crlf_save.txt");
 
     let mut doc = Document::new(1).unwrap();
-    doc.line_ending = LineEnding::CRLF;
+    doc.options.line_ending = LineEnding::CRLF;
     doc.buffer.insert_str("line1\nline2\n").unwrap();
     doc.set_path(&file_path);
 

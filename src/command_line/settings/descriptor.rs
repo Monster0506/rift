@@ -1,8 +1,6 @@
 //! Setting descriptor types
 //! Type definitions for declarative setting configuration
 
-use crate::state::UserSettings;
-
 /// Typed value after parsing and validation
 /// Setters receive this, never raw strings
 #[derive(Debug, Clone, PartialEq)]
@@ -98,7 +96,7 @@ impl From<SettingError> for crate::error::RiftError {
 ///
 /// Function pointers (not trait objects) for static dispatch.
 /// Receives parsed and validated `SettingValue`, never raw strings.
-pub type SettingSetter = fn(&mut UserSettings, SettingValue) -> Result<(), SettingError>;
+pub type SettingSetter<T> = fn(&mut T, SettingValue) -> Result<(), SettingError>;
 
 /// Setting descriptor
 ///
@@ -106,7 +104,7 @@ pub type SettingSetter = fn(&mut UserSettings, SettingValue) -> Result<(), Setti
 /// Name encodes path (e.g., "`command_line_window.width_ratio`" for nested settings).
 /// Setter handles mutation - no separate path information needed.
 #[derive(Debug, Clone)]
-pub struct SettingDescriptor {
+pub struct SettingDescriptor<T> {
     /// Canonical setting name (e.g., "expandtabs" or "`command_line_window.width_ratio`")
     pub name: &'static str,
     /// Short aliases (e.g., &["et"])
@@ -114,5 +112,5 @@ pub struct SettingDescriptor {
     /// Setting type for parsing and validation
     pub ty: SettingType,
     /// Setter function pointer
-    pub set: SettingSetter,
+    pub set: SettingSetter<T>,
 }

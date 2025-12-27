@@ -3,8 +3,10 @@
 
 use crate::command_line::parser::ParsedCommand;
 use crate::command_line::settings::SettingsRegistry;
+use crate::document::{settings::DocumentOptions, Document};
 use crate::error::{ErrorType, RiftError};
 use crate::state::State;
+use crate::state::UserSettings;
 
 /// Result of executing a command
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,7 +37,9 @@ impl CommandExecutor {
     pub fn execute(
         command: ParsedCommand,
         state: &mut State,
-        settings_registry: &SettingsRegistry,
+        document: &mut Document,
+        settings_registry: &SettingsRegistry<UserSettings>,
+        document_settings_registry: &SettingsRegistry<DocumentOptions>,
     ) -> ExecutionResult {
         match command {
             ParsedCommand::Quit { bangs } => ExecutionResult::Quit { bangs },
@@ -43,7 +47,38 @@ impl CommandExecutor {
                 option,
                 value,
                 bangs: _,
-            } => settings_registry.execute_setting(&option, value, state),
+            } => {
+                let mut errors = Vec::new();
+                let mut error_handler = |e: RiftError| errors.push(e);
+                let result = settings_registry.execute_setting(
+                    &option,
+                    value,
+                    &mut state.settings,
+                    &mut error_handler,
+                );
+                for err in errors {
+                    state.handle_error(err);
+                }
+                result
+            }
+            ParsedCommand::SetLocal {
+                option,
+                value,
+                bangs: _,
+            } => {
+                let mut errors = Vec::new();
+                let mut error_handler = |e: RiftError| errors.push(e);
+                let result = document_settings_registry.execute_setting(
+                    &option,
+                    value,
+                    &mut document.options,
+                    &mut error_handler,
+                );
+                for err in errors {
+                    state.handle_error(err);
+                }
+                result
+            }
             ParsedCommand::Write { path, bangs: _ } => {
                 // Set the path in state if provided (for :w filename)
                 if let Some(ref file_path) = path {
@@ -110,3 +145,6 @@ impl CommandExecutor {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod tests_local;

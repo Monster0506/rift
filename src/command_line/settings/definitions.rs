@@ -282,7 +282,7 @@ fn set_show_status_line(
 }
 
 /// Static registry of all settings
-pub const SETTINGS: &[SettingDescriptor] = &[
+pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "expandtabs",
         aliases: &["et"],
@@ -399,6 +399,6 @@ pub const SETTINGS: &[SettingDescriptor] = &[
 
 /// Create the settings registry
 #[must_use]
-pub fn create_settings_registry() -> SettingsRegistry {
+pub fn create_settings_registry() -> SettingsRegistry<UserSettings> {
     SettingsRegistry::new(SETTINGS)
 }

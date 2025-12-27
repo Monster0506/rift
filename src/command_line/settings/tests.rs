@@ -5,6 +5,7 @@ use crate::command_line::settings::descriptor::{
     SettingDescriptor, SettingError, SettingType, SettingValue,
 };
 use crate::command_line::settings::registry::SettingsRegistry;
+use crate::error::RiftError;
 use crate::state::{State, UserSettings};
 
 // Test setters for various types
@@ -70,7 +71,7 @@ fn set_border_style(_settings: &mut UserSettings, value: SettingValue) -> Result
     }
 }
 
-const TEST_SETTINGS: &[SettingDescriptor] = &[
+const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "expandtabs",
         aliases: &["et"],
@@ -105,7 +106,7 @@ const TEST_SETTINGS: &[SettingDescriptor] = &[
     },
 ];
 
-fn create_test_registry() -> SettingsRegistry {
+fn create_test_registry() -> SettingsRegistry<UserSettings> {
     SettingsRegistry::new(TEST_SETTINGS)
 }
 
@@ -140,23 +141,23 @@ fn test_setting_error_display() {
 fn test_parse_boolean_true() {
     let desc = &TEST_SETTINGS[0]; // expandtabs
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "true");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "true");
     assert_eq!(result, Ok(SettingValue::Bool(true)));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "1");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "1");
     assert_eq!(result, Ok(SettingValue::Bool(true)));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "on");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "on");
     assert_eq!(result, Ok(SettingValue::Bool(true)));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "yes");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "yes");
     assert_eq!(result, Ok(SettingValue::Bool(true)));
 
     // Case insensitive
-    let result = SettingsRegistry::parse_value(&desc.ty, "TRUE");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "TRUE");
     assert_eq!(result, Ok(SettingValue::Bool(true)));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "ON");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "ON");
     assert_eq!(result, Ok(SettingValue::Bool(true)));
 }
 
@@ -164,20 +165,20 @@ fn test_parse_boolean_true() {
 fn test_parse_boolean_false() {
     let desc = &TEST_SETTINGS[0]; // expandtabs
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "false");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "false");
     assert_eq!(result, Ok(SettingValue::Bool(false)));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "0");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "0");
     assert_eq!(result, Ok(SettingValue::Bool(false)));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "off");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "off");
     assert_eq!(result, Ok(SettingValue::Bool(false)));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "no");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "no");
     assert_eq!(result, Ok(SettingValue::Bool(false)));
 
     // Case insensitive
-    let result = SettingsRegistry::parse_value(&desc.ty, "FALSE");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "FALSE");
     assert_eq!(result, Ok(SettingValue::Bool(false)));
 }
 
@@ -185,13 +186,13 @@ fn test_parse_boolean_false() {
 fn test_parse_boolean_invalid() {
     let desc = &TEST_SETTINGS[0]; // expandtabs
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "maybe");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "maybe");
     assert!(matches!(result, Err(SettingError::ParseError(_))));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "2");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "2");
     assert!(matches!(result, Err(SettingError::ParseError(_))));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "");
     assert!(matches!(result, Err(SettingError::ParseError(_))));
 }
 
@@ -199,13 +200,13 @@ fn test_parse_boolean_invalid() {
 fn test_parse_integer_valid() {
     let desc = &TEST_SETTINGS[1]; // tabwidth
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "42");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "42");
     assert_eq!(result, Ok(SettingValue::Integer(42)));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "1");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "1");
     assert_eq!(result, Ok(SettingValue::Integer(1)));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "1000");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "1000");
     assert_eq!(result, Ok(SettingValue::Integer(1000)));
 }
 
@@ -214,15 +215,15 @@ fn test_parse_integer_with_bounds() {
     let desc = &TEST_SETTINGS[1]; // tabwidth (min: 1)
 
     // Below minimum
-    let result = SettingsRegistry::parse_value(&desc.ty, "0");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "0");
     assert!(matches!(result, Err(SettingError::ValidationError(_))));
 
     // At minimum
-    let result = SettingsRegistry::parse_value(&desc.ty, "1");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "1");
     assert_eq!(result, Ok(SettingValue::Integer(1)));
 
     // Above minimum
-    let result = SettingsRegistry::parse_value(&desc.ty, "8");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "8");
     assert_eq!(result, Ok(SettingValue::Integer(8)));
 }
 
@@ -230,13 +231,13 @@ fn test_parse_integer_with_bounds() {
 fn test_parse_integer_invalid() {
     let desc = &TEST_SETTINGS[1]; // tabwidth
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "not_a_number");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "not_a_number");
     assert!(matches!(result, Err(SettingError::ParseError(_))));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "3.14");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "3.14");
     assert!(matches!(result, Err(SettingError::ParseError(_))));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "");
     assert!(matches!(result, Err(SettingError::ParseError(_))));
 }
 
@@ -244,16 +245,16 @@ fn test_parse_integer_invalid() {
 fn test_parse_float_valid() {
     let desc = &TEST_SETTINGS[2]; // width_ratio
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "0.5");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "0.5");
     assert_eq!(result, Ok(SettingValue::Float(0.5)));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "0.0");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "0.0");
     assert_eq!(result, Ok(SettingValue::Float(0.0)));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "1.0");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "1.0");
     assert_eq!(result, Ok(SettingValue::Float(1.0)));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "0.75");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "0.75");
     assert_eq!(result, Ok(SettingValue::Float(0.75)));
 }
 
@@ -262,23 +263,23 @@ fn test_parse_float_with_bounds() {
     let desc = &TEST_SETTINGS[2]; // width_ratio (min: 0.0, max: 1.0)
 
     // Below minimum
-    let result = SettingsRegistry::parse_value(&desc.ty, "-0.1");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "-0.1");
     assert!(matches!(result, Err(SettingError::ValidationError(_))));
 
     // At minimum
-    let result = SettingsRegistry::parse_value(&desc.ty, "0.0");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "0.0");
     assert_eq!(result, Ok(SettingValue::Float(0.0)));
 
     // In range
-    let result = SettingsRegistry::parse_value(&desc.ty, "0.6");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "0.6");
     assert_eq!(result, Ok(SettingValue::Float(0.6)));
 
     // At maximum
-    let result = SettingsRegistry::parse_value(&desc.ty, "1.0");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "1.0");
     assert_eq!(result, Ok(SettingValue::Float(1.0)));
 
     // Above maximum
-    let result = SettingsRegistry::parse_value(&desc.ty, "1.1");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "1.1");
     assert!(matches!(result, Err(SettingError::ValidationError(_))));
 }
 
@@ -286,10 +287,10 @@ fn test_parse_float_with_bounds() {
 fn test_parse_float_invalid() {
     let desc = &TEST_SETTINGS[2]; // width_ratio
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "not_a_float");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "not_a_float");
     assert!(matches!(result, Err(SettingError::ParseError(_))));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "");
     assert!(matches!(result, Err(SettingError::ParseError(_))));
 }
 
@@ -297,13 +298,13 @@ fn test_parse_float_invalid() {
 fn test_parse_enum_valid() {
     let desc = &TEST_SETTINGS[3]; // borderstyle
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "unicode");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "unicode");
     assert_eq!(result, Ok(SettingValue::Enum("unicode".to_string())));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "ascii");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "ascii");
     assert_eq!(result, Ok(SettingValue::Enum("ascii".to_string())));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "none");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "none");
     assert_eq!(result, Ok(SettingValue::Enum("none".to_string())));
 }
 
@@ -312,13 +313,13 @@ fn test_parse_enum_case_insensitive() {
     let desc = &TEST_SETTINGS[3]; // borderstyle
 
     // Case insensitive matching, but returns canonical form
-    let result = SettingsRegistry::parse_value(&desc.ty, "UNICODE");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "UNICODE");
     assert_eq!(result, Ok(SettingValue::Enum("unicode".to_string())));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "Unicode");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "Unicode");
     assert_eq!(result, Ok(SettingValue::Enum("unicode".to_string())));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "ASCII");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "ASCII");
     assert_eq!(result, Ok(SettingValue::Enum("ascii".to_string())));
 }
 
@@ -326,13 +327,13 @@ fn test_parse_enum_case_insensitive() {
 fn test_parse_enum_invalid() {
     let desc = &TEST_SETTINGS[3]; // borderstyle
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "invalid");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "invalid");
     assert!(matches!(result, Err(SettingError::ParseError(_))));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "custom");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "custom");
     assert!(matches!(result, Err(SettingError::ParseError(_))));
 
-    let result = SettingsRegistry::parse_value(&desc.ty, "");
+    let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "");
     assert!(matches!(result, Err(SettingError::ParseError(_))));
 }
 
@@ -379,7 +380,14 @@ fn test_execute_setting_boolean() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("expandtabs", Some("false".to_string()), &mut state);
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result = registry.execute_setting(
+        "expandtabs",
+        Some("false".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -387,7 +395,12 @@ fn test_execute_setting_boolean() {
     settings = state.settings.clone();
     assert_eq!(settings.expand_tabs, false);
 
-    let result = registry.execute_setting("expandtabs", Some("true".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "expandtabs",
+        Some("true".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -395,7 +408,12 @@ fn test_execute_setting_boolean() {
     settings = state.settings.clone();
     assert_eq!(settings.expand_tabs, true);
 
-    let result = registry.execute_setting("et", Some("false".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "et",
+        Some("false".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -410,7 +428,14 @@ fn test_execute_setting_integer() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("tabwidth", Some("4".to_string()), &mut state);
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result = registry.execute_setting(
+        "tabwidth",
+        Some("4".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -418,7 +443,12 @@ fn test_execute_setting_integer() {
     settings = state.settings.clone();
     assert_eq!(settings.tab_width, 4);
 
-    let result = registry.execute_setting("tw", Some("8".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "tw",
+        Some("8".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -426,7 +456,12 @@ fn test_execute_setting_integer() {
     settings = state.settings.clone();
     assert_eq!(settings.tab_width, 8);
 
-    let result = registry.execute_setting("tabw", Some("2".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "tabw",
+        Some("2".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -441,10 +476,13 @@ fn test_execute_setting_float() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
     let result = registry.execute_setting(
         "command_line_window.width_ratio",
         Some("0.6".to_string()),
-        &mut state,
+        &mut state.settings,
+        &mut error_handler,
     );
     assert!(matches!(
         result,
@@ -453,7 +491,12 @@ fn test_execute_setting_float() {
     settings = state.settings.clone();
     assert_eq!(settings.command_line_window.width_ratio, 0.6);
 
-    let result = registry.execute_setting("cmdwidth", Some("0.8".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "cmdwidth",
+        Some("0.8".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -468,19 +511,36 @@ fn test_execute_setting_enum() {
     let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("borderstyle", Some("unicode".to_string()), &mut state);
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result = registry.execute_setting(
+        "borderstyle",
+        Some("unicode".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
     ));
 
-    let result = registry.execute_setting("borderstyle", Some("ASCII".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "borderstyle",
+        Some("ASCII".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
     ));
 
-    let result = registry.execute_setting("bs", Some("none".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "bs",
+        Some("none".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -493,7 +553,10 @@ fn test_execute_setting_missing_value() {
     let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("expandtabs", None, &mut state);
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result =
+        registry.execute_setting("expandtabs", None, &mut state.settings, &mut error_handler);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Failure
@@ -506,7 +569,14 @@ fn test_execute_setting_unknown_option() {
     let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("unknown_option", Some("value".to_string()), &mut state);
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result = registry.execute_setting(
+        "unknown_option",
+        Some("value".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Failure
@@ -519,22 +589,40 @@ fn test_execute_setting_invalid_value() {
     let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+
     // Invalid boolean
-    let result = registry.execute_setting("expandtabs", Some("maybe".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "expandtabs",
+        Some("maybe".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Failure
     ));
 
     // Invalid integer
-    let result = registry.execute_setting("tabwidth", Some("not_a_number".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "tabwidth",
+        Some("not_a_number".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Failure
     ));
 
     // Invalid enum
-    let result = registry.execute_setting("borderstyle", Some("invalid".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "borderstyle",
+        Some("invalid".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Failure
@@ -547,8 +635,16 @@ fn test_execute_setting_validation_error() {
     let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+
     // tabwidth below minimum (0)
-    let result = registry.execute_setting("tabwidth", Some("0".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "tabwidth",
+        Some("0".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Failure
@@ -558,7 +654,8 @@ fn test_execute_setting_validation_error() {
     let result = registry.execute_setting(
         "command_line_window.width_ratio",
         Some("1.5".to_string()),
-        &mut state,
+        &mut state.settings,
+        &mut error_handler,
     );
     assert!(matches!(
         result,
@@ -568,7 +665,8 @@ fn test_execute_setting_validation_error() {
     let result = registry.execute_setting(
         "command_line_window.width_ratio",
         Some("-0.1".to_string()),
-        &mut state,
+        &mut state.settings,
+        &mut error_handler,
     );
     assert!(matches!(
         result,
@@ -579,7 +677,7 @@ fn test_execute_setting_validation_error() {
 #[test]
 fn test_execute_setting_ambiguous() {
     // Create registry with ambiguous options
-    const AMBIGUOUS_SETTINGS: &[SettingDescriptor] = &[
+    const AMBIGUOUS_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         SettingDescriptor {
             name: "expandtabs",
             aliases: &[],
@@ -598,15 +696,28 @@ fn test_execute_setting_ambiguous() {
     let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+
     // "expa" is ambiguous
-    let result = registry.execute_setting("expa", Some("true".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "expa",
+        Some("true".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Failure
     ));
 
     // But "expandtabs" is unambiguous
-    let result = registry.execute_setting("expandtabs", Some("true".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "expandtabs",
+        Some("true".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -619,7 +730,14 @@ fn test_execute_setting_theme_light() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("aptheme", Some("light".to_string()), &mut state);
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result = registry.execute_setting(
+        "aptheme",
+        Some("light".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -642,7 +760,14 @@ fn test_execute_setting_theme_dark() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("aptheme", Some("dark".to_string()), &mut state);
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result = registry.execute_setting(
+        "aptheme",
+        Some("dark".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -665,7 +790,14 @@ fn test_execute_setting_theme_gruvbox() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("aptheme", Some("gruvbox".to_string()), &mut state);
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result = registry.execute_setting(
+        "aptheme",
+        Some("gruvbox".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -688,7 +820,14 @@ fn test_execute_setting_theme_nordic() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("aptheme", Some("nordic".to_string()), &mut state);
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result = registry.execute_setting(
+        "aptheme",
+        Some("nordic".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -711,7 +850,14 @@ fn test_execute_setting_theme_nord_alias() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("aptheme", Some("nord".to_string()), &mut state);
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result = registry.execute_setting(
+        "aptheme",
+        Some("nord".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -726,7 +872,14 @@ fn test_execute_setting_theme_case_insensitive() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("aptheme", Some("LIGHT".to_string()), &mut state);
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result = registry.execute_setting(
+        "aptheme",
+        Some("LIGHT".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -734,7 +887,12 @@ fn test_execute_setting_theme_case_insensitive() {
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
 
-    let result = registry.execute_setting("aptheme", Some("Dark".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "aptheme",
+        Some("Dark".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -749,7 +907,14 @@ fn test_execute_setting_theme_unknown() {
     let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("aptheme", Some("unknown_theme".to_string()), &mut state);
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result = registry.execute_setting(
+        "aptheme",
+        Some("unknown_theme".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Failure
@@ -762,8 +927,15 @@ fn test_execute_setting_theme_overwrites_previous() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
     // Apply light theme
-    let result = registry.execute_setting("aptheme", Some("light".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "aptheme",
+        Some("light".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -773,7 +945,12 @@ fn test_execute_setting_theme_overwrites_previous() {
     let light_bg = settings.editor_bg;
 
     // Apply dark theme - should overwrite
-    let result = registry.execute_setting("aptheme", Some("dark".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "aptheme",
+        Some("dark".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -793,8 +970,15 @@ fn test_execute_setting_theme_alias_colorscheme() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
     // Test alias "colorscheme"
-    let result = registry.execute_setting("colorscheme", Some("light".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "colorscheme",
+        Some("light".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -809,8 +993,15 @@ fn test_execute_setting_theme_alias_colors() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
     // Test alias "colors"
-    let result = registry.execute_setting("colors", Some("dark".to_string()), &mut state);
+    let result = registry.execute_setting(
+        "colors",
+        Some("dark".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
