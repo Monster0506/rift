@@ -23,7 +23,7 @@ Implemented:
 - line numbers
 - line indexing improvements to gap buffer
 - component level dirty flags to avoid clearing and repopulating full layers
-
+- add redraw command
 
 
 Todo:
@@ -39,4 +39,3 @@ Todo:
 - make command pattern more like settings design pattern
 - help manual
 - dumb gutter to avoid recalcing unless total lines changes significantly.
-- add redraw command
