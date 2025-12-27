@@ -62,23 +62,10 @@ impl CommandExecutor {
                 result
             }
             ParsedCommand::SetLocal {
-                option,
-                value,
+                option: _,
+                value: _,
                 bangs: _,
-            } => {
-                let mut errors = Vec::new();
-                let mut error_handler = |e: RiftError| errors.push(e);
-                let result = document_settings_registry.execute_setting(
-                    &option,
-                    value,
-                    &mut document.options,
-                    &mut error_handler,
-                );
-                for err in errors {
-                    state.handle_error(err);
-                }
-                result
-            }
+            } => local::execute_local_command(command, state, document, document_settings_registry),
             ParsedCommand::Write { path, bangs: _ } => {
                 // Set the path in state if provided (for :w filename)
                 if let Some(ref file_path) = path {
@@ -142,9 +129,8 @@ impl CommandExecutor {
     }
 }
 
+mod local;
+
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-
-#[cfg(test)]
-mod tests_local;

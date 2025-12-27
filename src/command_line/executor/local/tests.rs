@@ -1,14 +1,8 @@
-#[cfg(test)]
-use crate::command_line::executor::{CommandExecutor, ExecutionResult};
-#[cfg(test)]
+use super::*;
+use crate::command_line::executor::ExecutionResult;
 use crate::command_line::parser::ParsedCommand;
-#[cfg(test)]
-use crate::command_line::settings::create_settings_registry;
-#[cfg(test)]
 use crate::document::settings::create_document_settings_registry;
-#[cfg(test)]
 use crate::document::Document;
-#[cfg(test)]
 use crate::state::State;
 
 #[test]
@@ -22,7 +16,6 @@ fn test_execute_setlocal_line_ending() {
         bangs: 0,
     };
 
-    let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(1).unwrap();
 
@@ -30,11 +23,10 @@ fn test_execute_setlocal_line_ending() {
     use crate::document::LineEnding;
     assert_eq!(document.options.line_ending, LineEnding::LF);
 
-    let result = CommandExecutor::execute(
+    let result = execute_local_command(
         command,
         &mut state,
         &mut document,
-        &settings_registry,
         &document_settings_registry,
     );
 
