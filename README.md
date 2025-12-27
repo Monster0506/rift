@@ -27,11 +27,11 @@ Implemented:
 - crlf and lf support
 - setlocal for document-level settings
 - dumb gutter to avoid recalcing unless total lines changes significantly.
+- Multi-document support
 
 Todo:
 - LSP
 - Syntax highlighting
-- Multi-document support
 - :edit filename to open a new document (:e to reload from disk)
 - undo + redo
 - search + replace
@@ -41,3 +41,19 @@ Todo:
 - make command pattern more like settings design pattern
 - help manual
 - command history
+- mainloop non blocking
+- resize handling
+- buffer next/previous/ls
+- dirty rectangles
+
+Known issues:
+- Ascii only operation
+    - Renderer does not handle multibyte characters
+    - cursor calculation does not account for multibyte characters
+    - fix by using String instead of u8
+    - Use unicode-width instead of assuming everything is a single char
+- Gap Buffer uses a lot of `unsafe`. Write more debug asserts
+- TOCTOU Race Condition between file check and file open
+- buffer move to start implemented poorly
+    - use move_gap_to
+- inefficient string construction wrap_text in render loop
