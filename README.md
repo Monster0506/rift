@@ -39,3 +39,4 @@ Todo:
 - help manual
 - component level dirty flags to avoid clearing and repopulating full layers
 - dumb gutter to avoid recalcing unless total lines changes significantly.
+- add redraw command
