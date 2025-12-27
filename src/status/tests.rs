@@ -11,7 +11,7 @@ use crate::viewport::Viewport;
 fn test_format_mode() {
     assert_eq!(StatusBar::format_mode(Mode::Normal), "NORMAL");
     assert_eq!(StatusBar::format_mode(Mode::Insert), "INSERT");
-    assert_eq!(StatusBar::format_mode(Mode::Command), ":");
+    assert_eq!(StatusBar::format_mode(Mode::Command), "COMMAND");
 }
 
 #[test]
@@ -28,7 +28,7 @@ fn test_status_bar_render_command_mode() {
 
     let written = term.get_written_string();
     // Command mode should show colon prompt
-    assert!(written.contains(":"));
+    assert!(written.contains("COMMAND"));
     // Should not show NORMAL or INSERT
     assert!(!written.contains("NORMAL"));
     assert!(!written.contains("INSERT"));

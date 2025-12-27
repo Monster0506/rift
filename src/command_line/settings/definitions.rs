@@ -346,19 +346,19 @@ pub const SETTINGS: &[SettingDescriptor] = &[
         set: set_cmd_window_reverse_video,
     },
     SettingDescriptor {
-        name: "appearence.background",
+        name: "appearance.background",
         aliases: &["apbg", "bg"],
         ty: SettingType::Color,
         set: set_editor_bg,
     },
     SettingDescriptor {
-        name: "appearence.foreground",
+        name: "appearance.foreground",
         aliases: &["apfg", "fg"],
         ty: SettingType::Color,
         set: set_editor_fg,
     },
     SettingDescriptor {
-        name: "appearence.theme",
+        name: "appearance.theme",
         aliases: &["aptheme", "colorscheme", "colors"],
         ty: SettingType::Enum {
             variants: &["light", "dark", "gruvbox", "nordic", "nord"],

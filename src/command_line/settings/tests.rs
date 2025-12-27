@@ -619,7 +619,7 @@ fn test_execute_setting_theme_light() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("theme", Some("light".to_string()), &mut state);
+    let result = registry.execute_setting("aptheme", Some("light".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -642,7 +642,7 @@ fn test_execute_setting_theme_dark() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("theme", Some("dark".to_string()), &mut state);
+    let result = registry.execute_setting("aptheme", Some("dark".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -665,7 +665,7 @@ fn test_execute_setting_theme_gruvbox() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("theme", Some("gruvbox".to_string()), &mut state);
+    let result = registry.execute_setting("aptheme", Some("gruvbox".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -688,7 +688,7 @@ fn test_execute_setting_theme_nordic() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("theme", Some("nordic".to_string()), &mut state);
+    let result = registry.execute_setting("aptheme", Some("nordic".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -711,7 +711,7 @@ fn test_execute_setting_theme_nord_alias() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("theme", Some("nord".to_string()), &mut state);
+    let result = registry.execute_setting("aptheme", Some("nord".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -726,7 +726,7 @@ fn test_execute_setting_theme_case_insensitive() {
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("theme", Some("LIGHT".to_string()), &mut state);
+    let result = registry.execute_setting("aptheme", Some("LIGHT".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -734,7 +734,7 @@ fn test_execute_setting_theme_case_insensitive() {
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("light".to_string()));
 
-    let result = registry.execute_setting("theme", Some("Dark".to_string()), &mut state);
+    let result = registry.execute_setting("aptheme", Some("Dark".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -749,7 +749,7 @@ fn test_execute_setting_theme_unknown() {
     let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result = registry.execute_setting("theme", Some("unknown_theme".to_string()), &mut state);
+    let result = registry.execute_setting("aptheme", Some("unknown_theme".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Failure
@@ -763,7 +763,7 @@ fn test_execute_setting_theme_overwrites_previous() {
     let mut state = State::with_settings(settings.clone());
 
     // Apply light theme
-    let result = registry.execute_setting("theme", Some("light".to_string()), &mut state);
+    let result = registry.execute_setting("aptheme", Some("light".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -773,7 +773,7 @@ fn test_execute_setting_theme_overwrites_previous() {
     let light_bg = settings.editor_bg;
 
     // Apply dark theme - should overwrite
-    let result = registry.execute_setting("theme", Some("dark".to_string()), &mut state);
+    let result = registry.execute_setting("aptheme", Some("dark".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
