@@ -21,6 +21,8 @@ pub enum ExecutionResult {
     Failure,
     /// Force a full redraw
     Redraw,
+    /// Edit command - editor should open the specified file
+    Edit { path: Option<String>, bangs: usize },
 }
 
 /// Command executor
@@ -125,6 +127,7 @@ impl CommandExecutor {
                 state.notify(notification_kind, message);
                 ExecutionResult::Success
             }
+            ParsedCommand::Edit { path, bangs } => ExecutionResult::Edit { path, bangs },
         }
     }
 }

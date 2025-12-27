@@ -180,6 +180,9 @@ pub fn execute_command(
         Command::Quit => {
             // Quit handled by editor
         }
+        Command::BufferNext | Command::BufferPrevious => {
+            // Buffer navigation handled by editor
+        }
         Command::Noop => {}
     }
     Ok(())

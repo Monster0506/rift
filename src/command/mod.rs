@@ -42,6 +42,10 @@ pub enum Command {
     DeleteFromCommandLine,
     ExecuteCommandLine,
 
+    // Buffer/Tab management
+    BufferNext,
+    BufferPrevious,
+
     // Control
     Quit,
     Noop,

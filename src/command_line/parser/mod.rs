@@ -52,6 +52,11 @@ pub enum ParsedCommand {
     Redraw {
         bangs: usize,
     },
+    /// Edit command (open file)
+    Edit {
+        path: Option<String>,
+        bangs: usize,
+    },
 }
 
 /// Command parser
@@ -142,6 +147,7 @@ impl CommandParser {
             "wq" => self.parse_write_quit_command(args, bangs),
             "notify" => self.parse_notify_command(args, bangs),
             "redraw" => self.parse_redraw_command(args, bangs),
+            "edit" => self.parse_edit_command(args, bangs),
             _ => ParsedCommand::Unknown {
                 name: command_name.to_string(),
             },
@@ -407,6 +413,24 @@ impl CommandParser {
         }
 
         ParsedCommand::Redraw { bangs }
+    }
+
+    /// Parse :edit command arguments
+    ///
+    /// Supports:
+    /// - `:e` (reload current file or open empty)
+    /// - `:e filename` (open file)
+    fn parse_edit_command(&self, args: &[&str], bangs: usize) -> ParsedCommand {
+        match args.len() {
+            0 => ParsedCommand::Edit { path: None, bangs },
+            1 => ParsedCommand::Edit {
+                path: Some(args[0].to_string()),
+                bangs,
+            },
+            _ => ParsedCommand::Unknown {
+                name: "edit (too many arguments)".to_string(),
+            },
+        }
     }
 }
 

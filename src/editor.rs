@@ -6,7 +6,7 @@ use crate::command_line::executor::{CommandExecutor, ExecutionResult};
 use crate::command_line::parser::CommandParser;
 use crate::command_line::registry::{CommandDef, CommandRegistry};
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
-use crate::document::Document;
+use crate::document::{Document, DocumentId};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::executor::execute_command;
 use crate::key_handler::{KeyAction, KeyHandler};
@@ -17,6 +17,7 @@ use crate::screen_buffer::FrameStats;
 use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
+use std::collections::HashMap;
 
 /// Main editor struct
 pub struct Editor<T: TerminalBackend> {
@@ -24,7 +25,10 @@ pub struct Editor<T: TerminalBackend> {
     pub term: T,
     /// Render cache for selective redrawing
     pub render_cache: crate::render::RenderCache,
-    document: Document,
+    documents: HashMap<DocumentId, Document>,
+    tab_order: Vec<DocumentId>,
+    current_tab: usize,
+    next_document_id: DocumentId,
     compositor: LayerCompositor,
     viewport: Viewport,
     dispatcher: Dispatcher,
@@ -57,8 +61,9 @@ impl<T: TerminalBackend> Editor<T> {
         let size = terminal.get_size()?;
 
         // Create document (either from file or empty)
+        let next_id = 1;
         let document = if let Some(ref path) = file_path {
-            Document::from_file(1, path).map_err(|e| {
+            Document::from_file(next_id, path).map_err(|e| {
                 RiftError::new(
                     ErrorType::Io,
                     "LOAD_FAILED",
@@ -66,7 +71,7 @@ impl<T: TerminalBackend> Editor<T> {
                 )
             })?
         } else {
-            Document::new(1)
+            Document::new(next_id)
                 .map_err(|e| RiftError::new(ErrorType::Internal, "INTERNAL_ERROR", e.to_string()))?
         };
 
@@ -84,7 +89,8 @@ impl<T: TerminalBackend> Editor<T> {
             .register(CommandDef::new("write").with_alias("w"))
             .register(CommandDef::new("wq"))
             .register(CommandDef::new("notify"))
-            .register(CommandDef::new("redraw"));
+            .register(CommandDef::new("redraw"))
+            .register(CommandDef::new("edit").with_alias("e"));
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(registry.clone(), settings_registry.clone());
 
@@ -100,10 +106,17 @@ impl<T: TerminalBackend> Editor<T> {
         use crate::document::definitions::create_document_settings_registry;
         let document_settings_registry = create_document_settings_registry();
 
+        let mut documents = HashMap::new();
+        documents.insert(document.id, document);
+        let tab_order = vec![next_id];
+
         Ok(Editor {
             term: terminal,
             render_cache: crate::render::RenderCache::default(),
-            document,
+            documents,
+            tab_order,
+            current_tab: 0,
+            next_document_id: next_id + 1,
             compositor,
             viewport,
             dispatcher,
@@ -114,6 +127,202 @@ impl<T: TerminalBackend> Editor<T> {
             settings_registry,
             document_settings_registry,
         })
+    }
+
+    /// Get the ID of the active document
+    pub fn active_document_id(&self) -> DocumentId {
+        self.tab_order[self.current_tab]
+    }
+
+    /// Get mutable reference to the active document
+    pub fn active_document(&mut self) -> &mut Document {
+        let id = self.active_document_id();
+        self.documents
+            .get_mut(&id)
+            .expect("Active document missing from storage")
+    }
+
+    /// Sync editor state with the active document
+    fn sync_state_with_active_document(&mut self) {
+        let (display_name, file_path, is_dirty, line_ending) = {
+            let doc = self.active_document();
+            (
+                doc.display_name().to_string(),
+                doc.path().map(|p| p.to_string_lossy().to_string()),
+                doc.is_dirty(),
+                doc.options.line_ending,
+            )
+        };
+
+        self.state.update_filename(display_name);
+        self.state.set_file_path(file_path);
+        self.state.update_dirty(is_dirty);
+
+        let total_lines = self.active_document().buffer.get_total_lines();
+        let buffer_size = self.active_document().buffer.get_before_gap().len()
+            + self.active_document().buffer.get_after_gap().len();
+        self.state
+            .update_buffer_stats(total_lines, buffer_size, line_ending);
+    }
+
+    /// Force a full redraw of the editor
+    fn force_full_redraw(&mut self) -> Result<(), RiftError> {
+        let Editor {
+            term,
+            compositor,
+            render_cache,
+            documents,
+            tab_order,
+            current_tab,
+            viewport,
+            state,
+            current_mode,
+            dispatcher,
+            ..
+        } = self;
+
+        let doc_id = tab_order[*current_tab];
+        let ctx = render::RenderContext {
+            buf: &documents.get(&doc_id).unwrap().buffer,
+            viewport,
+            state,
+            current_mode: *current_mode,
+            pending_key: dispatcher.pending_key(),
+            needs_clear: true,
+        };
+
+        render::full_redraw(term, compositor, ctx, render_cache)
+            .map_err(|e| RiftError::new(ErrorType::Io, "REDRAW_FAILED", e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Remove a document by ID with strict tab semantics
+    pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
+        // 1. Check if document exists
+        if !self.documents.contains_key(&id) {
+            return Ok(());
+        }
+
+        // 2. Check dirty state
+        if self.documents.get(&id).unwrap().is_dirty() {
+            return Err(RiftError::warning(
+                ErrorType::Execution,
+                "UNSAVED_CHANGES",
+                "No write since last change",
+            ));
+        }
+
+        // 3. Find position in tab_order
+        let pos = self
+            .tab_order
+            .iter()
+            .position(|&x| x == id)
+            .expect("Document in storage but not in tab_order");
+
+        // 4. Update current_tab if necessary
+        if self.tab_order.len() == 1 {
+            // Closing last tab: auto-create new empty doc
+            let new_id = self.next_document_id;
+            self.next_document_id += 1;
+            let new_doc = Document::new(new_id).map_err(|e| {
+                RiftError::new(ErrorType::Internal, "INTERNAL_ERROR", e.to_string())
+            })?;
+            self.documents.insert(new_id, new_doc);
+            self.tab_order.push(new_id);
+
+            // Now remove the old one (it will be at pos 0)
+            self.tab_order.remove(pos);
+            self.documents.remove(&id);
+            self.current_tab = 0;
+        } else {
+            // General case
+            self.tab_order.remove(pos);
+            self.documents.remove(&id);
+
+            // Shift current_tab if we closed the active one OR if it's now out of bounds
+            if pos <= self.current_tab && self.current_tab > 0 {
+                self.current_tab -= 1;
+            }
+
+            // Boundary check
+            if self.current_tab >= self.tab_order.len() {
+                self.current_tab = self.tab_order.len() - 1;
+            }
+        }
+
+        self.sync_state_with_active_document();
+        Ok(())
+    }
+
+    /// Open a file in a new document or reload the current one
+    ///
+    /// If file_path is Some, it opens that file (or creates a new document for it if not found).
+    /// If file_path is None, it reloads the current active document.
+    pub fn open_file(&mut self, file_path: Option<String>, force: bool) -> Result<(), RiftError> {
+        if let Some(path_str) = file_path {
+            // Check if already open
+            let path_buf = std::path::PathBuf::from(&path_str);
+            let absolute_path = std::fs::canonicalize(&path_buf).unwrap_or(path_buf.clone());
+
+            for (idx, &id) in self.tab_order.iter().enumerate() {
+                if let Some(doc) = self.documents.get(&id) {
+                    if let Some(doc_path) = doc.path() {
+                        let doc_abs =
+                            std::fs::canonicalize(doc_path).unwrap_or(doc_path.to_path_buf());
+                        if doc_abs == absolute_path {
+                            self.current_tab = idx;
+                            self.sync_state_with_active_document();
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+
+            // Not open, load it
+            let document = if std::path::Path::new(&path_str).exists() {
+                Self::validate_file(&path_str)?;
+                Document::from_file(self.next_document_id, &path_str)?
+            } else {
+                let mut doc = Document::new(self.next_document_id)?;
+                doc.set_path(&path_str);
+                doc
+            };
+
+            let id = document.id;
+            self.next_document_id += 1;
+            self.documents.insert(id, document);
+            self.tab_order.push(id);
+            self.current_tab = self.tab_order.len() - 1;
+            self.sync_state_with_active_document();
+        } else {
+            // Reload current file
+            let (is_dirty, has_path) = {
+                let doc = self.active_document();
+                (doc.is_dirty(), doc.has_path())
+            };
+
+            if !force && is_dirty {
+                return Err(RiftError {
+                    severity: ErrorSeverity::Warning,
+                    kind: ErrorType::Execution,
+                    code: "UNSAVED_CHANGES".to_string(),
+                    message: "No write since last change (add ! to override)".to_string(),
+                });
+            }
+
+            if has_path {
+                self.active_document().reload_from_disk()?;
+                self.sync_state_with_active_document();
+            } else {
+                return Err(RiftError::new(
+                    ErrorType::Execution,
+                    "NO_PATH",
+                    "No file name",
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Validate that a file exists and is a valid file (not a directory)
@@ -160,7 +369,8 @@ impl<T: TerminalBackend> Editor<T> {
             let key_press = self.term.read_key()?;
 
             // Process keypress through key handler
-            let action = KeyHandler::process_key(key_press, self.current_mode);
+            let current_mode = self.current_mode;
+            let action = KeyHandler::process_key(key_press, current_mode);
 
             // Translate key to command (skip if action indicates special handling)
             let cmd = match action {
@@ -176,7 +386,7 @@ impl<T: TerminalBackend> Editor<T> {
             // ============================================================
 
             // Execute command if it affects the buffer (and not in command mode)
-            let should_execute_buffer = self.current_mode != Mode::Command
+            let should_execute_buffer = current_mode != Mode::Command
                 && !matches!(
                     cmd,
                     Command::EnterInsertMode
@@ -186,20 +396,24 @@ impl<T: TerminalBackend> Editor<T> {
                         | Command::ExecuteCommandLine
                         | Command::Quit
                         | Command::Noop
+                        | Command::BufferNext
+                        | Command::BufferPrevious
                 );
 
             if should_execute_buffer {
-                if let Err(e) = execute_command(
-                    cmd,
-                    &mut self.document.buffer,
-                    self.state.settings.expand_tabs,
-                    self.state.settings.tab_width,
-                ) {
+                let expand_tabs = self.state.settings.expand_tabs;
+                let tab_width = self.state.settings.tab_width;
+                let doc_id = self.tab_order[self.current_tab];
+                let res = {
+                    let doc = self.documents.get_mut(&doc_id).unwrap();
+                    execute_command(cmd, &mut doc.buffer, expand_tabs, tab_width)
+                };
+                if let Err(e) = res {
                     self.state.handle_error(e);
                 }
                 if cmd.is_mutating() {
                     // Mark document dirty after a mutating command
-                    self.document.mark_dirty();
+                    self.documents.get_mut(&doc_id).unwrap().mark_dirty();
                 }
             }
 
@@ -250,7 +464,8 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Insert);
             }
             Command::EnterInsertModeAfter => {
-                self.document.buffer.move_right();
+                let doc_id = self.tab_order[self.current_tab];
+                self.documents.get_mut(&doc_id).unwrap().buffer.move_right();
                 self.set_mode(Mode::Insert);
             }
             Command::EnterCommandMode => {
@@ -260,10 +475,13 @@ impl<T: TerminalBackend> Editor<T> {
                 // Parse and execute the command
                 let command_line = self.state.command_line.clone();
                 let parsed_command = self.command_parser.parse(&command_line);
+                let doc_id = self.tab_order[self.current_tab];
                 let execution_result = CommandExecutor::execute(
-                    parsed_command,
+                    parsed_command.clone(),
                     &mut self.state,
-                    &mut self.document,
+                    self.documents
+                        .get_mut(&doc_id)
+                        .expect("active document missing"),
                     &self.settings_registry,
                     &self.document_settings_registry,
                 );
@@ -271,7 +489,7 @@ impl<T: TerminalBackend> Editor<T> {
                 // Handle execution result
                 match execution_result {
                     ExecutionResult::Quit { bangs } => {
-                        if self.document.is_dirty() && bangs == 0 {
+                        if self.active_document().is_dirty() && bangs == 0 {
                             self.state.handle_error(RiftError {
                                 severity: ErrorSeverity::Warning,
                                 kind: ErrorType::Execution,
@@ -287,7 +505,7 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                     ExecutionResult::Success => {
                         // Handle write command - save if file path exists
-                        if self.state.file_path.is_some() && self.document.is_dirty() {
+                        if self.state.file_path.is_some() && self.active_document().is_dirty() {
                             if let Err(e) = self.save_document() {
                                 self.state.handle_error(e);
                                 return Ok(()); // Don't clear command line on error
@@ -328,20 +546,22 @@ impl<T: TerminalBackend> Editor<T> {
                         self.state.clear_command_line();
                         self.set_mode(Mode::Normal);
 
-                        let ctx = render::RenderContext {
-                            buf: &self.document.buffer,
-                            viewport: &self.viewport,
-                            state: &self.state,
-                            current_mode: self.current_mode,
-                            pending_key: self.dispatcher.pending_key(),
-                            needs_clear: true,
-                        };
-
-                        let compositor = &mut self.compositor;
-                        let term = &mut self.term;
-                        let render_cache = &mut self.render_cache;
-
-                        let _ = render::full_redraw(term, compositor, ctx, render_cache)?;
+                        if let Err(e) = self.force_full_redraw() {
+                            self.state.handle_error(e);
+                        }
+                    }
+                    ExecutionResult::Edit { path, bangs } => {
+                        let force = bangs > 0;
+                        if let Err(e) = self.open_file(path, force) {
+                            self.state.handle_error(e);
+                        } else {
+                            self.state.clear_command_line();
+                            self.set_mode(Mode::Normal);
+                            // Force redraw after opening a file
+                            if let Err(e) = self.force_full_redraw() {
+                                self.state.handle_error(e);
+                            }
+                        }
                     }
                 }
             }
@@ -381,23 +601,27 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.update_command(command);
 
         // Update buffer and cursor state
-        let cursor_line = self.document.buffer.get_line();
+        let doc_id = self.tab_order[self.current_tab];
+        let cursor_line = self.documents.get(&doc_id).unwrap().buffer.get_line();
+        let tab_width = self.state.settings.tab_width;
         let cursor_col = render::calculate_cursor_column(
-            &self.document.buffer,
+            &self.documents.get(&doc_id).unwrap().buffer,
             cursor_line,
-            self.state.settings.tab_width,
+            tab_width,
         );
         self.state.update_cursor(cursor_line, cursor_col);
 
-        let total_lines = self.document.buffer.get_total_lines();
-        let buffer_size = self.document.buffer.get_before_gap().len()
-            + self.document.buffer.get_after_gap().len();
-        self.state
-            .update_buffer_stats(total_lines, buffer_size, self.document.options.line_ending);
-        self.state.update_dirty(self.document.is_dirty());
+        self.sync_state_with_active_document();
         self.state.error_manager.notifications_mut().prune_expired();
 
         // Update viewport based on cursor position (state mutation happens here)
+        let doc_id = self.tab_order[self.current_tab];
+        let total_lines = self
+            .documents
+            .get(&doc_id)
+            .unwrap()
+            .buffer
+            .get_total_lines();
         let gutter_width = if self.state.settings.show_line_numbers {
             self.state.gutter_width
         } else {
@@ -414,22 +638,22 @@ impl<T: TerminalBackend> Editor<T> {
     /// Update state and render the editor (for initial render)
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
         // Update buffer and cursor state only (no input tracking on initial render)
-        let cursor_line = self.document.buffer.get_line();
-        let cursor_col = render::calculate_cursor_column(
-            &self.document.buffer,
-            cursor_line,
-            self.state.settings.tab_width,
-        );
+        let tab_width = self.state.settings.tab_width;
+        let cursor_line = self.active_document().buffer.get_line();
+        let cursor_col =
+            render::calculate_cursor_column(&self.active_document().buffer, cursor_line, tab_width);
         self.state.update_cursor(cursor_line, cursor_col);
 
-        let total_lines = self.document.buffer.get_total_lines();
-        let buffer_size = self.document.buffer.get_before_gap().len()
-            + self.document.buffer.get_after_gap().len();
-        self.state
-            .update_buffer_stats(total_lines, buffer_size, self.document.options.line_ending);
-        self.state.update_dirty(self.document.is_dirty());
+        self.sync_state_with_active_document();
 
         // Update viewport based on cursor position (state mutation happens here)
+        let doc_id = self.tab_order[self.current_tab];
+        let total_lines = self
+            .documents
+            .get(&doc_id)
+            .unwrap()
+            .buffer
+            .get_total_lines();
         let gutter_width = if self.state.settings.show_line_numbers {
             self.state.gutter_width
         } else {
@@ -457,18 +681,31 @@ impl<T: TerminalBackend> Editor<T> {
     /// Render the editor interface (pure read - no mutations)
     /// Uses the layer compositor for composited rendering
     fn render(&mut self, needs_clear: bool) -> Result<(), RiftError> {
+        let Editor {
+            documents,
+            tab_order,
+            current_tab,
+            viewport,
+            state,
+            current_mode,
+            dispatcher,
+            compositor,
+            term,
+            render_cache,
+            ..
+        } = self;
+
+        let doc_id = tab_order[*current_tab];
+        let buf = &documents.get(&doc_id).unwrap().buffer;
+
         let ctx = render::RenderContext {
-            buf: &self.document.buffer,
-            viewport: &self.viewport,
-            state: &self.state,
-            current_mode: self.current_mode,
-            pending_key: self.dispatcher.pending_key(),
+            buf,
+            viewport,
+            state,
+            current_mode: *current_mode,
+            pending_key: dispatcher.pending_key(),
             needs_clear,
         };
-
-        let compositor = &mut self.compositor;
-        let term = &mut self.term;
-        let render_cache = &mut self.render_cache;
 
         let _ = render::render(term, compositor, ctx, render_cache)?;
         Ok(())
@@ -490,32 +727,39 @@ impl<T: TerminalBackend> Editor<T> {
         let file_path = self
             .state
             .file_path
-            .as_ref()
+            .clone()
             .ok_or_else(|| RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))?;
 
         // Update document path if it changed in state
-        if self.document.path() != Some(std::path::Path::new(file_path)) {
-            self.document.set_path(PathBuf::from(file_path));
+        {
+            let doc = self.active_document();
+            if doc.path() != Some(std::path::Path::new(&file_path)) {
+                doc.set_path(PathBuf::from(&file_path));
+            }
         }
 
         // Save document
-        if self.document.has_path() {
-            self.document.save().map_err(|e| {
-                RiftError::new(
-                    ErrorType::Io,
-                    "SAVE_FAILED",
-                    format!("Failed to write {file_path}: {e}"),
-                )
-            })?;
+        let res = {
+            let doc = self.active_document();
+            if doc.has_path() {
+                doc.save().map_err(|e| {
+                    RiftError::new(
+                        ErrorType::Io,
+                        "SAVE_FAILED",
+                        format!("Failed to write {file_path}: {e}"),
+                    )
+                })
+            } else {
+                Err(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))
+            }
+        };
 
+        if res.is_ok() {
             // Update cached filename after save (handles save_as case)
-            self.state
-                .update_filename(self.document.display_name().to_string());
-        } else {
-            return Err(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"));
+            let display_name = self.active_document().display_name().to_string();
+            self.state.update_filename(display_name);
         }
-
-        Ok(())
+        res
     }
 
     pub fn term_mut(&mut self) -> &mut T {
@@ -526,5 +770,70 @@ impl<T: TerminalBackend> Editor<T> {
 impl<T: TerminalBackend> Drop for Editor<T> {
     fn drop(&mut self) {
         self.term.deinit();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::MockTerminal;
+
+    fn create_editor() -> Editor<MockTerminal> {
+        let term = MockTerminal::new(24, 80);
+        Editor::new(term).unwrap()
+    }
+
+    #[test]
+    fn test_editor_initial_state() {
+        let editor = create_editor();
+        assert_eq!(editor.documents.len(), 1);
+        assert_eq!(editor.tab_order.len(), 1);
+        assert_eq!(editor.current_tab, 0);
+    }
+
+    #[test]
+    fn test_editor_remove_last_tab() {
+        let mut editor = create_editor();
+        let doc_id = editor.tab_order[0];
+
+        // Removing the only tab should create a new empty one
+        let result = editor.remove_document(doc_id);
+        assert!(result.is_ok());
+        assert_eq!(editor.documents.len(), 1);
+        assert_eq!(editor.tab_order.len(), 1);
+        assert_ne!(editor.tab_order[0], doc_id, "Should have a new doc ID");
+    }
+
+    #[test]
+    fn test_editor_remove_dirty_tab() {
+        let mut editor = create_editor();
+        editor.active_document().mark_dirty();
+        let doc_id = editor.tab_order[0];
+
+        // Removing a dirty tab should return a warning
+        let result = editor.remove_document(doc_id);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.severity, ErrorSeverity::Warning);
+    }
+
+    #[test]
+    fn test_editor_open_file() {
+        let mut editor = create_editor();
+        // Open a new "file" (doesn't exist on disk, should create empty buffer)
+        editor
+            .open_file(Some("new_file.txt".to_string()), false)
+            .unwrap();
+
+        assert_eq!(editor.tab_order.len(), 2);
+        assert_eq!(editor.current_tab, 1);
+        assert_eq!(editor.active_document().display_name(), "new_file.txt");
+
+        // Open same file again, should just switch
+        editor
+            .open_file(Some("new_file.txt".to_string()), false)
+            .unwrap();
+        assert_eq!(editor.tab_order.len(), 2);
+        assert_eq!(editor.current_tab, 1);
     }
 }
