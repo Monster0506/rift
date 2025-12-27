@@ -73,6 +73,7 @@ pub fn render<T: TerminalBackend>(
         ctx.viewport,
         ctx.state.settings.editor_bg,
         ctx.state.settings.editor_fg,
+        &ctx,
     );
 
     // 2. Always render status bar to STATUS_BAR layer (visible in all modes)
@@ -135,9 +136,19 @@ pub fn render<T: TerminalBackend>(
             0
         };
 
+        // Calculate gutter width
+        let gutter_width = if ctx.state.settings.show_line_numbers {
+            ctx.state.total_lines.to_string().len() + 1
+        } else {
+            0
+        };
+
         let cursor_col =
             calculate_cursor_column(ctx.buf, cursor_line, ctx.state.settings.tab_width);
-        let display_col = cursor_col.min(ctx.viewport.visible_cols().saturating_sub(1));
+
+        // Add gutter width to cursor column
+        let display_col =
+            (cursor_col + gutter_width).min(ctx.viewport.visible_cols().saturating_sub(1));
 
         CursorPosition::Absolute(cursor_line_in_viewport as u16, display_col as u16)
     };
@@ -171,6 +182,7 @@ fn render_content_to_layer(
     viewport: &Viewport,
     editor_bg: Option<Color>,
     editor_fg: Option<Color>,
+    ctx: &RenderContext,
 ) {
     let before_gap = buf.get_before_gap();
     let after_gap = buf.get_after_gap();
@@ -204,6 +216,16 @@ fn render_content_to_layer(
         lines.push(current_line);
     }
 
+    // Calculate gutter width if line numbers are enabled
+    let gutter_width = if ctx.state.settings.show_line_numbers {
+        // Calculate digits needed for total lines
+        let digits = ctx.state.total_lines.to_string().len();
+        // Add 1 for padding
+        digits + 1
+    } else {
+        0
+    };
+
     // Render visible lines
     let top_line = viewport.top_line();
     let visible_rows = viewport.visible_rows().saturating_sub(1); // Reserve one row for status bar
@@ -211,19 +233,52 @@ fn render_content_to_layer(
 
     for i in 0..visible_rows {
         let line_num = top_line + i;
+
+        // Draw line numbers
+        if gutter_width > 0 {
+            if line_num < ctx.state.total_lines {
+                // Show number for valid lines
+                let line_str = format!("{:width$}", line_num + 1, width = gutter_width - 1);
+                // Draw line number
+                for (col, ch) in line_str.chars().enumerate() {
+                    layer.set_cell(
+                        i,
+                        col,
+                        Cell::new(ch as u8).with_colors(editor_fg, editor_bg),
+                    );
+                }
+                // Draw separator
+                layer.set_cell(
+                    i,
+                    gutter_width - 1,
+                    Cell::new(b' ').with_colors(editor_fg, editor_bg),
+                );
+            } else {
+                // Empty gutter for non-existent lines
+                for col in 0..gutter_width {
+                    layer.set_cell(i, col, Cell::new(b' ').with_colors(editor_fg, editor_bg));
+                }
+            }
+        }
+
         if line_num < lines.len() {
             let line = &lines[line_num];
             // Write line content
-            for (col, &byte) in line.iter().take(visible_cols).enumerate() {
-                layer.set_cell(i, col, Cell::new(byte).with_colors(editor_fg, editor_bg));
+            let content_cols = visible_cols.saturating_sub(gutter_width);
+            for (col, &byte) in line.iter().take(content_cols).enumerate() {
+                layer.set_cell(
+                    i,
+                    col + gutter_width,
+                    Cell::new(byte).with_colors(editor_fg, editor_bg),
+                );
             }
             // Pad with spaces
-            for col in line.len().min(visible_cols)..visible_cols {
+            for col in (line.len().min(content_cols) + gutter_width)..visible_cols {
                 layer.set_cell(i, col, Cell::new(b' ').with_colors(editor_fg, editor_bg));
             }
         } else {
             // Empty line - fill with spaces
-            for col in 0..visible_cols {
+            for col in gutter_width..visible_cols {
                 layer.set_cell(i, col, Cell::new(b' ').with_colors(editor_fg, editor_bg));
             }
         }

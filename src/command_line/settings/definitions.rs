@@ -236,6 +236,21 @@ fn set_show_dirty_indicator(
     }
 }
 
+fn set_show_line_numbers(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Bool(b) => {
+            settings.show_line_numbers = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
+    }
+}
+
 fn set_status_line_reverse_video(
     settings: &mut UserSettings,
     value: SettingValue,
@@ -373,6 +388,12 @@ pub const SETTINGS: &[SettingDescriptor] = &[
         aliases: &["sld"],
         ty: SettingType::Boolean,
         set: set_show_dirty_indicator,
+    },
+    SettingDescriptor {
+        name: "number",
+        aliases: &["nu"],
+        ty: SettingType::Boolean,
+        set: set_show_line_numbers,
     },
 ];
 

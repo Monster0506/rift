@@ -536,3 +536,141 @@ fn test_compositor_floating_window_layer() {
     assert_eq!(floating_layer.rows(), 10);
     assert_eq!(floating_layer.cols(), 80);
 }
+
+// ============================================================================
+// Line number rendering tests
+// ============================================================================
+
+#[test]
+fn test_render_line_numbers_enabled() {
+    let mut term = MockTerminal::new(10, 80);
+    let mut buf = GapBuffer::new(100).unwrap();
+    buf.insert_str("line1\nline2").unwrap();
+    let viewport = Viewport::new(10, 80);
+    let mut state = State::new();
+    state.settings.show_line_numbers = true;
+    state.update_buffer_stats(2, 11);
+
+    let mut compositor = LayerCompositor::new(10, 80);
+
+    render(
+        &mut term,
+        &mut compositor,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear: true,
+        },
+    )
+    .unwrap();
+
+    let content_layer = compositor.get_layer_mut(LayerPriority::CONTENT);
+    // Gutter width for 2 lines should be 1 (digit) + 1 (padding) = 2
+    // Line 1: "1 "
+    assert_eq!(content_layer.get_cell(0, 0).unwrap().content, vec![b'1']);
+    assert_eq!(content_layer.get_cell(0, 1).unwrap().content, vec![b' ']);
+    assert_eq!(content_layer.get_cell(0, 2).unwrap().content, vec![b'l']); // Content starts here
+}
+
+#[test]
+fn test_render_line_numbers_disabled() {
+    let mut term = MockTerminal::new(10, 80);
+    let mut buf = GapBuffer::new(100).unwrap();
+    buf.insert_str("line1").unwrap();
+    let viewport = Viewport::new(10, 80);
+    let mut state = State::new();
+    state.settings.show_line_numbers = false;
+    state.update_buffer_stats(1, 5);
+
+    let mut compositor = LayerCompositor::new(10, 80);
+
+    render(
+        &mut term,
+        &mut compositor,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear: true,
+        },
+    )
+    .unwrap();
+
+    let content_layer = compositor.get_layer_mut(LayerPriority::CONTENT);
+    // Should start immediately with content
+    assert_eq!(content_layer.get_cell(0, 0).unwrap().content, vec![b'l']);
+}
+
+#[test]
+fn test_render_line_numbers_gutter_width() {
+    let mut term = MockTerminal::new(10, 80);
+    let buf = GapBuffer::new(100).unwrap();
+    let viewport = Viewport::new(10, 80);
+    let mut state = State::new();
+    state.settings.show_line_numbers = true;
+    state.update_buffer_stats(100, 0); // 100 lines -> 3 digits
+
+    let mut compositor = LayerCompositor::new(10, 80);
+
+    render(
+        &mut term,
+        &mut compositor,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear: true,
+        },
+    )
+    .unwrap();
+
+    let content_layer = compositor.get_layer_mut(LayerPriority::CONTENT);
+    // Gutter width: 3 digits + 1 padding = 4
+    // Line 1: "  1 "
+    assert_eq!(content_layer.get_cell(0, 0).unwrap().content, vec![b' ']);
+    assert_eq!(content_layer.get_cell(0, 1).unwrap().content, vec![b' ']);
+    assert_eq!(content_layer.get_cell(0, 2).unwrap().content, vec![b'1']);
+    assert_eq!(content_layer.get_cell(0, 3).unwrap().content, vec![b' ']);
+}
+
+#[test]
+fn test_render_cursor_position_with_line_numbers() {
+    let mut term = MockTerminal::new(10, 80);
+    let mut buf = GapBuffer::new(100).unwrap();
+    buf.insert_str("test").unwrap();
+    buf.move_to_start();
+    let viewport = Viewport::new(10, 80);
+    let mut state = State::new();
+    state.settings.show_line_numbers = true;
+    state.update_buffer_stats(10, 4); // 2 digits -> gutter 3
+
+    let mut compositor = LayerCompositor::new(10, 80);
+
+    let cursor_info = render(
+        &mut term,
+        &mut compositor,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear: true,
+        },
+    )
+    .unwrap();
+
+    // Cursor at (0, 0) in buffer.
+    // Gutter width: 2 digits + 1 = 3.
+    // Visual cursor col should be 0 + 3 = 3.
+    let crate::render::CursorPosition::Absolute(row, col) = cursor_info;
+    assert_eq!(row, 0);
+    assert_eq!(col, 3);
+}

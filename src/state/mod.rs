@@ -76,6 +76,8 @@ impl Default for StatusLineSettings {
 pub struct UserSettings {
     /// Whether to expand tabs to spaces when inserting
     pub expand_tabs: bool,
+    /// Whether to show line numbers
+    pub show_line_numbers: bool,
     /// Tab width in spaces (for display and expansion)
     pub tab_width: usize,
     /// Default border characters for floating windows
@@ -98,6 +100,7 @@ impl UserSettings {
     pub fn new() -> Self {
         UserSettings {
             expand_tabs: true,          // Default to expanding tabs to spaces
+            show_line_numbers: true,    // Default to showing line numbers
             tab_width: 4,               // Default tab width
             default_border_chars: None, // None means use FloatingWindow defaults
             command_line_window: CommandLineWindowSettings::default(),
