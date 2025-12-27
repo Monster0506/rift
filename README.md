@@ -22,6 +22,7 @@ Implemented:
 - colorizing and themes
 - line numbers
 - line indexing improvements to gap buffer
+- component level dirty flags to avoid clearing and repopulating full layers
 
 
 
@@ -37,6 +38,5 @@ Todo:
 - setting and command descriptions
 - make command pattern more like settings design pattern
 - help manual
-- component level dirty flags to avoid clearing and repopulating full layers
 - dumb gutter to avoid recalcing unless total lines changes significantly.
 - add redraw command
