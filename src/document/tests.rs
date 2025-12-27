@@ -233,3 +233,47 @@ fn test_document_revision_tracking() {
     assert_eq!(doc.revision, 3);
     assert!(doc.is_dirty());
 }
+
+#[test]
+fn test_document_from_file_crlf() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("crlf.txt");
+
+    // Create test file with CRLF
+    let mut file = fs::File::create(&file_path).unwrap();
+    file.write_all(b"line1\r\nline2\r\n").unwrap();
+    drop(file);
+
+    // Load document
+    let doc = Document::from_file(1, &file_path).unwrap();
+
+    // In CRLF files, \r should now be normalized (removed)
+    assert_eq!(doc.line_ending, LineEnding::CRLF);
+
+    // Line 0 should be "line1" (no trailing \r)
+    let line0 = doc.buffer.get_line_bytes(0);
+    assert_eq!(line0, b"line1");
+
+    // Line 1 should be "line2" (no trailing \r)
+    let line1 = doc.buffer.get_line_bytes(1);
+    assert_eq!(line1, b"line2");
+
+    assert_eq!(doc.buffer.get_total_lines(), 3);
+}
+
+#[test]
+fn test_document_save_crlf() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("crlf_save.txt");
+
+    let mut doc = Document::new(1).unwrap();
+    doc.line_ending = LineEnding::CRLF;
+    doc.buffer.insert_str("line1\nline2\n").unwrap();
+    doc.set_path(&file_path);
+
+    doc.save().unwrap();
+
+    // Verify file contents on disk have CRLF
+    let bytes = fs::read(&file_path).unwrap();
+    assert_eq!(bytes, b"line1\r\nline2\r\n");
+}

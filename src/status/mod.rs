@@ -234,6 +234,13 @@ impl StatusBar {
         parts.push(format!("Lines: {}", state.total_lines));
         parts.push(format!("Size: {}B", state.buffer_size));
 
+        // Line ending
+        let eol = match state.line_ending {
+            crate::document::LineEnding::LF => "LF",
+            crate::document::LineEnding::CRLF => "CRLF",
+        };
+        parts.push(format!("{}", eol));
+
         parts.join(" | ")
     }
 

@@ -116,7 +116,7 @@ fn test_status_bar_render_debug_mode() {
     state.toggle_debug();
     state.update_keypress(Key::Char(b'a'));
     state.update_cursor(5, 10);
-    state.update_buffer_stats(10, 100);
+    state.update_buffer_stats(10, 100, crate::document::LineEnding::LF);
 
     StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
 
@@ -205,7 +205,7 @@ fn test_status_bar_debug_truncation() {
     state.toggle_debug();
     state.update_keypress(Key::Char(b'a'));
     state.update_cursor(100, 200);
-    state.update_buffer_stats(1000, 50000);
+    state.update_buffer_stats(1000, 50000, crate::document::LineEnding::LF);
 
     StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
 

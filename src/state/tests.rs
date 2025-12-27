@@ -80,15 +80,15 @@ fn test_update_buffer_stats() {
     assert_eq!(state.total_lines, 1);
     assert_eq!(state.buffer_size, 0);
 
-    state.update_buffer_stats(10, 500);
+    state.update_buffer_stats(10, 500, crate::document::LineEnding::LF);
     assert_eq!(state.total_lines, 10);
     assert_eq!(state.buffer_size, 500);
 
-    state.update_buffer_stats(1, 0);
+    state.update_buffer_stats(1, 0, crate::document::LineEnding::LF);
     assert_eq!(state.total_lines, 1);
     assert_eq!(state.buffer_size, 0);
 
-    state.update_buffer_stats(1000, 50000);
+    state.update_buffer_stats(1000, 50000, crate::document::LineEnding::LF);
     assert_eq!(state.total_lines, 1000);
     assert_eq!(state.buffer_size, 50000);
 }
@@ -99,7 +99,7 @@ fn test_state_operations_together() {
 
     state.update_keypress(Key::Char(b'h'));
     state.update_cursor(2, 5);
-    state.update_buffer_stats(3, 100);
+    state.update_buffer_stats(3, 100, crate::document::LineEnding::LF);
     assert_eq!(state.debug_mode, false);
     assert_eq!(state.last_keypress, Some(Key::Char(b'h')));
     assert_eq!(state.cursor_pos, (2, 5));
@@ -111,7 +111,7 @@ fn test_state_operations_together() {
 
     state.update_keypress(Key::ArrowDown);
     state.update_cursor(10, 20);
-    state.update_buffer_stats(15, 200);
+    state.update_buffer_stats(15, 200, crate::document::LineEnding::LF);
 
     assert_eq!(state.debug_mode, true);
     assert_eq!(state.last_keypress, Some(Key::ArrowDown));
@@ -165,19 +165,19 @@ fn test_buffer_stats_updates() {
     let mut state = State::new();
 
     // Simulate buffer growth
-    state.update_buffer_stats(1, 0);
+    state.update_buffer_stats(1, 0, crate::document::LineEnding::LF);
     assert_eq!(state.total_lines, 1);
     assert_eq!(state.buffer_size, 0);
 
-    state.update_buffer_stats(1, 5);
+    state.update_buffer_stats(1, 5, crate::document::LineEnding::LF);
     assert_eq!(state.total_lines, 1);
     assert_eq!(state.buffer_size, 5);
 
-    state.update_buffer_stats(2, 10);
+    state.update_buffer_stats(2, 10, crate::document::LineEnding::LF);
     assert_eq!(state.total_lines, 2);
     assert_eq!(state.buffer_size, 10);
 
-    state.update_buffer_stats(3, 15);
+    state.update_buffer_stats(3, 15, crate::document::LineEnding::LF);
     assert_eq!(state.total_lines, 3);
     assert_eq!(state.buffer_size, 15);
 }

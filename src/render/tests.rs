@@ -552,7 +552,7 @@ fn test_render_line_numbers_enabled() {
     let viewport = Viewport::new(10, 80);
     let mut state = State::new();
     state.settings.show_line_numbers = true;
-    state.update_buffer_stats(2, 11);
+    state.update_buffer_stats(2, 11, crate::document::LineEnding::LF);
 
     let mut compositor = LayerCompositor::new(10, 80);
 
@@ -587,7 +587,7 @@ fn test_render_line_numbers_disabled() {
     let viewport = Viewport::new(10, 80);
     let mut state = State::new();
     state.settings.show_line_numbers = false;
-    state.update_buffer_stats(1, 5);
+    state.update_buffer_stats(1, 5, crate::document::LineEnding::LF);
 
     let mut compositor = LayerCompositor::new(10, 80);
 
@@ -618,7 +618,7 @@ fn test_render_line_numbers_gutter_width() {
     let viewport = Viewport::new(10, 80);
     let mut state = State::new();
     state.settings.show_line_numbers = true;
-    state.update_buffer_stats(100, 0);
+    state.update_buffer_stats(100, 0, crate::document::LineEnding::LF);
 
     let mut compositor = LayerCompositor::new(10, 80);
 
@@ -655,7 +655,7 @@ fn test_render_cursor_position_with_line_numbers() {
     let viewport = Viewport::new(10, 80);
     let mut state = State::new();
     state.settings.show_line_numbers = true;
-    state.update_buffer_stats(10, 4); // 2 digits -> gutter 3
+    state.update_buffer_stats(10, 4, crate::document::LineEnding::LF); // 2 digits -> gutter 3
 
     let mut compositor = LayerCompositor::new(10, 80);
 

@@ -384,7 +384,8 @@ impl<T: TerminalBackend> Editor<T> {
         let total_lines = self.document.buffer.get_total_lines();
         let buffer_size = self.document.buffer.get_before_gap().len()
             + self.document.buffer.get_after_gap().len();
-        self.state.update_buffer_stats(total_lines, buffer_size);
+        self.state
+            .update_buffer_stats(total_lines, buffer_size, self.document.line_ending);
         self.state.update_dirty(self.document.is_dirty());
         self.state.error_manager.notifications_mut().prune_expired();
 
@@ -416,7 +417,8 @@ impl<T: TerminalBackend> Editor<T> {
         let total_lines = self.document.buffer.get_total_lines();
         let buffer_size = self.document.buffer.get_before_gap().len()
             + self.document.buffer.get_after_gap().len();
-        self.state.update_buffer_stats(total_lines, buffer_size);
+        self.state
+            .update_buffer_stats(total_lines, buffer_size, self.document.line_ending);
         self.state.update_dirty(self.document.is_dirty());
 
         // Update viewport based on cursor position (state mutation happens here)

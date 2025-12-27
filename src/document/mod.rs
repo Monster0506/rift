@@ -9,12 +9,33 @@ use std::path::{Path, PathBuf};
 /// Unique identifier for documents
 pub type DocumentId = u64;
 
+/// Line ending types supported by Rift
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineEnding {
+    /// Unix line endings (\n)
+    LF,
+    /// Windows line endings (\r\n)
+    CRLF,
+}
+
+impl LineEnding {
+    /// Get the byte sequence for this line ending
+    pub fn as_bytes(&self) -> &'static [u8] {
+        match self {
+            LineEnding::LF => b"\n",
+            LineEnding::CRLF => b"\r\n",
+        }
+    }
+}
+
 /// Document combining buffer and file metadata
 pub struct Document {
     /// Unique document identifier
     pub id: DocumentId,
     /// Text buffer
     pub buffer: GapBuffer,
+    /// Detected line ending for this document
+    pub line_ending: LineEnding,
     /// File path (None if new/unsaved)
     file_path: Option<PathBuf>,
     /// Current revision number (incremented on edits)
@@ -32,6 +53,7 @@ impl Document {
         Ok(Document {
             id,
             buffer,
+            line_ending: LineEnding::LF,
             file_path: None,
             revision: 0,
             last_saved_revision: 0,
@@ -44,15 +66,34 @@ impl Document {
         let path = path.as_ref();
         let bytes = std::fs::read(path)?;
 
-        let mut buffer = GapBuffer::new(bytes.len().max(4096)).map_err(io::Error::other)?;
+        // Detect line endings and normalize
+        let mut line_ending = LineEnding::LF;
+        let mut normalized_bytes = Vec::with_capacity(bytes.len());
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'\r' && i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+                line_ending = LineEnding::CRLF;
+                normalized_bytes.push(b'\n');
+                i += 2;
+            } else {
+                normalized_bytes.push(bytes[i]);
+                i += 1;
+            }
+        }
 
-        buffer.insert_bytes(&bytes).map_err(io::Error::other)?;
+        let mut buffer =
+            GapBuffer::new(normalized_bytes.len().max(4096)).map_err(io::Error::other)?;
+
+        buffer
+            .insert_bytes(&normalized_bytes)
+            .map_err(io::Error::other)?;
 
         buffer.move_to_start();
 
         Ok(Document {
             id,
             buffer,
+            line_ending,
             file_path: Some(path.to_path_buf()),
             revision: 0,
             last_saved_revision: 0,
@@ -155,14 +196,44 @@ impl Document {
         {
             let mut file = fs::File::create(&temp_path)?;
             use std::io::Write;
-            file.write_all(before)?;
-            file.write_all(after)?;
+
+            let line_ending_bytes = self.line_ending.as_bytes();
+
+            if self.line_ending == LineEnding::LF {
+                // Optimized write for LF
+                file.write_all(before)?;
+                file.write_all(after)?;
+            } else {
+                // Denormalize for CRLF
+                Self::write_denormalized(&mut file, before, line_ending_bytes)?;
+                Self::write_denormalized(&mut file, after, line_ending_bytes)?;
+            }
             file.sync_all()?;
         }
 
         // Atomically rename
         fs::rename(&temp_path, path)?;
 
+        Ok(())
+    }
+
+    /// Helper to write bytes with denormalized line endings
+    fn write_denormalized(
+        mut writer: impl io::Write,
+        bytes: &[u8],
+        line_ending: &[u8],
+    ) -> io::Result<()> {
+        let mut start = 0;
+        for (i, &byte) in bytes.iter().enumerate() {
+            if byte == b'\n' {
+                writer.write_all(&bytes[start..i])?;
+                writer.write_all(line_ending)?;
+                start = i + 1;
+            }
+        }
+        if start < bytes.len() {
+            writer.write_all(&bytes[start..])?;
+        }
         Ok(())
     }
 }

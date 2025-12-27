@@ -3,9 +3,6 @@
 
 use crate::color::{Color, Theme};
 use crate::command::Command;
-use crate::error::manager::ErrorManager;
-use crate::error::RiftError;
-use crate::floating_window::BorderChars;
 /// ## state/ Invariants
 ///
 /// - Editor mode is explicit and globally consistent.
@@ -13,6 +10,10 @@ use crate::floating_window::BorderChars;
 /// - There is exactly one active buffer at a time in v0.
 /// - Editor state is never partially updated.
 /// - State changes are observable by the renderer but never influenced by it.
+use crate::document::LineEnding;
+use crate::error::manager::ErrorManager;
+use crate::error::RiftError;
+use crate::floating_window::BorderChars;
 use crate::key::Key;
 use crate::notification::NotificationType;
 
@@ -156,6 +157,8 @@ pub struct State {
     pub command_line_cursor: usize,
     /// Whether the current document has unsaved changes
     pub is_dirty: bool,
+    /// Line ending type of the current document
+    pub line_ending: LineEnding,
     /// Error and notification manager
     pub error_manager: ErrorManager,
 }
@@ -177,6 +180,7 @@ impl State {
             command_line: String::new(),
             command_line_cursor: 0,
             is_dirty: false,
+            line_ending: LineEnding::LF,
             error_manager: ErrorManager::new(),
         }
     }
@@ -197,6 +201,7 @@ impl State {
             command_line: String::new(),
             command_line_cursor: 0,
             is_dirty: false,
+            line_ending: LineEnding::LF,
             error_manager: ErrorManager::new(),
         }
     }
@@ -237,9 +242,15 @@ impl State {
     }
 
     /// Update buffer statistics
-    pub fn update_buffer_stats(&mut self, total_lines: usize, buffer_size: usize) {
+    pub fn update_buffer_stats(
+        &mut self,
+        total_lines: usize,
+        buffer_size: usize,
+        line_ending: LineEnding,
+    ) {
         self.total_lines = total_lines;
         self.buffer_size = buffer_size;
+        self.line_ending = line_ending;
     }
 
     /// Append a character to the command line at cursor position
