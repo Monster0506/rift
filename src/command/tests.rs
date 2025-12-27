@@ -210,3 +210,30 @@ fn test_translate_command_mode() {
     assert_eq!(dispatcher.translate_key(Key::Char(0)), Command::Noop);
     assert_eq!(dispatcher.translate_key(Key::Char(127)), Command::Noop);
 }
+
+#[test]
+fn test_command_is_mutating() {
+    // Mutating commands
+    assert!(Command::InsertByte(b'a').is_mutating());
+    assert!(Command::DeleteForward.is_mutating());
+    assert!(Command::DeleteBackward.is_mutating());
+    assert!(Command::DeleteLine.is_mutating());
+
+    // Non-mutating commands
+    assert!(!Command::MoveLeft.is_mutating());
+    assert!(!Command::MoveRight.is_mutating());
+    assert!(!Command::MoveUp.is_mutating());
+    assert!(!Command::MoveDown.is_mutating());
+    assert!(!Command::MoveToLineStart.is_mutating());
+    assert!(!Command::MoveToLineEnd.is_mutating());
+    assert!(!Command::MoveToBufferStart.is_mutating());
+    assert!(!Command::MoveToBufferEnd.is_mutating());
+    assert!(Command::EnterInsertMode.is_mutating());
+    assert!(Command::EnterInsertModeAfter.is_mutating());
+    assert!(!Command::EnterCommandMode.is_mutating());
+    assert!(!Command::AppendToCommandLine(b'a').is_mutating());
+    assert!(!Command::DeleteFromCommandLine.is_mutating());
+    assert!(!Command::ExecuteCommandLine.is_mutating());
+    assert!(!Command::Quit.is_mutating());
+    assert!(!Command::Noop.is_mutating());
+}

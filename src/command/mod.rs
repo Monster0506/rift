@@ -45,6 +45,20 @@ pub enum Command {
     Noop,
 }
 
+impl Command {
+    /// Check if command mutates the buffer content
+    #[must_use]
+    pub fn is_mutating(&self) -> bool {
+        matches!(
+            self,
+            Command::DeleteForward
+                | Command::DeleteBackward
+                | Command::DeleteLine
+                | Command::InsertByte(_)
+        )
+    }
+}
+
 /// Command dispatcher state
 pub struct Dispatcher {
     mode: Mode,

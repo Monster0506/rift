@@ -184,8 +184,10 @@ impl<T: TerminalBackend> Editor<T> {
                 ) {
                     self.state.handle_error(e);
                 }
-                // Mark document dirty after any buffer mutation (even if part of command failed)
-                self.document.mark_dirty();
+                if cmd.is_mutating() {
+                    // Mark document dirty after a mutating command
+                    self.document.mark_dirty();
+                }
             }
 
             // Handle quit command (special case - exits loop)
