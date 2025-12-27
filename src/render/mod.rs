@@ -90,18 +90,20 @@ pub fn render<T: TerminalBackend>(
         // Render command line to FLOATING_WINDOW layer (renders on top of status bar)
         let layer = compositor.get_layer_mut(LayerPriority::FLOATING_WINDOW);
 
+        let default_border_chars = ctx.state.settings.default_border_chars.clone();
         let (window_row, window_col, _, offset) = CommandLine::render_to_layer(
             layer,
             ctx.viewport,
             &ctx.state.command_line,
-            ctx.state.settings.default_border_chars.clone(),
+            ctx.state.command_line_cursor,
+            default_border_chars,
             &ctx.state.settings.command_line_window,
         );
 
         // Calculate cursor position in command window
         let (cursor_row, cursor_col) = CommandLine::calculate_cursor_position(
             (window_row, window_col),
-            &ctx.state.command_line,
+            ctx.state.command_line_cursor,
             offset,
             ctx.state.settings.command_line_window.border,
         );
@@ -391,11 +393,9 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
     let mut current_line = String::new();
 
     for word in text.split_whitespace() {
-        if current_line.len() + word.len() + 1 > width {
-            if !current_line.is_empty() {
-                lines.push(current_line);
-                current_line = String::new();
-            }
+        if current_line.len() + word.len() + 1 > width && !current_line.is_empty() {
+            lines.push(current_line);
+            current_line = String::new();
         }
         if !current_line.is_empty() {
             current_line.push(' ');

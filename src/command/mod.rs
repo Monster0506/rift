@@ -11,6 +11,8 @@
 use crate::key::Key;
 use crate::mode::Mode;
 
+pub mod input;
+
 /// Editor commands
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
@@ -134,46 +136,80 @@ impl Dispatcher {
     }
 
     fn translate_insert_mode(&self, key: Key) -> Command {
-        match key {
-            Key::Char(ch) => {
-                if ch == b'\t' || (32..127).contains(&ch) {
-                    Command::InsertByte(ch)
-                } else {
-                    Command::Noop
+        use self::input::{Direction, InputIntent};
+
+        // Resolve shared input intent
+        if let Some(intent) = input::resolve_input(key) {
+            match intent {
+                InputIntent::Type(ch) => {
+                    // Filter out non-byte characters if necessary, or assume char fits in u8 for now
+                    // as InsertByte takes u8. Using ch as u8 only works for ASCII.
+                    if ch.is_ascii() {
+                        Command::InsertByte(ch as u8)
+                    } else {
+                        Command::Noop
+                    }
                 }
+                // TODO: Implement granular movement
+                // For now, fall back to character movement so keys aren't dead
+                InputIntent::Move(dir, _) => match dir {
+                    Direction::Left => Command::MoveLeft,
+                    Direction::Right => Command::MoveRight,
+                    Direction::Up => Command::MoveUp,
+                    Direction::Down => Command::MoveDown,
+                },
+                InputIntent::Delete(Direction::Left, _) => Command::DeleteBackward, // Backspace
+                InputIntent::Delete(Direction::Right, _) => Command::DeleteForward, // Delete
+                InputIntent::Delete(_, _) => Command::Noop, // Other deletes not supported yet
+                InputIntent::Accept => Command::InsertByte(b'\n'),
+                InputIntent::Cancel => Command::EnterInsertMode, // Toggle back to normal
             }
-            Key::Ctrl(ch) => {
-                // Handle Ctrl key combinations in insert mode
-                // Convert to control character (Ctrl+A = 0x01, etc.)
-                let ctrl_char = if ch.is_ascii_lowercase() {
-                    ch - b'a' + 1
-                } else {
-                    ch
-                };
-                Command::InsertByte(ctrl_char)
-            }
-            Key::Backspace => Command::DeleteBackward,
-            Key::Enter => Command::InsertByte(b'\n'),
-            Key::Tab => Command::InsertByte(b'\t'),
-            Key::Escape => Command::EnterInsertMode, // Exit insert mode (returns to normal)
-            _ => Command::Noop,
+        } else {
+            Command::Noop
         }
     }
 
     fn translate_command_mode(&self, key: Key) -> Command {
-        match key {
-            Key::Char(ch) => {
-                // Allow printable ASCII characters
-                if (32..127).contains(&ch) {
-                    Command::AppendToCommandLine(ch)
-                } else {
-                    Command::Noop
+        use self::input::{Direction, Granularity, InputIntent};
+
+        if let Some(intent) = input::resolve_input(key) {
+            match intent {
+                InputIntent::Type(ch) => {
+                    if ch.is_ascii() {
+                        Command::AppendToCommandLine(ch as u8)
+                    } else {
+                        Command::Noop
+                    }
                 }
+                InputIntent::Move(dir, Granularity::Line) => match dir {
+                    Direction::Left => Command::MoveToLineStart,
+                    Direction::Right => Command::MoveToLineEnd,
+                    _ => Command::Noop,
+                },
+                InputIntent::Move(dir, Granularity::Word) => {
+                    // TODO: Implement word-wise movement for command line
+                    // For now, fall back to character movement
+                    match dir {
+                        Direction::Left => Command::MoveLeft,
+                        Direction::Right => Command::MoveRight,
+                        Direction::Up => Command::MoveUp,
+                        Direction::Down => Command::MoveDown,
+                    }
+                }
+                InputIntent::Move(dir, _) => match dir {
+                    Direction::Left => Command::MoveLeft,
+                    Direction::Right => Command::MoveRight,
+                    Direction::Up => Command::MoveUp,
+                    Direction::Down => Command::MoveDown,
+                },
+                InputIntent::Delete(Direction::Left, _) => Command::DeleteFromCommandLine, // Backspace
+                InputIntent::Delete(Direction::Right, _) => Command::DeleteForward, // Forward delete
+                InputIntent::Delete(_, _) => Command::Noop,
+                InputIntent::Accept => Command::ExecuteCommandLine,
+                InputIntent::Cancel => Command::Noop, // Handled by KeyHandler
             }
-            Key::Backspace => Command::DeleteFromCommandLine,
-            Key::Enter => Command::ExecuteCommandLine,
-            Key::Escape => Command::Noop, // Exit handled by key handler
-            _ => Command::Noop,
+        } else {
+            Command::Noop
         }
     }
 

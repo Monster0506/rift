@@ -228,8 +228,8 @@ fn test_command_is_mutating() {
     assert!(!Command::MoveToLineEnd.is_mutating());
     assert!(!Command::MoveToBufferStart.is_mutating());
     assert!(!Command::MoveToBufferEnd.is_mutating());
-    assert!(Command::EnterInsertMode.is_mutating());
-    assert!(Command::EnterInsertModeAfter.is_mutating());
+    assert!(!Command::EnterInsertMode.is_mutating());
+    assert!(!Command::EnterInsertModeAfter.is_mutating());
     assert!(!Command::EnterCommandMode.is_mutating());
     assert!(!Command::AppendToCommandLine(b'a').is_mutating());
     assert!(!Command::DeleteFromCommandLine.is_mutating());

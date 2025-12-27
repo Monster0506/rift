@@ -468,8 +468,7 @@ fn test_execute_setting_enum() {
     let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result =
-        registry.execute_setting("borderstyle", Some("unicode".to_string()), &mut state);
+    let result = registry.execute_setting("borderstyle", Some("unicode".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Success
@@ -507,8 +506,7 @@ fn test_execute_setting_unknown_option() {
     let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result =
-        registry.execute_setting("unknown_option", Some("value".to_string()), &mut state);
+    let result = registry.execute_setting("unknown_option", Some("value".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Failure
@@ -529,16 +527,14 @@ fn test_execute_setting_invalid_value() {
     ));
 
     // Invalid integer
-    let result =
-        registry.execute_setting("tabwidth", Some("not_a_number".to_string()), &mut state);
+    let result = registry.execute_setting("tabwidth", Some("not_a_number".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Failure
     ));
 
     // Invalid enum
-    let result =
-        registry.execute_setting("borderstyle", Some("invalid".to_string()), &mut state);
+    let result = registry.execute_setting("borderstyle", Some("invalid".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Failure
@@ -753,8 +749,7 @@ fn test_execute_setting_theme_unknown() {
     let settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
-    let result =
-        registry.execute_setting("theme", Some("unknown_theme".to_string()), &mut state);
+    let result = registry.execute_setting("theme", Some("unknown_theme".to_string()), &mut state);
     assert!(matches!(
         result,
         crate::command_line::executor::ExecutionResult::Failure

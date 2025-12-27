@@ -15,6 +15,7 @@ fn test_command_line_render_to_layer() {
         &mut layer,
         &viewport,
         "test command",
+        "test command".len(),
         None,
         &window_settings,
     );
@@ -42,11 +43,13 @@ fn test_command_line_render_to_layer() {
 fn test_command_line_calculate_cursor_position() {
     // Window at (10, 20) with width 50
     let window_pos = (10, 20);
-    let cmd_width = 50;
+    // cmd_width unused
+    // let cmd_width = 50;
+    let _ = 50;
     let command_line = "test";
 
     let (cursor_row, cursor_col) =
-        CommandLine::calculate_cursor_position(window_pos, command_line, 0, true);
+        CommandLine::calculate_cursor_position(window_pos, command_line.len(), 0, true);
 
     // Content row should be window_row + 1 (middle row)
     assert_eq!(cursor_row, 11);
@@ -60,7 +63,9 @@ fn test_command_line_calculate_cursor_position() {
 fn test_command_line_cursor_position_clamped() {
     // Test that cursor position is clamped to content area
     let window_pos = (10, 20);
-    let cmd_width = 10; // Small width
+    // cmd_width unused
+    // let cmd_width = 10; // Small width
+    let _ = 10;
     let command_line = "very long command line that exceeds width";
 
     // cmd_width = 10. Border=true (implied).
@@ -68,8 +73,8 @@ fn test_command_line_cursor_position_clamped() {
     // len = 41.
     // offset = 41 - 7 + 1 = 35.
     let offset = 35;
-    let (cursor_row, cursor_col) =
-        CommandLine::calculate_cursor_position(window_pos, command_line, offset, true);
+    let (_, cursor_col) =
+        CommandLine::calculate_cursor_position(window_pos, command_line.len(), offset, true);
 
     // Cursor should be clamped to content_end_col
     // window_col (20) + border (1) + prompt (1) + visual_index (41-35=6) = 28
@@ -89,6 +94,7 @@ fn test_command_line_with_custom_border_chars() {
         &mut layer,
         &viewport,
         "test",
+        "test".len(),
         Some(custom_border),
         &window_settings,
     );

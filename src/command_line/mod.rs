@@ -30,6 +30,7 @@ impl CommandLine {
         layer: &mut Layer,
         viewport: &Viewport,
         command_line: &str,
+        cursor_pos: usize,
         default_border_chars: Option<BorderChars>,
         window_settings: &CommandLineWindowSettings,
     ) -> (u16, u16, usize, usize) {
@@ -52,21 +53,39 @@ impl CommandLine {
         let prompt_len = 1; // ":"
         let available_cmd_width = available_width.saturating_sub(prompt_len);
 
-        let cmd_len = command_line.len();
-
-        // Calculate offset for scrolling
-        // If content fits, offset is 0
-        // We reserve 1 cell for the cursor at the end
-        // So effective capacity is available_cmd_width - 1
-        let offset = if cmd_len >= available_cmd_width {
-            cmd_len - available_cmd_width + 1 // +1 to leave room for cursor
+        // Calculate offset to keep cursor visible
+        // We ensure cursor_pos is within the visible window [offset, offset + available_cmd_width)
+        // If length fits, offset is 0
+        let offset = if command_line.len() <= available_cmd_width {
+            0
+        } else if cursor_pos >= available_cmd_width {
+            // Keep cursor at the right edge minus 1? or just ensure it fits?
+            // Panning strategy:
+            cursor_pos
+                .saturating_sub(available_cmd_width)
+                .saturating_add(1)
         } else {
             0
         };
 
         // Slice command line
+        // Slice command line
+        let cmd_len = command_line.len();
         let displayed_cmd = if offset < cmd_len {
-            &command_line[offset..]
+            let end = (offset + available_cmd_width).min(cmd_len);
+            // Ensure char boundaries if multi-byte (simple slicing might panic on UTF-8)
+            // For now assuming ASCII/byte based on GapBuffer<u8> usage in Editor,
+            // but command_line is String.
+            // We should use chars() if possible or ensure indices.
+            // But Rift currently seems to treat indices as bytes?
+            // Let's assume bytes for now to match strict slicing.
+            // Safe slicing:
+            if end > offset {
+                // Check boundaries?
+                &command_line[offset..end]
+            } else {
+                ""
+            }
         } else {
             ""
         };
@@ -88,7 +107,7 @@ impl CommandLine {
     #[must_use]
     pub fn calculate_cursor_position(
         window_pos: (u16, u16),
-        command_line: &str,
+        cursor_pos: usize,
         offset: usize,
         has_border: bool,
     ) -> (u16, u16) {
@@ -101,8 +120,9 @@ impl CommandLine {
 
         // Visual cursor position:
         // start_col + prompt (1) + (len - offset)
-        let cursor_index = command_line.len();
-        let visual_index = cursor_index.saturating_sub(offset);
+        // Visual cursor position:
+        // start_col + prompt (1) + (cursor_pos - offset)
+        let visual_index = cursor_pos.saturating_sub(offset);
 
         // prompt is 1 char
         let visual_cursor_col = content_start_col + 1 + visual_index;

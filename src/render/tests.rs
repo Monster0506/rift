@@ -38,10 +38,10 @@ fn test_format_key_ctrl() {
 
 #[test]
 fn test_format_key_arrows() {
-    assert_eq!(format_key(Key::ArrowUp), "↑");
-    assert_eq!(format_key(Key::ArrowDown), "↓");
-    assert_eq!(format_key(Key::ArrowLeft), "←");
-    assert_eq!(format_key(Key::ArrowRight), "→");
+    assert_eq!(format_key(Key::ArrowUp), "Up");
+    assert_eq!(format_key(Key::ArrowDown), "Down");
+    assert_eq!(format_key(Key::ArrowLeft), "Left");
+    assert_eq!(format_key(Key::ArrowRight), "Right");
 }
 
 #[test]

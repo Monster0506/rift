@@ -12,6 +12,10 @@ pub enum Key {
     ArrowDown,
     ArrowLeft,
     ArrowRight,
+    CtrlArrowUp,
+    CtrlArrowDown,
+    CtrlArrowLeft,
+    CtrlArrowRight,
     /// Navigation keys
     Home,
     End,

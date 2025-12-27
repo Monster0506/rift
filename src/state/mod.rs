@@ -152,6 +152,8 @@ pub struct State {
     pub buffer_size: usize,
     /// Command line input (for command mode)
     pub command_line: String,
+    /// Command line cursor position (index in bytes)
+    pub command_line_cursor: usize,
     /// Whether the current document has unsaved changes
     pub is_dirty: bool,
     /// Error and notification manager
@@ -173,6 +175,7 @@ impl State {
             total_lines: 1,
             buffer_size: 0,
             command_line: String::new(),
+            command_line_cursor: 0,
             is_dirty: false,
             error_manager: ErrorManager::new(),
         }
@@ -192,6 +195,7 @@ impl State {
             total_lines: 1,
             buffer_size: 0,
             command_line: String::new(),
+            command_line_cursor: 0,
             is_dirty: false,
             error_manager: ErrorManager::new(),
         }
@@ -238,19 +242,62 @@ impl State {
         self.buffer_size = buffer_size;
     }
 
-    /// Append a character to the command line
+    /// Append a character to the command line at cursor position
     pub fn append_to_command_line(&mut self, ch: char) {
-        self.command_line.push(ch);
+        if self.command_line_cursor >= self.command_line.len() {
+            self.command_line.push(ch);
+        } else {
+            self.command_line.insert(self.command_line_cursor, ch);
+        }
+        self.command_line_cursor += 1;
     }
 
-    /// Remove the last character from the command line (backspace)
+    /// Remove character before cursor (Backspace)
     pub fn remove_from_command_line(&mut self) {
-        self.command_line.pop();
+        if self.command_line_cursor > 0 {
+            // Check if we are at end or middle
+            if self.command_line_cursor >= self.command_line.len() {
+                self.command_line.pop();
+            } else {
+                self.command_line.remove(self.command_line_cursor - 1);
+            }
+            self.command_line_cursor -= 1;
+        }
+    }
+
+    /// Delete character at cursor (Delete)
+    pub fn delete_forward_command_line(&mut self) {
+        if self.command_line_cursor < self.command_line.len() {
+            self.command_line.remove(self.command_line_cursor);
+        }
     }
 
     /// Clear the command line
     pub fn clear_command_line(&mut self) {
         self.command_line.clear();
+        self.command_line_cursor = 0;
+    }
+
+    /// Move command line cursor left
+    pub fn move_command_line_left(&mut self) {
+        self.command_line_cursor = self.command_line_cursor.saturating_sub(1);
+    }
+
+    /// Move command line cursor right
+    pub fn move_command_line_right(&mut self) {
+        if self.command_line_cursor < self.command_line.len() {
+            self.command_line_cursor += 1;
+        }
+    }
+
+    /// Move command line cursor to start
+    pub fn move_command_line_home(&mut self) {
+        self.command_line_cursor = 0;
+    }
+
+    /// Move command line cursor to end
+    pub fn move_command_line_end(&mut self) {
+        self.command_line_cursor = self.command_line.len();
     }
 
     /// Handle a RiftError by delegating to the ErrorManager

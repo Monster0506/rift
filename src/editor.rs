@@ -163,17 +163,18 @@ impl<T: TerminalBackend> Editor<T> {
             // COMMAND EXECUTION PHASE (Buffer mutations only)
             // ============================================================
 
-            // Execute command if it affects the buffer
-            let should_execute_buffer = !matches!(
-                cmd,
-                Command::EnterInsertMode
-                    | Command::EnterCommandMode
-                    | Command::AppendToCommandLine(_)
-                    | Command::DeleteFromCommandLine
-                    | Command::ExecuteCommandLine
-                    | Command::Quit
-                    | Command::Noop
-            );
+            // Execute command if it affects the buffer (and not in command mode)
+            let should_execute_buffer = self.current_mode != Mode::Command
+                && !matches!(
+                    cmd,
+                    Command::EnterInsertMode
+                        | Command::EnterCommandMode
+                        | Command::AppendToCommandLine(_)
+                        | Command::DeleteFromCommandLine
+                        | Command::ExecuteCommandLine
+                        | Command::Quit
+                        | Command::Noop
+                );
 
             if should_execute_buffer {
                 if let Err(e) = execute_command(
@@ -314,6 +315,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         // Handle command line editing (mutations happen here)
+        // Handle command line editing (mutations happen here)
         match command {
             Command::AppendToCommandLine(ch) => {
                 // ch is guaranteed to be valid ASCII (32-126) from translate_command_mode
@@ -321,6 +323,21 @@ impl<T: TerminalBackend> Editor<T> {
             }
             Command::DeleteFromCommandLine => {
                 self.state.remove_from_command_line();
+            }
+            Command::MoveLeft if self.current_mode == Mode::Command => {
+                self.state.move_command_line_left();
+            }
+            Command::MoveRight if self.current_mode == Mode::Command => {
+                self.state.move_command_line_right();
+            }
+            Command::MoveToLineStart if self.current_mode == Mode::Command => {
+                self.state.move_command_line_home();
+            }
+            Command::MoveToLineEnd if self.current_mode == Mode::Command => {
+                self.state.move_command_line_end();
+            }
+            Command::DeleteForward if self.current_mode == Mode::Command => {
+                self.state.delete_forward_command_line();
             }
             _ => {}
         }

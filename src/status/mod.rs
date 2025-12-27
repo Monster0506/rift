@@ -186,10 +186,14 @@ impl StatusBar {
                 }
             }
             Key::Ctrl(ch) => format!("Ctrl+{}", (ch as char).to_uppercase()),
-            Key::ArrowUp => "↑".to_string(),
-            Key::ArrowDown => "↓".to_string(),
-            Key::ArrowLeft => "←".to_string(),
-            Key::ArrowRight => "→".to_string(),
+            Key::ArrowUp => "Up".to_string(),
+            Key::ArrowDown => "Down".to_string(),
+            Key::ArrowLeft => "Left".to_string(),
+            Key::ArrowRight => "Right".to_string(),
+            Key::CtrlArrowUp => "Ctrl+Up".to_string(),
+            Key::CtrlArrowDown => "Ctrl+Down".to_string(),
+            Key::CtrlArrowLeft => "Ctrl+Left".to_string(),
+            Key::CtrlArrowRight => "Ctrl+Right".to_string(),
             Key::Backspace => "Backspace".to_string(),
             Key::Delete => "Delete".to_string(),
             Key::Enter => "Enter".to_string(),

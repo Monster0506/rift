@@ -164,10 +164,34 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
         KeyCode::Enter => Key::Enter,
         KeyCode::Esc => Key::Escape,
         KeyCode::Tab => Key::Tab,
-        KeyCode::Up => Key::ArrowUp,
-        KeyCode::Down => Key::ArrowDown,
-        KeyCode::Left => Key::ArrowLeft,
-        KeyCode::Right => Key::ArrowRight,
+        KeyCode::Up => {
+            if ctrl {
+                Key::CtrlArrowUp
+            } else {
+                Key::ArrowUp
+            }
+        }
+        KeyCode::Down => {
+            if ctrl {
+                Key::CtrlArrowDown
+            } else {
+                Key::ArrowDown
+            }
+        }
+        KeyCode::Left => {
+            if ctrl {
+                Key::CtrlArrowLeft
+            } else {
+                Key::ArrowLeft
+            }
+        }
+        KeyCode::Right => {
+            if ctrl {
+                Key::CtrlArrowRight
+            } else {
+                Key::ArrowRight
+            }
+        }
         KeyCode::Home => Key::Home,
         KeyCode::End => Key::End,
         KeyCode::PageUp => Key::PageUp,

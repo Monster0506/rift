@@ -49,10 +49,10 @@ fn test_format_key_ctrl() {
 
 #[test]
 fn test_format_key_arrows() {
-    assert_eq!(StatusBar::format_key(Key::ArrowUp), "↑");
-    assert_eq!(StatusBar::format_key(Key::ArrowDown), "↓");
-    assert_eq!(StatusBar::format_key(Key::ArrowLeft), "←");
-    assert_eq!(StatusBar::format_key(Key::ArrowRight), "→");
+    assert_eq!(StatusBar::format_key(Key::ArrowUp), "Up");
+    assert_eq!(StatusBar::format_key(Key::ArrowDown), "Down");
+    assert_eq!(StatusBar::format_key(Key::ArrowLeft), "Left");
+    assert_eq!(StatusBar::format_key(Key::ArrowRight), "Right");
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn test_status_bar_render_debug_with_pending() {
     let written = term.get_written_string();
     assert!(written.contains("NORMAL"));
     assert!(written.contains("[d]"));
-    assert!(written.contains("Last: ↑"));
+    assert!(written.contains("Last: Up"));
 }
 
 #[test]
