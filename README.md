@@ -41,3 +41,4 @@ Todo:
 - make command pattern more like settings design pattern
 - help manual
 - dumb gutter to avoid recalcing unless total lines changes significantly.
+- command history
