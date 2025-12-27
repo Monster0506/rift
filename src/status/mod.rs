@@ -239,7 +239,7 @@ impl StatusBar {
             crate::document::LineEnding::LF => "LF",
             crate::document::LineEnding::CRLF => "CRLF",
         };
-        parts.push(format!("{}", eol));
+        parts.push(eol.to_string());
 
         parts.join(" | ")
     }
