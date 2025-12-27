@@ -82,7 +82,8 @@ impl<T: TerminalBackend> Editor<T> {
             .register(CommandDef::new("write").with_alias("w"))
             .register(CommandDef::new("write").with_alias("w"))
             .register(CommandDef::new("wq"))
-            .register(CommandDef::new("notify"));
+            .register(CommandDef::new("notify"))
+            .register(CommandDef::new("redraw"));
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(registry, settings_registry);
 
@@ -313,6 +314,26 @@ impl<T: TerminalBackend> Editor<T> {
                     ExecutionResult::Failure => {
                         // Error already reported by executor to state/notification manager
                         // Keep command line visible so user can see it
+                    }
+                    ExecutionResult::Redraw => {
+                        // Close command line first before redraw
+                        self.state.clear_command_line();
+                        self.set_mode(Mode::Normal);
+
+                        let ctx = render::RenderContext {
+                            buf: &self.document.buffer,
+                            viewport: &self.viewport,
+                            state: &self.state,
+                            current_mode: self.current_mode,
+                            pending_key: self.dispatcher.pending_key(),
+                            needs_clear: true,
+                        };
+
+                        let compositor = &mut self.compositor;
+                        let term = &mut self.term;
+                        let render_cache = &mut self.render_cache;
+
+                        let _ = render::full_redraw(term, compositor, ctx, render_cache)?;
                     }
                 }
             }

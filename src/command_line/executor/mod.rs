@@ -17,6 +17,8 @@ pub enum ExecutionResult {
     WriteAndQuit,
     /// Error occurred during execution (already reported to manager)
     Failure,
+    /// Force a full redraw
+    Redraw,
 }
 
 /// Command executor
@@ -75,6 +77,8 @@ impl CommandExecutor {
                 ));
                 ExecutionResult::Failure
             }
+            ParsedCommand::Redraw { bangs: _ } => ExecutionResult::Redraw,
+
             ParsedCommand::Notify {
                 kind,
                 message,

@@ -32,6 +32,9 @@ pub enum ParsedCommand {
         message: String,
         bangs: usize,
     },
+    Redraw { 
+        bangs: usize,
+    },
 }
 
 /// Command parser
@@ -117,6 +120,7 @@ impl CommandParser {
             "write" => self.parse_write_command(args, bangs),
             "wq" => self.parse_write_quit_command(args, bangs),
             "notify" => self.parse_notify_command(args, bangs),
+            "redraw" => self.parse_redraw_command(args, bangs),
             _ => ParsedCommand::Unknown {
                 name: command_name.to_string(),
             },
@@ -308,6 +312,22 @@ impl CommandParser {
         ParsedCommand::Notify {
             kind,
             message,
+            bangs,
+        }
+    }
+
+    /// Parse :redraw command arguments
+    ///
+    /// Supports:
+    /// - `:redraw`
+    fn parse_redraw_command(&self, args: &[&str], bangs: usize) -> ParsedCommand {
+        if !args.is_empty() {
+            return ParsedCommand::Unknown {
+                name: "redraw (usage: :redraw)".to_string(),
+            };
+        }
+
+        ParsedCommand::Redraw {
             bangs,
         }
     }

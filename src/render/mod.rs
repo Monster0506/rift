@@ -109,6 +109,30 @@ impl RenderCache {
     }
 }
 
+/// Force a full redraw of all components by invalidating cache and clearing layers
+pub fn full_redraw<T: TerminalBackend>(
+    term: &mut T,
+    compositor: &mut LayerCompositor,
+    ctx: RenderContext,
+    cache: &mut RenderCache,
+) -> Result<CursorPosition, RiftError> {
+    // 1. Invalidate all cache entries
+    cache.invalidate_all();
+
+    // 2. Force clear all compositor layers to be absolutely sure
+    compositor.clear_layer(LayerPriority::CONTENT);
+    compositor.clear_layer(LayerPriority::STATUS_BAR);
+    compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
+    compositor.clear_layer(LayerPriority::NOTIFICATION);
+
+    // 3. Ensure we clear the terminal via context
+    let mut ctx = ctx;
+    ctx.needs_clear = true;
+
+    // 4. Perform a regular render pass
+    render(term, compositor, ctx, cache)
+}
+
 /// Context for rendering
 pub struct RenderContext<'a> {
     pub buf: &'a GapBuffer,
@@ -189,7 +213,7 @@ pub fn render<T: TerminalBackend>(
     };
 
     if cache.status.as_ref() != Some(&current_status_state) {
-        compositor.mark_dirty(LayerPriority::STATUS_BAR);
+        compositor.clear_layer(LayerPriority::STATUS_BAR);
         StatusBar::render_to_layer(
             compositor.get_layer_mut(LayerPriority::STATUS_BAR),
             ctx.viewport,
@@ -223,7 +247,7 @@ pub fn render<T: TerminalBackend>(
 
     if cache.command_line != current_command_state {
         if current_command_state.is_some() {
-            compositor.mark_dirty(LayerPriority::FLOATING_WINDOW);
+            compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
             // Render command line
             let layer = compositor.get_layer_mut(LayerPriority::FLOATING_WINDOW);
             let default_border_chars = ctx.state.settings.default_border_chars.clone();
@@ -246,7 +270,7 @@ pub fn render<T: TerminalBackend>(
             command_cursor_info = Some(CursorPosition::Absolute(cursor_row, cursor_col));
         } else {
             // Transitioned from Command mode to something else
-            compositor.mark_dirty(LayerPriority::FLOATING_WINDOW);
+            compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
         }
         cache.command_line = current_command_state;
     } else if let Some(ref state) = current_command_state {
@@ -311,7 +335,7 @@ pub fn render<T: TerminalBackend>(
     };
 
     if cache.notifications.as_ref() != Some(&current_notification_state) {
-        compositor.mark_dirty(LayerPriority::NOTIFICATION);
+        compositor.clear_layer(LayerPriority::NOTIFICATION);
         render_notifications(
             compositor.get_layer_mut(LayerPriority::NOTIFICATION),
             ctx.state,
