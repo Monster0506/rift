@@ -4,7 +4,9 @@ use crate::buffer::GapBuffer;
 use crate::key::Key;
 use crate::layer::{Layer, LayerCompositor, LayerPriority};
 use crate::mode::Mode;
-use crate::render::{_format_key as format_key, calculate_cursor_column, render, RenderContext};
+use crate::render::{
+    _format_key as format_key, calculate_cursor_column, render, RenderCache, RenderContext,
+};
 use crate::state::State;
 use crate::status::StatusBar;
 use crate::test_utils::MockTerminal;
@@ -197,11 +199,10 @@ fn test_render_status_bar_pending_key_layer() {
 fn test_render_clears_screen() {
     let mut term = MockTerminal::new(10, 80);
     let buf = GapBuffer::new(100).unwrap();
-    let mut viewport = Viewport::new(10, 80);
+    let viewport = Viewport::new(10, 80);
     let state = State::new();
     let mut compositor = LayerCompositor::new(10, 80);
 
-    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -211,8 +212,9 @@ fn test_render_clears_screen() {
             current_mode: Mode::Normal,
             pending_key: None,
             state: &state,
-            needs_clear,
+            needs_clear: true,
         },
+        &mut RenderCache::default(),
     )
     .unwrap();
 
@@ -225,11 +227,10 @@ fn test_render_cursor_positioning() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = GapBuffer::new(100).unwrap();
     buf.insert_str("hello").unwrap();
-    let mut viewport = Viewport::new(10, 80);
+    let viewport = Viewport::new(10, 80);
     let state = State::new();
     let mut compositor = LayerCompositor::new(10, 80);
 
-    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -239,8 +240,9 @@ fn test_render_cursor_positioning() {
             current_mode: Mode::Normal,
             pending_key: None,
             state: &state,
-            needs_clear,
+            needs_clear: true,
         },
+        &mut RenderCache::default(),
     )
     .unwrap();
 
@@ -252,11 +254,10 @@ fn test_render_cursor_positioning() {
 fn test_render_empty_buffer() {
     let mut term = MockTerminal::new(10, 80);
     let buf = GapBuffer::new(100).unwrap();
-    let mut viewport = Viewport::new(10, 80);
+    let viewport = Viewport::new(10, 80);
     let state = State::new();
     let mut compositor = LayerCompositor::new(10, 80);
 
-    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -266,8 +267,9 @@ fn test_render_empty_buffer() {
             current_mode: Mode::Normal,
             pending_key: None,
             state: &state,
-            needs_clear,
+            needs_clear: true,
         },
+        &mut RenderCache::default(),
     )
     .unwrap();
 
@@ -282,11 +284,10 @@ fn test_render_multiline_buffer() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = GapBuffer::new(100).unwrap();
     buf.insert_str("line1\nline2\nline3\nline4\nline5").unwrap();
-    let mut viewport = Viewport::new(10, 80);
+    let viewport = Viewport::new(10, 80);
     let state = State::new();
     let mut compositor = LayerCompositor::new(10, 80);
 
-    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -296,8 +297,9 @@ fn test_render_multiline_buffer() {
             current_mode: Mode::Normal,
             pending_key: None,
             state: &state,
-            needs_clear,
+            needs_clear: true,
         },
+        &mut RenderCache::default(),
     )
     .unwrap();
 
@@ -316,12 +318,11 @@ fn test_render_file_loaded_at_start() {
     buf.insert_bytes(b"line1\nline2\nline3\n").unwrap();
     buf.move_to_start();
 
-    let mut viewport = Viewport::new(10, 80);
+    let viewport = Viewport::new(10, 80);
     let state = State::new();
     let mut compositor = LayerCompositor::new(10, 80);
 
     // First render (simulating initial render after file load)
-    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -331,8 +332,9 @@ fn test_render_file_loaded_at_start() {
             current_mode: Mode::Normal,
             pending_key: None,
             state: &state,
-            needs_clear,
+            needs_clear: true,
         },
+        &mut RenderCache::default(),
     )
     .unwrap();
 
@@ -362,11 +364,10 @@ fn test_render_viewport_scrolling() {
     for _ in 0..8 {
         buf.move_up();
     }
-    let mut viewport = Viewport::new(5, 80);
+    let viewport = Viewport::new(5, 80);
     let state = State::new();
     let mut compositor = LayerCompositor::new(5, 80);
 
-    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -376,8 +377,9 @@ fn test_render_viewport_scrolling() {
             current_mode: Mode::Normal,
             pending_key: None,
             state: &state,
-            needs_clear,
+            needs_clear: true,
         },
+        &mut RenderCache::default(),
     )
     .unwrap();
 
@@ -390,12 +392,11 @@ fn test_render_viewport_scrolling() {
 fn test_render_viewport_edge_cases() {
     let mut term = MockTerminal::new(1, 1); // Minimal viewport
     let buf = GapBuffer::new(100).unwrap();
-    let mut viewport = Viewport::new(1, 1);
+    let viewport = Viewport::new(1, 1);
     let state = State::new();
     let mut compositor = LayerCompositor::new(1, 1);
 
     // Should not panic with minimal viewport
-    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -405,8 +406,9 @@ fn test_render_viewport_edge_cases() {
             current_mode: Mode::Normal,
             pending_key: None,
             state: &state,
-            needs_clear,
+            needs_clear: true,
         },
+        &mut RenderCache::default(),
     )
     .unwrap();
 }
@@ -419,11 +421,10 @@ fn test_render_large_buffer() {
     for i in 0..100 {
         buf.insert_str(&format!("line {}\n", i)).unwrap();
     }
-    let mut viewport = Viewport::new(10, 80);
+    let viewport = Viewport::new(10, 80);
     let state = State::new();
     let mut compositor = LayerCompositor::new(10, 80);
 
-    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -433,8 +434,9 @@ fn test_render_large_buffer() {
             current_mode: Mode::Normal,
             pending_key: None,
             state: &state,
-            needs_clear,
+            needs_clear: true,
         },
+        &mut RenderCache::default(),
     )
     .unwrap();
 
@@ -459,7 +461,6 @@ fn test_render_cursor_at_viewport_boundaries() {
     for _ in 0..20 {
         buf.move_up();
     }
-    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -469,8 +470,9 @@ fn test_render_cursor_at_viewport_boundaries() {
             current_mode: Mode::Normal,
             pending_key: None,
             state: &state,
-            needs_clear,
+            needs_clear: true,
         },
+        &mut RenderCache::default(),
     )
     .unwrap();
     // First render clears screen (viewport scrolls to show cursor at top)
@@ -497,6 +499,7 @@ fn test_render_cursor_at_viewport_boundaries() {
             state: &state,
             needs_clear: needs_clear2,
         },
+        &mut RenderCache::default(),
     )
     .unwrap();
     // Should clear when scrolling to show cursor at bottom
@@ -564,6 +567,7 @@ fn test_render_line_numbers_enabled() {
             state: &state,
             needs_clear: true,
         },
+        &mut RenderCache::default(),
     )
     .unwrap();
 
@@ -598,6 +602,7 @@ fn test_render_line_numbers_disabled() {
             state: &state,
             needs_clear: true,
         },
+        &mut RenderCache::default(),
     )
     .unwrap();
 
@@ -628,6 +633,7 @@ fn test_render_line_numbers_gutter_width() {
             state: &state,
             needs_clear: true,
         },
+        &mut RenderCache::default(),
     )
     .unwrap();
 
@@ -653,7 +659,8 @@ fn test_render_cursor_position_with_line_numbers() {
 
     let mut compositor = LayerCompositor::new(10, 80);
 
-    let cursor_info = render(
+    let mut cache = RenderCache::default();
+    render(
         &mut term,
         &mut compositor,
         RenderContext {
@@ -664,15 +671,124 @@ fn test_render_cursor_position_with_line_numbers() {
             state: &state,
             needs_clear: true,
         },
+        &mut cache,
+    )
+    .unwrap();
+}
+
+#[test]
+fn test_no_redraw_on_noop() {
+    let mut term = MockTerminal::new(10, 80);
+    let mut buf = GapBuffer::new(100).unwrap();
+    buf.insert_str("test").unwrap();
+    let viewport = Viewport::new(10, 80);
+    let mut state = State::new();
+    state.settings.show_line_numbers = false;
+    let mut compositor = LayerCompositor::new(10, 80);
+    let mut cache = RenderCache::default();
+
+    // 1. First render - populates layers and cache
+    render(
+        &mut term,
+        &mut compositor,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear: true,
+        },
+        &mut cache,
     )
     .unwrap();
 
-    // Cursor at (0, 0) in buffer.
-    // Gutter width: 2 digits + 1 = 3.
-    // Visual cursor col should be 0 + 3 = 3.
-    let crate::render::CursorPosition::Absolute(row, col) = cursor_info;
-    assert_eq!(row, 0);
-    assert_eq!(col, 3);
+    // Verify content was rendered
+    let content_layer = compositor.get_layer_mut(LayerPriority::CONTENT);
+    assert_eq!(content_layer.get_cell(0, 0).unwrap().content, vec![b't']);
+
+    // 2. Manually "vandalize" the layer content
+    // If selective redrawing works, this change should PERSIST because render() will skip this layer.
+    content_layer.set_cell(0, 0, crate::layer::Cell::new(b'X'));
+    assert_eq!(content_layer.get_cell(0, 0).unwrap().content, vec![b'X']);
+
+    // 3. Second render - should skip CONTENT layer because state hasn't changed
+    render(
+        &mut term,
+        &mut compositor,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear: false,
+        },
+        &mut cache,
+    )
+    .unwrap();
+
+    // 4. Verification: The 'X' should still be there!
+    let content_layer_after = compositor.get_layer_mut(LayerPriority::CONTENT);
+    assert_eq!(
+        content_layer_after.get_cell(0, 0).unwrap().content,
+        vec![b'X'],
+        "Layer was re-rendered despite identical state!"
+    );
+}
+
+#[test]
+fn test_redraw_on_change() {
+    let mut term = MockTerminal::new(10, 80);
+    let mut buf = GapBuffer::new(100).unwrap();
+    buf.insert_str("test").unwrap();
+    let viewport = Viewport::new(10, 80);
+    let mut state = State::new();
+    state.settings.show_line_numbers = false;
+    let mut compositor = LayerCompositor::new(10, 80);
+    let mut cache = RenderCache::default();
+
+    render(
+        &mut term,
+        &mut compositor,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear: true,
+        },
+        &mut cache,
+    )
+    .unwrap();
+
+    // Vandalize
+    compositor
+        .get_layer_mut(LayerPriority::CONTENT)
+        .set_cell(0, 0, crate::layer::Cell::new(b'X'));
+
+    // Change state (insert a char)
+    buf.insert(b'!').unwrap();
+
+    render(
+        &mut term,
+        &mut compositor,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            state: &state,
+            needs_clear: false,
+        },
+        &mut cache,
+    )
+    .unwrap();
+
+    // The 'X' should be GONE (replaced by 't' from "test!")
+    let content_layer = compositor.get_layer_mut(LayerPriority::CONTENT);
+    assert_eq!(content_layer.get_cell(0, 0).unwrap().content, vec![b't']);
 }
 
 // ============================================================================

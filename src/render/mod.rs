@@ -25,6 +25,90 @@ use crate::status::StatusBar;
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
 
+/// Explicitly tracked cursor information for rendering comparison
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CursorInfo {
+    pub row: usize,
+    pub col: usize,
+}
+
+/// Minimal state required to trigger a re-render of the buffer content
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContentDrawState {
+    pub revision: u64,
+    pub top_line: usize,
+    pub left_col: usize,
+    pub rows: usize,
+    pub cols: usize,
+    pub tab_width: usize,
+    pub show_line_numbers: bool,
+}
+
+/// Minimal state required to trigger a re-render of the status bar
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusDrawState {
+    pub mode: Mode,
+    pub pending_key: Option<crate::key::Key>,
+    pub file_name: String,
+    pub is_dirty: bool,
+    pub cursor: CursorInfo,
+    pub total_lines: usize,
+    pub debug_mode: bool,
+    pub cols: usize,
+}
+
+/// Minimal state required to trigger a re-render of the command line
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandDrawState {
+    pub content: String,
+    pub cursor: CursorInfo,
+    pub width: usize,
+    pub height: usize,
+    pub has_border: bool,
+    pub reverse_video: bool,
+}
+
+/// Minimal state required to trigger a re-render of notifications
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotificationDrawState {
+    pub generation: u64,
+    pub count: usize,
+}
+
+/// Cache for detecting changes in component drawing states
+#[derive(Debug, Clone, Default)]
+pub struct RenderCache {
+    pub content: Option<ContentDrawState>,
+    pub status: Option<StatusDrawState>,
+    pub command_line: Option<CommandDrawState>,
+    pub notifications: Option<NotificationDrawState>,
+}
+
+impl RenderCache {
+    pub fn invalidate_all(&mut self) {
+        self.content = None;
+        self.status = None;
+        self.command_line = None;
+        self.notifications = None;
+    }
+
+    pub fn invalidate_content(&mut self) {
+        self.content = None;
+    }
+
+    pub fn invalidate_status(&mut self) {
+        self.status = None;
+    }
+
+    pub fn invalidate_command_line(&mut self) {
+        self.command_line = None;
+    }
+
+    pub fn invalidate_notifications(&mut self) {
+        self.notifications = None;
+    }
+}
+
 /// Context for rendering
 pub struct RenderContext<'a> {
     pub buf: &'a GapBuffer,
@@ -55,59 +139,191 @@ pub fn render<T: TerminalBackend>(
     term: &mut T,
     compositor: &mut LayerCompositor,
     ctx: RenderContext,
+    cache: &mut RenderCache,
 ) -> Result<CursorPosition, RiftError> {
     // Resize compositor if needed
     if compositor.rows() != ctx.viewport.visible_rows()
         || compositor.cols() != ctx.viewport.visible_cols()
     {
         compositor.resize(ctx.viewport.visible_rows(), ctx.viewport.visible_cols());
+        cache.invalidate_all();
     }
 
-    // Clear all layers before rendering
-    compositor.clear_all();
-
     // 1. Render content to CONTENT layer
-    render_content_to_layer(
-        compositor.get_layer_mut(LayerPriority::CONTENT),
-        ctx.buf,
-        ctx.viewport,
-        ctx.state.settings.editor_bg,
-        ctx.state.settings.editor_fg,
-        &ctx,
-    );
+    let current_content_state = ContentDrawState {
+        revision: ctx.buf.revision,
+        top_line: ctx.viewport.top_line(),
+        left_col: ctx.viewport.left_col(),
+        rows: ctx.viewport.visible_rows(),
+        cols: ctx.viewport.visible_cols(),
+        tab_width: ctx.state.settings.tab_width,
+        show_line_numbers: ctx.state.settings.show_line_numbers,
+    };
 
-    // 2. Always render status bar to STATUS_BAR layer (visible in all modes)
-    StatusBar::render_to_layer(
-        compositor.get_layer_mut(LayerPriority::STATUS_BAR),
-        ctx.viewport,
-        ctx.current_mode,
-        ctx.pending_key,
-        ctx.state,
-    );
+    if cache.content.as_ref() != Some(&current_content_state) {
+        compositor.mark_dirty(LayerPriority::CONTENT);
+        render_content_to_layer(
+            compositor.get_layer_mut(LayerPriority::CONTENT),
+            ctx.buf,
+            ctx.viewport,
+            ctx.state.settings.editor_bg,
+            ctx.state.settings.editor_fg,
+            &ctx,
+        );
+        cache.content = Some(current_content_state);
+    }
+
+    // 2. Render status bar to STATUS_BAR layer (visible in all modes)
+    let current_status_state = StatusDrawState {
+        mode: ctx.current_mode,
+        pending_key: ctx.pending_key,
+        file_name: ctx.state.file_name.clone(),
+        is_dirty: ctx.state.is_dirty,
+        cursor: CursorInfo {
+            row: ctx.buf.get_line(),
+            col: calculate_cursor_column(ctx.buf, ctx.buf.get_line(), ctx.state.settings.tab_width),
+        },
+        total_lines: ctx.state.total_lines,
+        debug_mode: ctx.state.debug_mode,
+        cols: ctx.viewport.visible_cols(),
+    };
+
+    if cache.status.as_ref() != Some(&current_status_state) {
+        compositor.mark_dirty(LayerPriority::STATUS_BAR);
+        StatusBar::render_to_layer(
+            compositor.get_layer_mut(LayerPriority::STATUS_BAR),
+            ctx.viewport,
+            ctx.current_mode,
+            ctx.pending_key,
+            ctx.state,
+        );
+        cache.status = Some(current_status_state);
+    }
 
     // 3. Render command window on top if in command mode
-    let cursor_info = if ctx.current_mode == Mode::Command {
-        // Render command line to FLOATING_WINDOW layer (renders on top of status bar)
-        let layer = compositor.get_layer_mut(LayerPriority::FLOATING_WINDOW);
+    let mut command_cursor_info = None;
+    let current_command_state = if ctx.current_mode == Mode::Command {
+        Some(CommandDrawState {
+            content: ctx.state.command_line.clone(),
+            cursor: CursorInfo {
+                row: 0, // Command line is single line for now
+                col: ctx.state.command_line_cursor,
+            },
+            width: ((ctx.viewport.visible_cols() as f64
+                * ctx.state.settings.command_line_window.width_ratio) as usize)
+                .max(ctx.state.settings.command_line_window.min_width)
+                .min(ctx.viewport.visible_cols()),
+            height: ctx.state.settings.command_line_window.height,
+            has_border: ctx.state.settings.command_line_window.border,
+            reverse_video: ctx.state.settings.command_line_window.reverse_video,
+        })
+    } else {
+        None
+    };
 
-        let default_border_chars = ctx.state.settings.default_border_chars.clone();
-        let (window_row, window_col, _, offset) = CommandLine::render_to_layer(
-            layer,
-            ctx.viewport,
-            &ctx.state.command_line,
-            ctx.state.command_line_cursor,
-            default_border_chars,
-            &ctx.state.settings.command_line_window,
+    if cache.command_line != current_command_state {
+        if current_command_state.is_some() {
+            compositor.mark_dirty(LayerPriority::FLOATING_WINDOW);
+            // Render command line
+            let layer = compositor.get_layer_mut(LayerPriority::FLOATING_WINDOW);
+            let default_border_chars = ctx.state.settings.default_border_chars.clone();
+            let (window_row, window_col, _, offset) = CommandLine::render_to_layer(
+                layer,
+                ctx.viewport,
+                &ctx.state.command_line,
+                ctx.state.command_line_cursor,
+                default_border_chars,
+                &ctx.state.settings.command_line_window,
+            );
+
+            // Calculate cursor position in command window
+            let (cursor_row, cursor_col) = CommandLine::calculate_cursor_position(
+                (window_row, window_col),
+                ctx.state.command_line_cursor,
+                offset,
+                ctx.state.settings.command_line_window.border,
+            );
+            command_cursor_info = Some(CursorPosition::Absolute(cursor_row, cursor_col));
+        } else {
+            // Transitioned from Command mode to something else
+            compositor.mark_dirty(LayerPriority::FLOATING_WINDOW);
+        }
+        cache.command_line = current_command_state;
+    } else if let Some(ref state) = current_command_state {
+        // State is same, but we still need cursor pos info if we were already in command mode
+        // We could cache the cursor_info too, or just re-calculate it since it's cheap.
+        // For simplicity, let's just re-calculate it here (re-using identical logic as above)
+        let cmd_width = state.width;
+        let cmd_height = state.height;
+        let has_border = state.has_border;
+
+        // Note: We need window_row/window_col which are calculated during render.
+        // This is a bit tricky if we skip render.
+        // Let's store the cursor location in the cache or just re-calculate window pos.
+        let floating_window = crate::floating_window::FloatingWindow::new(
+            WindowPosition::Center,
+            cmd_width,
+            cmd_height,
+        )
+        .with_border(has_border);
+        let (window_row, window_col) = floating_window.calculate_position(
+            ctx.viewport.visible_rows() as u16,
+            ctx.viewport.visible_cols() as u16,
         );
 
-        // Calculate cursor position in command window
+        // We also need the 'offset' which CommandLine::render_to_layer calculates.
+        // Let's add 'offset' to CommandDrawState if we want to avoid re-rendering but still have cursor info.
+        // Actually, let's just re-render if we need simplicity, or add it to the DrawState.
+        // The user said: "If any component depends on something computed during render, include it".
+        // Let's just re-calculate the offset logic here (it's O(1)).
+        let border_offset = if has_border { 2 } else { 0 };
+        let available_cmd_width = cmd_width.saturating_sub(border_offset).saturating_sub(1);
+        let offset = if state.content.len() <= available_cmd_width {
+            0
+        } else if state.cursor.col >= available_cmd_width {
+            state
+                .cursor
+                .col
+                .saturating_sub(available_cmd_width)
+                .saturating_add(1)
+        } else {
+            0
+        };
+
         let (cursor_row, cursor_col) = CommandLine::calculate_cursor_position(
             (window_row, window_col),
-            ctx.state.command_line_cursor,
+            state.cursor.col,
             offset,
-            ctx.state.settings.command_line_window.border,
+            has_border,
         );
-        CursorPosition::Absolute(cursor_row, cursor_col)
+        command_cursor_info = Some(CursorPosition::Absolute(cursor_row, cursor_col));
+    }
+
+    // 4. Render notifications
+    let current_notification_state = NotificationDrawState {
+        generation: ctx.state.error_manager.notifications().generation,
+        count: ctx
+            .state
+            .error_manager
+            .notifications()
+            .iter_active()
+            .count(),
+    };
+
+    if cache.notifications.as_ref() != Some(&current_notification_state) {
+        compositor.mark_dirty(LayerPriority::NOTIFICATION);
+        render_notifications(
+            compositor.get_layer_mut(LayerPriority::NOTIFICATION),
+            ctx.state,
+            ctx.viewport.visible_rows(),
+            ctx.viewport.visible_cols(),
+        );
+        cache.notifications = Some(current_notification_state);
+    }
+
+    // Determine final cursor position
+    let cursor_info = if let Some(pos) = command_cursor_info {
+        pos
     } else {
         // Calculate normal cursor position
         let cursor_line = ctx.buf.get_line();
@@ -140,19 +356,12 @@ pub fn render<T: TerminalBackend>(
         CursorPosition::Absolute(cursor_line_in_viewport as u16, display_col as u16)
     };
 
-    render_notifications(
-        compositor.get_layer_mut(LayerPriority::NOTIFICATION),
-        ctx.state,
-        ctx.viewport.visible_rows(),
-        ctx.viewport.visible_cols(),
-    );
-
-    // 4. Render composited output to terminal
+    // 5. Render composited output to terminal
     term.hide_cursor()?;
     let _ = compositor.render_to_terminal(term, ctx.needs_clear)?;
     term.show_cursor()?;
 
-    // 5. Position cursor
+    // 6. Position cursor
     match cursor_info {
         CursorPosition::Absolute(row, col) => {
             term.move_cursor(row, col)?;

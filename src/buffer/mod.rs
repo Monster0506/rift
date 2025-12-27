@@ -32,6 +32,8 @@ pub struct GapBuffer {
     gap_end: usize,
     /// Line index for efficient line lookup
     pub line_index: LineIndex,
+    /// Monotonic revision counter for change detection
+    pub revision: u64,
 }
 
 impl GapBuffer {
@@ -68,6 +70,7 @@ impl GapBuffer {
             gap_start: 0,
             gap_end: initial_capacity,
             line_index: LineIndex::new(),
+            revision: 0,
         })
     }
 
@@ -131,6 +134,7 @@ impl GapBuffer {
         }
         self.line_index.insert(self.gap_start, &[byte]);
         self.gap_start += 1;
+        self.revision += 1;
         Ok(())
     }
 
@@ -157,6 +161,7 @@ impl GapBuffer {
         }
         self.line_index.insert(self.gap_start, bytes);
         self.gap_start += needed;
+        self.revision += 1;
 
         Ok(())
     }
@@ -173,6 +178,7 @@ impl GapBuffer {
             // Just move gap left - the byte is effectively deleted
             self.line_index.delete(self.gap_start - 1, 1);
             self.gap_start -= 1;
+            self.revision += 1;
             true
         } else {
             false
@@ -185,6 +191,7 @@ impl GapBuffer {
             // Just expand gap by one (effectively deleting the byte)
             self.line_index.delete(self.gap_start, 1);
             self.gap_end += 1;
+            self.revision += 1;
             true
         } else {
             false

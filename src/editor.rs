@@ -13,13 +13,17 @@ use crate::key_handler::{KeyAction, KeyHandler};
 use crate::layer::LayerCompositor;
 use crate::mode::Mode;
 use crate::render;
+use crate::screen_buffer::FrameStats;
 use crate::state::State;
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
 
 /// Main editor struct
 pub struct Editor<T: TerminalBackend> {
-    terminal: T,
+    /// Terminal backend
+    pub term: T,
+    /// Render cache for selective redrawing
+    pub render_cache: crate::render::RenderCache,
     document: Document,
     compositor: LayerCompositor,
     viewport: Viewport,
@@ -91,7 +95,8 @@ impl<T: TerminalBackend> Editor<T> {
         let compositor = LayerCompositor::new(size.rows as usize, size.cols as usize);
 
         Ok(Editor {
-            terminal,
+            term: terminal,
+            render_cache: crate::render::RenderCache::default(),
             document,
             compositor,
             viewport,
@@ -145,7 +150,7 @@ impl<T: TerminalBackend> Editor<T> {
             // ============================================================
 
             // Read key
-            let key_press = self.terminal.read_key()?;
+            let key_press = self.term.read_key()?;
 
             // Process keypress through key handler
             let action = KeyHandler::process_key(key_press, self.current_mode);
@@ -377,7 +382,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Update state and render the editor (for initial render)
-    fn update_and_render(&mut self) -> Result<(), RiftError> {
+    pub fn update_and_render(&mut self) -> Result<(), RiftError> {
         // Update buffer and cursor state only (no input tracking on initial render)
         let cursor_line = self.document.buffer.get_line();
         let cursor_col = render::calculate_cursor_column(
@@ -408,19 +413,33 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Render the editor interface (pure read - no mutations)
     /// Uses the layer compositor for composited rendering
+    pub fn render_to_terminal(&mut self, needs_clear: bool) -> Result<FrameStats, RiftError> {
+        self.term.hide_cursor()?;
+        let stats = self
+            .compositor
+            .render_to_terminal(&mut self.term, needs_clear)
+            .map_err(|e| RiftError::new(ErrorType::Internal, "RENDER_FAILED", e))?;
+        self.term.show_cursor()?;
+        Ok(stats)
+    }
+
+    /// Render the editor interface (pure read - no mutations)
+    /// Uses the layer compositor for composited rendering
     fn render(&mut self, needs_clear: bool) -> Result<(), RiftError> {
-        render::render(
-            &mut self.terminal,
-            &mut self.compositor,
-            render::RenderContext {
-                buf: &self.document.buffer,
-                viewport: &self.viewport,
-                current_mode: self.current_mode,
-                pending_key: self.dispatcher.pending_key(),
-                state: &self.state,
-                needs_clear,
-            },
-        )?;
+        let ctx = render::RenderContext {
+            buf: &self.document.buffer,
+            viewport: &self.viewport,
+            state: &self.state,
+            current_mode: self.current_mode,
+            pending_key: self.dispatcher.pending_key(),
+            needs_clear,
+        };
+
+        let compositor = &mut self.compositor;
+        let term = &mut self.term;
+        let render_cache = &mut self.render_cache;
+
+        let _ = render::render(term, compositor, ctx, render_cache)?;
         Ok(())
     }
 
@@ -467,10 +486,14 @@ impl<T: TerminalBackend> Editor<T> {
 
         Ok(())
     }
+
+    pub fn term_mut(&mut self) -> &mut T {
+        &mut self.term
+    }
 }
 
 impl<T: TerminalBackend> Drop for Editor<T> {
     fn drop(&mut self) {
-        self.terminal.deinit();
+        self.term.deinit();
     }
 }

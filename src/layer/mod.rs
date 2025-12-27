@@ -335,6 +335,11 @@ impl LayerCompositor {
         self.layers.remove(&priority)
     }
 
+    /// Explicitly mark a layer as dirty (clears it for repopulation)
+    pub fn mark_dirty(&mut self, priority: LayerPriority) {
+        self.clear_layer(priority);
+    }
+
     /// Clear all layers
     pub fn clear_all(&mut self) {
         for layer in self.layers.values_mut() {

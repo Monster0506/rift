@@ -76,6 +76,8 @@ pub struct NotificationManager {
     notifications: Vec<Notification>,
     /// Counter for generating unique IDs
     next_id: u64,
+    /// Monotonic generation counter for change detection
+    pub generation: u64,
 }
 
 impl NotificationManager {
@@ -84,6 +86,7 @@ impl NotificationManager {
         Self {
             notifications: Vec::new(),
             next_id: 0,
+            generation: 0,
         }
     }
 
@@ -98,6 +101,7 @@ impl NotificationManager {
         self.next_id += 1;
         self.notifications
             .push(Notification::new(id, kind, message, ttl));
+        self.generation += 1;
         id
     }
 
@@ -150,13 +154,18 @@ impl NotificationManager {
     /// Prune expired notifications
     pub fn prune_expired(&mut self) {
         let now = Instant::now();
+        let old_len = self.notifications.len();
         self.notifications.retain(|n| !n.is_expired(now));
+        if self.notifications.len() != old_len {
+            self.generation += 1;
+        }
     }
 
     /// Remove a notification by ID
     pub fn remove(&mut self, id: u64) {
         if let Some(pos) = self.notifications.iter().position(|n| n.id == id) {
             self.notifications.remove(pos);
+            self.generation += 1;
         }
     }
 }
