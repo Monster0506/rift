@@ -25,6 +25,7 @@ Implemented:
 - component level dirty flags to avoid clearing and repopulating full layers
 - add redraw command
 - crlf and lf support
+- setlocal for document-level settings
 
 
 Todo:
@@ -40,4 +41,3 @@ Todo:
 - make command pattern more like settings design pattern
 - help manual
 - dumb gutter to avoid recalcing unless total lines changes significantly.
-- setlocal for document-level settings
