@@ -171,38 +171,6 @@ fn render_content_to_layer(
     editor_fg: Option<Color>,
     ctx: &RenderContext,
 ) {
-    let before_gap = buf.get_before_gap();
-    let after_gap = buf.get_after_gap();
-
-    // Combine before and after gap to get full text
-    let mut lines: Vec<Vec<u8>> = Vec::new();
-    let mut current_line = Vec::new();
-
-    // Process before_gap
-    for &byte in before_gap {
-        if byte == b'\n' {
-            lines.push(current_line);
-            current_line = Vec::new();
-        } else if byte != b'\r' {
-            current_line.push(byte);
-        }
-    }
-
-    // Process after_gap
-    for &byte in after_gap {
-        if byte == b'\n' {
-            lines.push(current_line);
-            current_line = Vec::new();
-        } else if byte != b'\r' {
-            current_line.push(byte);
-        }
-    }
-
-    // Add last line if not empty
-    if !current_line.is_empty() || lines.is_empty() {
-        lines.push(current_line);
-    }
-
     // Calculate gutter width using helper function
     let gutter_width = if ctx.state.settings.show_line_numbers {
         calculate_gutter_width(ctx.state.total_lines)
@@ -245,8 +213,8 @@ fn render_content_to_layer(
             }
         }
 
-        if line_num < lines.len() {
-            let line = &lines[line_num];
+        if line_num < buf.get_total_lines() {
+            let line = buf.get_line_bytes(line_num);
             // Write line content
             // We need to skip visual columns based on viewport.left_col
             let content_cols = visible_cols.saturating_sub(gutter_width);
@@ -254,7 +222,7 @@ fn render_content_to_layer(
             let mut rendered_col = 0;
             let left_col = viewport.left_col();
 
-            for &byte in line {
+            for &byte in &line {
                 if rendered_col >= content_cols {
                     break;
                 }

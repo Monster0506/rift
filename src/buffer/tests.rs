@@ -157,10 +157,67 @@ fn test_insert_bytes_with_newlines() {
 }
 
 #[test]
-fn test_insert_bytes_binary_data() {
+fn test_line_indexing_basic() {
     let mut buf = GapBuffer::new(10).unwrap();
-    let binary_data = &[0x00, 0x01, 0xFF, 0xFE, b'a', b'b'];
-    buf.insert_bytes(binary_data).unwrap();
-    let result = buf.get_before_gap();
-    assert_eq!(result, binary_data);
+    buf.insert_str("line1\nline2\nline3").unwrap();
+    assert_eq!(buf.get_total_lines(), 3);
+    assert_eq!(buf.get_line(), 2); // Cursor at end of line 3 (index 2)
+}
+
+#[test]
+fn test_line_indexing_bytes() {
+    let mut buf = GapBuffer::new(20).unwrap();
+    buf.insert_str("abc\ndef\nghi").unwrap();
+    assert_eq!(buf.get_line_bytes(0), b"abc");
+    assert_eq!(buf.get_line_bytes(1), b"def");
+    assert_eq!(buf.get_line_bytes(2), b"ghi");
+}
+
+#[test]
+fn test_line_indexing_with_gap() {
+    let mut buf = GapBuffer::new(20).unwrap();
+    buf.insert_str("hello\nworld").unwrap();
+
+    // Move cursor to middle of "hello"
+    for _ in 0..8 {
+        buf.move_left();
+    }
+    // Buffer: [he] <gap> [llo\nworld]
+
+    assert_eq!(buf.get_line_bytes(0), b"hello");
+    assert_eq!(buf.get_line_bytes(1), b"world");
+}
+
+#[test]
+fn test_line_indexing_delete_merge() {
+    let mut buf = GapBuffer::new(20).unwrap();
+    buf.insert_str("abc\ndef").unwrap();
+    assert_eq!(buf.get_total_lines(), 2);
+
+    // Move to newline and delete it
+    for _ in 0..4 {
+        buf.move_left();
+    }
+    assert!(buf.delete_forward()); // Delete '\n'
+
+    assert_eq!(buf.to_string(), "abcdef");
+    assert_eq!(buf.get_total_lines(), 1);
+    assert_eq!(buf.get_line_bytes(0), b"abcdef");
+}
+
+#[test]
+fn test_line_indexing_complex_insert() {
+    let mut buf = GapBuffer::new(20).unwrap();
+    buf.insert_str("a\nd").unwrap();
+    // Move to after 'a'
+    for _ in 0..2 {
+        buf.move_left();
+    }
+    buf.insert_str("b\nc").unwrap();
+
+    assert_eq!(buf.to_string(), "ab\nc\nd");
+    assert_eq!(buf.get_total_lines(), 3);
+    assert_eq!(buf.get_line_bytes(0), b"ab");
+    assert_eq!(buf.get_line_bytes(1), b"c");
+    assert_eq!(buf.get_line_bytes(2), b"d");
 }

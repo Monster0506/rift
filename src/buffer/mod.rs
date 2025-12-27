@@ -15,6 +15,10 @@ use crate::error::{ErrorType, RiftError};
 /// - The buffer never emits or interprets commands.
 use std::alloc::{alloc, dealloc, Layout};
 use std::fmt::{self, Display};
+
+pub mod line_index;
+use line_index::LineIndex;
+
 /// Gap buffer for efficient insertion and deletion
 pub struct GapBuffer {
     /// Buffer containing text before gap, gap, and text after gap
@@ -26,6 +30,8 @@ pub struct GapBuffer {
     gap_start: usize,
     /// End of gap (start of `after_gap`)
     gap_end: usize,
+    /// Line index for efficient line lookup
+    pub line_index: LineIndex,
 }
 
 impl GapBuffer {
@@ -61,6 +67,7 @@ impl GapBuffer {
             capacity: initial_capacity,
             gap_start: 0,
             gap_end: initial_capacity,
+            line_index: LineIndex::new(),
         })
     }
 
@@ -122,6 +129,7 @@ impl GapBuffer {
         unsafe {
             *self.buffer.add(self.gap_start) = byte;
         }
+        self.line_index.insert(self.gap_start, &[byte]);
         self.gap_start += 1;
         Ok(())
     }
@@ -147,6 +155,7 @@ impl GapBuffer {
         unsafe {
             std::ptr::copy_nonoverlapping(bytes.as_ptr(), self.buffer.add(self.gap_start), needed);
         }
+        self.line_index.insert(self.gap_start, bytes);
         self.gap_start += needed;
 
         Ok(())
@@ -162,6 +171,7 @@ impl GapBuffer {
     pub fn delete_backward(&mut self) -> bool {
         if self.gap_start > 0 {
             // Just move gap left - the byte is effectively deleted
+            self.line_index.delete(self.gap_start - 1, 1);
             self.gap_start -= 1;
             true
         } else {
@@ -173,6 +183,7 @@ impl GapBuffer {
     pub fn delete_forward(&mut self) -> bool {
         if self.gap_end < self.capacity {
             // Just expand gap by one (effectively deleting the byte)
+            self.line_index.delete(self.gap_start, 1);
             self.gap_end += 1;
             true
         } else {
@@ -197,24 +208,54 @@ impl GapBuffer {
     /// Get the line number at the cursor position
     #[must_use]
     pub fn get_line(&self) -> usize {
-        let before = self.get_before_gap();
-        before.iter().filter(|&&b| b == b'\n').count()
+        self.line_index.get_line_at(self.gap_start)
     }
 
     /// Get the total number of lines
     #[must_use]
     pub fn get_total_lines(&self) -> usize {
-        let before = self.get_before_gap();
-        let after = self.get_after_gap();
-        let newlines = before.iter().filter(|&&b| b == b'\n').count()
-            + after.iter().filter(|&&b| b == b'\n').count();
-        // If there's at least one newline, lines = newlines + 1
-        // If no newlines, lines = 1 (single line)
-        if newlines > 0 || !before.is_empty() || !after.is_empty() {
-            newlines + 1
-        } else {
-            0
+        self.line_index.line_count()
+    }
+
+    /// Get bytes for a specific line (excluding trailing newline)
+    #[must_use]
+    pub fn get_line_bytes(&self, line_idx: usize) -> Vec<u8> {
+        let start = match self.line_index.get_start(line_idx) {
+            Some(s) => s,
+            None => return Vec::new(),
+        };
+        let end = match self.line_index.get_end(line_idx, self.len()) {
+            Some(e) => e,
+            None => return Vec::new(),
+        };
+
+        if end <= start {
+            return Vec::new();
         }
+
+        let mut result = Vec::with_capacity(end - start);
+
+        // 1. Portion before gap
+        if start < self.gap_start {
+            let chunk_end = end.min(self.gap_start);
+            let before = self.get_before_gap();
+            result.extend_from_slice(&before[start..chunk_end]);
+        }
+
+        // 2. Portion after gap
+        if end > self.gap_start {
+            let chunk_start = start.max(self.gap_start);
+            let after = self.get_after_gap();
+            // Logical 'chunk_start' is 'chunk_start - gap_start' in the 'after' slice
+            let slice_start = chunk_start.saturating_sub(self.gap_start);
+            let slice_end = end.saturating_sub(self.gap_start);
+            if slice_start < after.len() {
+                let actual_end = slice_end.min(after.len());
+                result.extend_from_slice(&after[slice_start..actual_end]);
+            }
+        }
+
+        result
     }
 
     /// Move cursor up one line
