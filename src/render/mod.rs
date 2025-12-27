@@ -90,40 +90,21 @@ pub fn render<T: TerminalBackend>(
         // Render command line to FLOATING_WINDOW layer (renders on top of status bar)
         let layer = compositor.get_layer_mut(LayerPriority::FLOATING_WINDOW);
 
-        // Calculate command window dimensions
-        let cmd_width = ((ctx.viewport.visible_cols() as f64
-            * ctx.state.settings.command_line_window.width_ratio)
-            as usize)
-            .max(ctx.state.settings.command_line_window.min_width)
-            .min(ctx.viewport.visible_cols());
-
-        let cmd_window = FloatingWindow::new(
-            WindowPosition::Center,
-            cmd_width,
-            ctx.state.settings.command_line_window.height,
-        )
-        .with_border(ctx.state.settings.command_line_window.border)
-        .with_reverse_video(ctx.state.settings.command_line_window.reverse_video);
-
-        // Prepare content
-        let mut content_line = Vec::new();
-        content_line.push(b':');
-        content_line.extend_from_slice(ctx.state.command_line.as_bytes());
-
-        // Render to layer using new API
-        cmd_window.render_with_border_chars(
+        let (window_row, window_col, _, offset) = CommandLine::render_to_layer(
             layer,
-            &[content_line],
+            ctx.viewport,
+            &ctx.state.command_line,
             ctx.state.settings.default_border_chars.clone(),
+            &ctx.state.settings.command_line_window,
         );
 
         // Calculate cursor position in command window
-        let window_pos = cmd_window.calculate_position(
-            ctx.viewport.visible_rows() as u16,
-            ctx.viewport.visible_cols() as u16,
+        let (cursor_row, cursor_col) = CommandLine::calculate_cursor_position(
+            (window_row, window_col),
+            &ctx.state.command_line,
+            offset,
+            ctx.state.settings.command_line_window.border,
         );
-        let (cursor_row, cursor_col) =
-            CommandLine::calculate_cursor_position(window_pos, cmd_width, &ctx.state.command_line);
         CursorPosition::Absolute(cursor_row, cursor_col)
     } else {
         // Calculate normal cursor position
@@ -138,7 +119,7 @@ pub fn render<T: TerminalBackend>(
 
         // Calculate gutter width
         let gutter_width = if ctx.state.settings.show_line_numbers {
-            ctx.state.total_lines.to_string().len() + 1
+            calculate_gutter_width(ctx.state.total_lines)
         } else {
             0
         };
@@ -147,8 +128,12 @@ pub fn render<T: TerminalBackend>(
             calculate_cursor_column(ctx.buf, cursor_line, ctx.state.settings.tab_width);
 
         // Add gutter width to cursor column
+        // Subtract left_col for horizontal scrolling
+        let visual_cursor_col = cursor_col.saturating_sub(ctx.viewport.left_col());
+
+        // Ensure cursor doesn't go onto gutter or past right edge
         let display_col =
-            (cursor_col + gutter_width).min(ctx.viewport.visible_cols().saturating_sub(1));
+            (visual_cursor_col + gutter_width).min(ctx.viewport.visible_cols().saturating_sub(1));
 
         CursorPosition::Absolute(cursor_line_in_viewport as u16, display_col as u16)
     };
@@ -216,12 +201,9 @@ fn render_content_to_layer(
         lines.push(current_line);
     }
 
-    // Calculate gutter width if line numbers are enabled
+    // Calculate gutter width using helper function
     let gutter_width = if ctx.state.settings.show_line_numbers {
-        // Calculate digits needed for total lines
-        let digits = ctx.state.total_lines.to_string().len();
-        // Add 1 for padding
-        digits + 1
+        calculate_gutter_width(ctx.state.total_lines)
     } else {
         0
     };
@@ -264,16 +246,49 @@ fn render_content_to_layer(
         if line_num < lines.len() {
             let line = &lines[line_num];
             // Write line content
+            // We need to skip visual columns based on viewport.left_col
             let content_cols = visible_cols.saturating_sub(gutter_width);
-            for (col, &byte) in line.iter().take(content_cols).enumerate() {
-                layer.set_cell(
-                    i,
-                    col + gutter_width,
-                    Cell::new(byte).with_colors(editor_fg, editor_bg),
-                );
+            let mut visual_col = 0;
+            let mut rendered_col = 0;
+            let left_col = viewport.left_col();
+
+            for &byte in line {
+                if rendered_col >= content_cols {
+                    break;
+                }
+
+                // Track visual column (handling tabs)
+                let char_width = if byte == b'\t' {
+                    ctx.state.settings.tab_width - (visual_col % ctx.state.settings.tab_width)
+                } else {
+                    1
+                };
+
+                let next_visual_col = visual_col + char_width;
+
+                // If any part of this character is visible (>= left_col)
+                if next_visual_col > left_col {
+                    // Check if we need to skip part of the character (e.g. part of a tab)
+                    // Currently simplification: just render if it ends after left_col
+
+                    // Only render if we haven't exceeded width
+                    if rendered_col < content_cols {
+                        let display_col = rendered_col + gutter_width;
+                        if display_col < visible_cols {
+                            layer.set_cell(
+                                i,
+                                display_col,
+                                Cell::new(byte).with_colors(editor_fg, editor_bg),
+                            );
+                        }
+                        rendered_col += char_width; // Advance by char width (e.g. tab)
+                    }
+                }
+                visual_col = next_visual_col;
             }
+
             // Pad with spaces
-            for col in (line.len().min(content_cols) + gutter_width)..visible_cols {
+            for col in (rendered_col + gutter_width)..visible_cols {
                 layer.set_cell(i, col, Cell::new(b' ').with_colors(editor_fg, editor_bg));
             }
         } else {
@@ -283,6 +298,14 @@ fn render_content_to_layer(
             }
         }
     }
+}
+
+/// Calculate gutter width for a given number of lines
+pub fn calculate_gutter_width(total_lines: usize) -> usize {
+    if total_lines == 0 {
+        return 0;
+    }
+    total_lines.to_string().len() + 1
 }
 
 /// Calculate the visual column position accounting for tab width

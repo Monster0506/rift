@@ -11,7 +11,7 @@ fn test_command_line_render_to_layer() {
     let viewport = Viewport::new(24, 80);
     let window_settings = CommandLineWindowSettings::default();
 
-    let (window_row, window_col, cmd_width) = CommandLine::render_to_layer(
+    let (window_row, window_col, cmd_width, _) = CommandLine::render_to_layer(
         &mut layer,
         &viewport,
         "test command",
@@ -46,7 +46,7 @@ fn test_command_line_calculate_cursor_position() {
     let command_line = "test";
 
     let (cursor_row, cursor_col) =
-        CommandLine::calculate_cursor_position(window_pos, cmd_width, command_line);
+        CommandLine::calculate_cursor_position(window_pos, command_line, 0, true);
 
     // Content row should be window_row + 1 (middle row)
     assert_eq!(cursor_row, 11);
@@ -63,14 +63,16 @@ fn test_command_line_cursor_position_clamped() {
     let cmd_width = 10; // Small width
     let command_line = "very long command line that exceeds width";
 
+    // cmd_width = 10. Border=true (implied).
+    // available_cmd = 10 - 2 - 1 = 7.
+    // len = 41.
+    // offset = 41 - 7 + 1 = 35.
+    let offset = 35;
     let (cursor_row, cursor_col) =
-        CommandLine::calculate_cursor_position(window_pos, cmd_width, command_line);
+        CommandLine::calculate_cursor_position(window_pos, command_line, offset, true);
 
-    // Content row should be window_row + 1
-    assert_eq!(cursor_row, 11);
-
-    // Cursor should be clamped to content_end_col = window_col + cmd_width - 2
-    // = 20 + 10 - 2 = 28
+    // Cursor should be clamped to content_end_col
+    // window_col (20) + border (1) + prompt (1) + visual_index (41-35=6) = 28
     assert_eq!(cursor_col, 28);
 }
 
@@ -83,7 +85,7 @@ fn test_command_line_with_custom_border_chars() {
     let window_settings = CommandLineWindowSettings::default();
     let custom_border = BorderChars::from_ascii(b'+', b'+', b'+', b'+', b'-', b'|');
 
-    let (window_row, window_col, _) = CommandLine::render_to_layer(
+    let (window_row, window_col, _, _) = CommandLine::render_to_layer(
         &mut layer,
         &viewport,
         "test",

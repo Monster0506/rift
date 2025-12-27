@@ -346,7 +346,14 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.error_manager.notifications_mut().prune_expired();
 
         // Update viewport based on cursor position (state mutation happens here)
-        let needs_clear = self.viewport.update(cursor_line, total_lines);
+        let gutter_width = if self.state.settings.show_line_numbers {
+            render::calculate_gutter_width(total_lines)
+        } else {
+            0
+        };
+        let needs_clear = self
+            .viewport
+            .update(cursor_line, cursor_col, total_lines, gutter_width);
 
         // Render (pure read - no mutations)
         self.render(needs_clear)
@@ -370,7 +377,14 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.update_dirty(self.document.is_dirty());
 
         // Update viewport based on cursor position (state mutation happens here)
-        let needs_clear = self.viewport.update(cursor_line, total_lines);
+        let gutter_width = if self.state.settings.show_line_numbers {
+            render::calculate_gutter_width(total_lines)
+        } else {
+            0
+        };
+        let needs_clear = self
+            .viewport
+            .update(cursor_line, cursor_col, total_lines, gutter_width);
 
         self.render(needs_clear)
     }

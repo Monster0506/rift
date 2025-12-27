@@ -32,7 +32,7 @@ impl CommandLine {
         command_line: &str,
         default_border_chars: Option<BorderChars>,
         window_settings: &CommandLineWindowSettings,
-    ) -> (u16, u16, usize) {
+    ) -> (u16, u16, usize, usize) {
         // Calculate width based on settings: ratio of terminal width, clamped to min/max
         let cmd_width = ((viewport.visible_cols() as f64 * window_settings.width_ratio) as usize)
             .max(window_settings.min_width)
@@ -46,7 +46,32 @@ impl CommandLine {
         // Prepare content: prompt + command line
         let mut content_line = Vec::new();
         content_line.push(b':');
-        content_line.extend_from_slice(command_line.as_bytes());
+
+        let border_width = if window_settings.border { 2 } else { 0 };
+        let available_width = cmd_width.saturating_sub(border_width); // Remove borders
+        let prompt_len = 1; // ":"
+        let available_cmd_width = available_width.saturating_sub(prompt_len);
+
+        let cmd_len = command_line.len();
+
+        // Calculate offset for scrolling
+        // If content fits, offset is 0
+        // We reserve 1 cell for the cursor at the end
+        // So effective capacity is available_cmd_width - 1
+        let offset = if cmd_len >= available_cmd_width {
+            cmd_len - available_cmd_width + 1 // +1 to leave room for cursor
+        } else {
+            0
+        };
+
+        // Slice command line
+        let displayed_cmd = if offset < cmd_len {
+            &command_line[offset..]
+        } else {
+            ""
+        };
+
+        content_line.extend_from_slice(displayed_cmd.as_bytes());
 
         // Render to layer
         cmd_window.render_with_border_chars(layer, &[content_line], default_border_chars);
@@ -54,7 +79,8 @@ impl CommandLine {
         // Calculate window position for cursor positioning
         let window_pos = cmd_window.calculate_position(layer.rows() as u16, layer.cols() as u16);
 
-        (window_pos.0, window_pos.1, cmd_width)
+        // Pass offset to cursor calculation
+        (window_pos.0, window_pos.1, cmd_width, offset)
     }
 
     /// Calculate the cursor position within the command line window
@@ -62,22 +88,26 @@ impl CommandLine {
     #[must_use]
     pub fn calculate_cursor_position(
         window_pos: (u16, u16),
-        cmd_width: usize,
         command_line: &str,
+        offset: usize,
+        has_border: bool,
     ) -> (u16, u16) {
         let (window_row, window_col) = window_pos;
-        // With border and height=3:
-        // Row 0: top border
-        // Row 1: content row (left border | content | right border)
-        // Row 2: bottom border
-        // Content area: window_col + 1 to window_col + cmd_width - 2 (inclusive)
-        // Prompt ":" is at window_col + 1, command line starts at window_col + 2
-        // Right border is at window_col + cmd_width - 1
-        let content_row = window_row + 1; // Content is on the middle row
-        let content_start_col = window_col as usize + 1; // After left border
-        let content_end_col = window_col as usize + cmd_width - 2; // Before right border
-        let cursor_col = (content_start_col + 1 + command_line.len()).min(content_end_col);
-        (content_row, cursor_col as u16)
+
+        // Content start position depends on border
+        let border_offset = if has_border { 1 } else { 0 };
+        let content_row = window_row + border_offset as u16;
+        let content_start_col = window_col as usize + border_offset;
+
+        // Visual cursor position:
+        // start_col + prompt (1) + (len - offset)
+        let cursor_index = command_line.len();
+        let visual_index = cursor_index.saturating_sub(offset);
+
+        // prompt is 1 char
+        let visual_cursor_col = content_start_col + 1 + visual_index;
+
+        (content_row, visual_cursor_col as u16)
     }
 }
 

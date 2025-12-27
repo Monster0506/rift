@@ -201,7 +201,7 @@ fn test_render_clears_screen() {
     let state = State::new();
     let mut compositor = LayerCompositor::new(10, 80);
 
-    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -229,7 +229,7 @@ fn test_render_cursor_positioning() {
     let state = State::new();
     let mut compositor = LayerCompositor::new(10, 80);
 
-    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -256,7 +256,7 @@ fn test_render_empty_buffer() {
     let state = State::new();
     let mut compositor = LayerCompositor::new(10, 80);
 
-    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -286,7 +286,7 @@ fn test_render_multiline_buffer() {
     let state = State::new();
     let mut compositor = LayerCompositor::new(10, 80);
 
-    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -321,7 +321,7 @@ fn test_render_file_loaded_at_start() {
     let mut compositor = LayerCompositor::new(10, 80);
 
     // First render (simulating initial render after file load)
-    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -366,7 +366,7 @@ fn test_render_viewport_scrolling() {
     let state = State::new();
     let mut compositor = LayerCompositor::new(5, 80);
 
-    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -395,7 +395,7 @@ fn test_render_viewport_edge_cases() {
     let mut compositor = LayerCompositor::new(1, 1);
 
     // Should not panic with minimal viewport
-    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -423,7 +423,7 @@ fn test_render_large_buffer() {
     let state = State::new();
     let mut compositor = LayerCompositor::new(10, 80);
 
-    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -459,7 +459,7 @@ fn test_render_cursor_at_viewport_boundaries() {
     for _ in 0..20 {
         buf.move_up();
     }
-    let needs_clear = viewport.update(buf.get_line(), buf.get_total_lines());
+    let needs_clear = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,
@@ -485,7 +485,7 @@ fn test_render_cursor_at_viewport_boundaries() {
     for _ in 0..20 {
         buf.move_down();
     }
-    let needs_clear2 = viewport.update(buf.get_line(), buf.get_total_lines());
+    let needs_clear2 = viewport.update(buf.get_line(), 0, buf.get_total_lines(), 0);
     render(
         &mut term,
         &mut compositor,

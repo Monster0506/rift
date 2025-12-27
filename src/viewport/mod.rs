@@ -19,9 +19,13 @@ pub struct Viewport {
     /// Whether this is the first update (for initial render)
     first_update: bool,
     /// Leftmost visible column (0-indexed)
-    visible_cols: usize,
+    left_col: usize,
+    /// Previous left column (for detecting scroll changes)
+    prev_left_col: usize,
     /// Number of visible rows
     visible_rows: usize,
+    /// Number of visible columns
+    visible_cols: usize,
 }
 
 impl Viewport {
@@ -32,58 +36,82 @@ impl Viewport {
             prev_top_line: 0,
             first_update: true,
             visible_cols: cols,
+            left_col: 0,
+            prev_left_col: 0,
             visible_rows: rows,
         }
     }
 
     /// Update viewport based on cursor position and total lines
     /// Ensures the cursor is always visible by scrolling when necessary
-    /// Returns true if the viewport scrolled (`top_line` changed) or if this is the first update
-    pub fn update(&mut self, cursor_line: usize, total_lines: usize) -> bool {
-        // Store previous top line
+    /// Returns true if the viewport scrolled or if this is the first update
+    pub fn update(
+        &mut self,
+        cursor_line: usize,
+        cursor_col: usize,
+        total_lines: usize,
+        gutter_width: usize,
+    ) -> bool {
+        // Store previous positions
         self.prev_top_line = self.top_line;
+        self.prev_left_col = self.left_col;
         let was_first = self.first_update;
         self.first_update = false;
+
+        // --- Vertical Scrolling ---
 
         // Calculate content rows (excluding status bar)
         let content_rows = self.visible_rows.saturating_sub(1);
 
         // Calculate the last visible content line (0-indexed)
-        // If top_line = 0 and content_rows = 9, we show lines 0-8, so bottom = 8
         let bottom_content_line = self.top_line + content_rows.saturating_sub(1);
 
-        // If cursor is above visible area, scroll up to show it
+        // If cursor is above visible area, scroll up
         if cursor_line < self.top_line {
             self.top_line = cursor_line;
         }
 
-        // If cursor is below visible area, scroll down to show it
-        // We want the cursor to be visible, so we position it near the bottom of the viewport
+        // If cursor is below visible area, scroll down
         if cursor_line > bottom_content_line {
-            // Position cursor so it's visible - put it on the last content line
-            // This means: top_line = cursor_line - (content_rows - 1)
-            // So if cursor_line = 10 and content_rows = 9, top_line = 10 - 8 = 2
-            // Then we show lines 2-10, with cursor on line 10 (last visible)
             let new_top = cursor_line.saturating_sub(content_rows.saturating_sub(1));
             self.top_line = new_top;
         }
 
         // Ensure we don't scroll past the end of the buffer
-        // If total_lines is less than content_rows, start at 0
         if total_lines > 0 && total_lines <= content_rows {
             self.top_line = 0;
         } else if self.top_line + content_rows > total_lines && total_lines > content_rows {
-            // If we're showing past the end, scroll back
             self.top_line = total_lines.saturating_sub(content_rows);
         }
 
-        // Ensure top_line doesn't go negative (shouldn't happen with usize, but be safe)
+        // Ensure top_line doesn't go negative
         if self.top_line > total_lines.saturating_sub(1) && total_lines > 0 {
             self.top_line = total_lines.saturating_sub(1).max(0);
         }
 
+        // --- Horizontal Scrolling ---
+
+        // Effective visible width depends on gutter
+        let content_width = self.visible_cols.saturating_sub(gutter_width);
+
+        // If content width is 0 (terminal too small), we can't do much
+        if content_width > 0 {
+            let right_limit = self.left_col + content_width.saturating_sub(1);
+
+            // If cursor is to the left of visible area, scroll left
+            if cursor_col < self.left_col {
+                self.left_col = cursor_col;
+            }
+
+            // If cursor is to the right of visible area, scroll right
+            if cursor_col > right_limit {
+                // Position cursor at right edge
+                self.left_col = cursor_col.saturating_sub(content_width.saturating_sub(1));
+            }
+        }
+
         // Return true if viewport scrolled or if this is the first update
-        self.top_line != self.prev_top_line || was_first
+        self.top_line != self.prev_top_line || self.left_col != self.prev_left_col || was_first
     }
 
     /// Get the previous top line (before last update)
@@ -95,6 +123,12 @@ impl Viewport {
     #[must_use]
     pub fn top_line(&self) -> usize {
         self.top_line
+    }
+
+    /// Get the leftmost visible column
+    #[must_use]
+    pub fn left_col(&self) -> usize {
+        self.left_col
     }
 
     #[must_use]
