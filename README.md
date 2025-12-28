@@ -48,10 +48,10 @@ Todo:
 
 Known issues:
 - 4 byte unicode characters are not handled (this is a crossterm issue on windows, idk man)
-- TOCTOU Race Condition between file check and file open
 
 
 Fixed stuff (lightly tracked):
+- TOCTOU Race Condition between file check and file open
 - Gap Buffer uses a lot of `unsafe`. Write more debug asserts
 - inefficient string construction wrap_text in render loop
 - Ascii only operation

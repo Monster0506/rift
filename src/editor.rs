@@ -49,20 +49,12 @@ impl<T: TerminalBackend> Editor<T> {
     /// Create a new editor instance with an optional file to load
     pub fn with_file(mut terminal: T, file_path: Option<String>) -> Result<Self, RiftError> {
         // Validate file BEFORE initializing terminal or creating buffer
-        // This ensures we don't clear the screen or allocate resources if the file is invalid
-        if let Some(ref path) = file_path {
-            Self::validate_file(path)?;
-        }
-
-        // Initialize terminal (clears screen, enters raw mode, etc.)
-        terminal.init()?;
-
-        // Get terminal size
-        let size = terminal.get_size()?;
+        // We attempt to load the file directly in the document creation block below
 
         // Create document (either from file or empty)
         let next_id = 1;
         let document = if let Some(ref path) = file_path {
+            // Try to load the file directly
             Document::from_file(next_id, path).map_err(|e| {
                 RiftError::new(
                     ErrorType::Io,
@@ -74,6 +66,13 @@ impl<T: TerminalBackend> Editor<T> {
             Document::new(next_id)
                 .map_err(|e| RiftError::new(ErrorType::Internal, "INTERNAL_ERROR", e.to_string()))?
         };
+
+        // Initialize terminal (clears screen, enters raw mode, etc.)
+        // We do this AFTER loading the document so we don't mess up the terminal if loading fails
+        terminal.init()?;
+
+        // Get terminal size
+        let size = terminal.get_size()?;
 
         // Create viewport
         let viewport = Viewport::new(size.rows as usize, size.cols as usize);
@@ -280,13 +279,31 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             // Not open, load it
-            let document = if std::path::Path::new(&path_str).exists() {
-                Self::validate_file(&path_str)?;
-                Document::from_file(self.next_document_id, &path_str)?
-            } else {
-                let mut doc = Document::new(self.next_document_id)?;
-                doc.set_path(&path_str);
-                doc
+            // Try to load existing file first
+            let document_result = Document::from_file(self.next_document_id, &path_str);
+
+            let document = match document_result {
+                Ok(doc) => doc,
+                Err(e) => {
+                    // If file doesn't exist, create a new empty buffer (standard :edit behavior)
+                    // For other errors (permission denied, is a directory, etc.), return the error
+                    if e.kind == ErrorType::Io
+                        && e.message
+                            .contains("The system cannot find the file specified")
+                    {
+                        if std::path::Path::new(&path_str).exists() {
+                            // File exists but we couldn't read it (AccessDenied, IsDir, etc.)
+                            return Err(e);
+                        } else {
+                            // File doesn't exist, so we are creating a new one
+                            let mut doc = Document::new(self.next_document_id)?;
+                            doc.set_path(&path_str);
+                            doc
+                        }
+                    } else {
+                        return Err(e);
+                    }
+                }
             };
 
             let id = document.id;
@@ -322,35 +339,6 @@ impl<T: TerminalBackend> Editor<T> {
                 ));
             }
         }
-        Ok(())
-    }
-
-    /// Validate that a file exists and is a valid file (not a directory)
-    /// This should be called BEFORE terminal initialization to avoid clearing the screen
-    /// if the file is invalid.
-    fn validate_file(file_path: &str) -> Result<(), RiftError> {
-        use std::path::Path;
-
-        let path = Path::new(file_path);
-
-        // Check if file exists
-        if !path.exists() {
-            return Err(RiftError::new(
-                ErrorType::Io,
-                "FILE_NOT_FOUND",
-                format!("File not found: {file_path}"),
-            ));
-        }
-
-        // Check if it's a file (not a directory)
-        if !path.is_file() {
-            return Err(RiftError::new(
-                ErrorType::Io,
-                "NOT_A_FILE",
-                format!("Path is not a file: {file_path}"),
-            ));
-        }
-
         Ok(())
     }
 
