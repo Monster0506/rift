@@ -69,7 +69,6 @@ impl CommandLine {
         };
 
         // Slice command line
-        // Slice command line
         let cmd_len = command_line.len();
         let displayed_cmd = if offset < cmd_len {
             let end = (offset + available_cmd_width).min(cmd_len);
@@ -118,13 +117,8 @@ impl CommandLine {
         let content_row = window_row + border_offset as u16;
         let content_start_col = window_col as usize + border_offset;
 
-        // Visual cursor position:
-        // start_col + prompt (1) + (len - offset)
-        // Visual cursor position:
-        // start_col + prompt (1) + (cursor_pos - offset)
+        // Visual cursor position: start_col + prompt (1) + (cursor_pos - offset)
         let visual_index = cursor_pos.saturating_sub(offset);
-
-        // prompt is 1 char
         let visual_cursor_col = content_start_col + 1 + visual_index;
 
         (content_row, visual_cursor_col as u16)

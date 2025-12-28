@@ -445,21 +445,12 @@ impl LayerCompositor {
 
     /// Remove a layer
     pub fn remove_layer(&mut self, priority: LayerPriority) -> Option<Layer> {
-        // If we remove a layer, the content below it might need to be shown.
-        // We can treat this as a full screen dirty rect.
-        // Or better, we just mark the compositor as fully dirty by adding a full screen dirty rect to a dummy?
-        // Actually, we need to re-composite the whole screen since we don't know what was behind it.
-        // For MVP, if we remove a layer, we just force a full redraw effectively.
-        // Ideally we'd only dirty the rects that the removed layer had content in, but that's complex.
+        // Removing a layer may reveal content underneath.
+        // For now, mark all other layers as dirty to ensure a full re-composite.
 
         let removed = self.layers.remove(&priority);
         if removed.is_some() {
-            // We can't easily mark "dirty rects" on a removed layer.
-            // We need to mark the *area* exposed as dirty.
-            // Since we don't track that easily, let's just mark all other layers as fully dirty?
-            // That's expensive.
-            // Alternative: LayerCompositor could store a "pending dirty rects" list itself suitable for "system" changes.
-            // But for now, let's just mark all remaining layers as fully dirty.
+            // Mark all remaining layers as fully dirty to ensure correct composition.
             for layer in self.layers.values_mut() {
                 layer.clear(); // Resets to full dirty rect
                                // Wait, clear() erases content. We just want to mark dirty.
@@ -529,11 +520,21 @@ impl LayerCompositor {
         // Process each dirty rect
         for rect in dirty_rects {
             // Iterate over every pixel in the dirty rect
-            for r in rect.start_row..=rect.end_row {
+            for (r, bufrow) in buffer
+                .iter_mut()
+                .enumerate()
+                .take(rect.end_row + 1)
+                .skip(rect.start_row)
+            {
                 if r >= self.rows {
                     continue;
                 }
-                for c in rect.start_col..=rect.end_col {
+                for (c, bufcol) in bufrow
+                    .iter_mut()
+                    .enumerate()
+                    .take(rect.end_col + 1)
+                    .skip(rect.start_col)
+                {
                     if c >= self.cols {
                         continue;
                     }
@@ -548,9 +549,9 @@ impl LayerCompositor {
                     }
 
                     if let Some(cell) = final_cell {
-                        buffer[r][c] = cell;
+                        *bufcol = cell;
                     } else {
-                        buffer[r][c] = Cell::empty();
+                        *bufcol = Cell::empty();
                     }
                 }
             }

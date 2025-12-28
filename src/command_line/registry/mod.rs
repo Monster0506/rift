@@ -109,7 +109,6 @@ impl CommandRegistry {
         }
 
         // Step 2: Check if input matches any explicit alias exactly
-        // (This is redundant with step 1, but we'll keep it for clarity)
 
         // Step 3: Find all commands that start with the input prefix
         let mut matches = Vec::new();

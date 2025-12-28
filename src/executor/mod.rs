@@ -131,14 +131,8 @@ pub fn execute_command(
         Command::MoveToLineEnd => {
             buf.move_to_line_end();
         }
-        Command::MoveToBufferStart => {
-            // Move to start of buffer
-            while buf.move_left() {}
-        }
-        Command::MoveToBufferEnd => {
-            // Move to end of buffer
-            while buf.move_right() {}
-        }
+        Command::MoveToBufferStart => while buf.move_left() {},
+        Command::MoveToBufferEnd => while buf.move_right() {},
         Command::DeleteForward => {
             buf.delete_forward();
         }

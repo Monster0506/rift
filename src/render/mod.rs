@@ -305,7 +305,7 @@ pub fn render<T: TerminalBackend>(
         // We also need the 'offset' which CommandLine::render_to_layer calculates.
         // Let's add 'offset' to CommandDrawState if we want to avoid re-rendering but still have cursor info.
         // Actually, let's just re-render if we need simplicity, or add it to the DrawState.
-        // The user said: "If any component depends on something computed during render, include it".
+        // If any component depends on something computed during render, include it.
         // Let's just re-calculate the offset logic here (it's O(1)).
         let border_offset = if has_border { 2 } else { 0 };
         let available_cmd_width = cmd_width.saturating_sub(border_offset).saturating_sub(1);

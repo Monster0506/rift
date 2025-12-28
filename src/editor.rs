@@ -557,11 +557,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         // Handle command line editing (mutations happen here)
-        // Handle command line editing (mutations happen here)
         match command {
             Command::AppendToCommandLine(ch) => {
                 // ch is guaranteed to be valid ASCII (32-126) from translate_command_mode
-                self.state.append_to_command_line(ch as char);
+                self.state.append_to_command_line(ch);
             }
             Command::DeleteFromCommandLine => {
                 self.state.remove_from_command_line();
