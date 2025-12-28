@@ -344,3 +344,99 @@ fn test_compositor_multiple_layers() {
     assert_eq!(composited[2][3].content, vec![b'.']);
     assert_eq!(composited[2][8].content, vec![b'.']);
 }
+
+#[test]
+fn test_rect_adjacency() {
+    let r1 = Rect::new(0, 0, 1, 1);
+    let r2 = Rect::new(0, 2, 1, 3);
+    assert!(
+        r1.is_adjacent(&r2),
+        "Rects touching horizontally should be adjacent"
+    );
+
+    let r3 = Rect::new(2, 0, 3, 1);
+    assert!(
+        r1.is_adjacent(&r3),
+        "Rects touching vertically should be adjacent"
+    );
+
+    let r4 = Rect::new(3, 3, 4, 4);
+    assert!(!r1.is_adjacent(&r4), "Distant rects should not be adjacent");
+}
+
+#[test]
+fn test_layer_set_cell_dirty_optimization() {
+    let mut layer = Layer::new(LayerPriority::CONTENT, 5, 5);
+    layer.mark_clean();
+    assert!(!layer.is_dirty());
+
+    // Set same value -> should not be dirty
+    layer.set_cell(0, 0, Cell::new(0)); // Default is None
+
+    // Reset to known state
+    layer.set_cell(0, 0, Cell::new(b'A'));
+    layer.mark_clean();
+
+    // Set same value
+    layer.set_cell(0, 0, Cell::new(b'A'));
+    assert!(
+        !layer.is_dirty(),
+        "Setting same value should not mark dirty"
+    );
+
+    // Set different value
+    layer.set_cell(0, 0, Cell::new(b'B'));
+    assert!(
+        layer.is_dirty(),
+        "Setting different value should mark dirty"
+    );
+}
+
+#[test]
+fn test_layer_dirty_rects_capping() {
+    let mut layer = Layer::new(LayerPriority::CONTENT, 20, 20);
+    layer.mark_clean();
+
+    // Add 11 non-overlapping, non-adjacent rects
+    for i in 0..11 {
+        layer.add_dirty_rect(Rect::new(i * 2, i * 2, i * 2, i * 2));
+    }
+
+    // Should have collapsed to 1
+    assert_eq!(
+        layer.get_dirty_rects().len(),
+        1,
+        "Should collapse dirty rects when exceeding cap"
+    );
+
+    // Check bounding box covers everything
+    let rect = layer.get_dirty_rects()[0];
+    assert!(rect.start_row <= 0);
+    assert!(rect.end_row >= 20); // 10*2 = 20
+}
+
+#[test]
+fn test_compositor_dirty_rect_optimization() {
+    let mut compositor = LayerCompositor::new(5, 5);
+
+    // Setup initial state
+    {
+        let layer = compositor.get_layer_mut(LayerPriority::CONTENT);
+        layer.fill_rect(Rect::new(0, 0, 4, 4), Cell::new(b'.'));
+    }
+    compositor.composite(); // Clean everything
+    assert!(!compositor.has_dirty());
+
+    // Modify one cell
+    {
+        let layer = compositor.get_layer_mut(LayerPriority::CONTENT);
+        layer.set_cell(2, 2, Cell::new(b'X'));
+    }
+
+    assert!(compositor.has_dirty());
+
+    // Get composited - logic should only update that one cell + others should remain
+    let composited = compositor.get_composited();
+    assert_eq!(composited[2][2].content, vec![b'X']);
+    assert_eq!(composited[0][0].content, vec![b'.']); // Should still be dot
+}

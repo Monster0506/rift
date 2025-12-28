@@ -32,6 +32,40 @@ impl Rect {
             end_col,
         }
     }
+    /// Check if the rect contains a point
+    pub fn contains_point(&self, row: usize, col: usize) -> bool {
+        row >= self.start_row && row <= self.end_row && col >= self.start_col && col <= self.end_col
+    }
+
+    /// Check if two rects intersect
+    pub fn intersects(&self, other: &Rect) -> bool {
+        self.start_row <= other.end_row
+            && self.end_row >= other.start_row
+            && self.start_col <= other.end_col
+            && self.end_col >= other.start_col
+    }
+
+    /// Check if two rects are adjacent (touching)
+    pub fn is_adjacent(&self, other: &Rect) -> bool {
+        // Expand self by 1 in all directions and check for intersection
+        let expanded = Rect {
+            start_row: self.start_row.saturating_sub(1),
+            start_col: self.start_col.saturating_sub(1),
+            end_row: self.end_row.saturating_add(1),
+            end_col: self.end_col.saturating_add(1),
+        };
+        expanded.intersects(other)
+    }
+
+    /// Union of two rects (bounding box)
+    pub fn union(&self, other: &Rect) -> Rect {
+        Rect {
+            start_row: self.start_row.min(other.start_row),
+            start_col: self.start_col.min(other.start_col),
+            end_row: self.end_row.max(other.end_row),
+            end_col: self.end_col.max(other.end_col),
+        }
+    }
 }
 
 /// Layer priority - higher values render on top
@@ -133,8 +167,8 @@ pub struct Layer {
     /// Grid of cells - outer vec is rows, inner vec is columns
     /// None = transparent, Some = content
     cells: Vec<Vec<Option<Cell>>>,
-    /// Whether this layer has been modified since last composite
-    dirty: bool,
+    /// List of dirty rectangles that need compositing
+    dirty_rects: Vec<Rect>,
     /// Number of rows in the layer
     rows: usize,
     /// Number of columns in the layer
@@ -142,13 +176,22 @@ pub struct Layer {
 }
 
 impl Layer {
+    /// Maximum number of dirty rects before collapsing to full layer
+    const MAX_DIRTY_RECTS: usize = 10;
+
     /// Create a new layer with the given dimensions
     pub fn new(priority: LayerPriority, rows: usize, cols: usize) -> Self {
         let cells = vec![vec![None; cols]; rows];
         Self {
             priority,
             cells,
-            dirty: true,
+            // Initial state is fully dirty
+            dirty_rects: vec![Rect::new(
+                0,
+                0,
+                rows.saturating_sub(1),
+                cols.saturating_sub(1),
+            )],
             rows,
             cols,
         }
@@ -161,12 +204,52 @@ impl Layer {
 
     /// Check if the layer has been modified
     pub fn is_dirty(&self) -> bool {
-        self.dirty
+        !self.dirty_rects.is_empty()
+    }
+
+    /// Get the list of dirty rectangles
+    pub fn get_dirty_rects(&self) -> &[Rect] {
+        &self.dirty_rects
+    }
+
+    /// Add a dirty rectangle to the tracking list
+    pub fn add_dirty_rect(&mut self, rect: Rect) {
+        // If we already have a full screen rect (implied if we hit limit, but good to check),
+        // or if the new rect covers everything, just reset to full screen.
+        // For simplicity, we just implement the merging logic.
+
+        // Strategy:
+        // 1. Try to merge with existing adjacent/overlapping rects
+        // 2. If count > MAX, collapse all to one bounding box
+
+        // Try to merge with existing rects
+        let mut merged = false;
+        for existing in &mut self.dirty_rects {
+            if existing.intersects(&rect) || existing.is_adjacent(&rect) {
+                *existing = existing.union(&rect);
+                merged = true;
+                break;
+            }
+        }
+
+        if !merged {
+            self.dirty_rects.push(rect);
+        }
+
+        // Check cap
+        if self.dirty_rects.len() > Self::MAX_DIRTY_RECTS {
+            let mut bounding_box = self.dirty_rects[0];
+            for r in &self.dirty_rects[1..] {
+                bounding_box = bounding_box.union(r);
+            }
+            self.dirty_rects.clear();
+            self.dirty_rects.push(bounding_box);
+        }
     }
 
     /// Mark the layer as clean (after compositing)
     pub fn mark_clean(&mut self) {
-        self.dirty = false;
+        self.dirty_rects.clear();
     }
 
     /// Clear all cells in the layer (make transparent)
@@ -176,15 +259,29 @@ impl Layer {
                 *cell = None;
             }
         }
-        self.dirty = true;
+        self.dirty_rects.clear();
+        self.dirty_rects.push(Rect::new(
+            0,
+            0,
+            self.rows.saturating_sub(1),
+            self.cols.saturating_sub(1),
+        ));
     }
 
     /// Set a cell at the given position
     /// Returns false if position is out of bounds
     pub fn set_cell(&mut self, row: usize, col: usize, cell: Cell) -> bool {
         if row < self.rows && col < self.cols {
-            self.cells[row][col] = Some(cell);
-            self.dirty = true;
+            // Optimization: only mark dirty if cell actually changed
+            let changed = match &self.cells[row][col] {
+                Some(current) => current != &cell,
+                None => true,
+            };
+
+            if changed {
+                self.cells[row][col] = Some(cell);
+                self.add_dirty_rect(Rect::new(row, col, row, col));
+            }
             true
         } else {
             false
@@ -194,8 +291,11 @@ impl Layer {
     /// Set a cell to transparent at the given position
     pub fn clear_cell(&mut self, row: usize, col: usize) -> bool {
         if row < self.rows && col < self.cols {
-            self.cells[row][col] = None;
-            self.dirty = true;
+            let changed = self.cells[row][col].is_some();
+            if changed {
+                self.cells[row][col] = None;
+                self.add_dirty_rect(Rect::new(row, col, row, col));
+            }
             true
         } else {
             false
@@ -289,7 +389,13 @@ impl Layer {
         self.cells = new_cells;
         self.rows = new_rows;
         self.cols = new_cols;
-        self.dirty = true;
+        self.dirty_rects.clear();
+        self.dirty_rects.push(Rect::new(
+            0,
+            0,
+            new_rows.saturating_sub(1),
+            new_cols.saturating_sub(1),
+        ));
     }
 
     /// Get the number of rows
@@ -312,8 +418,6 @@ pub struct LayerCompositor {
     cols: usize,
     /// Double buffer for rendering
     buffer: DoubleBuffer,
-    /// Whether any layer is dirty and needs recompositing
-    needs_composite: bool,
 }
 
 impl LayerCompositor {
@@ -324,13 +428,11 @@ impl LayerCompositor {
             rows,
             cols,
             buffer: DoubleBuffer::new(rows, cols),
-            needs_composite: true,
         }
     }
 
     /// Get or create a layer with the given priority
     pub fn get_layer_mut(&mut self, priority: LayerPriority) -> &mut Layer {
-        self.needs_composite = true;
         self.layers
             .entry(priority)
             .or_insert_with(|| Layer::new(priority, self.rows, self.cols))
@@ -343,8 +445,34 @@ impl LayerCompositor {
 
     /// Remove a layer
     pub fn remove_layer(&mut self, priority: LayerPriority) -> Option<Layer> {
-        self.needs_composite = true;
-        self.layers.remove(&priority)
+        // If we remove a layer, the content below it might need to be shown.
+        // We can treat this as a full screen dirty rect.
+        // Or better, we just mark the compositor as fully dirty by adding a full screen dirty rect to a dummy?
+        // Actually, we need to re-composite the whole screen since we don't know what was behind it.
+        // For MVP, if we remove a layer, we just force a full redraw effectively.
+        // Ideally we'd only dirty the rects that the removed layer had content in, but that's complex.
+
+        let removed = self.layers.remove(&priority);
+        if removed.is_some() {
+            // We can't easily mark "dirty rects" on a removed layer.
+            // We need to mark the *area* exposed as dirty.
+            // Since we don't track that easily, let's just mark all other layers as fully dirty?
+            // That's expensive.
+            // Alternative: LayerCompositor could store a "pending dirty rects" list itself suitable for "system" changes.
+            // But for now, let's just mark all remaining layers as fully dirty.
+            for layer in self.layers.values_mut() {
+                layer.clear(); // Resets to full dirty rect
+                               // Wait, clear() erases content. We just want to mark dirty.
+                layer.dirty_rects.clear();
+                layer.dirty_rects.push(Rect::new(
+                    0,
+                    0,
+                    self.rows.saturating_sub(1),
+                    self.cols.saturating_sub(1),
+                ));
+            }
+        }
+        removed
     }
 
     /// Explicitly mark a layer as dirty (clears it for repopulation)
@@ -357,14 +485,12 @@ impl LayerCompositor {
         for layer in self.layers.values_mut() {
             layer.clear();
         }
-        self.needs_composite = true;
     }
 
     /// Clear a specific layer
     pub fn clear_layer(&mut self, priority: LayerPriority) {
         if let Some(layer) = self.layers.get_mut(&priority) {
             layer.clear();
-            self.needs_composite = true;
         }
     }
 
@@ -377,29 +503,54 @@ impl LayerCompositor {
         for layer in self.layers.values_mut() {
             layer.resize(new_rows, new_cols);
         }
-        self.needs_composite = true;
+    }
+
+    /// Check if any layer has dirty rects
+    pub fn has_dirty(&self) -> bool {
+        self.layers.values().any(|l| l.is_dirty())
     }
 
     /// Composite all layers into the output buffer
     /// Layers are merged from lowest priority to highest
     pub fn composite(&mut self) {
-        // Clear the current buffer
-        self.buffer.clear();
+        // Collect all dirty rects from all layers
+        // We do this to know WHICH pixels need updating.
+        let mut dirty_rects = Vec::new();
+        for layer in self.layers.values() {
+            dirty_rects.extend_from_slice(&layer.dirty_rects);
+        }
+
+        if dirty_rects.is_empty() {
+            return;
+        }
+
         let buffer = self.buffer.current_mut();
 
-        // Merge layers from lowest to highest priority
-        // BTreeMap iterates in key order (ascending priority)
-        for layer in self.layers.values() {
-            for (r, row) in layer.cells.iter().enumerate() {
+        // Process each dirty rect
+        for rect in dirty_rects {
+            // Iterate over every pixel in the dirty rect
+            for r in rect.start_row..=rect.end_row {
                 if r >= self.rows {
-                    break;
+                    continue;
                 }
-                for (c, cell) in row.iter().enumerate() {
+                for c in rect.start_col..=rect.end_col {
                     if c >= self.cols {
-                        break;
+                        continue;
                     }
-                    if let Some(cell) = cell {
-                        buffer[r][c] = cell.clone();
+
+                    // Re-evaluate this pixel's final value by iterating bottom-up
+                    let mut final_cell: Option<Cell> = None;
+
+                    for layer in self.layers.values() {
+                        if let Some(cell) = layer.get_cell(r, c) {
+                            final_cell = Some(cell.clone());
+                        }
+                    }
+
+                    if let Some(cell) = final_cell {
+                        buffer[r][c] = cell;
+                    } else {
+                        buffer[r][c] = Cell::empty();
                     }
                 }
             }
@@ -409,13 +560,12 @@ impl LayerCompositor {
         for layer in self.layers.values_mut() {
             layer.mark_clean();
         }
-        self.needs_composite = false;
     }
 
     /// Get the composited buffer (read-only)
     /// Automatically composites if any layer is dirty
     pub fn get_composited(&mut self) -> &Vec<Vec<Cell>> {
-        if self.needs_composite || self.layers.values().any(|l| l.is_dirty()) {
+        if self.has_dirty() {
             self.composite();
         }
         self.buffer.current()
@@ -429,7 +579,7 @@ impl LayerCompositor {
         needs_clear: bool,
     ) -> Result<FrameStats, String> {
         // Composite if needed
-        if self.needs_composite || self.layers.values().any(|l| l.is_dirty()) {
+        if self.has_dirty() {
             self.composite();
         }
 
@@ -454,7 +604,7 @@ impl LayerCompositor {
 
     /// Check if any layer needs recompositing
     pub fn needs_recomposite(&self) -> bool {
-        self.needs_composite || self.layers.values().any(|l| l.is_dirty())
+        self.has_dirty()
     }
 }
 

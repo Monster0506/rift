@@ -29,6 +29,7 @@ Implemented:
 - dumb gutter to avoid recalcing unless total lines changes significantly.
 - Multi-document support
 - :edit filename to open a new document (:e to reload from disk)
+- dirty rectangles
 
 Todo:
 - LSP
@@ -44,7 +45,6 @@ Todo:
 - mainloop non blocking
 - resize handling
 - buffer next/previous/ls
-- dirty rectangles
 
 Known issues:
 - 4 byte unicode characters are not handled (this is a crossterm issue on windows, idk man)
