@@ -50,11 +50,10 @@ Known issues:
 - 4 byte unicode characters are not handled (this is a crossterm issue on windows, idk man)
 - Gap Buffer uses a lot of `unsafe`. Write more debug asserts
 - TOCTOU Race Condition between file check and file open
-- buffer move to start implemented poorly
-    - use move_gap_to
-- inefficient string construction wrap_text in render loop
+
 
 Fixed stuff (lightly tracked):
+- inefficient string construction wrap_text in render loop
 - Ascii only operation
     - Renderer does not handle multibyte characters
     - cursor calculation does not account for multibyte characters
