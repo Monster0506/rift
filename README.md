@@ -45,6 +45,7 @@ Todo:
 - mainloop non blocking
 - resize handling
 - buffer next/previous/ls
+- granular movement
 
 Known issues:
 - 4 byte unicode characters are not handled (this is a crossterm issue on windows, idk man)
