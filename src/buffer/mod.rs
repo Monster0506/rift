@@ -98,9 +98,11 @@ impl GapBuffer {
 
     /// Move cursor left (move gap right) by one UTF-8 codepoint
     pub fn move_left(&mut self) -> bool {
+        self.check();
         if self.gap_start > 0 {
             unsafe {
                 // Move one byte
+                debug_assert!(self.buffer.add(self.gap_start - 1) >= self.buffer);
                 let first_byte = *self.buffer.add(self.gap_start - 1);
                 *self.buffer.add(self.gap_end - 1) = first_byte;
                 self.gap_start -= 1;
@@ -129,9 +131,11 @@ impl GapBuffer {
 
     /// Move cursor right (move gap left) by one UTF-8 codepoint
     pub fn move_right(&mut self) -> bool {
+        self.check();
         if self.gap_end < self.capacity {
             // Move right one byte
             unsafe {
+                debug_assert!(self.buffer.add(self.gap_end) < self.buffer.add(self.capacity));
                 let byte = *self.buffer.add(self.gap_end);
                 *self.buffer.add(self.gap_start) = byte;
             }
@@ -151,6 +155,7 @@ impl GapBuffer {
                 self.gap_start += 1;
                 self.gap_end += 1;
             }
+            self.check();
             true
         } else {
             false
@@ -172,6 +177,7 @@ impl GapBuffer {
     /// Insert bytes at the cursor position (batch insertion)
     /// More efficient than inserting byte-by-byte
     pub fn insert_bytes(&mut self, bytes: &[u8]) -> Result<(), RiftError> {
+        self.check();
         if bytes.is_empty() {
             return Ok(());
         }
@@ -194,6 +200,7 @@ impl GapBuffer {
         self.gap_start += needed;
         self.revision += 1;
 
+        self.check();
         Ok(())
     }
 
@@ -204,6 +211,7 @@ impl GapBuffer {
 
     /// Delete the UTF-8 codepoint before the cursor (backspace)
     pub fn delete_backward(&mut self) -> bool {
+        self.check();
         if self.gap_start > 0 {
             let mut bytes_to_delete = 1;
             // Count continuation bytes
@@ -220,6 +228,8 @@ impl GapBuffer {
                 .delete(self.gap_start - bytes_to_delete, bytes_to_delete);
             self.gap_start -= bytes_to_delete;
             self.revision += 1;
+
+            self.check();
             true
         } else {
             false
@@ -228,6 +238,7 @@ impl GapBuffer {
 
     /// Delete the UTF-8 codepoint at the cursor position (delete)
     pub fn delete_forward(&mut self) -> bool {
+        self.check();
         if self.gap_end < self.capacity {
             let mut bytes_to_delete = 1;
             // Skip continuation bytes
@@ -242,6 +253,8 @@ impl GapBuffer {
             self.line_index.delete(self.gap_start, bytes_to_delete);
             self.gap_end += bytes_to_delete;
             self.revision += 1;
+
+            self.check();
             true
         } else {
             false
@@ -485,6 +498,7 @@ impl GapBuffer {
 
     /// Move gap to a specific position
     fn move_gap_to(&mut self, target_pos: usize) -> bool {
+        self.check();
         let current_pos = self.gap_start;
 
         if target_pos == current_pos {
@@ -514,11 +528,13 @@ impl GapBuffer {
             }
         }
 
+        self.check();
         true
     }
 
     /// Grow the buffer when gap is exhausted
     fn grow(&mut self) -> Result<(), RiftError> {
+        self.check();
         let new_capacity = self.capacity * 2;
         let new_layout = Layout::from_size_align(new_capacity, 1).map_err(|e| {
             RiftError::new(
@@ -562,7 +578,29 @@ impl GapBuffer {
         self.capacity = new_capacity;
         self.buffer = new_buffer;
 
+        self.check();
         Ok(())
+    }
+
+    #[cfg(debug_assertions)]
+    fn check_invariants(&self) {
+        debug_assert!(self.gap_start <= self.gap_end, "Gap start > Gap end");
+        debug_assert!(self.gap_end <= self.capacity, "Gap end > Capacity");
+        debug_assert!(!self.buffer.is_null(), "Buffer is null");
+        debug_assert!(self.capacity > 0, "Capacity is 0");
+
+        let gap_size = self.gap_end - self.gap_start;
+        debug_assert_eq!(
+            self.len() + gap_size,
+            self.capacity,
+            "Len + gap size != capacity"
+        );
+    }
+
+    #[inline(always)]
+    fn check(&self) {
+        #[cfg(debug_assertions)]
+        self.check_invariants();
     }
 }
 
