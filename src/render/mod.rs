@@ -604,12 +604,12 @@ mod tests;
 /// Helper to wrap text to a specific width
 fn wrap_text(text: &str, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
-    let mut current_line = String::new();
+    let mut current_line = String::with_capacity(width);
 
     for word in text.split_whitespace() {
         if current_line.len() + word.len() + 1 > width && !current_line.is_empty() {
             lines.push(current_line);
-            current_line = String::new();
+            current_line = String::with_capacity(width);
         }
         if !current_line.is_empty() {
             current_line.push(' ');
@@ -689,8 +689,7 @@ fn render_notifications(layer: &mut Layer, state: &State, term_rows: usize, term
         );
 
         // Render content lines
-        let content_bytes: Vec<Vec<u8>> =
-            lines.iter().map(|line| line.as_bytes().to_vec()).collect();
+        let content_bytes: Vec<Vec<u8>> = lines.into_iter().map(|line| line.into_bytes()).collect();
 
         window.render(layer, &content_bytes);
 
