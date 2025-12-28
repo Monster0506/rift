@@ -15,32 +15,29 @@ fn test_dispatcher_new() {
 fn test_translate_normal_mode_simple() {
     let mut dispatcher = Dispatcher::new(Mode::Normal);
 
-    assert_eq!(dispatcher.translate_key(Key::Char(b'h')), Command::MoveLeft);
-    assert_eq!(dispatcher.translate_key(Key::Char(b'j')), Command::MoveDown);
-    assert_eq!(dispatcher.translate_key(Key::Char(b'k')), Command::MoveUp);
+    assert_eq!(dispatcher.translate_key(Key::Char('h')), Command::MoveLeft);
+    assert_eq!(dispatcher.translate_key(Key::Char('j')), Command::MoveDown);
+    assert_eq!(dispatcher.translate_key(Key::Char('k')), Command::MoveUp);
+    assert_eq!(dispatcher.translate_key(Key::Char('l')), Command::MoveRight);
     assert_eq!(
-        dispatcher.translate_key(Key::Char(b'l')),
-        Command::MoveRight
-    );
-    assert_eq!(
-        dispatcher.translate_key(Key::Char(b'i')),
+        dispatcher.translate_key(Key::Char('i')),
         Command::EnterInsertMode
     );
     assert_eq!(
-        dispatcher.translate_key(Key::Char(b'a')),
+        dispatcher.translate_key(Key::Char('a')),
         Command::EnterInsertModeAfter
     );
     assert_eq!(
-        dispatcher.translate_key(Key::Char(b'x')),
+        dispatcher.translate_key(Key::Char('x')),
         Command::DeleteForward
     );
-    assert_eq!(dispatcher.translate_key(Key::Char(b'q')), Command::Quit);
+    assert_eq!(dispatcher.translate_key(Key::Char('q')), Command::Quit);
     assert_eq!(
-        dispatcher.translate_key(Key::Char(b':')),
+        dispatcher.translate_key(Key::Char(':')),
         Command::EnterCommandMode
     );
     assert_eq!(
-        dispatcher.translate_key(Key::Char(b'G')),
+        dispatcher.translate_key(Key::Char('G')),
         Command::MoveToBufferEnd
     );
 }
@@ -68,16 +65,16 @@ fn test_translate_insert_mode() {
     let mut dispatcher = Dispatcher::new(Mode::Insert);
 
     assert_eq!(
-        dispatcher.translate_key(Key::Char(b'a')),
-        Command::InsertByte(b'a')
+        dispatcher.translate_key(Key::Char('a')),
+        Command::InsertChar('a')
     );
     assert_eq!(
-        dispatcher.translate_key(Key::Char(b' ')),
-        Command::InsertByte(b' ')
+        dispatcher.translate_key(Key::Char(' ')),
+        Command::InsertChar(' ')
     );
     assert_eq!(
-        dispatcher.translate_key(Key::Char(b'\t')),
-        Command::InsertByte(b'\t')
+        dispatcher.translate_key(Key::Char('\t')),
+        Command::InsertChar('\t')
     );
     assert_eq!(
         dispatcher.translate_key(Key::Backspace),
@@ -85,11 +82,11 @@ fn test_translate_insert_mode() {
     );
     assert_eq!(
         dispatcher.translate_key(Key::Enter),
-        Command::InsertByte(b'\n')
+        Command::InsertChar('\n')
     );
     assert_eq!(
         dispatcher.translate_key(Key::Tab),
-        Command::InsertByte(b'\t')
+        Command::InsertChar('\t')
     );
     assert_eq!(
         dispatcher.translate_key(Key::Escape),
@@ -101,14 +98,14 @@ fn test_translate_insert_mode() {
 fn test_translate_insert_mode_ctrl() {
     let mut dispatcher = Dispatcher::new(Mode::Insert);
 
-    // Ctrl+A should map to 0x01, Ctrl+C should map to 0x03
+    // Ctrl+A should map to \u{1}, Ctrl+C should map to \u{3}
     assert_eq!(
         dispatcher.translate_key(Key::Ctrl(b'a')),
-        Command::InsertByte(1)
+        Command::InsertChar('\u{1}')
     );
     assert_eq!(
         dispatcher.translate_key(Key::Ctrl(b'c')),
-        Command::InsertByte(3)
+        Command::InsertChar('\u{3}')
     );
 }
 
@@ -117,12 +114,12 @@ fn test_pending_key_sequence() {
     let mut dispatcher = Dispatcher::new(Mode::Normal);
 
     // First 'd' should set pending key
-    assert_eq!(dispatcher.translate_key(Key::Char(b'd')), Command::Noop);
-    assert_eq!(dispatcher.pending_key(), Some(Key::Char(b'd')));
+    assert_eq!(dispatcher.translate_key(Key::Char('d')), Command::Noop);
+    assert_eq!(dispatcher.pending_key(), Some(Key::Char('d')));
 
     // Second 'd' should trigger delete_line
     assert_eq!(
-        dispatcher.translate_key(Key::Char(b'd')),
+        dispatcher.translate_key(Key::Char('d')),
         Command::DeleteLine
     );
     assert_eq!(dispatcher.pending_key(), None);
@@ -133,12 +130,12 @@ fn test_pending_key_sequence_gg() {
     let mut dispatcher = Dispatcher::new(Mode::Normal);
 
     // First 'g' should set pending key
-    assert_eq!(dispatcher.translate_key(Key::Char(b'g')), Command::Noop);
-    assert_eq!(dispatcher.pending_key(), Some(Key::Char(b'g')));
+    assert_eq!(dispatcher.translate_key(Key::Char('g')), Command::Noop);
+    assert_eq!(dispatcher.pending_key(), Some(Key::Char('g')));
 
     // Second 'g' should trigger move_to_buffer_start
     assert_eq!(
-        dispatcher.translate_key(Key::Char(b'g')),
+        dispatcher.translate_key(Key::Char('g')),
         Command::MoveToBufferStart
     );
     assert_eq!(dispatcher.pending_key(), None);
@@ -149,10 +146,10 @@ fn test_pending_key_sequence_invalid() {
     let mut dispatcher = Dispatcher::new(Mode::Normal);
 
     // First 'd' should set pending key
-    assert_eq!(dispatcher.translate_key(Key::Char(b'd')), Command::Noop);
+    assert_eq!(dispatcher.translate_key(Key::Char('d')), Command::Noop);
 
     // Different key should clear pending and return noop
-    assert_eq!(dispatcher.translate_key(Key::Char(b'x')), Command::Noop);
+    assert_eq!(dispatcher.translate_key(Key::Char('x')), Command::Noop);
     assert_eq!(dispatcher.pending_key(), None);
 }
 
@@ -166,8 +163,8 @@ fn test_mode_switching() {
 
     // Pending key should be cleared when switching modes
     dispatcher.set_mode(Mode::Normal);
-    dispatcher.translate_key(Key::Char(b'd'));
-    assert_eq!(dispatcher.pending_key(), Some(Key::Char(b'd')));
+    dispatcher.translate_key(Key::Char('d'));
+    assert_eq!(dispatcher.pending_key(), Some(Key::Char('d')));
     dispatcher.set_mode(Mode::Insert);
     // Pending key should be cleared after mode switch
     assert_eq!(dispatcher.pending_key(), None);
@@ -182,16 +179,16 @@ fn test_translate_command_mode() {
 
     // Printable characters should append to command line
     assert_eq!(
-        dispatcher.translate_key(Key::Char(b'a')),
-        Command::AppendToCommandLine(b'a')
+        dispatcher.translate_key(Key::Char('a')),
+        Command::AppendToCommandLine('a')
     );
     assert_eq!(
-        dispatcher.translate_key(Key::Char(b'q')),
-        Command::AppendToCommandLine(b'q')
+        dispatcher.translate_key(Key::Char('q')),
+        Command::AppendToCommandLine('q')
     );
     assert_eq!(
-        dispatcher.translate_key(Key::Char(b' ')),
-        Command::AppendToCommandLine(b' ')
+        dispatcher.translate_key(Key::Char(' ')),
+        Command::AppendToCommandLine(' ')
     );
 
     // Backspace should delete from command line
@@ -207,14 +204,13 @@ fn test_translate_command_mode() {
     );
 
     // Non-printable characters should be Noop
-    assert_eq!(dispatcher.translate_key(Key::Char(0)), Command::Noop);
-    assert_eq!(dispatcher.translate_key(Key::Char(127)), Command::Noop);
+    assert_eq!(dispatcher.translate_key(Key::Char('\0')), Command::Noop);
 }
 
 #[test]
 fn test_command_is_mutating() {
     // Mutating commands
-    assert!(Command::InsertByte(b'a').is_mutating());
+    assert!(Command::InsertChar('a').is_mutating());
     assert!(Command::DeleteForward.is_mutating());
     assert!(Command::DeleteBackward.is_mutating());
     assert!(Command::DeleteLine.is_mutating());
@@ -231,7 +227,7 @@ fn test_command_is_mutating() {
     assert!(!Command::EnterInsertMode.is_mutating());
     assert!(!Command::EnterInsertModeAfter.is_mutating());
     assert!(!Command::EnterCommandMode.is_mutating());
-    assert!(!Command::AppendToCommandLine(b'a').is_mutating());
+    assert!(!Command::AppendToCommandLine('a').is_mutating());
     assert!(!Command::DeleteFromCommandLine.is_mutating());
     assert!(!Command::ExecuteCommandLine.is_mutating());
     assert!(!Command::Quit.is_mutating());

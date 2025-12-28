@@ -148,8 +148,8 @@ pub fn execute_command(
         Command::DeleteLine => {
             // TODO: Implement delete_line
         }
-        Command::InsertByte(b) => {
-            if b == b'\t' && expand_tabs {
+        Command::InsertChar(ch) => {
+            if ch == '\t' && expand_tabs {
                 // Calculate current column position
                 let current_col = calculate_current_column(buf, tab_width);
                 // Calculate spaces needed to reach next tab stop
@@ -159,7 +159,7 @@ pub fn execute_command(
                     buf.insert(b' ')?;
                 }
             } else {
-                buf.insert(b)?;
+                buf.insert_char(ch)?;
             }
         }
         Command::EnterInsertMode | Command::EnterInsertModeAfter => {

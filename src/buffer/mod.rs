@@ -19,7 +19,11 @@ use std::fmt::{self, Display};
 pub mod line_index;
 use line_index::LineIndex;
 
-/// Gap buffer for efficient insertion and deletion
+/// Gap buffer for efficient insertion and deletion.
+///
+/// ## UTF-8 Invariant
+/// The cursor (`gap_start`) is always positioned at the start of a UTF-8 codepoint.
+/// All movement and deletion operations must maintain this invariant.
 pub struct GapBuffer {
     /// Buffer containing text before gap, gap, and text after gap
     /// Layout: [`before_gap`][gap][`after_gap`]
@@ -92,30 +96,61 @@ impl GapBuffer {
         self.len() == 0
     }
 
-    /// Move cursor left (move gap right)
+    /// Move cursor left (move gap right) by one UTF-8 codepoint
     pub fn move_left(&mut self) -> bool {
         if self.gap_start > 0 {
             unsafe {
-                let byte = *self.buffer.add(self.gap_start - 1);
-                *self.buffer.add(self.gap_end - 1) = byte;
+                // Move one byte
+                let first_byte = *self.buffer.add(self.gap_start - 1);
+                *self.buffer.add(self.gap_end - 1) = first_byte;
+                self.gap_start -= 1;
+                self.gap_end -= 1;
+
+                // Only continue if we moved a continuation byte (meaning we are in the middle of a char)
+                if (first_byte & 0b11000000) == 0b10000000 {
+                    while self.gap_start > 0 {
+                        let byte = *self.buffer.add(self.gap_start - 1);
+                        *self.buffer.add(self.gap_end - 1) = byte;
+                        self.gap_start -= 1;
+                        self.gap_end -= 1;
+
+                        // Stop if we just moved the header byte
+                        if (byte & 0b11000000) != 0b10000000 {
+                            break;
+                        }
+                    }
+                }
             }
-            self.gap_start -= 1;
-            self.gap_end -= 1;
             true
         } else {
             false
         }
     }
 
-    /// Move cursor right (move gap left)
+    /// Move cursor right (move gap left) by one UTF-8 codepoint
     pub fn move_right(&mut self) -> bool {
         if self.gap_end < self.capacity {
+            // Move right one byte
             unsafe {
                 let byte = *self.buffer.add(self.gap_end);
                 *self.buffer.add(self.gap_start) = byte;
             }
             self.gap_start += 1;
             self.gap_end += 1;
+
+            // Skip all continuation bytes
+            while self.gap_end < self.capacity {
+                let byte = unsafe { *self.buffer.add(self.gap_end) };
+                if (byte & 0b11000000) != 0b10000000 {
+                    break;
+                }
+                unsafe {
+                    let b = *self.buffer.add(self.gap_end);
+                    *self.buffer.add(self.gap_start) = b;
+                }
+                self.gap_start += 1;
+                self.gap_end += 1;
+            }
             true
         } else {
             false
@@ -124,18 +159,14 @@ impl GapBuffer {
 
     /// Insert a byte at the cursor position
     pub fn insert(&mut self, byte: u8) -> Result<(), RiftError> {
-        if self.gap_start >= self.gap_end {
-            // Gap is exhausted, need to grow
-            self.grow()?;
-        }
+        self.insert_bytes(&[byte])
+    }
 
-        unsafe {
-            *self.buffer.add(self.gap_start) = byte;
-        }
-        self.line_index.insert(self.gap_start, &[byte]);
-        self.gap_start += 1;
-        self.revision += 1;
-        Ok(())
+    /// Insert a character at the cursor position
+    pub fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
+        let mut buf = [0u8; 4];
+        let s = ch.encode_utf8(&mut buf);
+        self.insert_bytes(s.as_bytes())
     }
 
     /// Insert bytes at the cursor position (batch insertion)
@@ -171,13 +202,23 @@ impl GapBuffer {
         self.insert_bytes(s.as_bytes())
     }
 
-    /// Delete the byte before the cursor (backspace)
-    /// This moves the gap left, effectively deleting the byte
+    /// Delete the UTF-8 codepoint before the cursor (backspace)
     pub fn delete_backward(&mut self) -> bool {
         if self.gap_start > 0 {
-            // Just move gap left - the byte is effectively deleted
-            self.line_index.delete(self.gap_start - 1, 1);
-            self.gap_start -= 1;
+            let mut bytes_to_delete = 1;
+            // Count continuation bytes
+            while self.gap_start > bytes_to_delete {
+                let byte = unsafe { *self.buffer.add(self.gap_start - bytes_to_delete - 1) };
+                if (byte & 0b11000000) != 0b10000000 {
+                    break;
+                }
+                bytes_to_delete += 1;
+            }
+            // Also need to check the byte at (gap_start - bytes_to_delete) - it should be the start byte
+
+            self.line_index
+                .delete(self.gap_start - bytes_to_delete, bytes_to_delete);
+            self.gap_start -= bytes_to_delete;
             self.revision += 1;
             true
         } else {
@@ -185,12 +226,21 @@ impl GapBuffer {
         }
     }
 
-    /// Delete the byte at the cursor position (delete)
+    /// Delete the UTF-8 codepoint at the cursor position (delete)
     pub fn delete_forward(&mut self) -> bool {
         if self.gap_end < self.capacity {
-            // Just expand gap by one (effectively deleting the byte)
-            self.line_index.delete(self.gap_start, 1);
-            self.gap_end += 1;
+            let mut bytes_to_delete = 1;
+            // Skip continuation bytes
+            while self.gap_end + bytes_to_delete < self.capacity {
+                let byte = unsafe { *self.buffer.add(self.gap_end + bytes_to_delete) };
+                if (byte & 0b11000000) != 0b10000000 {
+                    break;
+                }
+                bytes_to_delete += 1;
+            }
+
+            self.line_index.delete(self.gap_start, bytes_to_delete);
+            self.gap_end += bytes_to_delete;
             self.revision += 1;
             true
         } else {

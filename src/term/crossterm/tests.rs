@@ -34,7 +34,17 @@ fn test_translate_key_event() {
         state: crossterm::event::KeyEventState::empty(),
     };
     let key = super::translate_key_event(key_event);
-    assert_eq!(key, Key::Char(b'a'));
+    assert_eq!(key, Key::Char('a'));
+
+    // Test Unicode character
+    let key_event = KeyEvent {
+        code: KeyCode::Char('🦀'),
+        modifiers: KeyModifiers::empty(),
+        kind: KeyEventKind::Press,
+        state: crossterm::event::KeyEventState::empty(),
+    };
+    let key = super::translate_key_event(key_event);
+    assert_eq!(key, Key::Char('🦀'));
 
     // Test Ctrl+Char
     let key_event = KeyEvent {

@@ -36,9 +36,9 @@ fn test_status_bar_render_command_mode() {
 
 #[test]
 fn test_format_key_char() {
-    assert_eq!(StatusBar::format_key(Key::Char(b'a')), "a");
-    assert_eq!(StatusBar::format_key(Key::Char(b'Z')), "Z");
-    assert_eq!(StatusBar::format_key(Key::Char(b' ')), " ");
+    assert_eq!(StatusBar::format_key(Key::Char('a')), "a");
+    assert_eq!(StatusBar::format_key(Key::Char('Z')), "Z");
+    assert_eq!(StatusBar::format_key(Key::Char(' ')), " ");
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn test_status_bar_render_pending_key() {
         &mut term,
         &viewport,
         Mode::Normal,
-        Some(Key::Char(b'd')),
+        Some(Key::Char('d')),
         &state,
     )
     .unwrap();
@@ -114,7 +114,7 @@ fn test_status_bar_render_debug_mode() {
     let viewport = Viewport::new(10, 80);
     let mut state = State::new();
     state.toggle_debug();
-    state.update_keypress(Key::Char(b'a'));
+    state.update_keypress(Key::Char('a'));
     state.update_cursor(5, 10);
     state.update_buffer_stats(10, 100, crate::document::LineEnding::LF);
 
@@ -139,7 +139,7 @@ fn test_status_bar_render_debug_with_pending() {
         &mut term,
         &viewport,
         Mode::Normal,
-        Some(Key::Char(b'd')),
+        Some(Key::Char('d')),
         &state,
     )
     .unwrap();
@@ -203,7 +203,7 @@ fn test_status_bar_debug_truncation() {
     let viewport = Viewport::new(10, 20);
     let mut state = State::new();
     state.toggle_debug();
-    state.update_keypress(Key::Char(b'a'));
+    state.update_keypress(Key::Char('a'));
     state.update_cursor(100, 200);
     state.update_buffer_stats(1000, 50000, crate::document::LineEnding::LF);
 
@@ -222,7 +222,7 @@ fn test_status_bar_various_keys() {
     let state = State::new();
 
     // Test various pending keys
-    let keys = vec![Key::Char(b'a'), Key::ArrowUp, Key::Ctrl(b'c'), Key::Escape];
+    let keys = vec![Key::Char('a'), Key::ArrowUp, Key::Ctrl(b'c'), Key::Escape];
 
     for key in keys {
         term.writes.clear();

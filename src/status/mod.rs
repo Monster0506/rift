@@ -166,10 +166,12 @@ impl StatusBar {
     pub fn format_key(key: Key) -> String {
         match key {
             Key::Char(ch) => {
-                if (32..127).contains(&ch) {
-                    format!("{}", ch as char)
+                if !ch.is_control() {
+                    format!("{ch}")
+                } else if ch == '\t' {
+                    "Tab".to_string()
                 } else {
-                    format!("\\x{ch:02x}")
+                    format!("\\u{{{:04x}}}", ch as u32)
                 }
             }
             Key::Ctrl(ch) => format!("Ctrl+{}", (ch as char).to_uppercase()),
@@ -207,19 +209,24 @@ impl StatusBar {
             parts.push(format!("Last: {}", Self::format_key(key)));
         }
 
-        // In insert mode, show the byte being inserted
+        // In insert mode, show the character being inserted
         if current_mode == Mode::Insert {
-            if let Some(Command::InsertByte(b)) = state.last_command {
-                let byte_str = if b == b'\t' {
-                    "\\t".to_string()
-                } else if b == b'\n' {
-                    "\\n".to_string()
-                } else if (32..127).contains(&b) {
-                    format!("'{}'", b as char)
-                } else {
-                    format!("\\x{b:02x}")
+            if let Some(Command::InsertChar(ch)) = state.last_command {
+                let bytes = {
+                    let mut b = [0u8; 4];
+                    ch.encode_utf8(&mut b);
+                    ch.len_utf8()
                 };
-                parts.push(format!("Insert: {byte_str} (0x{b:02x})"));
+                let char_str = if ch == '\t' {
+                    "\\t".to_string()
+                } else if ch == '\n' {
+                    "\\n".to_string()
+                } else if !ch.is_control() {
+                    format!("'{ch}'")
+                } else {
+                    format!("\\u{{{:04x}}}", ch as u32)
+                };
+                parts.push(format!("Insert: {char_str} ({bytes}B)"));
             }
         }
 

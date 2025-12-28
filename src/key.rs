@@ -3,8 +3,8 @@
 /// Represents a key press event
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Key {
-    /// Printable character (ASCII)
-    Char(u8),
+    /// Printable character
+    Char(char),
     /// Control key combination (e.g., Ctrl+A)
     Ctrl(u8),
     /// Arrow keys

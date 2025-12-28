@@ -12,7 +12,7 @@ fn test_new() {
 #[test]
 fn test_insert() {
     let mut buf = GapBuffer::new(10).unwrap();
-    buf.insert(b'a').unwrap();
+    buf.insert_char('a').unwrap();
     assert_eq!(buf.len(), 1);
     assert_eq!(buf.cursor(), 1);
 }
@@ -24,7 +24,7 @@ fn test_move_and_insert() {
     for _ in 0..5 {
         buf.move_left();
     }
-    buf.insert(b'X').unwrap();
+    buf.insert_char('X').unwrap();
     assert_eq!(buf.to_string(), "Xhello");
 }
 
@@ -92,11 +92,11 @@ fn test_cursor_position() {
 #[test]
 fn test_multiple_inserts() {
     let mut buf = GapBuffer::new(10).unwrap();
-    buf.insert(b'h').unwrap();
-    buf.insert(b'e').unwrap();
-    buf.insert(b'l').unwrap();
-    buf.insert(b'l').unwrap();
-    buf.insert(b'o').unwrap();
+    buf.insert_char('h').unwrap();
+    buf.insert_char('e').unwrap();
+    buf.insert_char('l').unwrap();
+    buf.insert_char('l').unwrap();
+    buf.insert_char('o').unwrap();
     assert_eq!(buf.to_string(), "hello");
     assert_eq!(buf.len(), 5);
 }
@@ -117,7 +117,7 @@ fn test_delete_backward_multiple() {
 fn test_gap_expansion() {
     let mut buf = GapBuffer::new(4).unwrap();
     buf.insert_str("abcd").unwrap();
-    buf.insert(b'e').unwrap();
+    buf.insert_char('e').unwrap();
     assert_eq!(buf.to_string(), "abcde");
     assert_eq!(buf.len(), 5);
 }

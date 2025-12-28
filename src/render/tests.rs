@@ -18,17 +18,17 @@ use crate::viewport::Viewport;
 
 #[test]
 fn test_format_key_char() {
-    assert_eq!(format_key(Key::Char(b'a')), "a");
-    assert_eq!(format_key(Key::Char(b'Z')), "Z");
-    assert_eq!(format_key(Key::Char(b' ')), " ");
-    assert_eq!(format_key(Key::Char(b'0')), "0");
+    assert_eq!(format_key(Key::Char('a')), "a");
+    assert_eq!(format_key(Key::Char('Z')), "Z");
+    assert_eq!(format_key(Key::Char(' ')), " ");
+    assert_eq!(format_key(Key::Char('0')), "0");
 }
 
 #[test]
 fn test_format_key_non_printable() {
-    assert_eq!(format_key(Key::Char(0x00)), "\\x00");
-    assert_eq!(format_key(Key::Char(0x1F)), "\\x1f");
-    assert_eq!(format_key(Key::Char(0x7F)), "\\x7f");
+    assert_eq!(format_key(Key::Char('\0')), "\\u{0000}");
+    assert_eq!(format_key(Key::Char('\x1f')), "\\u{001f}");
+    assert_eq!(format_key(Key::Char('\x7f')), "\\u{007f}");
 }
 
 #[test]
@@ -182,7 +182,7 @@ fn test_render_status_bar_pending_key_layer() {
         &mut layer,
         &viewport,
         Mode::Normal,
-        Some(Key::Char(b'd')),
+        Some(Key::Char('d')),
         &state,
     );
 
@@ -769,7 +769,7 @@ fn test_redraw_on_change() {
         .set_cell(0, 0, crate::layer::Cell::new(b'X'));
 
     // Change state (insert a char)
-    buf.insert(b'!').unwrap();
+    buf.insert_char('!').unwrap();
 
     render(
         &mut term,

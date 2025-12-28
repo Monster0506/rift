@@ -46,11 +46,11 @@ fn test_update_keypress() {
     let mut state = State::new();
     assert_eq!(state.last_keypress, None);
 
-    state.update_keypress(Key::Char(b'a'));
-    assert_eq!(state.last_keypress, Some(Key::Char(b'a')));
+    state.update_keypress(Key::Char('a'));
+    assert_eq!(state.last_keypress, Some(Key::Char('a')));
 
-    state.update_keypress(Key::Char(b'b'));
-    assert_eq!(state.last_keypress, Some(Key::Char(b'b')));
+    state.update_keypress(Key::Char('b'));
+    assert_eq!(state.last_keypress, Some(Key::Char('b')));
 
     state.update_keypress(Key::ArrowUp);
     assert_eq!(state.last_keypress, Some(Key::ArrowUp));
@@ -97,11 +97,11 @@ fn test_update_buffer_stats() {
 fn test_state_operations_together() {
     let mut state = State::new();
 
-    state.update_keypress(Key::Char(b'h'));
+    state.update_keypress(Key::Char('h'));
     state.update_cursor(2, 5);
     state.update_buffer_stats(3, 100, crate::document::LineEnding::LF);
     assert_eq!(state.debug_mode, false);
-    assert_eq!(state.last_keypress, Some(Key::Char(b'h')));
+    assert_eq!(state.last_keypress, Some(Key::Char('h')));
     assert_eq!(state.cursor_pos, (2, 5));
     assert_eq!(state.total_lines, 3);
     assert_eq!(state.buffer_size, 100);
@@ -126,12 +126,12 @@ fn test_multiple_keypress_updates() {
 
     // Simulate a sequence of keypresses
     let keys = vec![
-        Key::Char(b'i'),
-        Key::Char(b'n'),
-        Key::Char(b's'),
-        Key::Char(b'e'),
-        Key::Char(b'r'),
-        Key::Char(b't'),
+        Key::Char('i'),
+        Key::Char('n'),
+        Key::Char('s'),
+        Key::Char('e'),
+        Key::Char('r'),
+        Key::Char('t'),
         Key::Escape,
     ];
 

@@ -157,7 +157,7 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
             if ctrl {
                 Key::Ctrl(ch as u8)
             } else {
-                Key::Char(ch as u8)
+                Key::Char(ch)
             }
         }
         KeyCode::Backspace => Key::Backspace,
@@ -197,7 +197,7 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
         KeyCode::PageUp => Key::PageUp,
         KeyCode::PageDown => Key::PageDown,
         KeyCode::Delete => Key::Delete,
-        _ => Key::Char(0), // Unknown key
+        _ => Key::Char('\0'), // Unknown key
     }
 }
 

@@ -48,7 +48,7 @@ impl KeyHandler {
     fn process_normal_mode_key(key: Key) -> KeyAction {
         match key {
             // Debug mode toggle
-            Key::Char(b'?') => KeyAction::ToggleDebug,
+            Key::Char('?') => KeyAction::ToggleDebug,
             // Escape - clear pending keys
             Key::Escape => KeyAction::SkipAndRender,
             // Ctrl+] - clear pending keys (alternative)

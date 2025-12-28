@@ -7,7 +7,7 @@ use crate::mode::Mode;
 #[test]
 fn test_process_normal_mode_debug_toggle() {
     // Debug toggle should return ToggleDebug action
-    let action = KeyHandler::process_key(Key::Char(b'?'), Mode::Normal);
+    let action = KeyHandler::process_key(Key::Char('?'), Mode::Normal);
     assert_eq!(action, KeyAction::ToggleDebug);
 }
 
@@ -25,7 +25,7 @@ fn test_process_normal_mode_ctrl_bracket() {
 
 #[test]
 fn test_process_normal_mode_regular_key() {
-    let action = KeyHandler::process_key(Key::Char(b'h'), Mode::Normal);
+    let action = KeyHandler::process_key(Key::Char('h'), Mode::Normal);
     assert_eq!(action, KeyAction::Continue);
 }
 
@@ -37,14 +37,14 @@ fn test_process_insert_mode_escape() {
 
 #[test]
 fn test_process_insert_mode_regular_key() {
-    let action = KeyHandler::process_key(Key::Char(b'a'), Mode::Insert);
+    let action = KeyHandler::process_key(Key::Char('a'), Mode::Insert);
     assert_eq!(action, KeyAction::Continue);
 }
 
 #[test]
 fn test_process_insert_mode_debug_toggle_ignored() {
     // Debug toggle should not work in insert mode (should continue to command processing)
-    let action = KeyHandler::process_key(Key::Char(b'?'), Mode::Insert);
+    let action = KeyHandler::process_key(Key::Char('?'), Mode::Insert);
     assert_eq!(action, KeyAction::Continue);
 }
 
@@ -94,6 +94,6 @@ fn test_process_command_mode_escape() {
 #[test]
 fn test_process_command_mode_regular_key() {
     // Regular keys should continue in command mode (for future command input)
-    let action = KeyHandler::process_key(Key::Char(b'a'), Mode::Command);
+    let action = KeyHandler::process_key(Key::Char('a'), Mode::Command);
     assert_eq!(action, KeyAction::Continue);
 }

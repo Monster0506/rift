@@ -32,13 +32,13 @@ pub enum Command {
     DeleteForward,
     DeleteBackward,
     DeleteLine,
-    InsertByte(u8),
+    InsertChar(char),
 
     // Mode transitions
     EnterCommandMode,
 
     // Command line editing
-    AppendToCommandLine(u8),
+    AppendToCommandLine(char),
     DeleteFromCommandLine,
     ExecuteCommandLine,
 
@@ -60,7 +60,7 @@ impl Command {
             Command::DeleteForward
                 | Command::DeleteBackward
                 | Command::DeleteLine
-                | Command::InsertByte(_)
+                | Command::InsertChar(_)
         )
     }
 }
@@ -97,28 +97,28 @@ impl Dispatcher {
 
         match key {
             Key::Char(ch) => match ch {
-                b'h' => Command::MoveLeft,
-                b'j' => Command::MoveDown,
-                b'k' => Command::MoveUp,
-                b'l' => Command::MoveRight,
-                b'0' => Command::MoveToLineStart,
-                b'$' => Command::MoveToLineEnd,
-                b'i' => Command::EnterInsertMode,
-                b'a' => Command::EnterInsertModeAfter,
-                b'x' => Command::DeleteForward,
-                b'q' => Command::Quit,
-                b':' => Command::EnterCommandMode,
-                b'd' => {
+                'h' => Command::MoveLeft,
+                'j' => Command::MoveDown,
+                'k' => Command::MoveUp,
+                'l' => Command::MoveRight,
+                '0' => Command::MoveToLineStart,
+                '$' => Command::MoveToLineEnd,
+                'i' => Command::EnterInsertMode,
+                'a' => Command::EnterInsertModeAfter,
+                'x' => Command::DeleteForward,
+                'q' => Command::Quit,
+                ':' => Command::EnterCommandMode,
+                'd' => {
                     // Start sequence for 'dd'
                     self.pending_key = Some(key);
                     Command::Noop
                 }
-                b'g' => {
+                'g' => {
                     // Start sequence for 'gg'
                     self.pending_key = Some(key);
                     Command::Noop
                 }
-                b'G' => Command::MoveToBufferEnd,
+                'G' => Command::MoveToBufferEnd,
                 _ => Command::Noop,
             },
             Key::ArrowLeft => Command::MoveLeft,
@@ -133,8 +133,8 @@ impl Dispatcher {
 
     fn handle_normal_mode_sequence(&mut self, first: Key, second: Key) -> Command {
         match (first, second) {
-            (Key::Char(b'd'), Key::Char(b'd')) => Command::DeleteLine,
-            (Key::Char(b'g'), Key::Char(b'g')) => Command::MoveToBufferStart,
+            (Key::Char('d'), Key::Char('d')) => Command::DeleteLine,
+            (Key::Char('g'), Key::Char('g')) => Command::MoveToBufferStart,
             _ => Command::Noop,
         }
     }
@@ -145,15 +145,7 @@ impl Dispatcher {
         // Resolve shared input intent
         if let Some(intent) = input::resolve_input(key) {
             match intent {
-                InputIntent::Type(ch) => {
-                    // Filter out non-byte characters if necessary, or assume char fits in u8 for now
-                    // as InsertByte takes u8. Using ch as u8 only works for ASCII.
-                    if ch.is_ascii() {
-                        Command::InsertByte(ch as u8)
-                    } else {
-                        Command::Noop
-                    }
-                }
+                InputIntent::Type(ch) => Command::InsertChar(ch),
                 // TODO: Implement granular movement
                 // For now, fall back to character movement so keys aren't dead
                 InputIntent::Move(dir, _) => match dir {
@@ -165,7 +157,7 @@ impl Dispatcher {
                 InputIntent::Delete(Direction::Left, _) => Command::DeleteBackward, // Backspace
                 InputIntent::Delete(Direction::Right, _) => Command::DeleteForward, // Delete
                 InputIntent::Delete(_, _) => Command::Noop, // Other deletes not supported yet
-                InputIntent::Accept => Command::InsertByte(b'\n'),
+                InputIntent::Accept => Command::InsertChar('\n'),
                 InputIntent::Cancel => Command::EnterInsertMode, // Toggle back to normal
             }
         } else {
@@ -178,13 +170,7 @@ impl Dispatcher {
 
         if let Some(intent) = input::resolve_input(key) {
             match intent {
-                InputIntent::Type(ch) => {
-                    if ch.is_ascii() {
-                        Command::AppendToCommandLine(ch as u8)
-                    } else {
-                        Command::Noop
-                    }
-                }
+                InputIntent::Type(ch) => Command::AppendToCommandLine(ch),
                 InputIntent::Move(dir, Granularity::Line) => match dir {
                     Direction::Left => Command::MoveToLineStart,
                     Direction::Right => Command::MoveToLineEnd,

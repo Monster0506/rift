@@ -152,7 +152,7 @@ fn test_document_is_empty() {
     let mut doc = Document::new(1).unwrap();
     assert!(doc.is_empty());
 
-    doc.buffer.insert(b'a').unwrap();
+    doc.buffer.insert_char('a').unwrap();
     assert!(!doc.is_empty());
 }
 

@@ -2,11 +2,16 @@ use super::*;
 
 #[test]
 fn test_resolve_input_char() {
-    assert_eq!(resolve_input(Key::Char(b'a')), Some(InputIntent::Type('a')));
-    assert_eq!(resolve_input(Key::Char(b'Z')), Some(InputIntent::Type('Z')));
-    assert_eq!(resolve_input(Key::Char(b' ')), Some(InputIntent::Type(' ')));
+    assert_eq!(resolve_input(Key::Char('a')), Some(InputIntent::Type('a')));
+    assert_eq!(resolve_input(Key::Char('Z')), Some(InputIntent::Type('Z')));
+    assert_eq!(resolve_input(Key::Char(' ')), Some(InputIntent::Type(' ')));
+    // Unicode characters
+    assert_eq!(
+        resolve_input(Key::Char('🦀')),
+        Some(InputIntent::Type('🦀'))
+    );
     // Non-printable chars should return None (except Tab/Newline handled separately)
-    assert_eq!(resolve_input(Key::Char(0)), None);
+    assert_eq!(resolve_input(Key::Char('\0')), None);
 }
 
 #[test]

@@ -85,6 +85,13 @@ impl Cell {
         }
     }
 
+    /// Create a new cell from a char
+    pub fn from_char(ch: char) -> Self {
+        let mut buf = [0u8; 4];
+        let s = ch.encode_utf8(&mut buf);
+        Self::from_bytes(s.as_bytes())
+    }
+
     /// Create an empty (space) cell
     pub fn empty() -> Self {
         Self::new(b' ')
@@ -236,6 +243,11 @@ impl Layer {
     /// Handles multi-byte characters by putting them in a single cell
     pub fn write_utf8(&mut self, row: usize, col: usize, content: &[u8]) -> bool {
         self.set_cell(row, col, Cell::from_bytes(content))
+    }
+
+    /// Write a character at the given position
+    pub fn write_char(&mut self, row: usize, col: usize, ch: char) -> bool {
+        self.set_cell(row, col, Cell::from_char(ch))
     }
 
     /// Fill a row with a character

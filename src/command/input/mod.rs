@@ -38,9 +38,9 @@ pub enum InputIntent {
 pub fn resolve_input(key: Key) -> Option<InputIntent> {
     match key {
         Key::Char(ch) => {
-            // Handle ASCII printables and Tab
-            if ch == b'\t' || (32..127).contains(&ch) {
-                Some(InputIntent::Type(ch as char))
+            // Handle printable characters and Tab
+            if ch == '\t' || !ch.is_control() {
+                Some(InputIntent::Type(ch))
             } else {
                 None
             }
@@ -52,13 +52,15 @@ pub fn resolve_input(key: Key) -> Option<InputIntent> {
         // But let's support the existing behavior:
         Key::Ctrl(ch) => {
             // Handle ctrl logic if we want to emulate existing insert mode behavior
-            // "Ctrl+A" -> 1u8
-            let ctrl_byte = if ch.is_ascii_lowercase() {
-                ch - b'a' + 1
+            // "Ctrl+A" -> '\u{1}'
+            let ctrl_char = if ch.is_ascii_lowercase() {
+                (ch - b'a' + 1) as char
+            } else if ch.is_ascii_uppercase() {
+                (ch - b'A' + 1) as char
             } else {
-                ch
+                ch as char
             };
-            Some(InputIntent::Type(ctrl_byte as char))
+            Some(InputIntent::Type(ctrl_char))
         }
 
         Key::Enter => Some(InputIntent::Accept),

@@ -24,6 +24,7 @@ use crate::state::State;
 use crate::status::StatusBar;
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
+use unicode_width::UnicodeWidthChar;
 
 /// Explicitly tracked cursor information for rendering comparison
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -453,7 +454,9 @@ fn render_content_to_layer(
         }
 
         if line_num < buf.get_total_lines() {
-            let line = buf.get_line_bytes(line_num);
+            let line_bytes = buf.get_line_bytes(line_num);
+            let line_str = String::from_utf8_lossy(&line_bytes);
+
             // Write line content
             // We need to skip visual columns based on viewport.left_col
             let content_cols = visible_cols.saturating_sub(gutter_width);
@@ -461,25 +464,22 @@ fn render_content_to_layer(
             let mut rendered_col = 0;
             let left_col = viewport.left_col();
 
-            for &byte in &line {
+            for ch in line_str.chars() {
                 if rendered_col >= content_cols {
                     break;
                 }
 
-                // Track visual column (handling tabs)
-                let char_width = if byte == b'\t' {
+                // Track visual column (handling tabs and wide chars)
+                let char_width = if ch == '\t' {
                     ctx.state.settings.tab_width - (visual_col % ctx.state.settings.tab_width)
                 } else {
-                    1
+                    UnicodeWidthChar::width(ch).unwrap_or(1)
                 };
 
                 let next_visual_col = visual_col + char_width;
 
                 // If any part of this character is visible (>= left_col)
                 if next_visual_col > left_col {
-                    // Check if we need to skip part of the character (e.g. part of a tab)
-                    // Currently simplification: just render if it ends after left_col
-
                     // Only render if we haven't exceeded width
                     if rendered_col < content_cols {
                         let display_col = rendered_col + gutter_width;
@@ -487,10 +487,25 @@ fn render_content_to_layer(
                             layer.set_cell(
                                 i,
                                 display_col,
-                                Cell::new(byte).with_colors(editor_fg, editor_bg),
+                                Cell::from_char(ch).with_colors(editor_fg, editor_bg),
                             );
+
+                            // For wide characters, fill the remaining columns with empty content
+                            // so we don't overwrite the wide character with spaces from the background
+                            if char_width > 1 {
+                                let empty_cell = Cell {
+                                    content: Vec::new(),
+                                    fg: editor_fg,
+                                    bg: editor_bg,
+                                };
+                                for k in 1..char_width {
+                                    if display_col + k < visible_cols {
+                                        layer.set_cell(i, display_col + k, empty_cell.clone());
+                                    }
+                                }
+                            }
                         }
-                        rendered_col += char_width; // Advance by char width (e.g. tab)
+                        rendered_col += char_width; // Advance by visual width
                     }
                 }
                 visual_col = next_visual_col;
@@ -509,16 +524,16 @@ fn render_content_to_layer(
     }
 }
 
-/// Calculate the visual column position accounting for tab width
-/// If `start_col` is provided, continues from that column position
+/// Calculate the visual column position accounting for tab width and wide characters
 fn calculate_visual_column(line_bytes: &[u8], start_col: usize, tab_width: usize) -> usize {
     let mut col = start_col;
-    for &byte in line_bytes {
-        if byte == b'\t' {
+    let line_str = String::from_utf8_lossy(line_bytes);
+    for ch in line_str.chars() {
+        if ch == '\t' {
             // Move to next tab stop
             col = ((col / tab_width) + 1) * tab_width;
         } else {
-            col += 1;
+            col += UnicodeWidthChar::width(ch).unwrap_or(1);
         }
     }
     col
