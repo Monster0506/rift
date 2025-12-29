@@ -48,7 +48,7 @@ Todo:
 - granular movement
 
 Known issues:
-- 4 byte unicode characters are not handled (this is a crossterm issue on windows, idk man)
+- 4 byte unicode characters are not handled able to be inserted on windows (this is a crossterm issue on windows, idk man)
 
 
 Fixed stuff (lightly tracked):
