@@ -75,6 +75,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "expandtabs",
         aliases: &["et"],
+        description: "Expand tabs to spaces",
         ty: SettingType::Boolean,
         set: set_expand_tabs,
         needs_full_redraw: false,
@@ -82,6 +83,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "tabwidth",
         aliases: &["tw"],
+        description: "Tab width",
         ty: SettingType::Integer {
             min: Some(1),
             max: None,
@@ -92,6 +94,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line_window.width_ratio",
         aliases: &["cmdwidth"],
+        description: "Command line window width ratio",
         ty: SettingType::Float {
             min: Some(0.0),
             max: Some(1.0),
@@ -102,6 +105,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "borderstyle",
         aliases: &["bs"],
+        description: "Border style",
         ty: SettingType::Enum {
             variants: &["unicode", "ascii", "none"],
         },
@@ -685,6 +689,7 @@ fn test_execute_setting_ambiguous() {
         SettingDescriptor {
             name: "expandtabs",
             aliases: &[],
+            description: "Expand tabs",
             ty: SettingType::Boolean,
             set: set_expand_tabs,
             needs_full_redraw: false,
@@ -692,6 +697,7 @@ fn test_execute_setting_ambiguous() {
         SettingDescriptor {
             name: "expandspaces",
             aliases: &[],
+            description: "Expand spaces",
             ty: SettingType::Boolean,
             set: set_expand_tabs,
             needs_full_redraw: false,

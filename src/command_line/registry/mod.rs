@@ -24,6 +24,8 @@ pub struct CommandDef {
     pub name: String,
     /// Explicit aliases for this command
     pub aliases: Vec<String>,
+    /// Description of the command
+    pub description: String,
 }
 
 impl CommandDef {
@@ -32,7 +34,14 @@ impl CommandDef {
         CommandDef {
             name: name.into(),
             aliases: Vec::new(),
+            description: String::new(),
         }
+    }
+
+    /// Add a description
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
+        self
     }
 
     /// Add an explicit alias

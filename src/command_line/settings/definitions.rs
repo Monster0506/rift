@@ -286,6 +286,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "expandtabs",
         aliases: &["et"],
+        description: "Use spaces instead of tabs",
         ty: SettingType::Boolean,
         set: set_expand_tabs,
         needs_full_redraw: true,
@@ -293,6 +294,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "tabwidth",
         aliases: &["tw"],
+        description: "Number of spaces per tab",
         ty: SettingType::Integer {
             min: Some(1),
             max: None,
@@ -303,6 +305,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line.borderstyle",
         aliases: &["clborderstyle"],
+        description: "Style of the command line window border",
         ty: SettingType::Enum {
             variants: &["unicode", "ascii", "none"],
         },
@@ -312,6 +315,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line.width_ratio",
         aliases: &["clwidthratio"],
+        description: "Width of command line window as ratio of screen width",
         ty: SettingType::Float {
             min: Some(0.0),
             max: Some(1.0),
@@ -322,6 +326,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line.min_width",
         aliases: &["clminwidth"],
+        description: "Minimum width of command line window in columns",
         ty: SettingType::Integer {
             min: Some(1),
             max: None,
@@ -332,6 +337,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line.height",
         aliases: &["clheight"],
+        description: "Height of command line window in rows",
         ty: SettingType::Integer {
             min: Some(1),
             max: None,
@@ -342,6 +348,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line.border",
         aliases: &["clborder"],
+        description: "Show border around command line window",
         ty: SettingType::Boolean,
         set: set_cmd_window_border,
         needs_full_redraw: false,
@@ -349,6 +356,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line.reverse_video",
         aliases: &["clreverse"],
+        description: "Use reverse video for command line window",
         ty: SettingType::Boolean,
         set: set_cmd_window_reverse_video,
         needs_full_redraw: false,
@@ -356,6 +364,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "appearance.background",
         aliases: &["apbg", "bg"],
+        description: "Editor background color",
         ty: SettingType::Color,
         set: set_editor_bg,
         needs_full_redraw: true,
@@ -363,6 +372,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "appearance.foreground",
         aliases: &["apfg", "fg"],
+        description: "Editor foreground color",
         ty: SettingType::Color,
         set: set_editor_fg,
         needs_full_redraw: true,
@@ -370,6 +380,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "appearance.theme",
         aliases: &["aptheme", "colorscheme", "colors"],
+        description: "Color theme",
         ty: SettingType::Enum {
             variants: &["light", "dark", "gruvbox", "nordic", "nord"],
         },
@@ -379,6 +390,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "status_line.show_filename",
         aliases: &["slfilename"],
+        description: "Show filename in status line",
         ty: SettingType::Boolean,
         set: set_show_filename,
         needs_full_redraw: false,
@@ -386,6 +398,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "status_line.reverse_video",
         aliases: &["slreverse"],
+        description: "Use reverse video for status line",
         ty: SettingType::Boolean,
         set: set_status_line_reverse_video,
         needs_full_redraw: false,
@@ -393,6 +406,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "status_line.show_status_line",
         aliases: &["slshow"],
+        description: "Show status line",
         ty: SettingType::Boolean,
         set: set_show_status_line,
         needs_full_redraw: false,
@@ -400,6 +414,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "status_line.show_dirty",
         aliases: &["sldirty"],
+        description: "Show dirty indicator in status line",
         ty: SettingType::Boolean,
         set: set_show_dirty_indicator,
         needs_full_redraw: false,
@@ -407,6 +422,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "number",
         aliases: &[],
+        description: "Show line numbers",
         ty: SettingType::Boolean,
         set: set_show_line_numbers,
         needs_full_redraw: true,

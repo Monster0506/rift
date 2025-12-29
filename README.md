@@ -31,6 +31,7 @@ Implemented:
 - :edit filename to open a new document (:e to reload from disk)
 - dirty rectangles
 - Not a gap buffer anymore! We now use a rope with a piece table
+- setting and command descriptions
 
 Todo:
 - LSP
@@ -39,7 +40,6 @@ Todo:
 - search + replace
 - copy/paste (buffers)
 - macros
-- setting and command descriptions
 - make command pattern more like settings design pattern
 - help manual
 - command history

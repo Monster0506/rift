@@ -109,6 +109,8 @@ pub struct SettingDescriptor<T> {
     pub name: &'static str,
     /// Short aliases (e.g., &["et"])
     pub aliases: &'static [&'static str],
+    /// Description of the setting
+    pub description: &'static str,
     /// Setting type for parsing and validation
     pub ty: SettingType,
     /// Setter function pointer

@@ -82,14 +82,26 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Create command registry and settings registry
         let registry = CommandRegistry::new()
-            .register(CommandDef::new("quit").with_alias("q"))
-            .register(CommandDef::new("set"))
-            .register(CommandDef::new("setlocal"))
-            .register(CommandDef::new("write").with_alias("w"))
-            .register(CommandDef::new("wq"))
-            .register(CommandDef::new("notify"))
-            .register(CommandDef::new("redraw"))
-            .register(CommandDef::new("edit").with_alias("e"));
+            .register(
+                CommandDef::new("quit")
+                    .with_alias("q")
+                    .with_description("Quit the editor"),
+            )
+            .register(CommandDef::new("set").with_description("Set an option"))
+            .register(CommandDef::new("setlocal").with_description("Set a local option"))
+            .register(
+                CommandDef::new("write")
+                    .with_alias("w")
+                    .with_description("Save the current file"),
+            )
+            .register(CommandDef::new("wq").with_description("Save the current file and quit"))
+            .register(CommandDef::new("notify").with_description("Show a notification"))
+            .register(CommandDef::new("redraw").with_description("Redraw the screen"))
+            .register(
+                CommandDef::new("edit")
+                    .with_alias("e")
+                    .with_description("Edit a file"),
+            );
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(registry.clone(), settings_registry.clone());
 

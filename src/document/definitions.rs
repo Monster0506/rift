@@ -45,6 +45,7 @@ fn set_line_ending(options: &mut DocumentOptions, value: SettingValue) -> Result
 const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[SettingDescriptor {
     name: "line_ending",
     aliases: &["ff", "fileformat"], // mimicking vim's fileformat
+    description: "Line ending format (lf/crlf)",
     ty: SettingType::Enum {
         variants: &["lf", "crlf", "unix", "dos", "windows"],
     },
