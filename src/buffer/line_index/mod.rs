@@ -87,3 +87,7 @@ impl std::fmt::Debug for LineIndex {
             .finish()
     }
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
