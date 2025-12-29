@@ -92,7 +92,7 @@ fn calculate_current_column(buf: &TextBuffer, tab_width: usize) -> usize {
     // If we're at the end of the current line (after gap, no newline found)
     if current_line == line {
         // Include all remaining after_gap bytes
-        for &b in after_gap {
+        for b in after_gap {
             if b == b'\t' {
                 col = ((col / tab_width) + 1) * tab_width;
             } else {

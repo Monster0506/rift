@@ -586,7 +586,7 @@ pub(crate) fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: 
     // If we're at the end of the target line (after gap, no newline found)
     if current_line == line {
         // Include all remaining after_gap bytes, continuing from col
-        return calculate_visual_column(after_gap, col, tab_width);
+        return calculate_visual_column(&after_gap, col, tab_width);
     }
 
     0

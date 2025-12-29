@@ -30,6 +30,7 @@ Implemented:
 - Multi-document support
 - :edit filename to open a new document (:e to reload from disk)
 - dirty rectangles
+- Not a gap buffer anymore! We now use a rope with a piece table
 
 Todo:
 - LSP

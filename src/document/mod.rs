@@ -204,12 +204,12 @@ impl Document {
 
             if self.options.line_ending == LineEnding::LF {
                 // Optimized write for LF
-                file.write_all(before)?;
-                file.write_all(after)?;
+                file.write_all(&before)?;
+                file.write_all(&after)?;
             } else {
                 // Denormalize for CRLF
-                Self::write_denormalized(&mut file, before, line_ending_bytes)?;
-                Self::write_denormalized(&mut file, after, line_ending_bytes)?;
+                Self::write_denormalized(&mut file, &before, line_ending_bytes)?;
+                Self::write_denormalized(&mut file, &after, line_ending_bytes)?;
             }
             file.sync_all()?;
         }
