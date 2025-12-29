@@ -852,7 +852,7 @@ fn test_parse_subcommands() {
         .register(
             CommandDef::new("buffer")
                 .with_subcommand(CommandDef::new("next"))
-                .with_subcommand(CommandDef::new("prev")),
+                .with_subcommand(CommandDef::new("previous").with_alias("prev")),
         )
         .register(CommandDef::new("bnext"))
         .register(CommandDef::new("bprev"));

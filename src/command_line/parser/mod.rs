@@ -211,7 +211,7 @@ impl CommandParser {
         } else if command_chain.len() == 2 {
             match (command_chain[0].as_str(), command_chain[1].as_str()) {
                 ("buffer", "next") => return ParsedCommand::BufferNext { bangs },
-                ("buffer", "prev") => return ParsedCommand::BufferPrevious { bangs },
+                ("buffer", "previous") => return ParsedCommand::BufferPrevious { bangs },
                 _ => {}
             }
         }

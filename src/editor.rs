@@ -107,8 +107,18 @@ impl<T: TerminalBackend> Editor<T> {
                     .with_description("Buffer management")
                     .with_subcommand(CommandDef::new("next").with_description("Next buffer"))
                     .with_subcommand(
-                        CommandDef::new("previous").with_description("Previous buffer"),
+                        CommandDef::new("previous")
+                            .with_alias("prev")
+                            .with_description("Previous buffer"),
                     ),
+            )
+            .register(
+                CommandDef::new("bnext")
+                    .with_description("Next buffer"),
+            )
+            .register(
+                CommandDef::new("bprev")
+                    .with_description("Previous buffer"),
             );
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(registry.clone(), settings_registry.clone());
