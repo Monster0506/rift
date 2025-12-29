@@ -32,6 +32,8 @@ Implemented:
 - dirty rectangles
 - Not a gap buffer anymore! We now use a rope with a piece table
 - setting and command descriptions
+- make command pattern more like settings design pattern
+- Buffer next/previous
 
 Todo:
 - LSP
@@ -40,12 +42,11 @@ Todo:
 - search + replace
 - copy/paste (buffers)
 - macros
-- make command pattern more like settings design pattern
 - help manual
 - command history
 - mainloop non blocking
 - resize handling
-- buffer next/previous/ls
+- buffer ls
 - granular movement
 
 Known issues:

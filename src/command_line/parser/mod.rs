@@ -57,6 +57,14 @@ pub enum ParsedCommand {
         path: Option<String>,
         bangs: usize,
     },
+    /// Switch to next buffer
+    BufferNext {
+        bangs: usize,
+    },
+    /// Switch to previous buffer
+    BufferPrevious {
+        bangs: usize,
+    },
 }
 
 /// Command parser
@@ -109,48 +117,107 @@ impl CommandParser {
             };
         }
 
-        // Split into command and arguments
+        // Split into tokens
         let parts: Vec<&str> = input.split_whitespace().collect();
-        let raw_command_name = parts[0];
-        let args = &parts[1..];
-
-        let (command_name, bangs) = Self::strip_bangs(raw_command_name);
-
-        // Handle empty command name after stripping (e.g. just "!")
-        if command_name.is_empty() {
+        if parts.is_empty() {
             return ParsedCommand::Unknown {
-                name: raw_command_name.to_string(),
+                name: String::new(),
             };
         }
 
-        // Match command name using registry
-        match self.registry.match_command(command_name) {
-            MatchResult::Exact(name) | MatchResult::Prefix(name) => {
-                self.parse_command(&name, args, bangs)
+        let mut command_chain = Vec::new();
+        let mut current_registry = &self.registry;
+        let mut args_start_index = 0;
+        let mut bangs = 0;
+
+        // Traverse command hierarchy
+        for (i, part) in parts.iter().enumerate() {
+            let (name, part_bangs) = Self::strip_bangs(part);
+
+            if name.is_empty() {
+                if command_chain.is_empty() {
+                    return ParsedCommand::Unknown {
+                        name: part.to_string(),
+                    };
+                }
+                break;
             }
-            MatchResult::Ambiguous { prefix, matches } => {
-                ParsedCommand::Ambiguous { prefix, matches }
+
+            match current_registry.match_command(name) {
+                MatchResult::Exact(canonical_name) | MatchResult::Prefix(canonical_name) => {
+                    // Found a match
+                    command_chain.push(canonical_name.clone());
+                    bangs = part_bangs; // Update bangs from current token
+                    args_start_index = i + 1;
+
+                    // Check for subcommands
+                    if let Some(cmd_def) = current_registry.get(&canonical_name) {
+                        if let Some(ref sub_registry) = cmd_def.subcommands {
+                            current_registry = sub_registry;
+                            continue; // Continue to next token to see if it matches a subcommand
+                        }
+                    }
+                    // No subcommands or not found, stop traversal
+                    break;
+                }
+                MatchResult::Ambiguous { prefix, matches } => {
+                    return ParsedCommand::Ambiguous { prefix, matches };
+                }
+                MatchResult::Unknown(_) => {
+                    // Not a command in current registry.
+                    // If we haven't matched anything yet, it's an unknown command.
+                    if command_chain.is_empty() {
+                        return ParsedCommand::Unknown {
+                            name: part.to_string(),
+                        };
+                    }
+                    // If we have matched something previously, this token is the start of arguments.
+                    break;
+                }
             }
-            MatchResult::Unknown(_) => ParsedCommand::Unknown {
-                name: raw_command_name.to_string(),
-            },
         }
+
+        if command_chain.is_empty() {
+            return ParsedCommand::Unknown {
+                name: parts[0].to_string(),
+            };
+        }
+
+        let args = &parts[args_start_index..];
+        self.parse_command(&command_chain, args, bangs)
     }
 
     /// Parse a matched command with its arguments
-    fn parse_command(&self, command_name: &str, args: &[&str], bangs: usize) -> ParsedCommand {
-        match command_name {
-            "quit" => ParsedCommand::Quit { bangs },
-            "set" => self.parse_set_command(args, bangs, false),
-            "setlocal" => self.parse_set_command(args, bangs, true),
-            "write" => self.parse_write_command(args, bangs),
-            "wq" => self.parse_write_quit_command(args, bangs),
-            "notify" => self.parse_notify_command(args, bangs),
-            "redraw" => self.parse_redraw_command(args, bangs),
-            "edit" => self.parse_edit_command(args, bangs),
-            _ => ParsedCommand::Unknown {
-                name: command_name.to_string(),
-            },
+    fn parse_command(
+        &self,
+        command_chain: &[String],
+        args: &[&str],
+        bangs: usize,
+    ) -> ParsedCommand {
+        if command_chain.len() == 1 {
+            match command_chain[0].as_str() {
+                "quit" => return ParsedCommand::Quit { bangs },
+                "set" => return self.parse_set_command(args, bangs, false),
+                "setlocal" => return self.parse_set_command(args, bangs, true),
+                "write" => return self.parse_write_command(args, bangs),
+                "wq" => return self.parse_write_quit_command(args, bangs),
+                "notify" => return self.parse_notify_command(args, bangs),
+                "redraw" => return self.parse_redraw_command(args, bangs),
+                "edit" => return self.parse_edit_command(args, bangs),
+                "bnext" => return ParsedCommand::BufferNext { bangs },
+                "bprev" => return ParsedCommand::BufferPrevious { bangs },
+                _ => {}
+            }
+        } else if command_chain.len() == 2 {
+            match (command_chain[0].as_str(), command_chain[1].as_str()) {
+                ("buffer", "next") => return ParsedCommand::BufferNext { bangs },
+                ("buffer", "prev") => return ParsedCommand::BufferPrevious { bangs },
+                _ => {}
+            }
+        }
+
+        ParsedCommand::Unknown {
+            name: command_chain.join(" "),
         }
     }
 

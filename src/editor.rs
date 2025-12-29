@@ -101,6 +101,14 @@ impl<T: TerminalBackend> Editor<T> {
                 CommandDef::new("edit")
                     .with_alias("e")
                     .with_description("Edit a file"),
+            )
+            .register(
+                CommandDef::new("buffer")
+                    .with_description("Buffer management")
+                    .with_subcommand(CommandDef::new("next").with_description("Next buffer"))
+                    .with_subcommand(
+                        CommandDef::new("previous").with_description("Previous buffer"),
+                    ),
             );
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(registry.clone(), settings_registry.clone());
@@ -561,6 +569,41 @@ impl<T: TerminalBackend> Editor<T> {
                             if let Err(e) = self.force_full_redraw() {
                                 self.state.handle_error(e);
                             }
+                        }
+                    }
+                    ExecutionResult::BufferNext { bangs } => {
+                        if self.tab_order.len() > 1 {
+                            if bangs > 0 {
+                                // Go to last buffer
+                                self.current_tab = self.tab_order.len() - 1;
+                            } else {
+                                // Go to next buffer
+                                self.current_tab = (self.current_tab + 1) % self.tab_order.len();
+                            }
+                        }
+                        self.sync_state_with_active_document();
+                        self.state.clear_command_line();
+                        self.set_mode(Mode::Normal);
+                        if let Err(e) = self.force_full_redraw() {
+                            self.state.handle_error(e);
+                        }
+                    }
+                    ExecutionResult::BufferPrevious { bangs } => {
+                        if self.tab_order.len() > 1 {
+                            if bangs > 0 {
+                                // Go to first buffer
+                                self.current_tab = 0;
+                            } else {
+                                // Go to previous buffer
+                                self.current_tab = (self.current_tab + self.tab_order.len() - 1)
+                                    % self.tab_order.len();
+                            }
+                        }
+                        self.sync_state_with_active_document();
+                        self.state.clear_command_line();
+                        self.set_mode(Mode::Normal);
+                        if let Err(e) = self.force_full_redraw() {
+                            self.state.handle_error(e);
                         }
                     }
                 }

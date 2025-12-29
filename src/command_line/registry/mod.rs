@@ -26,6 +26,8 @@ pub struct CommandDef {
     pub aliases: Vec<String>,
     /// Description of the command
     pub description: String,
+    /// Subcommands registry
+    pub subcommands: Option<CommandRegistry>,
 }
 
 impl CommandDef {
@@ -35,6 +37,7 @@ impl CommandDef {
             name: name.into(),
             aliases: Vec::new(),
             description: String::new(),
+            subcommands: None,
         }
     }
 
@@ -56,6 +59,14 @@ impl CommandDef {
         for alias in aliases {
             self.aliases.push(alias.into());
         }
+        self
+    }
+
+    /// Add a subcommand
+    pub fn with_subcommand(mut self, cmd: CommandDef) -> Self {
+        let mut registry = self.subcommands.unwrap_or_default();
+        registry = registry.register(cmd);
+        self.subcommands = Some(registry);
         self
     }
 }
@@ -167,6 +178,12 @@ impl CommandRegistry {
     #[must_use]
     pub fn command_names(&self) -> Vec<&String> {
         self.commands.iter().map(|c| &c.name).collect()
+    }
+
+    /// Get a command definition by canonical name
+    #[must_use]
+    pub fn get(&self, name: &str) -> Option<&CommandDef> {
+        self.commands.iter().find(|c| c.name == name)
     }
 }
 

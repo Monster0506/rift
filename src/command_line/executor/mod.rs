@@ -23,6 +23,10 @@ pub enum ExecutionResult {
     Redraw,
     /// Edit command - editor should open the specified file
     Edit { path: Option<String>, bangs: usize },
+    /// Switch to next buffer
+    BufferNext { bangs: usize },
+    /// Switch to previous buffer
+    BufferPrevious { bangs: usize },
 }
 
 /// Command executor
@@ -128,6 +132,8 @@ impl CommandExecutor {
                 ExecutionResult::Success
             }
             ParsedCommand::Edit { path, bangs } => ExecutionResult::Edit { path, bangs },
+            ParsedCommand::BufferNext { bangs } => ExecutionResult::BufferNext { bangs },
+            ParsedCommand::BufferPrevious { bangs } => ExecutionResult::BufferPrevious { bangs },
         }
     }
 }

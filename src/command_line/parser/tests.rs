@@ -845,3 +845,53 @@ fn test_strip_bangs() {
     assert_eq!(CommandParser::strip_bangs("qu!it"), ("qu!it", 0));
     assert_eq!(CommandParser::strip_bangs("qu!it!"), ("qu!it", 1));
 }
+
+#[test]
+fn test_parse_subcommands() {
+    let registry = CommandRegistry::new()
+        .register(
+            CommandDef::new("buffer")
+                .with_subcommand(CommandDef::new("next"))
+                .with_subcommand(CommandDef::new("prev")),
+        )
+        .register(CommandDef::new("bnext"))
+        .register(CommandDef::new("bprev"));
+    let settings_registry = create_settings_registry();
+    let parser = CommandParser::new(registry, settings_registry);
+
+    // Test buffer next
+    match parser.parse("buffer next") {
+        ParsedCommand::BufferNext { bangs } => assert_eq!(bangs, 0),
+        _ => panic!("Expected BufferNext command"),
+    }
+
+    // Test buffer prev
+    match parser.parse("buffer prev") {
+        ParsedCommand::BufferPrevious { bangs } => assert_eq!(bangs, 0),
+        _ => panic!("Expected BufferPrevious command"),
+    }
+
+    // Test partial match (buffer only)
+    match parser.parse("buffer") {
+        ParsedCommand::Unknown { name } => assert_eq!(name, "buffer"),
+        _ => panic!("Expected Unknown command 'buffer'"),
+    }
+
+    // Test invalid subcommand (treated as argument to buffer)
+    // Since 'buffer' is not handled in parse_command, it returns Unknown "buffer"
+    match parser.parse("buffer invalid") {
+        ParsedCommand::Unknown { name } => assert_eq!(name, "buffer"),
+        _ => panic!("Expected Unknown command 'buffer'"),
+    }
+
+    // Test aliases
+    match parser.parse("bnext") {
+        ParsedCommand::BufferNext { bangs } => assert_eq!(bangs, 0),
+        _ => panic!("Expected BufferNext command from alias"),
+    }
+
+    match parser.parse("bprev") {
+        ParsedCommand::BufferPrevious { bangs } => assert_eq!(bangs, 0),
+        _ => panic!("Expected BufferPrevious command from alias"),
+    }
+}
