@@ -1,4 +1,4 @@
-//! Line indexing for GapBuffer
+//! Line indexing for TextBuffer
 //! Tracks logical offsets of line starts
 
 #[derive(Debug, Clone, PartialEq, Eq)]

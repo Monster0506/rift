@@ -10,13 +10,13 @@
 //! - Executor never inspects raw input or terminal state.
 //! - Commands are applied strictly in sequence.
 
-use crate::buffer::GapBuffer;
+use crate::buffer::TextBuffer;
 use crate::command::Command;
 use crate::error::RiftError;
 
 /// Calculate the current visual column position on the current line
 /// Accounts for tab width when calculating visual position
-fn calculate_current_column(buf: &GapBuffer, tab_width: usize) -> usize {
+fn calculate_current_column(buf: &TextBuffer, tab_width: usize) -> usize {
     let line = buf.get_line();
     let before_gap = buf.get_before_gap();
     let mut current_line = 0;
@@ -108,7 +108,7 @@ fn calculate_current_column(buf: &GapBuffer, tab_width: usize) -> usize {
 /// Execute a command on the editor buffer
 pub fn execute_command(
     cmd: Command,
-    buf: &mut GapBuffer,
+    buf: &mut TextBuffer,
     expand_tabs: bool,
     tab_width: usize,
 ) -> Result<(), RiftError> {

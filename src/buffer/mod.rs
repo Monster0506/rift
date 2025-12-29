@@ -24,7 +24,7 @@ use line_index::LineIndex;
 /// ## UTF-8 Invariant
 /// The cursor (`gap_start`) is always positioned at the start of a UTF-8 codepoint.
 /// All movement and deletion operations must maintain this invariant.
-pub struct GapBuffer {
+pub struct TextBuffer {
     /// Buffer containing text before gap, gap, and text after gap
     /// Layout: [`before_gap`][gap][`after_gap`]
     buffer: *mut u8,
@@ -40,7 +40,7 @@ pub struct GapBuffer {
     pub revision: u64,
 }
 
-impl GapBuffer {
+impl TextBuffer {
     /// Create a new gap buffer with initial capacity
     pub fn new(initial_capacity: usize) -> Result<Self, RiftError> {
         if initial_capacity == 0 {
@@ -68,7 +68,7 @@ impl GapBuffer {
             ));
         }
 
-        Ok(GapBuffer {
+        Ok(TextBuffer {
             buffer,
             capacity: initial_capacity,
             gap_start: 0,
@@ -604,7 +604,7 @@ impl GapBuffer {
     }
 }
 
-impl Drop for GapBuffer {
+impl Drop for TextBuffer {
     fn drop(&mut self) {
         let layout = Layout::from_size_align(self.capacity, 1).unwrap();
         unsafe {
@@ -612,7 +612,7 @@ impl Drop for GapBuffer {
         }
     }
 }
-impl Display for GapBuffer {
+impl Display for TextBuffer {
     /// Get the entire text as a string (reconstructs by moving gap to end)
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let before = self.get_before_gap();

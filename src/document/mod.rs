@@ -1,7 +1,7 @@
 //! Document management
 //! Encapsulates buffer + file metadata for multi-buffer support
 
-use crate::buffer::GapBuffer;
+use crate::buffer::TextBuffer;
 use crate::error::{ErrorType, RiftError};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -36,7 +36,7 @@ pub struct Document {
     /// Unique document identifier
     pub id: DocumentId,
     /// Text buffer
-    pub buffer: GapBuffer,
+    pub buffer: TextBuffer,
     /// Document-specific options (line endings, etc.)
     pub options: DocumentOptions,
     /// File path (None if new/unsaved)
@@ -52,7 +52,7 @@ pub struct Document {
 impl Document {
     /// Create a new empty document
     pub fn new(id: DocumentId) -> Result<Self, RiftError> {
-        let buffer = GapBuffer::new(4096)?;
+        let buffer = TextBuffer::new(4096)?;
         Ok(Document {
             id,
             buffer,
@@ -85,7 +85,7 @@ impl Document {
         }
 
         let mut buffer =
-            GapBuffer::new(normalized_bytes.len().max(4096)).map_err(io::Error::other)?;
+            TextBuffer::new(normalized_bytes.len().max(4096)).map_err(io::Error::other)?;
 
         buffer
             .insert_bytes(&normalized_bytes)

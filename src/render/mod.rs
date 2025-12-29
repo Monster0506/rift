@@ -12,7 +12,7 @@
 /// - Viewport must be updated before calling render functions (viewport updates happen
 ///   in the state update phase, not during rendering).
 /// - All rendering is layer-based and composited before output to terminal.
-use crate::buffer::GapBuffer;
+use crate::buffer::TextBuffer;
 use crate::color::Color;
 use crate::command_line::CommandLine;
 use crate::error::RiftError;
@@ -138,7 +138,7 @@ pub fn full_redraw<T: TerminalBackend>(
 
 /// Context for rendering
 pub struct RenderContext<'a> {
-    pub buf: &'a GapBuffer,
+    pub buf: &'a TextBuffer,
     pub viewport: &'a Viewport,
     pub current_mode: Mode,
     pub pending_key: Option<Key>,
@@ -405,7 +405,7 @@ pub fn render<T: TerminalBackend>(
 /// Render buffer content to a layer
 fn render_content_to_layer(
     layer: &mut Layer,
-    buf: &GapBuffer,
+    buf: &TextBuffer,
     viewport: &Viewport,
     editor_bg: Option<Color>,
     editor_fg: Option<Color>,
@@ -540,7 +540,7 @@ fn calculate_visual_column(line_bytes: &[u8], start_col: usize, tab_width: usize
 }
 
 /// Calculate the cursor column position in the buffer
-pub(crate) fn calculate_cursor_column(buf: &GapBuffer, line: usize, tab_width: usize) -> usize {
+pub(crate) fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) -> usize {
     let before_gap = buf.get_before_gap();
     let mut current_line = 0;
     let mut line_start = 0;

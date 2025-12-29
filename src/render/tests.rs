@@ -1,6 +1,6 @@
 //! Tests for rendering system
 
-use crate::buffer::GapBuffer;
+use crate::buffer::TextBuffer;
 use crate::key::Key;
 use crate::layer::{Layer, LayerCompositor, LayerPriority};
 use crate::mode::Mode;
@@ -65,7 +65,7 @@ fn test_format_key_special() {
 
 #[test]
 fn test_calculate_cursor_column_single_line() {
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("hello").unwrap();
     // Cursor is at position 5 (after "hello")
     assert_eq!(calculate_cursor_column(&buf, 0, 8), 5);
@@ -73,7 +73,7 @@ fn test_calculate_cursor_column_single_line() {
 
 #[test]
 fn test_calculate_cursor_column_multiline() {
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("line1\nline2\nline3").unwrap();
     // Move to start
     for _ in 0..18 {
@@ -95,13 +95,13 @@ fn test_calculate_cursor_column_multiline() {
 
 #[test]
 fn test_calculate_cursor_column_empty_buffer() {
-    let buf = GapBuffer::new(100).unwrap();
+    let buf = TextBuffer::new(100).unwrap();
     assert_eq!(calculate_cursor_column(&buf, 0, 8), 0);
 }
 
 #[test]
 fn test_calculate_cursor_column_at_gap() {
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("hello").unwrap();
     // Move cursor to middle
     for _ in 0..3 {
@@ -113,7 +113,7 @@ fn test_calculate_cursor_column_at_gap() {
 
 #[test]
 fn test_calculate_cursor_column_multiline_complex() {
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("hello\nworld\ntest").unwrap();
 
     // Move to start
@@ -198,7 +198,7 @@ fn test_render_status_bar_pending_key_layer() {
 #[test]
 fn test_render_clears_screen() {
     let mut term = MockTerminal::new(10, 80);
-    let buf = GapBuffer::new(100).unwrap();
+    let buf = TextBuffer::new(100).unwrap();
     let viewport = Viewport::new(10, 80);
     let state = State::new();
     let mut compositor = LayerCompositor::new(10, 80);
@@ -225,7 +225,7 @@ fn test_render_clears_screen() {
 #[test]
 fn test_render_cursor_positioning() {
     let mut term = MockTerminal::new(10, 80);
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("hello").unwrap();
     let viewport = Viewport::new(10, 80);
     let state = State::new();
@@ -253,7 +253,7 @@ fn test_render_cursor_positioning() {
 #[test]
 fn test_render_empty_buffer() {
     let mut term = MockTerminal::new(10, 80);
-    let buf = GapBuffer::new(100).unwrap();
+    let buf = TextBuffer::new(100).unwrap();
     let viewport = Viewport::new(10, 80);
     let state = State::new();
     let mut compositor = LayerCompositor::new(10, 80);
@@ -282,7 +282,7 @@ fn test_render_empty_buffer() {
 #[test]
 fn test_render_multiline_buffer() {
     let mut term = MockTerminal::new(10, 80);
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("line1\nline2\nline3\nline4\nline5").unwrap();
     let viewport = Viewport::new(10, 80);
     let state = State::new();
@@ -313,7 +313,7 @@ fn test_render_multiline_buffer() {
 fn test_render_file_loaded_at_start() {
     // Simulate file loading: content inserted, then cursor moved to start
     let mut term = MockTerminal::new(10, 80);
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     // Insert content (simulating file load)
     buf.insert_bytes(b"line1\nline2\nline3\n").unwrap();
     buf.move_to_start();
@@ -355,7 +355,7 @@ fn test_render_file_loaded_at_start() {
 #[test]
 fn test_render_viewport_scrolling() {
     let mut term = MockTerminal::new(5, 80); // Small viewport
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     // Create 10 lines
     for i in 0..10 {
         buf.insert_str(&format!("line{}\n", i)).unwrap();
@@ -391,7 +391,7 @@ fn test_render_viewport_scrolling() {
 #[test]
 fn test_render_viewport_edge_cases() {
     let mut term = MockTerminal::new(1, 1); // Minimal viewport
-    let buf = GapBuffer::new(100).unwrap();
+    let buf = TextBuffer::new(100).unwrap();
     let viewport = Viewport::new(1, 1);
     let state = State::new();
     let mut compositor = LayerCompositor::new(1, 1);
@@ -416,7 +416,7 @@ fn test_render_viewport_edge_cases() {
 #[test]
 fn test_render_large_buffer() {
     let mut term = MockTerminal::new(10, 80);
-    let mut buf = GapBuffer::new(10000).unwrap();
+    let mut buf = TextBuffer::new(10000).unwrap();
     // Insert a large amount of text
     for i in 0..100 {
         buf.insert_str(&format!("line {}\n", i)).unwrap();
@@ -448,7 +448,7 @@ fn test_render_large_buffer() {
 #[test]
 fn test_render_cursor_at_viewport_boundaries() {
     let mut term = MockTerminal::new(5, 80);
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     // Create content
     for i in 0..20 {
         buf.insert_str(&format!("line {}\n", i)).unwrap();
@@ -547,7 +547,7 @@ fn test_compositor_floating_window_layer() {
 #[test]
 fn test_render_line_numbers_enabled() {
     let mut term = MockTerminal::new(10, 80);
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("line1\nline2").unwrap();
     let viewport = Viewport::new(10, 80);
     let mut state = State::new();
@@ -582,7 +582,7 @@ fn test_render_line_numbers_enabled() {
 #[test]
 fn test_render_line_numbers_disabled() {
     let mut term = MockTerminal::new(10, 80);
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("line1").unwrap();
     let viewport = Viewport::new(10, 80);
     let mut state = State::new();
@@ -614,7 +614,7 @@ fn test_render_line_numbers_disabled() {
 #[test]
 fn test_render_line_numbers_gutter_width() {
     let mut term = MockTerminal::new(10, 80);
-    let buf = GapBuffer::new(100).unwrap();
+    let buf = TextBuffer::new(100).unwrap();
     let viewport = Viewport::new(10, 80);
     let mut state = State::new();
     state.settings.show_line_numbers = true;
@@ -649,7 +649,7 @@ fn test_render_line_numbers_gutter_width() {
 #[test]
 fn test_render_cursor_position_with_line_numbers() {
     let mut term = MockTerminal::new(10, 80);
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("test").unwrap();
     buf.move_to_start();
     let viewport = Viewport::new(10, 80);
@@ -679,7 +679,7 @@ fn test_render_cursor_position_with_line_numbers() {
 #[test]
 fn test_no_redraw_on_noop() {
     let mut term = MockTerminal::new(10, 80);
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("test").unwrap();
     let viewport = Viewport::new(10, 80);
     let mut state = State::new();
@@ -740,7 +740,7 @@ fn test_no_redraw_on_noop() {
 #[test]
 fn test_redraw_on_change() {
     let mut term = MockTerminal::new(10, 80);
-    let mut buf = GapBuffer::new(100).unwrap();
+    let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("test").unwrap();
     let viewport = Viewport::new(10, 80);
     let mut state = State::new();

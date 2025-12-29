@@ -73,7 +73,7 @@ impl CommandLine {
         let displayed_cmd = if offset < cmd_len {
             let end = (offset + available_cmd_width).min(cmd_len);
             // Ensure char boundaries if multi-byte (simple slicing might panic on UTF-8)
-            // For now assuming ASCII/byte based on GapBuffer<u8> usage in Editor,
+            // For now assuming ASCII/byte based on TextBuffer<u8> usage in Editor,
             // but command_line is String.
             // We should use chars() if possible or ensure indices.
             // But Rift currently seems to treat indices as bytes?

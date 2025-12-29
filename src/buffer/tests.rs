@@ -1,17 +1,17 @@
 //! Tests for gap buffer implementation
 
-use crate::buffer::GapBuffer;
+use crate::buffer::TextBuffer;
 
 #[test]
 fn test_new() {
-    let buf = GapBuffer::new(10).unwrap();
+    let buf = TextBuffer::new(10).unwrap();
     assert_eq!(buf.len(), 0);
     assert_eq!(buf.cursor(), 0);
 }
 
 #[test]
 fn test_insert() {
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     buf.insert_char('a').unwrap();
     assert_eq!(buf.len(), 1);
     assert_eq!(buf.cursor(), 1);
@@ -19,7 +19,7 @@ fn test_insert() {
 
 #[test]
 fn test_move_and_insert() {
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
     for _ in 0..5 {
         buf.move_left();
@@ -31,13 +31,13 @@ fn test_move_and_insert() {
 #[test]
 fn test_delete() {
     // Test deleting at cursor position (backspace)
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
     assert!(buf.delete_backward());
     assert_eq!(buf.to_string(), "hell");
 
     // Test deleting after moving cursor
-    let mut buf2 = GapBuffer::new(10).unwrap();
+    let mut buf2 = TextBuffer::new(10).unwrap();
     buf2.insert_str("hello").unwrap();
     assert!(buf2.move_left());
     assert!(buf2.delete_backward());
@@ -46,7 +46,7 @@ fn test_delete() {
 
 #[test]
 fn test_delete_at_start() {
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
     for _ in 0..5 {
         buf.move_left();
@@ -57,7 +57,7 @@ fn test_delete_at_start() {
 
 #[test]
 fn test_delete_forward() {
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
     for _ in 0..5 {
         buf.move_left();
@@ -68,7 +68,7 @@ fn test_delete_forward() {
 
 #[test]
 fn test_move_right() {
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
     for _ in 0..5 {
         buf.move_left();
@@ -80,7 +80,7 @@ fn test_move_right() {
 
 #[test]
 fn test_cursor_position() {
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
     assert_eq!(buf.cursor(), 5);
     assert!(buf.move_left());
@@ -91,7 +91,7 @@ fn test_cursor_position() {
 
 #[test]
 fn test_multiple_inserts() {
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     buf.insert_char('h').unwrap();
     buf.insert_char('e').unwrap();
     buf.insert_char('l').unwrap();
@@ -103,7 +103,7 @@ fn test_multiple_inserts() {
 
 #[test]
 fn test_delete_backward_multiple() {
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     buf.insert_str("hello").unwrap();
     assert!(buf.delete_backward());
     assert_eq!(buf.to_string(), "hell");
@@ -115,7 +115,7 @@ fn test_delete_backward_multiple() {
 
 #[test]
 fn test_gap_expansion() {
-    let mut buf = GapBuffer::new(4).unwrap();
+    let mut buf = TextBuffer::new(4).unwrap();
     buf.insert_str("abcd").unwrap();
     buf.insert_char('e').unwrap();
     assert_eq!(buf.to_string(), "abcde");
@@ -124,7 +124,7 @@ fn test_gap_expansion() {
 
 #[test]
 fn test_insert_bytes() {
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     buf.insert_bytes(b"hello").unwrap();
     assert_eq!(buf.to_string(), "hello");
     assert_eq!(buf.len(), 5);
@@ -133,7 +133,7 @@ fn test_insert_bytes() {
 
 #[test]
 fn test_insert_bytes_empty() {
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     buf.insert_bytes(b"").unwrap();
     assert_eq!(buf.len(), 0);
     assert_eq!(buf.cursor(), 0);
@@ -141,7 +141,7 @@ fn test_insert_bytes_empty() {
 
 #[test]
 fn test_insert_bytes_large() {
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     let large_text = "a".repeat(1000);
     buf.insert_bytes(large_text.as_bytes()).unwrap();
     assert_eq!(buf.len(), 1000);
@@ -150,7 +150,7 @@ fn test_insert_bytes_large() {
 
 #[test]
 fn test_insert_bytes_with_newlines() {
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     buf.insert_bytes(b"hello\nworld\n").unwrap();
     assert_eq!(buf.to_string(), "hello\nworld\n");
     assert_eq!(buf.len(), 12);
@@ -158,7 +158,7 @@ fn test_insert_bytes_with_newlines() {
 
 #[test]
 fn test_line_indexing_basic() {
-    let mut buf = GapBuffer::new(10).unwrap();
+    let mut buf = TextBuffer::new(10).unwrap();
     buf.insert_str("line1\nline2\nline3").unwrap();
     assert_eq!(buf.get_total_lines(), 3);
     assert_eq!(buf.get_line(), 2); // Cursor at end of line 3 (index 2)
@@ -166,7 +166,7 @@ fn test_line_indexing_basic() {
 
 #[test]
 fn test_line_indexing_bytes() {
-    let mut buf = GapBuffer::new(20).unwrap();
+    let mut buf = TextBuffer::new(20).unwrap();
     buf.insert_str("abc\ndef\nghi").unwrap();
     assert_eq!(buf.get_line_bytes(0), b"abc");
     assert_eq!(buf.get_line_bytes(1), b"def");
@@ -175,7 +175,7 @@ fn test_line_indexing_bytes() {
 
 #[test]
 fn test_line_indexing_with_gap() {
-    let mut buf = GapBuffer::new(20).unwrap();
+    let mut buf = TextBuffer::new(20).unwrap();
     buf.insert_str("hello\nworld").unwrap();
 
     // Move cursor to middle of "hello"
@@ -190,7 +190,7 @@ fn test_line_indexing_with_gap() {
 
 #[test]
 fn test_line_indexing_delete_merge() {
-    let mut buf = GapBuffer::new(20).unwrap();
+    let mut buf = TextBuffer::new(20).unwrap();
     buf.insert_str("abc\ndef").unwrap();
     assert_eq!(buf.get_total_lines(), 2);
 
@@ -207,7 +207,7 @@ fn test_line_indexing_delete_merge() {
 
 #[test]
 fn test_line_indexing_complex_insert() {
-    let mut buf = GapBuffer::new(20).unwrap();
+    let mut buf = TextBuffer::new(20).unwrap();
     buf.insert_str("a\nd").unwrap();
     // Move to after 'a'
     for _ in 0..2 {
