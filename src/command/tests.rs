@@ -1,6 +1,5 @@
 //! Tests for command system
 
-use super::*;
 use crate::action::Motion;
 use crate::command::{Command, Dispatcher};
 use crate::key::Key;
