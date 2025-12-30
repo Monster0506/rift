@@ -229,3 +229,36 @@ fn test_viewport_horizontal_scrolling_with_gutter() {
     // left_col = 15 - 15 + 1 = 1.
     assert_eq!(viewport.left_col(), 1);
 }
+
+#[test]
+fn test_viewport_resize_scrolling() {
+    let mut viewport = Viewport::new(10, 80);
+    let total_lines = 100;
+
+    // Scroll down to line 50
+    viewport.update(50, 0, total_lines, 0);
+    let initial_top = viewport.top_line();
+    assert!(initial_top > 0);
+
+    // Resize to be smaller (5 rows)
+    viewport.set_size(5, 80);
+
+    // Update with same cursor position
+    viewport.update(50, 0, total_lines, 0);
+
+    // Top line should have adjusted to keep cursor visible in smaller viewport
+    // Cursor at 50. Visible rows 5. Content rows 4 (1 for status).
+    // Max top line for cursor 50 is 50 - (4-1) = 47.
+    // Min top line is 50 - 0 = 50 (if cursor at top).
+    // So top line should be between 47 and 50.
+    assert!(viewport.top_line() >= 47);
+    assert!(viewport.top_line() <= 50);
+
+    // Resize to be larger (20 rows)
+    viewport.set_size(20, 80);
+    viewport.update(50, 0, total_lines, 0);
+
+    // Cursor should still be visible
+    assert!(viewport.top_line() <= 50);
+    assert!(viewport.top_line() + viewport.visible_rows() > 50);
+}
