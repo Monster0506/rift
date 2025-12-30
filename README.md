@@ -48,6 +48,7 @@ Todo:
 - mainloop non blocking
 - granular movement
 - notify clear (and clear all)
+- file exploration
 
 Known issues:
 - 4 byte unicode characters are not handled able to be inserted on windows (this is a crossterm issue on windows, idk man)
