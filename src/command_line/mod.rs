@@ -13,9 +13,7 @@ use crate::layer::Layer;
 use crate::state::CommandLineWindowSettings;
 use crate::viewport::Viewport;
 
-pub mod executor;
-pub mod parser;
-pub mod registry;
+pub mod commands;
 pub mod settings;
 
 /// Command line renderer
@@ -53,14 +51,9 @@ impl CommandLine {
         let prompt_len = 1; // ":"
         let available_cmd_width = available_width.saturating_sub(prompt_len);
 
-        // Calculate offset to keep cursor visible
-        // We ensure cursor_pos is within the visible window [offset, offset + available_cmd_width)
-        // If length fits, offset is 0
         let offset = if command_line.len() <= available_cmd_width {
             0
         } else if cursor_pos >= available_cmd_width {
-            // Keep cursor at the right edge minus 1? or just ensure it fits?
-            // Panning strategy:
             cursor_pos
                 .saturating_sub(available_cmd_width)
                 .saturating_add(1)
@@ -72,15 +65,7 @@ impl CommandLine {
         let cmd_len = command_line.len();
         let displayed_cmd = if offset < cmd_len {
             let end = (offset + available_cmd_width).min(cmd_len);
-            // Ensure char boundaries if multi-byte (simple slicing might panic on UTF-8)
-            // For now assuming ASCII/byte based on TextBuffer<u8> usage in Editor,
-            // but command_line is String.
-            // We should use chars() if possible or ensure indices.
-            // But Rift currently seems to treat indices as bytes?
-            // Let's assume bytes for now to match strict slicing.
-            // Safe slicing:
             if end > offset {
-                // Check boundaries?
                 &command_line[offset..end]
             } else {
                 ""

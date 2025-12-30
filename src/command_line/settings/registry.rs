@@ -2,8 +2,7 @@
 //! Registry that holds setting descriptors and provides execution
 
 use super::descriptor::{SettingDescriptor, SettingError, SettingType, SettingValue};
-use crate::command_line::executor::ExecutionResult;
-use crate::command_line::registry::{CommandDef, CommandRegistry, MatchResult};
+use crate::command_line::commands::{CommandDef, CommandRegistry, ExecutionResult, MatchResult};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 
 /// Settings registry

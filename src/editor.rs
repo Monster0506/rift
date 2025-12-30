@@ -2,9 +2,7 @@
 //! Main editor logic that ties everything together
 
 use crate::command::{Command, Dispatcher};
-use crate::command_line::executor::{CommandExecutor, ExecutionResult};
-use crate::command_line::parser::CommandParser;
-use crate::command_line::registry::{CommandDef, CommandRegistry};
+use crate::command_line::commands::{CommandExecutor, CommandParser, ExecutionResult};
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::document::{Document, DocumentId};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
@@ -81,47 +79,8 @@ impl<T: TerminalBackend> Editor<T> {
         let dispatcher = Dispatcher::new(Mode::Normal);
 
         // Create command registry and settings registry
-        let registry = CommandRegistry::new()
-            .register(
-                CommandDef::new("quit")
-                    .with_alias("q")
-                    .with_description("Quit the editor"),
-            )
-            .register(CommandDef::new("set").with_description("Set an option"))
-            .register(CommandDef::new("setlocal").with_description("Set a local option"))
-            .register(
-                CommandDef::new("write")
-                    .with_alias("w")
-                    .with_description("Save the current file"),
-            )
-            .register(CommandDef::new("wq").with_description("Save the current file and quit"))
-            .register(CommandDef::new("notify").with_description("Show a notification"))
-            .register(CommandDef::new("redraw").with_description("Redraw the screen"))
-            .register(
-                CommandDef::new("edit")
-                    .with_alias("e")
-                    .with_description("Edit a file"),
-            )
-            .register(
-                CommandDef::new("buffer")
-                    .with_description("Buffer management")
-                    .with_subcommand(CommandDef::new("next").with_description("Next buffer"))
-                    .with_subcommand(
-                        CommandDef::new("previous")
-                            .with_alias("prev")
-                            .with_description("Previous buffer"),
-                    ),
-            )
-            .register(
-                CommandDef::new("bnext")
-                    .with_description("Next buffer"),
-            )
-            .register(
-                CommandDef::new("bprev")
-                    .with_description("Previous buffer"),
-            );
         let settings_registry = create_settings_registry();
-        let command_parser = CommandParser::new(registry.clone(), settings_registry.clone());
+        let command_parser = CommandParser::new(settings_registry.clone());
 
         let mut state = State::new();
         state.set_file_path(file_path.clone());

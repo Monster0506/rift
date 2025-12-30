@@ -1,7 +1,6 @@
 //! Tests for command executor
 
-use crate::command_line::executor::{CommandExecutor, ExecutionResult};
-use crate::command_line::parser::ParsedCommand;
+use crate::command_line::commands::{CommandExecutor, ExecutionResult, ParsedCommand};
 use crate::command_line::settings::create_settings_registry;
 use crate::document::definitions::create_document_settings_registry;
 use crate::document::Document;

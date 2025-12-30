@@ -1,7 +1,7 @@
 //! Command executor
 //! Executes parsed commands and updates editor state
 
-use crate::command_line::parser::ParsedCommand;
+use crate::command_line::commands::ParsedCommand;
 use crate::command_line::settings::SettingsRegistry;
 use crate::document::{definitions::DocumentOptions, Document};
 use crate::error::{ErrorType, RiftError};
