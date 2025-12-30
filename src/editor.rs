@@ -176,6 +176,7 @@ impl<T: TerminalBackend> Editor<T> {
             state,
             current_mode: *current_mode,
             pending_key: dispatcher.pending_key(),
+            pending_count: dispatcher.pending_count(),
             needs_clear: true,
         };
 
@@ -485,16 +486,22 @@ impl<T: TerminalBackend> Editor<T> {
             Command::DeleteFromCommandLine => {
                 self.state.remove_from_command_line();
             }
-            Command::MoveLeft if self.current_mode == Mode::Command => {
+            Command::Move(crate::action::Motion::Left, _) if self.current_mode == Mode::Command => {
                 self.state.move_command_line_left();
             }
-            Command::MoveRight if self.current_mode == Mode::Command => {
+            Command::Move(crate::action::Motion::Right, _)
+                if self.current_mode == Mode::Command =>
+            {
                 self.state.move_command_line_right();
             }
-            Command::MoveToLineStart if self.current_mode == Mode::Command => {
+            Command::Move(crate::action::Motion::StartOfLine, _)
+                if self.current_mode == Mode::Command =>
+            {
                 self.state.move_command_line_home();
             }
-            Command::MoveToLineEnd if self.current_mode == Mode::Command => {
+            Command::Move(crate::action::Motion::EndOfLine, _)
+                if self.current_mode == Mode::Command =>
+            {
                 self.state.move_command_line_end();
             }
             Command::DeleteForward if self.current_mode == Mode::Command => {
@@ -623,6 +630,7 @@ impl<T: TerminalBackend> Editor<T> {
             state,
             current_mode: *current_mode,
             pending_key: dispatcher.pending_key(),
+            pending_count: dispatcher.pending_count(),
             needs_clear,
         };
 

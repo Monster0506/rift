@@ -24,7 +24,7 @@ fn test_status_bar_render_command_mode() {
     let viewport = Viewport::new(24, 80);
     let state = State::new();
 
-    StatusBar::render(&mut term, &viewport, Mode::Command, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Command, None, 0, &state).unwrap();
 
     let written = term.get_written_string();
     // Command mode should show colon prompt
@@ -69,7 +69,7 @@ fn test_status_bar_render_normal_mode() {
     let viewport = Viewport::new(10, 80);
     let state = State::new();
 
-    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
 
     let written = term.get_written_string();
     assert!(written.contains("NORMAL"));
@@ -82,7 +82,7 @@ fn test_status_bar_render_insert_mode() {
     let viewport = Viewport::new(10, 80);
     let state = State::new();
 
-    StatusBar::render(&mut term, &viewport, Mode::Insert, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Insert, None, 0, &state).unwrap();
 
     let written = term.get_written_string();
     assert!(written.contains("INSERT"));
@@ -100,6 +100,7 @@ fn test_status_bar_render_pending_key() {
         &viewport,
         Mode::Normal,
         Some(Key::Char('d')),
+        0,
         &state,
     )
     .unwrap();
@@ -118,7 +119,7 @@ fn test_status_bar_render_debug_mode() {
     state.update_cursor(5, 10);
     state.update_buffer_stats(10, 100, crate::document::LineEnding::LF);
 
-    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
 
     let written = term.get_written_string();
     assert!(written.contains("Last: a"));
@@ -140,6 +141,7 @@ fn test_status_bar_render_debug_with_pending() {
         &viewport,
         Mode::Normal,
         Some(Key::Char('d')),
+        0,
         &state,
     )
     .unwrap();
@@ -156,7 +158,7 @@ fn test_status_bar_render_fills_line() {
     let viewport = Viewport::new(10, 80);
     let state = State::new();
 
-    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
 
     // Status bar should fill the entire line width
     let total_written: usize = term.writes.iter().map(|w| w.len()).sum();
@@ -171,7 +173,7 @@ fn test_status_bar_render_reverse_video() {
     let mut state = State::new();
     state.settings.status_line.reverse_video = true;
 
-    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
 
     let written = term.get_written_bytes();
     // Should contain reverse video escape sequence
@@ -187,7 +189,7 @@ fn test_status_bar_render_reverse_video_off() {
     let viewport = Viewport::new(10, 80);
     let state = State::new();
 
-    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
 
     let written = term.get_written_bytes();
     // Should contain reverse video escape sequence
@@ -207,7 +209,7 @@ fn test_status_bar_debug_truncation() {
     state.update_cursor(100, 200);
     state.update_buffer_stats(1000, 50000, crate::document::LineEnding::LF);
 
-    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
 
     // Debug info should be truncated if too long
     let written = term.get_written_string();
@@ -226,7 +228,7 @@ fn test_status_bar_various_keys() {
 
     for key in keys {
         term.writes.clear();
-        StatusBar::render(&mut term, &viewport, Mode::Normal, Some(key), &state).unwrap();
+        StatusBar::render(&mut term, &viewport, Mode::Normal, Some(key), 0, &state).unwrap();
         let written = term.get_written_string();
         assert!(written.contains("["));
         assert!(written.contains("]"));
@@ -241,7 +243,7 @@ fn test_status_bar_filename_shown_when_enabled() {
     state.update_filename("test.txt".to_string());
     // show_filename defaults to true
 
-    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
 
     let written = term.get_written_string();
     assert!(written.contains("test.txt"));
@@ -255,7 +257,7 @@ fn test_status_bar_filename_hidden_when_disabled() {
     state.update_filename("test.txt".to_string());
     state.settings.status_line.show_filename = false;
 
-    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
 
     let written = term.get_written_string();
     assert!(!written.contains("test.txt"));
@@ -270,7 +272,7 @@ fn test_status_bar_filename_always_shown_in_debug() {
     state.toggle_debug(); // Enable debug mode
     state.settings.status_line.show_filename = false; // Disable filename setting
 
-    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
 
     let written = term.get_written_string();
     // In debug mode, filepath should appear even when show_filename is false
@@ -285,7 +287,7 @@ fn test_status_bar_no_name_display() {
     let state = State::new();
     // file_name defaults to "[No Name]"
 
-    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
 
     let written = term.get_written_string();
     assert!(written.contains("[No Name]"));
@@ -300,7 +302,7 @@ fn test_status_bar_dirty_indicator() {
     state.update_dirty(true);
     // show_dirty_indicator defaults to true
 
-    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
 
     let written = term.get_written_string();
     assert!(written.contains("test.txt*"));
@@ -315,7 +317,7 @@ fn test_status_bar_dirty_indicator_hidden_when_disabled() {
     state.update_dirty(true);
     state.settings.status_line.show_dirty_indicator = false;
 
-    StatusBar::render(&mut term, &viewport, Mode::Normal, None, &state).unwrap();
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
 
     let written = term.get_written_string();
     assert!(written.contains("test.txt"));

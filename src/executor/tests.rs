@@ -1,5 +1,6 @@
 //! Tests for command executor
 
+use crate::action::Motion;
 use crate::buffer::TextBuffer;
 use crate::command::Command;
 use crate::executor::execute_command;
@@ -10,7 +11,7 @@ fn test_execute_move_left() {
     buf.insert_str("hello").unwrap();
     assert_eq!(buf.cursor(), 5);
 
-    execute_command(Command::MoveLeft, &mut buf, false, 8, 24).unwrap();
+    execute_command(Command::Move(Motion::Left, 1), &mut buf, false, 8, 24).unwrap();
     assert_eq!(buf.cursor(), 4);
 }
 
@@ -23,7 +24,7 @@ fn test_execute_move_right() {
     }
     assert_eq!(buf.cursor(), 0);
 
-    execute_command(Command::MoveRight, &mut buf, false, 8, 24).unwrap();
+    execute_command(Command::Move(Motion::Right, 1), &mut buf, false, 8, 24).unwrap();
     assert_eq!(buf.cursor(), 1);
 }
 
@@ -67,7 +68,14 @@ fn test_execute_move_to_buffer_start() {
     buf.insert_str("hello").unwrap();
     assert_eq!(buf.cursor(), 5);
 
-    execute_command(Command::MoveToBufferStart, &mut buf, false, 8, 24).unwrap();
+    execute_command(
+        Command::Move(Motion::StartOfFile, 1),
+        &mut buf,
+        false,
+        8,
+        24,
+    )
+    .unwrap();
     assert_eq!(buf.cursor(), 0);
 }
 
@@ -80,7 +88,7 @@ fn test_execute_move_to_buffer_end() {
     }
     assert_eq!(buf.cursor(), 0);
 
-    execute_command(Command::MoveToBufferEnd, &mut buf, false, 8, 24).unwrap();
+    execute_command(Command::Move(Motion::EndOfFile, 1), &mut buf, false, 8, 24).unwrap();
     assert_eq!(buf.cursor(), 5);
 }
 

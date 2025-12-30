@@ -149,7 +149,7 @@ fn test_render_status_bar_normal_mode_layer() {
     let viewport = Viewport::new(10, 80);
     let state = State::new();
 
-    StatusBar::render_to_layer(&mut layer, &viewport, Mode::Normal, None, &state);
+    StatusBar::render_to_layer(&mut layer, &viewport, Mode::Normal, None, 0, &state);
 
     // Check that "NORMAL" was written to the layer
     // Status bar is at last row (9), mode is at start
@@ -165,7 +165,7 @@ fn test_render_status_bar_insert_mode_layer() {
     let viewport = Viewport::new(10, 80);
     let state = State::new();
 
-    StatusBar::render_to_layer(&mut layer, &viewport, Mode::Insert, None, &state);
+    StatusBar::render_to_layer(&mut layer, &viewport, Mode::Insert, None, 0, &state);
 
     // Check that content was written to the layer
     let cell = layer.get_cell(9, 0);
@@ -183,6 +183,7 @@ fn test_render_status_bar_pending_key_layer() {
         &viewport,
         Mode::Normal,
         Some(Key::Char('d')),
+        0,
         &state,
     );
 
@@ -211,6 +212,7 @@ fn test_render_clears_screen() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -239,6 +241,7 @@ fn test_render_cursor_positioning() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -266,6 +269,7 @@ fn test_render_empty_buffer() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -296,6 +300,7 @@ fn test_render_multiline_buffer() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -331,6 +336,7 @@ fn test_render_file_loaded_at_start() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -376,6 +382,7 @@ fn test_render_viewport_scrolling() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -405,6 +412,7 @@ fn test_render_viewport_edge_cases() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -433,6 +441,7 @@ fn test_render_large_buffer() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -469,6 +478,7 @@ fn test_render_cursor_at_viewport_boundaries() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -496,6 +506,7 @@ fn test_render_cursor_at_viewport_boundaries() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: needs_clear2,
         },
@@ -564,6 +575,7 @@ fn test_render_line_numbers_enabled() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -599,6 +611,7 @@ fn test_render_line_numbers_disabled() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -630,6 +643,7 @@ fn test_render_line_numbers_gutter_width() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -668,6 +682,7 @@ fn test_render_cursor_position_with_line_numbers() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -696,6 +711,7 @@ fn test_no_redraw_on_noop() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -721,6 +737,7 @@ fn test_no_redraw_on_noop() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: false,
         },
@@ -756,6 +773,7 @@ fn test_redraw_on_change() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: true,
         },
@@ -779,6 +797,7 @@ fn test_redraw_on_change() {
             viewport: &viewport,
             current_mode: Mode::Normal,
             pending_key: None,
+            pending_count: 0,
             state: &state,
             needs_clear: false,
         },

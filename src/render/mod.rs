@@ -52,6 +52,7 @@ pub struct ContentDrawState {
 pub struct StatusDrawState {
     pub mode: Mode,
     pub pending_key: Option<crate::key::Key>,
+    pub pending_count: usize,
     pub file_name: String,
     pub is_dirty: bool,
     pub cursor: CursorInfo,
@@ -142,6 +143,7 @@ pub struct RenderContext<'a> {
     pub viewport: &'a Viewport,
     pub current_mode: Mode,
     pub pending_key: Option<Key>,
+    pub pending_count: usize,
     pub state: &'a State,
     pub needs_clear: bool,
 }
@@ -208,6 +210,7 @@ pub fn render<T: TerminalBackend>(
     let current_status_state = StatusDrawState {
         mode: ctx.current_mode,
         pending_key: ctx.pending_key,
+        pending_count: ctx.pending_count,
         file_name: ctx.state.file_name.clone(),
         is_dirty: ctx.state.is_dirty,
         cursor: CursorInfo {
@@ -226,6 +229,7 @@ pub fn render<T: TerminalBackend>(
             ctx.viewport,
             ctx.current_mode,
             ctx.pending_key,
+            ctx.pending_count,
             ctx.state,
         );
         cache.status = Some(current_status_state);

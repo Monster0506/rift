@@ -10,6 +10,7 @@
 //! - Executor never inspects raw input or terminal state.
 //! - Commands are applied strictly in sequence.
 
+use crate::action::Motion;
 use crate::buffer::TextBuffer;
 use crate::command::Command;
 use crate::error::RiftError;
@@ -114,52 +115,133 @@ pub fn execute_command(
     viewport_height: usize,
 ) -> Result<(), RiftError> {
     match cmd {
-        Command::MoveLeft => {
-            buf.move_left();
-        }
-        Command::MoveRight => {
-            buf.move_right();
-        }
-        Command::MoveUp => {
-            buf.move_up();
-        }
-        Command::MoveDown => {
-            buf.move_down();
-        }
-        Command::MoveToLineStart => {
-            buf.move_to_line_start();
-        }
-        Command::MoveToLineEnd => {
-            buf.move_to_line_end();
-        }
-        Command::MoveToBufferStart => while buf.move_left() {},
-        Command::MoveToBufferEnd => while buf.move_right() {},
-        Command::MoveWordLeft => {
-            buf.move_word_left();
-        }
-        Command::MoveWordRight => {
-            buf.move_word_right();
-        }
-        Command::MoveParagraphForward => {
-            buf.move_paragraph_forward();
-        }
-        Command::MoveParagraphBackward => {
-            buf.move_paragraph_backward();
-        }
-        Command::MoveSentenceForward => {
-            buf.move_sentence_forward();
-        }
-        Command::MoveSentenceBackward => {
-            buf.move_sentence_backward();
-        }
-        Command::MovePageUp => {
-            for _ in 0..viewport_height {
-                buf.move_up();
+        Command::Move(motion, count) => {
+            for _ in 0..count {
+                match motion {
+                    Motion::Left => {
+                        buf.move_left();
+                    }
+                    Motion::Right => {
+                        buf.move_right();
+                    }
+                    Motion::Up => {
+                        buf.move_up();
+                    }
+                    Motion::Down => {
+                        buf.move_down();
+                    }
+                    Motion::StartOfLine => {
+                        buf.move_to_line_start();
+                    }
+                    Motion::EndOfLine => {
+                        buf.move_to_line_end();
+                    }
+                    Motion::StartOfFile => buf.move_to_start(),
+                    Motion::EndOfFile => buf.move_to_end(),
+                    Motion::PageUp => {
+                        for _ in 0..viewport_height {
+                            buf.move_up();
+                        }
+                    }
+                    Motion::PageDown => {
+                        for _ in 0..viewport_height {
+                            buf.move_down();
+                        }
+                    }
+                    Motion::NextWord => {
+                        buf.move_word_right();
+                    }
+                    Motion::PreviousWord => {
+                        buf.move_word_left();
+                    }
+                    Motion::NextParagraph => {
+                        buf.move_paragraph_forward();
+                    }
+                    Motion::PreviousParagraph => {
+                        buf.move_paragraph_backward();
+                    }
+                    Motion::NextSentence => {
+                        buf.move_sentence_forward();
+                    }
+                    Motion::PreviousSentence => {
+                        buf.move_sentence_backward();
+                    }
+                }
             }
         }
-        Command::MovePageDown => {
-            for _ in 0..viewport_height {
-                buf.move_down();
+        Command::Delete(motion, count) => {
+            let start = buf.cursor();
+            // Perform motion to find end point
+            for _ in 0..count {
+                match motion {
+                    Motion::Left => {
+                        buf.move_left();
+                    }
+                    Motion::Right => {
+                        buf.move_right();
+                    }
+                    Motion::Up => {
+                        buf.move_up();
+                    }
+                    Motion::Down => {
+                        buf.move_down();
+                    }
+                    Motion::StartOfLine => {
+                        buf.move_to_line_start();
+                    }
+                    Motion::EndOfLine => {
+                        buf.move_to_line_end();
+                    }
+                    Motion::StartOfFile => buf.move_to_start(),
+                    Motion::EndOfFile => buf.move_to_end(),
+                    Motion::PageUp => {
+                        for _ in 0..viewport_height {
+                            buf.move_up();
+                        }
+                    }
+                    Motion::PageDown => {
+                        for _ in 0..viewport_height {
+                            buf.move_down();
+                        }
+                    }
+                    Motion::NextWord => {
+                        buf.move_word_right();
+                    }
+                    Motion::PreviousWord => {
+                        buf.move_word_left();
+                    }
+                    Motion::NextParagraph => {
+                        buf.move_paragraph_forward();
+                    }
+                    Motion::PreviousParagraph => {
+                        buf.move_paragraph_backward();
+                    }
+                    Motion::NextSentence => {
+                        buf.move_sentence_forward();
+                    }
+                    Motion::PreviousSentence => {
+                        buf.move_sentence_backward();
+                    }
+                }
+            }
+            let end = buf.cursor();
+
+            if end > start {
+                // Forward deletion (e.g. dw)
+                // Cursor is at end. We want to delete [start, end).
+                // Move back to end, then delete backward until start.
+                let len = end - start;
+                for _ in 0..len {
+                    buf.delete_backward();
+                }
+            } else if end < start {
+                // Backward deletion (e.g. db)
+                // Cursor is at end. We want to delete [end, start).
+                // We are at end. delete_forward deletes (end).
+                let len = start - end;
+                for _ in 0..len {
+                    buf.delete_forward();
+                }
             }
         }
         Command::DeleteForward => {

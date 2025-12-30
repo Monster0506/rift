@@ -35,6 +35,10 @@ pub enum Motion {
     NextParagraph,
     /// Move to the previous paragraph
     PreviousParagraph,
+    /// Move to the next sentence
+    NextSentence,
+    /// Move to the previous sentence
+    PreviousSentence,
 }
 
 /// Represents an action in the editor

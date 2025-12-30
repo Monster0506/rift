@@ -1,5 +1,7 @@
 //! Tests for command system
 
+use super::*;
+use crate::action::Motion;
 use crate::command::{Command, Dispatcher};
 use crate::key::Key;
 use crate::mode::Mode;
@@ -15,10 +17,22 @@ fn test_dispatcher_new() {
 fn test_translate_normal_mode_simple() {
     let mut dispatcher = Dispatcher::new(Mode::Normal);
 
-    assert_eq!(dispatcher.translate_key(Key::Char('h')), Command::MoveLeft);
-    assert_eq!(dispatcher.translate_key(Key::Char('j')), Command::MoveDown);
-    assert_eq!(dispatcher.translate_key(Key::Char('k')), Command::MoveUp);
-    assert_eq!(dispatcher.translate_key(Key::Char('l')), Command::MoveRight);
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('h')),
+        Command::Move(Motion::Left, 1)
+    );
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('j')),
+        Command::Move(Motion::Down, 1)
+    );
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('k')),
+        Command::Move(Motion::Up, 1)
+    );
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('l')),
+        Command::Move(Motion::Right, 1)
+    );
     assert_eq!(
         dispatcher.translate_key(Key::Char('i')),
         Command::EnterInsertMode
@@ -38,7 +52,7 @@ fn test_translate_normal_mode_simple() {
     );
     assert_eq!(
         dispatcher.translate_key(Key::Char('G')),
-        Command::MoveToBufferEnd
+        Command::Move(Motion::EndOfFile, 1)
     );
 }
 
@@ -46,18 +60,30 @@ fn test_translate_normal_mode_simple() {
 fn test_translate_normal_mode_arrows() {
     let mut dispatcher = Dispatcher::new(Mode::Normal);
 
-    assert_eq!(dispatcher.translate_key(Key::ArrowLeft), Command::MoveLeft);
+    assert_eq!(
+        dispatcher.translate_key(Key::ArrowLeft),
+        Command::Move(Motion::Left, 1)
+    );
     assert_eq!(
         dispatcher.translate_key(Key::ArrowRight),
-        Command::MoveRight
+        Command::Move(Motion::Right, 1)
     );
-    assert_eq!(dispatcher.translate_key(Key::ArrowUp), Command::MoveUp);
-    assert_eq!(dispatcher.translate_key(Key::ArrowDown), Command::MoveDown);
+    assert_eq!(
+        dispatcher.translate_key(Key::ArrowUp),
+        Command::Move(Motion::Up, 1)
+    );
+    assert_eq!(
+        dispatcher.translate_key(Key::ArrowDown),
+        Command::Move(Motion::Down, 1)
+    );
     assert_eq!(
         dispatcher.translate_key(Key::Home),
-        Command::MoveToLineStart
+        Command::Move(Motion::StartOfLine, 1)
     );
-    assert_eq!(dispatcher.translate_key(Key::End), Command::MoveToLineEnd);
+    assert_eq!(
+        dispatcher.translate_key(Key::End),
+        Command::Move(Motion::EndOfLine, 1)
+    );
 }
 
 #[test]
@@ -136,9 +162,46 @@ fn test_pending_key_sequence_gg() {
     // Second 'g' should trigger move_to_buffer_start
     assert_eq!(
         dispatcher.translate_key(Key::Char('g')),
-        Command::MoveToBufferStart
+        Command::Move(Motion::StartOfFile, 1)
     );
     assert_eq!(dispatcher.pending_key(), None);
+}
+
+#[test]
+fn test_count_handling() {
+    let mut dispatcher = Dispatcher::new(Mode::Normal);
+
+    // "3j" -> Move(Down, 3)
+    assert_eq!(dispatcher.translate_key(Key::Char('3')), Command::Noop);
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('j')),
+        Command::Move(Motion::Down, 3)
+    );
+
+    // "12l" -> Move(Right, 12)
+    assert_eq!(dispatcher.translate_key(Key::Char('1')), Command::Noop);
+    assert_eq!(dispatcher.translate_key(Key::Char('2')), Command::Noop);
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('l')),
+        Command::Move(Motion::Right, 12)
+    );
+
+    // "d2w" -> Delete(NextWord, 2)
+    assert_eq!(dispatcher.translate_key(Key::Char('d')), Command::Noop);
+    assert_eq!(dispatcher.translate_key(Key::Char('2')), Command::Noop);
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('w')),
+        Command::Delete(Motion::NextWord, 2)
+    );
+
+    // "2d3w" -> Delete(NextWord, 6)
+    assert_eq!(dispatcher.translate_key(Key::Char('2')), Command::Noop);
+    assert_eq!(dispatcher.translate_key(Key::Char('d')), Command::Noop);
+    assert_eq!(dispatcher.translate_key(Key::Char('3')), Command::Noop);
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('w')),
+        Command::Delete(Motion::NextWord, 6)
+    );
 }
 
 #[test]
@@ -216,14 +279,14 @@ fn test_command_is_mutating() {
     assert!(Command::DeleteLine.is_mutating());
 
     // Non-mutating commands
-    assert!(!Command::MoveLeft.is_mutating());
-    assert!(!Command::MoveRight.is_mutating());
-    assert!(!Command::MoveUp.is_mutating());
-    assert!(!Command::MoveDown.is_mutating());
-    assert!(!Command::MoveToLineStart.is_mutating());
-    assert!(!Command::MoveToLineEnd.is_mutating());
-    assert!(!Command::MoveToBufferStart.is_mutating());
-    assert!(!Command::MoveToBufferEnd.is_mutating());
+    assert!(!Command::Move(Motion::Left, 1).is_mutating());
+    assert!(!Command::Move(Motion::Right, 1).is_mutating());
+    assert!(!Command::Move(Motion::Up, 1).is_mutating());
+    assert!(!Command::Move(Motion::Down, 1).is_mutating());
+    assert!(!Command::Move(Motion::StartOfLine, 1).is_mutating());
+    assert!(!Command::Move(Motion::EndOfLine, 1).is_mutating());
+    assert!(!Command::Move(Motion::StartOfFile, 1).is_mutating());
+    assert!(!Command::Move(Motion::EndOfFile, 1).is_mutating());
     assert!(!Command::EnterInsertMode.is_mutating());
     assert!(!Command::EnterInsertModeAfter.is_mutating());
     assert!(!Command::EnterCommandMode.is_mutating());

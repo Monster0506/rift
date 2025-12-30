@@ -27,6 +27,7 @@ impl StatusBar {
         viewport: &Viewport,
         current_mode: Mode,
         pending_key: Option<Key>,
+        pending_count: usize,
         state: &State,
     ) -> Result<(), String> {
         let status_row = viewport.visible_rows().saturating_sub(1);
@@ -51,11 +52,14 @@ impl StatusBar {
         term.write(mode_str.as_bytes())?;
 
         // Pending key indicator
-        let pending_str = if let Some(key) = pending_key {
-            format!(" [{}]", Self::format_key(key))
-        } else {
-            String::new()
-        };
+        let mut pending_str = String::new();
+        if pending_count > 0 {
+            pending_str.push_str(&format!(" {}", pending_count));
+        }
+        if let Some(key) = pending_key {
+            pending_str.push(' ');
+            pending_str.push_str(&format!("[{}]", Self::format_key(key)));
+        }
         if !pending_str.is_empty() {
             term.write(pending_str.as_bytes())?;
         }
@@ -231,6 +235,8 @@ impl StatusBar {
                 };
                 parts.push(format!("Insert: {char_str} ({bytes}B)"));
             }
+        } else if let Some(cmd) = state.last_command {
+            parts.push(format!("Cmd: {cmd:?}"));
         }
 
         // Cursor position (1-indexed for display)
@@ -261,6 +267,7 @@ impl StatusBar {
         viewport: &Viewport,
         current_mode: Mode,
         pending_key: Option<Key>,
+        pending_count: usize,
         state: &State,
     ) {
         let status_row = viewport.visible_rows().saturating_sub(1);
@@ -296,6 +303,12 @@ impl StatusBar {
         col += mode_str.len();
 
         // Pending key indicator
+        if pending_count > 0 {
+            let count_str = format!(" {}", pending_count);
+            layer.write_bytes_colored(status_row, col, count_str.as_bytes(), fg, bg);
+            col += count_str.len();
+        }
+
         if let Some(key) = pending_key {
             let pending_str = format!(" [{}]", Self::format_key(key));
             layer.write_bytes_colored(status_row, col, pending_str.as_bytes(), fg, bg);

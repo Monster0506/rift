@@ -8,6 +8,7 @@
 /// - All data required to apply a command is contained within the command.
 /// - Commands are immutable once created.
 /// - Adding a new command requires explicit executor support.
+use crate::action::Motion;
 use crate::key::Key;
 use crate::mode::Mode;
 
@@ -17,26 +18,12 @@ pub mod input;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     // Movement
-    MoveLeft,
-    MoveRight,
-    MoveUp,
-    MoveDown,
-    MoveToLineStart,
-    MoveToLineEnd,
-    MoveToBufferStart,
-    MoveToBufferEnd,
-    MoveWordLeft,
-    MoveWordRight,
-    MoveParagraphForward,
-    MoveParagraphBackward,
-    MoveSentenceForward,
-    MoveSentenceBackward,
-    MovePageUp,
-    MovePageDown,
+    Move(Motion, usize),
 
     // Editing
     EnterInsertMode,
     EnterInsertModeAfter,
+    Delete(Motion, usize),
     DeleteForward,
     DeleteBackward,
     DeleteLine,
@@ -76,7 +63,8 @@ impl Command {
 /// Command dispatcher state
 pub struct Dispatcher {
     mode: Mode,
-    pending_key: Option<Key>,
+    pending_key: Option<(Key, usize)>,
+    pending_count: usize,
 }
 
 impl Dispatcher {
@@ -85,6 +73,7 @@ impl Dispatcher {
         Dispatcher {
             mode,
             pending_key: None,
+            pending_count: 0,
         }
     }
 
@@ -98,65 +87,100 @@ impl Dispatcher {
     }
 
     fn translate_normal_mode(&mut self, key: Key) -> Command {
-        // Handle multi-key sequences
-        if let Some(pending) = self.pending_key.take() {
-            return self.handle_normal_mode_sequence(pending, key);
+        // Handle digits for count
+        if let Key::Char(ch) = key {
+            if ch.is_ascii_digit() && (ch != '0' || self.pending_count > 0) {
+                let digit = ch.to_digit(10).unwrap() as usize;
+                self.pending_count = self.pending_count.saturating_mul(10).saturating_add(digit);
+                return Command::Noop;
+            }
         }
+
+        let count = if self.pending_count == 0 {
+            1
+        } else {
+            self.pending_count
+        };
+
+        // Handle multi-key sequences
+        if let Some((pending, pending_count)) = self.pending_key.take() {
+            self.pending_count = 0;
+            return self.handle_normal_mode_sequence(pending, pending_count, key, count);
+        }
+
+        self.pending_count = 0;
 
         match key {
             Key::Char(ch) => match ch {
-                'h' => Command::MoveLeft,
-                'j' => Command::MoveDown,
-                'k' => Command::MoveUp,
-                'l' => Command::MoveRight,
-                '0' => Command::MoveToLineStart,
-                '$' => Command::MoveToLineEnd,
+                'h' => Command::Move(Motion::Left, count),
+                'j' => Command::Move(Motion::Down, count),
+                'k' => Command::Move(Motion::Up, count),
+                'l' => Command::Move(Motion::Right, count),
+                '0' => Command::Move(Motion::StartOfLine, 1),
+                '$' => Command::Move(Motion::EndOfLine, count),
                 'i' => Command::EnterInsertMode,
                 'a' => Command::EnterInsertModeAfter,
-                'w' => Command::MoveWordRight,
-                'b' => Command::MoveWordLeft,
-                '}' => Command::MoveParagraphForward,
-                '{' => Command::MoveParagraphBackward,
-                ')' => Command::MoveSentenceForward,
-                '(' => Command::MoveSentenceBackward,
+                'w' => Command::Move(Motion::NextWord, count),
+                'b' => Command::Move(Motion::PreviousWord, count),
+                '}' => Command::Move(Motion::NextParagraph, count),
+                '{' => Command::Move(Motion::PreviousParagraph, count),
+                ')' => Command::Move(Motion::NextSentence, count),
+                '(' => Command::Move(Motion::PreviousSentence, count),
                 'x' => Command::DeleteForward,
                 'q' => Command::Quit,
                 ':' => Command::EnterCommandMode,
                 'd' => {
-                    // Start sequence for 'dd'
-                    self.pending_key = Some(key);
+                    // Start sequence for 'dd' or 'd<motion>'
+                    self.pending_key = Some((key, count));
                     Command::Noop
                 }
                 'g' => {
                     // Start sequence for 'gg'
-                    self.pending_key = Some(key);
+                    self.pending_key = Some((key, count));
                     Command::Noop
                 }
-                'G' => Command::MoveToBufferEnd,
+                'G' => Command::Move(Motion::EndOfFile, count),
                 _ => Command::Noop,
             },
-            Key::ArrowLeft => Command::MoveLeft,
-            Key::ArrowRight => Command::MoveRight,
-            Key::ArrowUp => Command::MoveUp,
-            Key::ArrowDown => Command::MoveDown,
-            Key::Home => Command::MoveToLineStart,
-            Key::End => Command::MoveToLineEnd,
-            Key::PageUp => Command::MovePageUp,
-            Key::PageDown => Command::MovePageDown,
-            Key::CtrlArrowLeft => Command::MoveWordLeft,
-            Key::CtrlArrowRight => Command::MoveWordRight,
-            Key::CtrlArrowUp => Command::MoveParagraphBackward,
-            Key::CtrlArrowDown => Command::MoveParagraphForward,
-            Key::CtrlHome => Command::MoveToBufferStart,
-            Key::CtrlEnd => Command::MoveToBufferEnd,
+            Key::ArrowLeft => Command::Move(Motion::Left, count),
+            Key::ArrowRight => Command::Move(Motion::Right, count),
+            Key::ArrowUp => Command::Move(Motion::Up, count),
+            Key::ArrowDown => Command::Move(Motion::Down, count),
+            Key::Home => Command::Move(Motion::StartOfLine, 1),
+            Key::End => Command::Move(Motion::EndOfLine, count),
+            Key::PageUp => Command::Move(Motion::PageUp, count),
+            Key::PageDown => Command::Move(Motion::PageDown, count),
+            Key::CtrlArrowLeft => Command::Move(Motion::PreviousWord, count),
+            Key::CtrlArrowRight => Command::Move(Motion::NextWord, count),
+            Key::CtrlArrowUp => Command::Move(Motion::PreviousParagraph, count),
+            Key::CtrlArrowDown => Command::Move(Motion::NextParagraph, count),
+            Key::CtrlHome => Command::Move(Motion::StartOfFile, 1),
+            Key::CtrlEnd => Command::Move(Motion::EndOfFile, 1),
             _ => Command::Noop,
         }
     }
 
-    fn handle_normal_mode_sequence(&mut self, first: Key, second: Key) -> Command {
+    fn handle_normal_mode_sequence(
+        &mut self,
+        first: Key,
+        first_count: usize,
+        second: Key,
+        second_count: usize,
+    ) -> Command {
+        let total_count = first_count * second_count;
         match (first, second) {
             (Key::Char('d'), Key::Char('d')) => Command::DeleteLine,
-            (Key::Char('g'), Key::Char('g')) => Command::MoveToBufferStart,
+            (Key::Char('d'), Key::Char('w')) => Command::Delete(Motion::NextWord, total_count),
+            (Key::Char('d'), Key::Char('b')) => Command::Delete(Motion::PreviousWord, total_count),
+            (Key::Char('d'), Key::Char('}')) => Command::Delete(Motion::NextParagraph, total_count),
+            (Key::Char('d'), Key::Char('{')) => {
+                Command::Delete(Motion::PreviousParagraph, total_count)
+            }
+            (Key::Char('d'), Key::Char(')')) => Command::Delete(Motion::NextSentence, total_count),
+            (Key::Char('d'), Key::Char('(')) => {
+                Command::Delete(Motion::PreviousSentence, total_count)
+            }
+            (Key::Char('g'), Key::Char('g')) => Command::Move(Motion::StartOfFile, 1),
             _ => Command::Noop,
         }
     }
@@ -169,36 +193,50 @@ impl Dispatcher {
             match intent {
                 InputIntent::Type(ch) => Command::InsertChar(ch),
                 InputIntent::Move(dir, granularity) => match (dir, granularity) {
-                    (Direction::Left, Granularity::Character) => Command::MoveLeft,
-                    (Direction::Right, Granularity::Character) => Command::MoveRight,
-                    (Direction::Up, Granularity::Character) => Command::MoveUp,
-                    (Direction::Down, Granularity::Character) => Command::MoveDown,
+                    (Direction::Left, Granularity::Character) => Command::Move(Motion::Left, 1),
+                    (Direction::Right, Granularity::Character) => Command::Move(Motion::Right, 1),
+                    (Direction::Up, Granularity::Character) => Command::Move(Motion::Up, 1),
+                    (Direction::Down, Granularity::Character) => Command::Move(Motion::Down, 1),
 
-                    (Direction::Left, Granularity::Word) => Command::MoveWordLeft,
-                    (Direction::Right, Granularity::Word) => Command::MoveWordRight,
-                    (Direction::Up, Granularity::Word) => Command::MoveParagraphBackward,
-                    (Direction::Down, Granularity::Word) => Command::MoveParagraphForward,
+                    (Direction::Left, Granularity::Word) => Command::Move(Motion::PreviousWord, 1),
+                    (Direction::Right, Granularity::Word) => Command::Move(Motion::NextWord, 1),
+                    (Direction::Up, Granularity::Word) => {
+                        Command::Move(Motion::PreviousParagraph, 1)
+                    }
+                    (Direction::Down, Granularity::Word) => Command::Move(Motion::NextParagraph, 1),
 
-                    (Direction::Left, Granularity::Line) => Command::MoveToLineStart,
-                    (Direction::Right, Granularity::Line) => Command::MoveToLineEnd,
+                    (Direction::Left, Granularity::Line) => Command::Move(Motion::StartOfLine, 1),
+                    (Direction::Right, Granularity::Line) => Command::Move(Motion::EndOfLine, 1),
 
-                    (Direction::Left, Granularity::Sentence) => Command::MoveSentenceBackward,
-                    (Direction::Right, Granularity::Sentence) => Command::MoveSentenceForward,
+                    (Direction::Left, Granularity::Sentence) => {
+                        Command::Move(Motion::PreviousSentence, 1)
+                    }
+                    (Direction::Right, Granularity::Sentence) => {
+                        Command::Move(Motion::NextSentence, 1)
+                    }
 
-                    (Direction::Up, Granularity::Paragraph) => Command::MoveParagraphBackward,
-                    (Direction::Down, Granularity::Paragraph) => Command::MoveParagraphForward,
+                    (Direction::Up, Granularity::Paragraph) => {
+                        Command::Move(Motion::PreviousParagraph, 1)
+                    }
+                    (Direction::Down, Granularity::Paragraph) => {
+                        Command::Move(Motion::NextParagraph, 1)
+                    }
 
-                    (Direction::Up, Granularity::Page) => Command::MovePageUp,
-                    (Direction::Down, Granularity::Page) => Command::MovePageDown,
+                    (Direction::Up, Granularity::Page) => Command::Move(Motion::PageUp, 1),
+                    (Direction::Down, Granularity::Page) => Command::Move(Motion::PageDown, 1),
 
-                    (Direction::Left, Granularity::Document) => Command::MoveToBufferStart,
-                    (Direction::Right, Granularity::Document) => Command::MoveToBufferEnd,
+                    (Direction::Left, Granularity::Document) => {
+                        Command::Move(Motion::StartOfFile, 1)
+                    }
+                    (Direction::Right, Granularity::Document) => {
+                        Command::Move(Motion::EndOfFile, 1)
+                    }
 
                     // Fallbacks
-                    (Direction::Left, _) => Command::MoveLeft,
-                    (Direction::Right, _) => Command::MoveRight,
-                    (Direction::Up, _) => Command::MoveUp,
-                    (Direction::Down, _) => Command::MoveDown,
+                    (Direction::Left, _) => Command::Move(Motion::Left, 1),
+                    (Direction::Right, _) => Command::Move(Motion::Right, 1),
+                    (Direction::Up, _) => Command::Move(Motion::Up, 1),
+                    (Direction::Down, _) => Command::Move(Motion::Down, 1),
                 },
                 InputIntent::Delete(Direction::Left, _) => Command::DeleteBackward, // Backspace
                 InputIntent::Delete(Direction::Right, _) => Command::DeleteForward, // Delete
@@ -218,25 +256,25 @@ impl Dispatcher {
             match intent {
                 InputIntent::Type(ch) => Command::AppendToCommandLine(ch),
                 InputIntent::Move(dir, Granularity::Line) => match dir {
-                    Direction::Left => Command::MoveToLineStart,
-                    Direction::Right => Command::MoveToLineEnd,
+                    Direction::Left => Command::Move(Motion::StartOfLine, 1),
+                    Direction::Right => Command::Move(Motion::EndOfLine, 1),
                     _ => Command::Noop,
                 },
                 InputIntent::Move(dir, Granularity::Word) => {
                     // TODO: Implement word-wise movement for command line
                     // For now, fall back to character movement
                     match dir {
-                        Direction::Left => Command::MoveLeft,
-                        Direction::Right => Command::MoveRight,
-                        Direction::Up => Command::MoveUp,
-                        Direction::Down => Command::MoveDown,
+                        Direction::Left => Command::Move(Motion::Left, 1),
+                        Direction::Right => Command::Move(Motion::Right, 1),
+                        Direction::Up => Command::Move(Motion::Up, 1),
+                        Direction::Down => Command::Move(Motion::Down, 1),
                     }
                 }
                 InputIntent::Move(dir, _) => match dir {
-                    Direction::Left => Command::MoveLeft,
-                    Direction::Right => Command::MoveRight,
-                    Direction::Up => Command::MoveUp,
-                    Direction::Down => Command::MoveDown,
+                    Direction::Left => Command::Move(Motion::Left, 1),
+                    Direction::Right => Command::Move(Motion::Right, 1),
+                    Direction::Up => Command::Move(Motion::Up, 1),
+                    Direction::Down => Command::Move(Motion::Down, 1),
                 },
                 InputIntent::Delete(Direction::Left, _) => Command::DeleteFromCommandLine, // Backspace
                 InputIntent::Delete(Direction::Right, _) => Command::DeleteForward, // Forward delete
@@ -258,11 +296,17 @@ impl Dispatcher {
         self.mode = mode;
         // Clear pending key when switching modes
         self.pending_key = None;
+        self.pending_count = 0;
     }
 
     #[must_use]
     pub fn pending_key(&self) -> Option<Key> {
-        self.pending_key
+        self.pending_key.map(|(k, _)| k)
+    }
+
+    #[must_use]
+    pub fn pending_count(&self) -> usize {
+        self.pending_count
     }
 }
 
