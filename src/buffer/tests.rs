@@ -348,3 +348,63 @@ fn test_move_sentence_forward_multiline() {
     // Should end up at start of Line 3 (31).
     assert_eq!(buffer.cursor(), 31);
 }
+
+#[test]
+fn test_delete_empty_buffer() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    assert!(!buffer.delete_backward());
+    assert!(!buffer.delete_forward());
+    assert_eq!(buffer.len(), 0);
+}
+
+#[test]
+fn test_move_empty_buffer() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    assert!(!buffer.move_left());
+    assert!(!buffer.move_right());
+    assert!(!buffer.move_up());
+    assert!(!buffer.move_down());
+
+    buffer.move_to_start();
+    assert_eq!(buffer.cursor(), 0);
+
+    buffer.move_to_end();
+    assert_eq!(buffer.cursor(), 0);
+}
+
+#[test]
+fn test_insert_newline_at_start() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    buffer.insert_str("line").unwrap();
+    buffer.move_to_start();
+    buffer.insert_char('\n').unwrap();
+
+    assert_eq!(buffer.to_string(), "\nline");
+    assert_eq!(buffer.get_total_lines(), 2);
+    assert_eq!(buffer.get_line(), 1);
+}
+
+#[test]
+fn test_insert_newline_at_end() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    buffer.insert_str("line").unwrap();
+    buffer.insert_char('\n').unwrap();
+
+    assert_eq!(buffer.to_string(), "line\n");
+    assert_eq!(buffer.get_total_lines(), 2);
+    assert_eq!(buffer.get_line(), 1);
+}
+
+#[test]
+fn test_move_word_empty() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    assert!(!buffer.move_word_right());
+    assert!(!buffer.move_word_left());
+}
+
+#[test]
+fn test_move_paragraph_empty() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    assert!(!buffer.move_paragraph_forward());
+    assert!(!buffer.move_paragraph_backward());
+}
