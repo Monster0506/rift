@@ -77,6 +77,28 @@ impl Dispatcher {
         }
     }
 
+    fn key_to_motion(key: Key) -> Option<Motion> {
+        match key {
+            Key::Char('h') | Key::ArrowLeft => Some(Motion::Left),
+            Key::Char('j') | Key::ArrowDown => Some(Motion::Down),
+            Key::Char('k') | Key::ArrowUp => Some(Motion::Up),
+            Key::Char('l') | Key::ArrowRight => Some(Motion::Right),
+            Key::Char('w') | Key::CtrlArrowRight => Some(Motion::NextWord),
+            Key::Char('b') | Key::CtrlArrowLeft => Some(Motion::PreviousWord),
+            Key::Char('}') | Key::CtrlArrowDown => Some(Motion::NextParagraph),
+            Key::Char('{') | Key::CtrlArrowUp => Some(Motion::PreviousParagraph),
+            Key::Char(')') => Some(Motion::NextSentence),
+            Key::Char('(') => Some(Motion::PreviousSentence),
+            Key::Char('0') | Key::Home => Some(Motion::StartOfLine),
+            Key::Char('$') | Key::End => Some(Motion::EndOfLine),
+            Key::Char('G') | Key::CtrlEnd => Some(Motion::EndOfFile),
+            Key::CtrlHome => Some(Motion::StartOfFile),
+            Key::PageUp => Some(Motion::PageUp),
+            Key::PageDown => Some(Motion::PageDown),
+            _ => None,
+        }
+    }
+
     /// Translate a key into a command based on current mode
     pub fn translate_key(&mut self, key: Key) -> Command {
         match self.mode {
@@ -170,15 +192,12 @@ impl Dispatcher {
         let total_count = first_count * second_count;
         match (first, second) {
             (Key::Char('d'), Key::Char('d')) => Command::DeleteLine,
-            (Key::Char('d'), Key::Char('w')) => Command::Delete(Motion::NextWord, total_count),
-            (Key::Char('d'), Key::Char('b')) => Command::Delete(Motion::PreviousWord, total_count),
-            (Key::Char('d'), Key::Char('}')) => Command::Delete(Motion::NextParagraph, total_count),
-            (Key::Char('d'), Key::Char('{')) => {
-                Command::Delete(Motion::PreviousParagraph, total_count)
-            }
-            (Key::Char('d'), Key::Char(')')) => Command::Delete(Motion::NextSentence, total_count),
-            (Key::Char('d'), Key::Char('(')) => {
-                Command::Delete(Motion::PreviousSentence, total_count)
+            (Key::Char('d'), key) => {
+                if let Some(motion) = Self::key_to_motion(key) {
+                    Command::Delete(motion, total_count)
+                } else {
+                    Command::Noop
+                }
             }
             (Key::Char('g'), Key::Char('g')) => Command::Move(Motion::StartOfFile, 1),
             _ => Command::Noop,

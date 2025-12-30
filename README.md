@@ -36,6 +36,7 @@ Implemented:
 - Buffer next/previous/ls
 - Resizing
 - Notify clear and clear all
+- Granular movement
 
 Todo:
 - LSP
@@ -47,7 +48,7 @@ Todo:
 - help manual
 - command history
 - mainloop non blocking
-- granular movement
+
 - file exploration
 
 Known issues:
