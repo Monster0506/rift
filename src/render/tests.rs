@@ -844,7 +844,6 @@ fn test_wrap_text_empty() {
     assert_eq!(wrapped, vec!["".to_string()]);
 }
 
-
 #[test]
 fn test_wrap_text_newlines() {
     let text = "line1\nline2";
@@ -853,5 +852,8 @@ fn test_wrap_text_newlines() {
 
     let text = "line1\n\nline3";
     let wrapped = crate::render::wrap_text(text, 20);
-    assert_eq!(wrapped, vec!["line1".to_string(), "".to_string(), "line3".to_string()]);
+    assert_eq!(
+        wrapped,
+        vec!["line1".to_string(), "".to_string(), "line3".to_string()]
+    );
 }

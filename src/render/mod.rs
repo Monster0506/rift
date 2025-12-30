@@ -606,8 +606,7 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
 
     for paragraph in text.split('\n') {
-
-        let words:Vec<&str> = paragraph.split_whitespace().collect();
+        let words: Vec<&str> = paragraph.split_whitespace().collect();
         if words.is_empty() {
             lines.push(String::new());
             continue;
