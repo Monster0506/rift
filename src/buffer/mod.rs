@@ -384,12 +384,13 @@ impl TextBuffer {
 
     /// Move to next paragraph
     pub fn move_paragraph_forward(&mut self) -> bool {
+        let start_cursor = self.cursor;
         let current_line = self.get_line();
         let total_lines = self.get_total_lines();
 
         if current_line >= total_lines - 1 {
             self.move_to_end();
-            return true;
+            return self.cursor != start_cursor;
         }
 
         let mut line = current_line + 1;
@@ -399,22 +400,23 @@ impl TextBuffer {
                 if let Some(start) = self.line_index.get_start(line) {
                     self.cursor = start;
                 }
-                return true;
+                return self.cursor != start_cursor;
             }
             line += 1;
         }
 
         self.move_to_end();
-        true
+        self.cursor != start_cursor
     }
 
     /// Move to previous paragraph
     pub fn move_paragraph_backward(&mut self) -> bool {
+        let start_cursor = self.cursor;
         let current_line = self.get_line();
 
         if current_line == 0 {
             self.move_to_start();
-            return true;
+            return self.cursor != start_cursor;
         }
 
         let mut line = current_line - 1;
@@ -423,13 +425,13 @@ impl TextBuffer {
                 if let Some(start) = self.line_index.get_start(line) {
                     self.cursor = start;
                 }
-                return true;
+                return self.cursor != start_cursor;
             }
             line -= 1;
         }
 
         self.move_to_start();
-        true
+        self.cursor != start_cursor
     }
 
     /// Move to next sentence
