@@ -190,6 +190,8 @@ impl StatusBar {
             Key::Tab => "Tab".to_string(),
             Key::Home => "Home".to_string(),
             Key::End => "End".to_string(),
+            Key::CtrlHome => "Ctrl+Home".to_string(),
+            Key::CtrlEnd => "Ctrl+End".to_string(),
             Key::PageUp => "PageUp".to_string(),
             Key::PageDown => "PageDown".to_string(),
             Key::Resize(cols, rows) => format!("Resize({cols}, {rows})"),

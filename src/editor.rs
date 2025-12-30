@@ -383,10 +383,17 @@ impl<T: TerminalBackend> Editor<T> {
             if should_execute_buffer {
                 let expand_tabs = self.state.settings.expand_tabs;
                 let tab_width = self.state.settings.tab_width;
+                let viewport_height = self.viewport.visible_rows();
                 let doc_id = self.tab_order[self.current_tab];
                 let res = {
                     let doc = self.documents.get_mut(&doc_id).unwrap();
-                    execute_command(cmd, &mut doc.buffer, expand_tabs, tab_width)
+                    execute_command(
+                        cmd,
+                        &mut doc.buffer,
+                        expand_tabs,
+                        tab_width,
+                        viewport_height,
+                    )
                 };
                 if let Err(e) = res {
                     self.state.handle_error(e);

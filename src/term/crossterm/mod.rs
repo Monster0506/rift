@@ -191,8 +191,20 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
                 Key::ArrowRight
             }
         }
-        KeyCode::Home => Key::Home,
-        KeyCode::End => Key::End,
+        KeyCode::Home => {
+            if ctrl {
+                Key::CtrlHome
+            } else {
+                Key::Home
+            }
+        }
+        KeyCode::End => {
+            if ctrl {
+                Key::CtrlEnd
+            } else {
+                Key::End
+            }
+        }
         KeyCode::PageUp => Key::PageUp,
         KeyCode::PageDown => Key::PageDown,
         KeyCode::Delete => Key::Delete,

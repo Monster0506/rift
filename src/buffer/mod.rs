@@ -263,6 +263,343 @@ impl TextBuffer {
             self.cursor = end;
         }
     }
+
+    /// Move to the start of the next word
+    pub fn move_word_right(&mut self) -> bool {
+        let len = self.len();
+        if self.cursor >= len {
+            return false;
+        }
+
+        let get_class = |c: char| -> u8 {
+            if c.is_whitespace() {
+                0
+            } else if c.is_alphanumeric() || c == '_' {
+                1
+            } else {
+                2
+            }
+        };
+
+        let start_pos = self.cursor;
+
+        // Get current char
+        let curr_char = self.char_at(self.cursor);
+        if curr_char.is_none() {
+            return false;
+        }
+
+        let start_class = get_class(curr_char.unwrap());
+
+        if start_class == 0 {
+            // If on whitespace, skip whitespace
+            while self.cursor < len {
+                if let Some(c) = self.char_at(self.cursor) {
+                    if !c.is_whitespace() {
+                        break;
+                    }
+                }
+                self.move_right();
+            }
+        } else {
+            // Skip current word/punct
+            while self.cursor < len {
+                if let Some(c) = self.char_at(self.cursor) {
+                    if get_class(c) != start_class {
+                        break;
+                    }
+                }
+                self.move_right();
+            }
+            // Skip whitespace
+            while self.cursor < len {
+                if let Some(c) = self.char_at(self.cursor) {
+                    if !c.is_whitespace() {
+                        break;
+                    }
+                }
+                self.move_right();
+            }
+        }
+
+        self.cursor != start_pos
+    }
+
+    /// Move to the start of the previous word
+    pub fn move_word_left(&mut self) -> bool {
+        if self.cursor == 0 {
+            return false;
+        }
+
+        let get_class = |c: char| -> u8 {
+            if c.is_whitespace() {
+                0
+            } else if c.is_alphanumeric() || c == '_' {
+                1
+            } else {
+                2
+            }
+        };
+
+        let start_pos = self.cursor;
+
+        // Move left once to start checking
+        self.move_left();
+
+        // Skip whitespace going backwards
+        while self.cursor > 0 {
+            if let Some(c) = self.char_at(self.cursor) {
+                if !c.is_whitespace() {
+                    break;
+                }
+            }
+            self.move_left();
+        }
+
+        // Now we are on the last char of the previous word (or start of file)
+        // We need to find the start of this word.
+
+        if let Some(c) = self.char_at(self.cursor) {
+            let target_class = get_class(c);
+            if target_class == 0 {
+                // Still whitespace? means we hit start of file with whitespace
+                return true;
+            }
+
+            // Go back until class changes
+            while self.cursor > 0 {
+                // Look at previous char without moving yet
+                let prev_pos = self.prev_char_pos(self.cursor);
+                if let Some(pc) = self.char_at(prev_pos) {
+                    if get_class(pc) != target_class {
+                        break;
+                    }
+                }
+                self.move_left();
+            }
+        }
+
+        self.cursor != start_pos
+    }
+
+    /// Move to next paragraph
+    pub fn move_paragraph_forward(&mut self) -> bool {
+        let current_line = self.get_line();
+        let total_lines = self.get_total_lines();
+
+        if current_line >= total_lines - 1 {
+            self.move_to_end();
+            return true;
+        }
+
+        let mut line = current_line + 1;
+        while line < total_lines {
+            if self.is_line_empty(line) {
+                // Found empty line
+                if let Some(start) = self.line_index.get_start(line) {
+                    self.cursor = start;
+                }
+                return true;
+            }
+            line += 1;
+        }
+
+        self.move_to_end();
+        true
+    }
+
+    /// Move to previous paragraph
+    pub fn move_paragraph_backward(&mut self) -> bool {
+        let current_line = self.get_line();
+
+        if current_line == 0 {
+            self.move_to_start();
+            return true;
+        }
+
+        let mut line = current_line - 1;
+        while line > 0 {
+            if self.is_line_empty(line) {
+                if let Some(start) = self.line_index.get_start(line) {
+                    self.cursor = start;
+                }
+                return true;
+            }
+            line -= 1;
+        }
+
+        self.move_to_start();
+        true
+    }
+
+    /// Move to next sentence
+    pub fn move_sentence_forward(&mut self) -> bool {
+        let len = self.len();
+        if self.cursor >= len {
+            return false;
+        }
+
+        let start_pos = self.cursor;
+
+        // Scan forward
+        while self.cursor < len {
+            let c = self.char_at(self.cursor);
+
+            // If we hit a newline without finding a sentence end, stop there
+            if let Some('\n') = c {
+                if self.cursor != start_pos {
+                    return true;
+                }
+            }
+
+            self.move_right();
+
+            if let Some(ch) = c {
+                if ".!?".contains(ch) {
+                    // Check if followed by whitespace (or EOF)
+                    if self.cursor == len {
+                        return true;
+                    }
+                    if let Some(next_ch) = self.char_at(self.cursor) {
+                        if next_ch.is_whitespace() {
+                            // Found end of sentence. Now skip whitespace to find start of next.
+                            while self.cursor < len {
+                                if let Some(nc) = self.char_at(self.cursor) {
+                                    if !nc.is_whitespace() {
+                                        return true;
+                                    }
+                                }
+                                self.move_right();
+                            }
+                            return true; // EOF is valid start
+                        }
+                    }
+                }
+            }
+        }
+
+        self.cursor != start_pos
+    }
+
+    /// Move to previous sentence
+    pub fn move_sentence_backward(&mut self) -> bool {
+        if self.cursor == 0 {
+            return false;
+        }
+
+        let start_pos = self.cursor;
+
+        // 1. Move left
+        self.move_left();
+
+        // 2. Skip whitespace backwards
+        while self.cursor > 0 {
+            if let Some(c) = self.char_at(self.cursor) {
+                if !c.is_whitespace() {
+                    break;
+                }
+            }
+            self.move_left();
+        }
+
+        // 3. Skip terminators backwards (in case we were at start of sentence)
+        while self.cursor > 0 {
+            if let Some(c) = self.char_at(self.cursor) {
+                if !".!?".contains(c) {
+                    break;
+                }
+            }
+            self.move_left();
+        }
+
+        // 4. Scan backwards for terminator
+        while self.cursor > 0 {
+            if let Some(c) = self.char_at(self.cursor) {
+                if ".!?".contains(c) {
+                    // Found terminator of previous sentence.
+                    self.move_right();
+                    break;
+                }
+            }
+            self.move_left();
+        }
+
+        // 5. Skip whitespace forward
+        while self.cursor < self.len() {
+            if let Some(c) = self.char_at(self.cursor) {
+                if !c.is_whitespace() {
+                    break;
+                }
+            }
+            self.move_right();
+        }
+
+        self.cursor != start_pos
+    }
+
+    fn is_line_empty(&self, line_idx: usize) -> bool {
+        let start = match self.line_index.get_start(line_idx) {
+            Some(s) => s,
+            None => return true,
+        };
+        let end = match self.line_index.get_end(line_idx, self.len()) {
+            Some(e) => e,
+            None => return true,
+        };
+
+        for i in start..end {
+            let b = self.line_index.byte_at(i);
+            if !b.is_ascii_whitespace() {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn char_at(&self, pos: usize) -> Option<char> {
+        if pos >= self.len() {
+            return None;
+        }
+
+        let b = self.line_index.byte_at(pos);
+        if b < 128 {
+            return Some(b as char);
+        }
+
+        let mut bytes = [0u8; 4];
+        bytes[0] = b;
+        let mut len = 1;
+
+        let mut p = pos + 1;
+        while p < self.len() && len < 4 {
+            let next_b = self.line_index.byte_at(p);
+            if (next_b & 0b11000000) != 0b10000000 {
+                break;
+            }
+            bytes[len] = next_b;
+            len += 1;
+            p += 1;
+        }
+
+        std::str::from_utf8(&bytes[..len])
+            .ok()
+            .and_then(|s| s.chars().next())
+    }
+
+    fn prev_char_pos(&self, pos: usize) -> usize {
+        if pos == 0 {
+            return 0;
+        }
+        let mut p = pos - 1;
+        while p > 0 {
+            let byte = self.line_index.byte_at(p);
+            if (byte & 0b11000000) != 0b10000000 {
+                break;
+            }
+            p -= 1;
+        }
+        p
+    }
 }
 
 impl Display for TextBuffer {

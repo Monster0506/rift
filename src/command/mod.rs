@@ -25,6 +25,14 @@ pub enum Command {
     MoveToLineEnd,
     MoveToBufferStart,
     MoveToBufferEnd,
+    MoveWordLeft,
+    MoveWordRight,
+    MoveParagraphForward,
+    MoveParagraphBackward,
+    MoveSentenceForward,
+    MoveSentenceBackward,
+    MovePageUp,
+    MovePageDown,
 
     // Editing
     EnterInsertMode,
@@ -105,6 +113,12 @@ impl Dispatcher {
                 '$' => Command::MoveToLineEnd,
                 'i' => Command::EnterInsertMode,
                 'a' => Command::EnterInsertModeAfter,
+                'w' => Command::MoveWordRight,
+                'b' => Command::MoveWordLeft,
+                '}' => Command::MoveParagraphForward,
+                '{' => Command::MoveParagraphBackward,
+                ')' => Command::MoveSentenceForward,
+                '(' => Command::MoveSentenceBackward,
                 'x' => Command::DeleteForward,
                 'q' => Command::Quit,
                 ':' => Command::EnterCommandMode,
@@ -127,6 +141,14 @@ impl Dispatcher {
             Key::ArrowDown => Command::MoveDown,
             Key::Home => Command::MoveToLineStart,
             Key::End => Command::MoveToLineEnd,
+            Key::PageUp => Command::MovePageUp,
+            Key::PageDown => Command::MovePageDown,
+            Key::CtrlArrowLeft => Command::MoveWordLeft,
+            Key::CtrlArrowRight => Command::MoveWordRight,
+            Key::CtrlArrowUp => Command::MoveParagraphBackward,
+            Key::CtrlArrowDown => Command::MoveParagraphForward,
+            Key::CtrlHome => Command::MoveToBufferStart,
+            Key::CtrlEnd => Command::MoveToBufferEnd,
             _ => Command::Noop,
         }
     }
@@ -140,19 +162,43 @@ impl Dispatcher {
     }
 
     fn translate_insert_mode(&self, key: Key) -> Command {
-        use self::input::{Direction, InputIntent};
+        use self::input::{Direction, Granularity, InputIntent};
 
         // Resolve shared input intent
         if let Some(intent) = input::resolve_input(key) {
             match intent {
                 InputIntent::Type(ch) => Command::InsertChar(ch),
-                // TODO: Implement granular movement
-                // For now, fall back to character movement so keys aren't dead
-                InputIntent::Move(dir, _) => match dir {
-                    Direction::Left => Command::MoveLeft,
-                    Direction::Right => Command::MoveRight,
-                    Direction::Up => Command::MoveUp,
-                    Direction::Down => Command::MoveDown,
+                InputIntent::Move(dir, granularity) => match (dir, granularity) {
+                    (Direction::Left, Granularity::Character) => Command::MoveLeft,
+                    (Direction::Right, Granularity::Character) => Command::MoveRight,
+                    (Direction::Up, Granularity::Character) => Command::MoveUp,
+                    (Direction::Down, Granularity::Character) => Command::MoveDown,
+
+                    (Direction::Left, Granularity::Word) => Command::MoveWordLeft,
+                    (Direction::Right, Granularity::Word) => Command::MoveWordRight,
+                    (Direction::Up, Granularity::Word) => Command::MoveParagraphBackward,
+                    (Direction::Down, Granularity::Word) => Command::MoveParagraphForward,
+
+                    (Direction::Left, Granularity::Line) => Command::MoveToLineStart,
+                    (Direction::Right, Granularity::Line) => Command::MoveToLineEnd,
+
+                    (Direction::Left, Granularity::Sentence) => Command::MoveSentenceBackward,
+                    (Direction::Right, Granularity::Sentence) => Command::MoveSentenceForward,
+
+                    (Direction::Up, Granularity::Paragraph) => Command::MoveParagraphBackward,
+                    (Direction::Down, Granularity::Paragraph) => Command::MoveParagraphForward,
+
+                    (Direction::Up, Granularity::Page) => Command::MovePageUp,
+                    (Direction::Down, Granularity::Page) => Command::MovePageDown,
+
+                    (Direction::Left, Granularity::Document) => Command::MoveToBufferStart,
+                    (Direction::Right, Granularity::Document) => Command::MoveToBufferEnd,
+
+                    // Fallbacks
+                    (Direction::Left, _) => Command::MoveLeft,
+                    (Direction::Right, _) => Command::MoveRight,
+                    (Direction::Up, _) => Command::MoveUp,
+                    (Direction::Down, _) => Command::MoveDown,
                 },
                 InputIntent::Delete(Direction::Left, _) => Command::DeleteBackward, // Backspace
                 InputIntent::Delete(Direction::Right, _) => Command::DeleteForward, // Delete

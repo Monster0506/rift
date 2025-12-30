@@ -111,6 +111,7 @@ pub fn execute_command(
     buf: &mut TextBuffer,
     expand_tabs: bool,
     tab_width: usize,
+    viewport_height: usize,
 ) -> Result<(), RiftError> {
     match cmd {
         Command::MoveLeft => {
@@ -133,6 +134,34 @@ pub fn execute_command(
         }
         Command::MoveToBufferStart => while buf.move_left() {},
         Command::MoveToBufferEnd => while buf.move_right() {},
+        Command::MoveWordLeft => {
+            buf.move_word_left();
+        }
+        Command::MoveWordRight => {
+            buf.move_word_right();
+        }
+        Command::MoveParagraphForward => {
+            buf.move_paragraph_forward();
+        }
+        Command::MoveParagraphBackward => {
+            buf.move_paragraph_backward();
+        }
+        Command::MoveSentenceForward => {
+            buf.move_sentence_forward();
+        }
+        Command::MoveSentenceBackward => {
+            buf.move_sentence_backward();
+        }
+        Command::MovePageUp => {
+            for _ in 0..viewport_height {
+                buf.move_up();
+            }
+        }
+        Command::MovePageDown => {
+            for _ in 0..viewport_height {
+                buf.move_down();
+            }
+        }
         Command::DeleteForward => {
             buf.delete_forward();
         }

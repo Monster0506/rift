@@ -19,6 +19,8 @@ pub enum Key {
     /// Navigation keys
     Home,
     End,
+    CtrlHome,
+    CtrlEnd,
     PageUp,
     PageDown,
     /// Editing keys

@@ -204,3 +204,147 @@ fn test_get_before_after_gap() {
     let after = buffer.get_after_gap();
     assert_eq!(String::from_utf8(after).unwrap(), " World");
 }
+
+#[test]
+fn test_move_word_right() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    buffer.insert_str("hello world  test").unwrap();
+    buffer.move_to_start();
+
+    // "hello" -> " world"
+    assert!(buffer.move_word_right());
+    // "hello " is 6 chars. "world" starts at 6.
+    assert_eq!(buffer.cursor(), 6);
+
+    // "world" -> "  test"
+    assert!(buffer.move_word_right());
+    // "hello world  " is 6 + 5 + 2 = 13 chars. "test" starts at 13.
+    assert_eq!(buffer.cursor(), 13);
+
+    // "test" -> end
+    assert!(buffer.move_word_right());
+    assert_eq!(buffer.cursor(), 17);
+
+    // end -> false
+    assert!(!buffer.move_word_right());
+}
+
+#[test]
+fn test_move_word_left() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    buffer.insert_str("hello world").unwrap();
+
+    // Start at end (11)
+
+    // "world" -> "world" (start)
+    assert!(buffer.move_word_left());
+    assert_eq!(buffer.cursor(), 6); // Start of "world"
+
+    // "world" -> "hello" (start)
+    assert!(buffer.move_word_left());
+    assert_eq!(buffer.cursor(), 0); // Start of "hello"
+
+    // start -> false
+    assert!(!buffer.move_word_left());
+}
+
+#[test]
+fn test_move_paragraph() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    buffer.insert_str("P1\n\nP2\n\nP3").unwrap();
+    buffer.move_to_start();
+
+    // P1 -> empty line
+    assert!(buffer.move_paragraph_forward());
+    assert_eq!(buffer.get_line(), 1);
+
+    // empty line -> next empty line
+    assert!(buffer.move_paragraph_forward());
+    assert_eq!(buffer.get_line(), 3);
+
+    // next empty line -> end
+    assert!(buffer.move_paragraph_forward());
+    assert_eq!(buffer.cursor(), buffer.len());
+
+    // Backward
+    assert!(buffer.move_paragraph_backward());
+    assert_eq!(buffer.get_line(), 3);
+
+    assert!(buffer.move_paragraph_backward());
+    assert_eq!(buffer.get_line(), 1);
+
+    assert!(buffer.move_paragraph_backward());
+    assert_eq!(buffer.cursor(), 0);
+}
+
+#[test]
+fn test_move_sentence_forward() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    buffer
+        .insert_str("Hello world. This is a test! And another one? Yes.")
+        .unwrap();
+    buffer.move_to_start();
+
+    // "Hello world. " -> "This is a test! "
+    assert!(buffer.move_sentence_forward());
+    // "Hello world. " is 13 chars.
+    assert_eq!(buffer.cursor(), 13);
+
+    // "This is a test! " -> "And another one? "
+    assert!(buffer.move_sentence_forward());
+    // "This is a test! " is 16 chars. 13 + 16 = 29.
+    assert_eq!(buffer.cursor(), 29);
+
+    // "And another one? " -> "Yes."
+    assert!(buffer.move_sentence_forward());
+    // "And another one? " is 17 chars. 29 + 17 = 46.
+    assert_eq!(buffer.cursor(), 46);
+
+    // "Yes." -> end
+    assert!(buffer.move_sentence_forward());
+    assert_eq!(buffer.cursor(), buffer.len());
+}
+
+#[test]
+fn test_move_sentence_backward() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    buffer.insert_str("One. Two. Three.").unwrap();
+    buffer.move_to_end();
+
+    // End -> "Three."
+    assert!(buffer.move_sentence_backward());
+    // "One. Two. " is 5 + 5 = 10.
+    assert_eq!(buffer.cursor(), 10);
+
+    // "Three." -> "Two."
+    assert!(buffer.move_sentence_backward());
+    // "One. " is 5.
+    assert_eq!(buffer.cursor(), 5);
+
+    // "Two." -> "One."
+    assert!(buffer.move_sentence_backward());
+    assert_eq!(buffer.cursor(), 0);
+}
+
+#[test]
+fn test_move_sentence_forward_multiline() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    buffer
+        .insert_str("Line 1 no dot\nLine 2 with dot.\nLine 3")
+        .unwrap();
+    buffer.move_to_start();
+
+    // "Line 1 no dot" is 13 chars. '\n' is at 13.
+    // Should stop at newline if no dot found
+    assert!(buffer.move_sentence_forward());
+    assert_eq!(buffer.cursor(), 13); // At '\n'
+
+    // Should move past newline and find sentence end on next line
+    assert!(buffer.move_sentence_forward());
+    // "Line 2 with dot." is 16 chars.
+    // 14 (start of line 2) + 16 = 30.
+    // Dot is at 29. Next char is '\n' (at 30).
+    // Skips whitespace (newline).
+    // Should end up at start of Line 3 (31).
+    assert_eq!(buffer.cursor(), 31);
+}

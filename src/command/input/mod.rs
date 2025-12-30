@@ -12,11 +12,64 @@ pub enum Direction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Logical unit used to describe cursor movement, selection, and edit scope.
+///
+/// A `Granularity` represents *how much* content an operation applies to,
+/// independent of direction. It is used by commands such as move, select,
+/// delete, and change to express intent without encoding UI- or
+/// representation-specific behavior.
+///
+/// Granularities are ordered conceptually from finest (`Character`) to
+/// coarsest (`Document`), but no ordering is implied by the enum itself.
+/// Implementations may choose appropriate semantics as long as the unit
+/// boundaries are stable and intuitive.
 pub enum Granularity {
+    /// A single Unicode scalar value (code point).
+    ///
+    /// This is the smallest addressable unit in the buffer model. It does not
+    /// correspond to grapheme clusters; combined characters, emoji sequences,
+    /// and other multi-code-point constructs count as multiple characters.
     Character,
+
+    /// A contiguous sequence of non-separator characters.
+    ///
+    /// Word boundaries are implementation-defined, but typically follow
+    /// Unicode word boundary rules or editor conventions such as splitting on
+    /// whitespace and punctuation.
     Word,
+
+    /// A sentence of natural language text.
+    ///
+    /// Sentence boundaries are implementation-defined and commonly detected
+    /// using punctuation such as '.', '!', or '?' followed by whitespace.
+    /// This granularity is primarily intended for prose-oriented editing.
+    Sentence,
+
+    /// A logical line of text.
+    ///
+    /// Lines are delimited by newline characters in the underlying buffer and
+    /// do not account for soft wrapping or visual layout.
     Line,
+
+    /// A paragraph of text.
+    ///
+    /// Paragraphs are typically delimited by one or more blank lines. This
+    /// granularity represents a higher-level structural unit than `Line` and
+    /// is useful for both prose and code editing.
+    Paragraph,
+
+    /// A page-sized region of the document.
+    ///
+    /// The exact size of a page is implementation-defined and commonly maps to
+    /// a viewport-sized vertical movement, similar to Page Up and Page Down.
     Page,
+
+    /// The entire document.
+    ///
+    /// This granularity spans from the start of the buffer to the end and is
+    /// used for operations such as moving to the beginning or end of the file
+    /// or selecting all content.
+    Document,
 }
 
 /// Abstract intent for text input
@@ -89,6 +142,9 @@ pub fn resolve_input(key: Key) -> Option<InputIntent> {
         Key::End => Some(InputIntent::Move(Direction::Right, Granularity::Line)),
         Key::PageUp => Some(InputIntent::Move(Direction::Up, Granularity::Page)),
         Key::PageDown => Some(InputIntent::Move(Direction::Down, Granularity::Page)),
+
+        Key::CtrlHome => Some(InputIntent::Move(Direction::Left, Granularity::Document)),
+        Key::CtrlEnd => Some(InputIntent::Move(Direction::Right, Granularity::Document)),
 
         Key::Resize(_, _) => None,
     }
