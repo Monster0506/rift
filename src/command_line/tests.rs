@@ -16,10 +16,12 @@ fn test_command_line_render_to_layer() {
         &viewport,
         "test command",
         "test command".len(),
-        None,
-        &window_settings,
-        None,
-        None,
+        crate::command_line::RenderOptions {
+            default_border_chars: None,
+            window_settings: &window_settings,
+            fg: None,
+            bg: None,
+        },
     );
 
     // Check window position is centered
@@ -97,10 +99,12 @@ fn test_command_line_with_custom_border_chars() {
         &viewport,
         "test",
         "test".len(),
-        Some(custom_border),
-        &window_settings,
-        None,
-        None,
+        crate::command_line::RenderOptions {
+            default_border_chars: Some(custom_border),
+            window_settings: &window_settings,
+            fg: None,
+            bg: None,
+        },
     );
 
     // Check top-left corner has custom border character

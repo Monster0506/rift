@@ -267,10 +267,12 @@ pub fn render<T: TerminalBackend>(
                 ctx.viewport,
                 &ctx.state.command_line,
                 ctx.state.command_line_cursor,
-                default_border_chars,
-                &ctx.state.settings.command_line_window,
-                ctx.state.settings.editor_fg,
-                ctx.state.settings.editor_bg,
+                crate::command_line::RenderOptions {
+                    default_border_chars,
+                    window_settings: &ctx.state.settings.command_line_window,
+                    fg: ctx.state.settings.editor_fg,
+                    bg: ctx.state.settings.editor_bg,
+                },
             );
 
             // Calculate cursor position in command window

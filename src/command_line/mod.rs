@@ -17,6 +17,14 @@ use crate::viewport::Viewport;
 pub mod commands;
 pub mod settings;
 
+/// Options for rendering the command line
+pub struct RenderOptions<'a> {
+    pub default_border_chars: Option<BorderChars>,
+    pub window_settings: &'a CommandLineWindowSettings,
+    pub fg: Option<Color>,
+    pub bg: Option<Color>,
+}
+
 /// Command line renderer
 pub struct CommandLine;
 
@@ -30,11 +38,15 @@ impl CommandLine {
         viewport: &Viewport,
         command_line: &str,
         cursor_pos: usize,
-        default_border_chars: Option<BorderChars>,
-        window_settings: &CommandLineWindowSettings,
-        fg: Option<Color>,
-        bg: Option<Color>,
+        options: RenderOptions,
     ) -> (u16, u16, usize, usize) {
+        let RenderOptions {
+            default_border_chars,
+            window_settings,
+            fg,
+            bg,
+        } = options;
+
         // Calculate width based on settings: ratio of terminal width, clamped to min/max
         let cmd_width = ((viewport.visible_cols() as f64 * window_settings.width_ratio) as usize)
             .max(window_settings.min_width)
