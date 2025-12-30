@@ -597,10 +597,6 @@ pub(crate) fn _format_key(key: Key) -> String {
     StatusBar::format_key(key)
 }
 
-#[cfg(test)]
-#[path = "tests.rs"]
-mod tests;
-
 /// Helper to wrap text to a specific width
 fn wrap_text(text: &str, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
@@ -706,3 +702,7 @@ fn render_notifications(layer: &mut Layer, state: &State, term_rows: usize, term
         current_bottom = start_row.saturating_sub(1);
     }
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
