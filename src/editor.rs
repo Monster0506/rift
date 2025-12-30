@@ -575,6 +575,32 @@ impl<T: TerminalBackend> Editor<T> {
                             self.state.handle_error(e);
                         }
                     }
+                    ExecutionResult::BufferList => {
+                        let mut message = String::new();
+                        for (i, doc_id) in self.tab_order.iter().enumerate() {
+                            let doc = self.documents.get(doc_id).unwrap();
+                            let name = doc.display_name();
+                            let dirty = if doc.is_dirty() { "+" } else { " " };
+                            let read_only = if doc.is_read_only { "R" } else { " " };
+                            let current = if i == self.current_tab { "%" } else { " " };
+                            if !message.is_empty() {
+                                message.push_str("\n")
+                            }
+                            message.push_str(&format!(
+                                "[{}] {}: {}{}{}",
+                                i + 1,
+                                name,
+                                current,
+                                dirty,
+                                read_only
+                            ));
+                        }
+
+                        self.state
+                            .notify(crate::notification::NotificationType::Info, message);
+                        self.state.clear_command_line();
+                        self.set_mode(Mode::Normal);
+                    }
                 }
             }
             _ => {}

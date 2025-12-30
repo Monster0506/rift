@@ -14,7 +14,9 @@ pub enum ExecutionResult {
     /// Command executed successfully
     Success,
     /// Quit command - editor should exit
-    Quit { bangs: usize },
+    Quit {
+        bangs: usize,
+    },
     /// Write and quit - editor should save then exit
     WriteAndQuit,
     /// Error occurred during execution (already reported to manager)
@@ -22,11 +24,19 @@ pub enum ExecutionResult {
     /// Force a full redraw
     Redraw,
     /// Edit command - editor should open the specified file
-    Edit { path: Option<String>, bangs: usize },
+    Edit {
+        path: Option<String>,
+        bangs: usize,
+    },
     /// Switch to next buffer
-    BufferNext { bangs: usize },
+    BufferNext {
+        bangs: usize,
+    },
     /// Switch to previous buffer
-    BufferPrevious { bangs: usize },
+    BufferPrevious {
+        bangs: usize,
+    },
+    BufferList,
 }
 
 /// Command executor
@@ -134,6 +144,7 @@ impl CommandExecutor {
             ParsedCommand::Edit { path, bangs } => ExecutionResult::Edit { path, bangs },
             ParsedCommand::BufferNext { bangs } => ExecutionResult::BufferNext { bangs },
             ParsedCommand::BufferPrevious { bangs } => ExecutionResult::BufferPrevious { bangs },
+            ParsedCommand::BufferList => ExecutionResult::BufferList,
         }
     }
 }

@@ -135,6 +135,14 @@ fn parse_bprev(
     ParsedCommand::BufferPrevious { bangs }
 }
 
+fn parse_blist(
+    _registry: &SettingsRegistry<UserSettings>,
+    _args: &[&str],
+    _bangs: usize,
+) -> ParsedCommand {
+    ParsedCommand::BufferList
+}
+
 // Set command logic
 fn parse_set_impl(
     registry: &SettingsRegistry<UserSettings>,
@@ -405,8 +413,21 @@ pub const COMMANDS: &[CommandDescriptor] = &[
                 factory: Some(parse_bprev),
                 subcommands: &[],
             },
+            CommandDescriptor {
+                name: "list",
+                aliases: &["ls", "l"],
+                description: "List buffers",
+                factory: Some(parse_blist),
+                subcommands: &[],
+            },
         ],
     },
+
+
+
+    // =================
+    // TOP LEVEL ALIASES
+    // =================
     CommandDescriptor {
         name: "bnext",
         aliases: &["bn"],
@@ -419,6 +440,13 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         aliases: &["bp"],
         description: "Previous buffer",
         factory: Some(parse_bprev),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "ls",
+        aliases: &[],
+        description: "List buffers",
+        factory: Some(parse_blist),
         subcommands: &[],
     },
 ];
