@@ -274,10 +274,13 @@ impl StatusBar {
 
         // Determine colors based on reverse video setting
         let (fg, bg) = if state.settings.status_line.reverse_video {
-            // Reverse video: swap default fg/bg (use white on black or similar)
-            (Some(Color::Black), Some(Color::White))
+            // Reverse video: swap fg/bg
+            (
+                Some(state.settings.editor_bg.unwrap_or(Color::Black)),
+                Some(state.settings.editor_fg.unwrap_or(Color::White)),
+            )
         } else {
-            (None, None)
+            (state.settings.editor_fg, state.settings.editor_bg)
         };
 
         // Build the status line content

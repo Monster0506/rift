@@ -8,7 +8,8 @@
 //! - Cursor positioning is calculated based on window dimensions and content.
 //! - Window dimensions are constrained to terminal size.
 
-use crate::floating_window::{BorderChars, FloatingWindow, WindowPosition};
+use crate::color::Color;
+use crate::floating_window::{BorderChars, FloatingWindow, WindowPosition, WindowStyle};
 use crate::layer::Layer;
 use crate::state::CommandLineWindowSettings;
 use crate::viewport::Viewport;
@@ -31,16 +32,31 @@ impl CommandLine {
         cursor_pos: usize,
         default_border_chars: Option<BorderChars>,
         window_settings: &CommandLineWindowSettings,
+        fg: Option<Color>,
+        bg: Option<Color>,
     ) -> (u16, u16, usize, usize) {
         // Calculate width based on settings: ratio of terminal width, clamped to min/max
         let cmd_width = ((viewport.visible_cols() as f64 * window_settings.width_ratio) as usize)
             .max(window_settings.min_width)
             .min(viewport.visible_cols());
 
-        let cmd_window =
-            FloatingWindow::new(WindowPosition::Center, cmd_width, window_settings.height)
-                .with_border(window_settings.border)
-                .with_reverse_video(window_settings.reverse_video);
+        let mut style = WindowStyle::default()
+            .with_border(window_settings.border)
+            .with_reverse_video(window_settings.reverse_video);
+
+        if let Some(c) = fg {
+            style = style.with_fg(c);
+        }
+        if let Some(c) = bg {
+            style = style.with_bg(c);
+        }
+
+        let cmd_window = FloatingWindow::with_style(
+            WindowPosition::Center,
+            cmd_width,
+            window_settings.height,
+            style,
+        );
 
         // Prepare content: prompt + command line
         let mut content_line = Vec::new();

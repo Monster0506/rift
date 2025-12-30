@@ -265,6 +265,8 @@ pub fn render<T: TerminalBackend>(
                 ctx.state.command_line_cursor,
                 default_border_chars,
                 &ctx.state.settings.command_line_window,
+                ctx.state.settings.editor_fg,
+                ctx.state.settings.editor_bg,
             );
 
             // Calculate cursor position in command window
@@ -678,10 +680,14 @@ fn render_notifications(layer: &mut Layer, state: &State, term_rows: usize, term
         let start_row = current_bottom.saturating_sub(height);
 
         // Create window with style
-        let style = crate::floating_window::WindowStyle::default()
+        let mut style = crate::floating_window::WindowStyle::default()
             .with_border(true)
             .with_reverse_video(false)
             .with_fg(title_color.unwrap_or(Color::White));
+
+        if let Some(bg) = state.settings.editor_bg {
+            style = style.with_bg(bg);
+        }
 
         let window = FloatingWindow::with_style(
             WindowPosition::Absolute {

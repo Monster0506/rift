@@ -187,7 +187,10 @@ impl WindowStyle {
     /// Get the effective colors (applying reverse video if set)
     fn effective_colors(&self) -> (Option<Color>, Option<Color>) {
         if self.reverse_video {
-            (Some(Color::Black), Some(Color::White))
+            (
+                Some(self.bg.unwrap_or(Color::Black)),
+                Some(self.fg.unwrap_or(Color::White)),
+            )
         } else {
             (self.fg, self.bg)
         }

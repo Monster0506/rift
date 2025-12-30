@@ -18,6 +18,8 @@ fn test_command_line_render_to_layer() {
         "test command".len(),
         None,
         &window_settings,
+        None,
+        None,
     );
 
     // Check window position is centered
@@ -97,6 +99,8 @@ fn test_command_line_with_custom_border_chars() {
         "test".len(),
         Some(custom_border),
         &window_settings,
+        None,
+        None,
     );
 
     // Check top-left corner has custom border character

@@ -64,3 +64,4 @@ Fixed stuff (lightly tracked):
     - fix by using String instead of u8
     - Use unicode-width instead of assuming everything is a single char
 - Allow multiline notifications
+- Ensure all components use the theme system
