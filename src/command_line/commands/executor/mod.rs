@@ -37,6 +37,9 @@ pub enum ExecutionResult {
         bangs: usize,
     },
     BufferList,
+    NotificationClear {
+        bangs: usize,
+    },
 }
 
 /// Command executor
@@ -120,9 +123,12 @@ impl CommandExecutor {
             ParsedCommand::Notify {
                 kind,
                 message,
-                bangs: _,
+                bangs,
             } => {
                 use crate::notification::NotificationType;
+                if kind.to_lowercase().as_str() == "clear" {
+                    return ExecutionResult::NotificationClear { bangs };
+                }
                 let notification_kind = match kind.to_lowercase().as_str() {
                     "info" => NotificationType::Info,
                     "warning" | "warn" => NotificationType::Warning,

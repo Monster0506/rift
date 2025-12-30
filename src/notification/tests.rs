@@ -191,3 +191,41 @@ fn test_default_ttls() {
     assert_eq!(warn_ttl, Duration::from_secs(8));
     assert_eq!(error_ttl, Duration::from_secs(10));
 }
+
+#[test]
+fn test_clear_last() {
+    let mut manager = NotificationManager::new();
+    manager.info("1");
+    manager.info("2");
+    manager.info("3");
+
+    manager.clear_last();
+    assert_eq!(manager.notifications.len(), 2);
+    assert_eq!(manager.notifications.last().unwrap().message, "2");
+
+    manager.clear_last();
+    assert_eq!(manager.notifications.len(), 1);
+    assert_eq!(manager.notifications.last().unwrap().message, "1");
+
+    manager.clear_last();
+    assert!(manager.notifications.is_empty());
+
+    // Should not panic on empty
+    manager.clear_last();
+    assert!(manager.notifications.is_empty());
+}
+
+#[test]
+fn test_clear_all() {
+    let mut manager = NotificationManager::new();
+    manager.info("1");
+    manager.info("2");
+    manager.info("3");
+
+    manager.clear_all();
+    assert!(manager.notifications.is_empty());
+
+    // Should not panic on empty
+    manager.clear_all();
+    assert!(manager.notifications.is_empty());
+}

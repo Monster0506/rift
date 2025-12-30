@@ -90,6 +90,14 @@ fn parse_notify(
     args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
+    if args.len() == 1 && (args[0] == "clear" || args[0] == "clear!") {
+        let extra_bangs = if args[0].ends_with('!') { 1 } else { 0 };
+        return ParsedCommand::Notify {
+            kind: "clear".to_string(),
+            message: "".to_string(),
+            bangs: bangs + extra_bangs,
+        };
+    }
     if args.len() < 2 {
         return ParsedCommand::Unknown {
             name: "notify (usage: :notify <type> <message>)".to_string(),

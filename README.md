@@ -35,6 +35,7 @@ Implemented:
 - make command pattern more like settings design pattern (this took way too long)
 - Buffer next/previous/ls
 - Resizing
+- Notify clear and clear all
 
 Todo:
 - LSP
@@ -47,7 +48,6 @@ Todo:
 - command history
 - mainloop non blocking
 - granular movement
-- notify clear (and clear all)
 - file exploration
 
 Known issues:

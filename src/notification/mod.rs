@@ -168,6 +168,21 @@ impl NotificationManager {
             self.generation += 1;
         }
     }
+
+    /// Clear the last notification
+    pub fn clear_last(&mut self) {
+        if self.notifications.pop().is_some() {
+            self.generation += 1;
+        }
+    }
+
+    /// Clear all notifications
+    pub fn clear_all(&mut self) {
+        if !self.notifications.is_empty() {
+            self.notifications.clear();
+            self.generation += 1;
+        }
+    }
 }
 
 impl Default for NotificationManager {

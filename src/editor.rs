@@ -788,6 +788,15 @@ impl<T: TerminalBackend> Editor<T> {
                     self.state.handle_error(e);
                 }
             }
+            ExecutionResult::NotificationClear { bangs } => {
+                if bangs > 0 {
+                    self.state.error_manager.notifications_mut().clear_all();
+                } else {
+                    self.state.error_manager.notifications_mut().clear_last();
+                }
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+            }
             ExecutionResult::BufferList => {
                 let mut message = String::new();
                 for (i, doc_id) in self.tab_order.iter().enumerate() {
