@@ -604,24 +604,34 @@ mod tests;
 /// Helper to wrap text to a specific width
 fn wrap_text(text: &str, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
-    let mut current_line = String::with_capacity(width);
 
-    for word in text.split_whitespace() {
-        if current_line.len() + word.len() + 1 > width && !current_line.is_empty() {
-            lines.push(current_line);
-            current_line = String::with_capacity(width);
+    for paragraph in text.split('\n') {
+
+        let words:Vec<&str> = paragraph.split_whitespace().collect();
+        if words.is_empty() {
+            lines.push(String::new());
+            continue;
         }
+
+        let mut current_line = String::with_capacity(width);
+        for word in words {
+            if current_line.len() + word.len() + 1 > width && !current_line.is_empty() {
+                lines.push(current_line);
+                current_line = String::with_capacity(width);
+            }
+            if !current_line.is_empty() {
+                current_line.push(' ');
+            }
+            current_line.push_str(word);
+        }
+
         if !current_line.is_empty() {
-            current_line.push(' ');
+            lines.push(current_line);
         }
-        current_line.push_str(word);
-    }
-    if !current_line.is_empty() {
-        lines.push(current_line);
-    }
-    // Handle case where text is empty
-    if lines.is_empty() {
-        lines.push(String::new());
+        // Handle case where text is empty
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
     }
     lines
 }

@@ -843,3 +843,15 @@ fn test_wrap_text_empty() {
     // Should return at least one empty line to preserve height
     assert_eq!(wrapped, vec!["".to_string()]);
 }
+
+
+#[test]
+fn test_wrap_text_newlines() {
+    let text = "line1\nline2";
+    let wrapped = crate::render::wrap_text(text, 20);
+    assert_eq!(wrapped, vec!["line1".to_string(), "line2".to_string()]);
+
+    let text = "line1\n\nline3";
+    let wrapped = crate::render::wrap_text(text, 20);
+    assert_eq!(wrapped, vec!["line1".to_string(), "".to_string(), "line3".to_string()]);
+}
