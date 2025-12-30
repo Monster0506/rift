@@ -411,7 +411,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Handle special actions (mutations happen here, not during input handling)
-    fn handle_action_matching(&mut self, action: crate::key_handler::KeyAction) {
+    fn handle_key_actions(&mut self, action: crate::key_handler::KeyAction) {
         match action {
             KeyAction::ExitInsertMode => {
                 self.set_mode(Mode::Normal);
@@ -429,17 +429,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Update editor state and render
-    /// This is where ALL state mutations happen - input handling phase is pure
-    fn update_state_and_render(
-        &mut self,
-        keypress: crate::key::Key,
-        action: crate::key_handler::KeyAction,
-        command: crate::command::Command,
-    ) -> Result<(), RiftError> {
-        self.handle_action_matching(action);
-
-        // Handle mode transitions from commands (mutations happen here)
+    /// Switch between modes based on command, and handle commandline input
+    fn handle_mode_management(&mut self, command: crate::command::Command) {
         match command {
             Command::EnterInsertMode => {
                 self.set_mode(Mode::Insert);
@@ -467,145 +458,7 @@ impl<T: TerminalBackend> Editor<T> {
                     &self.document_settings_registry,
                 );
 
-                // Handle execution result
-                match execution_result {
-                    ExecutionResult::Quit { bangs } => {
-                        if self.active_document().is_dirty() && bangs == 0 {
-                            self.state.handle_error(RiftError {
-                                severity: ErrorSeverity::Warning,
-                                kind: ErrorType::Execution,
-                                code: "UNSAVED_CHANGES".to_string(),
-                                message: "No write since last change (add ! to override)"
-                                    .to_string(),
-                            });
-                        } else {
-                            self.should_quit = true;
-                            self.state.clear_command_line();
-                            self.set_mode(Mode::Normal);
-                        }
-                    }
-                    ExecutionResult::Success => {
-                        // Handle write command - save if file path exists
-                        if self.state.file_path.is_some() && self.active_document().is_dirty() {
-                            if let Err(e) = self.save_document() {
-                                self.state.handle_error(e);
-                                return Ok(()); // Don't clear command line on error
-                            } else {
-                                let filename = self.state.file_name.clone();
-                                self.state.notify(
-                                    crate::notification::NotificationType::Success,
-                                    format!("Written to {filename}"),
-                                );
-                            }
-                        }
-                        self.state.clear_command_line();
-                        self.set_mode(Mode::Normal);
-                    }
-                    ExecutionResult::WriteAndQuit => {
-                        // Save document, then quit if successful
-                        if let Err(e) = self.save_document() {
-                            self.state.handle_error(e);
-                            return Ok(()); // Don't quit on save error
-                        } else {
-                            let filename = self.state.file_name.clone();
-                            self.state.notify(
-                                crate::notification::NotificationType::Success,
-                                format!("Written to {filename}"),
-                            );
-                        }
-                        // Save successful, now quit
-                        self.should_quit = true;
-                        self.state.clear_command_line();
-                        self.set_mode(Mode::Normal);
-                    }
-                    ExecutionResult::Failure => {
-                        // Error already reported by executor to state/notification manager
-                        // Keep command line visible so user can see it
-                    }
-                    ExecutionResult::Redraw => {
-                        // Close command line first before redraw
-                        self.state.clear_command_line();
-                        self.set_mode(Mode::Normal);
-
-                        if let Err(e) = self.force_full_redraw() {
-                            self.state.handle_error(e);
-                        }
-                    }
-                    ExecutionResult::Edit { path, bangs } => {
-                        let force = bangs > 0;
-                        if let Err(e) = self.open_file(path, force) {
-                            self.state.handle_error(e);
-                        } else {
-                            self.state.clear_command_line();
-                            self.set_mode(Mode::Normal);
-                            // Force redraw after opening a file
-                            if let Err(e) = self.force_full_redraw() {
-                                self.state.handle_error(e);
-                            }
-                        }
-                    }
-                    ExecutionResult::BufferNext { bangs } => {
-                        if self.tab_order.len() > 1 {
-                            if bangs > 0 {
-                                // Go to last buffer
-                                self.current_tab = self.tab_order.len() - 1;
-                            } else {
-                                // Go to next buffer
-                                self.current_tab = (self.current_tab + 1) % self.tab_order.len();
-                            }
-                        }
-                        self.sync_state_with_active_document();
-                        self.state.clear_command_line();
-                        self.set_mode(Mode::Normal);
-                        if let Err(e) = self.force_full_redraw() {
-                            self.state.handle_error(e);
-                        }
-                    }
-                    ExecutionResult::BufferPrevious { bangs } => {
-                        if self.tab_order.len() > 1 {
-                            if bangs > 0 {
-                                // Go to first buffer
-                                self.current_tab = 0;
-                            } else {
-                                // Go to previous buffer
-                                self.current_tab = (self.current_tab + self.tab_order.len() - 1)
-                                    % self.tab_order.len();
-                            }
-                        }
-                        self.sync_state_with_active_document();
-                        self.state.clear_command_line();
-                        self.set_mode(Mode::Normal);
-                        if let Err(e) = self.force_full_redraw() {
-                            self.state.handle_error(e);
-                        }
-                    }
-                    ExecutionResult::BufferList => {
-                        let mut message = String::new();
-                        for (i, doc_id) in self.tab_order.iter().enumerate() {
-                            let doc = self.documents.get(doc_id).unwrap();
-                            let name = doc.display_name();
-                            let dirty = if doc.is_dirty() { "+" } else { " " };
-                            let read_only = if doc.is_read_only { "R" } else { " " };
-                            let current = if i == self.current_tab { "%" } else { " " };
-                            if !message.is_empty() {
-                                message.push('\n');
-                            }
-                            message.push_str(&format!(
-                                "[{}] {}: {}{}{}",
-                                i + 1,
-                                name,
-                                current,
-                                dirty,
-                                read_only
-                            ));
-                        }
-
-                        self.state
-                            .notify(crate::notification::NotificationType::Info, message);
-                        self.state.clear_command_line();
-                        self.set_mode(Mode::Normal);
-                    }
-                }
+                self.handle_execution_result(execution_result);
             }
             _ => {}
         }
@@ -636,6 +489,18 @@ impl<T: TerminalBackend> Editor<T> {
             }
             _ => {}
         }
+    }
+
+    /// Update editor state and render
+    /// This is where ALL state mutations happen - input handling phase is pure
+    fn update_state_and_render(
+        &mut self,
+        keypress: crate::key::Key,
+        action: crate::key_handler::KeyAction,
+        command: crate::command::Command,
+    ) -> Result<(), RiftError> {
+        self.handle_key_actions(action);
+        self.handle_mode_management(command);
 
         // Update input tracking (happens during state update, not input handling)
         self.state.update_keypress(keypress);
@@ -805,6 +670,145 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub fn term_mut(&mut self) -> &mut T {
         &mut self.term
+    }
+
+    // Handle execution results from command_line commands
+    fn handle_execution_result(&mut self, execution_result: ExecutionResult) {
+        match execution_result {
+            ExecutionResult::Quit { bangs } => {
+                if self.active_document().is_dirty() && bangs == 0 {
+                    self.state.handle_error(RiftError {
+                        severity: ErrorSeverity::Warning,
+                        kind: ErrorType::Execution,
+                        code: "UNSAVED_CHANGES".to_string(),
+                        message: "No write since last change (add ! to override)".to_string(),
+                    });
+                } else {
+                    self.should_quit = true;
+                    self.state.clear_command_line();
+                    self.set_mode(Mode::Normal);
+                }
+            }
+            ExecutionResult::Success => {
+                // Handle write command - save if file path exists
+                if self.state.file_path.is_some() && self.active_document().is_dirty() {
+                    if let Err(e) = self.save_document() {
+                        self.state.handle_error(e);
+                    } else {
+                        let filename = self.state.file_name.clone();
+                        self.state.notify(
+                            crate::notification::NotificationType::Success,
+                            format!("Written to {filename}"),
+                        );
+                    }
+                }
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+            }
+            ExecutionResult::WriteAndQuit => {
+                // Save document, then quit if successful
+                if let Err(e) = self.save_document() {
+                    self.state.handle_error(e);
+                } else {
+                    let filename = self.state.file_name.clone();
+                    self.state.notify(
+                        crate::notification::NotificationType::Success,
+                        format!("Written to {filename}"),
+                    );
+                }
+                // Save successful, now quit
+                self.should_quit = true;
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+            }
+            ExecutionResult::Failure => {
+                // Error already reported by executor to state/notification manager
+                // Keep command line visible so user can see it
+            }
+            ExecutionResult::Redraw => {
+                // Close command line first before redraw
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+
+                if let Err(e) = self.force_full_redraw() {
+                    self.state.handle_error(e);
+                }
+            }
+            ExecutionResult::Edit { path, bangs } => {
+                let force = bangs > 0;
+                if let Err(e) = self.open_file(path, force) {
+                    self.state.handle_error(e);
+                } else {
+                    self.state.clear_command_line();
+                    self.set_mode(Mode::Normal);
+                    // Force redraw after opening a file
+                    if let Err(e) = self.force_full_redraw() {
+                        self.state.handle_error(e);
+                    }
+                }
+            }
+            ExecutionResult::BufferNext { bangs } => {
+                if self.tab_order.len() > 1 {
+                    if bangs > 0 {
+                        // Go to last buffer
+                        self.current_tab = self.tab_order.len() - 1;
+                    } else {
+                        // Go to next buffer
+                        self.current_tab = (self.current_tab + 1) % self.tab_order.len();
+                    }
+                }
+                self.sync_state_with_active_document();
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+                if let Err(e) = self.force_full_redraw() {
+                    self.state.handle_error(e);
+                }
+            }
+            ExecutionResult::BufferPrevious { bangs } => {
+                if self.tab_order.len() > 1 {
+                    if bangs > 0 {
+                        // Go to first buffer
+                        self.current_tab = 0;
+                    } else {
+                        // Go to previous buffer
+                        self.current_tab =
+                            (self.current_tab + self.tab_order.len() - 1) % self.tab_order.len();
+                    }
+                }
+                self.sync_state_with_active_document();
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+                if let Err(e) = self.force_full_redraw() {
+                    self.state.handle_error(e);
+                }
+            }
+            ExecutionResult::BufferList => {
+                let mut message = String::new();
+                for (i, doc_id) in self.tab_order.iter().enumerate() {
+                    let doc = self.documents.get(doc_id).unwrap();
+                    let name = doc.display_name();
+                    let dirty = if doc.is_dirty() { "+" } else { " " };
+                    let read_only = if doc.is_read_only { "R" } else { " " };
+                    let current = if i == self.current_tab { "%" } else { " " };
+                    if !message.is_empty() {
+                        message.push('\n');
+                    }
+                    message.push_str(&format!(
+                        "[{}] {}: {}{}{}",
+                        i + 1,
+                        name,
+                        current,
+                        dirty,
+                        read_only
+                    ));
+                }
+
+                self.state
+                    .notify(crate::notification::NotificationType::Info, message);
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+            }
+        }
     }
 }
 
