@@ -410,15 +410,8 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    /// Update editor state and render
-    /// This is where ALL state mutations happen - input handling phase is pure
-    fn update_state_and_render(
-        &mut self,
-        keypress: crate::key::Key,
-        action: crate::key_handler::KeyAction,
-        command: crate::command::Command,
-    ) -> Result<(), RiftError> {
-        // Handle special actions (mutations happen here, not during input handling)
+    /// Handle special actions (mutations happen here, not during input handling)
+    fn handle_action_matching(&mut self, action: crate::key_handler::KeyAction) {
         match action {
             KeyAction::ExitInsertMode => {
                 self.set_mode(Mode::Normal);
@@ -434,6 +427,17 @@ impl<T: TerminalBackend> Editor<T> {
                 // No special action needed
             }
         }
+    }
+
+    /// Update editor state and render
+    /// This is where ALL state mutations happen - input handling phase is pure
+    fn update_state_and_render(
+        &mut self,
+        keypress: crate::key::Key,
+        action: crate::key_handler::KeyAction,
+        command: crate::command::Command,
+    ) -> Result<(), RiftError> {
+        self.handle_action_matching(action);
 
         // Handle mode transitions from commands (mutations happen here)
         match command {
@@ -584,7 +588,7 @@ impl<T: TerminalBackend> Editor<T> {
                             let read_only = if doc.is_read_only { "R" } else { " " };
                             let current = if i == self.current_tab { "%" } else { " " };
                             if !message.is_empty() {
-                                message.push_str("\n")
+                                message.push('\n');
                             }
                             message.push_str(&format!(
                                 "[{}] {}: {}{}{}",
