@@ -32,8 +32,8 @@ Implemented:
 - dirty rectangles
 - Not a gap buffer anymore! We now use a rope with a piece table
 - setting and command descriptions
-- make command pattern more like settings design pattern
-- Buffer next/previous
+- make command pattern more like settings design pattern (this took way too long)
+- Buffer next/previous/ls
 
 Todo:
 - LSP
@@ -46,7 +46,6 @@ Todo:
 - command history
 - mainloop non blocking
 - resize handling
-- buffer ls
 - granular movement
 
 Known issues:
@@ -62,3 +61,4 @@ Fixed stuff (lightly tracked):
     - cursor calculation does not account for multibyte characters
     - fix by using String instead of u8
     - Use unicode-width instead of assuming everything is a single char
+- Allow multiline notifications
