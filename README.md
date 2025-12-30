@@ -34,6 +34,7 @@ Implemented:
 - setting and command descriptions
 - make command pattern more like settings design pattern (this took way too long)
 - Buffer next/previous/ls
+- Resizing
 
 Todo:
 - LSP
@@ -45,7 +46,6 @@ Todo:
 - help manual
 - command history
 - mainloop non blocking
-- resize handling
 - granular movement
 
 Known issues:

@@ -27,4 +27,6 @@ pub enum Key {
     Enter,
     Escape,
     Tab,
+    /// System events
+    Resize(u16, u16),
 }

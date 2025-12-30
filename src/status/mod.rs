@@ -192,6 +192,7 @@ impl StatusBar {
             Key::End => "End".to_string(),
             Key::PageUp => "PageUp".to_string(),
             Key::PageDown => "PageDown".to_string(),
+            Key::Resize(cols, rows) => format!("Resize({cols}, {rows})"),
         }
     }
 

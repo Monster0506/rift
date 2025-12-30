@@ -27,6 +27,8 @@ pub enum KeyAction {
     ToggleDebug,
     /// Exit command mode and re-render
     ExitCommandMode,
+    /// Resize the terminal
+    Resize(u16, u16),
 }
 
 /// Key handler for processing special keypresses
@@ -37,6 +39,10 @@ impl KeyHandler {
     /// Returns the action the editor should take
     #[must_use]
     pub fn process_key(key: Key, current_mode: Mode) -> KeyAction {
+        if let Key::Resize(cols, rows) = key {
+            return KeyAction::Resize(cols, rows);
+        }
+
         match current_mode {
             Mode::Normal => Self::process_normal_mode_key(key),
             Mode::Insert => Self::process_insert_mode_key(key),

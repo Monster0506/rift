@@ -351,7 +351,10 @@ impl<T: TerminalBackend> Editor<T> {
 
             // Translate key to command (skip if action indicates special handling)
             let cmd = match action {
-                KeyAction::ExitInsertMode | KeyAction::ExitCommandMode | KeyAction::ToggleDebug => {
+                KeyAction::ExitInsertMode
+                | KeyAction::ExitCommandMode
+                | KeyAction::ToggleDebug
+                | KeyAction::Resize(_, _) => {
                     // Skip command translation for special actions
                     Command::Noop
                 }
@@ -422,6 +425,9 @@ impl<T: TerminalBackend> Editor<T> {
             }
             KeyAction::ToggleDebug => {
                 self.state.toggle_debug();
+            }
+            KeyAction::Resize(cols, rows) => {
+                self.viewport.set_size(rows as usize, cols as usize);
             }
             KeyAction::SkipAndRender | KeyAction::Continue => {
                 // No special action needed

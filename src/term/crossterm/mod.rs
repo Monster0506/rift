@@ -64,15 +64,14 @@ impl TerminalBackend for CrosstermBackend {
 
     fn read_key(&mut self) -> Result<Key, String> {
         loop {
-            if let Event::Key(key_event) =
-                event::read().map_err(|e| format!("Failed to read event: {e}"))?
-            {
-                if key_event.kind == event::KeyEventKind::Press {
-                    return Ok(translate_key_event(key_event));
+            match event::read().map_err(|e| format!("Failed to read event: {e}"))? {
+                Event::Key(key_event) => {
+                    if key_event.kind == event::KeyEventKind::Press {
+                        return Ok(translate_key_event(key_event));
+                    }
                 }
-                // Ignore key releases
-            } else {
-                // Ignore other events
+                Event::Resize(cols, rows) => return Ok(Key::Resize(cols, rows)),
+                _ => {}
             }
         }
     }

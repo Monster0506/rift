@@ -89,6 +89,8 @@ pub fn resolve_input(key: Key) -> Option<InputIntent> {
         Key::End => Some(InputIntent::Move(Direction::Right, Granularity::Line)),
         Key::PageUp => Some(InputIntent::Move(Direction::Up, Granularity::Page)),
         Key::PageDown => Some(InputIntent::Move(Direction::Down, Granularity::Page)),
+
+        Key::Resize(_, _) => None,
     }
 }
 

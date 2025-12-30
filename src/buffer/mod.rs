@@ -150,14 +150,12 @@ impl TextBuffer {
     }
 
     /// Get the text before the cursor
-    /// Changed to return Vec<u8> as storage is not contiguous
     #[must_use]
     pub fn get_before_gap(&self) -> Vec<u8> {
         self.line_index.bytes_range(0..self.cursor)
     }
 
     /// Get the text after the cursor
-    /// Changed to return Vec<u8> as storage is not contiguous
     #[must_use]
     pub fn get_after_gap(&self) -> Vec<u8> {
         self.line_index.bytes_range(self.cursor..self.len())
