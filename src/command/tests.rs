@@ -296,3 +296,57 @@ fn test_command_is_mutating() {
     assert!(!Command::Quit.is_mutating());
     assert!(!Command::Noop.is_mutating());
 }
+
+#[test]
+fn test_delete_with_motions() {
+    let mut dispatcher = Dispatcher::new(Mode::Normal);
+
+    // dj -> Delete(Down, 1)
+    assert_eq!(dispatcher.translate_key(Key::Char('d')), Command::Noop);
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('j')),
+        Command::Delete(Motion::Down, 1)
+    );
+
+    // dk -> Delete(Up, 1)
+    assert_eq!(dispatcher.translate_key(Key::Char('d')), Command::Noop);
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('k')),
+        Command::Delete(Motion::Up, 1)
+    );
+
+    // dh -> Delete(Left, 1)
+    assert_eq!(dispatcher.translate_key(Key::Char('d')), Command::Noop);
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('h')),
+        Command::Delete(Motion::Left, 1)
+    );
+
+    // dl -> Delete(Right, 1)
+    assert_eq!(dispatcher.translate_key(Key::Char('d')), Command::Noop);
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('l')),
+        Command::Delete(Motion::Right, 1)
+    );
+
+    // d$ -> Delete(EndOfLine, 1)
+    assert_eq!(dispatcher.translate_key(Key::Char('d')), Command::Noop);
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('$')),
+        Command::Delete(Motion::EndOfLine, 1)
+    );
+
+    // d0 -> Delete(StartOfLine, 1)
+    assert_eq!(dispatcher.translate_key(Key::Char('d')), Command::Noop);
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('0')),
+        Command::Delete(Motion::StartOfLine, 1)
+    );
+
+    // dG -> Delete(EndOfFile, 1)
+    assert_eq!(dispatcher.translate_key(Key::Char('d')), Command::Noop);
+    assert_eq!(
+        dispatcher.translate_key(Key::Char('G')),
+        Command::Delete(Motion::EndOfFile, 1)
+    );
+}
