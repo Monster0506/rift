@@ -61,6 +61,9 @@ pub struct StatusDrawState {
     pub total_lines: usize,
     pub debug_mode: bool,
     pub cols: usize,
+    pub search_query: Option<String>,
+    pub search_match_index: Option<usize>,
+    pub search_total_matches: usize,
 }
 
 /// Minimal state required to trigger a re-render of the command line
@@ -209,8 +212,23 @@ pub fn render<T: TerminalBackend>(
         );
         cache.content = Some(current_content_state);
     }
+    // Calculate search match info
+    let (search_match_index, search_total_matches) = if !ctx.state.search_matches.is_empty() {
+        let cursor_offset = ctx.buf.cursor();
+        let idx = ctx
+            .state
+            .search_matches
+            .iter()
+            .position(|m| {
+                // Check if cursor is contained in match range or at start
+                m.range.contains(&cursor_offset) || m.range.start == cursor_offset
+            })
+            .map(|i| i + 1); // 1-based index
+        (idx, ctx.state.search_matches.len())
+    } else {
+        (None, 0)
+    };
 
-    // 2. Render status bar to STATUS_BAR layer (visible in all modes)
     let current_status_state = StatusDrawState {
         mode: ctx.current_mode,
         pending_key: ctx.pending_key,
@@ -224,6 +242,9 @@ pub fn render<T: TerminalBackend>(
         total_lines: ctx.state.total_lines,
         debug_mode: ctx.state.debug_mode,
         cols: ctx.viewport.visible_cols(),
+        search_query: ctx.state.last_search_query.clone(),
+        search_match_index,
+        search_total_matches,
     };
 
     if cache.status.as_ref() != Some(&current_status_state) {
@@ -235,6 +256,9 @@ pub fn render<T: TerminalBackend>(
             ctx.pending_key,
             ctx.pending_count,
             ctx.state,
+            ctx.state.last_search_query.as_deref(),
+            search_match_index,
+            search_total_matches,
         );
         cache.status = Some(current_status_state);
     }

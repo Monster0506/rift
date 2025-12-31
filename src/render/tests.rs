@@ -149,7 +149,17 @@ fn test_render_status_bar_normal_mode_layer() {
     let viewport = Viewport::new(10, 80);
     let state = State::new();
 
-    StatusBar::render_to_layer(&mut layer, &viewport, Mode::Normal, None, 0, &state);
+    StatusBar::render_to_layer(
+        &mut layer,
+        &viewport,
+        Mode::Normal,
+        None,
+        0,
+        &state,
+        None,
+        None,
+        0,
+    );
 
     // Check that "NORMAL" was written to the layer
     // Status bar is at last row (9), mode is at start
@@ -165,7 +175,17 @@ fn test_render_status_bar_insert_mode_layer() {
     let viewport = Viewport::new(10, 80);
     let state = State::new();
 
-    StatusBar::render_to_layer(&mut layer, &viewport, Mode::Insert, None, 0, &state);
+    StatusBar::render_to_layer(
+        &mut layer,
+        &viewport,
+        Mode::Insert,
+        None,
+        0,
+        &state,
+        None,
+        None,
+        0,
+    );
 
     // Check that content was written to the layer
     let cell = layer.get_cell(9, 0);
@@ -185,6 +205,9 @@ fn test_render_status_bar_pending_key_layer() {
         Some(Key::Char('d')),
         0,
         &state,
+        None,
+        None,
+        0,
     );
 
     // Should have pending key indicator
