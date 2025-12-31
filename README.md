@@ -37,19 +37,21 @@ Implemented:
 - Resizing
 - Notify clear and clear all
 - Granular movement
+- Polling instead of blocking input
 
 Todo:
 - LSP
 - Syntax highlighting
+- Treesitter
 - undo + redo
-- search + replace
+- search + replace (I have to build my own regex spec first!)
 - copy/paste (buffers)
 - macros
 - help manual
 - command history
-- mainloop non blocking
-
+- animations
 - file exploration
+- visual selection
 
 Known issues:
 - 4 byte unicode characters are not handled able to be inserted on windows (this is a crossterm issue on windows, idk man)

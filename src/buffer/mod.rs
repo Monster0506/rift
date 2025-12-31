@@ -5,6 +5,7 @@
 use crate::error::RiftError;
 use std::fmt::{self, Display};
 
+pub mod api;
 pub mod line_index;
 pub mod rope;
 use line_index::LineIndex;

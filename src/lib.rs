@@ -17,6 +17,7 @@ pub mod mode;
 pub mod notification;
 pub mod render;
 pub mod screen_buffer;
+pub mod search;
 pub mod state;
 pub mod status;
 pub mod term;
