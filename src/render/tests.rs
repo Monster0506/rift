@@ -894,3 +894,49 @@ fn test_wrap_text_newlines() {
         vec!["line1".to_string(), "".to_string(), "line3".to_string()]
     );
 }
+
+#[test]
+fn test_render_search_highlights() {
+    let mut term = MockTerminal::new(10, 80);
+    let mut buf = TextBuffer::new(100).unwrap();
+    buf.insert_str("hello world").unwrap(); // "hello" at 0..5, " " at 5, "world" at 6..11
+    let viewport = Viewport::new(10, 80);
+    let mut state = State::new();
+    state.settings.show_line_numbers = false;
+    // mock matches
+    use crate::search::SearchMatch;
+    state.search_matches = vec![SearchMatch { range: 6..11 }];
+
+    let mut compositor = LayerCompositor::new(10, 80);
+    let mut cache = RenderCache::default();
+
+    render(
+        &mut term,
+        &mut compositor,
+        RenderContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            pending_count: 0,
+            state: &state,
+            needs_clear: true,
+            tab_width: 4,
+        },
+        &mut cache,
+    )
+    .unwrap();
+
+    let content_layer = compositor.get_layer_mut(LayerPriority::CONTENT);
+
+    // Check "hello" (start) - should be default colors (None, None)
+    let cell_h = content_layer.get_cell(0, 0).unwrap();
+    assert_eq!(cell_h.fg, state.settings.editor_fg);
+    assert_eq!(cell_h.bg, state.settings.editor_bg);
+
+    // Check "world" (start) - should be highlighted
+    let cell_w = content_layer.get_cell(0, 6).unwrap();
+    assert_eq!(cell_w.content, vec![b'w']);
+    assert_eq!(cell_w.bg, Some(crate::color::Color::Yellow));
+    assert_eq!(cell_w.fg, Some(crate::color::Color::Black));
+}

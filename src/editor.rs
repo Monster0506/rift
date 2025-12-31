@@ -346,6 +346,16 @@ impl<T: TerminalBackend> Editor<T> {
             cursor = cursor.saturating_add(1);
         }
 
+        // Find all matches first to populate state for highlighting
+        match crate::search::find_all(&doc.buffer, query) {
+            Ok(matches) => {
+                self.state.search_matches = matches;
+            }
+            Err(_) => {
+                self.state.search_matches.clear();
+            }
+        }
+
         match find_next(&doc.buffer, cursor, query, direction) {
             Ok(Some(m)) => {
                 // Move cursor to start of match
