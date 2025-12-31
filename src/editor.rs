@@ -12,6 +12,7 @@ use crate::layer::LayerCompositor;
 use crate::mode::Mode;
 use crate::render;
 use crate::screen_buffer::FrameStats;
+use crate::search::{find_next, SearchDirection};
 use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
@@ -335,6 +336,36 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Run the editor main loop
+    fn perform_search(&mut self, query: &str, direction: SearchDirection, skip_current: bool) {
+        let doc_id = self.tab_order[self.current_tab];
+        let doc = self.documents.get_mut(&doc_id).unwrap();
+        let mut cursor = doc.buffer.cursor();
+
+        // If searching forward and skipping current, advance cursor to avoid matching at current position
+        if skip_current && direction == SearchDirection::Forward {
+            cursor = cursor.saturating_add(1);
+        }
+
+        match find_next(&doc.buffer, cursor, query, direction) {
+            Ok(Some(m)) => {
+                // Move cursor to start of match
+                let _ = doc.buffer.set_cursor(m.range.start);
+            }
+            Ok(None) => {
+                self.state.notify(
+                    crate::notification::NotificationType::Info,
+                    format!("Pattern not found: {}", query),
+                );
+            }
+            Err(e) => {
+                self.state.notify(
+                    crate::notification::NotificationType::Error,
+                    format!("Search error: {}", e),
+                );
+            }
+        }
+    }
+
     pub fn run(&mut self) -> Result<(), RiftError> {
         // Initial render
         self.update_and_render()?;
@@ -380,13 +411,16 @@ impl<T: TerminalBackend> Editor<T> {
 
                 // Execute command if it affects the buffer (and not in command mode)
                 let should_execute_buffer = current_mode != Mode::Command
+                    && current_mode != Mode::Search
                     && !matches!(
                         cmd,
                         Command::EnterInsertMode
                             | Command::EnterCommandMode
+                            | Command::EnterSearchMode
                             | Command::AppendToCommandLine(_)
                             | Command::DeleteFromCommandLine
                             | Command::ExecuteCommandLine
+                            | Command::ExecuteSearch
                             | Command::Quit
                             | Command::Noop
                             | Command::BufferNext
@@ -406,6 +440,7 @@ impl<T: TerminalBackend> Editor<T> {
                             expand_tabs,
                             tab_width,
                             viewport_height,
+                            self.state.last_search_query.as_deref(),
                         )
                     };
                     if let Err(e) = res {
@@ -447,6 +482,10 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
             }
+            KeyAction::ExitSearchMode => {
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+            }
             KeyAction::ToggleDebug => {
                 self.state.toggle_debug();
             }
@@ -473,6 +512,20 @@ impl<T: TerminalBackend> Editor<T> {
             Command::EnterCommandMode => {
                 self.set_mode(Mode::Command);
             }
+            Command::EnterSearchMode => {
+                self.set_mode(Mode::Search);
+                self.state.clear_command_line();
+            }
+            Command::ExecuteSearch => {
+                let query = self.state.command_line.clone();
+                if !query.is_empty() {
+                    self.state.last_search_query = Some(query.clone());
+                    self.perform_search(&query, SearchDirection::Forward, false);
+                }
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+            }
+
             Command::ExecuteCommandLine => {
                 // Parse and execute the command
                 let command_line = self.state.command_line.clone();
@@ -502,25 +555,29 @@ impl<T: TerminalBackend> Editor<T> {
             Command::DeleteFromCommandLine => {
                 self.state.remove_from_command_line();
             }
-            Command::Move(crate::action::Motion::Left, _) if self.current_mode == Mode::Command => {
+            Command::Move(crate::action::Motion::Left, _)
+                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
+            {
                 self.state.move_command_line_left();
             }
             Command::Move(crate::action::Motion::Right, _)
-                if self.current_mode == Mode::Command =>
+                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
             {
                 self.state.move_command_line_right();
             }
             Command::Move(crate::action::Motion::StartOfLine, _)
-                if self.current_mode == Mode::Command =>
+                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
             {
                 self.state.move_command_line_home();
             }
             Command::Move(crate::action::Motion::EndOfLine, _)
-                if self.current_mode == Mode::Command =>
+                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
             {
                 self.state.move_command_line_end();
             }
-            Command::DeleteForward if self.current_mode == Mode::Command => {
+            Command::DeleteForward
+                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
+            {
                 self.state.delete_forward_command_line();
             }
             _ => {}

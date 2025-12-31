@@ -162,6 +162,7 @@ impl StatusBar {
             Mode::Normal => "NORMAL",
             Mode::Insert => "INSERT",
             Mode::Command => "COMMAND",
+            Mode::Search => "SEARCH",
         }
     }
 

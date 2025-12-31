@@ -27,6 +27,8 @@ pub enum KeyAction {
     ToggleDebug,
     /// Exit command mode and re-render
     ExitCommandMode,
+    /// Exit search mode and re-render
+    ExitSearchMode,
     /// Resize the terminal
     Resize(u16, u16),
 }
@@ -47,6 +49,7 @@ impl KeyHandler {
             Mode::Normal => Self::process_normal_mode_key(key),
             Mode::Insert => Self::process_insert_mode_key(key),
             Mode::Command => Self::process_command_mode_key(key),
+            Mode::Search => Self::process_search_mode_key(key),
         }
     }
 
@@ -80,6 +83,16 @@ impl KeyHandler {
             // Escape - exit command mode back to normal
             Key::Escape => KeyAction::ExitCommandMode,
             // All other keys continue to command processing (for now)
+            _ => KeyAction::Continue,
+        }
+    }
+
+    /// Process keypress in search mode
+    fn process_search_mode_key(key: Key) -> KeyAction {
+        match key {
+            // Escape - exit search mode back to normal
+            Key::Escape => KeyAction::ExitSearchMode,
+            // All other keys continue to command processing
             _ => KeyAction::Continue,
         }
     }

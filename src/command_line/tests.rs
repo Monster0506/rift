@@ -21,6 +21,7 @@ fn test_command_line_render_to_layer() {
             window_settings: &window_settings,
             fg: None,
             bg: None,
+            prompt: ':',
         },
     );
 
@@ -104,6 +105,7 @@ fn test_command_line_with_custom_border_chars() {
             window_settings: &window_settings,
             fg: None,
             bg: None,
+            prompt: ':',
         },
     );
 

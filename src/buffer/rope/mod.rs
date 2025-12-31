@@ -154,6 +154,18 @@ impl PieceTable {
         result
     }
 
+    pub fn chunks_in_range(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = &[u8]> {
+        let mut chunks = Vec::new();
+        collect_chunks_range(
+            self.root.as_deref(),
+            range,
+            &self.original,
+            &self.add,
+            &mut chunks,
+        );
+        chunks.into_iter()
+    }
+
     pub fn line_start_offset(&self, line_idx: usize) -> usize {
         if line_idx == 0 {
             return 0;
@@ -501,6 +513,46 @@ fn collect_bytes_range(
             let r_start = std::cmp::max(range.start, current_len) - current_len;
             let r_end = range.end - current_len;
             collect_bytes_range(n.right.as_deref(), r_start..r_end, original, add, out);
+        }
+    }
+}
+
+fn collect_chunks_range<'a>(
+    node: Option<&'a Node>,
+    range: std::ops::Range<usize>,
+    original: &'a [u8],
+    add: &'a [u8],
+    out: &mut Vec<&'a [u8]>,
+) {
+    if let Some(n) = node {
+        let left_len = n.left.as_ref().map_or(0, |n| n.len);
+        let piece_len = n.piece.len;
+        let current_len = left_len + piece_len;
+
+        // Check intersection with left child
+        if range.start < left_len {
+            let l_start = range.start;
+            let l_end = std::cmp::min(range.end, left_len);
+            collect_chunks_range(n.left.as_deref(), l_start..l_end, original, add, out);
+        }
+
+        // Check intersection with current piece
+        if range.end > left_len && range.start < current_len {
+            let p_start = std::cmp::max(range.start, left_len) - left_len;
+            let p_end = std::cmp::min(range.end, current_len) - left_len;
+
+            let slice = match n.piece.source {
+                BufferSource::Original => &original[n.piece.start..n.piece.start + n.piece.len],
+                BufferSource::Add => &add[n.piece.start..n.piece.start + n.piece.len],
+            };
+            out.push(&slice[p_start..p_end]);
+        }
+
+        // Check intersection with right child
+        if range.end > current_len {
+            let r_start = std::cmp::max(range.start, current_len) - current_len;
+            let r_end = range.end - current_len;
+            collect_chunks_range(n.right.as_deref(), r_start..r_end, original, add, out);
         }
     }
 }

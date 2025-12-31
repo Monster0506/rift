@@ -9,4 +9,6 @@ pub enum Mode {
     Insert,
     /// Command mode (ex command line, entered with :)
     Command,
+    /// Search mode (entered with /)
+    Search,
 }

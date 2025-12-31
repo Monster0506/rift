@@ -14,6 +14,7 @@ use crate::action::Motion;
 use crate::buffer::TextBuffer;
 use crate::command::Command;
 use crate::error::RiftError;
+use crate::search::{find_next, SearchDirection};
 
 /// Calculate the current visual column position on the current line
 /// Accounts for tab width when calculating visual position
@@ -113,6 +114,7 @@ pub fn execute_command(
     expand_tabs: bool,
     tab_width: usize,
     viewport_height: usize,
+    last_search_query: Option<&str>,
 ) -> Result<(), RiftError> {
     match cmd {
         Command::Move(motion, count) => {
@@ -165,6 +167,25 @@ pub fn execute_command(
                     }
                     Motion::PreviousSentence => {
                         buf.move_sentence_backward();
+                    }
+                    Motion::NextMatch => {
+                        if let Some(query) = last_search_query {
+                            let start = buf.cursor().saturating_add(1);
+                            if let Ok(Some(m)) =
+                                find_next(buf, start, query, SearchDirection::Forward)
+                            {
+                                buf.set_cursor(m.range.start)?;
+                            }
+                        }
+                    }
+                    Motion::PreviousMatch => {
+                        if let Some(query) = last_search_query {
+                            if let Ok(Some(m)) =
+                                find_next(buf, buf.cursor(), query, SearchDirection::Backward)
+                            {
+                                buf.set_cursor(m.range.start)?;
+                            }
+                        }
                     }
                 }
             }
@@ -222,6 +243,25 @@ pub fn execute_command(
                     Motion::PreviousSentence => {
                         buf.move_sentence_backward();
                     }
+                    Motion::NextMatch => {
+                        if let Some(query) = last_search_query {
+                            let start = buf.cursor().saturating_add(1);
+                            if let Ok(Some(m)) =
+                                find_next(buf, start, query, SearchDirection::Forward)
+                            {
+                                buf.set_cursor(m.range.start)?;
+                            }
+                        }
+                    }
+                    Motion::PreviousMatch => {
+                        if let Some(query) = last_search_query {
+                            if let Ok(Some(m)) =
+                                find_next(buf, buf.cursor(), query, SearchDirection::Backward)
+                            {
+                                buf.set_cursor(m.range.start)?;
+                            }
+                        }
+                    }
                 }
             }
             let end = buf.cursor();
@@ -273,6 +313,9 @@ pub fn execute_command(
         Command::EnterCommandMode => {
             // Mode change handled by editor
         }
+        Command::EnterSearchMode => {
+            // Mode change handled by editor
+        }
         Command::AppendToCommandLine(_) => {
             // Command line editing handled by editor
         }
@@ -281,6 +324,12 @@ pub fn execute_command(
         }
         Command::ExecuteCommandLine => {
             // Command execution handled by editor
+        }
+        Command::ExecuteSearch => {
+            // Search execution handled by editor
+        }
+        Command::NextMatch | Command::PreviousMatch => {
+            // Search navigation handled by editor
         }
         Command::Quit => {
             // Quit handled by editor

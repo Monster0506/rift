@@ -16,6 +16,7 @@ use crate::error::RiftError;
 use crate::floating_window::BorderChars;
 use crate::key::Key;
 use crate::notification::NotificationType;
+use crate::search::SearchDirection;
 
 /// Command line window settings
 #[derive(Debug, Clone)]
@@ -168,6 +169,10 @@ pub struct State {
     pub line_ending: LineEnding,
     /// Error and notification manager
     pub error_manager: ErrorManager,
+    /// Last search query
+    pub last_search_query: Option<String>,
+    /// Search direction
+    pub search_direction: SearchDirection,
 }
 
 impl State {
@@ -191,6 +196,8 @@ impl State {
             is_dirty: false,
             line_ending: LineEnding::LF,
             error_manager: ErrorManager::new(),
+            last_search_query: None,
+            search_direction: SearchDirection::Forward,
         }
     }
 
@@ -214,6 +221,8 @@ impl State {
             is_dirty: false,
             line_ending: LineEnding::LF,
             error_manager: ErrorManager::new(),
+            last_search_query: None,
+            search_direction: SearchDirection::Forward,
         }
     }
 

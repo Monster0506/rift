@@ -2,6 +2,7 @@
 //!
 //! REWRITTEN: Now uses Piece Table via LineIndex
 
+use crate::buffer::api::BufferView;
 use crate::error::RiftError;
 use std::fmt::{self, Display};
 
@@ -35,6 +36,29 @@ impl TextBuffer {
     #[must_use]
     pub fn cursor(&self) -> usize {
         self.cursor
+    }
+
+    pub fn set_cursor(&mut self, pos: usize) -> Result<(), RiftError> {
+        let len = self.len();
+        if pos > len {
+            return Err(RiftError::new(
+                crate::error::ErrorType::Internal,
+                "INVALID_CURSOR",
+                format!("Cursor position {} out of bounds (len: {})", pos, len),
+            ));
+        }
+
+        let current = self.cursor;
+        if pos < current {
+            for _ in 0..(current - pos) {
+                self.move_left();
+            }
+        } else if pos > current {
+            for _ in 0..(pos - current) {
+                self.move_right();
+            }
+        }
+        Ok(())
     }
 
     /// Get the total length of text
@@ -615,3 +639,31 @@ impl Display for TextBuffer {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+impl BufferView for TextBuffer {
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn line_count(&self) -> usize {
+        self.get_total_lines()
+    }
+
+    fn line_start(&self, line: usize) -> usize {
+        self.line_index.get_line_start(line)
+    }
+
+    fn line_bytes(&self, line: usize) -> impl Iterator<Item = &[u8]> + '_ {
+        let start = self.line_index.get_line_start(line);
+        let end = self.line_index.get_end(line, self.len()).unwrap_or(start);
+        self.line_index.chunks_in_range(start..end)
+    }
+
+    fn slice(&self, start: usize, end: usize) -> impl Iterator<Item = &[u8]> + '_ {
+        self.line_index.chunks_in_range(start..end)
+    }
+
+    fn revision(&self) -> u64 {
+        self.revision
+    }
+}

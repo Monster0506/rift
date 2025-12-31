@@ -23,6 +23,7 @@ pub struct RenderOptions<'a> {
     pub window_settings: &'a CommandLineWindowSettings,
     pub fg: Option<Color>,
     pub bg: Option<Color>,
+    pub prompt: char,
 }
 
 /// Command line renderer
@@ -45,6 +46,7 @@ impl CommandLine {
             window_settings,
             fg,
             bg,
+            prompt,
         } = options;
 
         // Calculate width based on settings: ratio of terminal width, clamped to min/max
@@ -72,11 +74,12 @@ impl CommandLine {
 
         // Prepare content: prompt + command line
         let mut content_line = Vec::new();
-        content_line.push(b':');
+        let mut buf = [0; 4];
+        content_line.extend_from_slice(prompt.encode_utf8(&mut buf).as_bytes());
 
         let border_width = if window_settings.border { 2 } else { 0 };
         let available_width = cmd_width.saturating_sub(border_width); // Remove borders
-        let prompt_len = 1; // ":"
+        let prompt_len = 1;
         let available_cmd_width = available_width.saturating_sub(prompt_len);
 
         let offset = if command_line.len() <= available_cmd_width {

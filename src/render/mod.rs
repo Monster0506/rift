@@ -236,9 +236,11 @@ pub fn render<T: TerminalBackend>(
         cache.status = Some(current_status_state);
     }
 
-    // 3. Render command window on top if in command mode
+    // 3. Render command window on top if in command mode or search mode
     let mut command_cursor_info = None;
-    let current_command_state = if ctx.current_mode == Mode::Command {
+    let current_command_state = if ctx.current_mode == Mode::Command
+        || ctx.current_mode == Mode::Search
+    {
         Some(CommandDrawState {
             content: ctx.state.command_line.clone(),
             cursor: CursorInfo {
@@ -273,6 +275,11 @@ pub fn render<T: TerminalBackend>(
                     window_settings: &ctx.state.settings.command_line_window,
                     fg: ctx.state.settings.editor_fg,
                     bg: ctx.state.settings.editor_bg,
+                    prompt: if ctx.current_mode == Mode::Search {
+                        '/'
+                    } else {
+                        ':'
+                    },
                 },
             );
 
@@ -285,7 +292,7 @@ pub fn render<T: TerminalBackend>(
             );
             command_cursor_info = Some(CursorPosition::Absolute(cursor_row, cursor_col));
         } else {
-            // Transitioned from Command mode to something else
+            // Transitioned from Command/Search mode to something else
             compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
         }
         cache.command_line = current_command_state;

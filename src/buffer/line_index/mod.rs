@@ -28,6 +28,10 @@ impl LineIndex {
         Some(self.table.line_start_offset(line_idx))
     }
 
+    pub fn get_line_start(&self, line_idx: usize) -> usize {
+        self.table.line_start_offset(line_idx)
+    }
+
     pub fn get_end(&self, line_idx: usize, total_len: usize) -> Option<usize> {
         if line_idx >= self.table.get_line_count() {
             return None;
@@ -71,6 +75,10 @@ impl LineIndex {
 
     pub fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
         self.table.bytes_range(range)
+    }
+
+    pub fn chunks_in_range(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = &[u8]> {
+        self.table.chunks_in_range(range)
     }
 }
 

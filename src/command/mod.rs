@@ -31,6 +31,12 @@ pub enum Command {
 
     // Mode transitions
     EnterCommandMode,
+    EnterSearchMode,
+
+    // Search
+    ExecuteSearch,
+    NextMatch,
+    PreviousMatch,
 
     // Command line editing
     AppendToCommandLine(char),
@@ -92,6 +98,8 @@ impl Dispatcher {
             Key::Char('0') | Key::Home => Some(Motion::StartOfLine),
             Key::Char('$') | Key::End => Some(Motion::EndOfLine),
             Key::Char('G') | Key::CtrlEnd => Some(Motion::EndOfFile),
+            Key::Char('n') => Some(Motion::NextMatch),
+            Key::Char('N') => Some(Motion::PreviousMatch),
             Key::CtrlHome => Some(Motion::StartOfFile),
             Key::PageUp => Some(Motion::PageUp),
             Key::PageDown => Some(Motion::PageDown),
@@ -105,6 +113,7 @@ impl Dispatcher {
             Mode::Normal => self.translate_normal_mode(key),
             Mode::Insert => self.translate_insert_mode(key),
             Mode::Command => self.translate_command_mode(key),
+            Mode::Search => self.translate_search_mode(key),
         }
     }
 
@@ -151,6 +160,9 @@ impl Dispatcher {
                 'x' => Command::DeleteForward,
                 'q' => Command::Quit,
                 ':' => Command::EnterCommandMode,
+                '/' => Command::EnterSearchMode,
+                'n' => Command::Move(Motion::NextMatch, count),
+                'N' => Command::Move(Motion::PreviousMatch, count),
                 'd' => {
                     // Start sequence for 'dd' or 'd<motion>'
                     self.pending_key = Some((key, count));
@@ -299,6 +311,33 @@ impl Dispatcher {
                 InputIntent::Delete(Direction::Right, _) => Command::DeleteForward, // Forward delete
                 InputIntent::Delete(_, _) => Command::Noop,
                 InputIntent::Accept => Command::ExecuteCommandLine,
+                InputIntent::Cancel => Command::Noop, // Handled by KeyHandler
+            }
+        } else {
+            Command::Noop
+        }
+    }
+
+    fn translate_search_mode(&self, key: Key) -> Command {
+        use self::input::{Direction, Granularity, InputIntent};
+
+        if let Some(intent) = input::resolve_input(key) {
+            match intent {
+                InputIntent::Type(ch) => Command::AppendToCommandLine(ch),
+                InputIntent::Move(dir, Granularity::Line) => match dir {
+                    Direction::Left => Command::Move(Motion::StartOfLine, 1),
+                    Direction::Right => Command::Move(Motion::EndOfLine, 1),
+                    _ => Command::Noop,
+                },
+                InputIntent::Move(dir, _) => match dir {
+                    Direction::Left => Command::Move(Motion::Left, 1),
+                    Direction::Right => Command::Move(Motion::Right, 1),
+                    _ => Command::Noop,
+                },
+                InputIntent::Delete(Direction::Left, _) => Command::DeleteFromCommandLine,
+                InputIntent::Delete(Direction::Right, _) => Command::DeleteForward,
+                InputIntent::Delete(_, _) => Command::Noop,
+                InputIntent::Accept => Command::ExecuteSearch,
                 InputIntent::Cancel => Command::Noop, // Handled by KeyHandler
             }
         } else {

@@ -39,6 +39,10 @@ pub enum Motion {
     NextSentence,
     /// Move to the previous sentence
     PreviousSentence,
+    /// Move to the next search match
+    NextMatch,
+    /// Move to the previous search match
+    PreviousMatch,
 }
 
 /// Represents an action in the editor
