@@ -14,22 +14,32 @@ pub use crate::command_line::commands::ParsedCommand;
 pub struct CommandParser {
     registry: CommandRegistry,
     settings_registry: SettingsRegistry<UserSettings>,
+    commands: &'static [CommandDescriptor],
 }
 
 impl CommandParser {
     /// Create a new command parser
     pub fn new(settings_registry: SettingsRegistry<UserSettings>) -> Self {
-        let registry = Self::build_registry();
+        Self::with_commands(settings_registry, COMMANDS)
+    }
+
+    /// Create a new command parser with custom commands (for testing)
+    pub fn with_commands(
+        settings_registry: SettingsRegistry<UserSettings>,
+        commands: &'static [CommandDescriptor],
+    ) -> Self {
+        let registry = Self::build_registry(commands);
         CommandParser {
             registry,
             settings_registry,
+            commands,
         }
     }
 
     /// Build the command registry from declarative definitions
-    fn build_registry() -> CommandRegistry {
+    fn build_registry(commands: &[CommandDescriptor]) -> CommandRegistry {
         let mut registry = CommandRegistry::new();
-        for desc in COMMANDS {
+        for desc in commands {
             registry = registry.register(Self::build_command_def(desc));
         }
         registry
@@ -145,7 +155,7 @@ impl CommandParser {
         args: &[&str],
         bangs: usize,
     ) -> ParsedCommand {
-        let mut current_list = COMMANDS;
+        let mut current_list = self.commands;
         let mut current_desc: Option<&CommandDescriptor> = None;
 
         for name in command_chain {

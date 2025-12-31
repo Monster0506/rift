@@ -1,9 +1,184 @@
-use crate::command_line::commands::{CommandParser, ParsedCommand};
-use crate::command_line::settings::create_settings_registry;
+use crate::command_line::commands::{CommandDescriptor, CommandParser, MatchResult, ParsedCommand};
+use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
+use crate::state::UserSettings;
+
+fn parse_quit(_: &SettingsRegistry<UserSettings>, _: &[&str], bangs: usize) -> ParsedCommand {
+    ParsedCommand::Quit { bangs }
+}
+
+fn parse_write(_: &SettingsRegistry<UserSettings>, args: &[&str], bangs: usize) -> ParsedCommand {
+    match args.len() {
+        0 => ParsedCommand::Write { path: None, bangs },
+        1 => ParsedCommand::Write {
+            path: Some(args[0].to_string()),
+            bangs,
+        },
+        _ => ParsedCommand::Unknown {
+            name: "write".to_string(),
+        },
+    }
+}
+
+fn parse_write_quit(
+    _: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    match args.len() {
+        0 => ParsedCommand::WriteQuit { path: None, bangs },
+        1 => ParsedCommand::WriteQuit {
+            path: Some(args[0].to_string()),
+            bangs,
+        },
+        _ => ParsedCommand::Unknown {
+            name: "wq".to_string(),
+        },
+    }
+}
+
+fn parse_bnext(_: &SettingsRegistry<UserSettings>, _: &[&str], bangs: usize) -> ParsedCommand {
+    ParsedCommand::BufferNext { bangs }
+}
+
+fn parse_bprev(_: &SettingsRegistry<UserSettings>, _: &[&str], bangs: usize) -> ParsedCommand {
+    ParsedCommand::BufferPrevious { bangs }
+}
+
+fn parse_set(
+    registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    if args.is_empty() {
+        return ParsedCommand::Unknown {
+            name: "set".to_string(),
+        };
+    }
+
+    let option_str = args[0];
+    let option_registry = registry.build_option_registry();
+
+    // Handle "no" prefix
+    let option_lower = option_str.to_lowercase();
+    if option_lower.starts_with("no") && option_lower.len() > 2 {
+        let option_without_no = &option_lower[2..];
+        match option_registry.match_command(option_without_no) {
+            MatchResult::Exact(name) | MatchResult::Prefix(name) => {
+                return ParsedCommand::Set {
+                    option: name,
+                    value: Some("false".to_string()),
+                    bangs,
+                };
+            }
+            _ => {}
+        }
+    }
+
+    // Handle assignment
+    if let Some(pos) = option_str.find('=') {
+        let opt = &option_str[..pos];
+        let val = &option_str[pos + 1..];
+        return ParsedCommand::Set {
+            option: opt.to_string(),
+            value: Some(val.to_string()),
+            bangs,
+        };
+    }
+
+    // Handle space separated
+    if args.len() > 1 {
+        return ParsedCommand::Set {
+            option: option_str.to_string(),
+            value: Some(args[1].to_string()),
+            bangs,
+        };
+    }
+
+    // Boolean on
+    ParsedCommand::Set {
+        option: option_str.to_string(),
+        value: Some("true".to_string()),
+        bangs,
+    }
+}
+
+const TEST_COMMANDS: &[CommandDescriptor] = &[
+    CommandDescriptor {
+        name: "quit",
+        aliases: &["q"],
+        description: "Quit",
+        factory: Some(parse_quit),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "write",
+        aliases: &["w"],
+        description: "Write",
+        factory: Some(parse_write),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "wq",
+        aliases: &[],
+        description: "Write Quit",
+        factory: Some(parse_write_quit),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "set",
+        aliases: &["se"],
+        description: "Set",
+        factory: Some(parse_set),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "setlocal",
+        aliases: &["setl"],
+        description: "Set Local",
+        factory: Some(parse_set),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "buffer",
+        aliases: &["b"],
+        description: "Buffer",
+        factory: None,
+        subcommands: &[
+            CommandDescriptor {
+                name: "next",
+                aliases: &["n"],
+                description: "Next",
+                factory: Some(parse_bnext),
+                subcommands: &[],
+            },
+            CommandDescriptor {
+                name: "previous",
+                aliases: &["prev", "p"],
+                description: "Prev",
+                factory: Some(parse_bprev),
+                subcommands: &[],
+            },
+        ],
+    },
+    CommandDescriptor {
+        name: "bnext",
+        aliases: &["bn"],
+        description: "Next Buffer",
+        factory: Some(parse_bnext),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "bprev",
+        aliases: &["bp"],
+        description: "Prev Buffer",
+        factory: Some(parse_bprev),
+        subcommands: &[],
+    },
+];
 
 fn create_test_parser() -> CommandParser {
     let settings_registry = create_settings_registry();
-    CommandParser::new(settings_registry)
+    CommandParser::with_commands(settings_registry, TEST_COMMANDS)
 }
 
 #[test]
