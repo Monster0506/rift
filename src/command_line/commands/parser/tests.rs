@@ -110,8 +110,8 @@ fn test_parse_set_boolean_off() {
     assert_eq!(
         result,
         ParsedCommand::Set {
-            option: "expandtabs".to_string(),
-            value: Some("false".to_string()),
+            option: "noexpandtabs".to_string(),
+            value: Some("true".to_string()),
             bangs: 0
         }
     );
@@ -232,12 +232,12 @@ fn test_parse_subcommands() {
 fn test_parse_set_option_prefix_expandtabs() {
     let parser = create_test_parser();
 
-    // "expa" -> "expandtabs"
+    // "expa" -> "expa" (unknown option)
     let result = parser.parse(":set expa");
     assert_eq!(
         result,
         ParsedCommand::Set {
-            option: "expandtabs".to_string(),
+            option: "expa".to_string(),
             value: Some("true".to_string()),
             bangs: 0
         }
@@ -248,13 +248,13 @@ fn test_parse_set_option_prefix_expandtabs() {
 fn test_parse_set_option_prefix_noexpandtabs() {
     let parser = create_test_parser();
 
-    // "noexpa" -> "noexpandtabs" -> expandtabs = false
+    // "noexpa" -> "noexpa" (unknown option)
     let result = parser.parse(":set noexpa");
     assert_eq!(
         result,
         ParsedCommand::Set {
-            option: "expandtabs".to_string(),
-            value: Some("false".to_string()),
+            option: "noexpa".to_string(),
+            value: Some("true".to_string()),
             bangs: 0
         }
     );

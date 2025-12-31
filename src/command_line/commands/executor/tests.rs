@@ -25,12 +25,12 @@ fn test_execute_quit() {
 }
 
 #[test]
-fn test_execute_set_expandtabs_true() {
+fn test_execute_set_number_true() {
     let mut state = State::new();
-    assert_eq!(state.settings.expand_tabs, true); // Default
+    state.settings.show_line_numbers = false;
 
     let command = ParsedCommand::Set {
-        option: "expandtabs".to_string(),
+        option: "number".to_string(),
         value: Some("true".to_string()),
         bangs: 0,
     };
@@ -46,16 +46,16 @@ fn test_execute_set_expandtabs_true() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.expand_tabs, true);
+    assert_eq!(state.settings.show_line_numbers, true);
 }
 
 #[test]
-fn test_execute_set_expandtabs_false() {
+fn test_execute_set_number_false() {
     let mut state = State::new();
-    assert_eq!(state.settings.expand_tabs, true); // Default
+    assert_eq!(state.settings.show_line_numbers, true); // Default
 
     let command = ParsedCommand::Set {
-        option: "expandtabs".to_string(),
+        option: "number".to_string(),
         value: Some("false".to_string()),
         bangs: 0,
     };
@@ -71,16 +71,16 @@ fn test_execute_set_expandtabs_false() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.expand_tabs, false);
+    assert_eq!(state.settings.show_line_numbers, false);
 }
 
 #[test]
-fn test_execute_set_expandtabs_alias_et() {
+fn test_execute_set_clminwidth_alias() {
     let mut state = State::new();
 
     let command = ParsedCommand::Set {
-        option: "et".to_string(),
-        value: Some("false".to_string()),
+        option: "clminwidth".to_string(),
+        value: Some("50".to_string()),
         bangs: 0,
     };
 
@@ -94,17 +94,17 @@ fn test_execute_set_expandtabs_alias_et() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.expand_tabs, false);
+    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(state.settings.command_line_window.min_width, 50);
 }
 
 #[test]
-fn test_execute_set_expandtabs_boolean_variants() {
+fn test_execute_set_number_boolean_variants() {
     let mut state = State::new();
 
     // Test "on"
     let command = ParsedCommand::Set {
-        option: "expandtabs".to_string(),
+        option: "number".to_string(),
         value: Some("on".to_string()),
         bangs: 0,
     };
@@ -119,11 +119,11 @@ fn test_execute_set_expandtabs_boolean_variants() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.expand_tabs, true);
+    assert_eq!(state.settings.show_line_numbers, true);
 
     // Test "off"
     let command = ParsedCommand::Set {
-        option: "expandtabs".to_string(),
+        option: "number".to_string(),
         value: Some("off".to_string()),
         bangs: 0,
     };
@@ -138,11 +138,11 @@ fn test_execute_set_expandtabs_boolean_variants() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.expand_tabs, false);
+    assert_eq!(state.settings.show_line_numbers, false);
 
     // Test "yes"
     let command = ParsedCommand::Set {
-        option: "expandtabs".to_string(),
+        option: "number".to_string(),
         value: Some("yes".to_string()),
         bangs: 0,
     };
@@ -157,11 +157,11 @@ fn test_execute_set_expandtabs_boolean_variants() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.expand_tabs, true);
+    assert_eq!(state.settings.show_line_numbers, true);
 
     // Test "no"
     let command = ParsedCommand::Set {
-        option: "expandtabs".to_string(),
+        option: "number".to_string(),
         value: Some("no".to_string()),
         bangs: 0,
     };
@@ -176,11 +176,11 @@ fn test_execute_set_expandtabs_boolean_variants() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.expand_tabs, false);
+    assert_eq!(state.settings.show_line_numbers, false);
 
     // Test "1"
     let command = ParsedCommand::Set {
-        option: "expandtabs".to_string(),
+        option: "number".to_string(),
         value: Some("1".to_string()),
         bangs: 0,
     };
@@ -195,11 +195,11 @@ fn test_execute_set_expandtabs_boolean_variants() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.expand_tabs, true);
+    assert_eq!(state.settings.show_line_numbers, true);
 
     // Test "0"
     let command = ParsedCommand::Set {
-        option: "expandtabs".to_string(),
+        option: "number".to_string(),
         value: Some("0".to_string()),
         bangs: 0,
     };
@@ -214,15 +214,15 @@ fn test_execute_set_expandtabs_boolean_variants() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.expand_tabs, false);
+    assert_eq!(state.settings.show_line_numbers, false);
 }
 
 #[test]
-fn test_execute_set_expandtabs_case_insensitive() {
+fn test_execute_set_number_case_insensitive() {
     let mut state = State::new();
 
     let command = ParsedCommand::Set {
-        option: "EXPANDTABS".to_string(),
+        option: "NUMBER".to_string(),
         value: Some("FALSE".to_string()),
         bangs: 0,
     };
@@ -238,17 +238,16 @@ fn test_execute_set_expandtabs_case_insensitive() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.expand_tabs, false);
+    assert_eq!(state.settings.show_line_numbers, false);
 }
 
 #[test]
-fn test_execute_set_tabwidth() {
+fn test_execute_set_clminwidth() {
     let mut state = State::new();
-    assert_eq!(state.settings.tab_width, 4); // Default
 
     let command = ParsedCommand::Set {
-        option: "tabwidth".to_string(),
-        value: Some("4".to_string()),
+        option: "command_line.min_width".to_string(),
+        value: Some("60".to_string()),
         bangs: 0,
     };
 
@@ -262,42 +261,18 @@ fn test_execute_set_tabwidth() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.tab_width, 4);
+    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(state.settings.command_line_window.min_width, 60);
 }
 
 #[test]
-fn test_execute_set_tabwidth_alias_tw() {
+fn test_execute_set_clminwidth_various_values() {
     let mut state = State::new();
 
-    let command = ParsedCommand::Set {
-        option: "tw".to_string(),
-        value: Some("2".to_string()),
-        bangs: 0,
-    };
-
-    let settings_registry = create_settings_registry();
-    let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
-    let result = CommandExecutor::execute(
-        command,
-        &mut state,
-        &mut document,
-        &settings_registry,
-        &document_settings_registry,
-    );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.tab_width, 2);
-}
-
-#[test]
-fn test_execute_set_tabwidth_various_values() {
-    let mut state = State::new();
-
-    // Test various tab widths
-    for width in &[1, 2, 4, 8, 16, 32] {
+    // Test various widths
+    for width in &[10, 20, 40, 80, 100] {
         let command = ParsedCommand::Set {
-            option: "tabwidth".to_string(),
+            option: "clminwidth".to_string(),
             value: Some(width.to_string()),
             bangs: 0,
         };
@@ -312,18 +287,18 @@ fn test_execute_set_tabwidth_various_values() {
             &settings_registry,
             &document_settings_registry,
         );
-        assert_eq!(result, ExecutionResult::Redraw);
-        assert_eq!(state.settings.tab_width, *width);
+        assert_eq!(result, ExecutionResult::Success);
+        assert_eq!(state.settings.command_line_window.min_width, *width);
     }
 }
 
 #[test]
-fn test_execute_set_tabwidth_zero_error() {
+fn test_execute_set_clminwidth_zero_error() {
     let mut state = State::new();
-    let original_width = state.settings.tab_width;
+    let original_width = state.settings.command_line_window.min_width;
 
     let command = ParsedCommand::Set {
-        option: "tabwidth".to_string(),
+        option: "clminwidth".to_string(),
         value: Some("0".to_string()),
         bangs: 0,
     };
@@ -343,24 +318,19 @@ fn test_execute_set_tabwidth_zero_error() {
     // Check if error was reported to manager
     let notifications: Vec<_> = state.error_manager.notifications().iter_active().collect();
     assert_eq!(notifications.len(), 1);
-    assert!(
-        notifications[0]
-            .message
-            .contains("tabwidth must be greater than 0")
-            || notifications[0].message.contains("is below minimum")
-    );
+    assert!(notifications[0].message.contains("is below minimum"));
 
     // State should not be modified
-    assert_eq!(state.settings.tab_width, original_width);
+    assert_eq!(state.settings.command_line_window.min_width, original_width);
 }
 
 #[test]
-fn test_execute_set_tabwidth_invalid_number() {
+fn test_execute_set_clminwidth_invalid_number() {
     let mut state = State::new();
-    let original_width = state.settings.tab_width;
+    let original_width = state.settings.command_line_window.min_width;
 
     let command = ParsedCommand::Set {
-        option: "tabwidth".to_string(),
+        option: "clminwidth".to_string(),
         value: Some("invalid".to_string()),
         bangs: 0,
     };
@@ -386,16 +356,16 @@ fn test_execute_set_tabwidth_invalid_number() {
     );
 
     // State should not be modified
-    assert_eq!(state.settings.tab_width, original_width);
+    assert_eq!(state.settings.command_line_window.min_width, original_width);
 }
 
 #[test]
-fn test_execute_set_expandtabs_invalid_boolean() {
+fn test_execute_set_number_invalid_boolean() {
     let mut state = State::new();
-    let original_value = state.settings.expand_tabs;
+    let original_value = state.settings.show_line_numbers;
 
     let command = ParsedCommand::Set {
-        option: "expandtabs".to_string(),
+        option: "number".to_string(),
         value: Some("maybe".to_string()),
         bangs: 0,
     };
@@ -417,18 +387,18 @@ fn test_execute_set_expandtabs_invalid_boolean() {
     assert!(notifications[0].message.contains("Invalid boolean value"));
 
     // State should not be modified
-    assert_eq!(state.settings.expand_tabs, original_value);
+    assert_eq!(state.settings.show_line_numbers, original_value);
 }
 
 #[test]
-fn test_execute_set_expandtabs_missing_value() {
+fn test_execute_set_number_missing_value() {
     let mut state = State::new();
-    let original_value = state.settings.expand_tabs;
+    let original_value = state.settings.show_line_numbers;
 
     // When value is None, it should be treated as "true" by the parser
     // But the executor expects a value, so this should error
     let command = ParsedCommand::Set {
-        option: "expandtabs".to_string(),
+        option: "number".to_string(),
         value: None,
         bangs: 0,
     };
@@ -455,7 +425,7 @@ fn test_execute_set_expandtabs_missing_value() {
     }
 
     // State should not be modified
-    assert_eq!(state.settings.expand_tabs, original_value);
+    assert_eq!(state.settings.show_line_numbers, original_value);
 }
 
 #[test]
@@ -580,9 +550,9 @@ fn test_execute_ambiguous_command() {
 fn test_execute_set_multiple_options() {
     let mut state = State::new();
 
-    // Set expandtabs to false
+    // Set number to false
     let command = ParsedCommand::Set {
-        option: "expandtabs".to_string(),
+        option: "number".to_string(),
         value: Some("false".to_string()),
         bangs: 0,
     };
@@ -597,12 +567,12 @@ fn test_execute_set_multiple_options() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.expand_tabs, false);
+    assert_eq!(state.settings.show_line_numbers, false);
 
-    // Set tabwidth to 4
+    // Set clminwidth to 50
     let command = ParsedCommand::Set {
-        option: "tabwidth".to_string(),
-        value: Some("4".to_string()),
+        option: "clminwidth".to_string(),
+        value: Some("50".to_string()),
         bangs: 0,
     };
     let settings_registry = create_settings_registry();
@@ -615,12 +585,12 @@ fn test_execute_set_multiple_options() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.tab_width, 4);
+    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(state.settings.command_line_window.min_width, 50);
 
-    // Set expandtabs back to true
+    // Set number back to true
     let command = ParsedCommand::Set {
-        option: "expandtabs".to_string(),
+        option: "number".to_string(),
         value: Some("true".to_string()),
         bangs: 0,
     };
@@ -635,20 +605,20 @@ fn test_execute_set_multiple_options() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.expand_tabs, true);
+    assert_eq!(state.settings.show_line_numbers, true);
 
     // Verify both settings are correct
-    assert_eq!(state.settings.expand_tabs, true);
-    assert_eq!(state.settings.tab_width, 4);
+    assert_eq!(state.settings.show_line_numbers, true);
+    assert_eq!(state.settings.command_line_window.min_width, 50);
 }
 
 #[test]
-fn test_execute_set_tabwidth_large_value() {
+fn test_execute_set_clminwidth_large_value() {
     let mut state = State::new();
 
     let command = ParsedCommand::Set {
-        option: "tabwidth".to_string(),
-        value: Some("100".to_string()),
+        option: "clminwidth".to_string(),
+        value: Some("1000".to_string()),
         bangs: 0,
     };
 
@@ -662,18 +632,18 @@ fn test_execute_set_tabwidth_large_value() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.tab_width, 100);
+    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(state.settings.command_line_window.min_width, 1000);
 }
 
 #[test]
-fn test_execute_set_tabwidth_negative_error() {
+fn test_execute_set_clminwidth_negative_error() {
     let mut state = State::new();
-    let original_width = state.settings.tab_width;
+    let original_width = state.settings.command_line_window.min_width;
 
     // Try to set negative value (will fail to parse as usize)
     let command = ParsedCommand::Set {
-        option: "tabwidth".to_string(),
+        option: "clminwidth".to_string(),
         value: Some("-1".to_string()),
         bangs: 0,
     };
@@ -712,16 +682,16 @@ fn test_execute_set_tabwidth_negative_error() {
     }
 
     // State should not be modified
-    assert_eq!(state.settings.tab_width, original_width);
+    assert_eq!(state.settings.command_line_window.min_width, original_width);
 }
 
 #[test]
-fn test_execute_set_expandtabs_empty_string() {
+fn test_execute_set_number_empty_string() {
     let mut state = State::new();
-    let original_value = state.settings.expand_tabs;
+    let original_value = state.settings.show_line_numbers;
 
     let command = ParsedCommand::Set {
-        option: "expandtabs".to_string(),
+        option: "number".to_string(),
         value: Some("".to_string()),
         bangs: 0,
     };
@@ -748,7 +718,7 @@ fn test_execute_set_expandtabs_empty_string() {
     }
 
     // State should not be modified
-    assert_eq!(state.settings.expand_tabs, original_value);
+    assert_eq!(state.settings.show_line_numbers, original_value);
 }
 
 #[test]
@@ -757,12 +727,12 @@ fn test_execute_set_case_insensitive_option_names() {
 
     // Test various case combinations
     let cases = vec![
-        ("EXPANDTABS", "false"),
-        ("ExpandTabs", "true"),
-        ("expandTABS", "false"),
-        ("TABWIDTH", "16"),
-        ("TabWidth", "4"),
-        ("tabWIDTH", "8"),
+        ("NUMBER", "false"),
+        ("NumBer", "true"),
+        ("numBER", "false"),
+        ("CLMINWIDTH", "16"),
+        ("cLmInWiDtH", "4"),
+        ("clminWIDTH", "8"),
     ];
 
     for (option, value) in cases {
@@ -782,21 +752,26 @@ fn test_execute_set_case_insensitive_option_names() {
             &settings_registry,
             &document_settings_registry,
         );
-        assert_eq!(result, ExecutionResult::Redraw);
+        // number returns Redraw, clminwidth returns Success
+        if option.to_lowercase() == "number" {
+            assert_eq!(result, ExecutionResult::Redraw);
+        } else {
+            assert_eq!(result, ExecutionResult::Success);
+        }
     }
 
     // Final state
-    assert_eq!(state.settings.expand_tabs, false);
-    assert_eq!(state.settings.tab_width, 8);
+    assert_eq!(state.settings.show_line_numbers, false);
+    assert_eq!(state.settings.command_line_window.min_width, 8);
 }
 
 #[test]
-fn test_execute_set_tabwidth_float_error() {
+fn test_execute_set_clminwidth_float_error() {
     let mut state = State::new();
-    let original_width = state.settings.tab_width;
+    let original_width = state.settings.command_line_window.min_width;
 
     let command = ParsedCommand::Set {
-        option: "tabwidth".to_string(),
+        option: "clminwidth".to_string(),
         value: Some("4.5".to_string()),
         bangs: 0,
     };
@@ -835,7 +810,7 @@ fn test_execute_set_tabwidth_float_error() {
     }
 
     // State should not be modified
-    assert_eq!(state.settings.tab_width, original_width);
+    assert_eq!(state.settings.command_line_window.min_width, original_width);
 }
 
 #[test]
