@@ -52,37 +52,6 @@ impl BufferView for MockBuffer {
 // --- Tests ---
 
 #[test]
-fn test_parse_query_smart_case() {
-    // All lowercase -> case insensitive (smart case)
-    let config = parse_query("abc");
-    assert_eq!(config.pattern, "abc");
-    assert!(!config.case_sensitive);
-
-    // Contains uppercase -> case sensitive
-    let config = parse_query("Abc");
-    assert_eq!(config.pattern, "Abc");
-    assert!(config.case_sensitive);
-}
-
-#[test]
-fn test_parse_query_flags() {
-    // Force case sensitive
-    let config = parse_query("abc\\C");
-    assert_eq!(config.pattern, "abc");
-    assert!(config.case_sensitive);
-
-    // Force case insensitive
-    let config = parse_query("Abc\\c");
-    assert_eq!(config.pattern, "Abc");
-    assert!(!config.case_sensitive);
-
-    // Flag in middle
-    let config = parse_query("a\\Cc");
-    assert_eq!(config.pattern, "ac");
-    assert!(config.case_sensitive);
-}
-
-#[test]
 fn test_find_next_forward_simple() {
     let buffer = MockBuffer::new(&["hello world", "another line"]);
 
@@ -213,12 +182,8 @@ fn test_case_sensitivity() {
     let res = find_next(&buffer, 0, "hello", SearchDirection::Forward).unwrap();
     assert!(res.is_some());
 
-    // Explicit case sensitive: "hello\C" does NOT match "Hello"
-    let res = find_next(&buffer, 0, "hello\\C", SearchDirection::Forward).unwrap();
-    assert!(res.is_none());
-
-    // Explicit case insensitive: "HELLO\c" matches "Hello"
-    let res = find_next(&buffer, 0, "HELLO\\c", SearchDirection::Forward).unwrap();
+    // Explicit case insensitive: "HELLO/i" matches "Hello"
+    let res = find_next(&buffer, 0, "HELLO/i", SearchDirection::Forward).unwrap();
     assert!(res.is_some());
 }
 
