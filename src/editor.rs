@@ -170,14 +170,16 @@ impl<T: TerminalBackend> Editor<T> {
         } = self;
 
         let doc_id = tab_order[*current_tab];
+        let doc = documents.get(&doc_id).unwrap();
         let ctx = render::RenderContext {
-            buf: &documents.get(&doc_id).unwrap().buffer,
+            buf: &doc.buffer,
             viewport,
             state,
             current_mode: *current_mode,
             pending_key: dispatcher.pending_key(),
             pending_count: dispatcher.pending_count(),
             needs_clear: true,
+            tab_width: doc.options.tab_width,
         };
 
         render::full_redraw(term, compositor, ctx, render_cache)
@@ -389,12 +391,12 @@ impl<T: TerminalBackend> Editor<T> {
                     );
 
                 if should_execute_buffer {
-                    let expand_tabs = self.state.settings.expand_tabs;
-                    let tab_width = self.state.settings.tab_width;
                     let viewport_height = self.viewport.visible_rows();
                     let doc_id = self.tab_order[self.current_tab];
                     let res = {
                         let doc = self.documents.get_mut(&doc_id).unwrap();
+                        let expand_tabs = doc.options.expand_tabs;
+                        let tab_width = doc.options.tab_width;
                         execute_command(
                             cmd,
                             &mut doc.buffer,
@@ -543,7 +545,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// Update state and render the editor (for initial render)
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
         // Update buffer and cursor state only (no input tracking on initial render)
-        let tab_width = self.state.settings.tab_width;
+        let tab_width = self.active_document().options.tab_width;
         let cursor_line = self.active_document().buffer.get_line();
         let cursor_col =
             render::calculate_cursor_column(&self.active_document().buffer, cursor_line, tab_width);
@@ -602,7 +604,8 @@ impl<T: TerminalBackend> Editor<T> {
         } = self;
 
         let doc_id = tab_order[*current_tab];
-        let buf = &documents.get(&doc_id).unwrap().buffer;
+        let doc = documents.get(&doc_id).unwrap();
+        let buf = &doc.buffer;
 
         let ctx = render::RenderContext {
             buf,
@@ -612,6 +615,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_key: dispatcher.pending_key(),
             pending_count: dispatcher.pending_count(),
             needs_clear,
+            tab_width: doc.options.tab_width,
         };
 
         let _ = render::render(term, compositor, ctx, render_cache)?;

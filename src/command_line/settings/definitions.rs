@@ -33,8 +33,6 @@ fn create_ascii_border() -> BorderChars {
 
 // Setter functions for each setting
 
-
-
 fn set_border_style(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
     match value {
         SettingValue::Enum(style) => {
@@ -81,13 +79,10 @@ fn set_cmd_window_min_width(
         )),
     }
 }
-fn set_poll_rate(
-    settings: &mut UserSettings,
-    value: SettingValue,
-) -> Result<(), SettingError> {
+fn set_poll_rate(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
     match value {
         SettingValue::Integer(n) => {
-            settings.poll_timeout_ms= n as u64;
+            settings.poll_timeout_ms = n as u64;
             Ok(())
         }
         _ => Err(SettingError::ValidationError(
@@ -399,7 +394,10 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         name: "editor.poll_rate (ms)",
         aliases: &[],
         description: "Set the polling rate",
-        ty: SettingType::Integer{ min: Some(1),  max: Some(1000)},
+        ty: SettingType::Integer {
+            min: Some(1),
+            max: Some(1000),
+        },
         set: set_poll_rate,
         needs_full_redraw: false,
     },

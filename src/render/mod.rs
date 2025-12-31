@@ -146,6 +146,7 @@ pub struct RenderContext<'a> {
     pub pending_count: usize,
     pub state: &'a State,
     pub needs_clear: bool,
+    pub tab_width: usize,
 }
 
 /// Cursor position information returned from layer-based rendering
@@ -184,7 +185,7 @@ pub fn render<T: TerminalBackend>(
         top_line: ctx.viewport.top_line(),
         left_col: ctx.viewport.left_col(),
         rows: ctx.viewport.visible_rows(),
-        tab_width: ctx.state.settings.tab_width,
+        tab_width: ctx.tab_width,
         show_line_numbers: ctx.state.settings.show_line_numbers,
         gutter_width: if ctx.state.settings.show_line_numbers {
             ctx.state.gutter_width
@@ -215,7 +216,7 @@ pub fn render<T: TerminalBackend>(
         is_dirty: ctx.state.is_dirty,
         cursor: CursorInfo {
             row: ctx.buf.get_line(),
-            col: calculate_cursor_column(ctx.buf, ctx.buf.get_line(), ctx.state.settings.tab_width),
+            col: calculate_cursor_column(ctx.buf, ctx.buf.get_line(), ctx.tab_width),
         },
         total_lines: ctx.state.total_lines,
         debug_mode: ctx.state.debug_mode,
@@ -381,8 +382,7 @@ pub fn render<T: TerminalBackend>(
             0
         };
 
-        let cursor_col =
-            calculate_cursor_column(ctx.buf, cursor_line, ctx.state.settings.tab_width);
+        let cursor_col = calculate_cursor_column(ctx.buf, cursor_line, ctx.tab_width);
 
         // Add gutter width to cursor column
         // Subtract left_col for horizontal scrolling
@@ -479,7 +479,7 @@ fn render_content_to_layer(
 
                 // Track visual column (handling tabs and wide chars)
                 let char_width = if ch == '\t' {
-                    ctx.state.settings.tab_width - (visual_col % ctx.state.settings.tab_width)
+                    ctx.tab_width - (visual_col % ctx.tab_width)
                 } else {
                     UnicodeWidthChar::width(ch).unwrap_or(1)
                 };

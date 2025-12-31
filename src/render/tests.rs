@@ -215,6 +215,7 @@ fn test_render_clears_screen() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut RenderCache::default(),
     )
@@ -244,6 +245,7 @@ fn test_render_cursor_positioning() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut RenderCache::default(),
     )
@@ -272,6 +274,7 @@ fn test_render_empty_buffer() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut RenderCache::default(),
     )
@@ -303,6 +306,7 @@ fn test_render_multiline_buffer() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut RenderCache::default(),
     )
@@ -339,6 +343,7 @@ fn test_render_file_loaded_at_start() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut RenderCache::default(),
     )
@@ -385,6 +390,7 @@ fn test_render_viewport_scrolling() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut RenderCache::default(),
     )
@@ -415,6 +421,7 @@ fn test_render_viewport_edge_cases() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut RenderCache::default(),
     )
@@ -444,6 +451,7 @@ fn test_render_large_buffer() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut RenderCache::default(),
     )
@@ -481,6 +489,7 @@ fn test_render_cursor_at_viewport_boundaries() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut RenderCache::default(),
     )
@@ -509,6 +518,7 @@ fn test_render_cursor_at_viewport_boundaries() {
             pending_count: 0,
             state: &state,
             needs_clear: needs_clear2,
+            tab_width: 4,
         },
         &mut RenderCache::default(),
     )
@@ -578,6 +588,7 @@ fn test_render_line_numbers_enabled() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut RenderCache::default(),
     )
@@ -614,6 +625,7 @@ fn test_render_line_numbers_disabled() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut RenderCache::default(),
     )
@@ -646,6 +658,7 @@ fn test_render_line_numbers_gutter_width() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut RenderCache::default(),
     )
@@ -685,6 +698,7 @@ fn test_render_cursor_position_with_line_numbers() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut cache,
     )
@@ -714,6 +728,7 @@ fn test_no_redraw_on_noop() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut cache,
     )
@@ -740,6 +755,7 @@ fn test_no_redraw_on_noop() {
             pending_count: 0,
             state: &state,
             needs_clear: false,
+            tab_width: 4,
         },
         &mut cache,
     )
@@ -776,6 +792,7 @@ fn test_redraw_on_change() {
             pending_count: 0,
             state: &state,
             needs_clear: true,
+            tab_width: 4,
         },
         &mut cache,
     )
@@ -800,6 +817,7 @@ fn test_redraw_on_change() {
             pending_count: 0,
             state: &state,
             needs_clear: false,
+            tab_width: 4,
         },
         &mut cache,
     )
