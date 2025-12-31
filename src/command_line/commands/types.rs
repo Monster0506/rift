@@ -58,5 +58,9 @@ pub enum ParsedCommand {
     BufferPrevious {
         bangs: usize,
     },
+    /// Clear search highlights
+    NoHighlight {
+        bangs: usize,
+    },
     BufferList,
 }
