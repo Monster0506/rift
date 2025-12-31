@@ -30,8 +30,8 @@ pub trait TerminalBackend {
     fn poll(&mut self, duration: std::time::Duration) -> Result<bool, String>;
 
     /// Read and decode a single keypress
-    /// Blocks until a key is available
-    fn read_key(&mut self) -> Result<Key, String>;
+    /// Returns None if the event was ignored (e.g. key release)
+    fn read_key(&mut self) -> Result<Option<Key>, String>;
 
     /// Write bytes to stdout
     fn write(&mut self, bytes: &[u8]) -> Result<(), String>;

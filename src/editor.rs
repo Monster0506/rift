@@ -353,7 +353,10 @@ impl<T: TerminalBackend> Editor<T> {
                 // ============================================================
 
                 // Read key
-                let key_press = self.term.read_key()?;
+                let key_press = match self.term.read_key()? {
+                    Some(key) => key,
+                    None => continue,
+                };
 
                 // Process keypress through key handler
                 let current_mode = self.current_mode;

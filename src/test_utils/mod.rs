@@ -115,7 +115,7 @@ impl TerminalBackend for MockTerminal {
         Ok(false)
     }
 
-    fn read_key(&mut self) -> Result<Key, String> {
+    fn read_key(&mut self) -> Result<Option<Key>, String> {
         Err("Not implemented in mock".to_string())
     }
 

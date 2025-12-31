@@ -66,17 +66,17 @@ impl TerminalBackend for CrosstermBackend {
         event::poll(duration).map_err(|e| format!("Failed to poll event: {e}"))
     }
 
-    fn read_key(&mut self) -> Result<Key, String> {
-        loop {
-            match event::read().map_err(|e| format!("Failed to read event: {e}"))? {
-                Event::Key(key_event) => {
-                    if key_event.kind == event::KeyEventKind::Press {
-                        return Ok(translate_key_event(key_event));
-                    }
+    fn read_key(&mut self) -> Result<Option<Key>, String> {
+        match event::read().map_err(|e| format!("Failed to read event: {e}"))? {
+            Event::Key(key_event) => {
+                if key_event.kind == event::KeyEventKind::Press {
+                    Ok(Some(translate_key_event(key_event)))
+                } else {
+                    Ok(None)
                 }
-                Event::Resize(cols, rows) => return Ok(Key::Resize(cols, rows)),
-                _ => {}
             }
+            Event::Resize(cols, rows) => Ok(Some(Key::Resize(cols, rows))),
+            _ => Ok(None),
         }
     }
 
