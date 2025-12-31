@@ -38,13 +38,14 @@ Implemented:
 - Notify clear and clear all
 - Granular movement
 - Polling instead of blocking input
+- search + replace
+- Custom regex engine (monster-regex)
 
 Todo:
 - LSP
 - Syntax highlighting
 - Treesitter
 - undo + redo
-- search + replace (I have to build my own regex spec first!)
 - copy/paste (buffers)
 - macros
 - help manual
