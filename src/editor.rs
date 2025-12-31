@@ -339,83 +339,94 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Main event loop
         while !self.should_quit {
-            // ============================================================
-            // INPUT HANDLING PHASE (Pure - no mutations)
-            // ============================================================
+            // Poll for input
+            let timeout = self.state.settings.poll_timeout_ms;
+            if self
+                .term
+                .poll(std::time::Duration::from_millis(timeout))
+                .map_err(|e| RiftError::new(ErrorType::Internal, "POLL_FAILED", e))?
+            {
+                // ============================================================
+                // INPUT HANDLING PHASE (Pure - no mutations)
+                // ============================================================
 
-            // Read key
-            let key_press = self.term.read_key()?;
+                // Read key
+                let key_press = self.term.read_key()?;
 
-            // Process keypress through key handler
-            let current_mode = self.current_mode;
-            let action = KeyHandler::process_key(key_press, current_mode);
+                // Process keypress through key handler
+                let current_mode = self.current_mode;
+                let action = KeyHandler::process_key(key_press, current_mode);
 
-            // Translate key to command (skip if action indicates special handling)
-            let cmd = match action {
-                KeyAction::ExitInsertMode
-                | KeyAction::ExitCommandMode
-                | KeyAction::ToggleDebug
-                | KeyAction::Resize(_, _) => {
-                    // Skip command translation for special actions
-                    Command::Noop
-                }
-                _ => self.dispatcher.translate_key(key_press),
-            };
-
-            // ============================================================
-            // COMMAND EXECUTION PHASE (Buffer mutations only)
-            // ============================================================
-
-            // Execute command if it affects the buffer (and not in command mode)
-            let should_execute_buffer = current_mode != Mode::Command
-                && !matches!(
-                    cmd,
-                    Command::EnterInsertMode
-                        | Command::EnterCommandMode
-                        | Command::AppendToCommandLine(_)
-                        | Command::DeleteFromCommandLine
-                        | Command::ExecuteCommandLine
-                        | Command::Quit
-                        | Command::Noop
-                        | Command::BufferNext
-                        | Command::BufferPrevious
-                );
-
-            if should_execute_buffer {
-                let expand_tabs = self.state.settings.expand_tabs;
-                let tab_width = self.state.settings.tab_width;
-                let viewport_height = self.viewport.visible_rows();
-                let doc_id = self.tab_order[self.current_tab];
-                let res = {
-                    let doc = self.documents.get_mut(&doc_id).unwrap();
-                    execute_command(
-                        cmd,
-                        &mut doc.buffer,
-                        expand_tabs,
-                        tab_width,
-                        viewport_height,
-                    )
+                // Translate key to command (skip if action indicates special handling)
+                let cmd = match action {
+                    KeyAction::ExitInsertMode
+                    | KeyAction::ExitCommandMode
+                    | KeyAction::ToggleDebug
+                    | KeyAction::Resize(_, _) => {
+                        // Skip command translation for special actions
+                        Command::Noop
+                    }
+                    _ => self.dispatcher.translate_key(key_press),
                 };
-                if let Err(e) = res {
-                    self.state.handle_error(e);
+
+                // ============================================================
+                // COMMAND EXECUTION PHASE (Buffer mutations only)
+                // ============================================================
+
+                // Execute command if it affects the buffer (and not in command mode)
+                let should_execute_buffer = current_mode != Mode::Command
+                    && !matches!(
+                        cmd,
+                        Command::EnterInsertMode
+                            | Command::EnterCommandMode
+                            | Command::AppendToCommandLine(_)
+                            | Command::DeleteFromCommandLine
+                            | Command::ExecuteCommandLine
+                            | Command::Quit
+                            | Command::Noop
+                            | Command::BufferNext
+                            | Command::BufferPrevious
+                    );
+
+                if should_execute_buffer {
+                    let expand_tabs = self.state.settings.expand_tabs;
+                    let tab_width = self.state.settings.tab_width;
+                    let viewport_height = self.viewport.visible_rows();
+                    let doc_id = self.tab_order[self.current_tab];
+                    let res = {
+                        let doc = self.documents.get_mut(&doc_id).unwrap();
+                        execute_command(
+                            cmd,
+                            &mut doc.buffer,
+                            expand_tabs,
+                            tab_width,
+                            viewport_height,
+                        )
+                    };
+                    if let Err(e) = res {
+                        self.state.handle_error(e);
+                    }
+                    if cmd.is_mutating() {
+                        // Mark document dirty after a mutating command
+                        self.documents.get_mut(&doc_id).unwrap().mark_dirty();
+                    }
                 }
-                if cmd.is_mutating() {
-                    // Mark document dirty after a mutating command
-                    self.documents.get_mut(&doc_id).unwrap().mark_dirty();
+
+                // Handle quit command (special case - exits loop)
+                if cmd == Command::Quit {
+                    self.should_quit = true;
+                    continue;
                 }
+
+                // ============================================================
+                // STATE UPDATE PHASE (All state mutations happen here)
+                // ============================================================
+
+                self.update_state_and_render(key_press, action, cmd)?;
+            } else {
+                // Idle processing
+                self.update_and_render()?;
             }
-
-            // Handle quit command (special case - exits loop)
-            if cmd == Command::Quit {
-                self.should_quit = true;
-                continue;
-            }
-
-            // ============================================================
-            // STATE UPDATE PHASE (All state mutations happen here)
-            // ============================================================
-
-            self.update_state_and_render(key_press, action, cmd)?;
         }
 
         Ok(())
@@ -526,39 +537,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.update_keypress(keypress);
         self.state.update_command(command);
 
-        // Update buffer and cursor state
-        let doc_id = self.tab_order[self.current_tab];
-        let cursor_line = self.documents.get(&doc_id).unwrap().buffer.get_line();
-        let tab_width = self.state.settings.tab_width;
-        let cursor_col = render::calculate_cursor_column(
-            &self.documents.get(&doc_id).unwrap().buffer,
-            cursor_line,
-            tab_width,
-        );
-        self.state.update_cursor(cursor_line, cursor_col);
-
-        self.sync_state_with_active_document();
-        self.state.error_manager.notifications_mut().prune_expired();
-
-        // Update viewport based on cursor position (state mutation happens here)
-        let doc_id = self.tab_order[self.current_tab];
-        let total_lines = self
-            .documents
-            .get(&doc_id)
-            .unwrap()
-            .buffer
-            .get_total_lines();
-        let gutter_width = if self.state.settings.show_line_numbers {
-            self.state.gutter_width
-        } else {
-            0
-        };
-        let needs_clear = self
-            .viewport
-            .update(cursor_line, cursor_col, total_lines, gutter_width);
-
-        // Render (pure read - no mutations)
-        self.render(needs_clear)
+        self.update_and_render()
     }
 
     /// Update state and render the editor (for initial render)
@@ -571,6 +550,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.update_cursor(cursor_line, cursor_col);
 
         self.sync_state_with_active_document();
+        self.state.error_manager.notifications_mut().prune_expired();
 
         // Update viewport based on cursor position (state mutation happens here)
         let doc_id = self.tab_order[self.current_tab];

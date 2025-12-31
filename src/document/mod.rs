@@ -96,7 +96,10 @@ impl Document {
         Ok(Document {
             id,
             buffer,
-            options: DocumentOptions { line_ending },
+            options: DocumentOptions {
+                line_ending,
+                ..DocumentOptions::default()
+            },
             file_path: Some(path.to_path_buf()),
             revision: 0,
             last_saved_revision: 0,

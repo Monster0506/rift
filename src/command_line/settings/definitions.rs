@@ -33,34 +33,7 @@ fn create_ascii_border() -> BorderChars {
 
 // Setter functions for each setting
 
-fn set_expand_tabs(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
-    match value {
-        SettingValue::Bool(b) => {
-            settings.expand_tabs = b;
-            Ok(())
-        }
-        _ => Err(SettingError::ValidationError(
-            "Expected boolean".to_string(),
-        )),
-    }
-}
 
-fn set_tab_width(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
-    match value {
-        SettingValue::Integer(n) => {
-            if n == 0 {
-                return Err(SettingError::ValidationError(
-                    "tabwidth must be greater than 0".to_string(),
-                ));
-            }
-            settings.tab_width = n;
-            Ok(())
-        }
-        _ => Err(SettingError::ValidationError(
-            "Expected integer".to_string(),
-        )),
-    }
-}
 
 fn set_border_style(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
     match value {
@@ -101,6 +74,20 @@ fn set_cmd_window_min_width(
     match value {
         SettingValue::Integer(n) => {
             settings.command_line_window.min_width = n;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected integer".to_string(),
+        )),
+    }
+}
+fn set_poll_rate(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Integer(n) => {
+            settings.poll_timeout_ms= n as u64;
             Ok(())
         }
         _ => Err(SettingError::ValidationError(
@@ -284,25 +271,6 @@ fn set_show_status_line(
 /// Static registry of all settings
 pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
-        name: "expandtabs",
-        aliases: &["et"],
-        description: "Use spaces instead of tabs",
-        ty: SettingType::Boolean,
-        set: set_expand_tabs,
-        needs_full_redraw: true,
-    },
-    SettingDescriptor {
-        name: "tabwidth",
-        aliases: &["tw"],
-        description: "Number of spaces per tab",
-        ty: SettingType::Integer {
-            min: Some(1),
-            max: None,
-        },
-        set: set_tab_width,
-        needs_full_redraw: true,
-    },
-    SettingDescriptor {
         name: "command_line.borderstyle",
         aliases: &["clborderstyle"],
         description: "Style of the command line window border",
@@ -426,6 +394,14 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_show_line_numbers,
         needs_full_redraw: true,
+    },
+    SettingDescriptor {
+        name: "editor.poll_rate (ms)",
+        aliases: &[],
+        description: "Set the polling rate",
+        ty: SettingType::Integer{ min: Some(1),  max: Some(1000)},
+        set: set_poll_rate,
+        needs_full_redraw: false,
     },
 ];
 

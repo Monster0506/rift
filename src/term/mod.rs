@@ -26,6 +26,9 @@ pub trait TerminalBackend {
     /// Restore terminal to original state
     fn deinit(&mut self);
 
+    /// Check if a key is available within the given duration
+    fn poll(&mut self, duration: std::time::Duration) -> Result<bool, String>;
+
     /// Read and decode a single keypress
     /// Blocks until a key is available
     fn read_key(&mut self) -> Result<Key, String>;

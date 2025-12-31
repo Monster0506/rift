@@ -62,6 +62,10 @@ impl TerminalBackend for CrosstermBackend {
         }
     }
 
+    fn poll(&mut self, duration: std::time::Duration) -> Result<bool, String> {
+        event::poll(duration).map_err(|e| format!("Failed to poll event: {e}"))
+    }
+
     fn read_key(&mut self) -> Result<Key, String> {
         loop {
             match event::read().map_err(|e| format!("Failed to read event: {e}"))? {

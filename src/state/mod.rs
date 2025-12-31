@@ -75,12 +75,8 @@ impl Default for StatusLineSettings {
 /// These are preferences that should be saved and loaded from a config file
 #[derive(Debug, Clone)]
 pub struct UserSettings {
-    /// Whether to expand tabs to spaces when inserting
-    pub expand_tabs: bool,
     /// Whether to show line numbers
     pub show_line_numbers: bool,
-    /// Tab width in spaces (for display and expansion)
-    pub tab_width: usize,
     /// Default border characters for floating windows
     pub default_border_chars: Option<BorderChars>,
     /// Command line window settings
@@ -93,6 +89,12 @@ pub struct UserSettings {
     pub editor_fg: Option<Color>,
     /// Current theme name (None means no theme applied)
     pub theme: Option<String>,
+    /// Main loop poll timeout in milliseconds
+    pub poll_timeout_ms: u64,
+    /// Tab width in spaces
+    pub tab_width: usize,
+    /// Whether to expand tabs to spaces
+    pub expand_tabs: bool,
 }
 
 impl UserSettings {
@@ -100,15 +102,16 @@ impl UserSettings {
     #[must_use]
     pub fn new() -> Self {
         UserSettings {
-            expand_tabs: true,          // Default to expanding tabs to spaces
             show_line_numbers: true,    // Default to showing line numbers
-            tab_width: 4,               // Default tab width
             default_border_chars: None, // None means use FloatingWindow defaults
             command_line_window: CommandLineWindowSettings::default(),
             status_line: StatusLineSettings::default(),
             editor_bg: None,
             editor_fg: None,
             theme: None,
+            poll_timeout_ms: 16,
+            tab_width: 4,
+            expand_tabs: true,
         }
     }
 
@@ -219,6 +222,16 @@ impl State {
         self.settings.default_border_chars = border_chars;
     }
 
+    /// Set whether to expand tabs to spaces
+    pub fn set_expand_tabs(&mut self, expand: bool) {
+        self.settings.expand_tabs = expand;
+    }
+
+    /// Set tab width
+    pub fn set_tab_width(&mut self, width: usize) {
+        self.settings.tab_width = width;
+    }
+
     /// Set the current file path
     pub fn set_file_path(&mut self, path: Option<String>) {
         self.file_path = path;
@@ -227,11 +240,6 @@ impl State {
     /// Toggle debug mode
     pub fn toggle_debug(&mut self) {
         self.debug_mode = !self.debug_mode;
-    }
-
-    /// Set whether to expand tabs to spaces
-    pub fn set_expand_tabs(&mut self, expand: bool) {
-        self.settings.expand_tabs = expand;
     }
 
     /// Update last keypress

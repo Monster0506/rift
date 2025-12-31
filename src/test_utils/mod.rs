@@ -14,20 +14,20 @@
 //!     let mut term = MockTerminal::new(10, 80);
 //!     // Use term as a TerminalBackend
 //!     term.write(b"hello").unwrap();
-//!     
+//!
 //!     // Check what was written
 //!     let written = term.get_written_string();
 //!     assert!(written.contains("hello"));
-//!     
+//!
 //!     // Check cursor moves
 //!     term.move_cursor(5, 10).unwrap();
 //!     assert_eq!(term.cursor_moves.len(), 1);
 //!     assert_eq!(term.cursor_moves[0], (5, 10));
-//!     
+//!
 //!     // Check clear screen calls
 //!     term.clear_screen().unwrap();
 //!     assert_eq!(term.clear_screen_calls, 1);
-//!     
+//!
 //!     // Reset for multiple test operations
 //!     term.clear();
 //! }
@@ -110,6 +110,10 @@ impl TerminalBackend for MockTerminal {
     }
 
     fn deinit(&mut self) {}
+
+    fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, String> {
+        Ok(false)
+    }
 
     fn read_key(&mut self) -> Result<Key, String> {
         Err("Not implemented in mock".to_string())
