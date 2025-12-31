@@ -392,11 +392,11 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
     SettingDescriptor {
         name: "editor.poll_rate",
-        aliases: &[],
+        aliases: &["epollrate"],
         description: "Set the polling rate (ms)",
         ty: SettingType::Integer {
             min: Some(1),
-            max: Some(1000),
+            max: Some(10000),
         },
         set: set_poll_rate,
         needs_full_redraw: false,
