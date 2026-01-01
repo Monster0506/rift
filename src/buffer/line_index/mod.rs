@@ -73,6 +73,10 @@ impl LineIndex {
         self.table.byte_at(pos)
     }
 
+    pub fn get_chunk_at_byte(&self, pos: usize) -> &[u8] {
+        self.table.get_chunk_at_byte(pos)
+    }
+
     pub fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
         self.table.bytes_range(range)
     }

@@ -13,6 +13,7 @@
 ///   in the state update phase, not during rendering).
 /// - All rendering is layer-based and composited before output to terminal.
 use crate::buffer::TextBuffer;
+use crate::color::theme::SyntaxColors;
 use crate::color::Color;
 use crate::command_line::CommandLine;
 use crate::error::RiftError;
@@ -47,6 +48,10 @@ pub struct ContentDrawState {
     pub gutter_width: usize,
     /// Number of search matches (to trigger redraw on search)
     pub search_matches_count: usize,
+    /// Theme/Color context
+    pub editor_bg: Option<crate::color::Color>,
+    pub editor_fg: Option<crate::color::Color>,
+    pub theme: Option<String>,
 }
 
 /// Minimal state required to trigger a re-render of the status bar
@@ -64,6 +69,10 @@ pub struct StatusDrawState {
     pub search_query: Option<String>,
     pub search_match_index: Option<usize>,
     pub search_total_matches: usize,
+    pub reverse_video: bool,
+    /// Theme/Color context
+    pub editor_bg: Option<crate::color::Color>,
+    pub editor_fg: Option<crate::color::Color>,
 }
 
 /// Minimal state required to trigger a re-render of the command line
@@ -75,6 +84,9 @@ pub struct CommandDrawState {
     pub height: usize,
     pub has_border: bool,
     pub reverse_video: bool,
+    /// Theme/Color context
+    pub editor_bg: Option<crate::color::Color>,
+    pub editor_fg: Option<crate::color::Color>,
 }
 
 /// Minimal state required to trigger a re-render of notifications
@@ -91,6 +103,8 @@ pub struct RenderCache {
     pub status: Option<StatusDrawState>,
     pub command_line: Option<CommandDrawState>,
     pub notifications: Option<NotificationDrawState>,
+    /// Last calculated cursor position for command mode
+    pub last_command_cursor: Option<CursorPosition>,
 }
 
 impl RenderCache {
@@ -99,6 +113,7 @@ impl RenderCache {
         self.status = None;
         self.command_line = None;
         self.notifications = None;
+        self.last_command_cursor = None;
     }
 
     pub fn invalidate_content(&mut self) {
@@ -152,6 +167,7 @@ pub struct RenderContext<'a> {
     pub state: &'a State,
     pub needs_clear: bool,
     pub tab_width: usize,
+    pub highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
 }
 
 /// Cursor position information returned from layer-based rendering
@@ -198,18 +214,14 @@ pub fn render<T: TerminalBackend>(
             0
         },
         search_matches_count: ctx.state.search_matches.len(),
+        editor_bg: ctx.state.settings.editor_bg,
+        editor_fg: ctx.state.settings.editor_fg,
+        theme: ctx.state.settings.theme.clone(),
     };
 
-    if cache.content.as_ref() != Some(&current_content_state) {
-        compositor.mark_dirty(LayerPriority::CONTENT);
-        render_content_to_layer(
-            compositor.get_layer_mut(LayerPriority::CONTENT),
-            ctx.buf,
-            ctx.viewport,
-            ctx.state.settings.editor_bg,
-            ctx.state.settings.editor_fg,
-            &ctx,
-        );
+    if cache.content.as_ref() != Some(&current_content_state) || ctx.needs_clear {
+        compositor.clear_layer(LayerPriority::CONTENT);
+        render_content_to_layer(compositor.get_layer_mut(LayerPriority::CONTENT), &ctx)?;
         cache.content = Some(current_content_state);
     }
     // Calculate search match info
@@ -229,6 +241,7 @@ pub fn render<T: TerminalBackend>(
         (None, 0)
     };
 
+    // 2. Render status bar to STATUS_BAR layer (always updated if relevant state changes)
     let current_status_state = StatusDrawState {
         mode: ctx.current_mode,
         pending_key: ctx.pending_key,
@@ -236,8 +249,8 @@ pub fn render<T: TerminalBackend>(
         file_name: ctx.state.file_name.clone(),
         is_dirty: ctx.state.is_dirty,
         cursor: CursorInfo {
-            row: ctx.buf.get_line(),
-            col: calculate_cursor_column(ctx.buf, ctx.buf.get_line(), ctx.tab_width),
+            row: ctx.state.cursor_pos.0,
+            col: ctx.state.cursor_pos.1,
         },
         total_lines: ctx.state.total_lines,
         debug_mode: ctx.state.debug_mode,
@@ -245,48 +258,42 @@ pub fn render<T: TerminalBackend>(
         search_query: ctx.state.last_search_query.clone(),
         search_match_index,
         search_total_matches,
+        reverse_video: ctx.state.settings.status_line.reverse_video,
+        editor_bg: ctx.state.settings.editor_bg,
+        editor_fg: ctx.state.settings.editor_fg,
     };
 
-    if cache.status.as_ref() != Some(&current_status_state) {
+    if cache.status.as_ref() != Some(&current_status_state) || ctx.needs_clear {
         compositor.clear_layer(LayerPriority::STATUS_BAR);
         StatusBar::render_to_layer(
             compositor.get_layer_mut(LayerPriority::STATUS_BAR),
-            ctx.viewport,
-            ctx.current_mode,
-            ctx.pending_key,
-            ctx.pending_count,
-            ctx.state,
-            ctx.state.last_search_query.as_deref(),
-            search_match_index,
-            search_total_matches,
+            &current_status_state,
         );
         cache.status = Some(current_status_state);
     }
 
-    // 3. Render command window on top if in command mode or search mode
+    // 3. Command line / Floating window
     let mut command_cursor_info = None;
-    let current_command_state = if ctx.current_mode == Mode::Command
-        || ctx.current_mode == Mode::Search
-    {
-        Some(CommandDrawState {
-            content: ctx.state.command_line.clone(),
-            cursor: CursorInfo {
-                row: 0, // Command line is single line for now
-                col: ctx.state.command_line_cursor,
-            },
-            width: ((ctx.viewport.visible_cols() as f64
-                * ctx.state.settings.command_line_window.width_ratio) as usize)
-                .max(ctx.state.settings.command_line_window.min_width)
-                .min(ctx.viewport.visible_cols()),
-            height: ctx.state.settings.command_line_window.height,
-            has_border: ctx.state.settings.command_line_window.border,
-            reverse_video: ctx.state.settings.command_line_window.reverse_video,
-        })
-    } else {
-        None
-    };
+    let current_command_state =
+        if ctx.current_mode == Mode::Command || ctx.current_mode == Mode::Search {
+            Some(CommandDrawState {
+                content: ctx.state.command_line.clone(),
+                cursor: CursorInfo {
+                    row: 0, // Command line is single line for now
+                    col: ctx.state.command_line_cursor,
+                },
+                width: ctx.viewport.visible_cols(),
+                height: ctx.state.settings.command_line_window.height,
+                has_border: ctx.state.settings.command_line_window.border,
+                reverse_video: ctx.state.settings.command_line_window.reverse_video,
+                editor_bg: ctx.state.settings.editor_bg,
+                editor_fg: ctx.state.settings.editor_fg,
+            })
+        } else {
+            None
+        };
 
-    if cache.command_line != current_command_state {
+    if cache.command_line.as_ref() != current_command_state.as_ref() || ctx.needs_clear {
         if current_command_state.is_some() {
             compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
             // Render command line
@@ -318,59 +325,16 @@ pub fn render<T: TerminalBackend>(
                 ctx.state.settings.command_line_window.border,
             );
             command_cursor_info = Some(CursorPosition::Absolute(cursor_row, cursor_col));
+            cache.last_command_cursor = command_cursor_info;
         } else {
             // Transitioned from Command/Search mode to something else
             compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
+            cache.last_command_cursor = None;
         }
         cache.command_line = current_command_state;
-    } else if let Some(ref state) = current_command_state {
-        // State is same, but we still need cursor pos info if we were already in command mode
-        // We could cache the cursor_info too, or just re-calculate it since it's cheap.
-        // For simplicity, let's just re-calculate it here (re-using identical logic as above)
-        let cmd_width = state.width;
-        let cmd_height = state.height;
-        let has_border = state.has_border;
-
-        // Note: We need window_row/window_col which are calculated during render.
-        // This is a bit tricky if we skip render.
-        // Let's store the cursor location in the cache or just re-calculate window pos.
-        let floating_window = crate::floating_window::FloatingWindow::new(
-            WindowPosition::Center,
-            cmd_width,
-            cmd_height,
-        )
-        .with_border(has_border);
-        let (window_row, window_col) = floating_window.calculate_position(
-            ctx.viewport.visible_rows() as u16,
-            ctx.viewport.visible_cols() as u16,
-        );
-
-        // We also need the 'offset' which CommandLine::render_to_layer calculates.
-        // Let's add 'offset' to CommandDrawState if we want to avoid re-rendering but still have cursor info.
-        // Actually, let's just re-render if we need simplicity, or add it to the DrawState.
-        // If any component depends on something computed during render, include it.
-        // Let's just re-calculate the offset logic here (it's O(1)).
-        let border_offset = if has_border { 2 } else { 0 };
-        let available_cmd_width = cmd_width.saturating_sub(border_offset).saturating_sub(1);
-        let offset = if state.content.len() <= available_cmd_width {
-            0
-        } else if state.cursor.col >= available_cmd_width {
-            state
-                .cursor
-                .col
-                .saturating_sub(available_cmd_width)
-                .saturating_add(1)
-        } else {
-            0
-        };
-
-        let (cursor_row, cursor_col) = CommandLine::calculate_cursor_position(
-            (window_row, window_col),
-            state.cursor.col,
-            offset,
-            has_border,
-        );
-        command_cursor_info = Some(CursorPosition::Absolute(cursor_row, cursor_col));
+    } else if current_command_state.is_some() {
+        // Cache hit, retrieve cursor info
+        command_cursor_info = cache.last_command_cursor;
     }
 
     // 4. Render notifications
@@ -444,16 +408,68 @@ pub fn render<T: TerminalBackend>(
     Ok(cursor_info)
 }
 
-/// Render buffer content to a layer
-fn render_content_to_layer(
-    layer: &mut Layer,
-    buf: &TextBuffer,
-    viewport: &Viewport,
-    editor_bg: Option<Color>,
-    editor_fg: Option<Color>,
-    ctx: &RenderContext,
-) {
-    // Use cached gutter width from state
+/// Map syntax highlight capture names to colors
+fn highlight_color(capture_name: &str, theme_colors: Option<&SyntaxColors>) -> Option<Color> {
+    // Handle sub-scopes (e.g., function.builtin -> function)
+    let base_name = capture_name.split('.').next().unwrap_or(capture_name);
+
+    if let Some(theme) = theme_colors {
+        match capture_name {
+            "constructor" => return Some(theme.constructor),
+            "function.builtin" | "builtin" => return Some(theme.builtin),
+            _ => {}
+        }
+
+        match base_name {
+            "keyword" => return Some(theme.keyword),
+            "type" => return Some(theme.type_def),
+            "function" => return Some(theme.function),
+            "string" => return Some(theme.string),
+            "number" => return Some(theme.number),
+            "constant" => return Some(theme.constant),
+            "boolean" => return Some(theme.boolean),
+            "comment" => return Some(theme.comment),
+            "variable" => return Some(theme.variable),
+            "parameter" => return Some(theme.parameter),
+            "property" | "field" => return Some(theme.property),
+            "attribute" | "label" => return Some(theme.attribute),
+            "namespace" | "module" => return Some(theme.namespace),
+            "operator" => return Some(theme.operator),
+            "punctuation" => return Some(theme.punctuation),
+            "constructor" => return Some(theme.constructor),
+            "builtin" => return Some(theme.builtin),
+            _ => {}
+        }
+    }
+
+    // Fallback to hardcoded defaults if no theme colors specified or unknown capture
+    match base_name {
+        "keyword" => Some(Color::Magenta),
+        "type" => Some(Color::Yellow),
+        "function" | "constructor" => Some(Color::Blue),
+        "string" => Some(Color::Green),
+        "number" | "constant" | "boolean" => Some(Color::Yellow),
+        "comment" => Some(Color::DarkGrey),
+        "variable" => Some(Color::Cyan),
+        "parameter" => Some(Color::White),
+        "property" | "field" => Some(Color::Blue),
+        "attribute" | "label" => Some(Color::Yellow),
+        "namespace" | "module" => Some(Color::Cyan),
+        "operator" => Some(Color::White),
+        "punctuation" => Some(Color::White),
+        "escape" | "embedded" => Some(Color::Grey),
+        _ => None,
+    }
+}
+
+/// Render buffer content to the content layer
+fn render_content_to_layer(layer: &mut Layer, ctx: &RenderContext) -> Result<(), String> {
+    let buf = ctx.buf;
+    let viewport = ctx.viewport;
+    let editor_bg = ctx.state.settings.editor_bg;
+    let editor_fg = ctx.state.settings.editor_fg;
+
+    // Gutter width is based on total lines
     let gutter_width = if ctx.state.settings.show_line_numbers {
         ctx.state.gutter_width
     } else {
@@ -496,9 +512,9 @@ fn render_content_to_layer(
         }
 
         if line_num < buf.get_total_lines() {
+            let line_start_byte = buf.line_index.get_start(line_num).unwrap_or(0);
             let line_bytes = buf.get_line_bytes(line_num);
             let line_str = String::from_utf8_lossy(&line_bytes);
-            let line_start_offset = buf.line_index.get_line_start(line_num);
 
             // Write line content
             // We need to skip visual columns based on viewport.left_col
@@ -506,29 +522,46 @@ fn render_content_to_layer(
             let mut visual_col = 0;
             let mut rendered_col = 0;
             let left_col = viewport.left_col();
-            let mut current_byte_offset = 0;
+            let mut byte_offset_in_line = 0usize;
 
             for ch in line_str.chars() {
                 if rendered_col >= content_cols {
                     break;
                 }
 
-                // Calculate match highlighting
+                // Calculate absolute byte offset for this character
+                let abs_byte_offset = line_start_byte + byte_offset_in_line;
                 let char_len = ch.len_utf8();
-                let abs_start = line_start_offset + current_byte_offset;
-                let abs_end = abs_start + char_len;
+                let abs_end = abs_byte_offset + char_len;
 
+                // 1. Check for search match (highest priority)
                 let is_match = !ctx.state.search_matches.is_empty()
                     && ctx.state.search_matches.iter().any(|m| {
-                        let start = std::cmp::max(m.range.start, abs_start);
+                        let start = std::cmp::max(m.range.start, abs_byte_offset);
                         let end = std::cmp::min(m.range.end, abs_end);
                         start < end
                     });
 
+                // 2. Check for syntax highlighting
+                let syntax_fg = if let Some(highlights) = ctx.highlights {
+                    // Find all highlights containing this byte and pick the most specific one (shortest range)
+                    highlights
+                        .iter()
+                        .filter(|(range, _)| range.contains(&abs_byte_offset))
+                        .min_by_key(|(range, _)| range.end - range.start)
+                        .and_then(|(_, name)| {
+                            highlight_color(name, ctx.state.settings.syntax_colors.as_ref())
+                        })
+                        .or(editor_fg)
+                } else {
+                    editor_fg
+                };
+
+                // Determine final colors
                 let (fg, bg) = if is_match {
                     (Some(Color::Black), Some(Color::Yellow))
                 } else {
-                    (editor_fg, editor_bg)
+                    (syntax_fg, editor_bg)
                 };
 
                 // Track visual column (handling tabs and wide chars)
@@ -566,7 +599,7 @@ fn render_content_to_layer(
                     }
                 }
                 visual_col = next_visual_col;
-                current_byte_offset += char_len;
+                byte_offset_in_line += char_len;
             }
 
             // Pad with spaces
@@ -580,6 +613,8 @@ fn render_content_to_layer(
             }
         }
     }
+
+    Ok(())
 }
 
 /// Calculate the visual column position accounting for tab width and wide characters
@@ -589,7 +624,7 @@ fn calculate_visual_column(line_bytes: &[u8], start_col: usize, tab_width: usize
     for ch in line_str.chars() {
         if ch == '\t' {
             // Move to next tab stop
-            col = ((col / tab_width) + 1) * tab_width;
+            col += tab_width - (col % tab_width);
         } else {
             col += UnicodeWidthChar::width(ch).unwrap_or(1);
         }
@@ -597,174 +632,114 @@ fn calculate_visual_column(line_bytes: &[u8], start_col: usize, tab_width: usize
     col
 }
 
-/// Calculate the cursor column position in the buffer
-pub(crate) fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) -> usize {
-    let before_gap = buf.get_before_gap();
-    let mut current_line = 0;
-    let mut line_start = 0;
-
-    // Find the start of the target line
-    for (i, &byte) in before_gap.iter().enumerate() {
-        if byte == b'\n' {
-            if current_line == line {
-                // Found the line, calculate visual column up to gap position
-                let line_bytes = &before_gap[line_start..i];
-                return calculate_visual_column(line_bytes, 0, tab_width);
-            }
-            current_line += 1;
-            line_start = i + 1;
-        }
+/// Calculate the cursor column position accounting for tab width and wide characters
+pub fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) -> usize {
+    if line >= buf.get_total_lines() {
+        return 0;
     }
 
-    // If we're at the gap position on the target line
-    if current_line == line {
-        let line_bytes = &before_gap[line_start..];
-        return calculate_visual_column(line_bytes, 0, tab_width);
-    }
+    let line_bytes = buf.get_line_bytes(line);
+    let cursor_offset = buf.cursor() - buf.line_index.get_start(line).unwrap_or(0);
 
-    // Check after_gap - need to include before_gap bytes from line_start
-    let after_gap = buf.get_after_gap();
-    // First, calculate column for before_gap portion of this line
-    let before_line_bytes = &before_gap[line_start..];
-    let mut col = calculate_visual_column(before_line_bytes, 0, tab_width);
+    // Calculate visual column up to cursor offset
+    let mut col = 0;
+    let mut current_byte = 0;
+    let line_str = String::from_utf8_lossy(&line_bytes);
 
-    // Now process after_gap bytes
-    for (i, &byte) in after_gap.iter().enumerate() {
-        if byte == b'\n' {
-            if current_line == line {
-                // Found the line in after_gap, include bytes up to this newline
-                let after_line_bytes = &after_gap[..i];
-                return calculate_visual_column(after_line_bytes, col, tab_width);
-            }
-            current_line += 1;
-            col = 0;
-        }
-    }
-
-    // If we're at the end of the target line (after gap, no newline found)
-    if current_line == line {
-        // Include all remaining after_gap bytes, continuing from col
-        return calculate_visual_column(&after_gap, col, tab_width);
-    }
-
-    0
-}
-
-// Re-export format_key for backward compatibility with tests
-pub(crate) fn _format_key(key: Key) -> String {
-    StatusBar::format_key(key)
-}
-
-/// Helper to wrap text to a specific width
-fn wrap_text(text: &str, width: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-
-    for paragraph in text.split('\n') {
-        let words: Vec<&str> = paragraph.split_whitespace().collect();
-        if words.is_empty() {
-            lines.push(String::new());
-            continue;
-        }
-
-        let mut current_line = String::with_capacity(width);
-        for word in words {
-            if current_line.len() + word.len() + 1 > width && !current_line.is_empty() {
-                lines.push(current_line);
-                current_line = String::with_capacity(width);
-            }
-            if !current_line.is_empty() {
-                current_line.push(' ');
-            }
-            current_line.push_str(word);
-        }
-
-        if !current_line.is_empty() {
-            lines.push(current_line);
-        }
-        // Handle case where text is empty
-        if lines.is_empty() {
-            lines.push(String::new());
-        }
-    }
-    lines
-}
-
-/// Render active notifications
-fn render_notifications(layer: &mut Layer, state: &State, term_rows: usize, term_cols: usize) {
-    use crate::notification::NotificationType;
-    let now = std::time::Instant::now();
-    let notifications: Vec<_> = state
-        .error_manager
-        .notifications()
-        .iter_active()
-        .filter(|n| !n.is_expired(now))
-        .collect();
-
-    let mut current_bottom = term_rows.saturating_sub(2); // Start above bottom status line
-
-    for notification in notifications.iter().rev() {
-        // Simple styling
-        let (_border_color, title_color) = match notification.kind {
-            NotificationType::Info => (Some(Color::Blue), Some(Color::Cyan)),
-            NotificationType::Warning => (Some(Color::Yellow), Some(Color::Yellow)),
-            NotificationType::Error => (Some(Color::Red), Some(Color::Red)),
-            NotificationType::Success => (Some(Color::Green), Some(Color::Green)),
-        };
-
-        // Format content
-        let prefix = match notification.kind {
-            NotificationType::Info => " [I] ",
-            NotificationType::Warning => " [W] ",
-            NotificationType::Error => " [E] ",
-            NotificationType::Success => " [S] ",
-        };
-        let full_text = format!("{}{}", prefix, notification.message);
-
-        // Calculate dimensions
-        // Fixed width for now, but wrapped
-        let width = 40;
-        let content_width = width - 2; // Subtract borders
-
-        let lines = wrap_text(&full_text, content_width - 2); // Subtract padding
-        let height = lines.len() + 2; // Content lines + top border + bottom border
-
-        // Skip if out of space
-        if current_bottom < height {
+    for ch in line_str.chars() {
+        if current_byte >= cursor_offset {
             break;
         }
 
-        let start_row = current_bottom.saturating_sub(height);
-
-        // Create window with style
-        let mut style = crate::floating_window::WindowStyle::default()
-            .with_border(true)
-            .with_reverse_video(false)
-            .with_fg(title_color.unwrap_or(Color::White));
-
-        if let Some(bg) = state.settings.editor_bg {
-            style = style.with_bg(bg);
+        if ch == '\t' {
+            col += tab_width - (col % tab_width);
+        } else {
+            col += UnicodeWidthChar::width(ch).unwrap_or(1);
         }
-
-        let window = FloatingWindow::with_style(
-            WindowPosition::Absolute {
-                row: start_row as u16,
-                col: term_cols.saturating_sub(width + 2) as u16,
-            },
-            width,
-            height,
-            style,
-        );
-
-        // Render content lines
-        let content_bytes: Vec<Vec<u8>> = lines.into_iter().map(|line| line.into_bytes()).collect();
-
-        window.render(layer, &content_bytes);
-
-        // Move up for next notification (preserve existing padding logic)
-        current_bottom = start_row.saturating_sub(1);
+        current_byte += ch.len_utf8();
     }
+
+    col
 }
 
-#[cfg(test)]
-#[path = "tests.rs"]
-mod tests;
+/// Render notifications to the notification layer
+fn render_notifications(
+    layer: &mut Layer,
+    state: &State,
+    viewport_rows: usize,
+    viewport_cols: usize,
+) {
+    let notifications = state.error_manager.notifications();
+    if notifications.is_empty() {
+        return;
+    }
+
+    // Render notifications from bottom up, above status bar
+    let mut current_row = viewport_rows.saturating_sub(2); // Start above status bar
+    let max_width = (viewport_cols as f32 * 0.8) as usize; // Max 80% width
+
+    for notification in notifications.iter_active().rev() {
+        let message = &notification.message;
+        let color = match notification.kind {
+            crate::notification::NotificationType::Error => Color::Red,
+            crate::notification::NotificationType::Warning => Color::Yellow,
+            crate::notification::NotificationType::Info => Color::Blue,
+            crate::notification::NotificationType::Success => Color::Green,
+        };
+
+        // Wrap text if needed
+        let mut lines = Vec::new();
+        let mut current_line = String::new();
+
+        for word in message.split_whitespace() {
+            if current_line.len() + word.len() + 1 > max_width {
+                lines.push(current_line);
+                current_line = String::from(word);
+            } else {
+                if !current_line.is_empty() {
+                    current_line.push(' ');
+                }
+                current_line.push_str(word);
+            }
+        }
+        if !current_line.is_empty() {
+            lines.push(current_line);
+        }
+
+        // Render lines
+        for line in lines.iter().rev() {
+            if current_row == 0 {
+                break;
+            }
+
+            let start_col = viewport_cols.saturating_sub(line.len() + 4); // Right aligned with padding
+
+            // Draw background box
+            for i in 0..(line.len() + 4) {
+                layer.set_cell(
+                    current_row,
+                    start_col + i,
+                    Cell::new(b' ').with_colors(Some(Color::White), Some(color)),
+                );
+            }
+
+            // Draw text
+            for (i, ch) in line.chars().enumerate() {
+                layer.set_cell(
+                    current_row,
+                    start_col + 2 + i,
+                    Cell::from_char(ch).with_colors(Some(Color::White), Some(color)),
+                );
+            }
+
+            if current_row > 0 {
+                current_row -= 1;
+            }
+        }
+
+        // Add spacing between notifications
+        if current_row > 0 {
+            current_row -= 1;
+        }
+    }
+}

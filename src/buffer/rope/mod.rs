@@ -142,6 +142,15 @@ impl PieceTable {
         get_byte_recursive(self.root.as_deref(), pos, &self.original, &self.add)
     }
 
+    /// Get a chunk of text starting at the given byte offset.
+    /// Used for Tree-sitter integration.
+    pub fn get_chunk_at_byte(&self, pos: usize) -> &[u8] {
+        if pos >= self.len() {
+            return &[];
+        }
+        get_chunk_at_byte_recursive(self.root.as_deref(), pos, &self.original, &self.add)
+    }
+
     pub fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
         let mut result = Vec::with_capacity(range.len());
         collect_bytes_range(
@@ -469,6 +478,36 @@ fn get_byte_recursive(node: Option<&Node>, pos: usize, original: &[u8], add: &[u
         slice[offset]
     } else {
         get_byte_recursive(
+            node.right.as_deref(),
+            pos - left_len - node.piece.len,
+            original,
+            add,
+        )
+    }
+}
+
+fn get_chunk_at_byte_recursive<'a>(
+    node: Option<&'a Node>,
+    pos: usize,
+    original: &'a [u8],
+    add: &'a [u8],
+) -> &'a [u8] {
+    let node = node.unwrap();
+    let left_len = node.left.as_ref().map_or(0, |n| n.len);
+
+    if pos < left_len {
+        get_chunk_at_byte_recursive(node.left.as_deref(), pos, original, add)
+    } else if pos < left_len + node.piece.len {
+        let offset = pos - left_len;
+        let slice = match node.piece.source {
+            BufferSource::Original => {
+                &original[node.piece.start..node.piece.start + node.piece.len]
+            }
+            BufferSource::Add => &add[node.piece.start..node.piece.start + node.piece.len],
+        };
+        &slice[offset..]
+    } else {
+        get_chunk_at_byte_recursive(
             node.right.as_deref(),
             pos - left_len - node.piece.len,
             original,

@@ -96,6 +96,8 @@ pub struct UserSettings {
     pub tab_width: usize,
     /// Whether to expand tabs to spaces
     pub expand_tabs: bool,
+    /// Optional syntax highlighting colors from current theme
+    pub syntax_colors: Option<crate::color::theme::SyntaxColors>,
 }
 
 impl UserSettings {
@@ -113,6 +115,7 @@ impl UserSettings {
             poll_timeout_ms: 16,
             tab_width: 4,
             expand_tabs: true,
+            syntax_colors: None,
         }
     }
 

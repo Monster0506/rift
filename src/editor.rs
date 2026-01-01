@@ -17,6 +17,7 @@ use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Main editor struct
 pub struct Editor<T: TerminalBackend> {
@@ -37,6 +38,8 @@ pub struct Editor<T: TerminalBackend> {
     command_parser: CommandParser,
     settings_registry: SettingsRegistry<UserSettings>,
     document_settings_registry: SettingsRegistry<crate::document::definitions::DocumentOptions>,
+    #[allow(dead_code)]
+    language_loader: Arc<crate::syntax::loader::LanguageLoader>,
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -47,12 +50,20 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Create a new editor instance with an optional file to load
     pub fn with_file(mut terminal: T, file_path: Option<String>) -> Result<Self, RiftError> {
+        // Init language loader
+        let grammar_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.join("grammars")))
+            .unwrap_or_else(|| std::path::PathBuf::from("grammars"));
+
+        let language_loader = Arc::new(crate::syntax::loader::LanguageLoader::new(grammar_dir));
+
         // Validate file BEFORE initializing terminal or creating buffer
         // We attempt to load the file directly in the document creation block below
 
         // Create document (either from file or empty)
         let next_id = 1;
-        let document = if let Some(ref path) = file_path {
+        let mut document = if let Some(ref path) = file_path {
             // Try to load the file directly
             Document::from_file(next_id, path).map_err(|e| {
                 RiftError::new(
@@ -65,6 +76,18 @@ impl<T: TerminalBackend> Editor<T> {
             Document::new(next_id)
                 .map_err(|e| RiftError::new(ErrorType::Internal, "INTERNAL_ERROR", e.to_string()))?
         };
+
+        // Try to load syntax for the document
+        if let Some(path) = document.path() {
+            if let Ok(loaded_lang) = language_loader.load_language_for_file(path) {
+                let highlights = language_loader
+                    .load_query(&loaded_lang.name, "highlights")
+                    .ok();
+                if let Ok(syntax) = crate::syntax::Syntax::new(loaded_lang, highlights) {
+                    document.set_syntax(syntax);
+                }
+            }
+        }
 
         // Initialize terminal (clears screen, enters raw mode, etc.)
         // We do this AFTER loading the document so we don't mess up the terminal if loading fails
@@ -115,6 +138,7 @@ impl<T: TerminalBackend> Editor<T> {
             command_parser,
             settings_registry,
             document_settings_registry,
+            language_loader,
         })
     }
 
@@ -171,7 +195,27 @@ impl<T: TerminalBackend> Editor<T> {
         } = self;
 
         let doc_id = tab_order[*current_tab];
-        let doc = documents.get(&doc_id).unwrap();
+        let doc = documents.get_mut(&doc_id).unwrap();
+
+        // Calculate visible range for syntax highlighting
+        let start_line = viewport.top_line();
+        let end_line = start_line + viewport.visible_rows();
+        let start_byte = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
+        let end_byte = if end_line < doc.buffer.get_total_lines() {
+            doc.buffer
+                .line_index
+                .get_start(end_line)
+                .unwrap_or(doc.buffer.len())
+        } else {
+            doc.buffer.len()
+        };
+
+        let highlights = if let Some(syntax) = doc.syntax.as_mut() {
+            Some(syntax.highlights(&doc.buffer, Some(start_byte..end_byte)))
+        } else {
+            None
+        };
+
         let ctx = render::RenderContext {
             buf: &doc.buffer,
             viewport,
@@ -181,6 +225,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_count: dispatcher.pending_count(),
             needs_clear: true,
             tab_width: doc.options.tab_width,
+            highlights: highlights.as_deref(),
         };
 
         render::full_redraw(term, compositor, ctx, render_cache)
@@ -446,7 +491,7 @@ impl<T: TerminalBackend> Editor<T> {
                         let tab_width = doc.options.tab_width;
                         execute_command(
                             cmd,
-                            &mut doc.buffer,
+                            doc,
                             expand_tabs,
                             tab_width,
                             viewport_height,
@@ -457,8 +502,7 @@ impl<T: TerminalBackend> Editor<T> {
                         self.state.handle_error(e);
                     }
                     if cmd.is_mutating() {
-                        // Mark document dirty after a mutating command
-                        self.documents.get_mut(&doc_id).unwrap().mark_dirty();
+                        // Mark document dirty is handled by Document methods now
                         // Update search highlights if active
                         self.update_search_highlights();
                     }
@@ -676,7 +720,28 @@ impl<T: TerminalBackend> Editor<T> {
         } = self;
 
         let doc_id = tab_order[*current_tab];
-        let doc = documents.get(&doc_id).unwrap();
+        // We need mutable access to call syntax.highlights() which potentially updates parse tree
+        let doc = documents.get_mut(&doc_id).unwrap();
+
+        // Calculate visible range for syntax highlighting optimization
+        let start_line = viewport.top_line();
+        let end_line = start_line + viewport.visible_rows();
+        let start_byte = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
+        let end_byte = if end_line < doc.buffer.get_total_lines() {
+            doc.buffer
+                .line_index
+                .get_start(end_line)
+                .unwrap_or(doc.buffer.len())
+        } else {
+            doc.buffer.len()
+        };
+
+        let highlights = if let Some(syntax) = doc.syntax.as_mut() {
+            Some(syntax.highlights(&doc.buffer, Some(start_byte..end_byte)))
+        } else {
+            None
+        };
+
         let buf = &doc.buffer;
 
         let ctx = render::RenderContext {
@@ -688,6 +753,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_count: dispatcher.pending_count(),
             needs_clear,
             tab_width: doc.options.tab_width,
+            highlights: highlights.as_deref(),
         };
 
         let _ = render::render(term, compositor, ctx, render_cache)?;

@@ -9,13 +9,14 @@
 //! - Status never consumes input or commands.
 
 use crate::color::Color;
-use crate::command::Command;
 use crate::key::Key;
 use crate::layer::{Cell, Layer};
 use crate::mode::Mode;
 use crate::state::State;
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
+
+use crate::render::{CursorInfo, StatusDrawState};
 
 /// Status bar renderer
 pub struct StatusBar;
@@ -204,7 +205,21 @@ impl StatusBar {
     }
 
     /// Format debug information string
-    fn format_debug_info(state: &State, current_mode: Mode) -> String {
+    fn format_debug_info_from_state(
+        file_name: &str,
+        cursor: &CursorInfo,
+        total_lines: usize,
+        _debug_mode: bool,
+    ) -> String {
+        let mut parts = Vec::new();
+        parts.push(format!("File: {}", file_name));
+        parts.push(format!("Pos: {}:{}", cursor.row + 1, cursor.col + 1));
+        parts.push(format!("Lines: {}", total_lines));
+        parts.join(" | ")
+    }
+
+    /// Format debug information string (legacy)
+    fn format_debug_info(state: &State, _current_mode: Mode) -> String {
         let mut parts = Vec::new();
 
         // Filepath (in debug mode, show full path)
@@ -215,29 +230,6 @@ impl StatusBar {
         // Last keypress
         if let Some(key) = state.last_keypress {
             parts.push(format!("Last: {}", Self::format_key(key)));
-        }
-
-        // In insert mode, show the character being inserted
-        if current_mode == Mode::Insert {
-            if let Some(Command::InsertChar(ch)) = state.last_command {
-                let bytes = {
-                    let mut b = [0u8; 4];
-                    ch.encode_utf8(&mut b);
-                    ch.len_utf8()
-                };
-                let char_str = if ch == '\t' {
-                    "\\t".to_string()
-                } else if ch == '\n' {
-                    "\\n".to_string()
-                } else if !ch.is_control() {
-                    format!("'{ch}'")
-                } else {
-                    format!("\\u{{{:04x}}}", ch as u32)
-                };
-                parts.push(format!("Insert: {char_str} ({bytes}B)"));
-            }
-        } else if let Some(cmd) = state.last_command {
-            parts.push(format!("Cmd: {cmd:?}"));
         }
 
         // Cursor position (1-indexed for display)
@@ -251,53 +243,27 @@ impl StatusBar {
         parts.push(format!("Lines: {}", state.total_lines));
         parts.push(format!("Size: {}B", state.buffer_size));
 
-        // Line ending
-        let eol = match state.line_ending {
-            crate::document::LineEnding::LF => "LF",
-            crate::document::LineEnding::CRLF => "CRLF",
-        };
-        parts.push(eol.to_string());
-
         parts.join(" | ")
     }
 
     /// Render the status bar to a layer instead of directly to terminal
     /// This allows the status bar to be composited with other layers
-    pub fn render_to_layer(
-        layer: &mut Layer,
-        viewport: &Viewport,
-        current_mode: Mode,
-        pending_key: Option<Key>,
-        pending_count: usize,
-        state: &State,
-        search_query: Option<&str>,
-        search_match_index: Option<usize>,
-        search_total_matches: usize,
-    ) {
-        let status_row = viewport.visible_rows().saturating_sub(1);
-        let visible_cols = viewport.visible_cols();
-
-        // If status line is disabled, clear the row and return
-        if !state.settings.status_line.show_status_line {
-            for col in 0..visible_cols {
-                layer.clear_cell(status_row, col);
-            }
-            return;
-        }
+    pub fn render_to_layer(layer: &mut Layer, state: &StatusDrawState) {
+        let status_row = layer.rows().saturating_sub(1);
+        let visible_cols = state.cols;
 
         // Determine colors based on reverse video setting
-        let (fg, bg) = if state.settings.status_line.reverse_video {
-            // Reverse video: swap fg/bg
+        let (fg, bg) = if state.reverse_video {
             (
-                Some(state.settings.editor_bg.unwrap_or(Color::Black)),
-                Some(state.settings.editor_fg.unwrap_or(Color::White)),
+                state.editor_bg.or(Some(Color::Black)),
+                state.editor_fg.or(Some(Color::White)),
             )
         } else {
-            (state.settings.editor_fg, state.settings.editor_bg)
+            (state.editor_fg, state.editor_bg)
         };
 
         // Build the status line content
-        let mode_str = Self::format_mode(current_mode);
+        let mode_str = Self::format_mode(state.mode);
 
         // Normal display: mode + pending key + search info + (debug info or filename)
         let mut col = 0;
@@ -307,20 +273,20 @@ impl StatusBar {
         col += mode_str.len();
 
         // Pending key indicator
-        if pending_count > 0 {
-            let count_str = format!(" {}", pending_count);
+        if state.pending_count > 0 {
+            let count_str = format!(" {}", state.pending_count);
             layer.write_bytes_colored(status_row, col, count_str.as_bytes(), fg, bg);
             col += count_str.len();
         }
 
-        if let Some(key) = pending_key {
+        if let Some(key) = state.pending_key {
             let pending_str = format!(" [{}]", Self::format_key(key));
             layer.write_bytes_colored(status_row, col, pending_str.as_bytes(), fg, bg);
             col += pending_str.len();
         }
 
         // Search stats: [#query# k/n]
-        if let Some(query) = search_query {
+        if let Some(query) = &state.search_query {
             if !query.is_empty() {
                 // Space before search info
                 layer.set_cell(status_row, col, Cell::new(b' ').with_colors(fg, bg));
@@ -337,12 +303,11 @@ impl StatusBar {
                 col += query.len();
 
                 // Render stats " k/n"
-                // Render stats " k/n"
-                if search_total_matches > 0 {
-                    let stats = if let Some(idx) = search_match_index {
-                        format!(" {}/{}", idx, search_total_matches)
+                if state.search_total_matches > 0 {
+                    let stats = if let Some(idx) = state.search_match_index {
+                        format!(" {}/{}", idx, state.search_total_matches)
                     } else {
-                        format!(" ?/{}", search_total_matches)
+                        format!(" ?/{}", state.search_total_matches)
                     };
                     layer.write_bytes_colored(status_row, col, stats.as_bytes(), fg, bg);
                     col += stats.len();
@@ -356,7 +321,12 @@ impl StatusBar {
 
         if state.debug_mode {
             // Debug mode: show debug info
-            let debug_str = Self::format_debug_info(state, current_mode);
+            let debug_str = Self::format_debug_info_from_state(
+                &state.file_name,
+                &state.cursor,
+                state.total_lines,
+                state.debug_mode,
+            );
             if !debug_str.is_empty() {
                 let truncated = if debug_str.len() <= available_cols {
                     debug_str
@@ -379,10 +349,9 @@ impl StatusBar {
                 layer.write_bytes_colored(status_row, col, truncated.as_bytes(), fg, bg);
                 col += truncated.len();
             }
-        } else if state.settings.status_line.show_filename {
+        } else {
             // Normal mode: show filename on the right
-            let display_name = if state.is_dirty && state.settings.status_line.show_dirty_indicator
-            {
+            let display_name = if state.is_dirty {
                 format!("{}*", state.file_name)
             } else {
                 state.file_name.clone()

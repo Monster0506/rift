@@ -54,20 +54,36 @@ impl ThemeHandler for DefaultThemeHandler {
         settings.editor_bg = Some(theme.background);
         settings.editor_fg = Some(theme.foreground);
 
-        // Future: When Theme struct is extended with more properties,
-        // add them here. For example:
-        // settings.status_bar_bg = Some(theme.status_bar_bg);
-        // settings.status_bar_fg = Some(theme.status_bar_fg);
-        // settings.selection_bg = Some(theme.selection_bg);
-        // settings.cursor_color = Some(theme.cursor_color);
-        // settings.command_line_bg = Some(theme.command_line_bg);
-        // etc.
+        // Apply syntax colors
+        settings.syntax_colors = theme.syntax;
     }
 }
 
 /// Global theme handler instance
 /// In the future, this could be made configurable or passed as a parameter
 static THEME_HANDLER: DefaultThemeHandler = DefaultThemeHandler;
+
+/// Syntax highlighting colors for a theme
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SyntaxColors {
+    pub keyword: Color,
+    pub function: Color,
+    pub type_def: Color,
+    pub string: Color,
+    pub number: Color,
+    pub constant: Color,
+    pub boolean: Color,
+    pub comment: Color,
+    pub variable: Color,
+    pub parameter: Color,
+    pub property: Color,
+    pub attribute: Color,
+    pub namespace: Color,
+    pub operator: Color,
+    pub punctuation: Color,
+    pub constructor: Color,
+    pub builtin: Color,
+}
 
 /// Editor theme definition
 #[derive(Debug, Clone)]
@@ -80,6 +96,8 @@ pub struct Theme {
     pub background: Color,
     /// Foreground (text) color
     pub foreground: Color,
+    /// Optional syntax highlighting colors
+    pub syntax: Option<SyntaxColors>,
 }
 
 /// Theme variant
@@ -97,12 +115,14 @@ impl Theme {
         variant: ThemeVariant,
         background: Color,
         foreground: Color,
+        syntax: Option<SyntaxColors>,
     ) -> Self {
         Theme {
             name,
             variant,
             background,
             foreground,
+            syntax,
         }
     }
 
@@ -118,6 +138,7 @@ impl Theme {
                 b: 255,
             }, // #FFFFFF - Pure white
             Color::Rgb { r: 0, g: 0, b: 0 }, // #000000 - Pure black
+            None,                            // Default syntax for now
         )
     }
 
@@ -137,12 +158,98 @@ impl Theme {
                 g: 224,
                 b: 224,
             }, // #E0E0E0 - Light gray
+            None,
         )
     }
 
     /// Get the gruvbox theme (dark variant)
     #[must_use]
     pub fn gruvbox() -> Self {
+        let fg = Color::Rgb {
+            r: 235,
+            g: 219,
+            b: 178,
+        };
+        let syntax = SyntaxColors {
+            keyword: Color::Rgb {
+                r: 251,
+                g: 73,
+                b: 52,
+            }, // #fb4934
+            function: Color::Rgb {
+                r: 238,
+                g: 189,
+                b: 53,
+            }, // #eebd35
+            type_def: Color::Rgb {
+                r: 142,
+                g: 192,
+                b: 124,
+            }, // #8ec07c
+            string: Color::Rgb {
+                r: 152,
+                g: 151,
+                b: 26,
+            }, // #98971a
+            number: Color::Rgb {
+                r: 177,
+                g: 98,
+                b: 134,
+            }, // #b16286
+            constant: Color::Rgb {
+                r: 212,
+                g: 135,
+                b: 156,
+            }, // #D4879C
+            boolean: Color::Rgb {
+                r: 214,
+                g: 93,
+                b: 14,
+            }, // #d65d0e
+            comment: Color::Rgb {
+                r: 102,
+                g: 92,
+                b: 84,
+            }, // #665c54
+            variable: Color::Rgb {
+                r: 127,
+                g: 162,
+                b: 172,
+            }, // #7fa2ac
+            parameter: Color::Rgb {
+                r: 69,
+                g: 133,
+                b: 136,
+            }, // #458588
+            property: Color::Rgb {
+                r: 69,
+                g: 133,
+                b: 136,
+            }, // #458588
+            attribute: Color::Rgb {
+                r: 69,
+                g: 133,
+                b: 136,
+            }, // #458588
+            namespace: Color::Rgb {
+                r: 127,
+                g: 162,
+                b: 172,
+            }, // #7fa2ac
+            operator: fg,
+            punctuation: fg,
+            constructor: Color::Rgb {
+                r: 142,
+                g: 192,
+                b: 124,
+            }, // #8ec07c
+            builtin: Color::Rgb {
+                r: 69,
+                g: 133,
+                b: 136,
+            }, // #458588
+        };
+
         Theme::new(
             "gruvbox",
             ThemeVariant::Dark,
@@ -150,18 +257,92 @@ impl Theme {
                 r: 40,
                 g: 40,
                 b: 32,
-            }, // #282828 - Gruvbox dark background
-            Color::Rgb {
-                r: 235,
-                g: 219,
-                b: 178,
-            }, // #EBDBB2 - Gruvbox beige foreground
+            }, // #282828
+            fg,
+            Some(syntax),
         )
     }
 
     /// Get the nordic theme (Nord)
     #[must_use]
     pub fn nordic() -> Self {
+        let fg = Color::Rgb {
+            r: 187,
+            g: 195,
+            b: 212,
+        }; // #BBC3D4
+        let syntax = SyntaxColors {
+            keyword: Color::Rgb {
+                r: 180,
+                g: 142,
+                b: 173,
+            }, // #B48EAD
+            function: Color::Rgb {
+                r: 136,
+                g: 192,
+                b: 208,
+            }, // #88C0D0
+            type_def: Color::Rgb {
+                r: 129,
+                g: 161,
+                b: 193,
+            }, // #81A1C1
+            string: Color::Rgb {
+                r: 163,
+                g: 190,
+                b: 140,
+            }, // #A3BE8C
+            number: Color::Rgb {
+                r: 180,
+                g: 142,
+                b: 173,
+            }, // #B48EAD
+            constant: Color::Rgb {
+                r: 208,
+                g: 135,
+                b: 112,
+            }, // #D08770
+            boolean: Color::Rgb {
+                r: 208,
+                g: 135,
+                b: 112,
+            }, // #D08770
+            comment: Color::Rgb {
+                r: 76,
+                g: 86,
+                b: 106,
+            }, // #4C566A
+            variable: fg,
+            parameter: fg,
+            property: Color::Rgb {
+                r: 136,
+                g: 192,
+                b: 208,
+            }, // #88C0D0
+            attribute: Color::Rgb {
+                r: 143,
+                g: 188,
+                b: 187,
+            }, // #8FBCBB
+            namespace: Color::Rgb {
+                r: 129,
+                g: 161,
+                b: 193,
+            }, // #81A1C1
+            operator: fg,
+            punctuation: fg,
+            constructor: Color::Rgb {
+                r: 129,
+                g: 161,
+                b: 193,
+            }, // #81A1C1
+            builtin: Color::Rgb {
+                r: 143,
+                g: 188,
+                b: 187,
+            }, // #8FBCBB
+        };
+
         Theme::new(
             "nordic",
             ThemeVariant::Dark,
@@ -169,12 +350,9 @@ impl Theme {
                 r: 46,
                 g: 52,
                 b: 64,
-            }, // #2E3440 - Nord polar night
-            Color::Rgb {
-                r: 216,
-                g: 222,
-                b: 233,
-            }, // #D8DEE9 - Nord snow storm
+            }, // #2E3440
+            fg,
+            Some(syntax),
         )
     }
 

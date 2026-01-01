@@ -3,10 +3,21 @@ name = "rift"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []  # Dynamic loading by default, no bundled grammars
+bundled-rust = ["dep:tree-sitter-rust"]
+bundled-python = ["dep:tree-sitter-python"]
+
 [dependencies]
-crossterm = "0.29.0"
+crossterm = "0.28.1"
 monster-regex = "0.1.0-alpha.7"
 unicode-width = "0.2.2"
+streaming-iterator = "0.1.9"
+tree-sitter = "0.24.5"
+libloading = "0.9.0"
+
+tree-sitter-rust = { version = "0.23", optional = true }
+tree-sitter-python = { version = "0.23", optional = true }
 
 [dev-dependencies]
 tempfile = "3.24.0"

@@ -1,6 +1,4 @@
 //! Gap buffer implementation for efficient text editing
-//!
-//! REWRITTEN: Now uses Piece Table via LineIndex
 
 use crate::buffer::api::BufferView;
 use crate::error::RiftError;
@@ -215,6 +213,16 @@ impl TextBuffer {
         }
 
         self.line_index.bytes_range(start..end)
+    }
+
+    /// Get a chunk of text starting at the given byte offset.
+    /// Used for Tree-sitter integration.
+    pub fn get_chunk_at_byte(&self, pos: usize) -> &[u8] {
+        self.line_index.get_chunk_at_byte(pos)
+    }
+
+    pub fn byte_at(&self, pos: usize) -> u8 {
+        self.line_index.byte_at(pos)
     }
 
     /// Move cursor up one line

@@ -144,10 +144,15 @@ impl NotificationManager {
         )
     }
 
+    /// Check if there are any notifications
+    pub fn is_empty(&self) -> bool {
+        self.notifications.is_empty()
+    }
+
     /// Get active (non-expired) notifications
     /// This also lazily prunes expired notifications?
     /// No, let's have explicit prune. And `iter_active` just returns iterator.
-    pub fn iter_active(&self) -> impl Iterator<Item = &Notification> {
+    pub fn iter_active(&self) -> std::slice::Iter<'_, Notification> {
         self.notifications.iter()
     }
 
