@@ -291,7 +291,31 @@ pub fn execute_command(
             buf.delete_backward();
         }
         Command::DeleteLine => {
-            // TODO: Implement delete_line
+            buf.move_to_line_start();
+            let start = buf.cursor();
+            if buf.move_down() {
+                let end = buf.cursor();
+                buf.set_cursor(start)?;
+                let len = end - start;
+                buf.line_index.delete(start, len);
+                buf.revision += 1;
+            } else {
+                // Last line
+                buf.move_to_line_end();
+                let end = buf.cursor();
+                // Delete content
+                if end > start {
+                    let len = end - start;
+                    buf.line_index.delete(start, len);
+                    buf.revision += 1;
+                }
+                // Delete preceding newline if exists
+                if start > 0 {
+                    buf.set_cursor(start)?;
+                    buf.delete_backward();
+                    buf.move_to_line_start();
+                }
+            }
         }
         Command::InsertChar(ch) => {
             if ch == '\t' && expand_tabs {

@@ -338,23 +338,23 @@ impl<T: TerminalBackend> Editor<T> {
     /// Run the editor main loop
     fn perform_search(&mut self, query: &str, direction: SearchDirection, skip_current: bool) {
         let doc_id = self.tab_order[self.current_tab];
-        let doc = self.documents.get_mut(&doc_id).unwrap();
-        let mut cursor = doc.buffer.cursor();
 
-        // If searching forward and skipping current, advance cursor to avoid matching at current position
-        if skip_current && direction == SearchDirection::Forward {
-            cursor = cursor.saturating_add(1);
-        }
+        // Calculate start cursor (scope to drop borrow)
+        let cursor = {
+            let doc = self.documents.get(&doc_id).unwrap();
+            let mut c = doc.buffer.cursor();
+            // If searching forward and skipping current, advance cursor to avoid matching at current position
+            if skip_current && direction == SearchDirection::Forward {
+                c = c.saturating_add(1);
+            }
+            c
+        };
 
         // Find all matches first to populate state for highlighting
-        match crate::search::find_all(&doc.buffer, query) {
-            Ok(matches) => {
-                self.state.search_matches = matches;
-            }
-            Err(_) => {
-                self.state.search_matches.clear();
-            }
-        }
+        self.update_search_highlights();
+
+        // Re-acquire mutable borrow for find_next and cursor update
+        let doc = self.documents.get_mut(&doc_id).unwrap();
 
         match find_next(&doc.buffer, cursor, query, direction) {
             Ok(Some(m)) => {
@@ -459,6 +459,8 @@ impl<T: TerminalBackend> Editor<T> {
                     if cmd.is_mutating() {
                         // Mark document dirty after a mutating command
                         self.documents.get_mut(&doc_id).unwrap().mark_dirty();
+                        // Update search highlights if active
+                        self.update_search_highlights();
                     }
                 }
 
@@ -892,6 +894,24 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
             }
+        }
+    }
+
+    /// Update search highlights based on current buffer state
+    fn update_search_highlights(&mut self) {
+        if let Some(query) = self.state.last_search_query.clone() {
+            let doc_id = self.tab_order[self.current_tab];
+            let doc = self.documents.get_mut(&doc_id).unwrap();
+            match crate::search::find_all(&doc.buffer, &query) {
+                Ok(matches) => {
+                    self.state.search_matches = matches;
+                }
+                Err(_) => {
+                    self.state.search_matches.clear();
+                }
+            }
+        } else {
+            self.state.search_matches.clear();
         }
     }
 }

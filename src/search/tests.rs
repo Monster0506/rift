@@ -135,17 +135,17 @@ fn test_unicode_offsets() {
     let buffer = MockBuffer::new(&["Héllo world"]);
 
     // Search "world"
-    // "Héllo " is 6 chars. "world" starts at 6.
+    // "Héllo " is 7 bytes ('é' is 2 bytes). "world" starts at 7.
     let res = find_next(&buffer, 0, "world", SearchDirection::Forward).unwrap();
     assert!(res.is_some());
     let m = res.unwrap();
-    assert_eq!(m.range, 6..11);
+    assert_eq!(m.range, 7..12);
 
     // Search "é"
     let res = find_next(&buffer, 0, "é", SearchDirection::Forward).unwrap();
     assert!(res.is_some());
     let m = res.unwrap();
-    assert_eq!(m.range, 1..2);
+    assert_eq!(m.range, 1..3);
 }
 
 #[test]
