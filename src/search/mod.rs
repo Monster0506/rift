@@ -19,8 +19,53 @@ pub enum SearchDirection {
 
 #[derive(Debug, Clone)]
 pub struct SearchMatch {
-    /// Range in code-points (absolute buffer offsets)
+    /// Range in bytes (absolute buffer offsets)
     pub range: Range<usize>,
+}
+
+/// Find all occurrences of the pattern in the buffer.
+pub fn find_all(buffer: &impl BufferView, query: &str) -> Result<Vec<SearchMatch>, RiftError> {
+    // Check if flags are provided (last unescaped slash)
+    let has_flags = {
+        let bytes = query.as_bytes();
+        let mut found = false;
+        for (i, &b) in bytes.iter().enumerate().rev() {
+            if b == b'/' {
+                if i == 0 || bytes[i - 1] != b'\\' {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        found
+    };
+
+    let query_cow = if has_flags {
+        std::borrow::Cow::Borrowed(query)
+    } else {
+        std::borrow::Cow::Owned(format!("{}/", query))
+    };
+
+    // Parse query
+    let (pattern, flags) = parse_rift_format(&query_cow).map_err(|e| {
+        RiftError::new(ErrorType::Internal, "REGEX_PARSE_ERROR", format!("{:?}", e))
+    })?;
+
+    let re = Regex::new(&pattern, flags).map_err(|e| {
+        RiftError::new(
+            ErrorType::Internal,
+            "REGEX_COMPILE_ERROR",
+            format!("{:?}", e),
+        )
+    })?;
+
+    let is_multiline = pattern.contains("\\n") || pattern.contains('\n');
+
+    if is_multiline {
+        find_all_multiline(buffer, &re)
+    } else {
+        find_all_line_by_line(buffer, &re)
+    }
 }
 
 /// Find the next occurrence of the pattern in the buffer.
@@ -149,8 +194,39 @@ fn find_line_by_line(
     Ok(None)
 }
 
+fn find_all_line_by_line(
+    buffer: &impl BufferView,
+    re: &Regex,
+) -> Result<Vec<SearchMatch>, RiftError> {
+    let mut matches = Vec::new();
+    let line_count = buffer.line_count();
+
+    for i in 0..line_count {
+        let line_start_offset = buffer.line_start(i);
+
+        let mut line_bytes = Vec::new();
+        for chunk in buffer.line_bytes(i) {
+            line_bytes.extend_from_slice(chunk);
+        }
+        if let Ok(line_str) = std::str::from_utf8(&line_bytes) {
+            for m in re.find_all(line_str) {
+                let byte_start = m.start;
+                let byte_end = m.end;
+                let abs_start = line_start_offset + byte_start;
+                let abs_end = line_start_offset + byte_end;
+
+                matches.push(SearchMatch {
+                    range: abs_start..abs_end,
+                });
+            }
+        }
+    }
+
+    Ok(matches)
+}
+
 /// Helper to search a single line.
-/// `min_start_pos`: If provided, the match must start at or after this absolute code-point offset.
+/// `min_start_pos`: If provided, the match must start at or after this absolute byte offset.
 fn search_single_line(
     buffer: &impl BufferView,
     line_idx: usize,
@@ -171,15 +247,8 @@ fn search_single_line(
         let byte_start = m.start;
         let byte_end = m.end;
 
-        // Convert byte offsets to code-point offsets
-        let prefix_str = &line_str[0..byte_start];
-        let match_str = &line_str[byte_start..byte_end];
-
-        let cp_start_rel = prefix_str.chars().count();
-        let cp_len = match_str.chars().count();
-
-        let abs_start = line_start_offset + cp_start_rel;
-        let abs_end = abs_start + cp_len;
+        let abs_start = line_start_offset + byte_start;
+        let abs_end = line_start_offset + byte_end;
 
         if let Some(min) = min_start_pos {
             if abs_start < min {
@@ -217,14 +286,8 @@ fn search_single_line_backward(
         let byte_start = m.start;
         let byte_end = m.end;
 
-        let prefix_str = &line_str[0..byte_start];
-        let match_str = &line_str[byte_start..byte_end];
-
-        let cp_start_rel = prefix_str.chars().count();
-        let cp_len = match_str.chars().count();
-
-        let abs_start = line_start_offset + cp_start_rel;
-        let abs_end = abs_start + cp_len;
+        let abs_start = line_start_offset + byte_start;
+        let abs_end = line_start_offset + byte_end;
 
         if abs_start < max_start_pos {
             last_valid_match = Some(SearchMatch {
@@ -258,17 +321,22 @@ fn find_multiline(
     let full_text = String::from_utf8(full_text_bytes)
         .map_err(|e| RiftError::new(ErrorType::Internal, "UTF8_ERROR", e.to_string()))?;
 
-    // 2. Map code-point `start_pos` to byte offset
-    let start_byte_offset = match get_byte_offset_from_char_offset(&full_text, start_pos) {
-        Some(o) => o,
-        None => full_text.len(),
-    };
+    // 2. Map start_pos for multiline search
+    // Since we are using byte offsets now, start_pos is already a byte offset.
+    // However, the constructed full_text might differ if we are adding newlines that weren't there?
+    // BufferView::line_bytes strips newlines?
+    // "buffer.line_bytes() strips it" -> Comment says so.
+    // So full_text closely matches buffer structure but is contiguous.
+
+    // Note: buffer.line_start(i) is based on the PieceTable with newlines.
+    // The constructed full_text has the same content.
+    // So byte offsets should match 1:1.
 
     match direction {
         SearchDirection::Forward => {
-            // Search from start_byte_offset
+            // Search from start_pos
             for m in re.find_all(&full_text) {
-                if m.start >= start_byte_offset {
+                if m.start >= start_pos {
                     return Ok(Some(convert_match(&full_text, m)));
                 }
             }
@@ -281,7 +349,7 @@ fn find_multiline(
         SearchDirection::Backward => {
             let mut last_match = None;
             for m in re.find_all(&full_text) {
-                if m.start < start_byte_offset {
+                if m.start < start_pos {
                     last_match = Some(m);
                 } else {
                     break;
@@ -299,7 +367,7 @@ fn find_multiline(
             }
 
             if let Some(m) = very_last_match {
-                if m.start >= start_byte_offset {
+                if m.start >= start_pos {
                     return Ok(Some(convert_match(&full_text, m)));
                 }
             }
@@ -309,23 +377,28 @@ fn find_multiline(
     Ok(None)
 }
 
-fn convert_match(text: &str, m: monster_regex::Match) -> SearchMatch {
-    let byte_start = m.start;
-    let byte_end = m.end;
-
-    let prefix = &text[0..byte_start];
-    let matched = &text[byte_start..byte_end];
-
-    let start_cp = prefix.chars().count();
-    let len_cp = matched.chars().count();
-
-    SearchMatch {
-        range: start_cp..(start_cp + len_cp),
+fn find_all_multiline(buffer: &impl BufferView, re: &Regex) -> Result<Vec<SearchMatch>, RiftError> {
+    let mut full_text_bytes = Vec::with_capacity(buffer.len());
+    for i in 0..buffer.line_count() {
+        for chunk in buffer.line_bytes(i) {
+            full_text_bytes.extend_from_slice(chunk);
+        }
+        full_text_bytes.push(b'\n');
     }
+    let full_text = String::from_utf8(full_text_bytes)
+        .map_err(|e| RiftError::new(ErrorType::Internal, "UTF8_ERROR", e.to_string()))?;
+
+    let mut matches = Vec::new();
+    for m in re.find_all(&full_text) {
+        matches.push(convert_match(&full_text, m));
+    }
+    Ok(matches)
 }
 
-fn get_byte_offset_from_char_offset(text: &str, char_offset: usize) -> Option<usize> {
-    text.char_indices().nth(char_offset).map(|(idx, _)| idx)
+fn convert_match(_text: &str, m: monster_regex::Match) -> SearchMatch {
+    SearchMatch {
+        range: m.start..m.end,
+    }
 }
 
 /// Helper to find which line index a code-point offset belongs to.

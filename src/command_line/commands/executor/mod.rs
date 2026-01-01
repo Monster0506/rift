@@ -150,6 +150,11 @@ impl CommandExecutor {
             ParsedCommand::Edit { path, bangs } => ExecutionResult::Edit { path, bangs },
             ParsedCommand::BufferNext { bangs } => ExecutionResult::BufferNext { bangs },
             ParsedCommand::BufferPrevious { bangs } => ExecutionResult::BufferPrevious { bangs },
+            ParsedCommand::NoHighlight { bangs: _ } => {
+                state.search_matches.clear();
+                state.last_search_query = None;
+                ExecutionResult::Redraw
+            }
             ParsedCommand::BufferList => ExecutionResult::BufferList,
         }
     }

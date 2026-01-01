@@ -151,6 +151,14 @@ fn parse_blist(
     ParsedCommand::BufferList
 }
 
+fn parse_nohighlight(
+    _registry: &SettingsRegistry<UserSettings>,
+    _args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    ParsedCommand::NoHighlight { bangs }
+}
+
 // Set command logic
 fn parse_set_impl(
     registry: &SettingsRegistry<UserSettings>,
@@ -452,6 +460,13 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         aliases: &[],
         description: "List buffers",
         factory: Some(parse_blist),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "nohighlight",
+        aliases: &["noh"],
+        description: "Clear search highlights",
+        factory: Some(parse_nohighlight),
         subcommands: &[],
     },
 ];

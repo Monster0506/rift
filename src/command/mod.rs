@@ -61,6 +61,7 @@ impl Command {
             Command::DeleteForward
                 | Command::DeleteBackward
                 | Command::DeleteLine
+                | Command::Delete(_, _)
                 | Command::InsertChar(_)
         )
     }

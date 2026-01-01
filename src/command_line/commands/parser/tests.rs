@@ -1,4 +1,6 @@
-use crate::command_line::commands::{CommandDescriptor, CommandParser, MatchResult, ParsedCommand};
+use crate::command_line::commands::{
+    CommandDescriptor, CommandParser, MatchResult, ParsedCommand, COMMANDS,
+};
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::state::UserSettings;
 
@@ -433,4 +435,18 @@ fn test_parse_set_option_prefix_noexpandtabs() {
             bangs: 0
         }
     );
+}
+
+#[test]
+fn test_parse_real_nohighlight() {
+    let settings_registry = create_settings_registry();
+    let parser = CommandParser::with_commands(settings_registry, COMMANDS);
+
+    // Test full name
+    let result = parser.parse(":nohighlight");
+    assert_eq!(result, ParsedCommand::NoHighlight { bangs: 0 });
+
+    // Test alias
+    let result = parser.parse(":noh");
+    assert_eq!(result, ParsedCommand::NoHighlight { bangs: 0 });
 }

@@ -16,7 +16,7 @@ use crate::error::RiftError;
 use crate::floating_window::BorderChars;
 use crate::key::Key;
 use crate::notification::NotificationType;
-use crate::search::SearchDirection;
+use crate::search::{SearchDirection, SearchMatch};
 
 /// Command line window settings
 #[derive(Debug, Clone)]
@@ -173,6 +173,8 @@ pub struct State {
     pub last_search_query: Option<String>,
     /// Search direction
     pub search_direction: SearchDirection,
+    /// Search matches
+    pub search_matches: Vec<SearchMatch>,
 }
 
 impl State {
@@ -198,6 +200,7 @@ impl State {
             error_manager: ErrorManager::new(),
             last_search_query: None,
             search_direction: SearchDirection::Forward,
+            search_matches: Vec::new(),
         }
     }
 
@@ -223,6 +226,7 @@ impl State {
             error_manager: ErrorManager::new(),
             last_search_query: None,
             search_direction: SearchDirection::Forward,
+            search_matches: Vec::new(),
         }
     }
 

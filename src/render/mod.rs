@@ -45,6 +45,8 @@ pub struct ContentDrawState {
     pub show_line_numbers: bool,
     /// Current gutter width
     pub gutter_width: usize,
+    /// Number of search matches (to trigger redraw on search)
+    pub search_matches_count: usize,
 }
 
 /// Minimal state required to trigger a re-render of the status bar
@@ -59,6 +61,9 @@ pub struct StatusDrawState {
     pub total_lines: usize,
     pub debug_mode: bool,
     pub cols: usize,
+    pub search_query: Option<String>,
+    pub search_match_index: Option<usize>,
+    pub search_total_matches: usize,
 }
 
 /// Minimal state required to trigger a re-render of the command line
@@ -192,6 +197,7 @@ pub fn render<T: TerminalBackend>(
         } else {
             0
         },
+        search_matches_count: ctx.state.search_matches.len(),
     };
 
     if cache.content.as_ref() != Some(&current_content_state) {
@@ -206,8 +212,23 @@ pub fn render<T: TerminalBackend>(
         );
         cache.content = Some(current_content_state);
     }
+    // Calculate search match info
+    let (search_match_index, search_total_matches) = if !ctx.state.search_matches.is_empty() {
+        let cursor_offset = ctx.buf.cursor();
+        let idx = ctx
+            .state
+            .search_matches
+            .iter()
+            .position(|m| {
+                // Check if cursor is contained in match range or at start
+                m.range.contains(&cursor_offset) || m.range.start == cursor_offset
+            })
+            .map(|i| i + 1); // 1-based index
+        (idx, ctx.state.search_matches.len())
+    } else {
+        (None, 0)
+    };
 
-    // 2. Render status bar to STATUS_BAR layer (visible in all modes)
     let current_status_state = StatusDrawState {
         mode: ctx.current_mode,
         pending_key: ctx.pending_key,
@@ -221,6 +242,9 @@ pub fn render<T: TerminalBackend>(
         total_lines: ctx.state.total_lines,
         debug_mode: ctx.state.debug_mode,
         cols: ctx.viewport.visible_cols(),
+        search_query: ctx.state.last_search_query.clone(),
+        search_match_index,
+        search_total_matches,
     };
 
     if cache.status.as_ref() != Some(&current_status_state) {
@@ -232,6 +256,9 @@ pub fn render<T: TerminalBackend>(
             ctx.pending_key,
             ctx.pending_count,
             ctx.state,
+            ctx.state.last_search_query.as_deref(),
+            search_match_index,
+            search_total_matches,
         );
         cache.status = Some(current_status_state);
     }
@@ -471,6 +498,7 @@ fn render_content_to_layer(
         if line_num < buf.get_total_lines() {
             let line_bytes = buf.get_line_bytes(line_num);
             let line_str = String::from_utf8_lossy(&line_bytes);
+            let line_start_offset = buf.line_index.get_line_start(line_num);
 
             // Write line content
             // We need to skip visual columns based on viewport.left_col
@@ -478,11 +506,30 @@ fn render_content_to_layer(
             let mut visual_col = 0;
             let mut rendered_col = 0;
             let left_col = viewport.left_col();
+            let mut current_byte_offset = 0;
 
             for ch in line_str.chars() {
                 if rendered_col >= content_cols {
                     break;
                 }
+
+                // Calculate match highlighting
+                let char_len = ch.len_utf8();
+                let abs_start = line_start_offset + current_byte_offset;
+                let abs_end = abs_start + char_len;
+
+                let is_match = !ctx.state.search_matches.is_empty()
+                    && ctx.state.search_matches.iter().any(|m| {
+                        let start = std::cmp::max(m.range.start, abs_start);
+                        let end = std::cmp::min(m.range.end, abs_end);
+                        start < end
+                    });
+
+                let (fg, bg) = if is_match {
+                    (Some(Color::Black), Some(Color::Yellow))
+                } else {
+                    (editor_fg, editor_bg)
+                };
 
                 // Track visual column (handling tabs and wide chars)
                 let char_width = if ch == '\t' {
@@ -499,19 +546,14 @@ fn render_content_to_layer(
                     if rendered_col < content_cols {
                         let display_col = rendered_col + gutter_width;
                         if display_col < visible_cols {
-                            layer.set_cell(
-                                i,
-                                display_col,
-                                Cell::from_char(ch).with_colors(editor_fg, editor_bg),
-                            );
+                            layer.set_cell(i, display_col, Cell::from_char(ch).with_colors(fg, bg));
 
                             // For wide characters, fill the remaining columns with empty content
-                            // so we don't overwrite the wide character with spaces from the background
                             if char_width > 1 {
                                 let empty_cell = Cell {
                                     content: Vec::new(),
-                                    fg: editor_fg,
-                                    bg: editor_bg,
+                                    fg,
+                                    bg,
                                 };
                                 for k in 1..char_width {
                                     if display_col + k < visible_cols {
@@ -524,6 +566,7 @@ fn render_content_to_layer(
                     }
                 }
                 visual_col = next_visual_col;
+                current_byte_offset += char_len;
             }
 
             // Pad with spaces

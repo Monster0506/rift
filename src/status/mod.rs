@@ -11,7 +11,7 @@
 use crate::color::Color;
 use crate::command::Command;
 use crate::key::Key;
-use crate::layer::Layer;
+use crate::layer::{Cell, Layer};
 use crate::mode::Mode;
 use crate::state::State;
 use crate::term::TerminalBackend;
@@ -270,6 +270,9 @@ impl StatusBar {
         pending_key: Option<Key>,
         pending_count: usize,
         state: &State,
+        search_query: Option<&str>,
+        search_match_index: Option<usize>,
+        search_total_matches: usize,
     ) {
         let status_row = viewport.visible_rows().saturating_sub(1);
         let visible_cols = viewport.visible_cols();
@@ -296,7 +299,7 @@ impl StatusBar {
         // Build the status line content
         let mode_str = Self::format_mode(current_mode);
 
-        // Normal display: mode + pending key + (debug info or filename)
+        // Normal display: mode + pending key + search info + (debug info or filename)
         let mut col = 0;
 
         // Write mode
@@ -314,6 +317,37 @@ impl StatusBar {
             let pending_str = format!(" [{}]", Self::format_key(key));
             layer.write_bytes_colored(status_row, col, pending_str.as_bytes(), fg, bg);
             col += pending_str.len();
+        }
+
+        // Search stats: [#query# k/n]
+        if let Some(query) = search_query {
+            if !query.is_empty() {
+                // Space before search info
+                layer.set_cell(status_row, col, Cell::new(b' ').with_colors(fg, bg));
+                col += 1;
+
+                // Render query highlighted (Yellow bg, Black fg)
+                layer.write_bytes_colored(
+                    status_row,
+                    col,
+                    query.as_bytes(),
+                    Some(Color::Black),
+                    Some(Color::Yellow),
+                );
+                col += query.len();
+
+                // Render stats " k/n"
+                // Render stats " k/n"
+                if search_total_matches > 0 {
+                    let stats = if let Some(idx) = search_match_index {
+                        format!(" {}/{}", idx, search_total_matches)
+                    } else {
+                        format!(" ?/{}", search_total_matches)
+                    };
+                    layer.write_bytes_colored(status_row, col, stats.as_bytes(), fg, bg);
+                    col += stats.len();
+                }
+            }
         }
 
         // Calculate remaining space
