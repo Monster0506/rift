@@ -178,13 +178,13 @@ fn test_multiline_wrap() {
 fn test_case_sensitivity() {
     let buffer = MockBuffer::new(&["Hello"]);
 
-    // Smart case: "hello" matches "Hello"
+    // Smart case: lowercase pattern "hello" matches "Hello" (case-insensitive)
     let res = find_next(&buffer, 0, "hello", SearchDirection::Forward).unwrap();
     assert!(res.is_some());
 
-    // Explicit case insensitive: "HELLO/i" matches "Hello"
-    let res = find_next(&buffer, 0, "HELLO/i", SearchDirection::Forward).unwrap();
-    assert!(res.is_some());
+    // Smart case: uppercase pattern "HELLO" does NOT match "Hello" (case-sensitive)
+    let res = find_next(&buffer, 0, "HELLO", SearchDirection::Forward).unwrap();
+    assert!(res.is_none());
 }
 
 #[test]

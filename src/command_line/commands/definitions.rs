@@ -159,6 +159,114 @@ fn parse_nohighlight(
     ParsedCommand::NoHighlight { bangs }
 }
 
+fn parse_substitute_impl(
+    _registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+    range: Option<String>,
+) -> ParsedCommand {
+    let raw_args = args.join(" ");
+    let raw_args = raw_args.trim();
+
+    if raw_args.is_empty() {
+        return ParsedCommand::Unknown {
+            name: "substitute (usage: :s/pattern/replacement/flags)".to_string(),
+        };
+    }
+
+    // 1. Get separator
+    let separator = raw_args.chars().next().unwrap();
+    let mut chars = raw_args.chars().skip(1); // Skip separator
+
+    // 2. Parse pattern
+    let mut pattern = String::new();
+    let mut escaped = false;
+    let mut found_sep = false;
+    for c in chars.by_ref() {
+        if escaped {
+            pattern.push(c);
+            escaped = false;
+        } else if c == '\\' {
+            pattern.push(c);
+            escaped = true;
+        } else if c == separator {
+            found_sep = true;
+            break;
+        } else {
+            pattern.push(c);
+        }
+    }
+    // 3. Parse replacement
+    let mut replacement = String::new();
+    escaped = false;
+    found_sep = false;
+    // chars iterator continues from after first separator
+    for c in chars.by_ref() {
+        if escaped {
+            replacement.push(c);
+            escaped = false;
+        } else if c == '\\' {
+            replacement.push(c);
+            escaped = true;
+        } else if c == separator {
+            found_sep = true;
+            break;
+        } else {
+            replacement.push(c);
+        }
+    }
+
+    // 4. Parse flags
+    let mut flags_str = String::new();
+    if found_sep {
+        // Rest determines flags
+        flags_str = chars.collect();
+    }
+
+    // 5. Separate flags
+    let mut subst_flags = String::new();
+    let mut regex_flags = String::new();
+
+    for c in flags_str.chars() {
+        if c == 'g' {
+            subst_flags.push(c);
+        } else {
+            regex_flags.push(c);
+        }
+    }
+
+    // append regex flags to pattern if present
+    if !regex_flags.is_empty() {
+        pattern.push_str(" /");
+        pattern.push('/');
+        pattern.push_str(&regex_flags);
+    }
+
+    ParsedCommand::Substitute {
+        pattern,
+        replacement,
+        flags: subst_flags,
+        range,
+        bangs,
+    }
+}
+
+fn parse_substitute(
+    registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    parse_substitute_impl(registry, args, bangs, None)
+}
+
+fn parse_substitute_range(
+    registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    parse_substitute_impl(registry, args, bangs, Some("%".to_string()))
+}
+
 // Set command logic
 fn parse_set_impl(
     registry: &SettingsRegistry<UserSettings>,
@@ -467,6 +575,20 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         aliases: &["noh"],
         description: "Clear search highlights",
         factory: Some(parse_nohighlight),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "substitute",
+        aliases: &["s"],
+        description: "Search and replace text",
+        factory: Some(parse_substitute),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "substitute_range",
+        aliases: &["s%"],
+        description: "Search and replace text in whole file",
+        factory: Some(parse_substitute_range),
         subcommands: &[],
     },
 ];
