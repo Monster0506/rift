@@ -208,7 +208,7 @@ fn test_render_status_bar_pending_key_layer() {
 // ============================================================================
 
 #[test]
-fn test_render_clears_screen() {
+fn test_render_does_not_clear_screen() {
     let mut term = MockTerminal::new(10, 80);
     let buf = TextBuffer::new(100).unwrap();
     let viewport = Viewport::new(10, 80);
@@ -233,8 +233,8 @@ fn test_render_clears_screen() {
     )
     .unwrap();
 
-    // First render should clear screen
-    assert!(term.clear_screen_calls >= 1);
+    // First render should NOT clear screen (to prevent flicker)
+    assert_eq!(term.clear_screen_calls, 0);
 }
 
 #[test]
@@ -294,8 +294,8 @@ fn test_render_empty_buffer() {
     )
     .unwrap();
 
-    // First render should clear screen
-    assert!(term.clear_screen_calls >= 1);
+    // First render should NOT clear screen
+    assert_eq!(term.clear_screen_calls, 0);
     // Should still render empty lines
     assert!(!term.writes.is_empty());
 }
@@ -365,8 +365,8 @@ fn test_render_file_loaded_at_start() {
     )
     .unwrap();
 
-    // Should clear screen on first render
-    assert!(term.clear_screen_calls >= 1);
+    // Should NOT clear screen on first render
+    assert_eq!(term.clear_screen_calls, 0);
 
     // Should render all lines
     let written = term.get_written_string();
@@ -476,8 +476,8 @@ fn test_render_large_buffer() {
     )
     .unwrap();
 
-    // Should render successfully - first render clears screen
-    assert!(term.clear_screen_calls >= 1);
+    // Should render successfully - first render does NOT clear screen
+    assert_eq!(term.clear_screen_calls, 0);
     assert!(!term.writes.is_empty());
 }
 
@@ -514,8 +514,8 @@ fn test_render_cursor_at_viewport_boundaries() {
         &mut RenderCache::default(),
     )
     .unwrap();
-    // First render clears screen (viewport scrolls to show cursor at top)
-    assert!(term.clear_screen_calls >= 1);
+    // First render does NOT clear screen
+    assert_eq!(term.clear_screen_calls, 0);
 
     // Reset
     term.clear_screen_calls = 0;
@@ -544,8 +544,8 @@ fn test_render_cursor_at_viewport_boundaries() {
         &mut RenderCache::default(),
     )
     .unwrap();
-    // Should clear when scrolling to show cursor at bottom
-    assert!(term.clear_screen_calls >= 1);
+    // Should NOT clear when scrolling to show cursor at bottom
+    assert_eq!(term.clear_screen_calls, 0);
 }
 
 // ============================================================================

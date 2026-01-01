@@ -327,11 +327,6 @@ impl DoubleBuffer {
         // Hide cursor during rendering
         term.hide_cursor()?;
 
-        // If force_full_redraw is true, clear the screen
-        if self.force_full_redraw {
-            term.clear_screen()?;
-        }
-
         // Get batched changes
         let (batches, stats) = self.get_batched_changes();
 
