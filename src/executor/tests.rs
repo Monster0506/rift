@@ -170,3 +170,173 @@ fn test_execute_insert_tab_not_expanded() {
     assert_eq!(text.len(), 1);
     assert_eq!(text.as_bytes()[0], b'\t');
 }
+
+// =============================================================================
+// Undo/Redo Executor Tests
+// =============================================================================
+
+#[test]
+fn test_execute_undo_command() {
+    let mut doc = create_doc();
+
+    // Insert something
+    doc.insert_char('x').unwrap();
+    assert_eq!(doc.buffer.to_string(), "x");
+
+    // Execute undo command
+    execute_command(Command::Undo, &mut doc, false, 8, 24, None).unwrap();
+    assert_eq!(doc.buffer.to_string(), "");
+}
+
+#[test]
+fn test_execute_redo_command() {
+    let mut doc = create_doc();
+
+    // Insert and undo
+    doc.insert_char('y').unwrap();
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "");
+
+    // Execute redo command
+    execute_command(Command::Redo, &mut doc, false, 8, 24, None).unwrap();
+    assert_eq!(doc.buffer.to_string(), "y");
+}
+
+#[test]
+fn test_execute_delete_line_single_undo() {
+    let mut doc = create_doc();
+
+    // Add a line
+    doc.buffer.insert_str("hello world\n").unwrap();
+    doc.buffer.move_to_start();
+    assert_eq!(doc.buffer.to_string(), "hello world\n");
+
+    // Wrap delete line in transaction (simulating normal mode behavior)
+    doc.begin_transaction("DeleteLine");
+    execute_command(Command::DeleteLine, &mut doc, false, 8, 24, None).unwrap();
+    doc.commit_transaction();
+
+    assert_eq!(doc.buffer.to_string(), "");
+
+    // Single undo should restore the entire line
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "hello world\n");
+}
+
+#[test]
+fn test_execute_delete_motion_single_undo() {
+    let mut doc = create_doc();
+
+    // Add text
+    doc.buffer.insert_str("one two three").unwrap();
+    doc.buffer.move_to_start();
+    assert_eq!(doc.buffer.cursor(), 0);
+
+    // Wrap delete word in transaction (simulating d2w)
+    doc.begin_transaction("Delete(NextWord, 2)");
+    execute_command(
+        Command::Delete(Motion::NextWord, 2),
+        &mut doc,
+        false,
+        8,
+        24,
+        None,
+    )
+    .unwrap();
+    doc.commit_transaction();
+
+    // "one two " should be deleted
+    assert_eq!(doc.buffer.to_string(), "three");
+
+    // Single undo should restore
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "one two three");
+}
+
+#[test]
+fn test_insert_mode_transaction_simulation() {
+    let mut doc = create_doc();
+
+    // Simulate entering insert mode
+    doc.begin_transaction("Insert");
+
+    // Type multiple characters (simulating insert mode typing)
+    doc.insert_char('a').unwrap();
+    doc.insert_char('b').unwrap();
+    doc.insert_char('c').unwrap();
+
+    // Simulate exiting insert mode
+    doc.commit_transaction();
+
+    assert_eq!(doc.buffer.to_string(), "abc");
+
+    // ONE undo should remove ALL characters (grouped as single transaction)
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "");
+
+    // ONE redo should restore ALL characters
+    doc.redo();
+    assert_eq!(doc.buffer.to_string(), "abc");
+}
+
+#[test]
+fn test_multiple_insert_sessions() {
+    let mut doc = create_doc();
+
+    // First insert mode session
+    doc.begin_transaction("Insert 1");
+    doc.insert_char('X').unwrap();
+    doc.insert_char('Y').unwrap();
+    doc.commit_transaction();
+
+    // Second insert mode session
+    doc.begin_transaction("Insert 2");
+    doc.insert_char('Z').unwrap();
+    doc.commit_transaction();
+
+    assert_eq!(doc.buffer.to_string(), "XYZ");
+
+    // Undo second session
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "XY");
+
+    // Undo first session
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "");
+}
+
+#[test]
+fn test_undo_then_new_insert_creates_branch() {
+    let mut doc = create_doc();
+
+    // First insert
+    doc.begin_transaction("Insert A");
+    doc.insert_char('A').unwrap();
+    doc.commit_transaction();
+
+    // Second insert
+    doc.begin_transaction("Insert B");
+    doc.insert_char('B').unwrap();
+    doc.commit_transaction();
+
+    assert_eq!(doc.buffer.to_string(), "AB");
+
+    // Undo B
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "A");
+
+    // New insert (creates branch)
+    doc.begin_transaction("Insert C");
+    doc.insert_char('C').unwrap();
+    doc.commit_transaction();
+
+    assert_eq!(doc.buffer.to_string(), "AC");
+
+    // Undo C
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "A");
+
+    // Redo goes to last visited branch (C, not B)
+    doc.redo();
+    assert_eq!(doc.buffer.to_string(), "AC");
+}
