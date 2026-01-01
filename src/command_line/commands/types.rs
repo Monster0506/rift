@@ -58,6 +58,14 @@ pub enum ParsedCommand {
     BufferPrevious {
         bangs: usize,
     },
+    /// Substitute text
+    Substitute {
+        pattern: String,
+        replacement: String,
+        flags: String,
+        range: Option<String>,
+        bangs: usize,
+    },
     /// Clear search highlights
     NoHighlight {
         bangs: usize,

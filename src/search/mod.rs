@@ -25,39 +25,42 @@ pub struct SearchMatch {
 
 /// Find all occurrences of the pattern in the buffer.
 pub fn find_all(buffer: &impl BufferView, query: &str) -> Result<Vec<SearchMatch>, RiftError> {
-    // Check if flags are provided (last unescaped slash)
-    let has_flags = {
-        let bytes = query.as_bytes();
-        let mut found = false;
-        for (i, &b) in bytes.iter().enumerate().rev() {
-            if b == b'/' {
-                if i == 0 || bytes[i - 1] != b'\\' {
-                    found = true;
-                    break;
-                }
-            }
-        }
-        found
-    };
+    // Determine if the query is in Rift format or a plain pattern
+    // Rift format patterns contain '/' (like "/pattern/flags" or "pattern/flags")
+    // Plain patterns have no '/' at all
+    let is_rift_format = query.contains('/');
 
-    let query_cow = if has_flags {
-        std::borrow::Cow::Borrowed(query)
+    let (re, pattern) = if is_rift_format {
+        // Rift format: parse using monster-regex's parser
+        // If it doesn't start with '/', prepend one for parse_rift_format
+        let query_for_parser = if query.starts_with('/') {
+            std::borrow::Cow::Borrowed(query)
+        } else {
+            std::borrow::Cow::Owned(format!("/{}", query))
+        };
+
+        let (pattern, flags) = parse_rift_format(&query_for_parser).map_err(|e| {
+            RiftError::new(ErrorType::Internal, "REGEX_PARSE_ERROR", format!("{:?}", e))
+        })?;
+        let re = Regex::new(&pattern, flags).map_err(|e| {
+            RiftError::new(
+                ErrorType::Internal,
+                "REGEX_COMPILE_ERROR",
+                format!("{:?}", e),
+            )
+        })?;
+        (re, pattern)
     } else {
-        std::borrow::Cow::Owned(format!("{}/", query))
+        // Plain pattern: use directly with default flags
+        let re = Regex::new(query, monster_regex::Flags::default()).map_err(|e| {
+            RiftError::new(
+                ErrorType::Internal,
+                "REGEX_COMPILE_ERROR",
+                format!("{:?}", e),
+            )
+        })?;
+        (re, query.to_string())
     };
-
-    // Parse query
-    let (pattern, flags) = parse_rift_format(&query_cow).map_err(|e| {
-        RiftError::new(ErrorType::Internal, "REGEX_PARSE_ERROR", format!("{:?}", e))
-    })?;
-
-    let re = Regex::new(&pattern, flags).map_err(|e| {
-        RiftError::new(
-            ErrorType::Internal,
-            "REGEX_COMPILE_ERROR",
-            format!("{:?}", e),
-        )
-    })?;
 
     let is_multiline = pattern.contains("\\n") || pattern.contains('\n');
 
@@ -75,39 +78,42 @@ pub fn find_next(
     query: &str,
     direction: SearchDirection,
 ) -> Result<Option<SearchMatch>, RiftError> {
-    // Check if flags are provided (last unescaped slash)
-    let has_flags = {
-        let bytes = query.as_bytes();
-        let mut found = false;
-        for (i, &b) in bytes.iter().enumerate().rev() {
-            if b == b'/' {
-                if i == 0 || bytes[i - 1] != b'\\' {
-                    found = true;
-                    break;
-                }
-            }
-        }
-        found
-    };
+    // Determine if the query is in Rift format or a plain pattern
+    // Rift format patterns contain '/' (like "/pattern/flags" or "pattern/flags")
+    // Plain patterns have no '/' at all
+    let is_rift_format = query.contains('/');
 
-    let query_cow = if has_flags {
-        std::borrow::Cow::Borrowed(query)
+    let (re, pattern) = if is_rift_format {
+        // Rift format: parse using monster-regex's parser
+        // If it doesn't start with '/', prepend one for parse_rift_format
+        let query_for_parser = if query.starts_with('/') {
+            std::borrow::Cow::Borrowed(query)
+        } else {
+            std::borrow::Cow::Owned(format!("/{}", query))
+        };
+
+        let (pattern, flags) = parse_rift_format(&query_for_parser).map_err(|e| {
+            RiftError::new(ErrorType::Internal, "REGEX_PARSE_ERROR", format!("{:?}", e))
+        })?;
+        let re = Regex::new(&pattern, flags).map_err(|e| {
+            RiftError::new(
+                ErrorType::Internal,
+                "REGEX_COMPILE_ERROR",
+                format!("{:?}", e),
+            )
+        })?;
+        (re, pattern)
     } else {
-        std::borrow::Cow::Owned(format!("{}/", query))
+        // Plain pattern: use directly with default flags
+        let re = Regex::new(query, monster_regex::Flags::default()).map_err(|e| {
+            RiftError::new(
+                ErrorType::Internal,
+                "REGEX_COMPILE_ERROR",
+                format!("{:?}", e),
+            )
+        })?;
+        (re, query.to_string())
     };
-
-    // Parse query using monster-regex's Rift format parser
-    let (pattern, flags) = parse_rift_format(&query_cow).map_err(|e| {
-        RiftError::new(ErrorType::Internal, "REGEX_PARSE_ERROR", format!("{:?}", e))
-    })?;
-
-    let re = Regex::new(&pattern, flags).map_err(|e| {
-        RiftError::new(
-            ErrorType::Internal,
-            "REGEX_COMPILE_ERROR",
-            format!("{:?}", e),
-        )
-    })?;
 
     // Optimization: Check if the pattern contains a newline.
     // If it does not, we can search line-by-line which is much more efficient

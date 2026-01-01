@@ -948,3 +948,234 @@ fn test_execute_write_quit_updates_path() {
     assert_eq!(result, ExecutionResult::WriteAndQuit);
     assert_eq!(state.file_path, Some("new.txt".to_string()));
 }
+
+#[test]
+fn test_substitute_current_line() {
+    let mut state = State::new();
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    document.buffer.insert_str("foo bar foo").unwrap();
+    // Cursor at 0
+    document.buffer.set_cursor(0).unwrap();
+
+    let command = ParsedCommand::Substitute {
+        pattern: "foo".to_string(),
+        replacement: "baz".to_string(),
+        flags: "".to_string(),
+        range: None,
+        bangs: 0,
+    };
+
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    assert_eq!(result, ExecutionResult::Redraw);
+    assert_eq!(document.buffer.to_string(), "baz bar foo");
+}
+
+#[test]
+fn test_substitute_global_line() {
+    let mut state = State::new();
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    document.buffer.insert_str("foo bar foo").unwrap();
+    document.buffer.set_cursor(0).unwrap();
+
+    let command = ParsedCommand::Substitute {
+        pattern: "foo".to_string(),
+        replacement: "baz".to_string(),
+        flags: "g".to_string(),
+        range: None,
+        bangs: 0,
+    };
+
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    assert_eq!(result, ExecutionResult::Redraw);
+    assert_eq!(document.buffer.to_string(), "baz bar baz");
+}
+
+#[test]
+fn test_substitute_whole_file() {
+    let mut state = State::new();
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    document.buffer.insert_str("foo\nbar\nfoo").unwrap();
+    document.buffer.set_cursor(0).unwrap();
+
+    // :s%/foo/baz/g
+    let command = ParsedCommand::Substitute {
+        pattern: "foo".to_string(),
+        replacement: "baz".to_string(),
+        flags: "g".to_string(),
+        range: Some("%".to_string()),
+        bangs: 0,
+    };
+
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    assert_eq!(result, ExecutionResult::Redraw);
+    assert_eq!(document.buffer.to_string(), "baz\nbar\nbaz");
+}
+
+#[test]
+fn test_substitute_case_insensitive() {
+    let mut state = State::new();
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    document.buffer.insert_str("Foo bar foo").unwrap();
+    document.buffer.set_cursor(0).unwrap();
+
+    // Smart case: lowercase pattern "foo" matches both "Foo" and "foo" (case-insensitive)
+    let command = ParsedCommand::Substitute {
+        pattern: "foo".to_string(),
+        replacement: "baz".to_string(),
+        flags: "".to_string(), // subst flags
+        range: None,
+        bangs: 0,
+    };
+
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    assert_eq!(result, ExecutionResult::Redraw);
+    assert_eq!(document.buffer.to_string(), "baz bar foo"); // First match only (no 'g' flag)
+}
+
+#[test]
+fn test_substitute_no_match() {
+    let mut state = State::new();
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    document.buffer.insert_str("hello world").unwrap();
+
+    let command = ParsedCommand::Substitute {
+        pattern: "nothere".to_string(),
+        replacement: "baz".to_string(),
+        flags: "".to_string(),
+        range: None,
+        bangs: 0,
+    };
+
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    assert_eq!(result, ExecutionResult::Failure);
+    assert_eq!(document.buffer.revision, 1); // Only insert incremented it
+    assert!(state
+        .error_manager
+        .notifications()
+        .iter_active()
+        .any(|n| n.message.contains("Pattern not found")));
+}
+
+#[test]
+fn test_substitute_parsing_requires_space() {
+    let settings_registry = create_settings_registry();
+    let command_parser =
+        crate::command_line::commands::parser::CommandParser::new(settings_registry);
+
+    // :s/foo/bar (no space) -> Unknown command "s/foo/bar"
+    let input = "s/foo/bar";
+    let command = command_parser.parse(input);
+
+    match command {
+        ParsedCommand::Unknown { name } => {
+            assert_eq!(name, "s/foo/bar");
+        }
+        _ => panic!("Expected Unknown command, got {:?}", command),
+    }
+}
+
+#[test]
+fn test_substitute_parsing_with_space() {
+    let settings_registry = create_settings_registry();
+    let command_parser =
+        crate::command_line::commands::parser::CommandParser::new(settings_registry);
+
+    // :s /foo/bar (with space) -> Valid Substitute command
+    let input = "s /foo/bar";
+    let command = command_parser.parse(input);
+
+    match command {
+        ParsedCommand::Substitute {
+            pattern,
+            replacement,
+            flags,
+            range,
+            bangs,
+        } => {
+            assert_eq!(pattern, "foo");
+            assert_eq!(replacement, "bar");
+            assert_eq!(flags, "");
+            assert_eq!(range, None);
+            assert_eq!(bangs, 0);
+        }
+        _ => panic!("Expected Substitute command, got {:?}", command),
+    }
+}
+
+#[test]
+fn test_substitute_parsing_weird_behavior_percent() {
+    let settings_registry = create_settings_registry();
+    let command_parser =
+        crate::command_line::commands::parser::CommandParser::new(settings_registry);
+
+    // :s % /ABC/XYZ
+    // The user noted this behaves nicely/weirdly.
+    // Here % is the first char of args, so it becomes the separator.
+    let input = "s % /ABC/XYZ";
+    let command = command_parser.parse(input);
+
+    match command {
+        ParsedCommand::Substitute {
+            pattern,
+            replacement,
+            flags,
+            range,
+            bangs,
+        } => {
+            // Separator is %.
+            // Rest of string is " /ABC/XYZ"
+            // Since no other % is found, pattern consumes everything.
+            assert_eq!(pattern, " /ABC/XYZ");
+            assert_eq!(replacement, "");
+            assert_eq!(flags, "");
+            assert_eq!(range, None);
+            assert_eq!(bangs, 0);
+        }
+        _ => panic!("Expected Substitute command, got {:?}", command),
+    }
+}
