@@ -152,6 +152,7 @@ impl CommandExecutor {
             ParsedCommand::BufferPrevious { bangs } => ExecutionResult::BufferPrevious { bangs },
             ParsedCommand::NoHighlight { bangs: _ } => {
                 state.search_matches.clear();
+                state.last_search_query = None;
                 ExecutionResult::Redraw
             }
             ParsedCommand::BufferList => ExecutionResult::BufferList,
