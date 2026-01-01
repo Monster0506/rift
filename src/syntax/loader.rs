@@ -144,12 +144,12 @@ impl LanguageLoader {
         if query_name == "highlights" {
             #[cfg(feature = "bundled-rust")]
             if lang_name == "rust" {
-                return Ok(include_str!("queries/rust/highlights.scm").to_string());
+                return Ok(tree_sitter_rust::HIGHLIGHTS_QUERY.to_string());
             }
 
             #[cfg(feature = "bundled-python")]
             if lang_name == "python" {
-                return Ok(include_str!("queries/python/highlights.scm").to_string());
+                return Ok(tree_sitter_python::HIGHLIGHTS_QUERY.to_string());
             }
         }
 
