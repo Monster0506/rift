@@ -39,6 +39,9 @@ use crate::error::RiftError;
 pub trait BufferView {
     /// Total number of code‑points in the document.
     fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     /// Number of logical lines.
     fn line_count(&self) -> usize;

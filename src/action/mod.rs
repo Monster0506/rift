@@ -59,3 +59,7 @@ pub enum Action {
     /// No action
     Noop,
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;

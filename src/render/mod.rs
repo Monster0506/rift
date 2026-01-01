@@ -17,7 +17,6 @@ use crate::color::theme::SyntaxColors;
 use crate::color::Color;
 use crate::command_line::CommandLine;
 use crate::error::RiftError;
-use crate::floating_window::{FloatingWindow, WindowPosition};
 use crate::key::Key;
 use crate::layer::{Cell, Layer, LayerCompositor, LayerPriority};
 use crate::mode::Mode;
@@ -617,21 +616,6 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &RenderContext) -> Result<(),
     Ok(())
 }
 
-/// Calculate the visual column position accounting for tab width and wide characters
-fn calculate_visual_column(line_bytes: &[u8], start_col: usize, tab_width: usize) -> usize {
-    let mut col = start_col;
-    let line_str = String::from_utf8_lossy(line_bytes);
-    for ch in line_str.chars() {
-        if ch == '\t' {
-            // Move to next tab stop
-            col += tab_width - (col % tab_width);
-        } else {
-            col += UnicodeWidthChar::width(ch).unwrap_or(1);
-        }
-    }
-    col
-}
-
 /// Calculate the cursor column position accounting for tab width and wide characters
 pub fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) -> usize {
     if line >= buf.get_total_lines() {
@@ -662,6 +646,36 @@ pub fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) 
     col
 }
 
+/// Helper to wrap text to a specific width
+pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    for paragraph in text.split('\n') {
+        let words: Vec<&str> = paragraph.split_whitespace().collect();
+        if words.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+
+        let mut current_line = String::with_capacity(width);
+        for word in words {
+            if current_line.len() + word.len() + 1 > width && !current_line.is_empty() {
+                lines.push(current_line);
+                current_line = String::with_capacity(width);
+            }
+            if !current_line.is_empty() {
+                current_line.push(' ');
+            }
+            current_line.push_str(word);
+        }
+
+        if !current_line.is_empty() {
+            lines.push(current_line);
+        }
+    }
+    lines
+}
+
 /// Render notifications to the notification layer
 fn render_notifications(
     layer: &mut Layer,
@@ -688,23 +702,7 @@ fn render_notifications(
         };
 
         // Wrap text if needed
-        let mut lines = Vec::new();
-        let mut current_line = String::new();
-
-        for word in message.split_whitespace() {
-            if current_line.len() + word.len() + 1 > max_width {
-                lines.push(current_line);
-                current_line = String::from(word);
-            } else {
-                if !current_line.is_empty() {
-                    current_line.push(' ');
-                }
-                current_line.push_str(word);
-            }
-        }
-        if !current_line.is_empty() {
-            lines.push(current_line);
-        }
+        let lines = wrap_text(message, max_width);
 
         // Render lines
         for line in lines.iter().rev() {
@@ -732,14 +730,14 @@ fn render_notifications(
                 );
             }
 
-            if current_row > 0 {
-                current_row -= 1;
-            }
+            current_row = current_row.saturating_sub(1);
         }
 
         // Add spacing between notifications
-        if current_row > 0 {
-            current_row -= 1;
-        }
+        current_row = current_row.saturating_sub(1);
     }
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;

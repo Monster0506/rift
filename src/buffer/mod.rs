@@ -644,10 +644,6 @@ impl Display for TextBuffer {
     }
 }
 
-#[cfg(test)]
-#[path = "tests.rs"]
-mod tests;
-
 impl BufferView for TextBuffer {
     fn len(&self) -> usize {
         self.len()
@@ -675,3 +671,7 @@ impl BufferView for TextBuffer {
         self.revision
     }
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
