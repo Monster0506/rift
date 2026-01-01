@@ -5,7 +5,8 @@ use crate::key::Key;
 use crate::layer::{Layer, LayerCompositor, LayerPriority};
 use crate::mode::Mode;
 use crate::render::{
-    _format_key as format_key, calculate_cursor_column, render, RenderCache, RenderContext,
+    _format_key as format_key, calculate_cursor_column, render, CursorInfo, RenderCache,
+    RenderContext, StatusDrawState,
 };
 use crate::state::State;
 use crate::status::StatusBar;
@@ -145,50 +146,71 @@ fn test_calculate_cursor_column_multiline_complex() {
 
 #[test]
 fn test_render_status_bar_normal_mode_layer() {
-    let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
-    let viewport = Viewport::new(10, 80);
-    let state = State::new();
+    let mut layer = Layer::new(LayerPriority::STATUS_BAR, 1, 80);
+    let state = StatusDrawState {
+        mode: Mode::Normal,
+        pending_key: None,
+        pending_count: 0,
+        file_name: "test.rs".to_string(),
+        is_dirty: false,
+        cursor: CursorInfo { row: 0, col: 0 },
+        total_lines: 10,
+        debug_mode: false,
+        cols: 80,
+        editor_bg: None,
+        editor_fg: None,
+    };
 
-    StatusBar::render_to_layer(&mut layer, &viewport, Mode::Normal, None, 0, &state);
+    StatusBar::render_to_layer(&mut layer, &state);
 
     // Check that "NORMAL" was written to the layer
-    // Status bar is at last row (9), mode is at start
-    let cell = layer.get_cell(9, 0);
+    let cell = layer.get_cell(0, 0);
     assert!(cell.is_some());
-    // Should contain 'N' from 'NORMAL'
-    // Note: The status bar writes to the last row of the viewport
 }
 
 #[test]
 fn test_render_status_bar_insert_mode_layer() {
-    let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
-    let viewport = Viewport::new(10, 80);
-    let state = State::new();
+    let mut layer = Layer::new(LayerPriority::STATUS_BAR, 1, 80);
+    let state = StatusDrawState {
+        mode: Mode::Insert,
+        pending_key: None,
+        pending_count: 0,
+        file_name: "test.rs".to_string(),
+        is_dirty: false,
+        cursor: CursorInfo { row: 0, col: 0 },
+        total_lines: 10,
+        debug_mode: false,
+        cols: 80,
+        editor_bg: None,
+        editor_fg: None,
+    };
 
-    StatusBar::render_to_layer(&mut layer, &viewport, Mode::Insert, None, 0, &state);
+    StatusBar::render_to_layer(&mut layer, &state);
 
-    // Check that content was written to the layer
-    let cell = layer.get_cell(9, 0);
+    let cell = layer.get_cell(0, 0);
     assert!(cell.is_some());
 }
 
 #[test]
 fn test_render_status_bar_pending_key_layer() {
-    let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
-    let viewport = Viewport::new(10, 80);
-    let state = State::new();
+    let mut layer = Layer::new(LayerPriority::STATUS_BAR, 1, 80);
+    let state = StatusDrawState {
+        mode: Mode::Normal,
+        pending_key: Some(Key::Char('d')),
+        pending_count: 0,
+        file_name: "test.rs".to_string(),
+        is_dirty: false,
+        cursor: CursorInfo { row: 0, col: 0 },
+        total_lines: 10,
+        debug_mode: false,
+        cols: 80,
+        editor_bg: None,
+        editor_fg: None,
+    };
 
-    StatusBar::render_to_layer(
-        &mut layer,
-        &viewport,
-        Mode::Normal,
-        Some(Key::Char('d')),
-        0,
-        &state,
-    );
+    StatusBar::render_to_layer(&mut layer, &state);
 
-    // Should have pending key indicator
-    let cell = layer.get_cell(9, 0);
+    let cell = layer.get_cell(0, 0);
     assert!(cell.is_some());
 }
 
@@ -216,6 +238,7 @@ fn test_render_clears_screen() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut RenderCache::default(),
     )
@@ -246,6 +269,7 @@ fn test_render_cursor_positioning() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut RenderCache::default(),
     )
@@ -275,6 +299,7 @@ fn test_render_empty_buffer() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut RenderCache::default(),
     )
@@ -307,6 +332,7 @@ fn test_render_multiline_buffer() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut RenderCache::default(),
     )
@@ -344,6 +370,7 @@ fn test_render_file_loaded_at_start() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut RenderCache::default(),
     )
@@ -391,6 +418,7 @@ fn test_render_viewport_scrolling() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut RenderCache::default(),
     )
@@ -422,6 +450,7 @@ fn test_render_viewport_edge_cases() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut RenderCache::default(),
     )
@@ -452,6 +481,7 @@ fn test_render_large_buffer() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut RenderCache::default(),
     )
@@ -490,6 +520,7 @@ fn test_render_cursor_at_viewport_boundaries() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut RenderCache::default(),
     )
@@ -519,6 +550,7 @@ fn test_render_cursor_at_viewport_boundaries() {
             state: &state,
             needs_clear: needs_clear2,
             tab_width: 4,
+            highlights: None,
         },
         &mut RenderCache::default(),
     )
@@ -589,6 +621,7 @@ fn test_render_line_numbers_enabled() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut RenderCache::default(),
     )
@@ -626,6 +659,7 @@ fn test_render_line_numbers_disabled() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut RenderCache::default(),
     )
@@ -659,6 +693,7 @@ fn test_render_line_numbers_gutter_width() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut RenderCache::default(),
     )
@@ -699,6 +734,7 @@ fn test_render_cursor_position_with_line_numbers() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut cache,
     )
@@ -729,6 +765,7 @@ fn test_no_redraw_on_noop() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut cache,
     )
@@ -756,6 +793,7 @@ fn test_no_redraw_on_noop() {
             state: &state,
             needs_clear: false,
             tab_width: 4,
+            highlights: None,
         },
         &mut cache,
     )
@@ -793,6 +831,7 @@ fn test_redraw_on_change() {
             state: &state,
             needs_clear: true,
             tab_width: 4,
+            highlights: None,
         },
         &mut cache,
     )
@@ -818,6 +857,7 @@ fn test_redraw_on_change() {
             state: &state,
             needs_clear: false,
             tab_width: 4,
+            highlights: None,
         },
         &mut cache,
     )

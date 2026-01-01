@@ -13,6 +13,7 @@
 ///   in the state update phase, not during rendering).
 /// - All rendering is layer-based and composited before output to terminal.
 use crate::buffer::TextBuffer;
+use crate::color::theme::SyntaxColors;
 use crate::color::Color;
 use crate::command_line::CommandLine;
 use crate::error::RiftError;
@@ -45,6 +46,10 @@ pub struct ContentDrawState {
     pub show_line_numbers: bool,
     /// Current gutter width
     pub gutter_width: usize,
+    /// Theme/Color context
+    pub editor_bg: Option<crate::color::Color>,
+    pub editor_fg: Option<crate::color::Color>,
+    pub theme: Option<String>,
 }
 
 /// Minimal state required to trigger a re-render of the status bar
@@ -59,6 +64,10 @@ pub struct StatusDrawState {
     pub total_lines: usize,
     pub debug_mode: bool,
     pub cols: usize,
+    pub reverse_video: bool,
+    /// Theme/Color context
+    pub editor_bg: Option<crate::color::Color>,
+    pub editor_fg: Option<crate::color::Color>,
 }
 
 /// Minimal state required to trigger a re-render of the command line
@@ -70,6 +79,9 @@ pub struct CommandDrawState {
     pub height: usize,
     pub has_border: bool,
     pub reverse_video: bool,
+    /// Theme/Color context
+    pub editor_bg: Option<crate::color::Color>,
+    pub editor_fg: Option<crate::color::Color>,
 }
 
 /// Minimal state required to trigger a re-render of notifications
@@ -86,6 +98,8 @@ pub struct RenderCache {
     pub status: Option<StatusDrawState>,
     pub command_line: Option<CommandDrawState>,
     pub notifications: Option<NotificationDrawState>,
+    /// Last calculated cursor position for command mode
+    pub last_command_cursor: Option<CursorPosition>,
 }
 
 impl RenderCache {
@@ -94,6 +108,7 @@ impl RenderCache {
         self.status = None;
         self.command_line = None;
         self.notifications = None;
+        self.last_command_cursor = None;
     }
 
     pub fn invalidate_content(&mut self) {
@@ -147,6 +162,7 @@ pub struct RenderContext<'a> {
     pub state: &'a State,
     pub needs_clear: bool,
     pub tab_width: usize,
+    pub highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
 }
 
 /// Cursor position information returned from layer-based rendering
@@ -192,22 +208,18 @@ pub fn render<T: TerminalBackend>(
         } else {
             0
         },
+        editor_bg: ctx.state.settings.editor_bg,
+        editor_fg: ctx.state.settings.editor_fg,
+        theme: ctx.state.settings.theme.clone(),
     };
 
-    if cache.content.as_ref() != Some(&current_content_state) {
-        compositor.mark_dirty(LayerPriority::CONTENT);
-        render_content_to_layer(
-            compositor.get_layer_mut(LayerPriority::CONTENT),
-            ctx.buf,
-            ctx.viewport,
-            ctx.state.settings.editor_bg,
-            ctx.state.settings.editor_fg,
-            &ctx,
-        );
+    if cache.content.as_ref() != Some(&current_content_state) || ctx.needs_clear {
+        compositor.clear_layer(LayerPriority::CONTENT);
+        render_content_to_layer(compositor.get_layer_mut(LayerPriority::CONTENT), &ctx)?;
         cache.content = Some(current_content_state);
     }
 
-    // 2. Render status bar to STATUS_BAR layer (visible in all modes)
+    // 2. Render status bar to STATUS_BAR layer (always updated if relevant state changes)
     let current_status_state = StatusDrawState {
         mode: ctx.current_mode,
         pending_key: ctx.pending_key,
@@ -215,51 +227,48 @@ pub fn render<T: TerminalBackend>(
         file_name: ctx.state.file_name.clone(),
         is_dirty: ctx.state.is_dirty,
         cursor: CursorInfo {
-            row: ctx.buf.get_line(),
-            col: calculate_cursor_column(ctx.buf, ctx.buf.get_line(), ctx.tab_width),
+            row: ctx.state.cursor_pos.0,
+            col: ctx.state.cursor_pos.1,
         },
         total_lines: ctx.state.total_lines,
         debug_mode: ctx.state.debug_mode,
         cols: ctx.viewport.visible_cols(),
+        reverse_video: ctx.state.settings.status_line.reverse_video,
+        editor_bg: ctx.state.settings.editor_bg,
+        editor_fg: ctx.state.settings.editor_fg,
     };
 
-    if cache.status.as_ref() != Some(&current_status_state) {
+    if cache.status.as_ref() != Some(&current_status_state) || ctx.needs_clear {
         compositor.clear_layer(LayerPriority::STATUS_BAR);
         StatusBar::render_to_layer(
             compositor.get_layer_mut(LayerPriority::STATUS_BAR),
-            ctx.viewport,
-            ctx.current_mode,
-            ctx.pending_key,
-            ctx.pending_count,
-            ctx.state,
+            &current_status_state,
         );
         cache.status = Some(current_status_state);
     }
 
-    // 3. Render command window on top if in command mode or search mode
+    // 3. Command line / Floating window
     let mut command_cursor_info = None;
-    let current_command_state = if ctx.current_mode == Mode::Command
-        || ctx.current_mode == Mode::Search
-    {
-        Some(CommandDrawState {
-            content: ctx.state.command_line.clone(),
-            cursor: CursorInfo {
-                row: 0, // Command line is single line for now
-                col: ctx.state.command_line_cursor,
-            },
-            width: ((ctx.viewport.visible_cols() as f64
-                * ctx.state.settings.command_line_window.width_ratio) as usize)
-                .max(ctx.state.settings.command_line_window.min_width)
-                .min(ctx.viewport.visible_cols()),
-            height: ctx.state.settings.command_line_window.height,
-            has_border: ctx.state.settings.command_line_window.border,
-            reverse_video: ctx.state.settings.command_line_window.reverse_video,
-        })
-    } else {
-        None
-    };
+    let current_command_state =
+        if ctx.current_mode == Mode::Command || ctx.current_mode == Mode::Search {
+            Some(CommandDrawState {
+                content: ctx.state.command_line.clone(),
+                cursor: CursorInfo {
+                    row: 0, // Command line is single line for now
+                    col: ctx.state.command_line_cursor,
+                },
+                width: ctx.viewport.visible_cols(),
+                height: ctx.state.settings.command_line_window.height,
+                has_border: ctx.state.settings.command_line_window.border,
+                reverse_video: ctx.state.settings.command_line_window.reverse_video,
+                editor_bg: ctx.state.settings.editor_bg,
+                editor_fg: ctx.state.settings.editor_fg,
+            })
+        } else {
+            None
+        };
 
-    if cache.command_line != current_command_state {
+    if cache.command_line.as_ref() != current_command_state.as_ref() || ctx.needs_clear {
         if current_command_state.is_some() {
             compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
             // Render command line
@@ -291,59 +300,16 @@ pub fn render<T: TerminalBackend>(
                 ctx.state.settings.command_line_window.border,
             );
             command_cursor_info = Some(CursorPosition::Absolute(cursor_row, cursor_col));
+            cache.last_command_cursor = command_cursor_info;
         } else {
             // Transitioned from Command/Search mode to something else
             compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
+            cache.last_command_cursor = None;
         }
         cache.command_line = current_command_state;
-    } else if let Some(ref state) = current_command_state {
-        // State is same, but we still need cursor pos info if we were already in command mode
-        // We could cache the cursor_info too, or just re-calculate it since it's cheap.
-        // For simplicity, let's just re-calculate it here (re-using identical logic as above)
-        let cmd_width = state.width;
-        let cmd_height = state.height;
-        let has_border = state.has_border;
-
-        // Note: We need window_row/window_col which are calculated during render.
-        // This is a bit tricky if we skip render.
-        // Let's store the cursor location in the cache or just re-calculate window pos.
-        let floating_window = crate::floating_window::FloatingWindow::new(
-            WindowPosition::Center,
-            cmd_width,
-            cmd_height,
-        )
-        .with_border(has_border);
-        let (window_row, window_col) = floating_window.calculate_position(
-            ctx.viewport.visible_rows() as u16,
-            ctx.viewport.visible_cols() as u16,
-        );
-
-        // We also need the 'offset' which CommandLine::render_to_layer calculates.
-        // Let's add 'offset' to CommandDrawState if we want to avoid re-rendering but still have cursor info.
-        // Actually, let's just re-render if we need simplicity, or add it to the DrawState.
-        // If any component depends on something computed during render, include it.
-        // Let's just re-calculate the offset logic here (it's O(1)).
-        let border_offset = if has_border { 2 } else { 0 };
-        let available_cmd_width = cmd_width.saturating_sub(border_offset).saturating_sub(1);
-        let offset = if state.content.len() <= available_cmd_width {
-            0
-        } else if state.cursor.col >= available_cmd_width {
-            state
-                .cursor
-                .col
-                .saturating_sub(available_cmd_width)
-                .saturating_add(1)
-        } else {
-            0
-        };
-
-        let (cursor_row, cursor_col) = CommandLine::calculate_cursor_position(
-            (window_row, window_col),
-            state.cursor.col,
-            offset,
-            has_border,
-        );
-        command_cursor_info = Some(CursorPosition::Absolute(cursor_row, cursor_col));
+    } else if current_command_state.is_some() {
+        // Cache hit, retrieve cursor info
+        command_cursor_info = cache.last_command_cursor;
     }
 
     // 4. Render notifications
@@ -417,16 +383,68 @@ pub fn render<T: TerminalBackend>(
     Ok(cursor_info)
 }
 
-/// Render buffer content to a layer
-fn render_content_to_layer(
-    layer: &mut Layer,
-    buf: &TextBuffer,
-    viewport: &Viewport,
-    editor_bg: Option<Color>,
-    editor_fg: Option<Color>,
-    ctx: &RenderContext,
-) {
-    // Use cached gutter width from state
+/// Map syntax highlight capture names to colors
+fn highlight_color(capture_name: &str, theme_colors: Option<&SyntaxColors>) -> Option<Color> {
+    // Handle sub-scopes (e.g., function.builtin -> function)
+    let base_name = capture_name.split('.').next().unwrap_or(capture_name);
+
+    if let Some(theme) = theme_colors {
+        match capture_name {
+            "constructor" => return Some(theme.constructor),
+            "function.builtin" | "builtin" => return Some(theme.builtin),
+            _ => {}
+        }
+
+        match base_name {
+            "keyword" => return Some(theme.keyword),
+            "type" => return Some(theme.type_def),
+            "function" => return Some(theme.function),
+            "string" => return Some(theme.string),
+            "number" => return Some(theme.number),
+            "constant" => return Some(theme.constant),
+            "boolean" => return Some(theme.boolean),
+            "comment" => return Some(theme.comment),
+            "variable" => return Some(theme.variable),
+            "parameter" => return Some(theme.parameter),
+            "property" | "field" => return Some(theme.property),
+            "attribute" | "label" => return Some(theme.attribute),
+            "namespace" | "module" => return Some(theme.namespace),
+            "operator" => return Some(theme.operator),
+            "punctuation" => return Some(theme.punctuation),
+            "constructor" => return Some(theme.constructor),
+            "builtin" => return Some(theme.builtin),
+            _ => {}
+        }
+    }
+
+    // Fallback to hardcoded defaults if no theme colors specified or unknown capture
+    match base_name {
+        "keyword" => Some(Color::Magenta),
+        "type" => Some(Color::Yellow),
+        "function" | "constructor" => Some(Color::Blue),
+        "string" => Some(Color::Green),
+        "number" | "constant" | "boolean" => Some(Color::Yellow),
+        "comment" => Some(Color::DarkGrey),
+        "variable" => Some(Color::Cyan),
+        "parameter" => Some(Color::White),
+        "property" | "field" => Some(Color::Blue),
+        "attribute" | "label" => Some(Color::Yellow),
+        "namespace" | "module" => Some(Color::Cyan),
+        "operator" => Some(Color::White),
+        "punctuation" => Some(Color::White),
+        "escape" | "embedded" => Some(Color::Grey),
+        _ => None,
+    }
+}
+
+/// Render buffer content to the content layer
+fn render_content_to_layer(layer: &mut Layer, ctx: &RenderContext) -> Result<(), String> {
+    let buf = ctx.buf;
+    let viewport = ctx.viewport;
+    let editor_bg = ctx.state.settings.editor_bg;
+    let editor_fg = ctx.state.settings.editor_fg;
+
+    // Gutter width is based on total lines
     let gutter_width = if ctx.state.settings.show_line_numbers {
         ctx.state.gutter_width
     } else {
@@ -469,6 +487,7 @@ fn render_content_to_layer(
         }
 
         if line_num < buf.get_total_lines() {
+            let line_start_byte = buf.line_index.get_start(line_num).unwrap_or(0);
             let line_bytes = buf.get_line_bytes(line_num);
             let line_str = String::from_utf8_lossy(&line_bytes);
 
@@ -478,11 +497,30 @@ fn render_content_to_layer(
             let mut visual_col = 0;
             let mut rendered_col = 0;
             let left_col = viewport.left_col();
+            let mut byte_offset_in_line = 0usize;
 
             for ch in line_str.chars() {
                 if rendered_col >= content_cols {
                     break;
                 }
+
+                // Calculate absolute byte offset for this character
+                let abs_byte_offset = line_start_byte + byte_offset_in_line;
+
+                // Determine color from highlights
+                let char_fg = if let Some(highlights) = ctx.highlights {
+                    // Find all highlights containing this byte and pick the most specific one (shortest range)
+                    highlights
+                        .iter()
+                        .filter(|(range, _)| range.contains(&abs_byte_offset))
+                        .min_by_key(|(range, _)| range.end - range.start)
+                        .and_then(|(_, name)| {
+                            highlight_color(name, ctx.state.settings.syntax_colors.as_ref())
+                        })
+                        .or(editor_fg)
+                } else {
+                    editor_fg
+                };
 
                 // Track visual column (handling tabs and wide chars)
                 let char_width = if ch == '\t' {
@@ -502,7 +540,7 @@ fn render_content_to_layer(
                             layer.set_cell(
                                 i,
                                 display_col,
-                                Cell::from_char(ch).with_colors(editor_fg, editor_bg),
+                                Cell::from_char(ch).with_colors(char_fg, editor_bg),
                             );
 
                             // For wide characters, fill the remaining columns with empty content
@@ -510,7 +548,7 @@ fn render_content_to_layer(
                             if char_width > 1 {
                                 let empty_cell = Cell {
                                     content: Vec::new(),
-                                    fg: editor_fg,
+                                    fg: char_fg,
                                     bg: editor_bg,
                                 };
                                 for k in 1..char_width {
@@ -524,6 +562,7 @@ fn render_content_to_layer(
                     }
                 }
                 visual_col = next_visual_col;
+                byte_offset_in_line += ch.len_utf8();
             }
 
             // Pad with spaces
@@ -537,6 +576,8 @@ fn render_content_to_layer(
             }
         }
     }
+
+    Ok(())
 }
 
 /// Calculate the visual column position accounting for tab width and wide characters

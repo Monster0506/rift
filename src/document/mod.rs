@@ -3,8 +3,10 @@
 
 use crate::buffer::TextBuffer;
 use crate::error::{ErrorType, RiftError};
+use crate::syntax::Syntax;
 use std::io;
 use std::path::{Path, PathBuf};
+use tree_sitter::{InputEdit, Point};
 
 pub mod definitions;
 use definitions::DocumentOptions;
@@ -47,6 +49,8 @@ pub struct Document {
     last_saved_revision: u64,
     /// Read-only flag (for permissions or :view mode)
     pub is_read_only: bool,
+    /// Syntax highlighting/parsing
+    pub syntax: Option<Syntax>,
 }
 
 impl Document {
@@ -61,6 +65,7 @@ impl Document {
             revision: 0,
             last_saved_revision: 0,
             is_read_only: false,
+            syntax: None,
         })
     }
 
@@ -104,7 +109,168 @@ impl Document {
             revision: 0,
             last_saved_revision: 0,
             is_read_only: false,
+            syntax: None,
         })
+    }
+
+    pub fn set_syntax(&mut self, syntax: Syntax) {
+        self.syntax = Some(syntax);
+        // Initial parse
+        if let Some(s) = &mut self.syntax {
+            s.parse(&self.buffer);
+        }
+    }
+
+    // --- Mutation Wrappers ---
+
+    fn get_point(&self, byte_offset: usize) -> Point {
+        let line = self.buffer.line_index.get_line_at(byte_offset);
+        let line_start = self.buffer.line_index.get_start(line).unwrap_or(0);
+        let col = byte_offset.saturating_sub(line_start);
+        Point {
+            row: line,
+            column: col,
+        }
+    }
+
+    pub fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
+        let start_byte = self.buffer.cursor();
+        let start_position = self.get_point(start_byte);
+
+        self.buffer.insert_char(ch)?;
+        self.mark_dirty();
+
+        let added_bytes = ch.len_utf8();
+        let new_end_byte = start_byte + added_bytes;
+        let new_end_position = self.get_point(new_end_byte);
+
+        // For insertion, old_end_byte == start_byte (length 0)
+        let edit = InputEdit {
+            start_byte,
+            old_end_byte: start_byte,
+            new_end_byte,
+            start_position,
+            old_end_position: start_position,
+            new_end_position,
+        };
+
+        if let Some(syntax) = &mut self.syntax {
+            syntax.update(edit, &self.buffer);
+        }
+
+        Ok(())
+    }
+
+    pub fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
+        let start_byte = self.buffer.cursor();
+        let start_position = self.get_point(start_byte);
+
+        self.buffer.insert_str(s)?;
+        self.mark_dirty();
+
+        let added_bytes = s.len();
+        let new_end_byte = start_byte + added_bytes;
+        let new_end_position = self.get_point(new_end_byte);
+
+        let edit = InputEdit {
+            start_byte,
+            old_end_byte: start_byte,
+            new_end_byte,
+            start_position,
+            old_end_position: start_position,
+            new_end_position,
+        };
+
+        if let Some(syntax) = &mut self.syntax {
+            syntax.update(edit, &self.buffer);
+        }
+        Ok(())
+    }
+
+    pub fn delete_backward(&mut self) -> bool {
+        let end_byte = self.buffer.cursor();
+        if end_byte == 0 {
+            return false;
+        }
+
+        // Calculate what we are about to delete
+        // We know delete_backward removes the char BEFORE cursor.
+        // We need the size of that char.
+        // We can look at the byte before cursor.
+        let mut char_len = 1;
+        // If it's a continuation byte (10xxxxxx), keep going back
+        while (self.buffer.byte_at(end_byte - char_len) & 0b11000000) == 0b10000000 {
+            char_len += 1;
+            if end_byte < char_len {
+                break;
+            } // Should not happen with valid utf8
+        }
+
+        let start_byte = end_byte - char_len;
+
+        let old_end_position = self.get_point(end_byte);
+        let start_position = self.get_point(start_byte);
+
+        if self.buffer.delete_backward() {
+            self.mark_dirty();
+
+            // new_end_byte is the start_byte (because we deleted up to it)
+            // new_end_position is start_position
+            let edit = InputEdit {
+                start_byte,
+                old_end_byte: end_byte,
+                new_end_byte: start_byte,
+                start_position,
+                old_end_position,
+                new_end_position: start_position,
+            };
+
+            if let Some(syntax) = &mut self.syntax {
+                syntax.update(edit, &self.buffer);
+            }
+            return true;
+        }
+        false
+    }
+
+    pub fn delete_forward(&mut self) -> bool {
+        let start_byte = self.buffer.cursor();
+        if start_byte >= self.buffer.len() {
+            return false;
+        }
+
+        // Find end of char
+        let mut end_byte = start_byte + 1;
+        let len = self.buffer.len();
+        while end_byte < len {
+            let byte = self.buffer.byte_at(end_byte);
+            if (byte & 0b11000000) != 0b10000000 {
+                break;
+            }
+            end_byte += 1;
+        }
+
+        let start_position = self.get_point(start_byte);
+        let old_end_position = self.get_point(end_byte);
+
+        if self.buffer.delete_forward() {
+            self.mark_dirty();
+
+            let edit = InputEdit {
+                start_byte,
+                old_end_byte: end_byte,
+                new_end_byte: start_byte,
+                start_position,
+                old_end_position,
+                new_end_position: start_position,
+            };
+
+            if let Some(syntax) = &mut self.syntax {
+                syntax.update(edit, &self.buffer);
+            }
+            return true;
+        }
+        false
     }
 
     /// Save document to its current path

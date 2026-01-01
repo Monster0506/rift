@@ -13,6 +13,7 @@
 use crate::action::Motion;
 use crate::buffer::TextBuffer;
 use crate::command::Command;
+use crate::document::Document;
 use crate::error::RiftError;
 use crate::search::{find_next, SearchDirection};
 
@@ -110,7 +111,7 @@ fn calculate_current_column(buf: &TextBuffer, tab_width: usize) -> usize {
 /// Execute a command on the editor buffer
 pub fn execute_command(
     cmd: Command,
-    buf: &mut TextBuffer,
+    doc: &mut Document,
     expand_tabs: bool,
     tab_width: usize,
     viewport_height: usize,
@@ -118,6 +119,7 @@ pub fn execute_command(
 ) -> Result<(), RiftError> {
     match cmd {
         Command::Move(motion, count) => {
+            let buf = &mut doc.buffer;
             for _ in 0..count {
                 match motion {
                     Motion::Left => {
@@ -191,59 +193,61 @@ pub fn execute_command(
             }
         }
         Command::Delete(motion, count) => {
-            let start = buf.cursor();
+            // Note: We access buffer for navigation to calculate range
+            let start = doc.buffer.cursor();
             // Perform motion to find end point
             for _ in 0..count {
                 match motion {
                     Motion::Left => {
-                        buf.move_left();
+                        doc.buffer.move_left();
                     }
                     Motion::Right => {
-                        buf.move_right();
+                        doc.buffer.move_right();
                     }
                     Motion::Up => {
-                        buf.move_up();
+                        doc.buffer.move_up();
                     }
                     Motion::Down => {
-                        buf.move_down();
+                        doc.buffer.move_down();
                     }
                     Motion::StartOfLine => {
-                        buf.move_to_line_start();
+                        doc.buffer.move_to_line_start();
                     }
                     Motion::EndOfLine => {
-                        buf.move_to_line_end();
+                        doc.buffer.move_to_line_end();
                     }
-                    Motion::StartOfFile => buf.move_to_start(),
-                    Motion::EndOfFile => buf.move_to_end(),
+                    Motion::StartOfFile => doc.buffer.move_to_start(),
+                    Motion::EndOfFile => doc.buffer.move_to_end(),
                     Motion::PageUp => {
                         for _ in 0..viewport_height {
-                            buf.move_up();
+                            doc.buffer.move_up();
                         }
                     }
                     Motion::PageDown => {
                         for _ in 0..viewport_height {
-                            buf.move_down();
+                            doc.buffer.move_down();
                         }
                     }
                     Motion::NextWord => {
-                        buf.move_word_right();
+                        doc.buffer.move_word_right();
                     }
                     Motion::PreviousWord => {
-                        buf.move_word_left();
+                        doc.buffer.move_word_left();
                     }
                     Motion::NextParagraph => {
-                        buf.move_paragraph_forward();
+                        doc.buffer.move_paragraph_forward();
                     }
                     Motion::PreviousParagraph => {
-                        buf.move_paragraph_backward();
+                        doc.buffer.move_paragraph_backward();
                     }
                     Motion::NextSentence => {
-                        buf.move_sentence_forward();
+                        doc.buffer.move_sentence_forward();
                     }
                     Motion::PreviousSentence => {
-                        buf.move_sentence_backward();
+                        doc.buffer.move_sentence_backward();
                     }
                     Motion::NextMatch => {
+                        let buf = &mut doc.buffer;
                         if let Some(query) = last_search_query {
                             let start = buf.cursor().saturating_add(1);
                             if let Ok(Some(m)) =
@@ -254,6 +258,7 @@ pub fn execute_command(
                         }
                     }
                     Motion::PreviousMatch => {
+                        let buf = &mut doc.buffer;
                         if let Some(query) = last_search_query {
                             if let Ok(Some(m)) =
                                 find_next(buf, buf.cursor(), query, SearchDirection::Backward)
@@ -264,47 +269,49 @@ pub fn execute_command(
                     }
                 }
             }
-            let end = buf.cursor();
+            let end = doc.buffer.cursor();
 
             if end > start {
                 // Forward deletion (e.g. dw)
                 // Cursor is at end. We want to delete [start, end).
-                // Move back to end, then delete backward until start.
+                // Move back to end (which we are at), then delete backward.
+                // Wait, if we are at end, deleting backward works.
                 let len = end - start;
                 for _ in 0..len {
-                    buf.delete_backward();
+                    // Use Document's delete_backward to track edits
+                    doc.delete_backward();
                 }
             } else if end < start {
                 // Backward deletion (e.g. db)
                 // Cursor is at end. We want to delete [end, start).
-                // We are at end. delete_forward deletes (end).
+                // We are at end. delete_forward deletes chars to the right.
                 let len = start - end;
                 for _ in 0..len {
-                    buf.delete_forward();
+                    doc.delete_forward();
                 }
             }
         }
         Command::DeleteForward => {
-            buf.delete_forward();
+            doc.delete_forward();
         }
         Command::DeleteBackward => {
-            buf.delete_backward();
+            doc.delete_backward();
         }
         Command::DeleteLine => {
             // TODO: Implement delete_line
         }
         Command::InsertChar(ch) => {
             if ch == '\t' && expand_tabs {
-                // Calculate current column position
-                let current_col = calculate_current_column(buf, tab_width);
+                // Calculate current column position on the buffer (read-only)
+                let current_col = calculate_current_column(&doc.buffer, tab_width);
                 // Calculate spaces needed to reach next tab stop
                 let spaces_needed = tab_width - (current_col % tab_width);
                 // Insert that many spaces, stop on error
                 for _ in 0..spaces_needed {
-                    buf.insert(b' ')?;
+                    doc.insert_char(' ')?;
                 }
             } else {
-                buf.insert_char(ch)?;
+                doc.insert_char(ch)?;
             }
         }
         Command::EnterInsertMode | Command::EnterInsertModeAfter => {
