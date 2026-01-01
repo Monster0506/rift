@@ -181,7 +181,6 @@ fn parse_substitute_impl(
     // 2. Parse pattern
     let mut pattern = String::new();
     let mut escaped = false;
-    let mut found_sep = false;
     for c in chars.by_ref() {
         if escaped {
             pattern.push(c);
@@ -190,7 +189,6 @@ fn parse_substitute_impl(
             pattern.push(c);
             escaped = true;
         } else if c == separator {
-            found_sep = true;
             break;
         } else {
             pattern.push(c);
@@ -199,7 +197,7 @@ fn parse_substitute_impl(
     // 3. Parse replacement
     let mut replacement = String::new();
     escaped = false;
-    found_sep = false;
+    let mut found_sep = false;
     // chars iterator continues from after first separator
     for c in chars.by_ref() {
         if escaped {
