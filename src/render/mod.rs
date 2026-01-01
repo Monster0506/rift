@@ -24,7 +24,7 @@ use crate::state::State;
 use crate::status::StatusBar;
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// Explicitly tracked cursor information for rendering comparison
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -704,16 +704,19 @@ fn render_notifications(
         // Wrap text if needed
         let lines = wrap_text(message, max_width);
 
+        // Calculate box width based on longest line
+        let content_width = lines.iter().map(|l| l.width()).max().unwrap_or(0);
+        let box_width = content_width + 4; // +4 for padding
+        let start_col = viewport_cols.saturating_sub(box_width);
+
         // Render lines
         for line in lines.iter().rev() {
             if current_row == 0 {
                 break;
             }
 
-            let start_col = viewport_cols.saturating_sub(line.len() + 4); // Right aligned with padding
-
             // Draw background box
-            for i in 0..(line.len() + 4) {
+            for i in 0..box_width {
                 layer.set_cell(
                     current_row,
                     start_col + i,
@@ -722,12 +725,27 @@ fn render_notifications(
             }
 
             // Draw text
-            for (i, ch) in line.chars().enumerate() {
+            let mut current_col = start_col + 2;
+            for ch in line.chars() {
+                let ch_width = ch.width().unwrap_or(1);
                 layer.set_cell(
                     current_row,
-                    start_col + 2 + i,
+                    current_col,
                     Cell::from_char(ch).with_colors(Some(Color::White), Some(color)),
                 );
+
+                // Handle wide characters
+                if ch_width > 1 {
+                    let empty_cell = Cell {
+                        content: Vec::new(),
+                        fg: Some(Color::White),
+                        bg: Some(color),
+                    };
+                    for k in 1..ch_width {
+                        layer.set_cell(current_row, current_col + k, empty_cell.clone());
+                    }
+                }
+                current_col += ch_width;
             }
 
             current_row = current_row.saturating_sub(1);
