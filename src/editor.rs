@@ -487,8 +487,10 @@ impl<T: TerminalBackend> Editor<T> {
                     let doc_id = self.tab_order[self.current_tab];
 
                     // Wrap mutating commands (except Undo/Redo) in a transaction
-                    let needs_transaction =
-                        cmd.is_mutating() && !matches!(cmd, Command::Undo | Command::Redo);
+                    // Skip wrapping in Insert mode - it already has an open transaction from mode entry
+                    let needs_transaction = cmd.is_mutating()
+                        && !matches!(cmd, Command::Undo | Command::Redo)
+                        && current_mode != Mode::Insert;
 
                     let res = {
                         let doc = self.documents.get_mut(&doc_id).unwrap();

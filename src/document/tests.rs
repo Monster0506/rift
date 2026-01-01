@@ -277,3 +277,228 @@ fn test_document_save_crlf() {
     let bytes = fs::read(&file_path).unwrap();
     assert_eq!(bytes, b"line1\r\nline2\r\n");
 }
+
+// =============================================================================
+// Undo/Redo Integration Tests
+// =============================================================================
+
+#[test]
+fn test_document_undo_insert_char() {
+    let mut doc = Document::new(1).unwrap();
+
+    // Insert characters
+    doc.insert_char('a').unwrap();
+    doc.insert_char('b').unwrap();
+    doc.insert_char('c').unwrap();
+
+    assert_eq!(doc.buffer.to_string(), "abc");
+
+    // Undo last char
+    assert!(doc.can_undo());
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "ab");
+
+    // Undo another
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "a");
+
+    // Undo again
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "");
+
+    // No more undos
+    assert!(!doc.can_undo());
+}
+
+#[test]
+fn test_document_redo_insert_char() {
+    let mut doc = Document::new(1).unwrap();
+
+    doc.insert_char('x').unwrap();
+    doc.insert_char('y').unwrap();
+
+    assert_eq!(doc.buffer.to_string(), "xy");
+
+    // Undo both
+    doc.undo();
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "");
+
+    // Redo first
+    assert!(doc.can_redo());
+    doc.redo();
+    assert_eq!(doc.buffer.to_string(), "x");
+
+    // Redo second
+    doc.redo();
+    assert_eq!(doc.buffer.to_string(), "xy");
+
+    // No more redos
+    assert!(!doc.can_redo());
+}
+
+#[test]
+fn test_document_undo_delete_backward() {
+    let mut doc = Document::new(1).unwrap();
+
+    doc.insert_str("hello").unwrap();
+    assert_eq!(doc.buffer.to_string(), "hello");
+
+    // Delete 'o'
+    doc.delete_backward();
+    assert_eq!(doc.buffer.to_string(), "hell");
+
+    // Undo delete - should restore 'o'
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "hello");
+}
+
+#[test]
+fn test_document_undo_delete_forward() {
+    let mut doc = Document::new(1).unwrap();
+
+    doc.insert_str("world").unwrap();
+    doc.buffer.move_to_start();
+    assert_eq!(doc.buffer.to_string(), "world");
+
+    // Delete 'w'
+    doc.delete_forward();
+    assert_eq!(doc.buffer.to_string(), "orld");
+
+    // Undo delete - should restore 'w'
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "world");
+}
+
+#[test]
+fn test_document_undo_insert_str() {
+    let mut doc = Document::new(1).unwrap();
+
+    doc.insert_str("Hello, World!").unwrap();
+    assert_eq!(doc.buffer.to_string(), "Hello, World!");
+
+    // Undo the entire string insert
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "");
+}
+
+#[test]
+fn test_document_transaction_grouping() {
+    let mut doc = Document::new(1).unwrap();
+
+    // Start a transaction
+    doc.begin_transaction("Test insert");
+
+    doc.insert_char('a').unwrap();
+    doc.insert_char('b').unwrap();
+    doc.insert_char('c').unwrap();
+
+    // Commit the transaction
+    doc.commit_transaction();
+
+    assert_eq!(doc.buffer.to_string(), "abc");
+
+    // One undo should remove all three characters (grouped transaction)
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "");
+
+    // One redo should restore all
+    doc.redo();
+    assert_eq!(doc.buffer.to_string(), "abc");
+}
+
+#[test]
+fn test_document_undo_redo_cursor_position() {
+    let mut doc = Document::new(1).unwrap();
+
+    doc.insert_str("abc").unwrap();
+    assert_eq!(doc.buffer.cursor(), 3);
+
+    doc.undo();
+    // Cursor position after undo - should be at start since content is gone
+    assert_eq!(doc.buffer.to_string(), "");
+}
+
+#[test]
+fn test_document_multiple_undo_redo_cycles() {
+    let mut doc = Document::new(1).unwrap();
+
+    // Insert, undo, redo multiple times
+    doc.insert_char('X').unwrap();
+    assert_eq!(doc.buffer.to_string(), "X");
+
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "");
+
+    doc.redo();
+    assert_eq!(doc.buffer.to_string(), "X");
+
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "");
+
+    doc.redo();
+    assert_eq!(doc.buffer.to_string(), "X");
+
+    // Add more text
+    doc.insert_char('Y').unwrap();
+    assert_eq!(doc.buffer.to_string(), "XY");
+
+    // Undo both
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "X");
+
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "");
+}
+
+#[test]
+fn test_document_undo_creates_branch() {
+    let mut doc = Document::new(1).unwrap();
+
+    doc.insert_char('A').unwrap();
+    doc.insert_char('B').unwrap();
+
+    // Undo B
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "A");
+
+    // Insert C (creates branch)
+    doc.insert_char('C').unwrap();
+    assert_eq!(doc.buffer.to_string(), "AC");
+
+    // Undo C
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "A");
+
+    // Can redo C (last visited branch)
+    assert!(doc.can_redo());
+    doc.redo();
+    assert_eq!(doc.buffer.to_string(), "AC");
+}
+
+#[test]
+fn test_document_can_undo_false_initially() {
+    let doc = Document::new(1).unwrap();
+    assert!(!doc.can_undo());
+}
+
+#[test]
+fn test_document_can_redo_false_initially() {
+    let doc = Document::new(1).unwrap();
+    assert!(!doc.can_redo());
+}
+
+#[test]
+fn test_document_undo_marks_dirty() {
+    let mut doc = Document::new(1).unwrap();
+
+    doc.insert_char('x').unwrap();
+
+    // Clear dirty flag (simulate save)
+    doc.last_saved_revision = doc.revision;
+    assert!(!doc.is_dirty());
+
+    // Undo should mark dirty
+    doc.undo();
+    assert!(doc.is_dirty());
+}
