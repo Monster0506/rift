@@ -5,6 +5,8 @@ This is a vim-like text editor.
 I use this daily and primarily. 
 
 Implemented:
+- Syntax highlighting
+- Treesitter (supporting only Python and Rust currently)
 - Open File
 - Save File
 - Save As
@@ -43,8 +45,6 @@ Implemented:
 
 Todo:
 - LSP
-- Syntax highlighting
-- Treesitter
 - undo + redo
 - copy/paste (buffers)
 - macros
