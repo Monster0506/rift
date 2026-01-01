@@ -55,10 +55,15 @@ impl Syntax {
     }
 
     pub fn parse(&mut self, text: &TextBuffer) {
-        // FIXME: optimize to use chunks instead of collecting all bytes
-        // The closure approach was causing trait bound errors with TextProvider
-        let bytes = text.line_index.bytes_range(0..text.len());
-        let tree = self.parser.parse(&bytes, self.tree.as_ref());
+        let tree = self.parser.parse_with(
+            &mut |byte, _| {
+                if byte >= text.len() {
+                    return &[] as &[u8];
+                }
+                text.get_chunk_at_byte(byte)
+            },
+            self.tree.as_ref(),
+        );
         self.tree = tree;
     }
 
@@ -84,17 +89,15 @@ impl Syntax {
         } = self
         {
             let root_node = tree.root_node();
-            // FIXME: optimize to avoid full copy
-            let bytes = text.line_index.bytes_range(0..text.len());
 
             if let Some(r) = range {
                 query_cursor.set_byte_range(r);
             } else {
-                query_cursor.set_byte_range(0..bytes.len());
+                query_cursor.set_byte_range(0..text.len());
             }
 
-            // With tree-sitter 0.24, directly passing slice works
-            let mut matches = query_cursor.matches(query, root_node, bytes.as_slice());
+            // Using TextProvider implementation for TextBuffer to avoid full copy
+            let mut matches = query_cursor.matches(query, root_node, text);
 
             while let Some(m) = matches.next() {
                 for capture in m.captures {
@@ -107,3 +110,19 @@ impl Syntax {
         result
     }
 }
+
+/// Implementation of Tree-sitter's TextProvider to allow efficient querying
+/// without copying the entire buffer into a contiguous slice.
+impl<'a> tree_sitter::TextProvider<&'a [u8]> for &'a TextBuffer {
+    type I = std::vec::IntoIter<&'a [u8]>;
+
+    fn text(&mut self, node: tree_sitter::Node<'_>) -> Self::I {
+        let range = node.byte_range();
+        // collect into pointers to existing pieces, no data copy
+        let chunks: Vec<&'a [u8]> = self.line_index.chunks_in_range(range).collect();
+        chunks.into_iter()
+    }
+}
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;

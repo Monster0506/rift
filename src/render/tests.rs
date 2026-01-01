@@ -159,6 +159,7 @@ fn test_render_status_bar_normal_mode_layer() {
         cols: 80,
         editor_bg: None,
         editor_fg: None,
+        reverse_video: false,
     };
 
     StatusBar::render_to_layer(&mut layer, &state);
@@ -183,6 +184,7 @@ fn test_render_status_bar_insert_mode_layer() {
         cols: 80,
         editor_bg: None,
         editor_fg: None,
+        reverse_video: false,
     };
 
     StatusBar::render_to_layer(&mut layer, &state);
@@ -206,6 +208,7 @@ fn test_render_status_bar_pending_key_layer() {
         cols: 80,
         editor_bg: None,
         editor_fg: None,
+        reverse_video: false,
     };
 
     StatusBar::render_to_layer(&mut layer, &state);

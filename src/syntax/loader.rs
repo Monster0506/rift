@@ -69,7 +69,7 @@ impl LanguageLoader {
         #[cfg(feature = "bundled-rust")]
         if lang_name == "rust" {
             return Ok(LoadedLanguage::bundled(
-                unsafe { tree_sitter_rust::LANGUAGE.into() },
+                tree_sitter_rust::LANGUAGE.into(),
                 "rust",
             ));
         }
@@ -77,7 +77,7 @@ impl LanguageLoader {
         #[cfg(feature = "bundled-python")]
         if lang_name == "python" {
             return Ok(LoadedLanguage::bundled(
-                unsafe { tree_sitter_python::LANGUAGE.into() },
+                tree_sitter_python::LANGUAGE.into(),
                 "python",
             ));
         }

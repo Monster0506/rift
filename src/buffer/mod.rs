@@ -1,6 +1,4 @@
 //! Gap buffer implementation for efficient text editing
-//!
-//! REWRITTEN: Now uses Piece Table via LineIndex
 
 use crate::buffer::api::BufferView;
 use crate::error::RiftError;
