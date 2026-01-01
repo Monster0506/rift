@@ -47,6 +47,10 @@ pub enum Command {
     BufferNext,
     BufferPrevious,
 
+    // History
+    Undo,
+    Redo,
+
     // Control
     Quit,
     Noop,
@@ -63,6 +67,8 @@ impl Command {
                 | Command::DeleteLine
                 | Command::Delete(_, _)
                 | Command::InsertChar(_)
+                | Command::Undo
+                | Command::Redo
         )
     }
 }
@@ -175,8 +181,10 @@ impl Dispatcher {
                     Command::Noop
                 }
                 'G' => Command::Move(Motion::EndOfFile, count),
+                'u' => Command::Undo,
                 _ => Command::Noop,
             },
+            Key::Ctrl(b'r') => Command::Redo,
             Key::ArrowLeft => Command::Move(Motion::Left, count),
             Key::ArrowRight => Command::Move(Motion::Right, count),
             Key::ArrowUp => Command::Move(Motion::Up, count),

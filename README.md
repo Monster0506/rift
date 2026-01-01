@@ -5,6 +5,7 @@ This is a vim-like text editor.
 I use this daily and primarily. 
 
 Implemented:
+- Undo and redo
 - Syntax highlighting
 - Treesitter (supporting only Python and Rust currently)
 - Open File
@@ -42,10 +43,10 @@ Implemented:
 - Polling instead of blocking input
 - search + replace
 - Custom regex engine (monster-regex)
+- undo + redo
 
 Todo:
 - LSP
-- undo + redo
 - copy/paste (buffers)
 - macros
 - help manual

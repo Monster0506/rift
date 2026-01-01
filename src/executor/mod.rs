@@ -369,6 +369,12 @@ pub fn execute_command(
         Command::BufferNext | Command::BufferPrevious => {
             // Buffer navigation handled by editor
         }
+        Command::Undo => {
+            doc.undo();
+        }
+        Command::Redo => {
+            doc.redo();
+        }
         Command::Noop => {}
     }
     Ok(())

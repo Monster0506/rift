@@ -67,6 +67,13 @@ impl Syntax {
         self.tree = tree;
     }
 
+    /// Force a full reparse, discarding the old tree
+    /// Use this after bulk changes (undo/redo) where incremental parsing would be incorrect
+    pub fn reparse(&mut self, text: &TextBuffer) {
+        self.tree = None; // Clear old tree to force full parse
+        self.parse(text);
+    }
+
     pub fn update(&mut self, edit: InputEdit, new_text: &TextBuffer) {
         if let Some(tree) = self.tree.as_mut() {
             tree.edit(&edit);
