@@ -3,6 +3,7 @@
 
 use crate::buffer::TextBuffer;
 use crate::error::{ErrorType, RiftError};
+use crate::history::{EditOperation, EditTransaction, Position, Range, UndoTree};
 use crate::syntax::Syntax;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -51,6 +52,10 @@ pub struct Document {
     pub is_read_only: bool,
     /// Syntax highlighting/parsing
     pub syntax: Option<Syntax>,
+    /// Undo/redo history tree
+    pub history: UndoTree,
+    /// Current transaction for grouping edits
+    current_transaction: Option<EditTransaction>,
 }
 
 impl Document {
@@ -66,6 +71,8 @@ impl Document {
             last_saved_revision: 0,
             is_read_only: false,
             syntax: None,
+            history: UndoTree::new(),
+            current_transaction: None,
         })
     }
 
@@ -110,6 +117,8 @@ impl Document {
             last_saved_revision: 0,
             is_read_only: false,
             syntax: None,
+            history: UndoTree::new(),
+            current_transaction: None,
         })
     }
 
@@ -136,9 +145,22 @@ impl Document {
     pub fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
         let start_byte = self.buffer.cursor();
         let start_position = self.get_point(start_byte);
+        let history_pos = self.byte_to_position(start_byte);
 
         self.buffer.insert_char(ch)?;
         self.mark_dirty();
+
+        // Record to undo history
+        let mut text = String::new();
+        text.push(ch);
+        self.record_edit(
+            EditOperation::Insert {
+                position: history_pos,
+                text: text.clone(),
+                len: ch.len_utf8(),
+            },
+            &format!("Insert '{}'", if ch == '\n' { "\\n" } else { &text }),
+        );
 
         let added_bytes = ch.len_utf8();
         let new_end_byte = start_byte + added_bytes;
@@ -164,9 +186,22 @@ impl Document {
     pub fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
         let start_byte = self.buffer.cursor();
         let start_position = self.get_point(start_byte);
+        let history_pos = self.byte_to_position(start_byte);
 
         self.buffer.insert_str(s)?;
         self.mark_dirty();
+
+        // Record to undo history
+        if !s.is_empty() {
+            self.record_edit(
+                EditOperation::Insert {
+                    position: history_pos,
+                    text: s.to_string(),
+                    len: s.len(),
+                },
+                &format!("Insert {} chars", s.len()),
+            );
+        }
 
         let added_bytes = s.len();
         let new_end_byte = start_byte + added_bytes;
@@ -194,19 +229,26 @@ impl Document {
         }
 
         // Calculate what we are about to delete
-        // We know delete_backward removes the char BEFORE cursor.
-        // We need the size of that char.
-        // We can look at the byte before cursor.
         let mut char_len = 1;
-        // If it's a continuation byte (10xxxxxx), keep going back
         while (self.buffer.byte_at(end_byte - char_len) & 0b11000000) == 0b10000000 {
             char_len += 1;
             if end_byte < char_len {
                 break;
-            } // Should not happen with valid utf8
+            }
         }
 
         let start_byte = end_byte - char_len;
+
+        // Capture deleted text before deletion
+        let deleted_text: String = self
+            .buffer
+            .line_index
+            .bytes_range(start_byte..end_byte)
+            .iter()
+            .map(|&b| b as char)
+            .collect();
+        let history_start = self.byte_to_position(start_byte);
+        let history_end = self.byte_to_position(end_byte);
 
         let old_end_position = self.get_point(end_byte);
         let start_position = self.get_point(start_byte);
@@ -214,8 +256,22 @@ impl Document {
         if self.buffer.delete_backward() {
             self.mark_dirty();
 
-            // new_end_byte is the start_byte (because we deleted up to it)
-            // new_end_position is start_position
+            // Record to undo history
+            self.record_edit(
+                EditOperation::Delete {
+                    range: Range::new(history_start, history_end),
+                    deleted_text: deleted_text.clone(),
+                },
+                &format!(
+                    "Delete '{}'",
+                    if deleted_text == "\n" {
+                        "\\n"
+                    } else {
+                        &deleted_text
+                    }
+                ),
+            );
+
             let edit = InputEdit {
                 start_byte,
                 old_end_byte: end_byte,
@@ -250,11 +306,38 @@ impl Document {
             end_byte += 1;
         }
 
+        // Capture deleted text before deletion
+        let deleted_text: String = self
+            .buffer
+            .line_index
+            .bytes_range(start_byte..end_byte)
+            .iter()
+            .map(|&b| b as char)
+            .collect();
+        let history_start = self.byte_to_position(start_byte);
+        let history_end = self.byte_to_position(end_byte);
+
         let start_position = self.get_point(start_byte);
         let old_end_position = self.get_point(end_byte);
 
         if self.buffer.delete_forward() {
             self.mark_dirty();
+
+            // Record to undo history
+            self.record_edit(
+                EditOperation::Delete {
+                    range: Range::new(history_start, history_end),
+                    deleted_text: deleted_text.clone(),
+                },
+                &format!(
+                    "Delete '{}'",
+                    if deleted_text == "\n" {
+                        "\\n"
+                    } else {
+                        &deleted_text
+                    }
+                ),
+            );
 
             let edit = InputEdit {
                 start_byte,
@@ -407,6 +490,206 @@ impl Document {
             writer.write_all(&bytes[start..])?;
         }
         Ok(())
+    }
+
+    // ==========================================================================
+    // Undo/Redo Support
+    // ==========================================================================
+
+    /// Convert byte offset to history Position
+    fn byte_to_position(&self, byte_offset: usize) -> Position {
+        let line = self.buffer.line_index.get_line_at(byte_offset);
+        let line_start = self.buffer.line_index.get_start(line).unwrap_or(0);
+        let col = byte_offset.saturating_sub(line_start);
+        Position::new(line as u32, col as u32)
+    }
+
+    /// Start a transaction for grouping multiple edits
+    pub fn begin_transaction(&mut self, description: impl Into<String>) {
+        self.current_transaction = Some(EditTransaction::new(description));
+    }
+
+    /// Commit the current transaction to undo history
+    pub fn commit_transaction(&mut self) {
+        if let Some(tx) = self.current_transaction.take() {
+            if !tx.is_empty() {
+                self.history.push(tx, None);
+            }
+        }
+    }
+
+    /// Record an edit operation (either to current transaction or immediately)
+    fn record_edit(&mut self, op: EditOperation, description: &str) {
+        if let Some(ref mut tx) = self.current_transaction {
+            tx.record(op);
+        } else {
+            // Auto-commit single operation
+            let mut tx = EditTransaction::new(description);
+            tx.record(op);
+            self.history.push(tx, None);
+        }
+    }
+
+    /// Undo the last edit
+    /// Returns true if undo was successful
+    pub fn undo(&mut self) -> bool {
+        if !self.history.can_undo() {
+            return false;
+        }
+
+        // Get the transaction to undo
+        let inverse_ops = if let Some(tx) = self.history.current_transaction() {
+            tx.inverse()
+        } else {
+            return false;
+        };
+
+        // Apply inverse operations
+        for op in inverse_ops {
+            self.apply_operation(&op);
+        }
+
+        // Move in the tree
+        self.history.undo();
+        self.mark_dirty();
+
+        // Force full reparse (incremental parse would have stale positions)
+        if let Some(syntax) = &mut self.syntax {
+            syntax.reparse(&self.buffer);
+        }
+
+        true
+    }
+
+    /// Redo the last undone edit
+    /// Returns true if redo was successful
+    pub fn redo(&mut self) -> bool {
+        if !self.history.can_redo() {
+            return false;
+        }
+
+        // Move in the tree first to get the transaction
+        if self.history.redo().is_none() {
+            return false;
+        }
+
+        // Get operations to redo
+        let ops = if let Some(tx) = self.history.current_transaction() {
+            tx.ops.clone()
+        } else {
+            return false;
+        };
+
+        // Apply operations
+        for op in ops {
+            self.apply_operation(&op);
+        }
+
+        self.mark_dirty();
+
+        // Force full reparse (incremental parse would have stale positions)
+        if let Some(syntax) = &mut self.syntax {
+            syntax.reparse(&self.buffer);
+        }
+
+        true
+    }
+
+    /// Apply an edit operation to the buffer (for undo/redo)
+    fn apply_operation(&mut self, op: &EditOperation) {
+        match op {
+            EditOperation::Insert { position, text, .. } => {
+                // Convert position to byte offset
+                let line_start = self
+                    .buffer
+                    .line_index
+                    .get_start(position.line as usize)
+                    .unwrap_or(0);
+                let byte_offset = line_start + position.col as usize;
+                let _ = self.buffer.set_cursor(byte_offset);
+                let _ = self.buffer.insert_str(text);
+            }
+            EditOperation::Delete { range, .. } => {
+                // Convert range to byte offsets
+                let start_line_start = self
+                    .buffer
+                    .line_index
+                    .get_start(range.start.line as usize)
+                    .unwrap_or(0);
+                let start_offset = start_line_start + range.start.col as usize;
+                let end_line_start = self
+                    .buffer
+                    .line_index
+                    .get_start(range.end.line as usize)
+                    .unwrap_or(0);
+                let end_offset = end_line_start + range.end.col as usize;
+
+                // Position cursor at start and delete
+                let _ = self.buffer.set_cursor(start_offset);
+                for _ in start_offset..end_offset {
+                    self.buffer.delete_forward();
+                }
+            }
+            EditOperation::Replace {
+                range, new_text, ..
+            } => {
+                // Delete old content
+                let start_line_start = self
+                    .buffer
+                    .line_index
+                    .get_start(range.start.line as usize)
+                    .unwrap_or(0);
+                let start_offset = start_line_start + range.start.col as usize;
+                let end_line_start = self
+                    .buffer
+                    .line_index
+                    .get_start(range.end.line as usize)
+                    .unwrap_or(0);
+                let end_offset = end_line_start + range.end.col as usize;
+
+                let _ = self.buffer.set_cursor(start_offset);
+                for _ in start_offset..end_offset {
+                    self.buffer.delete_forward();
+                }
+                // Insert new content
+                let _ = self.buffer.insert_str(new_text);
+            }
+            EditOperation::BlockChange {
+                range, new_content, ..
+            } => {
+                // For block changes, we need to replace line by line
+                let start_line_start = self
+                    .buffer
+                    .line_index
+                    .get_start(range.start.line as usize)
+                    .unwrap_or(0);
+                let start_offset = start_line_start + range.start.col as usize;
+                let end_line_start = self
+                    .buffer
+                    .line_index
+                    .get_start(range.end.line as usize)
+                    .unwrap_or(0);
+                let end_offset = end_line_start + range.end.col as usize;
+
+                let _ = self.buffer.set_cursor(start_offset);
+                for _ in start_offset..end_offset {
+                    self.buffer.delete_forward();
+                }
+                // Insert new content
+                let new_text = new_content.join("\n");
+                let _ = self.buffer.insert_str(&new_text);
+            }
+        }
+    }
+
+    /// Check if undo is available
+    pub fn can_undo(&self) -> bool {
+        self.history.can_undo()
+    }
+
+    /// Check if redo is available
+    pub fn can_redo(&self) -> bool {
+        self.history.can_redo()
     }
 }
 

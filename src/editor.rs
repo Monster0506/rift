@@ -485,18 +485,34 @@ impl<T: TerminalBackend> Editor<T> {
                 if should_execute_buffer {
                     let viewport_height = self.viewport.visible_rows();
                     let doc_id = self.tab_order[self.current_tab];
+
+                    // Wrap mutating commands (except Undo/Redo) in a transaction
+                    let needs_transaction =
+                        cmd.is_mutating() && !matches!(cmd, Command::Undo | Command::Redo);
+
                     let res = {
                         let doc = self.documents.get_mut(&doc_id).unwrap();
                         let expand_tabs = doc.options.expand_tabs;
                         let tab_width = doc.options.tab_width;
-                        execute_command(
+
+                        if needs_transaction {
+                            doc.begin_transaction(format!("{:?}", cmd));
+                        }
+
+                        let result = execute_command(
                             cmd,
                             doc,
                             expand_tabs,
                             tab_width,
                             viewport_height,
                             self.state.last_search_query.as_deref(),
-                        )
+                        );
+
+                        if needs_transaction {
+                            doc.commit_transaction();
+                        }
+
+                        result
                     };
                     if let Err(e) = res {
                         self.state.handle_error(e);
@@ -532,6 +548,12 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_key_actions(&mut self, action: crate::key_handler::KeyAction) {
         match action {
             KeyAction::ExitInsertMode => {
+                // Commit insert mode transaction before exiting
+                let doc_id = self.tab_order[self.current_tab];
+                self.documents
+                    .get_mut(&doc_id)
+                    .unwrap()
+                    .commit_transaction();
                 self.set_mode(Mode::Normal);
             }
             KeyAction::ExitCommandMode => {
@@ -558,11 +580,19 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_mode_management(&mut self, command: crate::command::Command) {
         match command {
             Command::EnterInsertMode => {
+                // Start transaction for grouping insert mode edits
+                let doc_id = self.tab_order[self.current_tab];
+                self.documents
+                    .get_mut(&doc_id)
+                    .unwrap()
+                    .begin_transaction("Insert");
                 self.set_mode(Mode::Insert);
             }
             Command::EnterInsertModeAfter => {
                 let doc_id = self.tab_order[self.current_tab];
-                self.documents.get_mut(&doc_id).unwrap().buffer.move_right();
+                let doc = self.documents.get_mut(&doc_id).unwrap();
+                doc.buffer.move_right();
+                doc.begin_transaction("Insert");
                 self.set_mode(Mode::Insert);
             }
             Command::EnterCommandMode => {

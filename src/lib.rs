@@ -10,6 +10,7 @@ pub mod editor;
 pub mod error;
 pub mod executor;
 pub mod floating_window;
+pub mod history;
 pub mod key;
 pub mod key_handler;
 pub mod layer;

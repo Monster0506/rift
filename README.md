@@ -40,12 +40,12 @@ Implemented:
 - Polling instead of blocking input
 - search + replace
 - Custom regex engine (monster-regex)
+- undo + redo
 
 Todo:
 - LSP
 - Syntax highlighting
 - Treesitter
-- undo + redo
 - copy/paste (buffers)
 - macros
 - help manual
