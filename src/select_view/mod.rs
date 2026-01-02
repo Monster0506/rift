@@ -18,9 +18,9 @@ pub struct SelectView {
     /// Percentage of width allocated to left pane (0-100)
     left_width_percent: u8,
     /// Content for the left pane
-    left_content: Vec<Vec<char>>,
+    left_content: Vec<Vec<crate::layer::Cell>>,
     /// Content for the right pane
-    right_content: Vec<Vec<char>>,
+    right_content: Vec<Vec<crate::layer::Cell>>,
     /// Scroll offset for left pane
     left_scroll: usize,
     /// Scroll offset for right pane
@@ -51,12 +51,12 @@ impl SelectView {
     }
 
     /// Set the left pane content
-    pub fn set_left_content(&mut self, content: Vec<Vec<char>>) {
+    pub fn set_left_content(&mut self, content: Vec<Vec<crate::layer::Cell>>) {
         self.left_content = content;
     }
 
     /// Set the right pane content
-    pub fn set_right_content(&mut self, content: Vec<Vec<char>>) {
+    pub fn set_right_content(&mut self, content: Vec<Vec<crate::layer::Cell>>) {
         self.right_content = content;
     }
 
@@ -107,55 +107,57 @@ impl SelectView {
         let right_width = content_width.saturating_sub(left_width).saturating_sub(1); // -1 for divider
 
         // Build combined content with divider
-        let mut combined_content: Vec<Vec<char>> = Vec::new();
+        let mut combined_content: Vec<Vec<crate::layer::Cell>> = Vec::new();
+
+        use crate::layer::Cell;
 
         for row in 0..content_height {
-            let mut line: Vec<char> = Vec::with_capacity(content_width);
+            let mut line: Vec<Cell> = Vec::with_capacity(content_width);
 
             // Left pane content
             let left_row = row + self.left_scroll;
             if let Some(left_line) = self.left_content.get(left_row) {
-                for (i, &byte) in left_line.iter().take(left_width).enumerate() {
-                    line.push(byte);
+                for (i, cell) in left_line.iter().take(left_width).enumerate() {
+                    line.push(cell.clone());
                     if i >= left_width - 1 {
                         break;
                     }
                 }
                 // Pad to left_width
                 while line.len() < left_width {
-                    line.push(' ');
+                    line.push(Cell::new(b' '));
                 }
             } else {
                 // Empty line
-                line.extend(repeat_n(' ', left_width));
+                line.extend(repeat_n(Cell::new(b' '), left_width));
             }
 
             // Divider
-            line.push(DIVIDER_CHAR);
+            line.push(Cell::from_char(DIVIDER_CHAR));
 
             // Right pane content
             let right_row = row + self.right_scroll;
             if let Some(right_line) = self.right_content.get(right_row) {
-                for (i, &byte) in right_line.iter().take(right_width).enumerate() {
-                    line.push(byte);
+                for (i, cell) in right_line.iter().take(right_width).enumerate() {
+                    line.push(cell.clone());
                     if i >= right_width - 1 {
                         break;
                     }
                 }
                 // Pad to right_width
                 while line.len() < left_width + 1 + right_width {
-                    line.push(' ');
+                    line.push(Cell::new(b' '));
                 }
             } else {
                 // Empty line
-                line.extend(repeat_n(' ', right_width));
+                line.extend(repeat_n(Cell::new(b' '), right_width));
             }
 
             combined_content.push(line);
         }
 
-        // Render using FloatingWindow
-        window.render(layer, &combined_content);
+        // Render using FloatingWindow with Cells
+        window.render_cells(layer, &combined_content);
 
         // Highlight selected line in left pane
         if let Some(selected_idx) = self.selected_line {
@@ -179,13 +181,11 @@ impl SelectView {
                     if let Some(line) = combined_content.get(visual_row_idx) {
                         for i in 0..left_width {
                             let col = abs_col_start + i;
-                            if let Some(&ch) = line.get(i) {
+                            if let Some(cell) = line.get(i) {
                                 layer.set_cell(
                                     abs_row,
                                     col,
-                                    crate::layer::Cell::from_char(ch)
-                                        .with_fg(Color::Black)
-                                        .with_bg(Color::White),
+                                    cell.clone().with_fg(Color::Black).with_bg(Color::White),
                                 );
                             }
                         }

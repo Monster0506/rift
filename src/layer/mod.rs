@@ -90,7 +90,7 @@ impl LayerPriority {
 }
 
 /// A cell in the terminal buffer
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
     /// The character to display (UTF-8 encoded bytes)
     pub content: Vec<u8>,
@@ -108,6 +108,15 @@ impl Cell {
             fg: None,
             bg: None,
         }
+    }
+
+    /// Convert cell content to char (best effort)
+    pub fn to_char(&self) -> char {
+        std::str::from_utf8(&self.content)
+            .unwrap_or("?")
+            .chars()
+            .next()
+            .unwrap_or('?')
     }
 
     /// Create a new cell with UTF-8 content
