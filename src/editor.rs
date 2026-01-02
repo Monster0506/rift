@@ -864,7 +864,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.set_mode(Mode::Normal);
                 }
             }
-            ExecutionResult::Success => {
+            ExecutionResult::Write => {
                 // Handle write command - save if file path exists
                 if self.state.file_path.is_some() && self.active_document().is_dirty() {
                     if let Err(e) = self.save_document() {
@@ -989,6 +989,10 @@ impl<T: TerminalBackend> Editor<T> {
 
                 self.state
                     .notify(crate::notification::NotificationType::Info, message);
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+            }
+            ExecutionResult::Success => {
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
             }
