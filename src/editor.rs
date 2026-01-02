@@ -459,9 +459,16 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                         Key::Char('j') | Key::ArrowDown => {
                             if let Some(ref mut content) = self.state.overlay_content {
-                                if content.left.len() > 0 {
-                                    content.cursor =
-                                        (content.cursor + 1).min(content.left.len() - 1);
+                                let len = content.left.len();
+                                if len > 0 {
+                                    let mut next = content.cursor + 1;
+                                    while next < len {
+                                        if content.selectable.get(next).copied().unwrap_or(true) {
+                                            content.cursor = next;
+                                            break;
+                                        }
+                                        next += 1;
+                                    }
                                     self.update_and_render()?;
                                 }
                             }
@@ -469,7 +476,14 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                         Key::Char('k') | Key::ArrowUp => {
                             if let Some(ref mut content) = self.state.overlay_content {
-                                content.cursor = content.cursor.saturating_sub(1);
+                                let mut next = content.cursor;
+                                while next > 0 {
+                                    next -= 1;
+                                    if content.selectable.get(next).copied().unwrap_or(true) {
+                                        content.cursor = next;
+                                        break;
+                                    }
+                                }
                                 self.update_and_render()?;
                             }
                             continue;

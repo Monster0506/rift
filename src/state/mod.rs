@@ -193,6 +193,8 @@ pub struct OverlayContent {
     pub left_width_percent: u8,
     /// Cursor position (line index in left pane)
     pub cursor: usize,
+    /// Which lines are selectable (for skipping connector lines)
+    pub selectable: Vec<bool>,
 }
 
 impl State {

@@ -307,12 +307,15 @@ impl CommandExecutor {
 
                 // Create overlay content
                 // We map sequences to lines, but for now just validation
+                use crate::history::EditSeq;
+                let selectable = _seqs.iter().map(|&s| s != EditSeq::MAX).collect();
 
                 let content = crate::state::OverlayContent {
                     left: lines,
                     right: vec![vec!['P', 'r', 'e', 'v', 'i', 'e', 'w']], // Placeholder
                     left_width_percent: 40,
                     cursor,
+                    selectable,
                 };
 
                 ExecutionResult::UndoTree { content }
