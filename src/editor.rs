@@ -1047,33 +1047,6 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
             }
-            ExecutionResult::TestSelectView => {
-                // [TEMPORARY] Set overlay with demo content
-                use crate::state::OverlayContent;
-
-                self.state.overlay_content = Some(OverlayContent {
-                    left: vec![
-                        "Left Pane".chars().collect(),
-                        "----------".chars().collect(),
-                        "Item 1".chars().collect(),
-                        "Item 2".chars().collect(),
-                        "Item 3".chars().collect(),
-                        "Item 4".chars().collect(),
-                        "Item 5".chars().collect(),
-                    ],
-                    right: vec![
-                        "Right Pane - Preview".chars().collect(),
-                        "--------------------".chars().collect(),
-                        "This is a demo of the split view.".chars().collect(),
-                        "Press q to close.".chars().collect(),
-                    ],
-                    left_width_percent: 40,
-                    cursor: 0,
-                });
-
-                self.state.clear_command_line();
-                self.set_mode(Mode::Overlay);
-            }
             ExecutionResult::Success => {
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
@@ -1148,6 +1121,11 @@ impl<T: TerminalBackend> Editor<T> {
                 // Already handled in executor
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
+            }
+            ExecutionResult::UndoTree { content } => {
+                self.state.overlay_content = Some(content);
+                self.state.clear_command_line();
+                self.set_mode(Mode::Overlay);
             }
         }
     }

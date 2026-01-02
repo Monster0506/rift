@@ -380,10 +380,10 @@ impl std::error::Error for UndoError {}
 
 /// Undo tree with branching history and checkpoint strategy
 pub struct UndoTree {
-    nodes: HashMap<EditSeq, EditNode>,
-    current: EditSeq,
+    pub nodes: HashMap<EditSeq, EditNode>,
+    pub current: EditSeq,
     next_seq: EditSeq,
-    root_seq: EditSeq,
+    pub root_seq: EditSeq,
 
     // Checkpoint configuration
     checkpoint_interval: u64,

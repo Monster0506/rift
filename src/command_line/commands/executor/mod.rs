@@ -43,8 +43,6 @@ pub enum ExecutionResult {
     NotificationClear {
         bangs: usize,
     },
-    /// [TEMPORARY] Open split view test
-    TestSelectView,
 
     /// Undo command - editor should undo changes
     Undo {
@@ -60,6 +58,10 @@ pub enum ExecutionResult {
     },
     /// Checkpoint created successfully
     Checkpoint,
+    /// Open undo tree visualization
+    UndoTree {
+        content: crate::state::OverlayContent,
+    },
 }
 
 /// Command executor
@@ -288,7 +290,6 @@ impl CommandExecutor {
                 }
             }
             ParsedCommand::BufferList => ExecutionResult::BufferList,
-            ParsedCommand::TestSelectView { bangs: _ } => ExecutionResult::TestSelectView,
             ParsedCommand::Undo { count, bangs: _ } => ExecutionResult::Undo { count },
             ParsedCommand::Redo { count, bangs: _ } => ExecutionResult::Redo { count },
             ParsedCommand::UndoGoto { seq, bangs: _ } => ExecutionResult::UndoGoto { seq },
@@ -300,6 +301,21 @@ impl CommandExecutor {
                     "Checkpoint created".to_string(),
                 );
                 ExecutionResult::Checkpoint
+            }
+            ParsedCommand::UndoTree { bangs: _ } => {
+                let (lines, _seqs, cursor) = crate::undotree_view::render_tree(&document.history);
+
+                // Create overlay content
+                // We map sequences to lines, but for now just validation
+
+                let content = crate::state::OverlayContent {
+                    left: lines,
+                    right: vec![vec!['P', 'r', 'e', 'v', 'i', 'e', 'w']], // Placeholder
+                    left_width_percent: 40,
+                    cursor,
+                };
+
+                ExecutionResult::UndoTree { content }
             }
         }
     }

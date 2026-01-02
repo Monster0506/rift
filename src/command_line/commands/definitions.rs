@@ -509,6 +509,14 @@ fn parse_setlocal(
     parse_set_impl(registry, args, bangs, true)
 }
 
+fn parse_undotree(
+    _registry: &SettingsRegistry<UserSettings>,
+    _args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    ParsedCommand::UndoTree { bangs }
+}
+
 /// Static registry of all commands
 pub const COMMANDS: &[CommandDescriptor] = &[
     CommandDescriptor {
@@ -641,14 +649,6 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         factory: Some(parse_substitute_range),
         subcommands: &[],
     },
-    // [TEMPORARY] Test split view - remove after manual verification
-    CommandDescriptor {
-        name: "testsplit",
-        aliases: &["ts"],
-        description: "[TEMP] Test split view",
-        factory: Some(parse_testsplit),
-        subcommands: &[],
-    },
     CommandDescriptor {
         name: "undo",
         aliases: &["u"],
@@ -675,13 +675,11 @@ pub const COMMANDS: &[CommandDescriptor] = &[
             subcommands: &[],
         }],
     },
+    CommandDescriptor {
+        name: "undotree",
+        aliases: &["ut"],
+        description: "Open undo tree visualization",
+        factory: Some(parse_undotree),
+        subcommands: &[],
+    },
 ];
-
-// [TEMPORARY] Test split view factory - remove after manual verification
-fn parse_testsplit(
-    _registry: &SettingsRegistry<UserSettings>,
-    _args: &[&str],
-    bangs: usize,
-) -> ParsedCommand {
-    ParsedCommand::TestSelectView { bangs }
-}

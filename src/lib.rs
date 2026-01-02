@@ -24,6 +24,7 @@ pub mod state;
 pub mod status;
 pub mod syntax;
 pub mod term;
+pub mod undotree_view;
 pub mod viewport;
 
 #[cfg(test)]

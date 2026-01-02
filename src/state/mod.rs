@@ -183,7 +183,7 @@ pub struct State {
 }
 
 /// Content for split-view overlay (used in Mode::Overlay)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OverlayContent {
     /// Left pane content (lines)
     pub left: Vec<Vec<char>>,

@@ -71,10 +71,6 @@ pub enum ParsedCommand {
         bangs: usize,
     },
     BufferList,
-    /// [TEMPORARY] Test split view (remove after manual verification)
-    TestSelectView {
-        bangs: usize,
-    },
     /// Undo command (undo last change, optionally with count)
     Undo {
         count: Option<u64>,
@@ -92,6 +88,10 @@ pub enum ParsedCommand {
     },
     /// Create checkpoint at current position
     Checkpoint {
+        bangs: usize,
+    },
+    /// Open undo tree visualization
+    UndoTree {
         bangs: usize,
     },
 }
