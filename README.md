@@ -5,7 +5,8 @@ This is a vim-like text editor.
 I use this daily and primarily. 
 
 Implemented:
-- Undo and redo
+- Undo and redo with hybrid delta+checkpointing approach
+- Fancy undotree
 - Syntax highlighting
 - Treesitter (supporting only Python and Rust currently)
 - Open File
