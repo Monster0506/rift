@@ -640,3 +640,200 @@ fn test_redo_at_leaf_returns_none() {
     assert!(!tree.can_redo());
     assert!(tree.redo().is_none());
 }
+
+// =============================================================================
+// goto_seq Tests
+// =============================================================================
+
+#[test]
+fn test_goto_seq_same_position() {
+    let mut tree = UndoTree::new();
+
+    let mut tx = EditTransaction::new("Edit");
+    tx.record(EditOperation::Insert {
+        position: Position::new(0, 0),
+        text: "a".to_string(),
+        len: 1,
+    });
+    tree.push(tx, None);
+
+    let result = tree.goto_seq(1).unwrap();
+    assert_eq!(result.undo_ops.len(), 0);
+    assert_eq!(result.redo_ops.len(), 0);
+    assert_eq!(tree.current_seq(), 1);
+}
+
+#[test]
+fn test_goto_seq_backward() {
+    let mut tree = UndoTree::new();
+
+    // Push 3 edits
+    for i in 0..3 {
+        let mut tx = EditTransaction::new(format!("Edit {}", i));
+        tx.record(EditOperation::Insert {
+            position: Position::new(0, i as u32),
+            text: format!("{}", i),
+            len: 1,
+        });
+        tree.push(tx, None);
+    }
+
+    assert_eq!(tree.current_seq(), 3);
+
+    // Go back to seq=1
+    let result = tree.goto_seq(1).unwrap();
+    assert_eq!(tree.current_seq(), 1);
+    assert_eq!(result.undo_ops.len(), 2); // Undo seq=3 and seq=2
+    assert_eq!(result.redo_ops.len(), 0);
+}
+
+#[test]
+fn test_goto_seq_forward() {
+    let mut tree = UndoTree::new();
+
+    // Push 3 edits
+    for i in 0..3 {
+        let mut tx = EditTransaction::new(format!("Edit {}", i));
+        tx.record(EditOperation::Insert {
+            position: Position::new(0, i as u32),
+            text: format!("{}", i),
+            len: 1,
+        });
+        tree.push(tx, None);
+    }
+
+    // Go back to root via undo
+    tree.undo();
+    tree.undo();
+    tree.undo();
+    assert_eq!(tree.current_seq(), 0);
+
+    // Jump forward to seq=2
+    let result = tree.goto_seq(2).unwrap();
+    assert_eq!(tree.current_seq(), 2);
+    assert_eq!(result.undo_ops.len(), 0);
+    assert_eq!(result.redo_ops.len(), 2); // Redo seq=1 and seq=2
+}
+
+#[test]
+fn test_goto_seq_to_root() {
+    let mut tree = UndoTree::new();
+
+    // Push 3 edits
+    for i in 0..3 {
+        let mut tx = EditTransaction::new(format!("Edit {}", i));
+        tx.record(EditOperation::Insert {
+            position: Position::new(0, i as u32),
+            text: format!("{}", i),
+            len: 1,
+        });
+        tree.push(tx, None);
+    }
+
+    // Jump to root
+    let result = tree.goto_seq(0).unwrap();
+    assert_eq!(tree.current_seq(), 0);
+    assert_eq!(result.undo_ops.len(), 3);
+    assert_eq!(result.redo_ops.len(), 0);
+}
+
+#[test]
+fn test_goto_seq_cross_branch() {
+    let mut tree = UndoTree::new();
+
+    // Create branching structure:
+    // 0 -> 1 -> 2
+    //      |
+    //      +-> 3
+
+    let mut tx1 = EditTransaction::new("Edit 1");
+    tx1.record(EditOperation::Insert {
+        position: Position::new(0, 0),
+        text: "a".to_string(),
+        len: 1,
+    });
+    tree.push(tx1, None); // seq=1
+
+    let mut tx2 = EditTransaction::new("Edit 2");
+    tx2.record(EditOperation::Insert {
+        position: Position::new(0, 1),
+        text: "b".to_string(),
+        len: 1,
+    });
+    tree.push(tx2, None); // seq=2
+
+    // Go back to seq=1
+    tree.undo();
+    assert_eq!(tree.current_seq(), 1);
+
+    // Create branch
+    let mut tx3 = EditTransaction::new("Edit 3");
+    tx3.record(EditOperation::Insert {
+        position: Position::new(0, 1),
+        text: "c".to_string(),
+        len: 1,
+    });
+    tree.push(tx3, None); // seq=3
+
+    // Now at seq=3, jump to seq=2 (different branch)
+    let result = tree.goto_seq(2).unwrap();
+    assert_eq!(tree.current_seq(), 2);
+    // Should undo seq=3 (back to seq=1), then redo seq=2
+    assert_eq!(result.undo_ops.len(), 1);
+    assert_eq!(result.redo_ops.len(), 1);
+}
+
+#[test]
+fn test_goto_seq_invalid_target() {
+    let mut tree = UndoTree::new();
+
+    let result = tree.goto_seq(999);
+    assert!(result.is_err());
+    match result {
+        Err(UndoError::InvalidSeq(seq)) => assert_eq!(seq, 999),
+        _ => panic!("Expected InvalidSeq error"),
+    }
+}
+
+#[test]
+fn test_goto_seq_updates_last_visited_child() {
+    let mut tree = UndoTree::new();
+
+    // Create branching structure
+    let mut tx1 = EditTransaction::new("Edit 1");
+    tx1.record(EditOperation::Insert {
+        position: Position::new(0, 0),
+        text: "a".to_string(),
+        len: 1,
+    });
+    tree.push(tx1, None); // seq=1
+
+    let mut tx2 = EditTransaction::new("Edit 2");
+    tx2.record(EditOperation::Insert {
+        position: Position::new(0, 1),
+        text: "b".to_string(),
+        len: 1,
+    });
+    tree.push(tx2, None); // seq=2
+
+    tree.undo(); // Back to seq=1
+
+    let mut tx3 = EditTransaction::new("Edit 3");
+    tx3.record(EditOperation::Insert {
+        position: Position::new(0, 1),
+        text: "c".to_string(),
+        len: 1,
+    });
+    tree.push(tx3, None); // seq=3
+
+    // Now goto seq=2
+    tree.goto_seq(2).unwrap();
+
+    // Undo back to seq=1
+    tree.undo();
+    assert_eq!(tree.current_seq(), 1);
+
+    // Redo should go to seq=2 (not seq=3) because goto_seq updated last_visited_child
+    tree.redo();
+    assert_eq!(tree.current_seq(), 2);
+}
