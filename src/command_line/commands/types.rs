@@ -71,4 +71,23 @@ pub enum ParsedCommand {
         bangs: usize,
     },
     BufferList,
+    /// Undo command (undo last change, optionally with count)
+    Undo {
+        count: Option<u64>,
+        bangs: usize,
+    },
+    /// Redo command (redo last undone change, optionally with count)
+    Redo {
+        count: Option<u64>,
+        bangs: usize,
+    },
+    /// Undo goto sequence (jump to specific edit sequence)
+    UndoGoto {
+        seq: u64,
+        bangs: usize,
+    },
+    /// Create checkpoint at current position
+    Checkpoint {
+        bangs: usize,
+    },
 }

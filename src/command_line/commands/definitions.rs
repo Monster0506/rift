@@ -159,6 +159,58 @@ fn parse_nohighlight(
     ParsedCommand::NoHighlight { bangs }
 }
 
+fn parse_undo(
+    _registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    if args.is_empty() {
+        // Simple undo
+        return ParsedCommand::Undo { count: None, bangs };
+    }
+
+    // Try to parse as sequence number (goto)
+    if let Ok(seq) = args[0].parse::<u64>() {
+        return ParsedCommand::UndoGoto { seq, bangs };
+    }
+
+    // Try to parse as count (for multiple undos)
+    ParsedCommand::Unknown {
+        name: format!("undo (invalid argument: {})", args[0]),
+    }
+}
+
+fn parse_redo(
+    _registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    if args.is_empty() {
+        // Simple redo
+        return ParsedCommand::Redo { count: None, bangs };
+    }
+
+    // Try to parse as count
+    if let Ok(count) = args[0].parse::<u64>() {
+        return ParsedCommand::Redo {
+            count: Some(count),
+            bangs,
+        };
+    }
+
+    ParsedCommand::Unknown {
+        name: format!("redo (invalid argument: {})", args[0]),
+    }
+}
+
+fn parse_checkpoint(
+    _registry: &SettingsRegistry<UserSettings>,
+    _args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    ParsedCommand::Checkpoint { bangs }
+}
+
 fn parse_substitute_impl(
     _registry: &SettingsRegistry<UserSettings>,
     args: &[&str],
@@ -588,5 +640,31 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Search and replace text in whole file",
         factory: Some(parse_substitute_range),
         subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "undo",
+        aliases: &["u"],
+        description: "Undo changes",
+        factory: Some(parse_undo),
+        subcommands: &[CommandDescriptor {
+            name: "checkpoint",
+            aliases: &[],
+            description: "Create undo checkpoint",
+            factory: Some(parse_checkpoint),
+            subcommands: &[],
+        }],
+    },
+    CommandDescriptor {
+        name: "redo",
+        aliases: &["red"],
+        description: "Redo changes",
+        factory: Some(parse_redo),
+        subcommands: &[CommandDescriptor {
+            name: "checkpoint",
+            aliases: &[],
+            description: "Create undo checkpoint",
+            factory: Some(parse_checkpoint),
+            subcommands: &[],
+        }],
     },
 ];

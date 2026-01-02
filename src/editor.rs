@@ -996,6 +996,77 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
             }
+            ExecutionResult::Undo { count } => {
+                let doc_id = self.tab_order[self.current_tab];
+                let doc = self.documents.get_mut(&doc_id).unwrap();
+                let count = count.unwrap_or(1) as usize;
+                let mut undone = 0;
+                for _ in 0..count {
+                    if doc.undo() {
+                        undone += 1;
+                    } else {
+                        break;
+                    }
+                }
+                if undone == 0 {
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        "Already at oldest change".to_string(),
+                    );
+                }
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+                self.update_search_highlights();
+            }
+            ExecutionResult::Redo { count } => {
+                let doc_id = self.tab_order[self.current_tab];
+                let doc = self.documents.get_mut(&doc_id).unwrap();
+                let count = count.unwrap_or(1) as usize;
+                let mut redone = 0;
+                for _ in 0..count {
+                    if doc.redo() {
+                        redone += 1;
+                    } else {
+                        break;
+                    }
+                }
+                if redone == 0 {
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        "Already at newest change".to_string(),
+                    );
+                }
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+                self.update_search_highlights();
+            }
+            ExecutionResult::UndoGoto { seq } => {
+                let doc_id = self.tab_order[self.current_tab];
+                let doc = self.documents.get_mut(&doc_id).unwrap();
+                match doc.goto_seq(seq) {
+                    Ok(()) => {
+                        self.state.notify(
+                            crate::notification::NotificationType::Info,
+                            format!("Jumped to edit #{}", seq),
+                        );
+                    }
+                    Err(e) => {
+                        self.state.handle_error(RiftError::new(
+                            ErrorType::Execution,
+                            "UNDO_ERROR",
+                            e.to_string(),
+                        ));
+                    }
+                }
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+                self.update_search_highlights();
+            }
+            ExecutionResult::Checkpoint => {
+                // Already handled in executor
+                self.state.clear_command_line();
+                self.set_mode(Mode::Normal);
+            }
         }
     }
 
