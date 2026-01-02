@@ -691,6 +691,56 @@ impl Document {
     pub fn can_redo(&self) -> bool {
         self.history.can_redo()
     }
+
+    /// Create a checkpoint at the current position
+    pub fn checkpoint(&mut self) {
+        use crate::history::DocumentSnapshot;
+
+        // Build snapshot from buffer
+        let before = self.buffer.get_before_gap();
+        let after = self.buffer.get_after_gap();
+        let mut full_text = String::with_capacity(before.len() + after.len());
+
+        // Convert bytes to string (handling invalid UTF-8 gracefully)
+        if let Ok(s) = std::str::from_utf8(&before) {
+            full_text.push_str(s);
+        }
+        if let Ok(s) = std::str::from_utf8(&after) {
+            full_text.push_str(s);
+        }
+
+        let snapshot = DocumentSnapshot::new(full_text);
+        self.history.checkpoint(snapshot);
+    }
+
+    /// Navigate to a specific edit sequence in the undo tree
+    /// Returns true if successful
+    pub fn goto_seq(&mut self, target: u64) -> Result<(), crate::history::UndoError> {
+        let replay_path = self.history.goto_seq(target)?;
+
+        // Apply undo operations (inverse in reverse order)
+        for tx in &replay_path.undo_ops {
+            for op in tx.inverse() {
+                self.apply_operation(&op);
+            }
+        }
+
+        // Apply redo operations (forward in order)
+        for tx in &replay_path.redo_ops {
+            for op in &tx.ops {
+                self.apply_operation(op);
+            }
+        }
+
+        self.mark_dirty();
+
+        // Force full reparse
+        if let Some(syntax) = &mut self.syntax {
+            syntax.reparse(&self.buffer);
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

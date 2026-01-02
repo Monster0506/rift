@@ -45,6 +45,21 @@ pub enum ExecutionResult {
     },
     /// [TEMPORARY] Open split view test
     TestSelectView,
+
+    /// Undo command - editor should undo changes
+    Undo {
+        count: Option<u64>,
+    },
+    /// Redo command - editor should redo changes
+    Redo {
+        count: Option<u64>,
+    },
+    /// Undo goto sequence - editor should jump to specific edit
+    UndoGoto {
+        seq: u64,
+    },
+    /// Checkpoint created successfully
+    Checkpoint,
 }
 
 /// Command executor
@@ -274,6 +289,18 @@ impl CommandExecutor {
             }
             ParsedCommand::BufferList => ExecutionResult::BufferList,
             ParsedCommand::TestSelectView { bangs: _ } => ExecutionResult::TestSelectView,
+            ParsedCommand::Undo { count, bangs: _ } => ExecutionResult::Undo { count },
+            ParsedCommand::Redo { count, bangs: _ } => ExecutionResult::Redo { count },
+            ParsedCommand::UndoGoto { seq, bangs: _ } => ExecutionResult::UndoGoto { seq },
+            ParsedCommand::Checkpoint { bangs: _ } => {
+                // Create checkpoint at current position
+                document.checkpoint();
+                state.notify(
+                    crate::notification::NotificationType::Info,
+                    "Checkpoint created".to_string(),
+                );
+                ExecutionResult::Checkpoint
+            }
         }
     }
 }

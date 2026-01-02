@@ -554,8 +554,8 @@ impl UndoTree {
 
         // Build redo operations
         let mut redo_ops = Vec::new();
-        for seq in redo_path {
-            if let Some(node) = self.nodes.get(&seq) {
+        for seq in redo_path.iter() {
+            if let Some(node) = self.nodes.get(seq) {
                 redo_ops.push(node.transaction.clone());
             }
         }
@@ -588,11 +588,13 @@ impl UndoTree {
             }
         }
 
+        let from_seq = self.current;
+
         // Move to target
         self.current = target;
 
         Ok(ReplayPath {
-            from_seq: self.current,
+            from_seq,
             to_seq: target,
             undo_ops,
             redo_ops,
