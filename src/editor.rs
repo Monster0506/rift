@@ -457,8 +457,24 @@ impl<T: TerminalBackend> Editor<T> {
                             self.update_and_render()?;
                             continue;
                         }
+                        Key::Char('j') | Key::ArrowDown => {
+                            if let Some(ref mut content) = self.state.overlay_content {
+                                if content.left.len() > 0 {
+                                    content.cursor =
+                                        (content.cursor + 1).min(content.left.len() - 1);
+                                    self.update_and_render()?;
+                                }
+                            }
+                            continue;
+                        }
+                        Key::Char('k') | Key::ArrowUp => {
+                            if let Some(ref mut content) = self.state.overlay_content {
+                                content.cursor = content.cursor.saturating_sub(1);
+                                self.update_and_render()?;
+                            }
+                            continue;
+                        }
                         _ => {
-                            // TODO: handle j/k/h/l navigation
                             continue;
                         }
                     }
@@ -814,14 +830,15 @@ impl<T: TerminalBackend> Editor<T> {
         if *current_mode == Mode::Overlay {
             if let Some(ref overlay) = state.overlay_content {
                 use crate::layer::LayerPriority;
-                use crate::split_view::SplitView;
+                use crate::select_view::SelectView;
 
-                let mut split_view = SplitView::new().with_left_width(overlay.left_width_percent);
-                split_view.set_left_content(overlay.left.clone());
-                split_view.set_right_content(overlay.right.clone());
+                let mut select_view = SelectView::new().with_left_width(overlay.left_width_percent);
+                select_view.set_left_content(overlay.left.clone());
+                select_view.set_right_content(overlay.right.clone());
+                select_view.set_selected_line(Some(overlay.cursor));
 
                 let layer = compositor.get_layer_mut(LayerPriority::POPUP);
-                split_view.render(layer);
+                select_view.render(layer);
                 // Re-composite and render
                 let _ = compositor.render_to_terminal(term, false)?;
             }
@@ -1030,7 +1047,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
             }
-            ExecutionResult::TestSplitView => {
+            ExecutionResult::TestSelectView => {
                 // [TEMPORARY] Set overlay with demo content
                 use crate::state::OverlayContent;
 

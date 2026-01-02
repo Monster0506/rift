@@ -12,7 +12,7 @@ const DIVIDER_CHAR: char = '│';
 
 /// A split-view overlay that renders left and right panes
 #[derive(Debug, Clone)]
-pub struct SplitView {
+pub struct SelectView {
     /// Percentage of width allocated to left pane (0-100)
     left_width_percent: u8,
     /// Content for the left pane
@@ -22,10 +22,13 @@ pub struct SplitView {
     /// Scroll offset for left pane
     left_scroll: usize,
     /// Scroll offset for right pane
+    /// Scroll offset for right pane
     right_scroll: usize,
+    /// Selected line index (in left pane)
+    selected_line: Option<usize>,
 }
 
-impl SplitView {
+impl SelectView {
     /// Create a new split view with 40% left pane
     pub fn new() -> Self {
         Self {
@@ -34,6 +37,7 @@ impl SplitView {
             right_content: Vec::new(),
             left_scroll: 0,
             right_scroll: 0,
+            selected_line: None,
         }
     }
 
@@ -62,6 +66,11 @@ impl SplitView {
     /// Set right pane scroll offset
     pub fn set_right_scroll(&mut self, scroll: usize) {
         self.right_scroll = scroll;
+    }
+
+    /// Set selected line index
+    pub fn set_selected_line(&mut self, line: Option<usize>) {
+        self.selected_line = line;
     }
 
     /// Render the split view to a layer
@@ -145,10 +154,47 @@ impl SplitView {
 
         // Render using FloatingWindow
         window.render(layer, &combined_content);
+
+        // Highlight selected line in left pane
+        if let Some(selected_idx) = self.selected_line {
+            // Check visibility based on scroll
+            if selected_idx >= self.left_scroll {
+                let visual_row_idx = selected_idx - self.left_scroll;
+
+                // Check if within visible content height
+                if visual_row_idx < content_height {
+                    // Calculate absolute window position
+                    // SAFETY: Layer dimensions usually fit in u16 for terminals
+                    let (win_row, win_col) =
+                        window.calculate_position(term_rows as u16, term_cols as u16);
+
+                    // Content starts at +1, +1 due to border
+                    // Convert back to usize for layer operations
+                    let abs_row = (win_row as usize) + 1 + visual_row_idx;
+                    let abs_col_start = (win_col as usize) + 1;
+
+                    // Highlight left pane width (invert colors)
+                    if let Some(line) = combined_content.get(visual_row_idx) {
+                        for i in 0..left_width {
+                            let col = abs_col_start + i;
+                            if let Some(&ch) = line.get(i) {
+                                layer.set_cell(
+                                    abs_row,
+                                    col,
+                                    crate::layer::Cell::from_char(ch)
+                                        .with_fg(Color::Black)
+                                        .with_bg(Color::White),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
-impl Default for SplitView {
+impl Default for SelectView {
     fn default() -> Self {
         Self::new()
     }

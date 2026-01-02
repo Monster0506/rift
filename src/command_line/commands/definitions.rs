@@ -605,5 +605,5 @@ fn parse_testsplit(
     _args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
-    ParsedCommand::TestSplitView { bangs }
+    ParsedCommand::TestSelectView { bangs }
 }

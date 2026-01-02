@@ -72,7 +72,7 @@ pub enum ParsedCommand {
     },
     BufferList,
     /// [TEMPORARY] Test split view (remove after manual verification)
-    TestSplitView {
+    TestSelectView {
         bangs: usize,
     },
 }
