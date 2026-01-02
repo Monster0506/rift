@@ -459,31 +459,14 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                         Key::Char('j') | Key::ArrowDown => {
                             if let Some(ref mut content) = self.state.overlay_content {
-                                let len = content.left.len();
-                                if len > 0 {
-                                    let mut next = content.cursor + 1;
-                                    while next < len {
-                                        if content.selectable.get(next).copied().unwrap_or(true) {
-                                            content.cursor = next;
-                                            break;
-                                        }
-                                        next += 1;
-                                    }
-                                    self.update_and_render()?;
-                                }
+                                content.move_cursor_down();
+                                self.update_and_render()?;
                             }
                             continue;
                         }
                         Key::Char('k') | Key::ArrowUp => {
                             if let Some(ref mut content) = self.state.overlay_content {
-                                let mut next = content.cursor;
-                                while next > 0 {
-                                    next -= 1;
-                                    if content.selectable.get(next).copied().unwrap_or(true) {
-                                        content.cursor = next;
-                                        break;
-                                    }
-                                }
+                                content.move_cursor_up();
                                 self.update_and_render()?;
                             }
                             continue;

@@ -197,6 +197,39 @@ pub struct OverlayContent {
     pub selectable: Vec<bool>,
 }
 
+impl OverlayContent {
+    /// Move cursor down, skipping non-selectable lines
+    pub fn move_cursor_down(&mut self) {
+        if self.left.is_empty() {
+            return;
+        }
+        let len = self.left.len();
+        let mut next = self.cursor + 1;
+        while next < len {
+            if self.selectable.get(next).copied().unwrap_or(true) {
+                self.cursor = next;
+                break;
+            }
+            next += 1;
+        }
+    }
+
+    /// Move cursor up, skipping non-selectable lines
+    pub fn move_cursor_up(&mut self) {
+        if self.left.is_empty() {
+            return;
+        }
+        let mut next = self.cursor;
+        while next > 0 {
+            next -= 1;
+            if self.selectable.get(next).copied().unwrap_or(true) {
+                self.cursor = next;
+                break;
+            }
+        }
+    }
+}
+
 impl State {
     /// Create a new state instance with default values
     #[must_use]
@@ -418,4 +451,49 @@ impl Default for State {
 
 #[cfg(test)]
 #[path = "tests.rs"]
-mod tests;
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_overlay_navigation_skip_connectors() {
+        let mut content = OverlayContent {
+            left: vec![vec!['a'], vec!['b'], vec!['c'], vec!['d']],
+            right: Vec::new(),
+            left_width_percent: 50,
+            cursor: 0,
+            // 0: selectable, 1: skip, 2: skip, 3: selectable
+            selectable: vec![true, false, false, true],
+        };
+
+        // Test Down
+        content.move_cursor_down();
+        assert_eq!(content.cursor, 3, "Should skip indices 1 and 2");
+
+        content.move_cursor_down();
+        assert_eq!(content.cursor, 3, "Should stay at bottom");
+
+        // Test Up
+        content.move_cursor_up();
+        assert_eq!(content.cursor, 0, "Should skip indices 2 and 1");
+
+        content.move_cursor_up();
+        assert_eq!(content.cursor, 0, "Should stay at top");
+    }
+
+    #[test]
+    fn test_overlay_navigation_empty() {
+        let mut content = OverlayContent {
+            left: Vec::new(),
+            right: Vec::new(),
+            left_width_percent: 50,
+            cursor: 0,
+            selectable: Vec::new(),
+        };
+
+        content.move_cursor_down();
+        assert_eq!(content.cursor, 0);
+
+        content.move_cursor_up();
+        assert_eq!(content.cursor, 0);
+    }
+}
