@@ -457,6 +457,30 @@ impl<T: TerminalBackend> Editor<T> {
                             self.update_and_render()?;
                             continue;
                         }
+                        Key::Enter => {
+                            if let Some(ref content) = self.state.overlay_content {
+                                if let Some(&seq) = content.sequences.get(content.cursor) {
+                                    use crate::history::EditSeq;
+                                    if seq != EditSeq::MAX {
+                                        let doc_id = self.tab_order[self.current_tab];
+                                        let doc = self.documents.get_mut(&doc_id).unwrap();
+                                        if let Err(e) = doc.goto_seq(seq) {
+                                            self.state.handle_error(crate::error::RiftError::new(
+                                                crate::error::ErrorType::Execution,
+                                                "UNDO_FAILED",
+                                                format!("Failed to go to sequence {}: {}", seq, e),
+                                            ));
+                                        }
+                                        // Close after selection
+                                        self.state.overlay_content = None;
+                                        self.compositor.clear_layer(LayerPriority::POPUP);
+                                        self.set_mode(Mode::Normal);
+                                        self.update_and_render()?;
+                                    }
+                                }
+                            }
+                            continue;
+                        }
                         Key::Char('j') | Key::ArrowDown => {
                             if let Some(ref mut content) = self.state.overlay_content {
                                 content.move_cursor_down();

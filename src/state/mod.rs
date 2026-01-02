@@ -195,6 +195,8 @@ pub struct OverlayContent {
     pub cursor: usize,
     /// Which lines are selectable (for skipping connector lines)
     pub selectable: Vec<bool>,
+    /// Map of line index to EditSeq (MAX if connector)
+    pub sequences: Vec<crate::history::EditSeq>,
 }
 
 impl OverlayContent {
@@ -463,6 +465,7 @@ mod tests {
             cursor: 0,
             // 0: selectable, 1: skip, 2: skip, 3: selectable
             selectable: vec![true, false, false, true],
+            sequences: vec![1, u64::MAX, u64::MAX, 2],
         };
 
         // Test Down
@@ -488,6 +491,7 @@ mod tests {
             left_width_percent: 50,
             cursor: 0,
             selectable: Vec::new(),
+            sequences: Vec::new(),
         };
 
         content.move_cursor_down();
