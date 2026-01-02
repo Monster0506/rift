@@ -304,6 +304,7 @@ impl CommandExecutor {
                     left_width_percent: 40,
                     cursor,
                     selectable,
+                    sequences: _seqs,
                 };
 
                 ExecutionResult::UndoTree { content }
