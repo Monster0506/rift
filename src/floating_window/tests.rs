@@ -57,7 +57,11 @@ fn test_floating_window_render_multiline() {
     let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
     let window = FloatingWindow::new(WindowPosition::Center, 30, 5).with_border(true);
 
-    let content = vec![b"Line 1".to_vec(), b"Line 2".to_vec(), b"Line 3".to_vec()];
+    let content = vec![
+        "Line 1".chars().collect(),
+        "Line 2".chars().collect(),
+        "Line 3".chars().collect(),
+    ];
 
     window.render(&mut layer, &content);
 
@@ -137,7 +141,9 @@ fn test_floating_window_content_truncation() {
     let window = FloatingWindow::new(WindowPosition::Center, 10, 1).with_border(false);
 
     // Content longer than window width
-    let long_content = b"This is a very long line that should be truncated".to_vec();
+    let long_content = "This is a very long line that should be truncated"
+        .chars()
+        .collect();
     window.render(&mut layer, &[long_content]);
 
     let pos = window.calculate_position(24, 80);
@@ -158,12 +164,12 @@ fn test_floating_window_content_truncation() {
 #[test]
 fn test_floating_window_with_custom_border_chars() {
     let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
-    let custom_border = BorderChars::from_ascii(b'+', b'+', b'+', b'+', b'-', b'|');
+    let custom_border = BorderChars::from_ascii('+', '+', '+', '+', '-', '|');
     let window = FloatingWindow::new(WindowPosition::Center, 10, 3)
         .with_border(true)
         .with_border_chars(custom_border);
 
-    window.render(&mut layer, &[b"Hi".to_vec()]);
+    window.render(&mut layer, &["Hi".chars().collect()]);
 
     let pos = window.calculate_position(24, 80);
 
@@ -191,7 +197,10 @@ fn test_floating_window_no_border() {
     let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
     let window = FloatingWindow::new(WindowPosition::Center, 10, 3).with_border(false);
 
-    window.render(&mut layer, &[b"Hello".to_vec(), b"World".to_vec()]);
+    window.render(
+        &mut layer,
+        &["Hello".chars().collect(), "World".chars().collect()],
+    );
 
     let pos = window.calculate_position(24, 80);
 

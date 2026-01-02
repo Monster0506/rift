@@ -8,7 +8,7 @@ use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
 use crate::layer::Layer;
 
 /// Vertical divider character
-const DIVIDER_CHAR: u8 = b'|';
+const DIVIDER_CHAR: char = '│';
 
 /// A split-view overlay that renders left and right panes
 #[derive(Debug, Clone)]
@@ -16,9 +16,9 @@ pub struct SplitView {
     /// Percentage of width allocated to left pane (0-100)
     left_width_percent: u8,
     /// Content for the left pane
-    left_content: Vec<Vec<u8>>,
+    left_content: Vec<Vec<char>>,
     /// Content for the right pane
-    right_content: Vec<Vec<u8>>,
+    right_content: Vec<Vec<char>>,
     /// Scroll offset for left pane
     left_scroll: usize,
     /// Scroll offset for right pane
@@ -45,12 +45,12 @@ impl SplitView {
     }
 
     /// Set the left pane content
-    pub fn set_left_content(&mut self, content: Vec<Vec<u8>>) {
+    pub fn set_left_content(&mut self, content: Vec<Vec<char>>) {
         self.left_content = content;
     }
 
     /// Set the right pane content
-    pub fn set_right_content(&mut self, content: Vec<Vec<u8>>) {
+    pub fn set_right_content(&mut self, content: Vec<Vec<char>>) {
         self.right_content = content;
     }
 
@@ -96,10 +96,10 @@ impl SplitView {
         let right_width = content_width.saturating_sub(left_width).saturating_sub(1); // -1 for divider
 
         // Build combined content with divider
-        let mut combined_content: Vec<Vec<u8>> = Vec::new();
+        let mut combined_content: Vec<Vec<char>> = Vec::new();
 
         for row in 0..content_height {
-            let mut line = Vec::with_capacity(content_width);
+            let mut line: Vec<char> = Vec::with_capacity(content_width);
 
             // Left pane content
             let left_row = row + self.left_scroll;
@@ -112,11 +112,11 @@ impl SplitView {
                 }
                 // Pad to left_width
                 while line.len() < left_width {
-                    line.push(b' ');
+                    line.push(' ');
                 }
             } else {
                 // Empty line
-                line.extend(std::iter::repeat(b' ').take(left_width));
+                line.extend(std::iter::repeat(' ').take(left_width));
             }
 
             // Divider
@@ -133,11 +133,11 @@ impl SplitView {
                 }
                 // Pad to right_width
                 while line.len() < left_width + 1 + right_width {
-                    line.push(b' ');
+                    line.push(' ');
                 }
             } else {
                 // Empty line
-                line.extend(std::iter::repeat(b' ').take(right_width));
+                line.extend(std::iter::repeat(' ').take(right_width));
             }
 
             combined_content.push(line);

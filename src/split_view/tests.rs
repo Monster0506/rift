@@ -26,8 +26,8 @@ fn test_split_view_with_left_width() {
 #[test]
 fn test_split_view_set_content() {
     let mut view = SplitView::new();
-    view.set_left_content(vec![b"left".to_vec()]);
-    view.set_right_content(vec![b"right".to_vec()]);
+    view.set_left_content(vec!["left".chars().collect()]);
+    view.set_right_content(vec!["right".chars().collect()]);
 
     assert_eq!(view.left_content.len(), 1);
     assert_eq!(view.right_content.len(), 1);
@@ -39,8 +39,14 @@ fn test_split_view_render() {
     let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
     let mut view = SplitView::new();
 
-    view.set_left_content(vec![b"Line 1 left".to_vec(), b"Line 2 left".to_vec()]);
-    view.set_right_content(vec![b"Line 1 right".to_vec(), b"Line 2 right".to_vec()]);
+    view.set_left_content(vec![
+        "Line 1 left".chars().collect(),
+        "Line 2 left".chars().collect(),
+    ]);
+    view.set_right_content(vec![
+        "Line 1 right".chars().collect(),
+        "Line 2 right".chars().collect(),
+    ]);
 
     // Should not panic
     view.render(&mut layer);

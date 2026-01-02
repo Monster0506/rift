@@ -23,40 +23,40 @@ struct RenderLayout {
 }
 
 // Default border characters (Unicode box drawing)
-const DEFAULT_BORDER_TOP_LEFT: &[u8] = "╭".as_bytes();
-const DEFAULT_BORDER_TOP_RIGHT: &[u8] = "╮".as_bytes();
-const DEFAULT_BORDER_BOTTOM_LEFT: &[u8] = "╰".as_bytes();
-const DEFAULT_BORDER_BOTTOM_RIGHT: &[u8] = "╯".as_bytes();
-const DEFAULT_BORDER_HORIZONTAL: &[u8] = "─".as_bytes();
-const DEFAULT_BORDER_VERTICAL: &[u8] = "│".as_bytes();
+const DEFAULT_BORDER_TOP_LEFT: char = '╭';
+const DEFAULT_BORDER_TOP_RIGHT: char = '╮';
+const DEFAULT_BORDER_BOTTOM_LEFT: char = '╰';
+const DEFAULT_BORDER_BOTTOM_RIGHT: char = '╯';
+const DEFAULT_BORDER_HORIZONTAL: char = '─';
+const DEFAULT_BORDER_VERTICAL: char = '│';
 
 /// Border characters for floating windows
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BorderChars {
     /// Top-left corner character
-    pub top_left: Vec<u8>,
+    pub top_left: char,
     /// Top-right corner character
-    pub top_right: Vec<u8>,
+    pub top_right: char,
     /// Bottom-left corner character
-    pub bottom_left: Vec<u8>,
+    pub bottom_left: char,
     /// Bottom-right corner character
-    pub bottom_right: Vec<u8>,
+    pub bottom_right: char,
     /// Horizontal line character
-    pub horizontal: Vec<u8>,
+    pub horizontal: char,
     /// Vertical line character
-    pub vertical: Vec<u8>,
+    pub vertical: char,
 }
 
 impl Default for BorderChars {
     /// Create default border characters (Unicode box drawing)
     fn default() -> Self {
         BorderChars {
-            top_left: DEFAULT_BORDER_TOP_LEFT.to_vec(),
-            top_right: DEFAULT_BORDER_TOP_RIGHT.to_vec(),
-            bottom_left: DEFAULT_BORDER_BOTTOM_LEFT.to_vec(),
-            bottom_right: DEFAULT_BORDER_BOTTOM_RIGHT.to_vec(),
-            horizontal: DEFAULT_BORDER_HORIZONTAL.to_vec(),
-            vertical: DEFAULT_BORDER_VERTICAL.to_vec(),
+            top_left: DEFAULT_BORDER_TOP_LEFT,
+            top_right: DEFAULT_BORDER_TOP_RIGHT,
+            bottom_left: DEFAULT_BORDER_BOTTOM_LEFT,
+            bottom_right: DEFAULT_BORDER_BOTTOM_RIGHT,
+            horizontal: DEFAULT_BORDER_HORIZONTAL,
+            vertical: DEFAULT_BORDER_VERTICAL,
         }
     }
 }
@@ -65,40 +65,40 @@ impl BorderChars {
     /// Create border characters from byte slices
     #[must_use]
     pub fn new(
-        top_left: &[u8],
-        top_right: &[u8],
-        bottom_left: &[u8],
-        bottom_right: &[u8],
-        horizontal: &[u8],
-        vertical: &[u8],
+        top_left: char,
+        top_right: char,
+        bottom_left: char,
+        bottom_right: char,
+        horizontal: char,
+        vertical: char,
     ) -> Self {
         BorderChars {
-            top_left: top_left.to_vec(),
-            top_right: top_right.to_vec(),
-            bottom_left: bottom_left.to_vec(),
-            bottom_right: bottom_right.to_vec(),
-            horizontal: horizontal.to_vec(),
-            vertical: vertical.to_vec(),
+            top_left,
+            top_right,
+            bottom_left,
+            bottom_right,
+            horizontal,
+            vertical,
         }
     }
 
     /// Create border characters from single-byte ASCII characters
     #[must_use]
     pub fn from_ascii(
-        top_left: u8,
-        top_right: u8,
-        bottom_left: u8,
-        bottom_right: u8,
-        horizontal: u8,
-        vertical: u8,
+        top_left: char,
+        top_right: char,
+        bottom_left: char,
+        bottom_right: char,
+        horizontal: char,
+        vertical: char,
     ) -> Self {
         BorderChars {
-            top_left: vec![top_left],
-            top_right: vec![top_right],
-            bottom_left: vec![bottom_left],
-            bottom_right: vec![bottom_right],
-            horizontal: vec![horizontal],
-            vertical: vec![vertical],
+            top_left,
+            top_right,
+            bottom_left,
+            bottom_right,
+            horizontal,
+            vertical,
         }
     }
 }
@@ -339,7 +339,7 @@ impl FloatingWindow {
     /// # Arguments
     /// * `layer` - The layer to render to
     /// * `content` - Content lines (each line is a byte vector)
-    pub fn render(&self, layer: &mut Layer, content: &[Vec<u8>]) {
+    pub fn render(&self, layer: &mut Layer, content: &[Vec<char>]) {
         self.render_with_border_chars(layer, content, None)
     }
 
@@ -352,7 +352,7 @@ impl FloatingWindow {
     pub fn render_with_border_chars(
         &self,
         layer: &mut Layer,
-        content: &[Vec<u8>],
+        content: &[Vec<char>],
         border_chars_override: Option<BorderChars>,
     ) {
         let rows = layer.rows() as u16;
@@ -407,7 +407,7 @@ impl FloatingWindow {
     fn render_with_border(
         &self,
         layer: &mut Layer,
-        content: &[Vec<u8>],
+        content: &[Vec<char>],
         layout: RenderLayout,
         fg: Option<Color>,
         bg: Option<Color>,
@@ -424,14 +424,14 @@ impl FloatingWindow {
         layer.set_cell(
             start_row,
             start_col,
-            Cell::from_bytes(&border_chars.top_left).with_colors(fg, bg),
+            Cell::from_char(border_chars.top_left).with_colors(fg, bg),
         );
         for i in 0..content_width {
             let col = start_col + 1 + i;
             layer.set_cell(
                 start_row,
                 col,
-                Cell::from_bytes(&border_chars.horizontal).with_colors(fg, bg),
+                Cell::from_char(border_chars.horizontal).with_colors(fg, bg),
             );
         }
         if width > 1 {
@@ -439,7 +439,7 @@ impl FloatingWindow {
             layer.set_cell(
                 start_row,
                 col,
-                Cell::from_bytes(&border_chars.top_right).with_colors(fg, bg),
+                Cell::from_char(border_chars.top_right).with_colors(fg, bg),
             );
         }
 
@@ -451,19 +451,19 @@ impl FloatingWindow {
             layer.set_cell(
                 row,
                 start_col,
-                Cell::from_bytes(&border_chars.vertical).with_colors(fg, bg),
+                Cell::from_char(border_chars.vertical).with_colors(fg, bg),
             );
 
             // Content
             if let Some(line) = content.get(content_row) {
                 for (i, &byte) in line.iter().take(content_width).enumerate() {
                     let col = start_col + 1 + i;
-                    layer.set_cell(row, col, Cell::new(byte).with_colors(fg, bg));
+                    layer.set_cell(row, col, Cell::from_char(byte).with_colors(fg, bg));
                 }
                 // Pad with spaces
                 for i in line.len().min(content_width)..content_width {
                     let col = start_col + 1 + i;
-                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                    layer.set_cell(row, col, Cell::from_bytes(&[b' ']).with_colors(fg, bg));
                 }
             } else {
                 // Empty line - fill with spaces
@@ -479,7 +479,7 @@ impl FloatingWindow {
                 layer.set_cell(
                     row,
                     col,
-                    Cell::from_bytes(&border_chars.vertical).with_colors(fg, bg),
+                    Cell::from_char(border_chars.vertical).with_colors(fg, bg),
                 );
             }
         }
@@ -490,14 +490,14 @@ impl FloatingWindow {
             layer.set_cell(
                 row,
                 start_col,
-                Cell::from_bytes(&border_chars.bottom_left).with_colors(fg, bg),
+                Cell::from_char(border_chars.bottom_left).with_colors(fg, bg),
             );
             for i in 0..content_width {
                 let col = start_col + 1 + i;
                 layer.set_cell(
                     row,
                     col,
-                    Cell::from_bytes(&border_chars.horizontal).with_colors(fg, bg),
+                    Cell::from_char(border_chars.horizontal).with_colors(fg, bg),
                 );
             }
             if width > 1 {
@@ -505,7 +505,7 @@ impl FloatingWindow {
                 layer.set_cell(
                     row,
                     col,
-                    Cell::from_bytes(&border_chars.bottom_right).with_colors(fg, bg),
+                    Cell::from_char(border_chars.bottom_right).with_colors(fg, bg),
                 );
             }
         }
@@ -515,7 +515,7 @@ impl FloatingWindow {
     fn render_without_border(
         &self,
         layer: &mut Layer,
-        content: &[Vec<u8>],
+        content: &[Vec<char>],
         layout: RenderLayout,
         fg: Option<Color>,
         bg: Option<Color>,
@@ -531,12 +531,12 @@ impl FloatingWindow {
             if let Some(line) = content.get(row_offset) {
                 for (i, &byte) in line.iter().take(width).enumerate() {
                     let col = start_col + i;
-                    layer.set_cell(row, col, Cell::new(byte).with_colors(fg, bg));
+                    layer.set_cell(row, col, Cell::from_char(byte).with_colors(fg, bg));
                 }
                 // Pad with spaces
                 for i in line.len().min(width)..width {
                     let col = start_col + i;
-                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                    layer.set_cell(row, col, Cell::from_char(' ').with_colors(fg, bg));
                 }
             } else {
                 // Empty line - fill with spaces
@@ -552,9 +552,9 @@ impl FloatingWindow {
     ///
     /// `prompt` is displayed at the start, followed by `content`
     pub fn render_single_line(&self, layer: &mut Layer, prompt: &str, content: &str) {
-        let mut line = Vec::new();
-        line.extend_from_slice(prompt.as_bytes());
-        line.extend_from_slice(content.as_bytes());
+        let mut line: Vec<char> = Vec::new();
+        line.extend(prompt.chars());
+        line.extend(content.chars());
         self.render(layer, &[line]);
     }
 
@@ -571,7 +571,7 @@ impl FloatingWindow {
     pub fn render_to_layer(
         &self,
         layer: &mut Layer,
-        content: &[Vec<u8>],
+        content: &[Vec<char>],
         _term_rows: u16,
         _term_cols: u16,
         border_chars_override: Option<BorderChars>,

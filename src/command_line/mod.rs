@@ -73,9 +73,8 @@ impl CommandLine {
         );
 
         // Prepare content: prompt + command line
-        let mut content_line = Vec::new();
-        let mut buf = [0; 4];
-        content_line.extend_from_slice(prompt.encode_utf8(&mut buf).as_bytes());
+        let mut content_line: Vec<char> = Vec::new();
+        content_line.push(prompt);
 
         let border_width = if window_settings.border { 2 } else { 0 };
         let available_width = cmd_width.saturating_sub(border_width); // Remove borders
@@ -105,7 +104,7 @@ impl CommandLine {
             ""
         };
 
-        content_line.extend_from_slice(displayed_cmd.as_bytes());
+        content_line.extend(displayed_cmd.chars());
 
         // Render to layer
         cmd_window.render_with_border_chars(layer, &[content_line], default_border_chars);

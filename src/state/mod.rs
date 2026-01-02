@@ -186,9 +186,9 @@ pub struct State {
 #[derive(Debug, Clone)]
 pub struct OverlayContent {
     /// Left pane content (lines)
-    pub left: Vec<Vec<u8>>,
+    pub left: Vec<Vec<char>>,
     /// Right pane content (lines)
-    pub right: Vec<Vec<u8>>,
+    pub right: Vec<Vec<char>>,
     /// Left pane width percentage (0-100)
     pub left_width_percent: u8,
     /// Cursor position (line index in left pane)
