@@ -210,7 +210,7 @@ impl CommandExecutor {
 
                         if matches.is_empty() {
                             state.handle_error(RiftError::new(
-                                ErrorType::Execution, // Changed to Execution
+                                ErrorType::Execution,
                                 "PATTERN_NOT_FOUND",
                                 format!("Pattern not found: {pattern}"),
                             ));
@@ -218,21 +218,10 @@ impl CommandExecutor {
                         }
 
                         // Apply replacements
-                        // We must process in reverse order to keep indices valid
                         matches.sort_by_key(|m| std::cmp::Reverse(m.range.start));
 
                         let mut changes_made = 0;
 
-                        // Valid matches pre-filtering for !global
-                        // Since we are iterating in reverse order?
-                        // Wait, reverse order iteration: we see last match on line 1 first.
-                        // If !global, we ONLY want the FIRST match (smallest index).
-                        // So if we see m2 then m1 (m1 < m2), we should ignore m2 and take m1.
-                        // How to do this in one pass?
-                        // We can collect all matches for a line, then pick the smallest one.
-
-                        // Let's filter first.
-                        // Sort by start index (find_all returns sorted relative to search, usually? Yes).
                         matches.sort_by_key(|m| m.range.start);
 
                         let mut valid_matches = Vec::new();
@@ -306,7 +295,6 @@ impl CommandExecutor {
                 let (lines, _seqs, cursor) = crate::undotree_view::render_tree(&document.history);
 
                 // Create overlay content
-                // We map sequences to lines, but for now just validation
                 use crate::history::EditSeq;
                 let selectable = _seqs.iter().map(|&s| s != EditSeq::MAX).collect();
 

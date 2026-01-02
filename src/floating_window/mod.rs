@@ -463,7 +463,7 @@ impl FloatingWindow {
                 // Pad with spaces
                 for i in line.len().min(content_width)..content_width {
                     let col = start_col + 1 + i;
-                    layer.set_cell(row, col, Cell::from_bytes(&[b' ']).with_colors(fg, bg));
+                    layer.set_cell(row, col, Cell::from_bytes(b" ").with_colors(fg, bg));
                 }
             } else {
                 // Empty line - fill with spaces

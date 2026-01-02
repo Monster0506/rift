@@ -3,6 +3,8 @@
 //! A 90% width/height floating window with left and right panes
 //! separated by a vertical divider.
 
+use std::iter::repeat_n;
+
 use crate::color::Color;
 use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
 use crate::layer::Layer;
@@ -44,7 +46,7 @@ impl SelectView {
     /// Set the left pane width percentage
     #[must_use]
     pub fn with_left_width(mut self, percent: u8) -> Self {
-        self.left_width_percent = percent.min(90).max(10);
+        self.left_width_percent = percent.clamp(10, 90);
         self
     }
 
@@ -125,7 +127,7 @@ impl SelectView {
                 }
             } else {
                 // Empty line
-                line.extend(std::iter::repeat(' ').take(left_width));
+                line.extend(repeat_n(' ', left_width));
             }
 
             // Divider
@@ -146,7 +148,7 @@ impl SelectView {
                 }
             } else {
                 // Empty line
-                line.extend(std::iter::repeat(' ').take(right_width));
+                line.extend(repeat_n(' ', right_width));
             }
 
             combined_content.push(line);

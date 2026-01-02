@@ -56,7 +56,7 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<char>>, Vec<EditSeq>, usize) {
         let mut row_str = String::new();
 
         // Render node marker and vertical lines
-        for i in 0..max_col {
+        for (i, item) in columns.iter().enumerate().take(max_col) {
             if i == main_col {
                 // This is the node
                 if is_current {
@@ -68,7 +68,7 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<char>>, Vec<EditSeq>, usize) {
                 row_str.push(' '); // Placeholder
             } else {
                 // Unrelated column
-                if let Some(_) = columns[i] {
+                if item.is_some() {
                     row_str.push('│');
                 } else {
                     row_str.push(' ');
@@ -79,7 +79,7 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<char>>, Vec<EditSeq>, usize) {
 
         if col_indices.len() > 1 {
             let mut conn_str = String::new();
-            for c in 0..max_col {
+            for (c, item) in columns.iter().enumerate().take(max_col) {
                 if c == main_col {
                     conn_str.push('│');
                 } else if col_indices.contains(&c) {
@@ -88,7 +88,7 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<char>>, Vec<EditSeq>, usize) {
                     } else {
                         conn_str.push('\\'); // Shifts right
                     }
-                } else if columns[c].is_some() {
+                } else if item.is_some() {
                     conn_str.push('│');
                 } else {
                     conn_str.push(' ');
@@ -101,7 +101,7 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<char>>, Vec<EditSeq>, usize) {
 
         sequences.push(seq);
         let mut final_row = String::new();
-        for c in 0..max_col {
+        for (c, item) in columns.iter().enumerate().take(max_col) {
             if c == main_col {
                 if is_current {
                     final_row.push('@');
@@ -110,7 +110,7 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<char>>, Vec<EditSeq>, usize) {
                 }
             } else if col_indices.contains(&c) {
                 final_row.push(' ');
-            } else if columns[c].is_some() {
+            } else if item.is_some() {
                 final_row.push('│');
             } else {
                 final_row.push(' ');
