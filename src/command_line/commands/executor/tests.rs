@@ -831,7 +831,7 @@ fn test_execute_write_no_path() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Write);
     assert!(state.file_path.is_none());
 }
 
@@ -853,7 +853,7 @@ fn test_execute_write_with_path() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Write);
     assert_eq!(state.file_path, Some("test.txt".to_string()));
 }
 
@@ -877,7 +877,7 @@ fn test_execute_write_updates_path() {
         &settings_registry,
         &document_settings_registry,
     );
-    assert_eq!(result, ExecutionResult::Success);
+    assert_eq!(result, ExecutionResult::Write);
     assert_eq!(state.file_path, Some("new.txt".to_string()));
 }
 
