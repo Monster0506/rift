@@ -491,6 +491,145 @@ impl UndoTree {
         Ok(())
     }
 
+    /// Jump to edit #n via checkpoint+replay
+    ///
+    /// Returns a ReplayPath describing the undo/redo operations needed.
+    /// The caller is responsible for applying these operations to the buffer.
+    pub fn goto_seq(&mut self, target: EditSeq) -> Result<ReplayPath, UndoError> {
+        // Validate target exists
+        if !self.nodes.contains_key(&target) {
+            return Err(UndoError::InvalidSeq(target));
+        }
+
+        // If already at target, return empty path
+        if self.current == target {
+            return Ok(ReplayPath {
+                from_seq: self.current,
+                to_seq: target,
+                undo_ops: Vec::new(),
+                redo_ops: Vec::new(),
+            });
+        }
+
+        // Find ancestors of current and target
+        let current_ancestors = self.get_ancestors(self.current);
+        let target_ancestors = self.get_ancestors(target);
+
+        // Find common ancestor (LCA)
+        let common_ancestor = self.find_common_ancestor(&current_ancestors, &target_ancestors);
+
+        // Build undo path: current -> common_ancestor
+        let mut undo_ops = Vec::new();
+        let mut seq = self.current;
+        while seq != common_ancestor {
+            if let Some(node) = self.nodes.get(&seq) {
+                undo_ops.push(node.transaction.clone());
+                if let Some(parent) = node.parent {
+                    seq = parent;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        // Build redo path: common_ancestor -> target
+        // First collect the path from target back to common_ancestor, then reverse
+        let mut redo_path = Vec::new();
+        seq = target;
+        while seq != common_ancestor {
+            redo_path.push(seq);
+            if let Some(node) = self.nodes.get(&seq) {
+                if let Some(parent) = node.parent {
+                    seq = parent;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        redo_path.reverse();
+
+        // Build redo operations
+        let mut redo_ops = Vec::new();
+        for seq in redo_path {
+            if let Some(node) = self.nodes.get(&seq) {
+                redo_ops.push(node.transaction.clone());
+            }
+        }
+
+        // Update last_visited_child along the redo path for proper redo tracking
+        seq = target;
+        let mut path_to_target = vec![target];
+        while seq != common_ancestor {
+            if let Some(node) = self.nodes.get(&seq) {
+                if let Some(parent) = node.parent {
+                    path_to_target.push(parent);
+                    seq = parent;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        path_to_target.reverse();
+
+        // Update last_visited_child for each node in the path
+        for i in 0..path_to_target.len().saturating_sub(1) {
+            let parent_seq = path_to_target[i];
+            let child_seq = path_to_target[i + 1];
+            if let Some(parent_node) = self.nodes.get_mut(&parent_seq) {
+                if let Some(child_idx) = parent_node.children.iter().position(|&c| c == child_seq) {
+                    parent_node.last_visited_child = Some(child_idx);
+                }
+            }
+        }
+
+        // Move to target
+        self.current = target;
+
+        Ok(ReplayPath {
+            from_seq: self.current,
+            to_seq: target,
+            undo_ops,
+            redo_ops,
+        })
+    }
+
+    /// Get all ancestors of a node (including the node itself)
+    fn get_ancestors(&self, seq: EditSeq) -> Vec<EditSeq> {
+        let mut ancestors = Vec::new();
+        let mut current = seq;
+        while let Some(node) = self.nodes.get(&current) {
+            ancestors.push(current);
+            if let Some(parent) = node.parent {
+                current = parent;
+            } else {
+                break;
+            }
+        }
+        ancestors
+    }
+
+    /// Find the lowest common ancestor of two nodes
+    fn find_common_ancestor(&self, ancestors_a: &[EditSeq], ancestors_b: &[EditSeq]) -> EditSeq {
+        // Convert one to a set for O(1) lookup
+        let set_a: std::collections::HashSet<_> = ancestors_a.iter().copied().collect();
+
+        // Find first ancestor of B that's in A's ancestors
+        for &seq in ancestors_b {
+            if set_a.contains(&seq) {
+                return seq;
+            }
+        }
+
+        // Fallback to root (should always be reachable)
+        self.root_seq
+    }
+
     /// Record a new edit (creates new node as child of current)
     pub fn push(
         &mut self,
