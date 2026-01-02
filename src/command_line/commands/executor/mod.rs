@@ -18,6 +18,8 @@ pub enum ExecutionResult {
     Quit {
         bangs: usize,
     },
+    /// Write command - editor should save
+    Write,
     /// Write and quit - editor should save then exit
     WriteAndQuit,
     /// Error occurred during execution (already reported to manager)
@@ -92,7 +94,7 @@ impl CommandExecutor {
                     state.set_file_path(Some(file_path.clone()));
                 }
                 // Editor will check if path exists and call Document::save()
-                ExecutionResult::Success
+                ExecutionResult::Write
             }
             ParsedCommand::WriteQuit { path, bangs: _ } => {
                 // Set the path in state if provided (for :wq filename)
