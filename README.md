@@ -6,7 +6,7 @@ I use this daily and primarily.
 
 Implemented:
 - Undo and redo with hybrid delta+checkpointing approach
-- Fancy undotree
+- Fancy undotree (with colors)
 - Syntax highlighting
 - Treesitter (supporting only Python and Rust currently)
 - Open File
@@ -44,7 +44,6 @@ Implemented:
 - Polling instead of blocking input
 - search + replace
 - Custom regex engine (monster-regex)
-- undo + redo
 
 Todo:
 - LSP
@@ -55,6 +54,7 @@ Todo:
 - animations
 - file exploration
 - visual selection
+- undotree preview
 
 Known issues:
 - 4 byte unicode characters are not handled able to be inserted on windows (this is a crossterm issue on windows, idk man)
