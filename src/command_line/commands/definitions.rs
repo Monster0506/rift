@@ -589,4 +589,21 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         factory: Some(parse_substitute_range),
         subcommands: &[],
     },
+    // [TEMPORARY] Test split view - remove after manual verification
+    CommandDescriptor {
+        name: "testsplit",
+        aliases: &["ts"],
+        description: "[TEMP] Test split view",
+        factory: Some(parse_testsplit),
+        subcommands: &[],
+    },
 ];
+
+// [TEMPORARY] Test split view factory - remove after manual verification
+fn parse_testsplit(
+    _registry: &SettingsRegistry<UserSettings>,
+    _args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    ParsedCommand::TestSplitView { bangs }
+}

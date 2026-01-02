@@ -43,6 +43,8 @@ pub enum ExecutionResult {
     NotificationClear {
         bangs: usize,
     },
+    /// [TEMPORARY] Open split view test
+    TestSplitView,
 }
 
 /// Command executor
@@ -271,6 +273,7 @@ impl CommandExecutor {
                 }
             }
             ParsedCommand::BufferList => ExecutionResult::BufferList,
+            ParsedCommand::TestSplitView { bangs: _ } => ExecutionResult::TestSplitView,
         }
     }
 }

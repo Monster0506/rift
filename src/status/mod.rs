@@ -164,6 +164,7 @@ impl StatusBar {
             Mode::Insert => "INSERT",
             Mode::Command => "COMMAND",
             Mode::Search => "SEARCH",
+            Mode::Overlay => "OVERLAY",
         }
     }
 

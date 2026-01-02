@@ -178,6 +178,21 @@ pub struct State {
     pub search_direction: SearchDirection,
     /// Search matches
     pub search_matches: Vec<SearchMatch>,
+    /// Overlay content for Mode::Overlay (left/right panes)
+    pub overlay_content: Option<OverlayContent>,
+}
+
+/// Content for split-view overlay (used in Mode::Overlay)
+#[derive(Debug, Clone)]
+pub struct OverlayContent {
+    /// Left pane content (lines)
+    pub left: Vec<Vec<u8>>,
+    /// Right pane content (lines)
+    pub right: Vec<Vec<u8>>,
+    /// Left pane width percentage (0-100)
+    pub left_width_percent: u8,
+    /// Cursor position (line index in left pane)
+    pub cursor: usize,
 }
 
 impl State {
@@ -204,6 +219,7 @@ impl State {
             last_search_query: None,
             search_direction: SearchDirection::Forward,
             search_matches: Vec::new(),
+            overlay_content: None,
         }
     }
 
@@ -230,6 +246,7 @@ impl State {
             last_search_query: None,
             search_direction: SearchDirection::Forward,
             search_matches: Vec::new(),
+            overlay_content: None,
         }
     }
 

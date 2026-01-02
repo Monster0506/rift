@@ -444,6 +444,26 @@ impl<T: TerminalBackend> Editor<T> {
                     None => continue,
                 };
 
+                // Handle overlay input first (modal overlay)
+                if self.current_mode == Mode::Overlay {
+                    use crate::key::Key;
+                    use crate::layer::LayerPriority;
+                    match key_press {
+                        Key::Char('q') | Key::Escape => {
+                            // Close overlay
+                            self.state.overlay_content = None;
+                            self.compositor.clear_layer(LayerPriority::POPUP);
+                            self.set_mode(Mode::Normal);
+                            self.update_and_render()?;
+                            continue;
+                        }
+                        _ => {
+                            // TODO: handle j/k/h/l navigation
+                            continue;
+                        }
+                    }
+                }
+
                 // Process keypress through key handler
                 let current_mode = self.current_mode;
                 let action = KeyHandler::process_key(key_press, current_mode);
@@ -789,6 +809,24 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let _ = render::render(term, compositor, ctx, render_cache)?;
+
+        // Render overlay if in Overlay mode
+        if *current_mode == Mode::Overlay {
+            if let Some(ref overlay) = state.overlay_content {
+                use crate::layer::LayerPriority;
+                use crate::split_view::SplitView;
+
+                let mut split_view = SplitView::new().with_left_width(overlay.left_width_percent);
+                split_view.set_left_content(overlay.left.clone());
+                split_view.set_right_content(overlay.right.clone());
+
+                let layer = compositor.get_layer_mut(LayerPriority::POPUP);
+                split_view.render(layer);
+                // Re-composite and render
+                let _ = compositor.render_to_terminal(term, false)?;
+            }
+        }
+
         Ok(())
     }
 
@@ -991,6 +1029,33 @@ impl<T: TerminalBackend> Editor<T> {
                     .notify(crate::notification::NotificationType::Info, message);
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
+            }
+            ExecutionResult::TestSplitView => {
+                // [TEMPORARY] Set overlay with demo content
+                use crate::state::OverlayContent;
+
+                self.state.overlay_content = Some(OverlayContent {
+                    left: vec![
+                        b"Left Pane".to_vec(),
+                        b"----------".to_vec(),
+                        b"Item 1".to_vec(),
+                        b"Item 2".to_vec(),
+                        b"Item 3".to_vec(),
+                        b"Item 4".to_vec(),
+                        b"Item 5".to_vec(),
+                    ],
+                    right: vec![
+                        b"Right Pane - Preview".to_vec(),
+                        b"--------------------".to_vec(),
+                        b"This is a demo of the split view.".to_vec(),
+                        b"Press q to close.".to_vec(),
+                    ],
+                    left_width_percent: 40,
+                    cursor: 0,
+                });
+
+                self.state.clear_command_line();
+                self.set_mode(Mode::Overlay);
             }
             ExecutionResult::Success => {
                 self.state.clear_command_line();

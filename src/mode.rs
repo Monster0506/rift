@@ -11,4 +11,6 @@ pub enum Mode {
     Command,
     /// Search mode (entered with /)
     Search,
+    /// Overlay mode (split-view overlays like :undotree)
+    Overlay,
 }

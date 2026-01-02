@@ -71,4 +71,8 @@ pub enum ParsedCommand {
         bangs: usize,
     },
     BufferList,
+    /// [TEMPORARY] Test split view (remove after manual verification)
+    TestSplitView {
+        bangs: usize,
+    },
 }
