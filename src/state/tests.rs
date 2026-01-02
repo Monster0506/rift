@@ -227,12 +227,12 @@ fn test_set_default_border_chars() {
     assert_eq!(state.settings.default_border_chars, None);
 
     let border_chars = BorderChars {
-        top_left: vec![b'+'],
-        top_right: vec![b'+'],
-        bottom_left: vec![b'+'],
-        bottom_right: vec![b'+'],
-        horizontal: vec![b'-'],
-        vertical: vec![b'|'],
+        top_left: '+',
+        top_right: '+',
+        bottom_left: '+',
+        bottom_right: '+',
+        horizontal: '-',
+        vertical: '|',
     };
 
     state.set_default_border_chars(Some(border_chars));

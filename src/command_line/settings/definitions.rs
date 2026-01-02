@@ -11,23 +11,23 @@ use crate::state::UserSettings;
 // Helper functions to create border presets
 fn create_unicode_border() -> BorderChars {
     BorderChars {
-        top_left: vec![0xE2, 0x95, 0xAD],     // ╭
-        top_right: vec![0xE2, 0x95, 0xAE],    // ╮
-        bottom_left: vec![0xE2, 0x95, 0xB0],  // ╰
-        bottom_right: vec![0xE2, 0x95, 0xAF], // ╯
-        horizontal: vec![0xE2, 0x94, 0x80],   // ─
-        vertical: vec![0xE2, 0x94, 0x82],     // │
+        top_left: '╭',
+        top_right: '╮',
+        bottom_left: '╰',
+        bottom_right: '╯',
+        horizontal: '─',
+        vertical: '│',
     }
 }
 
 fn create_ascii_border() -> BorderChars {
     BorderChars {
-        top_left: vec![b'+'],
-        top_right: vec![b'+'],
-        bottom_left: vec![b'+'],
-        bottom_right: vec![b'+'],
-        horizontal: vec![b'-'],
-        vertical: vec![b'|'],
+        top_left: '+',
+        top_right: '+',
+        bottom_left: '+',
+        bottom_right: '+',
+        horizontal: '-',
+        vertical: '|',
     }
 }
 
@@ -39,7 +39,6 @@ fn set_border_style(settings: &mut UserSettings, value: SettingValue) -> Result<
             settings.default_border_chars = match style.as_str() {
                 "unicode" => Some(create_unicode_border()),
                 "ascii" => Some(create_ascii_border()),
-                "none" => None,
                 _ => {
                     return Err(SettingError::ValidationError(format!(
                         "Unknown border style: {style}"
@@ -270,7 +269,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         aliases: &["clborderstyle"],
         description: "Style of the command line window border",
         ty: SettingType::Enum {
-            variants: &["unicode", "ascii", "none"],
+            variants: &["unicode", "ascii"],
         },
         set: set_border_style,
         needs_full_redraw: false,

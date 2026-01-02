@@ -90,4 +90,8 @@ pub enum ParsedCommand {
     Checkpoint {
         bangs: usize,
     },
+    /// Open undo tree visualization
+    UndoTree {
+        bangs: usize,
+    },
 }

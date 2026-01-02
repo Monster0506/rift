@@ -444,6 +444,39 @@ impl<T: TerminalBackend> Editor<T> {
                     None => continue,
                 };
 
+                // Handle overlay input first (modal overlay)
+                if self.current_mode == Mode::Overlay {
+                    use crate::key::Key;
+                    use crate::layer::LayerPriority;
+                    match key_press {
+                        Key::Char('q') | Key::Escape => {
+                            // Close overlay
+                            self.state.overlay_content = None;
+                            self.compositor.clear_layer(LayerPriority::POPUP);
+                            self.set_mode(Mode::Normal);
+                            self.update_and_render()?;
+                            continue;
+                        }
+                        Key::Char('j') | Key::ArrowDown => {
+                            if let Some(ref mut content) = self.state.overlay_content {
+                                content.move_cursor_down();
+                                self.update_and_render()?;
+                            }
+                            continue;
+                        }
+                        Key::Char('k') | Key::ArrowUp => {
+                            if let Some(ref mut content) = self.state.overlay_content {
+                                content.move_cursor_up();
+                                self.update_and_render()?;
+                            }
+                            continue;
+                        }
+                        _ => {
+                            continue;
+                        }
+                    }
+                }
+
                 // Process keypress through key handler
                 let current_mode = self.current_mode;
                 let action = KeyHandler::process_key(key_press, current_mode);
@@ -789,6 +822,25 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let _ = render::render(term, compositor, ctx, render_cache)?;
+
+        // Render overlay if in Overlay mode
+        if *current_mode == Mode::Overlay {
+            if let Some(ref overlay) = state.overlay_content {
+                use crate::layer::LayerPriority;
+                use crate::select_view::SelectView;
+
+                let mut select_view = SelectView::new().with_left_width(overlay.left_width_percent);
+                select_view.set_left_content(overlay.left.clone());
+                select_view.set_right_content(overlay.right.clone());
+                select_view.set_selected_line(Some(overlay.cursor));
+
+                let layer = compositor.get_layer_mut(LayerPriority::POPUP);
+                select_view.render(layer);
+                // Re-composite and render
+                let _ = compositor.render_to_terminal(term, false)?;
+            }
+        }
+
         Ok(())
     }
 
@@ -1066,6 +1118,11 @@ impl<T: TerminalBackend> Editor<T> {
                 // Already handled in executor
                 self.state.clear_command_line();
                 self.set_mode(Mode::Normal);
+            }
+            ExecutionResult::UndoTree { content } => {
+                self.state.overlay_content = Some(content);
+                self.state.clear_command_line();
+                self.set_mode(Mode::Overlay);
             }
         }
     }

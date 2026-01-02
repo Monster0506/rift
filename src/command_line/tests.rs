@@ -93,7 +93,7 @@ fn test_command_line_with_custom_border_chars() {
     let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
     let viewport = Viewport::new(24, 80);
     let window_settings = CommandLineWindowSettings::default();
-    let custom_border = BorderChars::from_ascii(b'+', b'+', b'+', b'+', b'-', b'|');
+    let custom_border = BorderChars::from_ascii('+', '+', '+', '+', '-', '|');
 
     let (window_row, window_col, _, _) = CommandLine::render_to_layer(
         &mut layer,
