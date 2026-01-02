@@ -186,9 +186,9 @@ pub struct State {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OverlayContent {
     /// Left pane content (lines)
-    pub left: Vec<Vec<char>>,
+    pub left: Vec<Vec<crate::layer::Cell>>,
     /// Right pane content (lines)
-    pub right: Vec<Vec<char>>,
+    pub right: Vec<Vec<crate::layer::Cell>>,
     /// Left pane width percentage (0-100)
     pub left_width_percent: u8,
     /// Cursor position (line index in left pane)
@@ -458,8 +458,14 @@ mod tests {
 
     #[test]
     fn test_overlay_navigation_skip_connectors() {
+        use crate::layer::Cell;
         let mut content = OverlayContent {
-            left: vec![vec!['a'], vec!['b'], vec!['c'], vec!['d']],
+            left: vec![
+                vec![Cell::new(b'a')],
+                vec![Cell::new(b'b')],
+                vec![Cell::new(b'c')],
+                vec![Cell::new(b'd')],
+            ],
             right: Vec::new(),
             left_width_percent: 50,
             cursor: 0,

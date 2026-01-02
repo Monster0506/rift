@@ -343,6 +343,11 @@ impl FloatingWindow {
         self.render_with_border_chars(layer, content, None)
     }
 
+    /// Render the floating window with Cells (colored content)
+    pub fn render_cells(&self, layer: &mut Layer, content: &[Vec<Cell>]) {
+        self.render_cells_with_border_chars(layer, content, None)
+    }
+
     /// Render the floating window to a layer with optional border character override
     ///
     /// # Arguments
@@ -400,6 +405,216 @@ impl FloatingWindow {
                 fg,
                 bg,
             );
+        }
+    }
+
+    /// Render with custom border chars and Cells
+    pub fn render_cells_with_border_chars(
+        &self,
+        layer: &mut Layer,
+        content: &[Vec<Cell>],
+        border_chars_override: Option<BorderChars>,
+    ) {
+        let rows = layer.rows() as u16;
+        let cols = layer.cols() as u16;
+
+        let (start_row, start_col) = self.calculate_position(rows, cols);
+        let start_row = start_row as usize;
+        let start_col = start_col as usize;
+
+        let width = self.width.min(cols as usize);
+        let height = self.height.min(rows as usize);
+
+        let (fg, bg) = self.style.effective_colors();
+        let border_chars = border_chars_override.unwrap_or_else(|| self.style.border_chars());
+
+        if self.style.border {
+            self.render_cells_with_border(
+                layer,
+                content,
+                RenderLayout {
+                    start_row,
+                    start_col,
+                    width,
+                    height,
+                },
+                fg,
+                bg,
+                &border_chars,
+            );
+        } else {
+            self.render_cells_without_border(
+                layer,
+                content,
+                RenderLayout {
+                    start_row,
+                    start_col,
+                    width,
+                    height,
+                },
+                fg,
+                bg,
+            );
+        }
+    }
+
+    /// Render window content with border (Cells version)
+    fn render_cells_with_border(
+        &self,
+        layer: &mut Layer,
+        content: &[Vec<Cell>],
+        layout: RenderLayout,
+        fg: Option<Color>,
+        bg: Option<Color>,
+        border_chars: &BorderChars,
+    ) {
+        let content_height = layout.height.saturating_sub(2);
+        let content_width = layout.width.saturating_sub(2);
+        let start_row = layout.start_row;
+        let start_col = layout.start_col;
+        let width = layout.width;
+        let height = layout.height;
+
+        // Top border
+        layer.set_cell(
+            start_row,
+            start_col,
+            Cell::from_char(border_chars.top_left).with_colors(fg, bg),
+        );
+        for i in 0..content_width {
+            let col = start_col + 1 + i;
+            layer.set_cell(
+                start_row,
+                col,
+                Cell::from_char(border_chars.horizontal).with_colors(fg, bg),
+            );
+        }
+        if width > 1 {
+            let col = start_col + width - 1;
+            layer.set_cell(
+                start_row,
+                col,
+                Cell::from_char(border_chars.top_right).with_colors(fg, bg),
+            );
+        }
+
+        // Content rows with side borders
+        for content_row in 0..content_height {
+            let row = start_row + 1 + content_row;
+
+            // Left border
+            layer.set_cell(
+                row,
+                start_col,
+                Cell::from_char(border_chars.vertical).with_colors(fg, bg),
+            );
+
+            // Content
+            if let Some(line) = content.get(content_row) {
+                for (i, cell) in line.iter().take(content_width).enumerate() {
+                    let col = start_col + 1 + i;
+                    // Use cell as is, but if it has no colors, apply window defaults?
+                    let mut final_cell = cell.clone();
+                    if final_cell.fg.is_none() {
+                        final_cell.fg = fg;
+                    }
+                    if final_cell.bg.is_none() {
+                        final_cell.bg = bg;
+                    }
+                    layer.set_cell(row, col, final_cell);
+                }
+                // Pad with spaces
+                for i in line.len().min(content_width)..content_width {
+                    let col = start_col + 1 + i;
+                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                }
+            } else {
+                // Empty line - fill with spaces
+                for i in 0..content_width {
+                    let col = start_col + 1 + i;
+                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                }
+            }
+
+            // Right border
+            if width > 1 {
+                let col = start_col + width - 1;
+                layer.set_cell(
+                    row,
+                    col,
+                    Cell::from_char(border_chars.vertical).with_colors(fg, bg),
+                );
+            }
+        }
+
+        // Bottom border
+        if height > 1 {
+            let row = start_row + height - 1;
+            layer.set_cell(
+                row,
+                start_col,
+                Cell::from_char(border_chars.bottom_left).with_colors(fg, bg),
+            );
+            for i in 0..content_width {
+                let col = start_col + 1 + i;
+                layer.set_cell(
+                    row,
+                    col,
+                    Cell::from_char(border_chars.horizontal).with_colors(fg, bg),
+                );
+            }
+            if width > 1 {
+                let col = start_col + width - 1;
+                layer.set_cell(
+                    row,
+                    col,
+                    Cell::from_char(border_chars.bottom_right).with_colors(fg, bg),
+                );
+            }
+        }
+    }
+
+    /// Render window content without border (Cells version)
+    fn render_cells_without_border(
+        &self,
+        layer: &mut Layer,
+        content: &[Vec<Cell>],
+        layout: RenderLayout,
+        fg: Option<Color>,
+        bg: Option<Color>,
+    ) {
+        let start_row = layout.start_row;
+        let start_col = layout.start_col;
+        let height = layout.height;
+        let width = layout.width;
+
+        for row_offset in 0..height {
+            let row = start_row + row_offset;
+
+            if let Some(line) = content.get(row_offset) {
+                for (i, cell) in line.iter().take(width).enumerate() {
+                    let col = start_col + i;
+                    let mut final_cell = cell.clone();
+                    if final_cell.fg.is_none() {
+                        final_cell.fg = fg;
+                    }
+                    if final_cell.bg.is_none() {
+                        final_cell.bg = bg;
+                    }
+                    layer.set_cell(row, col, final_cell);
+                }
+                // Pad with spaces
+                for i in line.len().min(width)..width {
+                    let col = start_col + i;
+                    layer.set_cell(row, col, Cell::from_char(' ').with_colors(fg, bg));
+                }
+            } else {
+                // Empty line - fill with spaces
+                for i in 0..width {
+                    let col = start_col + i;
+                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                }
+            }
         }
     }
 
