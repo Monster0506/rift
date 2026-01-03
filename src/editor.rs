@@ -181,26 +181,12 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Force a full redraw of the editor
     fn force_full_redraw(&mut self) -> Result<(), RiftError> {
-        let Editor {
-            term,
-            compositor,
-            render_cache,
-            documents,
-            tab_order,
-            current_tab,
-            viewport,
-            state,
-            current_mode,
-            dispatcher,
-            ..
-        } = self;
-
-        let doc_id = tab_order[*current_tab];
-        let doc = documents.get_mut(&doc_id).unwrap();
+        let doc_id = self.tab_order[self.current_tab];
+        let doc = self.documents.get_mut(&doc_id).unwrap();
 
         // Calculate visible range for syntax highlighting
-        let start_line = viewport.top_line();
-        let end_line = start_line + viewport.visible_rows();
+        let start_line = self.viewport.top_line();
+        let end_line = start_line + self.viewport.visible_rows();
         let start_byte = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
         let end_byte = if end_line < doc.buffer.get_total_lines() {
             doc.buffer
@@ -219,18 +205,23 @@ impl<T: TerminalBackend> Editor<T> {
 
         let ctx = render::RenderContext {
             buf: &doc.buffer,
-            viewport,
-            state,
-            current_mode: *current_mode,
-            pending_key: dispatcher.pending_key(),
-            pending_count: dispatcher.pending_count(),
+            viewport: &self.viewport,
+            state: &self.state,
+            current_mode: self.current_mode,
+            pending_key: self.dispatcher.pending_key(),
+            pending_count: self.dispatcher.pending_count(),
             needs_clear: true,
             tab_width: doc.options.tab_width,
             highlights: highlights.as_deref(),
         };
 
-        render::full_redraw(term, compositor, ctx, render_cache)
-            .map_err(|e| RiftError::new(ErrorType::Io, "REDRAW_FAILED", e.to_string()))?;
+        render::full_redraw(
+            &mut self.term,
+            &mut self.compositor,
+            ctx,
+            &mut self.render_cache,
+        )
+        .map_err(|e| RiftError::new(ErrorType::Io, "REDRAW_FAILED", e.to_string()))?;
 
         Ok(())
     }
