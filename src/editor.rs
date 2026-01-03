@@ -44,10 +44,13 @@ pub struct Editor<T: TerminalBackend> {
     pub modal: Option<Box<dyn crate::component::Component>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum ComponentAction {
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ComponentAction {
     UndoTreeGoto(u64),
     UndoTreeCancel,
+    ExecuteCommand(String),
+    ExecuteSearch(String),
+    CancelMode,
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -478,6 +481,44 @@ impl<T: TerminalBackend> Editor<T> {
                                         self.set_mode(Mode::Normal);
                                         self.update_and_render()?;
                                     }
+                                    ComponentAction::ExecuteCommand(cmd) => {
+                                        // Sync legacy state for consistency
+                                        self.state.command_line = cmd.clone();
+
+                                        // Parse and execute the command
+                                        let parsed_command = self.command_parser.parse(&cmd);
+                                        let doc_id = self.tab_order[self.current_tab];
+                                        let execution_result = CommandExecutor::execute(
+                                            parsed_command.clone(),
+                                            &mut self.state,
+                                            self.documents
+                                                .get_mut(&doc_id)
+                                                .expect("active document missing"),
+                                            &self.settings_registry,
+                                            &self.document_settings_registry,
+                                        );
+
+                                        self.handle_execution_result(execution_result);
+                                        self.update_and_render()?;
+                                    }
+                                    ComponentAction::ExecuteSearch(query) => {
+                                        self.modal = None;
+                                        if !query.is_empty() {
+                                            self.state.last_search_query = Some(query.clone());
+                                            self.perform_search(
+                                                &query,
+                                                SearchDirection::Forward,
+                                                false,
+                                            );
+                                        }
+                                        self.set_mode(Mode::Normal);
+                                        self.update_and_render()?;
+                                    }
+                                    ComponentAction::CancelMode => {
+                                        self.modal = None;
+                                        self.set_mode(Mode::Normal);
+                                        self.update_and_render()?;
+                                    }
                                 }
                             }
                             continue;
@@ -831,6 +872,11 @@ impl<T: TerminalBackend> Editor<T> {
             modal.render(layer);
             // Re-composite and render
             let _ = compositor.render_to_terminal(term, false)?;
+
+            // Explicitly set cursor if modal requests it
+            if let Some((row, col)) = modal.cursor_position() {
+                term.move_cursor(row, col)?;
+            }
         }
 
         Ok(())
@@ -840,6 +886,22 @@ impl<T: TerminalBackend> Editor<T> {
     fn set_mode(&mut self, mode: Mode) {
         self.current_mode = mode;
         self.dispatcher.set_mode(mode);
+
+        match mode {
+            Mode::Command => {
+                let settings = self.state.settings.command_line_window.clone();
+                self.modal = Some(Box::new(
+                    crate::command_line::component::CommandLineComponent::new(':', settings),
+                ));
+            }
+            Mode::Search => {
+                let settings = self.state.settings.command_line_window.clone();
+                self.modal = Some(Box::new(
+                    crate::command_line::component::CommandLineComponent::new('/', settings),
+                ));
+            }
+            _ => {}
+        }
     }
 
     /// Save document to file
@@ -905,6 +967,7 @@ impl<T: TerminalBackend> Editor<T> {
                 } else {
                     self.should_quit = true;
                     self.state.clear_command_line();
+                    self.modal = None;
                     self.set_mode(Mode::Normal);
                 }
             }
@@ -922,6 +985,9 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
                 self.state.clear_command_line();
+                self.modal = None;
+                use crate::layer::LayerPriority;
+                self.compositor.clear_layer(LayerPriority::POPUP);
                 self.set_mode(Mode::Normal);
             }
             ExecutionResult::WriteAndQuit => {
@@ -938,6 +1004,7 @@ impl<T: TerminalBackend> Editor<T> {
                 // Save successful, now quit
                 self.should_quit = true;
                 self.state.clear_command_line();
+                self.modal = None;
                 self.set_mode(Mode::Normal);
             }
             ExecutionResult::Failure => {
@@ -947,6 +1014,7 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::Redraw => {
                 // Close command line first before redraw
                 self.state.clear_command_line();
+                self.modal = None;
                 self.set_mode(Mode::Normal);
 
                 if let Err(e) = self.force_full_redraw() {
@@ -959,6 +1027,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.state.handle_error(e);
                 } else {
                     self.state.clear_command_line();
+                    self.modal = None;
                     self.set_mode(Mode::Normal);
                     // Force redraw after opening a file
                     if let Err(e) = self.force_full_redraw() {
@@ -1038,6 +1107,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             ExecutionResult::Success => {
                 self.state.clear_command_line();
+                self.modal = None;
                 self.set_mode(Mode::Normal);
             }
             ExecutionResult::Undo { count } => {
