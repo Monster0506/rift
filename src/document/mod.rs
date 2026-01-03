@@ -4,6 +4,7 @@
 use crate::buffer::TextBuffer;
 use crate::error::{ErrorType, RiftError};
 use crate::history::{EditOperation, EditTransaction, Position, Range, UndoTree};
+use crate::search::{find_next, SearchDirection};
 use crate::syntax::Syntax;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -740,6 +741,33 @@ impl Document {
         }
 
         Ok(())
+    }
+
+    /// Perform a search in the document
+    /// Returns the match if found
+    pub fn perform_search(
+        &self,
+        query: &str,
+        direction: SearchDirection,
+        skip_current: bool,
+    ) -> Result<Option<crate::search::SearchMatch>, RiftError> {
+        let mut cursor = self.buffer.cursor();
+
+        // If searching forward and skipping current, advance cursor to avoid
+        // matching at current position
+        if skip_current && direction == SearchDirection::Forward {
+            cursor = cursor.saturating_add(1);
+        }
+
+        match find_next(&self.buffer, cursor, query, direction) {
+            Ok(Some(m)) => Ok(Some(m)),
+            Ok(None) => Ok(None),
+            Err(e) => Err(RiftError::new(
+                ErrorType::Execution,
+                "SEARCH_ERROR",
+                e.to_string(),
+            )),
+        }
     }
 }
 

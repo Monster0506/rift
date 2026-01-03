@@ -12,7 +12,7 @@ use crate::layer::LayerCompositor;
 use crate::mode::Mode;
 use crate::render;
 use crate::screen_buffer::FrameStats;
-use crate::search::{find_next, SearchDirection};
+use crate::search::SearchDirection;
 use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
@@ -380,25 +380,12 @@ impl<T: TerminalBackend> Editor<T> {
     fn perform_search(&mut self, query: &str, direction: SearchDirection, skip_current: bool) {
         let doc_id = self.tab_order[self.current_tab];
 
-        // Calculate start cursor (scope to drop borrow)
-        let cursor = {
-            let doc = self.documents.get(&doc_id).unwrap();
-            let mut c = doc.buffer.cursor();
-            // If searching forward and skipping current, advance cursor to avoid
-            // matching at current position
-            if skip_current && direction == SearchDirection::Forward {
-                c = c.saturating_add(1);
-            }
-            c
-        };
-
         // Find all matches first to populate state for highlighting
+        // TODO: Move this into Document too eventually, or listen for search events
         self.update_search_highlights();
 
-        // Re-acquire mutable borrow for find_next and cursor update
         let doc = self.documents.get_mut(&doc_id).unwrap();
-
-        match find_next(&doc.buffer, cursor, query, direction) {
+        match doc.perform_search(query, direction, skip_current) {
             Ok(Some(m)) => {
                 // Move cursor to start of match
                 let _ = doc.buffer.set_cursor(m.range.start);
