@@ -40,6 +40,14 @@ pub struct Editor<T: TerminalBackend> {
     document_settings_registry: SettingsRegistry<crate::document::definitions::DocumentOptions>,
     #[allow(dead_code)]
     language_loader: Arc<crate::syntax::loader::LanguageLoader>,
+    /// Active modal component (overlay)
+    pub modal: Option<Box<dyn crate::component::Component>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ComponentAction {
+    UndoTreeGoto(u64),
+    UndoTreeCancel,
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -57,9 +65,6 @@ impl<T: TerminalBackend> Editor<T> {
             .unwrap_or_else(|| std::path::PathBuf::from("grammars"));
 
         let language_loader = Arc::new(crate::syntax::loader::LanguageLoader::new(grammar_dir));
-
-        // Validate file BEFORE initializing terminal or creating buffer
-        // We attempt to load the file directly in the document creation block below
 
         // Create document (either from file or empty)
         let next_id = 1;
@@ -108,25 +113,17 @@ impl<T: TerminalBackend> Editor<T> {
 
         let mut state = State::new();
         state.set_file_path(file_path.clone());
-        // Initialize filename from document
         state.update_filename(document.display_name().to_string());
 
-        // Create layer compositor for layer-based rendering
         let compositor = LayerCompositor::new(size.rows as usize, size.cols as usize);
 
         // Create document settings registry
-        use crate::document::definitions::create_document_settings_registry;
-        let document_settings_registry = create_document_settings_registry();
 
-        let mut documents = HashMap::new();
-        documents.insert(document.id, document);
-        let tab_order = vec![next_id];
-
-        Ok(Editor {
+        Ok(Self {
             term: terminal,
             render_cache: crate::render::RenderCache::default(),
-            documents,
-            tab_order,
+            documents: HashMap::from([(next_id, document)]),
+            tab_order: vec![next_id],
             current_tab: 0,
             next_document_id: next_id + 1,
             compositor,
@@ -137,8 +134,10 @@ impl<T: TerminalBackend> Editor<T> {
             state,
             command_parser,
             settings_registry,
-            document_settings_registry,
+            document_settings_registry:
+                crate::document::definitions::create_document_settings_registry(),
             language_loader,
+            modal: None,
         })
     }
 
@@ -434,68 +433,53 @@ impl<T: TerminalBackend> Editor<T> {
                 .poll(std::time::Duration::from_millis(timeout))
                 .map_err(|e| RiftError::new(ErrorType::Internal, "POLL_FAILED", e))?
             {
-                // ============================================================
-                // INPUT HANDLING PHASE (Pure - no mutations)
-                // ============================================================
-
                 // Read key
                 let key_press = match self.term.read_key()? {
                     Some(key) => key,
                     None => continue,
                 };
 
-                // Handle overlay input first (modal overlay)
-                if self.current_mode == Mode::Overlay {
-                    use crate::key::Key;
-                    use crate::layer::LayerPriority;
-                    match key_press {
-                        Key::Char('q') | Key::Escape => {
-                            // Close overlay
-                            self.state.overlay_content = None;
-                            self.compositor.clear_layer(LayerPriority::POPUP);
-                            self.set_mode(Mode::Normal);
-                            self.update_and_render()?;
-                            continue;
-                        }
-                        Key::Enter => {
-                            if let Some(ref content) = self.state.overlay_content {
-                                if let Some(&seq) = content.sequences.get(content.cursor) {
-                                    use crate::history::EditSeq;
-                                    if seq != EditSeq::MAX {
+                // Handle generic modal input
+                let modal_result = if let Some(ref mut modal) = self.modal {
+                    Some(modal.handle_input(key_press))
+                } else {
+                    None
+                };
+
+                if let Some(result) = modal_result {
+                    use crate::component::EventResult;
+                    match result {
+                        EventResult::Consumed => continue,
+                        EventResult::Ignored => continue, // Modals trap input by default
+                        EventResult::Action(any) => {
+                            if let Some(action) = any.downcast_ref::<ComponentAction>() {
+                                match action {
+                                    ComponentAction::UndoTreeGoto(seq) => {
                                         let doc_id = self.tab_order[self.current_tab];
                                         let doc = self.documents.get_mut(&doc_id).unwrap();
-                                        if let Err(e) = doc.goto_seq(seq) {
+                                        if let Err(e) = doc.goto_seq(*seq) {
                                             self.state.handle_error(crate::error::RiftError::new(
                                                 crate::error::ErrorType::Execution,
                                                 "UNDO_FAILED",
                                                 format!("Failed to go to sequence {}: {}", seq, e),
                                             ));
                                         }
-                                        // Close after selection
-                                        self.state.overlay_content = None;
+                                        // Close modal
+                                        self.modal = None;
+                                        use crate::layer::LayerPriority;
+                                        self.compositor.clear_layer(LayerPriority::POPUP);
+                                        self.set_mode(Mode::Normal);
+                                        self.update_and_render()?;
+                                    }
+                                    ComponentAction::UndoTreeCancel => {
+                                        self.modal = None;
+                                        use crate::layer::LayerPriority;
                                         self.compositor.clear_layer(LayerPriority::POPUP);
                                         self.set_mode(Mode::Normal);
                                         self.update_and_render()?;
                                     }
                                 }
                             }
-                            continue;
-                        }
-                        Key::Char('j') | Key::ArrowDown => {
-                            if let Some(ref mut content) = self.state.overlay_content {
-                                content.move_cursor_down();
-                                self.update_and_render()?;
-                            }
-                            continue;
-                        }
-                        Key::Char('k') | Key::ArrowUp => {
-                            if let Some(ref mut content) = self.state.overlay_content {
-                                content.move_cursor_up();
-                                self.update_and_render()?;
-                            }
-                            continue;
-                        }
-                        _ => {
                             continue;
                         }
                     }
@@ -516,10 +500,6 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                     _ => self.dispatcher.translate_key(key_press),
                 };
-
-                // ============================================================
-                // COMMAND EXECUTION PHASE (Buffer mutations only)
-                // ============================================================
 
                 // Execute command if it affects the buffer (and not in command mode)
                 let should_execute_buffer = current_mode != Mode::Command
@@ -588,10 +568,6 @@ impl<T: TerminalBackend> Editor<T> {
                     self.should_quit = true;
                     continue;
                 }
-
-                // ============================================================
-                // STATE UPDATE PHASE (All state mutations happen here)
-                // ============================================================
 
                 self.update_state_and_render(key_press, action, cmd)?;
             } else {
@@ -848,21 +824,13 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = render::render(term, compositor, ctx, render_cache)?;
 
         // Render overlay if in Overlay mode
-        if *current_mode == Mode::Overlay {
-            if let Some(ref overlay) = state.overlay_content {
-                use crate::layer::LayerPriority;
-                use crate::select_view::SelectView;
-
-                let mut select_view = SelectView::new().with_left_width(overlay.left_width_percent);
-                select_view.set_left_content(overlay.left.clone());
-                select_view.set_right_content(overlay.right.clone());
-                select_view.set_selected_line(Some(overlay.cursor));
-
-                let layer = compositor.get_layer_mut(LayerPriority::POPUP);
-                select_view.render(layer);
-                // Re-composite and render
-                let _ = compositor.render_to_terminal(term, false)?;
-            }
+        // Render modal if active
+        if let Some(ref mut modal) = self.modal {
+            use crate::layer::LayerPriority;
+            let layer = compositor.get_layer_mut(LayerPriority::POPUP);
+            modal.render(layer);
+            // Re-composite and render
+            let _ = compositor.render_to_terminal(term, false)?;
         }
 
         Ok(())
@@ -1144,7 +1112,30 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Normal);
             }
             ExecutionResult::UndoTree { content } => {
-                self.state.overlay_content = Some(content);
+                use crate::component::EventResult;
+                use crate::select_view::SelectView;
+
+                let mut view = SelectView::new().with_left_width(content.left_width_percent);
+                view.set_left_content(content.left);
+                view.set_right_content(content.right);
+                view.set_selected_line(Some(content.cursor));
+                let view = view.with_selectable(content.selectable.clone());
+
+                let sequences = content.sequences;
+                let view = view
+                    .on_select(move |idx| {
+                        if let Some(&seq) = sequences.get(idx) {
+                            if seq != crate::history::EditSeq::MAX {
+                                return EventResult::Action(Box::new(
+                                    ComponentAction::UndoTreeGoto(seq),
+                                ));
+                            }
+                        }
+                        EventResult::Consumed
+                    })
+                    .on_cancel(|| EventResult::Action(Box::new(ComponentAction::UndoTreeCancel)));
+
+                self.modal = Some(Box::new(view));
                 self.state.clear_command_line();
                 self.set_mode(Mode::Overlay);
             }

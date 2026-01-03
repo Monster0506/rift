@@ -1,4 +1,5 @@
 use super::*;
+#[allow(unused_imports)]
 use crate::layer::Layer;
 
 #[test]
@@ -54,4 +55,58 @@ fn test_select_view_render() {
 
     // Should not panic
     view.render(&mut layer);
+}
+
+#[test]
+fn test_select_view_navigation() {
+    use crate::key::Key;
+    let mut view = SelectView::new().with_selectable(vec![true, false, false, true]); // 0 and 3 are selectable
+
+    // Set initial
+    view.set_selected_line(Some(0));
+
+    // Move down - should skip 1, 2, land on 3
+    view.handle_input(Key::ArrowDown);
+    assert_eq!(view.selected_line, Some(3));
+
+    // Move down again - should stay on 3
+    view.handle_input(Key::ArrowDown);
+    assert_eq!(view.selected_line, Some(3));
+
+    // Move up - should skip 2, 1, land on 0
+    view.handle_input(Key::ArrowUp);
+    assert_eq!(view.selected_line, Some(0));
+}
+
+#[test]
+fn test_select_view_callbacks() {
+    use crate::component::EventResult;
+    use crate::key::Key;
+    use std::cell::RefCell;
+
+    let selected = RefCell::new(None);
+    let changed = RefCell::new(None);
+
+    {
+        let mut view = SelectView::new()
+            .with_selectable(vec![true, true])
+            .on_select(|idx| {
+                *selected.borrow_mut() = Some(idx);
+                EventResult::Consumed
+            })
+            .on_change(|idx| {
+                *changed.borrow_mut() = Some(idx);
+                EventResult::Consumed
+            });
+
+        view.set_selected_line(Some(0));
+
+        // Move down -> changes 0->1
+        view.handle_input(Key::ArrowDown);
+        assert_eq!(*changed.borrow(), Some(1));
+
+        // Enter -> select 1
+        view.handle_input(Key::Enter);
+        assert_eq!(*selected.borrow(), Some(1));
+    }
 }
