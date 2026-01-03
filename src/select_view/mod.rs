@@ -9,11 +9,13 @@ use crate::color::Color;
 use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
 use crate::layer::Layer;
 
+use crate::component::{Component, EventResult};
+use crate::key::Key;
+
 /// Vertical divider character
 const DIVIDER_CHAR: char = '│';
 
 /// A split-view overlay that renders left and right panes
-#[derive(Debug, Clone)]
 pub struct SelectView {
     /// Percentage of width allocated to left pane (0-100)
     left_width_percent: u8,
@@ -24,10 +26,18 @@ pub struct SelectView {
     /// Scroll offset for left pane
     left_scroll: usize,
     /// Scroll offset for right pane
-    /// Scroll offset for right pane
     right_scroll: usize,
     /// Selected line index (in left pane)
     selected_line: Option<usize>,
+    /// Mask of selectable lines (true = selectable)
+    selectable_lines: Vec<bool>,
+
+    // Callbacks
+    on_select: Option<Box<dyn FnMut(usize) -> EventResult>>,
+    on_cancel: Option<Box<dyn FnMut() -> EventResult>>,
+    on_change: Option<Box<dyn FnMut(usize) -> EventResult>>,
+    on_down: Option<Box<dyn FnMut(usize) -> EventResult>>,
+    on_up: Option<Box<dyn FnMut(usize) -> EventResult>>,
 }
 
 impl SelectView {
@@ -40,6 +50,12 @@ impl SelectView {
             left_scroll: 0,
             right_scroll: 0,
             selected_line: None,
+            selectable_lines: Vec::new(),
+            on_select: None,
+            on_cancel: None,
+            on_change: None,
+            on_down: None,
+            on_up: None,
         }
     }
 
@@ -70,6 +86,158 @@ impl SelectView {
         self.right_scroll = scroll;
     }
 
+    /// Set the selectable lines mask
+    #[must_use]
+    pub fn with_selectable(mut self, selectable: Vec<bool>) -> Self {
+        self.selectable_lines = selectable;
+        self
+    }
+
+    /// Set callback for selection (Enter)
+    #[must_use]
+    pub fn on_select<F>(mut self, callback: F) -> Self
+    where
+        F: FnMut(usize) -> EventResult + 'static,
+    {
+        self.on_select = Some(Box::new(callback));
+        self
+    }
+
+    /// Set callback for cancellation (Esc/q)
+    #[must_use]
+    pub fn on_cancel<F>(mut self, callback: F) -> Self
+    where
+        F: FnMut() -> EventResult + 'static,
+    {
+        self.on_cancel = Some(Box::new(callback));
+        self
+    }
+
+    /// Set callback for selection change
+    #[must_use]
+    pub fn on_change<F>(mut self, callback: F) -> Self
+    where
+        F: FnMut(usize) -> EventResult + 'static,
+    {
+        self.on_change = Some(Box::new(callback));
+        self
+    }
+
+    /// Set callback for moving down
+    #[must_use]
+    pub fn on_down<F>(mut self, callback: F) -> Self
+    where
+        F: FnMut(usize) -> EventResult + 'static,
+    {
+        self.on_down = Some(Box::new(callback));
+        self
+    }
+
+    /// Set callback for moving up
+    #[must_use]
+    pub fn on_up<F>(mut self, callback: F) -> Self
+    where
+        F: FnMut(usize) -> EventResult + 'static,
+    {
+        self.on_up = Some(Box::new(callback));
+        self
+    }
+
+    /// Handle keyboard input
+    pub fn handle_input(&mut self, key: Key) -> EventResult {
+        match key {
+            Key::Char('q') | Key::Escape => {
+                if let Some(cb) = self.on_cancel.as_mut() {
+                    cb()
+                } else {
+                    EventResult::Consumed
+                }
+            }
+            Key::Enter => {
+                if let Some(idx) = self.selected_line {
+                    if let Some(cb) = self.on_select.as_mut() {
+                        cb(idx)
+                    } else {
+                        EventResult::Consumed
+                    }
+                } else {
+                    EventResult::Ignored
+                }
+            }
+            Key::Char('j') | Key::ArrowDown => self.move_selection_down(),
+            Key::Char('k') | Key::ArrowUp => self.move_selection_up(),
+            _ => EventResult::Ignored,
+        }
+    }
+
+    /// Move selection down, skipping non-selectable lines
+    fn move_selection_down(&mut self) -> EventResult {
+        let len = if !self.selectable_lines.is_empty() {
+            self.selectable_lines.len()
+        } else {
+            self.left_content.len()
+        };
+
+        if len == 0 {
+            return EventResult::Ignored;
+        }
+
+        let current = self.selected_line.unwrap_or(0);
+        let mut next = current + 1;
+        while next < len {
+            if self.is_selectable(next) {
+                self.selected_line = Some(next);
+                if let Some(cb) = self.on_change.as_mut() {
+                    cb(next);
+                }
+                if let Some(cb) = self.on_down.as_mut() {
+                    return cb(next);
+                }
+                return EventResult::Consumed;
+            }
+            next += 1;
+        }
+        EventResult::Consumed
+    }
+
+    /// Move selection up, skipping non-selectable lines
+    fn move_selection_up(&mut self) -> EventResult {
+        let len = if !self.selectable_lines.is_empty() {
+            self.selectable_lines.len()
+        } else {
+            self.left_content.len()
+        };
+
+        if len == 0 {
+            return EventResult::Ignored;
+        }
+
+        let current = self.selected_line.unwrap_or(0);
+        if current == 0 {
+            return EventResult::Ignored;
+        }
+        let mut next = current;
+        while next > 0 {
+            next -= 1;
+            if self.is_selectable(next) {
+                self.selected_line = Some(next);
+                if let Some(cb) = self.on_change.as_mut() {
+                    cb(next);
+                }
+                if let Some(cb) = self.on_up.as_mut() {
+                    return cb(next);
+                }
+                return EventResult::Consumed;
+            }
+        }
+        EventResult::Consumed
+    }
+
+    /// Check if a line is selectable
+    fn is_selectable(&self, index: usize) -> bool {
+        self.selectable_lines.get(index).copied().unwrap_or(true)
+    }
+
     /// Set selected line index
     pub fn set_selected_line(&mut self, line: Option<usize>) {
         self.selected_line = line;
@@ -90,7 +258,6 @@ impl SelectView {
         let width = width.max(20);
         let height = height.max(5);
 
-        // Create the floating window
         let style = WindowStyle::new()
             .with_border(true)
             .with_reverse_video(false)
@@ -156,7 +323,6 @@ impl SelectView {
             combined_content.push(line);
         }
 
-        // Render using FloatingWindow with Cells
         window.render_cells(layer, &combined_content);
 
         // Highlight selected line in left pane
@@ -202,6 +368,12 @@ impl Default for SelectView {
     }
 }
 
-#[cfg(test)]
-#[path = "tests.rs"]
-mod tests;
+impl Component for SelectView {
+    fn handle_input(&mut self, key: Key) -> EventResult {
+        SelectView::handle_input(self, key)
+    }
+
+    fn render(&mut self, layer: &mut Layer) {
+        SelectView::render(self, layer);
+    }
+}

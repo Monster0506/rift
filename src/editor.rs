@@ -40,6 +40,8 @@ pub struct Editor<T: TerminalBackend> {
     document_settings_registry: SettingsRegistry<crate::document::definitions::DocumentOptions>,
     #[allow(dead_code)]
     language_loader: Arc<crate::syntax::loader::LanguageLoader>,
+    /// Active modal component (overlay)
+    pub modal: Option<Box<dyn crate::component::Component>>,
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -57,9 +59,6 @@ impl<T: TerminalBackend> Editor<T> {
             .unwrap_or_else(|| std::path::PathBuf::from("grammars"));
 
         let language_loader = Arc::new(crate::syntax::loader::LanguageLoader::new(grammar_dir));
-
-        // Validate file BEFORE initializing terminal or creating buffer
-        // We attempt to load the file directly in the document creation block below
 
         // Create document (either from file or empty)
         let next_id = 1;
@@ -108,25 +107,17 @@ impl<T: TerminalBackend> Editor<T> {
 
         let mut state = State::new();
         state.set_file_path(file_path.clone());
-        // Initialize filename from document
         state.update_filename(document.display_name().to_string());
 
-        // Create layer compositor for layer-based rendering
         let compositor = LayerCompositor::new(size.rows as usize, size.cols as usize);
 
         // Create document settings registry
-        use crate::document::definitions::create_document_settings_registry;
-        let document_settings_registry = create_document_settings_registry();
 
-        let mut documents = HashMap::new();
-        documents.insert(document.id, document);
-        let tab_order = vec![next_id];
-
-        Ok(Editor {
+        Ok(Self {
             term: terminal,
             render_cache: crate::render::RenderCache::default(),
-            documents,
-            tab_order,
+            documents: HashMap::from([(next_id, document)]),
+            tab_order: vec![next_id],
             current_tab: 0,
             next_document_id: next_id + 1,
             compositor,
@@ -137,8 +128,10 @@ impl<T: TerminalBackend> Editor<T> {
             state,
             command_parser,
             settings_registry,
-            document_settings_registry,
+            document_settings_registry:
+                crate::document::definitions::create_document_settings_registry(),
             language_loader,
+            modal: None,
         })
     }
 
@@ -434,10 +427,6 @@ impl<T: TerminalBackend> Editor<T> {
                 .poll(std::time::Duration::from_millis(timeout))
                 .map_err(|e| RiftError::new(ErrorType::Internal, "POLL_FAILED", e))?
             {
-                // ============================================================
-                // INPUT HANDLING PHASE (Pure - no mutations)
-                // ============================================================
-
                 // Read key
                 let key_press = match self.term.read_key()? {
                     Some(key) => key,
@@ -446,58 +435,112 @@ impl<T: TerminalBackend> Editor<T> {
 
                 // Handle overlay input first (modal overlay)
                 if self.current_mode == Mode::Overlay {
-                    use crate::key::Key;
-                    use crate::layer::LayerPriority;
-                    match key_press {
-                        Key::Char('q') | Key::Escape => {
-                            // Close overlay
-                            self.state.overlay_content = None;
-                            self.compositor.clear_layer(LayerPriority::POPUP);
+                    let (selectable, current_cursor) =
+                        if let Some(ref content) = self.state.overlay_content {
+                            (content.selectable.clone(), content.cursor)
+                        } else {
+                            // Should not happen in Overlay mode without content
                             self.set_mode(Mode::Normal);
-                            self.update_and_render()?;
                             continue;
-                        }
-                        Key::Enter => {
-                            if let Some(ref content) = self.state.overlay_content {
-                                if let Some(&seq) = content.sequences.get(content.cursor) {
-                                    use crate::history::EditSeq;
-                                    if seq != EditSeq::MAX {
-                                        let doc_id = self.tab_order[self.current_tab];
-                                        let doc = self.documents.get_mut(&doc_id).unwrap();
-                                        if let Err(e) = doc.goto_seq(seq) {
-                                            self.state.handle_error(crate::error::RiftError::new(
-                                                crate::error::ErrorType::Execution,
-                                                "UNDO_FAILED",
-                                                format!("Failed to go to sequence {}: {}", seq, e),
-                                            ));
+                        };
+
+                    use crate::component::EventResult;
+                    use crate::select_view::SelectView;
+                    use std::cell::RefCell;
+                    use std::rc::Rc; // Added Rc
+
+                    #[derive(Clone, Copy)]
+                    enum OverlayAction {
+                        None,
+                        Cursor(usize),
+                        Select(usize),
+                        Cancel,
+                    }
+                    let action_cell = Rc::new(RefCell::new(OverlayAction::None));
+
+                    let consumed = {
+                        // Scope for view borrowing action
+                        let mut view = SelectView::new().with_selectable(selectable);
+                        view.set_selected_line(Some(current_cursor));
+
+                        // Actions need to capture atomic/rc references now that SelectView is 'static
+                        let ac = action_cell.clone();
+                        let ac2 = action_cell.clone();
+                        let ac3 = action_cell.clone();
+                        let ac4 = action_cell.clone();
+
+                        let mut view = view
+                            .on_down(move |idx| {
+                                *ac.borrow_mut() = OverlayAction::Cursor(idx);
+                                EventResult::Consumed
+                            })
+                            .on_up(move |idx| {
+                                *ac2.borrow_mut() = OverlayAction::Cursor(idx);
+                                EventResult::Consumed
+                            })
+                            .on_select(move |idx| {
+                                *ac3.borrow_mut() = OverlayAction::Select(idx);
+                                EventResult::Consumed
+                            })
+                            .on_cancel(move || {
+                                *ac4.borrow_mut() = OverlayAction::Cancel;
+                                EventResult::Consumed
+                            });
+
+                        view.handle_input(key_press) == EventResult::Consumed
+                    };
+
+                    if consumed {
+                        // Extract action from RefCell
+                        let action = *action_cell.borrow();
+                        match action {
+                            OverlayAction::Cursor(idx) => {
+                                if let Some(ref mut content) = self.state.overlay_content {
+                                    content.cursor = idx;
+                                }
+                                self.update_and_render()?;
+                            }
+                            OverlayAction::Select(idx) => {
+                                if let Some(ref content) = self.state.overlay_content {
+                                    if let Some(&seq) = content.sequences.get(idx) {
+                                        use crate::history::EditSeq;
+                                        if seq != EditSeq::MAX {
+                                            let doc_id = self.tab_order[self.current_tab];
+                                            let doc = self.documents.get_mut(&doc_id).unwrap();
+                                            if let Err(e) = doc.goto_seq(seq) {
+                                                self.state.handle_error(
+                                                    crate::error::RiftError::new(
+                                                        crate::error::ErrorType::Execution,
+                                                        "UNDO_FAILED",
+                                                        format!(
+                                                            "Failed to go to sequence {}: {}",
+                                                            seq, e
+                                                        ),
+                                                    ),
+                                                );
+                                            }
+                                            // Close after selection
+                                            self.state.overlay_content = None;
+                                            use crate::layer::LayerPriority;
+                                            self.compositor.clear_layer(LayerPriority::POPUP);
+                                            self.set_mode(Mode::Normal);
+                                            self.update_and_render()?;
                                         }
-                                        // Close after selection
-                                        self.state.overlay_content = None;
-                                        self.compositor.clear_layer(LayerPriority::POPUP);
-                                        self.set_mode(Mode::Normal);
-                                        self.update_and_render()?;
                                     }
                                 }
                             }
-                            continue;
-                        }
-                        Key::Char('j') | Key::ArrowDown => {
-                            if let Some(ref mut content) = self.state.overlay_content {
-                                content.move_cursor_down();
+                            OverlayAction::Cancel => {
+                                self.state.overlay_content = None;
+                                use crate::layer::LayerPriority;
+                                self.compositor.clear_layer(LayerPriority::POPUP);
+                                self.set_mode(Mode::Normal);
                                 self.update_and_render()?;
                             }
-                            continue;
-                        }
-                        Key::Char('k') | Key::ArrowUp => {
-                            if let Some(ref mut content) = self.state.overlay_content {
-                                content.move_cursor_up();
-                                self.update_and_render()?;
+                            OverlayAction::None => {
+                                // Consumed but no action (e.g. boundary hit)
                             }
-                            continue;
                         }
-                        _ => {
-                            continue;
-                        }
+                        continue;
                     }
                 }
 
@@ -516,10 +559,6 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                     _ => self.dispatcher.translate_key(key_press),
                 };
-
-                // ============================================================
-                // COMMAND EXECUTION PHASE (Buffer mutations only)
-                // ============================================================
 
                 // Execute command if it affects the buffer (and not in command mode)
                 let should_execute_buffer = current_mode != Mode::Command
@@ -588,10 +627,6 @@ impl<T: TerminalBackend> Editor<T> {
                     self.should_quit = true;
                     continue;
                 }
-
-                // ============================================================
-                // STATE UPDATE PHASE (All state mutations happen here)
-                // ============================================================
 
                 self.update_state_and_render(key_press, action, cmd)?;
             } else {
