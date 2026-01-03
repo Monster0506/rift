@@ -197,6 +197,8 @@ pub struct OverlayContent {
     pub selectable: Vec<bool>,
     /// Map of line index to EditSeq (MAX if connector)
     pub sequences: Vec<crate::history::EditSeq>,
+    /// Scroll offset for right pane
+    pub right_scroll: usize,
 }
 
 impl OverlayContent {
@@ -472,6 +474,7 @@ mod tests {
             // 0: selectable, 1: skip, 2: skip, 3: selectable
             selectable: vec![true, false, false, true],
             sequences: vec![1, u64::MAX, u64::MAX, 2],
+            right_scroll: 0,
         };
 
         // Test Down
@@ -498,6 +501,7 @@ mod tests {
             cursor: 0,
             selectable: Vec::new(),
             sequences: Vec::new(),
+            right_scroll: 0,
         };
 
         content.move_cursor_down();

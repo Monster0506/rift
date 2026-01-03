@@ -44,10 +44,13 @@ pub struct Editor<T: TerminalBackend> {
     pub modal: Option<Box<dyn crate::component::Component>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum ComponentAction {
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ComponentAction {
     UndoTreeGoto(u64),
     UndoTreeCancel,
+    ExecuteCommand(String),
+    ExecuteSearch(String),
+    CancelMode,
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -95,7 +98,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         // Initialize terminal (clears screen, enters raw mode, etc.)
-        // We do this AFTER loading the document so we don't mess up the terminal if loading fails
+        // We do this AFTER loading the document so we don't mess up the terminal
+        // if loading fails
         terminal.init()?;
 
         // Get terminal size
@@ -116,8 +120,6 @@ impl<T: TerminalBackend> Editor<T> {
         state.update_filename(document.display_name().to_string());
 
         let compositor = LayerCompositor::new(size.rows as usize, size.cols as usize);
-
-        // Create document settings registry
 
         Ok(Self {
             term: terminal,
@@ -276,7 +278,8 @@ impl<T: TerminalBackend> Editor<T> {
             self.tab_order.remove(pos);
             self.documents.remove(&id);
 
-            // Shift current_tab if we closed the active one OR if it's now out of bounds
+            // Shift current_tab if we closed the active one OR if it's now
+            // out of bounds
             if pos <= self.current_tab && self.current_tab > 0 {
                 self.current_tab -= 1;
             }
@@ -293,8 +296,9 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Open a file in a new document or reload the current one
     ///
-    /// If file_path is Some, it opens that file (or creates a new document for it if not found).
-    /// If file_path is None, it reloads the current active document.
+    /// If file_path is Some, it opens that file (or creates a new document for
+    /// it if not found). If file_path is None, it reloads the current active
+    /// document.
     pub fn open_file(&mut self, file_path: Option<String>, force: bool) -> Result<(), RiftError> {
         if let Some(path_str) = file_path {
             // Check if already open
@@ -322,14 +326,16 @@ impl<T: TerminalBackend> Editor<T> {
             let document = match document_result {
                 Ok(doc) => doc,
                 Err(e) => {
-                    // If file doesn't exist, create a new empty buffer (standard :edit behavior)
-                    // For other errors (permission denied, is a directory, etc.), return the error
+                    // If file doesn't exist, create a new empty buffer (standard
+                    // :edit behavior). For other errors (permission denied, is a
+                    // directory, etc.), return the error
                     if e.kind == ErrorType::Io
                         && e.message
                             .contains("The system cannot find the file specified")
                     {
                         if std::path::Path::new(&path_str).exists() {
-                            // File exists but we couldn't read it (AccessDenied, IsDir, etc.)
+                            // File exists but we couldn't read it (AccessDenied,
+                            // IsDir, etc.)
                             return Err(e);
                         } else {
                             // File doesn't exist, so we are creating a new one
@@ -379,7 +385,7 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    /// Run the editor main loop
+    /// Perform a search in the document
     fn perform_search(&mut self, query: &str, direction: SearchDirection, skip_current: bool) {
         let doc_id = self.tab_order[self.current_tab];
 
@@ -387,7 +393,8 @@ impl<T: TerminalBackend> Editor<T> {
         let cursor = {
             let doc = self.documents.get(&doc_id).unwrap();
             let mut c = doc.buffer.cursor();
-            // If searching forward and skipping current, advance cursor to avoid matching at current position
+            // If searching forward and skipping current, advance cursor to avoid
+            // matching at current position
             if skip_current && direction == SearchDirection::Forward {
                 c = c.saturating_add(1);
             }
@@ -420,6 +427,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    /// Run the editor main loop
     pub fn run(&mut self) -> Result<(), RiftError> {
         // Initial render
         self.update_and_render()?;
@@ -440,17 +448,16 @@ impl<T: TerminalBackend> Editor<T> {
                 };
 
                 // Handle generic modal input
-                let modal_result = if let Some(ref mut modal) = self.modal {
-                    Some(modal.handle_input(key_press))
-                } else {
-                    None
-                };
+                let modal_result = self
+                    .modal
+                    .as_mut()
+                    .map(|modal| modal.handle_input(key_press));
 
                 if let Some(result) = modal_result {
                     use crate::component::EventResult;
                     match result {
                         EventResult::Consumed => continue,
-                        EventResult::Ignored => continue, // Modals trap input by default
+                        EventResult::Ignored => continue,
                         EventResult::Action(any) => {
                             if let Some(action) = any.downcast_ref::<ComponentAction>() {
                                 match action {
@@ -458,8 +465,8 @@ impl<T: TerminalBackend> Editor<T> {
                                         let doc_id = self.tab_order[self.current_tab];
                                         let doc = self.documents.get_mut(&doc_id).unwrap();
                                         if let Err(e) = doc.goto_seq(*seq) {
-                                            self.state.handle_error(crate::error::RiftError::new(
-                                                crate::error::ErrorType::Execution,
+                                            self.state.handle_error(RiftError::new(
+                                                ErrorType::Execution,
                                                 "UNDO_FAILED",
                                                 format!("Failed to go to sequence {}: {}", seq, e),
                                             ));
@@ -475,6 +482,44 @@ impl<T: TerminalBackend> Editor<T> {
                                         self.modal = None;
                                         use crate::layer::LayerPriority;
                                         self.compositor.clear_layer(LayerPriority::POPUP);
+                                        self.set_mode(Mode::Normal);
+                                        self.update_and_render()?;
+                                    }
+                                    ComponentAction::ExecuteCommand(cmd) => {
+                                        // Sync legacy state for consistency
+                                        self.state.command_line = cmd.clone();
+
+                                        // Parse and execute the command
+                                        let parsed_command = self.command_parser.parse(cmd);
+                                        let doc_id = self.tab_order[self.current_tab];
+                                        let execution_result = CommandExecutor::execute(
+                                            parsed_command.clone(),
+                                            &mut self.state,
+                                            self.documents
+                                                .get_mut(&doc_id)
+                                                .expect("active document missing"),
+                                            &self.settings_registry,
+                                            &self.document_settings_registry,
+                                        );
+
+                                        self.handle_execution_result(execution_result);
+                                        self.update_and_render()?;
+                                    }
+                                    ComponentAction::ExecuteSearch(query) => {
+                                        self.modal = None;
+                                        if !query.is_empty() {
+                                            self.state.last_search_query = Some(query.clone());
+                                            self.perform_search(
+                                                query,
+                                                SearchDirection::Forward,
+                                                false,
+                                            );
+                                        }
+                                        self.set_mode(Mode::Normal);
+                                        self.update_and_render()?;
+                                    }
+                                    ComponentAction::CancelMode => {
+                                        self.modal = None;
                                         self.set_mode(Mode::Normal);
                                         self.update_and_render()?;
                                     }
@@ -501,7 +546,8 @@ impl<T: TerminalBackend> Editor<T> {
                     _ => self.dispatcher.translate_key(key_press),
                 };
 
-                // Execute command if it affects the buffer (and not in command mode)
+                // Execute command if it affects the buffer (and not in command
+                // mode)
                 let should_execute_buffer = current_mode != Mode::Command
                     && current_mode != Mode::Search
                     && !matches!(
@@ -524,7 +570,8 @@ impl<T: TerminalBackend> Editor<T> {
                     let doc_id = self.tab_order[self.current_tab];
 
                     // Wrap mutating commands (except Undo/Redo) in a transaction
-                    // Skip wrapping in Insert mode - it already has an open transaction from mode entry
+                    // Skip wrapping in Insert mode - it already has an open
+                    // transaction from mode entry
                     let needs_transaction = cmd.is_mutating()
                         && !matches!(cmd, Command::Undo | Command::Redo)
                         && current_mode != Mode::Insert;
@@ -670,7 +717,8 @@ impl<T: TerminalBackend> Editor<T> {
         // Handle command line editing (mutations happen here)
         match command {
             Command::AppendToCommandLine(ch) => {
-                // ch is guaranteed to be valid ASCII (32-126) from translate_command_mode
+                // ch is guaranteed to be valid ASCII (32-126) from
+                // translate_command_mode
                 self.state.append_to_command_line(ch);
             }
             Command::DeleteFromCommandLine => {
@@ -725,7 +773,8 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Update state and render the editor (for initial render)
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
-        // Update buffer and cursor state only (no input tracking on initial render)
+        // Update buffer and cursor state only (no input tracking on initial
+        // render)
         let tab_width = self.active_document().options.tab_width;
         let cursor_line = self.active_document().buffer.get_line();
         let cursor_col =
@@ -785,7 +834,8 @@ impl<T: TerminalBackend> Editor<T> {
         } = self;
 
         let doc_id = tab_order[*current_tab];
-        // We need mutable access to call syntax.highlights() which potentially updates parse tree
+        // We need mutable access to call syntax.highlights() which potentially
+        // updates parse tree
         let doc = documents.get_mut(&doc_id).unwrap();
 
         // Calculate visible range for syntax highlighting optimization
@@ -823,7 +873,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         let _ = render::render(term, compositor, ctx, render_cache)?;
 
-        // Render overlay if in Overlay mode
         // Render modal if active
         if let Some(ref mut modal) = self.modal {
             use crate::layer::LayerPriority;
@@ -831,6 +880,11 @@ impl<T: TerminalBackend> Editor<T> {
             modal.render(layer);
             // Re-composite and render
             let _ = compositor.render_to_terminal(term, false)?;
+
+            // Explicitly set cursor if modal requests it
+            if let Some((row, col)) = modal.cursor_position() {
+                term.move_cursor(row, col)?;
+            }
         }
 
         Ok(())
@@ -840,6 +894,22 @@ impl<T: TerminalBackend> Editor<T> {
     fn set_mode(&mut self, mode: Mode) {
         self.current_mode = mode;
         self.dispatcher.set_mode(mode);
+
+        match mode {
+            Mode::Command => {
+                let settings = self.state.settings.command_line_window.clone();
+                self.modal = Some(Box::new(
+                    crate::command_line::component::CommandLineComponent::new(':', settings),
+                ));
+            }
+            Mode::Search => {
+                let settings = self.state.settings.command_line_window.clone();
+                self.modal = Some(Box::new(
+                    crate::command_line::component::CommandLineComponent::new('/', settings),
+                ));
+            }
+            _ => {}
+        }
     }
 
     /// Save document to file
@@ -905,6 +975,7 @@ impl<T: TerminalBackend> Editor<T> {
                 } else {
                     self.should_quit = true;
                     self.state.clear_command_line();
+                    self.modal = None;
                     self.set_mode(Mode::Normal);
                 }
             }
@@ -922,6 +993,9 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
                 self.state.clear_command_line();
+                self.modal = None;
+                use crate::layer::LayerPriority;
+                self.compositor.clear_layer(LayerPriority::POPUP);
                 self.set_mode(Mode::Normal);
             }
             ExecutionResult::WriteAndQuit => {
@@ -938,15 +1012,19 @@ impl<T: TerminalBackend> Editor<T> {
                 // Save successful, now quit
                 self.should_quit = true;
                 self.state.clear_command_line();
+                self.modal = None;
+                use crate::layer::LayerPriority;
+                self.compositor.clear_layer(LayerPriority::POPUP);
                 self.set_mode(Mode::Normal);
             }
             ExecutionResult::Failure => {
-                // Error already reported by executor to state/notification manager
-                // Keep command line visible so user can see it
+                // Error already reported by executor to state/notification
+                // manager Keep command line visible so user can see it
             }
             ExecutionResult::Redraw => {
                 // Close command line first before redraw
                 self.state.clear_command_line();
+                self.modal = None;
                 self.set_mode(Mode::Normal);
 
                 if let Err(e) = self.force_full_redraw() {
@@ -959,6 +1037,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.state.handle_error(e);
                 } else {
                     self.state.clear_command_line();
+                    self.modal = None;
                     self.set_mode(Mode::Normal);
                     // Force redraw after opening a file
                     if let Err(e) = self.force_full_redraw() {
@@ -1038,6 +1117,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             ExecutionResult::Success => {
                 self.state.clear_command_line();
+                self.modal = None;
                 self.set_mode(Mode::Normal);
             }
             ExecutionResult::Undo { count } => {

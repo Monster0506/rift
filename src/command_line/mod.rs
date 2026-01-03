@@ -15,6 +15,7 @@ use crate::state::CommandLineWindowSettings;
 use crate::viewport::Viewport;
 
 pub mod commands;
+pub mod component;
 pub mod settings;
 
 /// Options for rendering the command line

@@ -317,6 +317,7 @@ impl CommandExecutor {
                     cursor,
                     selectable,
                     sequences: _seqs,
+                    right_scroll: 0,
                 };
                 ExecutionResult::UndoTree { content }
             }
