@@ -31,4 +31,10 @@ pub trait Component {
 
     /// Render the component to the given layer
     fn render(&mut self, layer: &mut Layer);
+
+    /// Get the cursor position for this component (absolute terminal coordinates)
+    /// Returns None if the component doesn't want the cursor.
+    fn cursor_position(&self) -> Option<(u16, u16)> {
+        None
+    }
 }

@@ -44,6 +44,15 @@ pub struct Editor<T: TerminalBackend> {
     pub modal: Option<Box<dyn crate::component::Component>>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ComponentAction {
+    UndoTreeGoto(u64),
+    UndoTreeCancel,
+    ExecuteCommand(String),
+    ExecuteSearch(String),
+    CancelMode,
+}
+
 impl<T: TerminalBackend> Editor<T> {
     /// Create a new editor instance
     pub fn new(terminal: T) -> Result<Self, RiftError> {
@@ -89,7 +98,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         // Initialize terminal (clears screen, enters raw mode, etc.)
-        // We do this AFTER loading the document so we don't mess up the terminal if loading fails
+        // We do this AFTER loading the document so we don't mess up the terminal
+        // if loading fails
         terminal.init()?;
 
         // Get terminal size
@@ -110,8 +120,6 @@ impl<T: TerminalBackend> Editor<T> {
         state.update_filename(document.display_name().to_string());
 
         let compositor = LayerCompositor::new(size.rows as usize, size.cols as usize);
-
-        // Create document settings registry
 
         Ok(Self {
             term: terminal,
@@ -270,7 +278,8 @@ impl<T: TerminalBackend> Editor<T> {
             self.tab_order.remove(pos);
             self.documents.remove(&id);
 
-            // Shift current_tab if we closed the active one OR if it's now out of bounds
+            // Shift current_tab if we closed the active one OR if it's now
+            // out of bounds
             if pos <= self.current_tab && self.current_tab > 0 {
                 self.current_tab -= 1;
             }
@@ -287,8 +296,9 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Open a file in a new document or reload the current one
     ///
-    /// If file_path is Some, it opens that file (or creates a new document for it if not found).
-    /// If file_path is None, it reloads the current active document.
+    /// If file_path is Some, it opens that file (or creates a new document for
+    /// it if not found). If file_path is None, it reloads the current active
+    /// document.
     pub fn open_file(&mut self, file_path: Option<String>, force: bool) -> Result<(), RiftError> {
         if let Some(path_str) = file_path {
             // Check if already open
@@ -316,14 +326,16 @@ impl<T: TerminalBackend> Editor<T> {
             let document = match document_result {
                 Ok(doc) => doc,
                 Err(e) => {
-                    // If file doesn't exist, create a new empty buffer (standard :edit behavior)
-                    // For other errors (permission denied, is a directory, etc.), return the error
+                    // If file doesn't exist, create a new empty buffer (standard
+                    // :edit behavior). For other errors (permission denied, is a
+                    // directory, etc.), return the error
                     if e.kind == ErrorType::Io
                         && e.message
                             .contains("The system cannot find the file specified")
                     {
                         if std::path::Path::new(&path_str).exists() {
-                            // File exists but we couldn't read it (AccessDenied, IsDir, etc.)
+                            // File exists but we couldn't read it (AccessDenied,
+                            // IsDir, etc.)
                             return Err(e);
                         } else {
                             // File doesn't exist, so we are creating a new one
@@ -373,7 +385,7 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    /// Run the editor main loop
+    /// Perform a search in the document
     fn perform_search(&mut self, query: &str, direction: SearchDirection, skip_current: bool) {
         let doc_id = self.tab_order[self.current_tab];
 
@@ -381,7 +393,8 @@ impl<T: TerminalBackend> Editor<T> {
         let cursor = {
             let doc = self.documents.get(&doc_id).unwrap();
             let mut c = doc.buffer.cursor();
-            // If searching forward and skipping current, advance cursor to avoid matching at current position
+            // If searching forward and skipping current, advance cursor to avoid
+            // matching at current position
             if skip_current && direction == SearchDirection::Forward {
                 c = c.saturating_add(1);
             }
@@ -414,6 +427,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    /// Run the editor main loop
     pub fn run(&mut self) -> Result<(), RiftError> {
         // Initial render
         self.update_and_render()?;
@@ -433,311 +447,86 @@ impl<T: TerminalBackend> Editor<T> {
                     None => continue,
                 };
 
-                // Handle overlay input first (modal overlay)
-                if self.current_mode == Mode::Overlay {
-                    let (selectable, current_cursor) =
-                        if let Some(ref content) = self.state.overlay_content {
-                            (content.selectable.clone(), content.cursor)
-                        } else {
-                            // Should not happen in Overlay mode without content
-                            self.set_mode(Mode::Normal);
-                            continue;
-                        };
+                // Handle generic modal input
+                let modal_result = self
+                    .modal
+                    .as_mut()
+                    .map(|modal| modal.handle_input(key_press));
 
+                if let Some(result) = modal_result {
                     use crate::component::EventResult;
-                    use crate::select_view::SelectView;
-                    use std::cell::RefCell;
-                    use std::rc::Rc; // Added Rc
-
-                    #[derive(Clone, Copy)]
-                    enum OverlayAction {
-                        None,
-                        Cursor(usize),
-                        Select(usize),
-                        Cancel,
-                    }
-                    let action_cell = Rc::new(RefCell::new(OverlayAction::None));
-
-                    let consumed = {
-                        // Scope for view borrowing action
-                        let mut view = SelectView::new().with_selectable(selectable);
-                        view.set_selected_line(Some(current_cursor));
-
-                        // Actions need to capture atomic/rc references now that SelectView is 'static
-                        let ac = action_cell.clone();
-                        let ac2 = action_cell.clone();
-                        let ac3 = action_cell.clone();
-                        let ac4 = action_cell.clone();
-
-                        let mut view = view
-                            .on_down(move |idx| {
-                                *ac.borrow_mut() = OverlayAction::Cursor(idx);
-                                EventResult::Consumed
-                            })
-                            .on_up(move |idx| {
-                                *ac2.borrow_mut() = OverlayAction::Cursor(idx);
-                                EventResult::Consumed
-                            })
-                            .on_select(move |idx| {
-                                *ac3.borrow_mut() = OverlayAction::Select(idx);
-                                EventResult::Consumed
-                            })
-                            .on_cancel(move || {
-                                *ac4.borrow_mut() = OverlayAction::Cancel;
-                                EventResult::Consumed
-                            });
-
-                        view.handle_input(key_press) == EventResult::Consumed
-                    };
-
-                    if consumed {
-                        // Extract action from RefCell
-                        let action = *action_cell.borrow();
-                        match action {
-                            OverlayAction::Cursor(idx) => {
-                                if let Some(ref mut content) = self.state.overlay_content {
-                                    content.cursor = idx;
-
-                                    // Real Preview Logic
-                                    if let Some(&target_seq) = content.sequences.get(idx) {
-                                        use crate::history::EditSeq;
-                                        if target_seq != EditSeq::MAX {
-                                            let doc_id = self.tab_order[self.current_tab];
-                                            let doc = self.documents.get_mut(&doc_id).unwrap();
-
-                                            // 1. Calculate replay path
-                                            if let Ok(replay_path) =
-                                                doc.history.compute_replay_path(
-                                                    doc.history.current,
-                                                    target_seq,
-                                                )
-                                            {
-                                                // 2. Clone buffer to temporary state (cheap for PieceTable?)
-                                                // Actually TextBuffer clone might be heavy if not purely distinct-structure based.
-                                                // But let's assume it's okay for now or optimize later.
-                                                // We need a way to clone the buffer efficiently.
-                                                // TextBuffer contains LineIndex which contains PieceTable.
-                                                // PieceTable is Copy-on-Write friendly usually?
-                                                // Let's rely on standard Clone for now.
-                                                // We can use `doc.buffer.clone()` if derived, check `buffer/mod.rs`?
-                                                // It doesn't derive Clone. We need to implement it or manually construct.
-                                                // Let's manually construct a new TextBuffer from current content.
-                                                // Or better yet, add Clone to TextBuffer/LineIndex later.
-                                                // For now, let's just get the bytes and make a new one.
-                                                // Wait, getting bytes is expensive.
-                                                // Let's modify buffer/mod.rs to derive Clone first?
-                                                // Or, just use `doc.buffer.line_index.clone()` if that is possible?
-
-                                                // Temporary workaround: Re-construct buffer from full text (Slow but correct)
-                                                // Optimization: Implement Clone for TextBuffer
-                                                let mut temp_buffer = {
-                                                    let before = doc.buffer.get_before_gap();
-                                                    let after = doc.buffer.get_after_gap();
-                                                    let mut temp = crate::buffer::TextBuffer::new(
-                                                        before.len() + after.len(),
-                                                    )
-                                                    .unwrap();
-                                                    temp.insert_bytes(&before).unwrap();
-                                                    temp.insert_bytes(&after).unwrap();
-                                                    temp.move_to_start(); // Reset cursor
-                                                                          // Move cursor to where it was? Not needed for preview content really.
-                                                                          // But we need to set revision to match?
-                                                                          // Actually we just apply ops on top.
-                                                    temp
-                                                };
-
-                                                // 3. Apply Replay Ops
-                                                // Undo first
-                                                for tx in &replay_path.undo_ops {
-                                                    for op in tx.inverse() {
-                                                        // We need to apply op to temp_buffer.
-                                                        // doc.apply_operation is a wrapper around buffer edits + syntax.
-                                                        // We can duplicate the logic or extract it.
-                                                        // Since we made apply_operation pub(crate), we can't call it on temp_buffer
-                                                        // because it's a method on Document, not Buffer.
-                                                        // We need to wrap temp_buffer in a pseudo-Document or extract logic to Buffer.
-                                                        // Let's extract specific apply logic or just re-implement simple application here.
-                                                        // Actually `apply_operation` does simple buffer calls.
-
-                                                        match op {
-                                                            crate::history::EditOperation::Insert { position, text, .. } => {
-                                                                let line_start = temp_buffer.line_index.get_start(position.line as usize).unwrap_or(0);
-                                                                let offset = line_start + position.col as usize;
-                                                                let _ = temp_buffer.set_cursor(offset);
-                                                                let _ = temp_buffer.insert_str(&text);
-                                                            }
-                                                            crate::history::EditOperation::Delete { range, .. } => {
-                                                                let start_line_start = temp_buffer.line_index.get_start(range.start.line as usize).unwrap_or(0);
-                                                                let start_offset = start_line_start + range.start.col as usize;
-                                                                let end_line_start = temp_buffer.line_index.get_start(range.end.line as usize).unwrap_or(0);
-                                                                let end_offset = end_line_start + range.end.col as usize;
-                                                                let _ = temp_buffer.set_cursor(start_offset);
-                                                                for _ in start_offset..end_offset {
-                                                                    temp_buffer.delete_forward();
-                                                                }
-                                                            }
-                                                            crate::history::EditOperation::Replace { range, new_text, .. } => {
-                                                                let start_line_start = temp_buffer.line_index.get_start(range.start.line as usize).unwrap_or(0);
-                                                                let start_offset = start_line_start + range.start.col as usize;
-                                                                let end_line_start = temp_buffer.line_index.get_start(range.end.line as usize).unwrap_or(0);
-                                                                let end_offset = end_line_start + range.end.col as usize;
-                                                                let _ = temp_buffer.set_cursor(start_offset);
-                                                                for _ in start_offset..end_offset {
-                                                                    temp_buffer.delete_forward();
-                                                                }
-                                                                let _ = temp_buffer.insert_str(&new_text);
-                                                            }
-                                                            crate::history::EditOperation::BlockChange { range, new_content, .. } => {
-                                                                let start_line_start = temp_buffer.line_index.get_start(range.start.line as usize).unwrap_or(0);
-                                                                let start_offset = start_line_start + range.start.col as usize;
-                                                                let end_line_start = temp_buffer.line_index.get_start(range.end.line as usize).unwrap_or(0);
-                                                                let end_offset = end_line_start + range.end.col as usize;
-                                                                let _ = temp_buffer.set_cursor(start_offset);
-                                                                for _ in start_offset..end_offset {
-                                                                    temp_buffer.delete_forward();
-                                                                }
-                                                                let new_text = new_content.join("\n");
-                                                                let _ = temp_buffer.insert_str(&new_text);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                // Redo next
-                                                for tx in &replay_path.redo_ops {
-                                                    for op in &tx.ops {
-                                                        match op {
-                                                            crate::history::EditOperation::Insert { position, text, .. } => {
-                                                                let line_start = temp_buffer.line_index.get_start(position.line as usize).unwrap_or(0);
-                                                                let offset = line_start + position.col as usize;
-                                                                let _ = temp_buffer.set_cursor(offset);
-                                                                let _ = temp_buffer.insert_str(&text);
-                                                            }
-                                                            crate::history::EditOperation::Delete { range, .. } => {
-                                                                let start_line_start = temp_buffer.line_index.get_start(range.start.line as usize).unwrap_or(0);
-                                                                let start_offset = start_line_start + range.start.col as usize;
-                                                                let end_line_start = temp_buffer.line_index.get_start(range.end.line as usize).unwrap_or(0);
-                                                                let end_offset = end_line_start + range.end.col as usize;
-                                                                let _ = temp_buffer.set_cursor(start_offset);
-                                                                for _ in start_offset..end_offset {
-                                                                    temp_buffer.delete_forward();
-                                                                }
-                                                            }
-                                                            crate::history::EditOperation::Replace { range, new_text, .. } => {
-                                                                let start_line_start = temp_buffer.line_index.get_start(range.start.line as usize).unwrap_or(0);
-                                                                let start_offset = start_line_start + range.start.col as usize;
-                                                                let end_line_start = temp_buffer.line_index.get_start(range.end.line as usize).unwrap_or(0);
-                                                                let end_offset = end_line_start + range.end.col as usize;
-                                                                let _ = temp_buffer.set_cursor(start_offset);
-                                                                for _ in start_offset..end_offset {
-                                                                    temp_buffer.delete_forward();
-                                                                }
-                                                                let _ = temp_buffer.insert_str(&new_text);
-                                                            }
-                                                            crate::history::EditOperation::BlockChange { range, new_content, .. } => {
-                                                                let start_line_start = temp_buffer.line_index.get_start(range.start.line as usize).unwrap_or(0);
-                                                                let start_offset = start_line_start + range.start.col as usize;
-                                                                let end_line_start = temp_buffer.line_index.get_start(range.end.line as usize).unwrap_or(0);
-                                                                let end_offset = end_line_start + range.end.col as usize;
-                                                                let _ = temp_buffer.set_cursor(start_offset);
-                                                                for _ in start_offset..end_offset {
-                                                                    temp_buffer.delete_forward();
-                                                                }
-                                                                let new_text = new_content.join("\n");
-                                                                let _ = temp_buffer.insert_str(&new_text);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                // 4. Render to cells using Viewport-like logic
-                                                // We can reuse render::draw_buffer? No, that draws to Frame.
-                                                // We need Vec<Vec<Cell>>.
-                                                // Let's implement a simple renderer here.
-                                                let lines = temp_buffer.get_total_lines();
-                                                let mut new_right_content = Vec::new();
-                                                for i in 0..lines {
-                                                    let bytes = temp_buffer.get_line_bytes(i);
-                                                    let s = String::from_utf8_lossy(&bytes);
-                                                    let mut row = Vec::new();
-                                                    for char in s.chars() {
-                                                        row.push(crate::layer::Cell::from_char(
-                                                            char,
-                                                        ));
-                                                    }
-                                                    new_right_content.push(row);
-                                                }
-
-                                                content.right = new_right_content;
-
-                                                // 5. Intelligent Scrolling
-                                                // Find the last changed line in the target transaction
-                                                if let Some(node) =
-                                                    doc.history.nodes.get(&target_seq)
-                                                {
-                                                    // Get the last operation
-                                                    if let Some(last_op) =
-                                                        node.transaction.ops.last()
-                                                    {
-                                                        let changed_line = match last_op {
-                                                            crate::history::EditOperation::Insert { position, .. } => position.line,
-                                                            crate::history::EditOperation::Delete { range, .. } => range.start.line,
-                                                            crate::history::EditOperation::Replace { range, .. } => range.start.line,
-                                                            crate::history::EditOperation::BlockChange { range, .. } => range.start.line,
-                                                        } as usize;
-
-                                                        // Scroll so that changed_line is at index 2 (3rd from top)
-                                                        content.right_scroll =
-                                                            changed_line.saturating_sub(2);
-                                                    }
-                                                }
-                                            }
+                    match result {
+                        EventResult::Consumed => continue,
+                        EventResult::Ignored => continue,
+                        EventResult::Action(any) => {
+                            if let Some(action) = any.downcast_ref::<ComponentAction>() {
+                                match action {
+                                    ComponentAction::UndoTreeGoto(seq) => {
+                                        let doc_id = self.tab_order[self.current_tab];
+                                        let doc = self.documents.get_mut(&doc_id).unwrap();
+                                        if let Err(e) = doc.goto_seq(*seq) {
+                                            self.state.handle_error(RiftError::new(
+                                                ErrorType::Execution,
+                                                "UNDO_FAILED",
+                                                format!("Failed to go to sequence {}: {}", seq, e),
+                                            ));
                                         }
+                                        // Close modal
+                                        self.modal = None;
+                                        use crate::layer::LayerPriority;
+                                        self.compositor.clear_layer(LayerPriority::POPUP);
+                                        self.set_mode(Mode::Normal);
+                                        self.update_and_render()?;
                                     }
-                                }
-                                self.update_and_render()?;
-                            }
-                            OverlayAction::Select(idx) => {
-                                if let Some(ref content) = self.state.overlay_content {
-                                    if let Some(&seq) = content.sequences.get(idx) {
-                                        use crate::history::EditSeq;
-                                        if seq != EditSeq::MAX {
-                                            let doc_id = self.tab_order[self.current_tab];
-                                            let doc = self.documents.get_mut(&doc_id).unwrap();
-                                            if let Err(e) = doc.goto_seq(seq) {
-                                                self.state.handle_error(
-                                                    crate::error::RiftError::new(
-                                                        crate::error::ErrorType::Execution,
-                                                        "UNDO_FAILED",
-                                                        format!(
-                                                            "Failed to go to sequence {}: {}",
-                                                            seq, e
-                                                        ),
-                                                    ),
-                                                );
-                                            }
-                                            // Close after selection
-                                            self.state.overlay_content = None;
-                                            use crate::layer::LayerPriority;
-                                            self.compositor.clear_layer(LayerPriority::POPUP);
-                                            self.set_mode(Mode::Normal);
-                                            self.update_and_render()?;
+                                    ComponentAction::UndoTreeCancel => {
+                                        self.modal = None;
+                                        use crate::layer::LayerPriority;
+                                        self.compositor.clear_layer(LayerPriority::POPUP);
+                                        self.set_mode(Mode::Normal);
+                                        self.update_and_render()?;
+                                    }
+                                    ComponentAction::ExecuteCommand(cmd) => {
+                                        // Sync legacy state for consistency
+                                        self.state.command_line = cmd.clone();
+
+                                        // Parse and execute the command
+                                        let parsed_command = self.command_parser.parse(cmd);
+                                        let doc_id = self.tab_order[self.current_tab];
+                                        let execution_result = CommandExecutor::execute(
+                                            parsed_command.clone(),
+                                            &mut self.state,
+                                            self.documents
+                                                .get_mut(&doc_id)
+                                                .expect("active document missing"),
+                                            &self.settings_registry,
+                                            &self.document_settings_registry,
+                                        );
+
+                                        self.handle_execution_result(execution_result);
+                                        self.update_and_render()?;
+                                    }
+                                    ComponentAction::ExecuteSearch(query) => {
+                                        self.modal = None;
+                                        if !query.is_empty() {
+                                            self.state.last_search_query = Some(query.clone());
+                                            self.perform_search(
+                                                query,
+                                                SearchDirection::Forward,
+                                                false,
+                                            );
                                         }
+                                        self.set_mode(Mode::Normal);
+                                        self.update_and_render()?;
+                                    }
+                                    ComponentAction::CancelMode => {
+                                        self.modal = None;
+                                        self.set_mode(Mode::Normal);
+                                        self.update_and_render()?;
                                     }
                                 }
                             }
-                            OverlayAction::Cancel => {
-                                self.state.overlay_content = None;
-                                use crate::layer::LayerPriority;
-                                self.compositor.clear_layer(LayerPriority::POPUP);
-                                self.set_mode(Mode::Normal);
-                                self.update_and_render()?;
-                            }
-                            OverlayAction::None => {
-                                // Consumed but no action (e.g. boundary hit)
-                            }
+                            continue;
                         }
-                        continue;
                     }
                 }
 
@@ -757,7 +546,8 @@ impl<T: TerminalBackend> Editor<T> {
                     _ => self.dispatcher.translate_key(key_press),
                 };
 
-                // Execute command if it affects the buffer (and not in command mode)
+                // Execute command if it affects the buffer (and not in command
+                // mode)
                 let should_execute_buffer = current_mode != Mode::Command
                     && current_mode != Mode::Search
                     && !matches!(
@@ -780,7 +570,8 @@ impl<T: TerminalBackend> Editor<T> {
                     let doc_id = self.tab_order[self.current_tab];
 
                     // Wrap mutating commands (except Undo/Redo) in a transaction
-                    // Skip wrapping in Insert mode - it already has an open transaction from mode entry
+                    // Skip wrapping in Insert mode - it already has an open
+                    // transaction from mode entry
                     let needs_transaction = cmd.is_mutating()
                         && !matches!(cmd, Command::Undo | Command::Redo)
                         && current_mode != Mode::Insert;
@@ -926,7 +717,8 @@ impl<T: TerminalBackend> Editor<T> {
         // Handle command line editing (mutations happen here)
         match command {
             Command::AppendToCommandLine(ch) => {
-                // ch is guaranteed to be valid ASCII (32-126) from translate_command_mode
+                // ch is guaranteed to be valid ASCII (32-126) from
+                // translate_command_mode
                 self.state.append_to_command_line(ch);
             }
             Command::DeleteFromCommandLine => {
@@ -981,7 +773,8 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Update state and render the editor (for initial render)
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
-        // Update buffer and cursor state only (no input tracking on initial render)
+        // Update buffer and cursor state only (no input tracking on initial
+        // render)
         let tab_width = self.active_document().options.tab_width;
         let cursor_line = self.active_document().buffer.get_line();
         let cursor_col =
@@ -1041,7 +834,8 @@ impl<T: TerminalBackend> Editor<T> {
         } = self;
 
         let doc_id = tab_order[*current_tab];
-        // We need mutable access to call syntax.highlights() which potentially updates parse tree
+        // We need mutable access to call syntax.highlights() which potentially
+        // updates parse tree
         let doc = documents.get_mut(&doc_id).unwrap();
 
         // Calculate visible range for syntax highlighting optimization
@@ -1079,21 +873,17 @@ impl<T: TerminalBackend> Editor<T> {
 
         let _ = render::render(term, compositor, ctx, render_cache)?;
 
-        // Render overlay if in Overlay mode
-        if *current_mode == Mode::Overlay {
-            if let Some(ref overlay) = state.overlay_content {
-                use crate::layer::LayerPriority;
-                use crate::select_view::SelectView;
+        // Render modal if active
+        if let Some(ref mut modal) = self.modal {
+            use crate::layer::LayerPriority;
+            let layer = compositor.get_layer_mut(LayerPriority::POPUP);
+            modal.render(layer);
+            // Re-composite and render
+            let _ = compositor.render_to_terminal(term, false)?;
 
-                let mut select_view = SelectView::new().with_left_width(overlay.left_width_percent);
-                select_view.set_left_content(overlay.left.clone());
-                select_view.set_right_content(overlay.right.clone());
-                select_view.set_selected_line(Some(overlay.cursor));
-
-                let layer = compositor.get_layer_mut(LayerPriority::POPUP);
-                select_view.render(layer);
-                // Re-composite and render
-                let _ = compositor.render_to_terminal(term, false)?;
+            // Explicitly set cursor if modal requests it
+            if let Some((row, col)) = modal.cursor_position() {
+                term.move_cursor(row, col)?;
             }
         }
 
@@ -1104,6 +894,22 @@ impl<T: TerminalBackend> Editor<T> {
     fn set_mode(&mut self, mode: Mode) {
         self.current_mode = mode;
         self.dispatcher.set_mode(mode);
+
+        match mode {
+            Mode::Command => {
+                let settings = self.state.settings.command_line_window.clone();
+                self.modal = Some(Box::new(
+                    crate::command_line::component::CommandLineComponent::new(':', settings),
+                ));
+            }
+            Mode::Search => {
+                let settings = self.state.settings.command_line_window.clone();
+                self.modal = Some(Box::new(
+                    crate::command_line::component::CommandLineComponent::new('/', settings),
+                ));
+            }
+            _ => {}
+        }
     }
 
     /// Save document to file
@@ -1169,6 +975,7 @@ impl<T: TerminalBackend> Editor<T> {
                 } else {
                     self.should_quit = true;
                     self.state.clear_command_line();
+                    self.modal = None;
                     self.set_mode(Mode::Normal);
                 }
             }
@@ -1186,6 +993,9 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
                 self.state.clear_command_line();
+                self.modal = None;
+                use crate::layer::LayerPriority;
+                self.compositor.clear_layer(LayerPriority::POPUP);
                 self.set_mode(Mode::Normal);
             }
             ExecutionResult::WriteAndQuit => {
@@ -1202,15 +1012,19 @@ impl<T: TerminalBackend> Editor<T> {
                 // Save successful, now quit
                 self.should_quit = true;
                 self.state.clear_command_line();
+                self.modal = None;
+                use crate::layer::LayerPriority;
+                self.compositor.clear_layer(LayerPriority::POPUP);
                 self.set_mode(Mode::Normal);
             }
             ExecutionResult::Failure => {
-                // Error already reported by executor to state/notification manager
-                // Keep command line visible so user can see it
+                // Error already reported by executor to state/notification
+                // manager Keep command line visible so user can see it
             }
             ExecutionResult::Redraw => {
                 // Close command line first before redraw
                 self.state.clear_command_line();
+                self.modal = None;
                 self.set_mode(Mode::Normal);
 
                 if let Err(e) = self.force_full_redraw() {
@@ -1223,6 +1037,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.state.handle_error(e);
                 } else {
                     self.state.clear_command_line();
+                    self.modal = None;
                     self.set_mode(Mode::Normal);
                     // Force redraw after opening a file
                     if let Err(e) = self.force_full_redraw() {
@@ -1302,6 +1117,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             ExecutionResult::Success => {
                 self.state.clear_command_line();
+                self.modal = None;
                 self.set_mode(Mode::Normal);
             }
             ExecutionResult::Undo { count } => {
@@ -1376,7 +1192,30 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Normal);
             }
             ExecutionResult::UndoTree { content } => {
-                self.state.overlay_content = Some(content);
+                use crate::component::EventResult;
+                use crate::select_view::SelectView;
+
+                let mut view = SelectView::new().with_left_width(content.left_width_percent);
+                view.set_left_content(content.left);
+                view.set_right_content(content.right);
+                view.set_selected_line(Some(content.cursor));
+                let view = view.with_selectable(content.selectable.clone());
+
+                let sequences = content.sequences;
+                let view = view
+                    .on_select(move |idx| {
+                        if let Some(&seq) = sequences.get(idx) {
+                            if seq != crate::history::EditSeq::MAX {
+                                return EventResult::Action(Box::new(
+                                    ComponentAction::UndoTreeGoto(seq),
+                                ));
+                            }
+                        }
+                        EventResult::Consumed
+                    })
+                    .on_cancel(|| EventResult::Action(Box::new(ComponentAction::UndoTreeCancel)));
+
+                self.modal = Some(Box::new(view));
                 self.state.clear_command_line();
                 self.set_mode(Mode::Overlay);
             }

@@ -367,7 +367,6 @@ impl Default for SelectView {
         Self::new()
     }
 }
-
 impl Component for SelectView {
     fn handle_input(&mut self, key: Key) -> EventResult {
         SelectView::handle_input(self, key)
