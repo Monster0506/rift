@@ -497,6 +497,203 @@ impl<T: TerminalBackend> Editor<T> {
                             OverlayAction::Cursor(idx) => {
                                 if let Some(ref mut content) = self.state.overlay_content {
                                     content.cursor = idx;
+
+                                    // Real Preview Logic
+                                    if let Some(&target_seq) = content.sequences.get(idx) {
+                                        use crate::history::EditSeq;
+                                        if target_seq != EditSeq::MAX {
+                                            let doc_id = self.tab_order[self.current_tab];
+                                            let doc = self.documents.get_mut(&doc_id).unwrap();
+
+                                            // 1. Calculate replay path
+                                            if let Ok(replay_path) =
+                                                doc.history.compute_replay_path(
+                                                    doc.history.current,
+                                                    target_seq,
+                                                )
+                                            {
+                                                // 2. Clone buffer to temporary state (cheap for PieceTable?)
+                                                // Actually TextBuffer clone might be heavy if not purely distinct-structure based.
+                                                // But let's assume it's okay for now or optimize later.
+                                                // We need a way to clone the buffer efficiently.
+                                                // TextBuffer contains LineIndex which contains PieceTable.
+                                                // PieceTable is Copy-on-Write friendly usually?
+                                                // Let's rely on standard Clone for now.
+                                                // We can use `doc.buffer.clone()` if derived, check `buffer/mod.rs`?
+                                                // It doesn't derive Clone. We need to implement it or manually construct.
+                                                // Let's manually construct a new TextBuffer from current content.
+                                                // Or better yet, add Clone to TextBuffer/LineIndex later.
+                                                // For now, let's just get the bytes and make a new one.
+                                                // Wait, getting bytes is expensive.
+                                                // Let's modify buffer/mod.rs to derive Clone first?
+                                                // Or, just use `doc.buffer.line_index.clone()` if that is possible?
+
+                                                // Temporary workaround: Re-construct buffer from full text (Slow but correct)
+                                                // Optimization: Implement Clone for TextBuffer
+                                                let mut temp_buffer = {
+                                                    let before = doc.buffer.get_before_gap();
+                                                    let after = doc.buffer.get_after_gap();
+                                                    let mut temp = crate::buffer::TextBuffer::new(
+                                                        before.len() + after.len(),
+                                                    )
+                                                    .unwrap();
+                                                    temp.insert_bytes(&before).unwrap();
+                                                    temp.insert_bytes(&after).unwrap();
+                                                    temp.move_to_start(); // Reset cursor
+                                                                          // Move cursor to where it was? Not needed for preview content really.
+                                                                          // But we need to set revision to match?
+                                                                          // Actually we just apply ops on top.
+                                                    temp
+                                                };
+
+                                                // 3. Apply Replay Ops
+                                                // Undo first
+                                                for tx in &replay_path.undo_ops {
+                                                    for op in tx.inverse() {
+                                                        // We need to apply op to temp_buffer.
+                                                        // doc.apply_operation is a wrapper around buffer edits + syntax.
+                                                        // We can duplicate the logic or extract it.
+                                                        // Since we made apply_operation pub(crate), we can't call it on temp_buffer
+                                                        // because it's a method on Document, not Buffer.
+                                                        // We need to wrap temp_buffer in a pseudo-Document or extract logic to Buffer.
+                                                        // Let's extract specific apply logic or just re-implement simple application here.
+                                                        // Actually `apply_operation` does simple buffer calls.
+
+                                                        match op {
+                                                            crate::history::EditOperation::Insert { position, text, .. } => {
+                                                                let line_start = temp_buffer.line_index.get_start(position.line as usize).unwrap_or(0);
+                                                                let offset = line_start + position.col as usize;
+                                                                let _ = temp_buffer.set_cursor(offset);
+                                                                let _ = temp_buffer.insert_str(&text);
+                                                            }
+                                                            crate::history::EditOperation::Delete { range, .. } => {
+                                                                let start_line_start = temp_buffer.line_index.get_start(range.start.line as usize).unwrap_or(0);
+                                                                let start_offset = start_line_start + range.start.col as usize;
+                                                                let end_line_start = temp_buffer.line_index.get_start(range.end.line as usize).unwrap_or(0);
+                                                                let end_offset = end_line_start + range.end.col as usize;
+                                                                let _ = temp_buffer.set_cursor(start_offset);
+                                                                for _ in start_offset..end_offset {
+                                                                    temp_buffer.delete_forward();
+                                                                }
+                                                            }
+                                                            crate::history::EditOperation::Replace { range, new_text, .. } => {
+                                                                let start_line_start = temp_buffer.line_index.get_start(range.start.line as usize).unwrap_or(0);
+                                                                let start_offset = start_line_start + range.start.col as usize;
+                                                                let end_line_start = temp_buffer.line_index.get_start(range.end.line as usize).unwrap_or(0);
+                                                                let end_offset = end_line_start + range.end.col as usize;
+                                                                let _ = temp_buffer.set_cursor(start_offset);
+                                                                for _ in start_offset..end_offset {
+                                                                    temp_buffer.delete_forward();
+                                                                }
+                                                                let _ = temp_buffer.insert_str(&new_text);
+                                                            }
+                                                            crate::history::EditOperation::BlockChange { range, new_content, .. } => {
+                                                                let start_line_start = temp_buffer.line_index.get_start(range.start.line as usize).unwrap_or(0);
+                                                                let start_offset = start_line_start + range.start.col as usize;
+                                                                let end_line_start = temp_buffer.line_index.get_start(range.end.line as usize).unwrap_or(0);
+                                                                let end_offset = end_line_start + range.end.col as usize;
+                                                                let _ = temp_buffer.set_cursor(start_offset);
+                                                                for _ in start_offset..end_offset {
+                                                                    temp_buffer.delete_forward();
+                                                                }
+                                                                let new_text = new_content.join("\n");
+                                                                let _ = temp_buffer.insert_str(&new_text);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                // Redo next
+                                                for tx in &replay_path.redo_ops {
+                                                    for op in &tx.ops {
+                                                        match op {
+                                                            crate::history::EditOperation::Insert { position, text, .. } => {
+                                                                let line_start = temp_buffer.line_index.get_start(position.line as usize).unwrap_or(0);
+                                                                let offset = line_start + position.col as usize;
+                                                                let _ = temp_buffer.set_cursor(offset);
+                                                                let _ = temp_buffer.insert_str(&text);
+                                                            }
+                                                            crate::history::EditOperation::Delete { range, .. } => {
+                                                                let start_line_start = temp_buffer.line_index.get_start(range.start.line as usize).unwrap_or(0);
+                                                                let start_offset = start_line_start + range.start.col as usize;
+                                                                let end_line_start = temp_buffer.line_index.get_start(range.end.line as usize).unwrap_or(0);
+                                                                let end_offset = end_line_start + range.end.col as usize;
+                                                                let _ = temp_buffer.set_cursor(start_offset);
+                                                                for _ in start_offset..end_offset {
+                                                                    temp_buffer.delete_forward();
+                                                                }
+                                                            }
+                                                            crate::history::EditOperation::Replace { range, new_text, .. } => {
+                                                                let start_line_start = temp_buffer.line_index.get_start(range.start.line as usize).unwrap_or(0);
+                                                                let start_offset = start_line_start + range.start.col as usize;
+                                                                let end_line_start = temp_buffer.line_index.get_start(range.end.line as usize).unwrap_or(0);
+                                                                let end_offset = end_line_start + range.end.col as usize;
+                                                                let _ = temp_buffer.set_cursor(start_offset);
+                                                                for _ in start_offset..end_offset {
+                                                                    temp_buffer.delete_forward();
+                                                                }
+                                                                let _ = temp_buffer.insert_str(&new_text);
+                                                            }
+                                                            crate::history::EditOperation::BlockChange { range, new_content, .. } => {
+                                                                let start_line_start = temp_buffer.line_index.get_start(range.start.line as usize).unwrap_or(0);
+                                                                let start_offset = start_line_start + range.start.col as usize;
+                                                                let end_line_start = temp_buffer.line_index.get_start(range.end.line as usize).unwrap_or(0);
+                                                                let end_offset = end_line_start + range.end.col as usize;
+                                                                let _ = temp_buffer.set_cursor(start_offset);
+                                                                for _ in start_offset..end_offset {
+                                                                    temp_buffer.delete_forward();
+                                                                }
+                                                                let new_text = new_content.join("\n");
+                                                                let _ = temp_buffer.insert_str(&new_text);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                // 4. Render to cells using Viewport-like logic
+                                                // We can reuse render::draw_buffer? No, that draws to Frame.
+                                                // We need Vec<Vec<Cell>>.
+                                                // Let's implement a simple renderer here.
+                                                let lines = temp_buffer.get_total_lines();
+                                                let mut new_right_content = Vec::new();
+                                                for i in 0..lines {
+                                                    let bytes = temp_buffer.get_line_bytes(i);
+                                                    let s = String::from_utf8_lossy(&bytes);
+                                                    let mut row = Vec::new();
+                                                    for char in s.chars() {
+                                                        row.push(crate::layer::Cell::from_char(
+                                                            char,
+                                                        ));
+                                                    }
+                                                    new_right_content.push(row);
+                                                }
+
+                                                content.right = new_right_content;
+
+                                                // 5. Intelligent Scrolling
+                                                // Find the last changed line in the target transaction
+                                                if let Some(node) =
+                                                    doc.history.nodes.get(&target_seq)
+                                                {
+                                                    // Get the last operation
+                                                    if let Some(last_op) =
+                                                        node.transaction.ops.last()
+                                                    {
+                                                        let changed_line = match last_op {
+                                                            crate::history::EditOperation::Insert { position, .. } => position.line,
+                                                            crate::history::EditOperation::Delete { range, .. } => range.start.line,
+                                                            crate::history::EditOperation::Replace { range, .. } => range.start.line,
+                                                            crate::history::EditOperation::BlockChange { range, .. } => range.start.line,
+                                                        } as usize;
+
+                                                        // Scroll so that changed_line is at index 2 (3rd from top)
+                                                        content.right_scroll =
+                                                            changed_line.saturating_sub(2);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                                 self.update_and_render()?;
                             }

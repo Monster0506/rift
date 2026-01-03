@@ -491,36 +491,36 @@ impl UndoTree {
         Ok(())
     }
 
-    /// Jump to edit #n via checkpoint+replay
-    ///
-    /// Returns a ReplayPath describing the undo/redo operations needed.
-    /// The caller is responsible for applying these operations to the buffer.
-    pub fn goto_seq(&mut self, target: EditSeq) -> Result<ReplayPath, UndoError> {
-        // Validate target exists
-        if !self.nodes.contains_key(&target) {
-            return Err(UndoError::InvalidSeq(target));
+    /// Compute replay path from one edit to another without mutating state
+    pub fn compute_replay_path(&self, from: EditSeq, to: EditSeq) -> Result<ReplayPath, UndoError> {
+        // Validate targets exist
+        if !self.nodes.contains_key(&from) {
+            return Err(UndoError::InvalidSeq(from));
+        }
+        if !self.nodes.contains_key(&to) {
+            return Err(UndoError::InvalidSeq(to));
         }
 
-        // If already at target, return empty path
-        if self.current == target {
+        // If same, return empty
+        if from == to {
             return Ok(ReplayPath {
-                from_seq: self.current,
-                to_seq: target,
+                from_seq: from,
+                to_seq: to,
                 undo_ops: Vec::new(),
                 redo_ops: Vec::new(),
             });
         }
 
-        // Find ancestors of current and target
-        let current_ancestors = self.get_ancestors(self.current);
-        let target_ancestors = self.get_ancestors(target);
+        // Find ancestors
+        let current_ancestors = self.get_ancestors(from);
+        let target_ancestors = self.get_ancestors(to);
 
-        // Find common ancestor (LCA)
+        // Find common ancestor
         let common_ancestor = self.find_common_ancestor(&current_ancestors, &target_ancestors);
 
-        // Build undo path: current -> common_ancestor
+        // Build undo path: from -> common_ancestor
         let mut undo_ops = Vec::new();
-        let mut seq = self.current;
+        let mut seq = from;
         while seq != common_ancestor {
             if let Some(node) = self.nodes.get(&seq) {
                 undo_ops.push(node.transaction.clone());
@@ -534,10 +534,9 @@ impl UndoTree {
             }
         }
 
-        // Build redo path: common_ancestor -> target
-        // First collect the path from target back to common_ancestor, then reverse
+        // Build redo path: common_ancestor -> to
         let mut redo_path = Vec::new();
-        seq = target;
+        seq = to;
         while seq != common_ancestor {
             redo_path.push(seq);
             if let Some(node) = self.nodes.get(&seq) {
@@ -552,7 +551,6 @@ impl UndoTree {
         }
         redo_path.reverse();
 
-        // Build redo operations
         let mut redo_ops = Vec::new();
         for seq in redo_path.iter() {
             if let Some(node) = self.nodes.get(seq) {
@@ -560,8 +558,29 @@ impl UndoTree {
             }
         }
 
-        // Update last_visited_child along the redo path for proper redo tracking
-        seq = target;
+        Ok(ReplayPath {
+            from_seq: from,
+            to_seq: to,
+            undo_ops,
+            redo_ops,
+        })
+    }
+
+    /// Jump to edit #n via checkpoint+replay
+    ///
+    /// Returns a ReplayPath describing the undo/redo operations needed.
+    /// The caller is responsible for applying these operations to the buffer.
+    pub fn goto_seq(&mut self, target: EditSeq) -> Result<ReplayPath, UndoError> {
+        // Compute path first
+        let path = self.compute_replay_path(self.current, target)?;
+
+        // Update internal state (last_visited_child) along the redo path
+        // Find ancestors again for path calculation (could optimize but keeping it simple)
+        let current_ancestors = self.get_ancestors(self.current);
+        let target_ancestors = self.get_ancestors(target);
+        let common_ancestor = self.find_common_ancestor(&current_ancestors, &target_ancestors);
+
+        let mut seq = target;
         let mut path_to_target = vec![target];
         while seq != common_ancestor {
             if let Some(node) = self.nodes.get(&seq) {
@@ -588,17 +607,10 @@ impl UndoTree {
             }
         }
 
-        let from_seq = self.current;
-
         // Move to target
         self.current = target;
 
-        Ok(ReplayPath {
-            from_seq,
-            to_seq: target,
-            undo_ops,
-            redo_ops,
-        })
+        Ok(path)
     }
 
     /// Get all ancestors of a node (including the node itself)

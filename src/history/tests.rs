@@ -837,3 +837,53 @@ fn test_goto_seq_updates_last_visited_child() {
     tree.redo();
     assert_eq!(tree.current_seq(), 2);
 }
+
+#[test]
+fn test_compute_replay_path() {
+    let mut tree = UndoTree::new();
+
+    // Create branching structure:
+    // 0 -> 1 -> 2
+    //      |
+    //      +-> 3
+
+    let mut tx1 = EditTransaction::new("Edit 1");
+    tx1.record(EditOperation::Insert {
+        position: Position::new(0, 0),
+        text: "a".to_string(),
+        len: 1,
+    });
+    tree.push(tx1, None); // seq=1
+
+    let mut tx2 = EditTransaction::new("Edit 2");
+    tx2.record(EditOperation::Insert {
+        position: Position::new(0, 1),
+        text: "b".to_string(),
+        len: 1,
+    });
+    tree.push(tx2, None); // seq=2
+
+    tree.undo(); // Back to seq=1
+
+    let mut tx3 = EditTransaction::new("Edit 3");
+    tx3.record(EditOperation::Insert {
+        position: Position::new(0, 1),
+        text: "c".to_string(),
+        len: 1,
+    });
+    tree.push(tx3, None); // seq=3
+
+    // Current is seq=3. Compute path to seq=2.
+    // Should undo seq=3 (to seq=1) and redo seq=2.
+    let replay = tree.compute_replay_path(3, 2).unwrap();
+
+    assert_eq!(replay.from_seq, 3);
+    assert_eq!(replay.to_seq, 2);
+    assert_eq!(replay.undo_ops.len(), 1);
+    assert_eq!(replay.undo_ops[0].description, "Edit 3");
+    assert_eq!(replay.redo_ops.len(), 1);
+    assert_eq!(replay.redo_ops[0].description, "Edit 2");
+
+    // Verify state was NOT mutated
+    assert_eq!(tree.current_seq(), 3);
+}

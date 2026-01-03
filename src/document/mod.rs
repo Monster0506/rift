@@ -596,7 +596,7 @@ impl Document {
     }
 
     /// Apply an edit operation to the buffer (for undo/redo)
-    fn apply_operation(&mut self, op: &EditOperation) {
+    pub(crate) fn apply_operation(&mut self, op: &EditOperation) {
         match op {
             EditOperation::Insert { position, text, .. } => {
                 // Convert position to byte offset
