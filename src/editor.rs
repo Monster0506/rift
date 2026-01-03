@@ -44,6 +44,12 @@ pub struct Editor<T: TerminalBackend> {
     pub modal: Option<Box<dyn crate::component::Component>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ComponentAction {
+    UndoTreeGoto(u64),
+    UndoTreeCancel,
+}
+
 impl<T: TerminalBackend> Editor<T> {
     /// Create a new editor instance
     pub fn new(terminal: T) -> Result<Self, RiftError> {
@@ -433,114 +439,49 @@ impl<T: TerminalBackend> Editor<T> {
                     None => continue,
                 };
 
-                // Handle overlay input first (modal overlay)
-                if self.current_mode == Mode::Overlay {
-                    let (selectable, current_cursor) =
-                        if let Some(ref content) = self.state.overlay_content {
-                            (content.selectable.clone(), content.cursor)
-                        } else {
-                            // Should not happen in Overlay mode without content
-                            self.set_mode(Mode::Normal);
-                            continue;
-                        };
+                // Handle generic modal input
+                let modal_result = if let Some(ref mut modal) = self.modal {
+                    Some(modal.handle_input(key_press))
+                } else {
+                    None
+                };
 
+                if let Some(result) = modal_result {
                     use crate::component::EventResult;
-                    use crate::select_view::SelectView;
-                    use std::cell::RefCell;
-                    use std::rc::Rc; // Added Rc
-
-                    #[derive(Clone, Copy)]
-                    enum OverlayAction {
-                        None,
-                        Cursor(usize),
-                        Select(usize),
-                        Cancel,
-                    }
-                    let action_cell = Rc::new(RefCell::new(OverlayAction::None));
-
-                    let consumed = {
-                        // Scope for view borrowing action
-                        let mut view = SelectView::new().with_selectable(selectable);
-                        view.set_selected_line(Some(current_cursor));
-
-                        // Actions need to capture atomic/rc references now that SelectView is 'static
-                        let ac = action_cell.clone();
-                        let ac2 = action_cell.clone();
-                        let ac3 = action_cell.clone();
-                        let ac4 = action_cell.clone();
-
-                        let mut view = view
-                            .on_down(move |idx| {
-                                *ac.borrow_mut() = OverlayAction::Cursor(idx);
-                                EventResult::Consumed
-                            })
-                            .on_up(move |idx| {
-                                *ac2.borrow_mut() = OverlayAction::Cursor(idx);
-                                EventResult::Consumed
-                            })
-                            .on_select(move |idx| {
-                                *ac3.borrow_mut() = OverlayAction::Select(idx);
-                                EventResult::Consumed
-                            })
-                            .on_cancel(move || {
-                                *ac4.borrow_mut() = OverlayAction::Cancel;
-                                EventResult::Consumed
-                            });
-
-                        view.handle_input(key_press) == EventResult::Consumed
-                    };
-
-                    if consumed {
-                        // Extract action from RefCell
-                        let action = *action_cell.borrow();
-                        match action {
-                            OverlayAction::Cursor(idx) => {
-                                if let Some(ref mut content) = self.state.overlay_content {
-                                    content.cursor = idx;
-                                }
-                                self.update_and_render()?;
-                            }
-                            OverlayAction::Select(idx) => {
-                                if let Some(ref content) = self.state.overlay_content {
-                                    if let Some(&seq) = content.sequences.get(idx) {
-                                        use crate::history::EditSeq;
-                                        if seq != EditSeq::MAX {
-                                            let doc_id = self.tab_order[self.current_tab];
-                                            let doc = self.documents.get_mut(&doc_id).unwrap();
-                                            if let Err(e) = doc.goto_seq(seq) {
-                                                self.state.handle_error(
-                                                    crate::error::RiftError::new(
-                                                        crate::error::ErrorType::Execution,
-                                                        "UNDO_FAILED",
-                                                        format!(
-                                                            "Failed to go to sequence {}: {}",
-                                                            seq, e
-                                                        ),
-                                                    ),
-                                                );
-                                            }
-                                            // Close after selection
-                                            self.state.overlay_content = None;
-                                            use crate::layer::LayerPriority;
-                                            self.compositor.clear_layer(LayerPriority::POPUP);
-                                            self.set_mode(Mode::Normal);
-                                            self.update_and_render()?;
+                    match result {
+                        EventResult::Consumed => continue,
+                        EventResult::Ignored => continue, // Modals trap input by default
+                        EventResult::Action(any) => {
+                            if let Some(action) = any.downcast_ref::<ComponentAction>() {
+                                match action {
+                                    ComponentAction::UndoTreeGoto(seq) => {
+                                        let doc_id = self.tab_order[self.current_tab];
+                                        let doc = self.documents.get_mut(&doc_id).unwrap();
+                                        if let Err(e) = doc.goto_seq(*seq) {
+                                            self.state.handle_error(crate::error::RiftError::new(
+                                                crate::error::ErrorType::Execution,
+                                                "UNDO_FAILED",
+                                                format!("Failed to go to sequence {}: {}", seq, e),
+                                            ));
                                         }
+                                        // Close modal
+                                        self.modal = None;
+                                        use crate::layer::LayerPriority;
+                                        self.compositor.clear_layer(LayerPriority::POPUP);
+                                        self.set_mode(Mode::Normal);
+                                        self.update_and_render()?;
+                                    }
+                                    ComponentAction::UndoTreeCancel => {
+                                        self.modal = None;
+                                        use crate::layer::LayerPriority;
+                                        self.compositor.clear_layer(LayerPriority::POPUP);
+                                        self.set_mode(Mode::Normal);
+                                        self.update_and_render()?;
                                     }
                                 }
                             }
-                            OverlayAction::Cancel => {
-                                self.state.overlay_content = None;
-                                use crate::layer::LayerPriority;
-                                self.compositor.clear_layer(LayerPriority::POPUP);
-                                self.set_mode(Mode::Normal);
-                                self.update_and_render()?;
-                            }
-                            OverlayAction::None => {
-                                // Consumed but no action (e.g. boundary hit)
-                            }
+                            continue;
                         }
-                        continue;
                     }
                 }
 
@@ -883,21 +824,13 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = render::render(term, compositor, ctx, render_cache)?;
 
         // Render overlay if in Overlay mode
-        if *current_mode == Mode::Overlay {
-            if let Some(ref overlay) = state.overlay_content {
-                use crate::layer::LayerPriority;
-                use crate::select_view::SelectView;
-
-                let mut select_view = SelectView::new().with_left_width(overlay.left_width_percent);
-                select_view.set_left_content(overlay.left.clone());
-                select_view.set_right_content(overlay.right.clone());
-                select_view.set_selected_line(Some(overlay.cursor));
-
-                let layer = compositor.get_layer_mut(LayerPriority::POPUP);
-                select_view.render(layer);
-                // Re-composite and render
-                let _ = compositor.render_to_terminal(term, false)?;
-            }
+        // Render modal if active
+        if let Some(ref mut modal) = self.modal {
+            use crate::layer::LayerPriority;
+            let layer = compositor.get_layer_mut(LayerPriority::POPUP);
+            modal.render(layer);
+            // Re-composite and render
+            let _ = compositor.render_to_terminal(term, false)?;
         }
 
         Ok(())
@@ -1179,7 +1112,30 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Normal);
             }
             ExecutionResult::UndoTree { content } => {
-                self.state.overlay_content = Some(content);
+                use crate::component::EventResult;
+                use crate::select_view::SelectView;
+
+                let mut view = SelectView::new().with_left_width(content.left_width_percent);
+                view.set_left_content(content.left);
+                view.set_right_content(content.right);
+                view.set_selected_line(Some(content.cursor));
+                let view = view.with_selectable(content.selectable.clone());
+
+                let sequences = content.sequences;
+                let view = view
+                    .on_select(move |idx| {
+                        if let Some(&seq) = sequences.get(idx) {
+                            if seq != crate::history::EditSeq::MAX {
+                                return EventResult::Action(Box::new(
+                                    ComponentAction::UndoTreeGoto(seq),
+                                ));
+                            }
+                        }
+                        EventResult::Consumed
+                    })
+                    .on_cancel(|| EventResult::Action(Box::new(ComponentAction::UndoTreeCancel)));
+
+                self.modal = Some(Box::new(view));
                 self.state.clear_command_line();
                 self.set_mode(Mode::Overlay);
             }
