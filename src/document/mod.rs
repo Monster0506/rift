@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 use tree_sitter::{InputEdit, Point};
 
 pub mod definitions;
+pub mod manager;
 use definitions::DocumentOptions;
+pub use manager::DocumentManager;
 
 /// Unique identifier for documents
 pub type DocumentId = u64;
@@ -778,6 +780,15 @@ impl Document {
             )),
         }
     }
+
+    /// Find all occurrences of the pattern in the document
+    pub fn find_all_matches(
+        &self,
+        query: &str,
+    ) -> Result<Vec<crate::search::SearchMatch>, RiftError> {
+        crate::search::find_all(&self.buffer, query)
+    }
+
     /// Get a preview of the document at a specific edit sequence
     pub fn preview_at_seq(&self, seq: u64) -> Result<String, crate::history::UndoError> {
         let path = self
