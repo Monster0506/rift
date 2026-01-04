@@ -32,9 +32,6 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
         };
 
         let is_current = seq == tree.current;
-        if is_current {
-            cursor_row = lines.len();
-        }
 
         let mut col_indices: Vec<usize> = columns
             .iter()
@@ -129,6 +126,9 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
             final_row.push(Cell::from_char(ch).with_fg(desc_color));
         }
 
+        if is_current {
+            cursor_row = lines.len();
+        }
         lines.push(final_row);
 
         columns[main_col] = node.parent;
