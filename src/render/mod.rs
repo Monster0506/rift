@@ -421,49 +421,67 @@ fn highlight_color(capture_name: &str, theme_colors: Option<&SyntaxColors>) -> O
 
     if let Some(theme) = theme_colors {
         match capture_name {
-            "constructor" => return Some(theme.constructor),
-            "function.builtin" | "builtin" => return Some(theme.builtin),
+            crate::constants::captures::CONSTRUCTOR => return Some(theme.constructor),
+            "function.builtin" | crate::constants::captures::BUILTIN => return Some(theme.builtin),
             _ => {}
         }
 
         match base_name {
-            "keyword" => return Some(theme.keyword),
-            "type" => return Some(theme.type_def),
-            "function" => return Some(theme.function),
-            "string" => return Some(theme.string),
-            "number" => return Some(theme.number),
-            "constant" => return Some(theme.constant),
-            "boolean" => return Some(theme.boolean),
-            "comment" => return Some(theme.comment),
-            "variable" => return Some(theme.variable),
+            crate::constants::captures::KEYWORD => return Some(theme.keyword),
+            crate::constants::captures::TYPE => return Some(theme.type_def),
+            crate::constants::captures::FUNCTION => return Some(theme.function),
+            crate::constants::captures::STRING => return Some(theme.string),
+            crate::constants::captures::NUMBER => return Some(theme.number),
+            crate::constants::captures::CONSTANT => return Some(theme.constant),
+            crate::constants::captures::BOOLEAN => return Some(theme.boolean),
+            crate::constants::captures::COMMENT => return Some(theme.comment),
+            crate::constants::captures::VARIABLE => return Some(theme.variable),
             "parameter" => return Some(theme.parameter),
-            "property" | "field" => return Some(theme.property),
-            "attribute" | "label" => return Some(theme.attribute),
-            "namespace" | "module" => return Some(theme.namespace),
-            "operator" => return Some(theme.operator),
-            "punctuation" => return Some(theme.punctuation),
-            "constructor" => return Some(theme.constructor),
-            "builtin" => return Some(theme.builtin),
+            crate::constants::captures::PROPERTY | crate::constants::captures::FIELD => {
+                return Some(theme.property)
+            }
+            crate::constants::captures::ATTRIBUTE | crate::constants::captures::LABEL => {
+                return Some(theme.attribute)
+            }
+            crate::constants::captures::NAMESPACE | crate::constants::captures::MODULE => {
+                return Some(theme.namespace)
+            }
+            crate::constants::captures::OPERATOR => return Some(theme.operator),
+            crate::constants::captures::PUNCTUATION => return Some(theme.punctuation),
+            crate::constants::captures::CONSTRUCTOR => return Some(theme.constructor),
+            crate::constants::captures::BUILTIN => return Some(theme.builtin),
             _ => {}
         }
     }
 
     // Fallback to hardcoded defaults if no theme colors specified or unknown capture
     match base_name {
-        "keyword" => Some(Color::Magenta),
-        "type" => Some(Color::Yellow),
-        "function" | "constructor" => Some(Color::Blue),
-        "string" => Some(Color::Green),
-        "number" | "constant" | "boolean" => Some(Color::Yellow),
-        "comment" => Some(Color::DarkGrey),
-        "variable" => Some(Color::Cyan),
+        crate::constants::captures::KEYWORD => Some(Color::Magenta),
+        crate::constants::captures::TYPE => Some(Color::Yellow),
+        crate::constants::captures::FUNCTION | crate::constants::captures::CONSTRUCTOR => {
+            Some(Color::Blue)
+        }
+        crate::constants::captures::STRING => Some(Color::Green),
+        crate::constants::captures::NUMBER
+        | crate::constants::captures::CONSTANT
+        | crate::constants::captures::BOOLEAN => Some(Color::Yellow),
+        crate::constants::captures::COMMENT => Some(Color::DarkGrey),
+        crate::constants::captures::VARIABLE => Some(Color::Cyan),
         "parameter" => Some(Color::White),
-        "property" | "field" => Some(Color::Blue),
-        "attribute" | "label" => Some(Color::Yellow),
-        "namespace" | "module" => Some(Color::Cyan),
-        "operator" => Some(Color::White),
-        "punctuation" => Some(Color::White),
-        "escape" | "embedded" => Some(Color::Grey),
+        crate::constants::captures::PROPERTY | crate::constants::captures::FIELD => {
+            Some(Color::Blue)
+        }
+        crate::constants::captures::ATTRIBUTE | crate::constants::captures::LABEL => {
+            Some(Color::Yellow)
+        }
+        crate::constants::captures::NAMESPACE | crate::constants::captures::MODULE => {
+            Some(Color::Cyan)
+        }
+        crate::constants::captures::OPERATOR => Some(Color::White),
+        crate::constants::captures::PUNCTUATION => Some(Color::White),
+        crate::constants::captures::ESCAPE | crate::constants::captures::EMBEDDED => {
+            Some(Color::Grey)
+        }
         _ => None,
     }
 }
