@@ -89,13 +89,13 @@ pub mod logging {
 
 pub mod error_types {
     pub const IO: &str = "IO";
-    pub const INVALID_CURSOR: &str = "INVALID_CURSOR";
-    pub const PARSE: &str = "PARSE";
-    pub const SETTINGS: &str = "SETTINGS";
-    pub const EXECUTION: &str = "EXECUTION";
-    pub const RENDERER: &str = "RENDERER";
-    pub const INTERNAL: &str = "INTERNAL";
-    pub const OTHER: &str = "OTHER";
+    pub const INVALID_CURSOR: &str = "InvalidCursor";
+    pub const PARSE: &str = "Parse";
+    pub const SETTINGS: &str = "Settings";
+    pub const EXECUTION: &str = "Execution";
+    pub const RENDERER: &str = "Renderer";
+    pub const INTERNAL: &str = "Internal";
+    pub const OTHER: &str = "Other";
 }
 
 pub mod themes {
