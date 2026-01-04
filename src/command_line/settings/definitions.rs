@@ -349,7 +349,6 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
                 crate::constants::themes::DARK,
                 crate::constants::themes::GRUVBOX,
                 crate::constants::themes::NORDIC,
-                crate::constants::themes::NORD,
             ],
         },
         set: set_theme,
