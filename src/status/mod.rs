@@ -160,11 +160,11 @@ impl StatusBar {
     #[must_use]
     pub fn format_mode(mode: Mode) -> &'static str {
         match mode {
-            Mode::Normal => "NORMAL",
-            Mode::Insert => "INSERT",
-            Mode::Command => "COMMAND",
-            Mode::Search => "SEARCH",
-            Mode::Overlay => "OVERLAY",
+            Mode::Normal => crate::constants::modes::NORMAL,
+            Mode::Insert => crate::constants::modes::INSERT,
+            Mode::Command => crate::constants::modes::COMMAND,
+            Mode::Search => crate::constants::modes::SEARCH,
+            Mode::Overlay => crate::constants::modes::OVERLAY,
         }
     }
 

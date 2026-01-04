@@ -41,7 +41,7 @@ impl TextBuffer {
         if pos > len {
             return Err(RiftError::new(
                 crate::error::ErrorType::Internal,
-                "INVALID_CURSOR",
+                crate::constants::error_types::INVALID_CURSOR,
                 format!("Cursor position {} out of bounds (len: {})", pos, len),
             ));
         }

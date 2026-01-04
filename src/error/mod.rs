@@ -19,10 +19,10 @@ pub enum ErrorSeverity {
 impl fmt::Display for ErrorSeverity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Info => write!(f, "INFO"),
-            Self::Warning => write!(f, "WARN"),
-            Self::Error => write!(f, "ERROR"),
-            Self::Critical => write!(f, "CRITICAL"),
+            Self::Info => write!(f, "{}", crate::constants::logging::INFO),
+            Self::Warning => write!(f, "{}", crate::constants::logging::WARN),
+            Self::Error => write!(f, "{}", crate::constants::logging::ERROR),
+            Self::Critical => write!(f, "{}", crate::constants::logging::CRITICAL),
         }
     }
 }
@@ -49,13 +49,13 @@ pub enum ErrorType {
 impl fmt::Display for ErrorType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io => write!(f, "IO"),
-            Self::Parse => write!(f, "Parse"),
-            Self::Settings => write!(f, "Settings"),
-            Self::Execution => write!(f, "Execution"),
-            Self::Renderer => write!(f, "Renderer"),
-            Self::Internal => write!(f, "Internal"),
-            Self::Other => write!(f, "Other"),
+            Self::Io => write!(f, "{}", crate::constants::error_types::IO),
+            Self::Parse => write!(f, "{}", crate::constants::error_types::PARSE),
+            Self::Settings => write!(f, "{}", crate::constants::error_types::SETTINGS),
+            Self::Execution => write!(f, "{}", crate::constants::error_types::EXECUTION),
+            Self::Renderer => write!(f, "{}", crate::constants::error_types::RENDERER),
+            Self::Internal => write!(f, "{}", crate::constants::error_types::INTERNAL),
+            Self::Other => write!(f, "{}", crate::constants::error_types::OTHER),
         }
     }
 }

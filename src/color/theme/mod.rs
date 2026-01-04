@@ -130,7 +130,7 @@ impl Theme {
     #[must_use]
     pub fn light() -> Self {
         Theme::new(
-            "light",
+            crate::constants::themes::LIGHT,
             ThemeVariant::Light,
             Color::Rgb {
                 r: 255,
@@ -146,7 +146,7 @@ impl Theme {
     #[must_use]
     pub fn dark() -> Self {
         Theme::new(
-            "dark",
+            crate::constants::themes::DARK,
             ThemeVariant::Dark,
             Color::Rgb {
                 r: 30,
@@ -251,7 +251,7 @@ impl Theme {
         };
 
         Theme::new(
-            "gruvbox",
+            crate::constants::themes::GRUVBOX,
             ThemeVariant::Dark,
             Color::Rgb {
                 r: 40,
@@ -263,7 +263,7 @@ impl Theme {
         )
     }
 
-    /// Get the nordic theme (Nord)
+    /// Get the nordic theme
     #[must_use]
     pub fn nordic() -> Self {
         let fg = Color::Rgb {
@@ -344,7 +344,7 @@ impl Theme {
         };
 
         Theme::new(
-            "nordic",
+            crate::constants::themes::NORDIC,
             ThemeVariant::Dark,
             Color::Rgb {
                 r: 46,
@@ -360,10 +360,10 @@ impl Theme {
     #[must_use]
     pub fn by_name(name: &str) -> Option<Self> {
         match name.to_lowercase().as_str() {
-            "light" => Some(Theme::light()),
-            "dark" => Some(Theme::dark()),
-            "gruvbox" => Some(Theme::gruvbox()),
-            "nordic" | "nord" => Some(Theme::nordic()),
+            crate::constants::themes::LIGHT => Some(Theme::light()),
+            crate::constants::themes::DARK => Some(Theme::dark()),
+            crate::constants::themes::GRUVBOX => Some(Theme::gruvbox()),
+            crate::constants::themes::NORDIC => Some(Theme::nordic()),
             _ => None,
         }
     }
@@ -371,7 +371,12 @@ impl Theme {
     /// Get all available theme names
     #[must_use]
     pub fn available_themes() -> Vec<&'static str> {
-        vec!["light", "dark", "gruvbox", "nordic"]
+        vec![
+            crate::constants::themes::LIGHT,
+            crate::constants::themes::DARK,
+            crate::constants::themes::GRUVBOX,
+            crate::constants::themes::NORDIC,
+        ]
     }
 
     /// Apply this theme using the default theme handler

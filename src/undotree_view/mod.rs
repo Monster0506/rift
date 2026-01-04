@@ -118,7 +118,11 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
         }
 
         // 2. Draw Text part
-        let snap_marker = if node.snapshot.is_some() { "*" } else { "" };
+        let snap_marker = if node.snapshot.is_some() {
+            crate::constants::ui::SNAPSHOT_MARKER
+        } else {
+            ""
+        };
         let desc_str = format!(
             " [{}{}{}] {}",
             snap_marker, seq, snap_marker, node.transaction.description

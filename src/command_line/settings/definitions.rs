@@ -344,7 +344,13 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         aliases: &["aptheme", "colorscheme", "colors"],
         description: "Color theme",
         ty: SettingType::Enum {
-            variants: &["light", "dark", "gruvbox", "nordic", "nord"],
+            variants: &[
+                crate::constants::themes::LIGHT,
+                crate::constants::themes::DARK,
+                crate::constants::themes::GRUVBOX,
+                crate::constants::themes::NORDIC,
+                crate::constants::themes::NORD,
+            ],
         },
         set: set_theme,
         needs_full_redraw: true,

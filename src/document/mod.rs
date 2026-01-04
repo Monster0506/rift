@@ -359,10 +359,13 @@ impl Document {
 
     /// Save document to its current path
     pub fn save(&mut self) -> Result<(), RiftError> {
-        let path = self
-            .file_path
-            .as_ref()
-            .ok_or_else(|| RiftError::new(ErrorType::Io, "NO_PATH", "No file path"))?;
+        let path = self.file_path.as_ref().ok_or_else(|| {
+            RiftError::new(
+                ErrorType::Io,
+                crate::constants::errors::NO_PATH,
+                "No file path",
+            )
+        })?;
 
         self.write_to_file(path)?;
         self.last_saved_revision = self.revision;
@@ -380,10 +383,13 @@ impl Document {
 
     /// Reload document from disk
     pub fn reload_from_disk(&mut self) -> Result<(), RiftError> {
-        let path = self
-            .file_path
-            .clone()
-            .ok_or_else(|| RiftError::new(ErrorType::Io, "NO_PATH", "No file path"))?;
+        let path = self.file_path.clone().ok_or_else(|| {
+            RiftError::new(
+                ErrorType::Io,
+                crate::constants::errors::NO_PATH,
+                "No file path",
+            )
+        })?;
 
         *self = Self::from_file(self.id, path)?;
         Ok(())
@@ -424,7 +430,7 @@ impl Document {
             .as_ref()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .unwrap_or("[No Name]")
+            .unwrap_or(crate::constants::ui::NO_NAME)
     }
 
     /// Get the file path if it exists
@@ -764,7 +770,7 @@ impl Document {
             Ok(None) => Ok(None),
             Err(e) => Err(RiftError::new(
                 ErrorType::Execution,
-                "SEARCH_ERROR",
+                crate::constants::errors::SEARCH_ERROR,
                 e.to_string(),
             )),
         }

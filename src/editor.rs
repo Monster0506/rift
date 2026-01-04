@@ -64,8 +64,11 @@ impl<T: TerminalBackend> Editor<T> {
         // Init language loader
         let grammar_dir = std::env::current_exe()
             .ok()
-            .and_then(|p| p.parent().map(|p| p.join("grammars")))
-            .unwrap_or_else(|| std::path::PathBuf::from("grammars"));
+            .and_then(|p| {
+                p.parent()
+                    .map(|p| p.join(crate::constants::paths::GRAMMARS_DIR))
+            })
+            .unwrap_or_else(|| std::path::PathBuf::from(crate::constants::paths::GRAMMARS_DIR));
 
         let language_loader = Arc::new(crate::syntax::loader::LanguageLoader::new(grammar_dir));
 
@@ -76,13 +79,18 @@ impl<T: TerminalBackend> Editor<T> {
             Document::from_file(next_id, path).map_err(|e| {
                 RiftError::new(
                     ErrorType::Io,
-                    "LOAD_FAILED",
+                    crate::constants::errors::LOAD_FAILED,
                     format!("Failed to load file {path}: {e}"),
                 )
             })?
         } else {
-            Document::new(next_id)
-                .map_err(|e| RiftError::new(ErrorType::Internal, "INTERNAL_ERROR", e.to_string()))?
+            Document::new(next_id).map_err(|e| {
+                RiftError::new(
+                    ErrorType::Internal,
+                    crate::constants::errors::INTERNAL_ERROR,
+                    e.to_string(),
+                )
+            })?
         };
 
         // Try to load syntax for the document
@@ -221,7 +229,13 @@ impl<T: TerminalBackend> Editor<T> {
             ctx,
             &mut self.render_cache,
         )
-        .map_err(|e| RiftError::new(ErrorType::Io, "REDRAW_FAILED", e.to_string()))?;
+        .map_err(|e| {
+            RiftError::new(
+                ErrorType::Io,
+                crate::constants::errors::RENDER_FAILED,
+                e.to_string(),
+            )
+        })?;
 
         Ok(())
     }
@@ -237,8 +251,8 @@ impl<T: TerminalBackend> Editor<T> {
         if self.documents.get(&id).unwrap().is_dirty() {
             return Err(RiftError::warning(
                 ErrorType::Execution,
-                "UNSAVED_CHANGES",
-                "No write since last change",
+                crate::constants::errors::UNSAVED_CHANGES,
+                crate::constants::errors::MSG_UNSAVED_CHANGES,
             ));
         }
 
@@ -255,7 +269,11 @@ impl<T: TerminalBackend> Editor<T> {
             let new_id = self.next_document_id;
             self.next_document_id += 1;
             let new_doc = Document::new(new_id).map_err(|e| {
-                RiftError::new(ErrorType::Internal, "INTERNAL_ERROR", e.to_string())
+                RiftError::new(
+                    ErrorType::Internal,
+                    crate::constants::errors::INTERNAL_ERROR,
+                    e.to_string(),
+                )
             })?;
             self.documents.insert(new_id, new_doc);
             self.tab_order.push(new_id);
@@ -322,7 +340,7 @@ impl<T: TerminalBackend> Editor<T> {
                     // directory, etc.), return the error
                     if e.kind == ErrorType::Io
                         && e.message
-                            .contains("The system cannot find the file specified")
+                            .contains(crate::constants::errors::MSG_FILE_NOT_FOUND_WIN)
                     {
                         if std::path::Path::new(&path_str).exists() {
                             // File exists but we couldn't read it (AccessDenied,
@@ -357,8 +375,8 @@ impl<T: TerminalBackend> Editor<T> {
                 return Err(RiftError {
                     severity: ErrorSeverity::Warning,
                     kind: ErrorType::Execution,
-                    code: "UNSAVED_CHANGES".to_string(),
-                    message: "No write since last change (add ! to override)".to_string(),
+                    code: crate::constants::errors::UNSAVED_CHANGES.to_string(),
+                    message: crate::constants::errors::MSG_UNSAVED_CHANGES.to_string(),
                 });
             }
 
@@ -368,8 +386,8 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 return Err(RiftError::new(
                     ErrorType::Execution,
-                    "NO_PATH",
-                    "No file name",
+                    crate::constants::errors::NO_PATH,
+                    crate::constants::errors::MSG_NO_FILE_NAME,
                 ));
             }
         }
@@ -417,7 +435,13 @@ impl<T: TerminalBackend> Editor<T> {
             if self
                 .term
                 .poll(std::time::Duration::from_millis(timeout))
-                .map_err(|e| RiftError::new(ErrorType::Internal, "POLL_FAILED", e))?
+                .map_err(|e| {
+                    RiftError::new(
+                        ErrorType::Internal,
+                        crate::constants::errors::POLL_FAILED,
+                        e,
+                    )
+                })?
             {
                 // Read key
                 let key_press = match self.term.read_key()? {
@@ -445,7 +469,7 @@ impl<T: TerminalBackend> Editor<T> {
                                         if let Err(e) = doc.goto_seq(*seq) {
                                             self.state.handle_error(RiftError::new(
                                                 ErrorType::Execution,
-                                                "UNDO_FAILED",
+                                                crate::constants::errors::UNDO_ERROR,
                                                 format!("Failed to go to sequence {}: {}", seq, e),
                                             ));
                                         }
@@ -645,14 +669,14 @@ impl<T: TerminalBackend> Editor<T> {
                 self.documents
                     .get_mut(&doc_id)
                     .unwrap()
-                    .begin_transaction("Insert");
+                    .begin_transaction(crate::constants::history::INSERT_LABEL);
                 self.set_mode(Mode::Insert);
             }
             Command::EnterInsertModeAfter => {
                 let doc_id = self.tab_order[self.current_tab];
                 let doc = self.documents.get_mut(&doc_id).unwrap();
                 doc.buffer.move_right();
-                doc.begin_transaction("Insert");
+                doc.begin_transaction(crate::constants::history::INSERT_LABEL);
                 self.set_mode(Mode::Insert);
             }
             Command::EnterCommandMode => {
@@ -789,7 +813,13 @@ impl<T: TerminalBackend> Editor<T> {
         let stats = self
             .compositor
             .render_to_terminal(&mut self.term, needs_clear)
-            .map_err(|e| RiftError::new(ErrorType::Internal, "RENDER_FAILED", e))?;
+            .map_err(|e| {
+                RiftError::new(
+                    ErrorType::Internal,
+                    crate::constants::errors::RENDER_FAILED,
+                    e,
+                )
+            })?;
         self.term.show_cursor()?;
         Ok(stats)
     }

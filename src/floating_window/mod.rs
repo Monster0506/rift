@@ -11,6 +11,7 @@
 //! - Window position is validated to ensure it fits within bounds.
 
 use crate::color::Color;
+use crate::constants;
 
 use crate::layer::{Cell, Layer};
 
@@ -22,42 +23,13 @@ struct RenderLayout {
     height: usize,
 }
 
-// Default border characters (Unicode box drawing)
-const DEFAULT_BORDER_TOP_LEFT: char = '╭';
-const DEFAULT_BORDER_TOP_RIGHT: char = '╮';
-const DEFAULT_BORDER_BOTTOM_LEFT: char = '╰';
-const DEFAULT_BORDER_BOTTOM_RIGHT: char = '╯';
-const DEFAULT_BORDER_HORIZONTAL: char = '─';
-const DEFAULT_BORDER_VERTICAL: char = '│';
-
 /// Border characters for floating windows
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BorderChars {
-    /// Top-left corner character
-    pub top_left: char,
-    /// Top-right corner character
-    pub top_right: char,
-    /// Bottom-left corner character
-    pub bottom_left: char,
-    /// Bottom-right corner character
-    pub bottom_right: char,
-    /// Horizontal line character
-    pub horizontal: char,
-    /// Vertical line character
-    pub vertical: char,
-}
+pub use constants::ui::borders::BorderSet as BorderChars;
 
 impl Default for BorderChars {
     /// Create default border characters (Unicode box drawing)
     fn default() -> Self {
-        BorderChars {
-            top_left: DEFAULT_BORDER_TOP_LEFT,
-            top_right: DEFAULT_BORDER_TOP_RIGHT,
-            bottom_left: DEFAULT_BORDER_BOTTOM_LEFT,
-            bottom_right: DEFAULT_BORDER_BOTTOM_RIGHT,
-            horizontal: DEFAULT_BORDER_HORIZONTAL,
-            vertical: DEFAULT_BORDER_VERTICAL,
-        }
+        constants::ui::borders::UNICODE
     }
 }
 
@@ -72,7 +44,7 @@ impl BorderChars {
         horizontal: char,
         vertical: char,
     ) -> Self {
-        BorderChars {
+        constants::ui::borders::BorderSet {
             top_left,
             top_right,
             bottom_left,
@@ -92,7 +64,7 @@ impl BorderChars {
         horizontal: char,
         vertical: char,
     ) -> Self {
-        BorderChars {
+        constants::ui::borders::BorderSet {
             top_left,
             top_right,
             bottom_left,
