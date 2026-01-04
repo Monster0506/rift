@@ -8,7 +8,7 @@ use crate::document::{Document, DocumentId};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::executor::execute_command;
 use crate::key_handler::{KeyAction, KeyHandler};
-use crate::layer::LayerCompositor;
+use crate::layer::{LayerCompositor, LayerPriority};
 use crate::mode::Mode;
 use crate::render;
 use crate::screen_buffer::FrameStats;
@@ -41,7 +41,13 @@ pub struct Editor<T: TerminalBackend> {
     #[allow(dead_code)]
     language_loader: Arc<crate::syntax::loader::LanguageLoader>,
     /// Active modal component (overlay)
-    pub modal: Option<Box<dyn crate::component::Component>>,
+    pub modal: Option<ActiveModal>,
+}
+
+/// Helper struct to track active modal and its layer
+pub struct ActiveModal {
+    pub component: Box<dyn crate::component::Component>,
+    pub layer: crate::layer::LayerPriority,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -435,6 +441,7 @@ impl<T: TerminalBackend> Editor<T> {
                 );
             }
         }
+        self.close_active_modal();
     }
 
     /// Run the editor main loop
@@ -463,14 +470,14 @@ impl<T: TerminalBackend> Editor<T> {
                     None => continue,
                 };
 
-                // Handle generic modal input
                 let modal_result = self
                     .modal
                     .as_mut()
-                    .map(|modal| modal.handle_input(key_press));
+                    .map(|modal| modal.component.handle_input(key_press));
 
                 if let Some(result) = modal_result {
                     use crate::component::EventResult;
+
                     match result {
                         EventResult::Consumed => continue,
                         EventResult::Ignored => continue,
@@ -488,18 +495,10 @@ impl<T: TerminalBackend> Editor<T> {
                                             ));
                                         }
                                         // Close modal
-                                        self.modal = None;
-                                        use crate::layer::LayerPriority;
-                                        self.compositor.clear_layer(LayerPriority::POPUP);
-                                        self.set_mode(Mode::Normal);
-                                        self.update_and_render()?;
+                                        self.close_active_modal();
                                     }
                                     ComponentAction::UndoTreeCancel => {
-                                        self.modal = None;
-                                        use crate::layer::LayerPriority;
-                                        self.compositor.clear_layer(LayerPriority::POPUP);
-                                        self.set_mode(Mode::Normal);
-                                        self.update_and_render()?;
+                                        self.close_active_modal();
                                     }
                                     ComponentAction::UndoTreePreview(seq) => {
                                         let doc_id = self.tab_order[self.current_tab];
@@ -515,6 +514,7 @@ impl<T: TerminalBackend> Editor<T> {
 
                                             if let Some(modal) = self.modal.as_mut() {
                                                 if let Some(view) = modal
+                                                    .component
                                                     .as_any_mut()
                                                     .downcast_mut::<crate::select_view::SelectView>(
                                                 ) {
@@ -542,7 +542,6 @@ impl<T: TerminalBackend> Editor<T> {
                                         );
 
                                         self.handle_execution_result(execution_result);
-                                        self.update_and_render()?;
                                     }
                                     ComponentAction::ExecuteSearch(query) => {
                                         self.modal = None;
@@ -554,13 +553,10 @@ impl<T: TerminalBackend> Editor<T> {
                                                 false,
                                             );
                                         }
-                                        self.set_mode(Mode::Normal);
-                                        self.update_and_render()?;
+                                        self.close_active_modal();
                                     }
                                     ComponentAction::CancelMode => {
-                                        self.modal = None;
-                                        self.set_mode(Mode::Normal);
-                                        self.update_and_render()?;
+                                        self.close_active_modal();
                                     }
                                 }
                             }
@@ -679,10 +675,12 @@ impl<T: TerminalBackend> Editor<T> {
             }
             KeyAction::ExitCommandMode => {
                 self.state.clear_command_line();
+                self.close_active_modal();
                 self.set_mode(Mode::Normal);
             }
             KeyAction::ExitSearchMode => {
                 self.state.clear_command_line();
+                self.close_active_modal();
                 self.set_mode(Mode::Normal);
             }
             KeyAction::ToggleDebug => {
@@ -920,19 +918,30 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Render modal if active
         if let Some(ref mut modal) = self.modal {
-            use crate::layer::LayerPriority;
-            let layer = compositor.get_layer_mut(LayerPriority::POPUP);
-            modal.render(layer);
+            let layer = compositor.get_layer_mut(modal.layer);
+            modal.component.render(layer);
             // Re-composite and render
             let _ = compositor.render_to_terminal(term, false)?;
 
             // Explicitly set cursor if modal requests it
-            if let Some((row, col)) = modal.cursor_position() {
+            if let Some((row, col)) = modal.component.cursor_position() {
                 term.move_cursor(row, col)?;
             }
         }
 
         Ok(())
+    }
+
+    /// Helper to close any active modal, clear optional layer, and reset to Normal mode
+    fn close_active_modal(&mut self) {
+        if let Some(modal) = &self.modal {
+            self.compositor.clear_layer(modal.layer);
+        }
+        self.modal = None;
+        self.set_mode(Mode::Normal);
+        if let Err(e) = self.update_and_render() {
+            self.state.handle_error(e);
+        }
     }
 
     /// Set editor mode and update dispatcher
@@ -943,15 +952,21 @@ impl<T: TerminalBackend> Editor<T> {
         match mode {
             Mode::Command => {
                 let settings = self.state.settings.command_line_window.clone();
-                self.modal = Some(Box::new(
-                    crate::command_line::component::CommandLineComponent::new(':', settings),
-                ));
+                self.modal = Some(ActiveModal {
+                    component: Box::new(crate::command_line::component::CommandLineComponent::new(
+                        ':', settings,
+                    )),
+                    layer: LayerPriority::FLOATING_WINDOW,
+                });
             }
             Mode::Search => {
                 let settings = self.state.settings.command_line_window.clone();
-                self.modal = Some(Box::new(
-                    crate::command_line::component::CommandLineComponent::new('/', settings),
-                ));
+                self.modal = Some(ActiveModal {
+                    component: Box::new(crate::command_line::component::CommandLineComponent::new(
+                        '/', settings,
+                    )),
+                    layer: LayerPriority::FLOATING_WINDOW,
+                });
             }
             _ => {}
         }
@@ -1008,6 +1023,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     // Handle execution results from command_line commands
     fn handle_execution_result(&mut self, execution_result: ExecutionResult) {
+        let mut should_close_modal = true;
         match execution_result {
             ExecutionResult::Quit { bangs } => {
                 if self.active_document().is_dirty() && bangs == 0 {
@@ -1019,29 +1035,18 @@ impl<T: TerminalBackend> Editor<T> {
                     });
                 } else {
                     self.should_quit = true;
-                    self.state.clear_command_line();
-                    self.modal = None;
-                    self.set_mode(Mode::Normal);
                 }
             }
             ExecutionResult::Write => {
-                // Handle write command - save if file path exists
-                if self.state.file_path.is_some() && self.active_document().is_dirty() {
-                    if let Err(e) = self.save_document() {
+                // Save document
+                let doc_id = self.tab_order[self.current_tab];
+                if let Some(doc) = self.documents.get_mut(&doc_id) {
+                    if let Err(e) = doc.save() {
                         self.state.handle_error(e);
-                    } else {
-                        let filename = self.state.file_name.clone();
-                        self.state.notify(
-                            crate::notification::NotificationType::Success,
-                            format!("Written to {filename}"),
-                        );
                     }
                 }
                 self.state.clear_command_line();
-                self.modal = None;
-                use crate::layer::LayerPriority;
-                self.compositor.clear_layer(LayerPriority::POPUP);
-                self.set_mode(Mode::Normal);
+                self.close_active_modal();
             }
             ExecutionResult::WriteAndQuit => {
                 // Save document, then quit if successful
@@ -1057,20 +1062,16 @@ impl<T: TerminalBackend> Editor<T> {
                 // Save successful, now quit
                 self.should_quit = true;
                 self.state.clear_command_line();
-                self.modal = None;
-                use crate::layer::LayerPriority;
-                self.compositor.clear_layer(LayerPriority::POPUP);
-                self.set_mode(Mode::Normal);
+                self.close_active_modal();
             }
             ExecutionResult::Failure => {
                 // Error already reported by executor to state/notification
                 // manager Keep command line visible so user can see it
+                should_close_modal = false;
             }
             ExecutionResult::Redraw => {
                 // Close command line first before redraw
                 self.state.clear_command_line();
-                self.modal = None;
-                self.set_mode(Mode::Normal);
 
                 if let Err(e) = self.force_full_redraw() {
                     self.state.handle_error(e);
@@ -1082,8 +1083,6 @@ impl<T: TerminalBackend> Editor<T> {
                     self.state.handle_error(e);
                 } else {
                     self.state.clear_command_line();
-                    self.modal = None;
-                    self.set_mode(Mode::Normal);
                     // Force redraw after opening a file
                     if let Err(e) = self.force_full_redraw() {
                         self.state.handle_error(e);
@@ -1102,7 +1101,6 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 self.sync_state_with_active_document();
                 self.state.clear_command_line();
-                self.set_mode(Mode::Normal);
                 if let Err(e) = self.force_full_redraw() {
                     self.state.handle_error(e);
                 }
@@ -1120,7 +1118,6 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 self.sync_state_with_active_document();
                 self.state.clear_command_line();
-                self.set_mode(Mode::Normal);
                 if let Err(e) = self.force_full_redraw() {
                     self.state.handle_error(e);
                 }
@@ -1132,7 +1129,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.state.error_manager.notifications_mut().clear_last();
                 }
                 self.state.clear_command_line();
-                self.set_mode(Mode::Normal);
+                self.close_active_modal();
             }
             ExecutionResult::BufferList => {
                 let mut message = String::new();
@@ -1158,12 +1155,11 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state
                     .notify(crate::notification::NotificationType::Info, message);
                 self.state.clear_command_line();
-                self.set_mode(Mode::Normal);
+                self.close_active_modal();
             }
             ExecutionResult::Success => {
                 self.state.clear_command_line();
-                self.modal = None;
-                self.set_mode(Mode::Normal);
+                self.close_active_modal();
             }
             ExecutionResult::Undo { count } => {
                 let doc_id = self.tab_order[self.current_tab];
@@ -1184,7 +1180,6 @@ impl<T: TerminalBackend> Editor<T> {
                     );
                 }
                 self.state.clear_command_line();
-                self.set_mode(Mode::Normal);
                 self.update_search_highlights();
             }
             ExecutionResult::Redo { count } => {
@@ -1206,7 +1201,6 @@ impl<T: TerminalBackend> Editor<T> {
                     );
                 }
                 self.state.clear_command_line();
-                self.set_mode(Mode::Normal);
                 self.update_search_highlights();
             }
             ExecutionResult::UndoGoto { seq } => {
@@ -1228,15 +1222,15 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
                 self.state.clear_command_line();
-                self.set_mode(Mode::Normal);
                 self.update_search_highlights();
             }
             ExecutionResult::Checkpoint => {
                 // Already handled in executor
-                self.state.clear_command_line();
-                self.set_mode(Mode::Normal);
             }
             ExecutionResult::UndoTree { content } => {
+                // Close command line first
+                self.close_active_modal();
+
                 use crate::component::EventResult;
                 use crate::select_view::SelectView;
 
@@ -1289,11 +1283,17 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                     }
                 }
-
-                self.modal = Some(Box::new(view));
-                self.state.clear_command_line();
+                self.modal = Some(ActiveModal {
+                    component: Box::new(view),
+                    layer: LayerPriority::POPUP,
+                });
                 self.set_mode(Mode::Overlay);
+                should_close_modal = false;
             }
+        }
+        if should_close_modal {
+            self.close_active_modal();
+            self.state.clear_command_line();
         }
     }
 
