@@ -84,18 +84,21 @@ fn test_select_view_callbacks() {
     use crate::key::Key;
     use std::cell::RefCell;
 
-    let selected = RefCell::new(None);
-    let changed = RefCell::new(None);
+    use std::rc::Rc;
+    let selected = Rc::new(RefCell::new(None));
+    let changed = Rc::new(RefCell::new(None));
 
     {
+        let selected_clone = selected.clone();
+        let changed_clone = changed.clone();
         let mut view = SelectView::new()
             .with_selectable(vec![true, true])
-            .on_select(|idx| {
-                *selected.borrow_mut() = Some(idx);
+            .on_select(move |idx| {
+                *selected_clone.borrow_mut() = Some(idx);
                 EventResult::Consumed
             })
-            .on_change(|idx| {
-                *changed.borrow_mut() = Some(idx);
+            .on_change(move |idx| {
+                *changed_clone.borrow_mut() = Some(idx);
                 EventResult::Consumed
             });
 
@@ -108,5 +111,34 @@ fn test_select_view_callbacks() {
         // Enter -> select 1
         view.handle_input(Key::Enter);
         assert_eq!(*selected.borrow(), Some(1));
+    }
+}
+
+#[test]
+fn test_select_view_on_change_propagation() {
+    use crate::component::EventResult;
+    use crate::key::Key;
+
+    #[derive(Debug, PartialEq, Clone)]
+    struct TestAction(usize);
+
+    let mut view = SelectView::new()
+        .with_selectable(vec![true, true])
+        .on_change(|idx| EventResult::Action(Box::new(TestAction(idx))));
+
+    view.set_selected_line(Some(0));
+
+    // Move down -> invokes on_change(1) -> returns Action(TestAction(1))
+    let result = view.handle_input(Key::ArrowDown);
+
+    match result {
+        EventResult::Action(action) => {
+            if let Some(test_action) = action.downcast_ref::<TestAction>() {
+                assert_eq!(test_action.0, 1);
+            } else {
+                panic!("Action was not TestAction");
+            }
+        }
+        _ => panic!("Expected Action, got {:?}", result),
     }
 }

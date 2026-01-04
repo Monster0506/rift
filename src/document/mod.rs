@@ -604,87 +604,102 @@ impl Document {
 
     /// Apply an edit operation to the buffer (for undo/redo)
     pub(crate) fn apply_operation(&mut self, op: &EditOperation) {
+        Self::apply_operation_to_buffer(&mut self.buffer, op);
+    }
+
+    /// Apply an edit operation to a buffer
+    fn apply_operation_to_buffer(buffer: &mut TextBuffer, op: &EditOperation) {
         match op {
             EditOperation::Insert { position, text, .. } => {
                 // Convert position to byte offset
-                let line_start = self
-                    .buffer
+                let line_start = buffer
                     .line_index
                     .get_start(position.line as usize)
                     .unwrap_or(0);
                 let byte_offset = line_start + position.col as usize;
-                let _ = self.buffer.set_cursor(byte_offset);
-                let _ = self.buffer.insert_str(text);
+                let _ = buffer.set_cursor(byte_offset);
+                let _ = buffer.insert_str(text);
             }
             EditOperation::Delete { range, .. } => {
                 // Convert range to byte offsets
-                let start_line_start = self
-                    .buffer
+                let start_line_start = buffer
                     .line_index
                     .get_start(range.start.line as usize)
                     .unwrap_or(0);
                 let start_offset = start_line_start + range.start.col as usize;
-                let end_line_start = self
-                    .buffer
+                let end_line_start = buffer
                     .line_index
                     .get_start(range.end.line as usize)
                     .unwrap_or(0);
                 let end_offset = end_line_start + range.end.col as usize;
 
                 // Position cursor at start and delete
-                let _ = self.buffer.set_cursor(start_offset);
+                let _ = buffer.set_cursor(start_offset);
                 for _ in start_offset..end_offset {
-                    self.buffer.delete_forward();
+                    buffer.delete_forward();
                 }
             }
             EditOperation::Replace {
                 range, new_text, ..
             } => {
                 // Delete old content
-                let start_line_start = self
-                    .buffer
+                let start_line_start = buffer
                     .line_index
                     .get_start(range.start.line as usize)
                     .unwrap_or(0);
                 let start_offset = start_line_start + range.start.col as usize;
-                let end_line_start = self
-                    .buffer
+                let end_line_start = buffer
                     .line_index
                     .get_start(range.end.line as usize)
                     .unwrap_or(0);
                 let end_offset = end_line_start + range.end.col as usize;
 
-                let _ = self.buffer.set_cursor(start_offset);
+                let _ = buffer.set_cursor(start_offset);
                 for _ in start_offset..end_offset {
-                    self.buffer.delete_forward();
+                    buffer.delete_forward();
                 }
                 // Insert new content
-                let _ = self.buffer.insert_str(new_text);
+                let _ = buffer.insert_str(new_text);
             }
             EditOperation::BlockChange {
                 range, new_content, ..
             } => {
                 // For block changes, we need to replace line by line
-                let start_line_start = self
-                    .buffer
+                let start_line_start = buffer
                     .line_index
                     .get_start(range.start.line as usize)
                     .unwrap_or(0);
                 let start_offset = start_line_start + range.start.col as usize;
-                let end_line_start = self
-                    .buffer
+                let end_line_start = buffer
                     .line_index
                     .get_start(range.end.line as usize)
                     .unwrap_or(0);
                 let end_offset = end_line_start + range.end.col as usize;
 
-                let _ = self.buffer.set_cursor(start_offset);
+                let _ = buffer.set_cursor(start_offset);
                 for _ in start_offset..end_offset {
-                    self.buffer.delete_forward();
+                    buffer.delete_forward();
                 }
                 // Insert new content
                 let new_text = new_content.join("\n");
-                let _ = self.buffer.insert_str(&new_text);
+                let _ = buffer.insert_str(&new_text);
+            }
+        }
+    }
+
+    /// Apply a replay path to a buffer
+    fn apply_replay_path_to_buffer(buffer: &mut TextBuffer, path: &crate::history::ReplayPath) {
+        // Apply undo operations (inverse in reverse order)
+        for tx in &path.undo_ops {
+            for op in tx.inverse() {
+                Self::apply_operation_to_buffer(buffer, &op);
+            }
+        }
+
+        // Apply redo operations (forward in order)
+        for tx in &path.redo_ops {
+            for op in &tx.ops {
+                Self::apply_operation_to_buffer(buffer, op);
             }
         }
     }
@@ -725,19 +740,7 @@ impl Document {
     pub fn goto_seq(&mut self, target: u64) -> Result<(), crate::history::UndoError> {
         let replay_path = self.history.goto_seq(target)?;
 
-        // Apply undo operations (inverse in reverse order)
-        for tx in &replay_path.undo_ops {
-            for op in tx.inverse() {
-                self.apply_operation(&op);
-            }
-        }
-
-        // Apply redo operations (forward in order)
-        for tx in &replay_path.redo_ops {
-            for op in &tx.ops {
-                self.apply_operation(op);
-            }
-        }
+        Self::apply_replay_path_to_buffer(&mut self.buffer, &replay_path);
 
         self.mark_dirty();
 
@@ -774,6 +777,15 @@ impl Document {
                 e.to_string(),
             )),
         }
+    }
+    /// Get a preview of the document at a specific edit sequence
+    pub fn preview_at_seq(&self, seq: u64) -> Result<String, crate::history::UndoError> {
+        let path = self
+            .history
+            .compute_replay_path(self.history.current_seq(), seq)?;
+        let mut preview_buffer = self.buffer.clone();
+        Self::apply_replay_path_to_buffer(&mut preview_buffer, &path);
+        Ok(preview_buffer.to_string())
     }
 }
 

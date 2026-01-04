@@ -19,11 +19,11 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
     let mut columns: Vec<Option<EditSeq>> = Vec::new();
 
     // Define colors
-    let current_node_color = Color::Green;
     let node_color = Color::DarkYellow;
-    let branch_color = Color::Blue;
+    let branch_color = Color::DarkRed;
     let text_color = Color::Grey;
-    let current_text_color = Color::White;
+    let current_text_color = Color::Magenta;
+    let snap_text_color = Color::Cyan;
 
     for &seq in &all_seqs {
         let node = match tree.nodes.get(&seq) {
@@ -62,12 +62,6 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
         // We need to extend chars to cover all active columns
         let max_col = columns.len();
 
-        // Build the current row (connector line above the node)
-        // Actually, previous logic output TWO lines? No, it output ONE line IF multiple parents/children involved?
-        // Wait, the previous logic had a block: `if col_indices.len() > 1`.
-        // This handles "merges" or multiple incoming branches?
-        // Let's preserve that logic but use Cells.
-
         if col_indices.len() > 1 {
             let mut conn_line: Vec<Cell> = Vec::new();
             for (c, item) in columns.iter().enumerate().take(max_col) {
@@ -94,19 +88,22 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
         sequences.push(seq);
         let mut final_row: Vec<Cell> = Vec::new();
 
+        let snap_marker = node.snapshot.is_some();
+
+        const CURRENT_CHAR: char = '@';
+        const NODE_CHAR: char = '*';
+        const SNAPSHOT_CHAR: char = '#';
         // 1. Draw Graph part
         for (c, item) in columns.iter().enumerate().take(max_col) {
             let cell = if c == main_col {
                 if is_current {
-                    Cell::from_char('@').with_fg(current_node_color)
+                    Cell::from_char(CURRENT_CHAR).with_fg(current_text_color)
+                } else if snap_marker {
+                    Cell::from_char(SNAPSHOT_CHAR).with_fg(snap_text_color)
                 } else {
-                    Cell::from_char('o').with_fg(node_color)
+                    Cell::from_char(NODE_CHAR).with_fg(node_color)
                 }
             } else if col_indices.contains(&c) {
-                // Should not happen if we did potential connector line above?
-                // Actually if len > 1 we output connector line, then THIS line puts node at main_col.
-                // The OTHER columns at this point are just spaces since they merged?
-                // Wait, previous logic: `if col_indices.contains(&c) { push(' ') }`
                 Cell::new(b' ')
             } else if item.is_some() {
                 Cell::from_char('│').with_fg(branch_color)
@@ -118,18 +115,12 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
         }
 
         // 2. Draw Text part
-        let snap_marker = if node.snapshot.is_some() {
-            crate::constants::ui::SNAPSHOT_MARKER
-        } else {
-            ""
-        };
-        let desc_str = format!(
-            " [{}{}{}] {}",
-            snap_marker, seq, snap_marker, node.transaction.description
-        );
+        let desc_str = format!(" [{}] {}", seq, node.transaction.description);
 
         let desc_color = if is_current {
             current_text_color
+        } else if snap_marker {
+            snap_text_color
         } else {
             text_color
         };

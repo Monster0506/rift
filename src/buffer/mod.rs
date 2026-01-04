@@ -10,6 +10,7 @@ pub mod rope;
 use line_index::LineIndex;
 
 /// Text buffer using a Piece Table for efficient insertion and deletion.
+#[derive(Clone)]
 pub struct TextBuffer {
     /// Line index which also holds the PieceTable
     pub line_index: LineIndex,
