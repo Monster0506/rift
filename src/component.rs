@@ -37,4 +37,10 @@ pub trait Component {
     fn cursor_position(&self) -> Option<(u16, u16)> {
         None
     }
+
+    /// Downcast to concrete type
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Downcast to concrete type (mutable)
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }

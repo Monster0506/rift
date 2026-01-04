@@ -114,4 +114,12 @@ impl Component for CommandLineComponent {
     fn cursor_position(&self) -> Option<(u16, u16)> {
         self.last_cursor_pos
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }

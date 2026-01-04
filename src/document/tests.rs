@@ -502,3 +502,39 @@ fn test_document_undo_marks_dirty() {
     doc.undo();
     assert!(doc.is_dirty());
 }
+
+#[test]
+fn test_preview_at_seq() {
+    let mut doc = Document::new(1).unwrap();
+
+    // 1. Initial state (empty)
+    doc.insert_char('A').unwrap();
+    let seq_a = doc.history.current_seq();
+
+    doc.insert_char('B').unwrap();
+    let seq_ab = doc.history.current_seq();
+
+    // Undo B
+    doc.undo();
+    let seq_undo_b = doc.history.current_seq();
+
+    // Verify previews
+    // Preview at seq_a should be "A"
+    assert_eq!(doc.preview_at_seq(seq_a).unwrap(), "A");
+
+    // Preview at seq_ab should be "AB"
+    assert_eq!(doc.preview_at_seq(seq_ab).unwrap(), "AB");
+
+    // Preview at current (undo B) should be "A"
+    assert_eq!(doc.preview_at_seq(seq_undo_b).unwrap(), "A");
+
+    // Add branch
+    doc.insert_char('C').unwrap();
+    let seq_ac = doc.history.current_seq();
+
+    // Preview AC
+    assert_eq!(doc.preview_at_seq(seq_ac).unwrap(), "AC");
+
+    // Preview AB from branch AC
+    assert_eq!(doc.preview_at_seq(seq_ab).unwrap(), "AB");
+}

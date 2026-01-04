@@ -6,6 +6,7 @@
 
 use super::rope::PieceTable;
 
+#[derive(Clone)]
 pub struct LineIndex {
     pub table: PieceTable,
 }
@@ -43,7 +44,6 @@ impl LineIndex {
         }
 
         // Otherwise, it's the start of next line - 1 (newline)
-        // Note: This assumes standard \n line endings.
         let next_start = self.table.line_start_offset(line_idx + 1);
         Some(next_start.saturating_sub(1))
     }

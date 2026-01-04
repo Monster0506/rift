@@ -188,7 +188,11 @@ impl SelectView {
             if self.is_selectable(next) {
                 self.selected_line = Some(next);
                 if let Some(cb) = self.on_change.as_mut() {
-                    cb(next);
+                    let result = cb(next);
+                    match result {
+                        EventResult::Consumed | EventResult::Ignored => {}
+                        _ => return result,
+                    }
                 }
                 if let Some(cb) = self.on_down.as_mut() {
                     return cb(next);
@@ -222,7 +226,11 @@ impl SelectView {
             if self.is_selectable(next) {
                 self.selected_line = Some(next);
                 if let Some(cb) = self.on_change.as_mut() {
-                    cb(next);
+                    let result = cb(next);
+                    match result {
+                        EventResult::Consumed | EventResult::Ignored => {}
+                        _ => return result,
+                    }
                 }
                 if let Some(cb) = self.on_up.as_mut() {
                     return cb(next);
@@ -375,4 +383,15 @@ impl Component for SelectView {
     fn render(&mut self, layer: &mut Layer) {
         SelectView::render(self, layer);
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
+
+#[cfg(test)]
+mod tests;

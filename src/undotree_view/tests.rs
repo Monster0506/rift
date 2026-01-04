@@ -46,3 +46,53 @@ fn test_git_graph_render() {
     assert!(l0.contains("@"));
     assert!(l0.contains("Msg5"));
 }
+
+#[test]
+fn test_cursor_position_on_merge() {
+    let mut tree = UndoTree::new();
+    tree.nodes.clear();
+    tree.root_seq = 0;
+
+    // Create a scenario where Node 1 has two children (2 and 3), so when rendering Node 1 in descending order,
+    // we encounter a merge point (cols for 2 and 3 both pointing to 1).
+    tree.nodes.insert(0, create_dummy_node(0, None, "Original"));
+    tree.nodes
+        .insert(1, create_dummy_node(1, Some(0), "Branch Point"));
+    tree.nodes
+        .insert(2, create_dummy_node(2, Some(1), "Child A"));
+    tree.nodes
+        .insert(3, create_dummy_node(3, Some(1), "Child B"));
+
+    // Set current to Branch Point (Seq 1)
+    tree.current = 1;
+
+    let (lines, _, cursor_row) = render_tree(&tree);
+
+    // In descending order:
+    // 3: Tip
+    // 2: Tip
+    // 1: Merge of 3 and 2. Should produce a connector line, THEN the node line.
+    // 0: Parent of 1
+
+    // If there is a connector line, Node 1 will be on a later line.
+    // The cursor should point to Node 1's line (containing "@"), NOT the connector line.
+
+    let cursor_line_str: String = lines[cursor_row].iter().map(|c| c.to_char()).collect();
+
+    // Debug print
+    println!("Cursor Row: {}", cursor_row);
+    println!("Cursor Line Content: '{}'", cursor_line_str);
+    for (i, line) in lines.iter().enumerate() {
+        let s: String = line.iter().map(|c| c.to_char()).collect();
+        println!("{}: {}", i, s);
+    }
+
+    assert!(
+        cursor_line_str.contains("@"),
+        "Cursor row should contain current node marker '@'"
+    );
+    assert!(
+        cursor_line_str.contains("Branch Point"),
+        "Cursor row should contain node description"
+    );
+}
