@@ -104,3 +104,30 @@ pub mod themes {
     pub const GRUVBOX: &str = "gruvbox";
     pub const NORDIC: &str = "nordic";
 }
+
+pub mod captures {
+    pub const ATTRIBUTE: &str = "attribute";
+    pub const COMMENT: &str = "comment";
+    pub const CONSTANT: &str = "constant";
+    pub const CONSTRUCTOR: &str = "constructor";
+    pub const EMBEDDED: &str = "embedded";
+    pub const FUNCTION: &str = "function";
+    pub const KEYWORD: &str = "keyword";
+    pub const LABEL: &str = "label";
+    pub const OPERATOR: &str = "operator";
+    pub const PROPERTY: &str = "property";
+    pub const PUNCTUATION: &str = "punctuation";
+    pub const STRING: &str = "string";
+    pub const TYPE: &str = "type";
+    pub const VARIABLE: &str = "variable";
+    pub const TAG: &str = "tag";
+
+    // Additional captures used in render
+    pub const BOOLEAN: &str = "boolean";
+    pub const BUILTIN: &str = "builtin";
+    pub const ESCAPE: &str = "escape";
+    pub const FIELD: &str = "field";
+    pub const MODULE: &str = "module";
+    pub const NAMESPACE: &str = "namespace";
+    pub const NUMBER: &str = "number";
+}
