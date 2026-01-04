@@ -47,6 +47,7 @@ pub struct Editor<T: TerminalBackend> {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ComponentAction {
     UndoTreeGoto(u64),
+    UndoTreePreview(u64),
     UndoTreeCancel,
     ExecuteCommand(String),
     ExecuteSearch(String),
@@ -483,6 +484,29 @@ impl<T: TerminalBackend> Editor<T> {
                                         use crate::layer::LayerPriority;
                                         self.compositor.clear_layer(LayerPriority::POPUP);
                                         self.set_mode(Mode::Normal);
+                                        self.update_and_render()?;
+                                    }
+                                    ComponentAction::UndoTreePreview(seq) => {
+                                        let doc_id = self.tab_order[self.current_tab];
+                                        let doc = self.documents.get(&doc_id).unwrap();
+                                        if let Ok(preview_text) = doc.preview_at_seq(*seq) {
+                                            use crate::layer::Cell;
+                                            let mut content = Vec::new();
+                                            for line in preview_text.lines() {
+                                                let cells: Vec<Cell> =
+                                                    line.chars().map(Cell::from_char).collect();
+                                                content.push(cells);
+                                            }
+
+                                            if let Some(modal) = self.modal.as_mut() {
+                                                if let Some(view) = modal
+                                                    .as_any_mut()
+                                                    .downcast_mut::<crate::select_view::SelectView>(
+                                                ) {
+                                                    view.set_right_content(content);
+                                                }
+                                            }
+                                        }
                                         self.update_and_render()?;
                                     }
                                     ComponentAction::ExecuteCommand(cmd) => {
@@ -1202,9 +1226,12 @@ impl<T: TerminalBackend> Editor<T> {
                 let view = view.with_selectable(content.selectable.clone());
 
                 let sequences = content.sequences;
-                let view = view
+                let seqs_select = sequences.clone();
+                let seqs_change = sequences.clone();
+
+                let mut view = view
                     .on_select(move |idx| {
-                        if let Some(&seq) = sequences.get(idx) {
+                        if let Some(&seq) = seqs_select.get(idx) {
                             if seq != crate::history::EditSeq::MAX {
                                 return EventResult::Action(Box::new(
                                     ComponentAction::UndoTreeGoto(seq),
@@ -1213,7 +1240,34 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                         EventResult::Consumed
                     })
+                    .on_change(move |idx| {
+                        if let Some(&seq) = seqs_change.get(idx) {
+                            if seq != crate::history::EditSeq::MAX {
+                                return EventResult::Action(Box::new(
+                                    ComponentAction::UndoTreePreview(seq),
+                                ));
+                            }
+                        }
+                        EventResult::Consumed
+                    })
                     .on_cancel(|| EventResult::Action(Box::new(ComponentAction::UndoTreeCancel)));
+
+                // Trigger initial preview
+                let doc_id = self.tab_order[self.current_tab];
+                let doc = self.documents.get(&doc_id).unwrap();
+                if let Some(&seq) = sequences.get(content.cursor) {
+                    if seq != crate::history::EditSeq::MAX {
+                        if let Ok(preview_text) = doc.preview_at_seq(seq) {
+                            use crate::layer::Cell;
+                            let mut preview_content = Vec::new();
+                            for line in preview_text.lines() {
+                                let cells: Vec<Cell> = line.chars().map(Cell::from_char).collect();
+                                preview_content.push(cells);
+                            }
+                            view.set_right_content(preview_content);
+                        }
+                    }
+                }
 
                 self.modal = Some(Box::new(view));
                 self.state.clear_command_line();

@@ -298,17 +298,7 @@ impl CommandExecutor {
                 use crate::history::EditSeq;
                 let selectable = _seqs.iter().map(|&s| s != EditSeq::MAX).collect();
 
-                let mut preview: Vec<Vec<crate::layer::Cell>> = Vec::new();
-                use crate::layer::Cell;
-                preview.push(vec![
-                    Cell::new(b'P'),
-                    Cell::new(b'r'),
-                    Cell::new(b'e'),
-                    Cell::new(b'v'),
-                    Cell::new(b'i'),
-                    Cell::new(b'e'),
-                    Cell::new(b'w'),
-                ]);
+                let preview: Vec<Vec<crate::layer::Cell>> = Vec::new();
 
                 let content = crate::state::OverlayContent {
                     left: lines,

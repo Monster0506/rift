@@ -39,6 +39,7 @@ struct Node {
 }
 
 /// A Piece Table backed by an AVL Tree (Rope).
+#[derive(Clone)]
 pub struct PieceTable {
     original: Arc<Vec<u8>>,
     add: Vec<u8>,
