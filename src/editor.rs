@@ -177,6 +177,19 @@ impl<T: TerminalBackend> Editor<T> {
             + self.active_document().buffer.get_after_gap().len();
         self.state
             .update_buffer_stats(total_lines, buffer_size, line_ending);
+
+        // Update gutter width
+        if self.state.settings.show_line_numbers {
+            let digits = if total_lines > 0 {
+                (total_lines as f64).log10().floor() as usize + 1
+            } else {
+                1
+            };
+            // 1 space padding on each side
+            self.state.gutter_width = digits + 2;
+        } else {
+            self.state.gutter_width = 0;
+        }
     }
 
     /// Force a full redraw of the editor

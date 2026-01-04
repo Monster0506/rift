@@ -104,6 +104,8 @@ pub struct RenderCache {
     pub notifications: Option<NotificationDrawState>,
     /// Last calculated cursor position for command mode
     pub last_command_cursor: Option<CursorPosition>,
+    /// Last rendered cursor position
+    pub last_cursor_pos: Option<CursorPosition>,
 }
 
 impl RenderCache {
@@ -113,6 +115,7 @@ impl RenderCache {
         self.command_line = None;
         self.notifications = None;
         self.last_command_cursor = None;
+        self.last_cursor_pos = None;
     }
 
     pub fn invalidate_content(&mut self) {
@@ -170,7 +173,7 @@ pub struct RenderContext<'a> {
 }
 
 /// Cursor position information returned from layer-based rendering
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorPosition {
     /// Absolute terminal position (row, col)
     Absolute(u16, u16),
@@ -218,7 +221,7 @@ pub fn render<T: TerminalBackend>(
         theme: ctx.state.settings.theme.clone(),
     };
 
-    if cache.content.as_ref() != Some(&current_content_state) || ctx.needs_clear {
+    if cache.content.as_ref() != Some(&current_content_state) {
         compositor.clear_layer(LayerPriority::CONTENT);
         render_content_to_layer(compositor.get_layer_mut(LayerPriority::CONTENT), &ctx)?;
         cache.content = Some(current_content_state);
@@ -262,7 +265,7 @@ pub fn render<T: TerminalBackend>(
         editor_fg: ctx.state.settings.editor_fg,
     };
 
-    if cache.status.as_ref() != Some(&current_status_state) || ctx.needs_clear {
+    if cache.status.as_ref() != Some(&current_status_state) {
         compositor.clear_layer(LayerPriority::STATUS_BAR);
         StatusBar::render_to_layer(
             compositor.get_layer_mut(LayerPriority::STATUS_BAR),
@@ -292,7 +295,7 @@ pub fn render<T: TerminalBackend>(
             None
         };
 
-    if cache.command_line.as_ref() != current_command_state.as_ref() || ctx.needs_clear {
+    if cache.command_line.as_ref() != current_command_state.as_ref() {
         if current_command_state.is_some() {
             compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
             // Render command line
@@ -393,16 +396,20 @@ pub fn render<T: TerminalBackend>(
     };
 
     // 5. Render composited output to terminal
-    term.hide_cursor()?;
-    let _ = compositor.render_to_terminal(term, ctx.needs_clear)?;
-    term.show_cursor()?;
+    let stats = compositor
+        .render_to_terminal(term, false)
+        .map_err(|e| RiftError::new(crate::error::ErrorType::Renderer, "RENDER_FAILED", e))?;
 
     // 6. Position cursor
-    match cursor_info {
-        CursorPosition::Absolute(row, col) => {
-            term.move_cursor(row, col)?;
+    if stats.changed_cells > 0 || cache.last_cursor_pos != Some(cursor_info) {
+        match cursor_info {
+            CursorPosition::Absolute(row, col) => {
+                term.move_cursor(row, col)?;
+            }
         }
+        cache.last_cursor_pos = Some(cursor_info);
     }
+    term.show_cursor()?;
 
     Ok(cursor_info)
 }

@@ -324,11 +324,15 @@ impl DoubleBuffer {
         use crossterm::queue;
         use crossterm::style::ResetColor;
 
-        // Hide cursor during rendering
-        term.hide_cursor()?;
-
         // Get batched changes
         let (batches, stats) = self.get_batched_changes();
+
+        if batches.is_empty() {
+            return Ok(stats);
+        }
+
+        // Hide cursor during rendering
+        term.hide_cursor()?;
 
         // Track current colors to minimize escape sequences
         let mut current_fg: Option<Color> = None;
