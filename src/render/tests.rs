@@ -5,7 +5,7 @@ use crate::key::Key;
 use crate::layer::{Layer, LayerCompositor, LayerPriority};
 use crate::mode::Mode;
 use crate::render::{
-    calculate_cursor_column, render, CursorInfo, RenderCache, RenderContext, StatusDrawState,
+    calculate_cursor_column, render, CursorInfo, DrawContext, RenderCache, StatusDrawState,
 };
 use crate::state::State;
 use crate::status::StatusBar;
@@ -218,7 +218,7 @@ fn test_render_does_not_clear_screen() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -249,7 +249,7 @@ fn test_render_cursor_positioning() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -279,7 +279,7 @@ fn test_render_empty_buffer() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -312,7 +312,7 @@ fn test_render_multiline_buffer() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -350,7 +350,7 @@ fn test_render_file_loaded_at_start() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -398,7 +398,7 @@ fn test_render_viewport_scrolling() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -430,7 +430,7 @@ fn test_render_viewport_edge_cases() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -461,7 +461,7 @@ fn test_render_large_buffer() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -500,7 +500,7 @@ fn test_render_cursor_at_viewport_boundaries() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -530,7 +530,7 @@ fn test_render_cursor_at_viewport_boundaries() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -601,7 +601,7 @@ fn test_render_line_numbers_enabled() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -639,7 +639,7 @@ fn test_render_line_numbers_disabled() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -673,7 +673,7 @@ fn test_render_line_numbers_gutter_width() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -714,7 +714,7 @@ fn test_render_cursor_position_with_line_numbers() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -745,7 +745,7 @@ fn test_no_redraw_on_noop() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -773,7 +773,7 @@ fn test_no_redraw_on_noop() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -811,7 +811,7 @@ fn test_redraw_on_change() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -837,7 +837,7 @@ fn test_redraw_on_change() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
@@ -942,7 +942,7 @@ fn test_render_search_highlights() {
     render(
         &mut term,
         &mut compositor,
-        RenderContext {
+        DrawContext {
             buf: &buf,
             viewport: &viewport,
             current_mode: Mode::Normal,
