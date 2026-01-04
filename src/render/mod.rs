@@ -26,6 +26,9 @@ use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+pub mod system;
+pub use system::RenderSystem;
+
 /// Explicitly tracked cursor information for rendering comparison
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CursorInfo {
@@ -139,7 +142,7 @@ impl RenderCache {
 pub fn full_redraw<T: TerminalBackend>(
     term: &mut T,
     compositor: &mut LayerCompositor,
-    ctx: RenderContext,
+    ctx: DrawContext,
     cache: &mut RenderCache,
 ) -> Result<CursorPosition, RiftError> {
     // 1. Invalidate all cache entries
@@ -160,7 +163,7 @@ pub fn full_redraw<T: TerminalBackend>(
 }
 
 /// Context for rendering
-pub struct RenderContext<'a> {
+pub struct DrawContext<'a> {
     pub buf: &'a TextBuffer,
     pub viewport: &'a Viewport,
     pub current_mode: Mode,
@@ -191,7 +194,7 @@ pub enum CursorPosition {
 pub fn render<T: TerminalBackend>(
     term: &mut T,
     compositor: &mut LayerCompositor,
-    ctx: RenderContext,
+    ctx: DrawContext,
     cache: &mut RenderCache,
 ) -> Result<CursorPosition, RiftError> {
     // Resize compositor if needed
@@ -487,7 +490,7 @@ fn highlight_color(capture_name: &str, theme_colors: Option<&SyntaxColors>) -> O
 }
 
 /// Render buffer content to the content layer
-fn render_content_to_layer(layer: &mut Layer, ctx: &RenderContext) -> Result<(), String> {
+fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), String> {
     let buf = ctx.buf;
     let viewport = ctx.viewport;
     let editor_bg = ctx.state.settings.editor_bg;

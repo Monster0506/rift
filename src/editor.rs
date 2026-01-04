@@ -8,25 +8,21 @@ use crate::document::{Document, DocumentId};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::executor::execute_command;
 use crate::key_handler::{KeyAction, KeyHandler};
-use crate::layer::{LayerCompositor, LayerPriority};
+use crate::layer::LayerPriority;
 use crate::mode::Mode;
 use crate::render;
 use crate::screen_buffer::FrameStats;
 use crate::search::SearchDirection;
 use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
-use crate::viewport::Viewport;
 use std::sync::Arc;
 
 /// Main editor struct
 pub struct Editor<T: TerminalBackend> {
     /// Terminal backend
     pub term: T,
-    /// Render cache for selective redrawing
-    pub render_cache: crate::render::RenderCache,
     pub document_manager: crate::document::DocumentManager,
-    compositor: LayerCompositor,
-    viewport: Viewport,
+    pub render_system: crate::render::RenderSystem,
     dispatcher: Dispatcher,
     current_mode: Mode,
     should_quit: bool,
@@ -115,8 +111,9 @@ impl<T: TerminalBackend> Editor<T> {
         // Get terminal size
         let size = terminal.get_size()?;
 
-        // Create viewport
-        let viewport = Viewport::new(size.rows as usize, size.cols as usize);
+        // Create render system
+        let render_system =
+            crate::render::RenderSystem::new(size.rows as usize, size.cols as usize);
 
         // Create dispatcher
         let dispatcher = Dispatcher::new(Mode::Normal);
@@ -131,14 +128,10 @@ impl<T: TerminalBackend> Editor<T> {
             state.update_filename(doc.display_name().to_string());
         }
 
-        let compositor = LayerCompositor::new(size.rows as usize, size.cols as usize);
-
         Ok(Self {
             term: terminal,
-            render_cache: crate::render::RenderCache::default(),
+            render_system,
             document_manager,
-            compositor,
-            viewport,
             dispatcher,
             current_mode: Mode::Normal,
             should_quit: false,
@@ -207,8 +200,8 @@ impl<T: TerminalBackend> Editor<T> {
         let doc = self.document_manager.active_document_mut().unwrap();
 
         // Calculate visible range for syntax highlighting
-        let start_line = self.viewport.top_line();
-        let end_line = start_line + self.viewport.visible_rows();
+        let start_line = self.render_system.viewport.top_line();
+        let end_line = start_line + self.render_system.viewport.visible_rows();
         let start_byte = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
         let end_byte = if end_line < doc.buffer.get_total_lines() {
             doc.buffer
@@ -225,9 +218,9 @@ impl<T: TerminalBackend> Editor<T> {
             None
         };
 
-        let ctx = render::RenderContext {
+        let ctx = render::DrawContext {
             buf: &doc.buffer,
-            viewport: &self.viewport,
+            viewport: &self.render_system.viewport,
             state: &self.state,
             current_mode: self.current_mode,
             pending_key: self.dispatcher.pending_key(),
@@ -239,9 +232,9 @@ impl<T: TerminalBackend> Editor<T> {
 
         render::full_redraw(
             &mut self.term,
-            &mut self.compositor,
+            &mut self.render_system.compositor,
             ctx,
-            &mut self.render_cache,
+            &mut self.render_system.render_cache,
         )
         .map_err(|e| {
             RiftError::new(
@@ -481,7 +474,7 @@ impl<T: TerminalBackend> Editor<T> {
                     );
 
                 if should_execute_buffer {
-                    let viewport_height = self.viewport.visible_rows();
+                    let viewport_height = self.render_system.viewport.visible_rows();
 
                     // Wrap mutating commands (except Undo/Redo) in a transaction
                     // Skip wrapping in Insert mode - it already has an open
@@ -565,7 +558,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.toggle_debug();
             }
             KeyAction::Resize(cols, rows) => {
-                self.viewport.set_size(rows as usize, cols as usize);
+                self.render_system.resize(rows as usize, cols as usize);
             }
             KeyAction::SkipAndRender | KeyAction::Continue => {
                 // No special action needed
@@ -708,9 +701,10 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             0
         };
-        let needs_clear = self
-            .viewport
-            .update(cursor_line, cursor_col, total_lines, gutter_width);
+        let needs_clear =
+            self.render_system
+                .viewport
+                .update(cursor_line, cursor_col, total_lines, gutter_width);
 
         self.render(needs_clear)
     }
@@ -720,6 +714,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub fn render_to_terminal(&mut self, needs_clear: bool) -> Result<FrameStats, RiftError> {
         self.term.hide_cursor()?;
         let stats = self
+            .render_system
             .compositor
             .render_to_terminal(&mut self.term, needs_clear)
             .map_err(|e| {
@@ -738,13 +733,11 @@ impl<T: TerminalBackend> Editor<T> {
     fn render(&mut self, needs_clear: bool) -> Result<(), RiftError> {
         let Editor {
             document_manager,
-            viewport,
+            render_system,
             state,
             current_mode,
             dispatcher,
-            compositor,
             term,
-            render_cache,
             ..
         } = self;
 
@@ -753,8 +746,8 @@ impl<T: TerminalBackend> Editor<T> {
         let doc = document_manager.active_document_mut().unwrap();
 
         // Calculate visible range for syntax highlighting optimization
-        let start_line = viewport.top_line();
-        let end_line = start_line + viewport.visible_rows();
+        let start_line = render_system.viewport.top_line();
+        let end_line = start_line + render_system.viewport.visible_rows();
         let start_byte = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
         let end_byte = if end_line < doc.buffer.get_total_lines() {
             doc.buffer
@@ -773,9 +766,9 @@ impl<T: TerminalBackend> Editor<T> {
 
         let buf = &doc.buffer;
 
-        let ctx = render::RenderContext {
+        let ctx = render::DrawContext {
             buf,
-            viewport,
+            viewport: &render_system.viewport,
             state,
             current_mode: *current_mode,
             pending_key: dispatcher.pending_key(),
@@ -785,14 +778,22 @@ impl<T: TerminalBackend> Editor<T> {
             highlights: highlights.as_deref(),
         };
 
-        let _ = render::render(term, compositor, ctx, render_cache)?;
+        let _ = render::render(
+            term,
+            &mut render_system.compositor,
+            ctx,
+            &mut render_system.render_cache,
+        )?;
 
         // Render modal if active
         if let Some(ref mut modal) = self.modal {
-            let layer = compositor.get_layer_mut(modal.layer);
+            let layer = self.render_system.compositor.get_layer_mut(modal.layer);
             modal.component.render(layer);
             // Re-composite and render
-            let _ = compositor.render_to_terminal(term, false)?;
+            let _ = self
+                .render_system
+                .compositor
+                .render_to_terminal(term, false)?;
 
             // Explicitly set cursor if modal requests it
             if let Some((row, col)) = modal.component.cursor_position() {
@@ -806,7 +807,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// Helper to close any active modal, clear optional layer, and reset to Normal mode
     fn close_active_modal(&mut self) {
         if let Some(modal) = &self.modal {
-            self.compositor.clear_layer(modal.layer);
+            self.render_system.compositor.clear_layer(modal.layer);
         }
         self.modal = None;
         self.set_mode(Mode::Normal);

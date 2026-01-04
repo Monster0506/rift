@@ -1,6 +1,4 @@
 use super::*;
-use crate::document::DocumentId;
-use crate::error::ErrorType;
 
 fn create_manager() -> DocumentManager {
     DocumentManager::new()
