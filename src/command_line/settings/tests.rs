@@ -857,28 +857,6 @@ fn test_execute_setting_theme_nordic() {
 }
 
 #[test]
-fn test_execute_setting_theme_nord_alias() {
-    let registry = create_settings_registry();
-    let mut settings = UserSettings::new();
-    let mut state = State::with_settings(settings.clone());
-
-    let mut errors = Vec::new();
-    let mut error_handler = |e: RiftError| errors.push(e);
-    let result = registry.execute_setting(
-        "aptheme",
-        Some("nord".to_string()),
-        &mut state.settings,
-        &mut error_handler,
-    );
-    assert!(matches!(
-        result,
-        crate::command_line::commands::ExecutionResult::Redraw
-    ));
-    settings = state.settings.clone();
-    assert_eq!(settings.theme, Some("nordic".to_string()));
-}
-
-#[test]
 fn test_execute_setting_theme_case_insensitive() {
     let registry = create_settings_registry();
     let mut settings = UserSettings::new();

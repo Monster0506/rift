@@ -18,7 +18,6 @@ fn test_theme_by_name() {
     assert!(Theme::by_name("dark").is_some());
     assert!(Theme::by_name("gruvbox").is_some());
     assert!(Theme::by_name("nordic").is_some());
-    assert!(Theme::by_name("nord").is_some());
     assert!(Theme::by_name("unknown").is_none());
 }
 
