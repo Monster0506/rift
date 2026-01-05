@@ -101,6 +101,12 @@ pub fn execute_command(
                     Motion::PreviousSentence => {
                         buf.move_sentence_backward();
                     }
+                    Motion::NextBigWord => {
+                        buf.move_big_word_right();
+                    }
+                    Motion::PreviousBigWord => {
+                        buf.move_big_word_left();
+                    }
                     Motion::NextMatch => {
                         if let Some(query) = last_search_query {
                             let start = buf.cursor().saturating_add(1);
@@ -176,6 +182,12 @@ pub fn execute_command(
                     }
                     Motion::PreviousSentence => {
                         doc.buffer.move_sentence_backward();
+                    }
+                    Motion::NextBigWord => {
+                        doc.buffer.move_big_word_right();
+                    }
+                    Motion::PreviousBigWord => {
+                        doc.buffer.move_big_word_left();
                     }
                     Motion::NextMatch => {
                         let buf = &mut doc.buffer;

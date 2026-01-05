@@ -279,9 +279,9 @@ fn test_move_sentence_forward_multiline() {
     buffer.move_to_start();
 
     // "Line 1 no dot" is 13 chars. '\n' is at 13.
-    // Should stop at newline if no dot found
+    // Should stop at start of next line if no dot found
     assert!(buffer.move_sentence_forward());
-    assert_eq!(buffer.cursor(), 13); // At '\n'
+    assert_eq!(buffer.cursor(), 14); // At 'L' of "Line 2" (past newline)
 
     // Should move past newline and find sentence end on next line
     assert!(buffer.move_sentence_forward());
