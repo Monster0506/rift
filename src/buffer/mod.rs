@@ -382,24 +382,155 @@ impl TextBuffer {
     // User wants "Cascading type errors...". I should try to keep functionality.
 
     pub fn move_paragraph_forward(&mut self) -> bool {
-        // ... simplified ...
-        self.move_down(); // placeholder
-        true
+        let current_line = self.get_line();
+        let total_lines = self.get_total_lines();
+        let start_pos = self.cursor;
+
+        let mut target_line = current_line + 1;
+        while target_line < total_lines {
+            let start = self.line_index.get_start(target_line).unwrap_or(0);
+            let end = self
+                .line_index
+                .get_end(target_line, self.len())
+                .unwrap_or(self.len());
+
+            // If end <= start, line contains only newline (or is empty last line)
+            if end <= start {
+                self.cursor = start;
+                return true;
+            }
+            target_line += 1;
+        }
+
+        // If no empty line found, move to end
+        self.move_to_end();
+        self.cursor != start_pos
     }
 
     pub fn move_paragraph_backward(&mut self) -> bool {
-        self.move_up(); // placeholder
-        true
+        let current_line = self.get_line();
+        let start_pos = self.cursor;
+
+        if current_line == 0 {
+            self.cursor = 0;
+            return self.cursor != start_pos;
+        }
+
+        let mut target_line = current_line - 1;
+        while target_line > 0 {
+            let start = self.line_index.get_start(target_line).unwrap_or(0);
+            let end = self
+                .line_index
+                .get_end(target_line, self.len())
+                .unwrap_or(self.len());
+
+            if end <= start {
+                self.cursor = start;
+                return true;
+            }
+            target_line -= 1;
+        }
+
+        // If no empty line found, move to start
+        self.move_to_start();
+        self.cursor != start_pos
     }
 
     pub fn move_sentence_forward(&mut self) -> bool {
-        self.move_right();
-        true
+        let len = self.len();
+        if self.cursor >= len {
+            return false;
+        }
+        let start_pos = self.cursor;
+
+        // Helper to check for sentence terminator
+        let is_terminator = |c: Character| matches!(c, Character::Unicode('.' | '!' | '?'));
+        let is_whitespace = |c: Character| {
+            matches!(c, Character::Unicode(ch) if ch.is_whitespace())
+                || matches!(c, Character::Tab | Character::Newline)
+        };
+
+        let mut pos = self.cursor;
+        while pos < len {
+            if let Some(c) = self.char_at(pos) {
+                if is_terminator(c) {
+                    // Check if next char is whitespace or EOF
+                    let next_pos = pos + 1;
+                    if next_pos >= len || self.char_at(next_pos).map_or(true, is_whitespace) {
+                        // Found sentence end. Skip whitespace to find next start.
+                        pos = next_pos;
+                        while pos < len {
+                            if let Some(wc) = self.char_at(pos) {
+                                if !is_whitespace(wc) {
+                                    break;
+                                }
+                            }
+                            pos += 1;
+                        }
+                        self.cursor = pos;
+                        return true;
+                    }
+                } else if c == Character::Newline {
+                    // Newline acts as a fallback sentence terminator if we have moved
+                    if pos > start_pos {
+                        self.cursor = pos;
+                        return true;
+                    }
+                }
+            }
+            pos += 1;
+        }
+
+        self.move_to_end();
+        self.cursor != start_pos
     }
 
     pub fn move_sentence_backward(&mut self) -> bool {
-        self.move_left();
-        true
+        if self.cursor == 0 {
+            return false;
+        }
+        let start_pos = self.cursor;
+
+        let is_terminator = |c: Character| matches!(c, Character::Unicode('.' | '!' | '?'));
+        let is_whitespace = |c: Character| {
+            matches!(c, Character::Unicode(ch) if ch.is_whitespace())
+                || matches!(c, Character::Tab | Character::Newline)
+        };
+
+        let mut pos = self.cursor.saturating_sub(1);
+        while pos > 0 {
+            if let Some(c) = self.char_at(pos) {
+                if is_terminator(c) {
+                    let next_pos = pos + 1;
+                    if next_pos < self.len() && self.char_at(next_pos).map_or(false, is_whitespace)
+                    {
+                        // Found terminator + whitespace.
+                        // Skip whitespace after terminator to find start of next sentence (which is BEFORE our cursor)
+                        let mut s = next_pos;
+                        while s < self.len() {
+                            if let Some(wc) = self.char_at(s) {
+                                if !is_whitespace(wc) {
+                                    break;
+                                }
+                            }
+                            s += 1;
+                        }
+
+                        // If this sentence start is strictly before our cursor, it's the target.
+                        // Since we are scanning backwards, the first valid one we find is the closest previous sentence.
+                        if s < self.cursor {
+                            self.cursor = s;
+                            return true;
+                        }
+                    }
+                }
+            }
+            pos -= 1;
+        }
+
+        // If no sentence boundary found (or we reached start), move to start
+        self.move_to_start();
+        self.cursor != start_pos
     }
 }
 

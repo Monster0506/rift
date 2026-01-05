@@ -244,8 +244,13 @@ fn find_all_line_by_line(
             buffer.len()
         };
 
-        let (line_str, mapping) =
+        let (mut line_str, mut mapping) =
             chars_to_string_with_mapping(buffer, line_start_val..line_end_val);
+
+        if line_str.ends_with('\n') {
+            line_str.pop();
+            mapping.pop();
+        }
 
         for m in re.find_all(&line_str) {
             let char_start = byte_to_char_idx(m.start, &mapping);
@@ -276,7 +281,13 @@ fn search_single_line(
         buffer.len()
     };
 
-    let (line_str, mapping) = chars_to_string_with_mapping(buffer, line_start_val..line_end_val);
+    let (mut line_str, mut mapping) =
+        chars_to_string_with_mapping(buffer, line_start_val..line_end_val);
+
+    if line_str.ends_with('\n') {
+        line_str.pop();
+        mapping.pop();
+    }
 
     for m in re.find_all(&line_str) {
         let char_start = byte_to_char_idx(m.start, &mapping);
@@ -312,7 +323,13 @@ fn search_single_line_backward(
         buffer.len()
     };
 
-    let (line_str, mapping) = chars_to_string_with_mapping(buffer, line_start_val..line_end_val);
+    let (mut line_str, mut mapping) =
+        chars_to_string_with_mapping(buffer, line_start_val..line_end_val);
+
+    if line_str.ends_with('\n') {
+        line_str.pop();
+        mapping.pop();
+    }
 
     let mut last_valid_match = None;
 

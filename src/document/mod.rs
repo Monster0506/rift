@@ -440,17 +440,12 @@ impl Document {
             for i in 0..self.buffer.get_total_lines() {
                 let line_bytes = self.buffer.get_line_bytes(i);
 
-                // If it's LF (unix), just write bytes.
-                // TextBuffer internal storage conventions:
-                // If we loaded file, we normalized to LF.
-                // Insertions usually use LF or whatever.
-                // PieceTable just stores characters.
-                // `get_line_bytes` returns bytes.
+                // Write the line content
+                file.write_all(&line_bytes)?;
 
-                if self.options.line_ending == LineEnding::LF {
-                    file.write_all(&line_bytes)?;
-                } else {
-                    Self::write_denormalized(&mut file, &line_bytes, line_ending_bytes)?;
+                // If not the last line, write the line ending
+                if i < self.buffer.get_total_lines() - 1 {
+                    file.write_all(line_ending_bytes)?;
                 }
             }
 
@@ -460,26 +455,6 @@ impl Document {
         // Atomically rename
         fs::rename(&temp_path, path)?;
 
-        Ok(())
-    }
-
-    /// Helper to write bytes with denormalized line endings
-    fn write_denormalized(
-        mut writer: impl io::Write,
-        bytes: &[u8],
-        line_ending: &[u8],
-    ) -> io::Result<()> {
-        let mut start = 0;
-        for (i, &byte) in bytes.iter().enumerate() {
-            if byte == b'\n' {
-                writer.write_all(&bytes[start..i])?;
-                writer.write_all(line_ending)?;
-                start = i + 1;
-            }
-        }
-        if start < bytes.len() {
-            writer.write_all(&bytes[start..])?;
-        }
         Ok(())
     }
 

@@ -15,7 +15,8 @@ use crate::buffer::api::BufferView;
 /// - All rendering is layer-based and composited before output to terminal.
 use crate::buffer::TextBuffer;
 use crate::character::Character;
-use crate::color::theme::SyntaxColors;
+// use crate::color::theme::Theme;
+// use crate::color::theme::SyntaxColors;
 use crate::color::Color;
 use crate::command_line::CommandLine;
 use crate::error::RiftError;
@@ -417,76 +418,6 @@ pub fn render<T: TerminalBackend>(
 }
 
 /// Map syntax highlight capture names to colors
-fn highlight_color(capture_name: &str, theme_colors: Option<&SyntaxColors>) -> Option<Color> {
-    // Handle sub-scopes (e.g., function.builtin -> function)
-    let base_name = capture_name.split('.').next().unwrap_or(capture_name);
-
-    if let Some(theme) = theme_colors {
-        match capture_name {
-            crate::constants::captures::CONSTRUCTOR => return Some(theme.constructor),
-            "function.builtin" | crate::constants::captures::BUILTIN => return Some(theme.builtin),
-            _ => {}
-        }
-
-        match base_name {
-            crate::constants::captures::KEYWORD => return Some(theme.keyword),
-            crate::constants::captures::TYPE => return Some(theme.type_def),
-            crate::constants::captures::FUNCTION => return Some(theme.function),
-            crate::constants::captures::STRING => return Some(theme.string),
-            crate::constants::captures::NUMBER => return Some(theme.number),
-            crate::constants::captures::CONSTANT => return Some(theme.constant),
-            crate::constants::captures::BOOLEAN => return Some(theme.boolean),
-            crate::constants::captures::COMMENT => return Some(theme.comment),
-            crate::constants::captures::VARIABLE => return Some(theme.variable),
-            "parameter" => return Some(theme.parameter),
-            crate::constants::captures::PROPERTY | crate::constants::captures::FIELD => {
-                return Some(theme.property)
-            }
-            crate::constants::captures::ATTRIBUTE | crate::constants::captures::LABEL => {
-                return Some(theme.attribute)
-            }
-            crate::constants::captures::NAMESPACE | crate::constants::captures::MODULE => {
-                return Some(theme.namespace)
-            }
-            crate::constants::captures::OPERATOR => return Some(theme.operator),
-            crate::constants::captures::PUNCTUATION => return Some(theme.punctuation),
-            crate::constants::captures::CONSTRUCTOR => return Some(theme.constructor),
-            crate::constants::captures::BUILTIN => return Some(theme.builtin),
-            _ => {}
-        }
-    }
-
-    // Fallback to hardcoded defaults if no theme colors specified or unknown capture
-    match base_name {
-        crate::constants::captures::KEYWORD => Some(Color::Magenta),
-        crate::constants::captures::TYPE => Some(Color::Yellow),
-        crate::constants::captures::FUNCTION | crate::constants::captures::CONSTRUCTOR => {
-            Some(Color::Blue)
-        }
-        crate::constants::captures::STRING => Some(Color::Green),
-        crate::constants::captures::NUMBER
-        | crate::constants::captures::CONSTANT
-        | crate::constants::captures::BOOLEAN => Some(Color::Yellow),
-        crate::constants::captures::COMMENT => Some(Color::DarkGrey),
-        crate::constants::captures::VARIABLE => Some(Color::Cyan),
-        "parameter" => Some(Color::White),
-        crate::constants::captures::PROPERTY | crate::constants::captures::FIELD => {
-            Some(Color::Blue)
-        }
-        crate::constants::captures::ATTRIBUTE | crate::constants::captures::LABEL => {
-            Some(Color::Yellow)
-        }
-        crate::constants::captures::NAMESPACE | crate::constants::captures::MODULE => {
-            Some(Color::Cyan)
-        }
-        crate::constants::captures::OPERATOR => Some(Color::White),
-        crate::constants::captures::PUNCTUATION => Some(Color::White),
-        crate::constants::captures::ESCAPE | crate::constants::captures::EMBEDDED => {
-            Some(Color::Grey)
-        }
-        _ => None,
-    }
-}
 
 /// Render buffer content to the content layer
 fn render_content_to_layer(layer: &mut Layer, ctx: &RenderContext) -> Result<(), String> {
