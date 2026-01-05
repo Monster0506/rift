@@ -8,6 +8,7 @@
 //! - Status display is optional and failure-tolerant.
 //! - Status never consumes input or commands.
 
+use crate::character::Character;
 use crate::color::Color;
 use crate::key::Key;
 use crate::layer::{Cell, Layer};
@@ -270,19 +271,19 @@ impl StatusBar {
         let mut col = 0;
 
         // Write mode
-        layer.write_bytes_colored(status_row, col, mode_str.as_bytes(), fg, bg);
+        layer.write_str_colored(status_row, col, mode_str, fg, bg);
         col += mode_str.len();
 
         // Pending key indicator
         if state.pending_count > 0 {
             let count_str = format!(" {}", state.pending_count);
-            layer.write_bytes_colored(status_row, col, count_str.as_bytes(), fg, bg);
+            layer.write_str_colored(status_row, col, &count_str, fg, bg);
             col += count_str.len();
         }
 
         if let Some(key) = state.pending_key {
             let pending_str = format!(" [{}]", Self::format_key(key));
-            layer.write_bytes_colored(status_row, col, pending_str.as_bytes(), fg, bg);
+            layer.write_str_colored(status_row, col, &pending_str, fg, bg);
             col += pending_str.len();
         }
 
@@ -290,14 +291,18 @@ impl StatusBar {
         if let Some(query) = &state.search_query {
             if !query.is_empty() {
                 // Space before search info
-                layer.set_cell(status_row, col, Cell::new(b' ').with_colors(fg, bg));
+                layer.set_cell(
+                    status_row,
+                    col,
+                    Cell::new(Character::from(' ')).with_colors(fg, bg),
+                );
                 col += 1;
 
                 // Render query highlighted (Yellow bg, Black fg)
-                layer.write_bytes_colored(
+                layer.write_str_colored(
                     status_row,
                     col,
-                    query.as_bytes(),
+                    query,
                     Some(Color::Black),
                     Some(Color::Yellow),
                 );
@@ -310,7 +315,7 @@ impl StatusBar {
                     } else {
                         format!(" ?/{}", state.search_total_matches)
                     };
-                    layer.write_bytes_colored(status_row, col, stats.as_bytes(), fg, bg);
+                    layer.write_str_colored(status_row, col, &stats, fg, bg);
                     col += stats.len();
                 }
             }
@@ -343,11 +348,11 @@ impl StatusBar {
                     layer.set_cell(
                         status_row,
                         col,
-                        crate::layer::Cell::new(b' ').with_colors(fg, bg),
+                        crate::layer::Cell::new(Character::from(' ')).with_colors(fg, bg),
                     );
                     col += 1;
                 }
-                layer.write_bytes_colored(status_row, col, truncated.as_bytes(), fg, bg);
+                layer.write_str_colored(status_row, col, &truncated, fg, bg);
                 col += truncated.len();
             }
         } else {
@@ -365,11 +370,11 @@ impl StatusBar {
                     layer.set_cell(
                         status_row,
                         col,
-                        crate::layer::Cell::new(b' ').with_colors(fg, bg),
+                        crate::layer::Cell::new(Character::from(' ')).with_colors(fg, bg),
                     );
                     col += 1;
                 }
-                layer.write_bytes_colored(status_row, col, display_name.as_bytes(), fg, bg);
+                layer.write_str_colored(status_row, col, &display_name, fg, bg);
                 col += display_name.len();
             } else if available_cols > 3 {
                 // Truncate filename
@@ -382,11 +387,11 @@ impl StatusBar {
                     layer.set_cell(
                         status_row,
                         col,
-                        crate::layer::Cell::new(b' ').with_colors(fg, bg),
+                        crate::layer::Cell::new(Character::from(' ')).with_colors(fg, bg),
                     );
                     col += 1;
                 }
-                layer.write_bytes_colored(status_row, col, truncated.as_bytes(), fg, bg);
+                layer.write_str_colored(status_row, col, &truncated, fg, bg);
                 col += truncated.len();
             }
         }
@@ -396,7 +401,7 @@ impl StatusBar {
             layer.set_cell(
                 status_row,
                 col,
-                crate::layer::Cell::new(b' ').with_colors(fg, bg),
+                crate::layer::Cell::new(Character::from(' ')).with_colors(fg, bg),
             );
             col += 1;
         }

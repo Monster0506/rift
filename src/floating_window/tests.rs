@@ -1,5 +1,6 @@
 //! Tests for floating window
 
+use crate::character::Character;
 use crate::floating_window::{BorderChars, FloatingWindow, WindowPosition, WindowStyle};
 use crate::layer::{Layer, LayerPriority};
 
@@ -49,7 +50,7 @@ fn test_floating_window_render_single_line() {
     let start_col = pos.1 as usize;
     let cell = layer.get_cell(pos.0 as usize, start_col);
     assert!(cell.is_some());
-    assert_eq!(cell.unwrap().content, vec![b':']);
+    assert_eq!(cell.unwrap().content, Character::from(':'));
 }
 
 #[test]
@@ -74,12 +75,12 @@ fn test_floating_window_render_multiline() {
     let cell = layer.get_cell(row as usize, col as usize);
     assert!(cell.is_some());
     // Should be top-left corner: ╭
-    assert_eq!(cell.unwrap().content, "╭".as_bytes());
+    assert_eq!(cell.unwrap().content, Character::from('╭'));
 
     // Check content row (first content at row+1, col+1)
     let cell = layer.get_cell(row as usize + 1, col as usize + 1);
     assert!(cell.is_some());
-    assert_eq!(cell.unwrap().content, vec![b'L']);
+    assert_eq!(cell.unwrap().content, Character::from('L'));
 }
 
 #[test]
@@ -151,12 +152,12 @@ fn test_floating_window_content_truncation() {
     // Only first 10 characters should be rendered
     let cell = layer.get_cell(pos.0 as usize, pos.1 as usize);
     assert!(cell.is_some());
-    assert_eq!(cell.unwrap().content, vec![b'T']);
+    assert_eq!(cell.unwrap().content, Character::from('T'));
 
     // Cell at position 10 should be 'i' (10th char, 0-indexed = 9)
     let cell = layer.get_cell(pos.0 as usize, pos.1 as usize + 9);
     assert!(cell.is_some());
-    assert_eq!(cell.unwrap().content, vec![b' ']); // 'a' from "a very" - wait, let me check
+    assert_eq!(cell.unwrap().content, Character::from(' ')); // 'a' from "a very" - wait, let me check
 
     // Actually "This is a " is 10 chars, so position 9 (0-indexed) = ' ' (space after 'a')
 }
@@ -176,12 +177,12 @@ fn test_floating_window_with_custom_border_chars() {
     // Top-left should be '+' (ASCII)
     let cell = layer.get_cell(pos.0 as usize, pos.1 as usize);
     assert!(cell.is_some());
-    assert_eq!(cell.unwrap().content, vec![b'+']);
+    assert_eq!(cell.unwrap().content, Character::from('+'));
 
     // Horizontal border should be '-'
     let cell = layer.get_cell(pos.0 as usize, pos.1 as usize + 1);
     assert!(cell.is_some());
-    assert_eq!(cell.unwrap().content, vec![b'-']);
+    assert_eq!(cell.unwrap().content, Character::from('-'));
 }
 
 #[test]
@@ -207,10 +208,10 @@ fn test_floating_window_no_border() {
     // First character should be 'H' (no border)
     let cell = layer.get_cell(pos.0 as usize, pos.1 as usize);
     assert!(cell.is_some());
-    assert_eq!(cell.unwrap().content, vec![b'H']);
+    assert_eq!(cell.unwrap().content, Character::from('H'));
 
     // Second row should start with 'W'
     let cell = layer.get_cell(pos.0 as usize + 1, pos.1 as usize);
     assert!(cell.is_some());
-    assert_eq!(cell.unwrap().content, vec![b'W']);
+    assert_eq!(cell.unwrap().content, Character::from('W'));
 }

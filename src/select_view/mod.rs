@@ -5,6 +5,7 @@
 
 use std::iter::repeat_n;
 
+use crate::character::Character;
 use crate::color::Color;
 use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
 use crate::layer::Layer;
@@ -300,11 +301,11 @@ impl SelectView {
                 }
                 // Pad to left_width
                 while line.len() < left_width {
-                    line.push(Cell::new(b' '));
+                    line.push(Cell::new(Character::from(' ')));
                 }
             } else {
                 // Empty line
-                line.extend(repeat_n(Cell::new(b' '), left_width));
+                line.extend(repeat_n(Cell::new(Character::from(' ')), left_width));
             }
 
             // Divider
@@ -321,11 +322,11 @@ impl SelectView {
                 }
                 // Pad to right_width
                 while line.len() < left_width + 1 + right_width {
-                    line.push(Cell::new(b' '));
+                    line.push(Cell::new(Character::from(' ')));
                 }
             } else {
                 // Empty line
-                line.extend(repeat_n(Cell::new(b' '), right_width));
+                line.extend(repeat_n(Cell::new(Character::from(' ')), right_width));
             }
 
             combined_content.push(line);

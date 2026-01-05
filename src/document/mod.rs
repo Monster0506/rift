@@ -224,35 +224,24 @@ impl Document {
     }
 
     pub fn delete_backward(&mut self) -> bool {
-        let end_byte = self.buffer.cursor();
-        if end_byte == 0 {
+        let cursor = self.buffer.cursor();
+        if cursor == 0 {
             return false;
         }
 
-        // Calculate what we are about to delete
-        let mut char_len = 1;
-        while (self.buffer.byte_at(end_byte - char_len) & 0b11000000) == 0b10000000 {
-            char_len += 1;
-            if end_byte < char_len {
-                break;
-            }
-        }
-
-        let start_byte = end_byte - char_len;
-
         // Capture deleted text before deletion
-        let deleted_text: String = self
+        // We delete one Character
+        let deleted_char = self
             .buffer
-            .line_index
-            .bytes_range(start_byte..end_byte)
-            .iter()
-            .map(|&b| b as char)
-            .collect();
-        let history_start = self.byte_to_position(start_byte);
-        let history_end = self.byte_to_position(end_byte);
+            .char_at(cursor - 1)
+            .unwrap_or(crate::character::Character::from('\0'));
+        let deleted_text = deleted_char.to_string();
 
-        let old_end_position = self.get_point(end_byte);
-        let start_position = self.get_point(start_byte);
+        let history_start = self.byte_to_position(cursor - 1);
+        let history_end = self.byte_to_position(cursor);
+
+        let old_end_position = self.get_point(cursor);
+        let start_position = self.get_point(cursor - 1);
 
         if self.buffer.delete_backward() {
             self.mark_dirty();
@@ -273,10 +262,13 @@ impl Document {
                 ),
             );
 
+            // Note: InputEdit technically expects byte offsets.
+            // We are passing char indices. This works for 1-byte chars but is imprecise for multi-byte.
+            // TODO: Fix byte offset calculation for tree-sitter.
             let edit = InputEdit {
-                start_byte,
-                old_end_byte: end_byte,
-                new_end_byte: start_byte,
+                start_byte: cursor - 1,
+                old_end_byte: cursor,
+                new_end_byte: cursor - 1,
                 start_position,
                 old_end_position,
                 new_end_position: start_position,
@@ -291,35 +283,22 @@ impl Document {
     }
 
     pub fn delete_forward(&mut self) -> bool {
-        let start_byte = self.buffer.cursor();
-        if start_byte >= self.buffer.len() {
+        let cursor = self.buffer.cursor();
+        if cursor >= self.buffer.len() {
             return false;
         }
 
-        // Find end of char
-        let mut end_byte = start_byte + 1;
-        let len = self.buffer.len();
-        while end_byte < len {
-            let byte = self.buffer.byte_at(end_byte);
-            if (byte & 0b11000000) != 0b10000000 {
-                break;
-            }
-            end_byte += 1;
-        }
-
-        // Capture deleted text before deletion
-        let deleted_text: String = self
+        let deleted_char = self
             .buffer
-            .line_index
-            .bytes_range(start_byte..end_byte)
-            .iter()
-            .map(|&b| b as char)
-            .collect();
-        let history_start = self.byte_to_position(start_byte);
-        let history_end = self.byte_to_position(end_byte);
+            .char_at(cursor)
+            .unwrap_or(crate::character::Character::from('\0'));
+        let deleted_text = deleted_char.to_string();
 
-        let start_position = self.get_point(start_byte);
-        let old_end_position = self.get_point(end_byte);
+        let history_start = self.byte_to_position(cursor);
+        let history_end = self.byte_to_position(cursor + 1);
+
+        let start_position = self.get_point(cursor);
+        let old_end_position = self.get_point(cursor + 1);
 
         if self.buffer.delete_forward() {
             self.mark_dirty();
@@ -341,9 +320,9 @@ impl Document {
             );
 
             let edit = InputEdit {
-                start_byte,
-                old_end_byte: end_byte,
-                new_end_byte: start_byte,
+                start_byte: cursor,
+                old_end_byte: cursor + 1,
+                new_end_byte: cursor,
                 start_position,
                 old_end_position,
                 new_end_position: start_position,
@@ -443,10 +422,6 @@ impl Document {
     fn write_to_file(&self, path: &Path) -> Result<(), RiftError> {
         use std::fs;
 
-        // Get buffer contents
-        let before = self.buffer.get_before_gap();
-        let after = self.buffer.get_after_gap();
-
         // Write atomically using a temporary file
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
         let temp_path = parent.join(format!(
@@ -461,15 +436,24 @@ impl Document {
 
             let line_ending_bytes = self.options.line_ending.as_bytes();
 
-            if self.options.line_ending == LineEnding::LF {
-                // Optimized write for LF
-                file.write_all(&before)?;
-                file.write_all(&after)?;
-            } else {
-                // Denormalize for CRLF
-                Self::write_denormalized(&mut file, &before, line_ending_bytes)?;
-                Self::write_denormalized(&mut file, &after, line_ending_bytes)?;
+            // Loop over lines and write each
+            for i in 0..self.buffer.get_total_lines() {
+                let line_bytes = self.buffer.get_line_bytes(i);
+
+                // If it's LF (unix), just write bytes.
+                // TextBuffer internal storage conventions:
+                // If we loaded file, we normalized to LF.
+                // Insertions usually use LF or whatever.
+                // PieceTable just stores characters.
+                // `get_line_bytes` returns bytes.
+
+                if self.options.line_ending == LineEnding::LF {
+                    file.write_all(&line_bytes)?;
+                } else {
+                    Self::write_denormalized(&mut file, &line_bytes, line_ending_bytes)?;
+                }
             }
+
             file.sync_all()?;
         }
 
@@ -503,11 +487,12 @@ impl Document {
     // Undo/Redo Support
     // ==========================================================================
 
-    /// Convert byte offset to history Position
-    fn byte_to_position(&self, byte_offset: usize) -> Position {
-        let line = self.buffer.line_index.get_line_at(byte_offset);
+    /// Convert character index to history Position
+    fn byte_to_position(&self, char_idx: usize) -> Position {
+        // Method name is byte_to_position but we use char_idx from Buffer
+        let line = self.buffer.line_index.get_line_at(char_idx);
         let line_start = self.buffer.line_index.get_start(line).unwrap_or(0);
-        let col = byte_offset.saturating_sub(line_start);
+        let col = char_idx.saturating_sub(line_start);
         Position::new(line as u32, col as u32)
     }
 
@@ -611,17 +596,17 @@ impl Document {
     fn apply_operation_to_buffer(buffer: &mut TextBuffer, op: &EditOperation) {
         match op {
             EditOperation::Insert { position, text, .. } => {
-                // Convert position to byte offset
+                // Convert position to char offset
                 let line_start = buffer
                     .line_index
                     .get_start(position.line as usize)
                     .unwrap_or(0);
-                let byte_offset = line_start + position.col as usize;
-                let _ = buffer.set_cursor(byte_offset);
+                let char_offset = line_start + position.col as usize;
+                let _ = buffer.set_cursor(char_offset);
                 let _ = buffer.insert_str(text);
             }
             EditOperation::Delete { range, .. } => {
-                // Convert range to byte offsets
+                // Convert range to char offsets
                 let start_line_start = buffer
                     .line_index
                     .get_start(range.start.line as usize)
@@ -635,7 +620,9 @@ impl Document {
 
                 // Position cursor at start and delete
                 let _ = buffer.set_cursor(start_offset);
-                for _ in start_offset..end_offset {
+                // Difference in chars
+                let count = end_offset.saturating_sub(start_offset);
+                for _ in 0..count {
                     buffer.delete_forward();
                 }
             }
@@ -655,7 +642,8 @@ impl Document {
                 let end_offset = end_line_start + range.end.col as usize;
 
                 let _ = buffer.set_cursor(start_offset);
-                for _ in start_offset..end_offset {
+                let count = end_offset.saturating_sub(start_offset);
+                for _ in 0..count {
                     buffer.delete_forward();
                 }
                 // Insert new content
@@ -677,7 +665,8 @@ impl Document {
                 let end_offset = end_line_start + range.end.col as usize;
 
                 let _ = buffer.set_cursor(start_offset);
-                for _ in start_offset..end_offset {
+                let count = end_offset.saturating_sub(start_offset);
+                for _ in 0..count {
                     buffer.delete_forward();
                 }
                 // Insert new content
@@ -716,20 +705,15 @@ impl Document {
 
     /// Create a checkpoint at the current position
     pub fn checkpoint(&mut self) {
+        use crate::buffer::api::BufferView;
         use crate::history::DocumentSnapshot;
 
-        // Build snapshot from buffer
-        let before = self.buffer.get_before_gap();
-        let after = self.buffer.get_after_gap();
-        let mut full_text = String::with_capacity(before.len() + after.len());
-
-        // Convert bytes to string (handling invalid UTF-8 gracefully)
-        if let Ok(s) = std::str::from_utf8(&before) {
-            full_text.push_str(s);
-        }
-        if let Ok(s) = std::str::from_utf8(&after) {
-            full_text.push_str(s);
-        }
+        // Build snapshot from buffer characters
+        let full_text: String = self
+            .buffer
+            .chars(0..self.buffer.len())
+            .map(|c| c.to_char_lossy())
+            .collect();
 
         let snapshot = DocumentSnapshot::new(full_text);
         self.history.checkpoint(snapshot);

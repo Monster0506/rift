@@ -33,7 +33,9 @@
 //! increment. This ensures logical units of work appear as single entries in
 //! undo history and prevents rendering from seeing intermediate states.
 
+use crate::character::Character;
 use crate::error::RiftError;
+use std::ops::Range;
 
 /// Read‑only view of a document at a specific revision.
 pub trait BufferView {
@@ -49,13 +51,8 @@ pub trait BufferView {
     /// Code‑point offset of the start of `line` (0‑based).
     fn line_start(&self, line: usize) -> usize;
 
-    /// Contents of `line` without the trailing newline, as an iterator over
-    /// byte slices. Chunks are contiguous in the underlying storage.
-    fn line_bytes(&self, line: usize) -> impl Iterator<Item = &[u8]> + '_;
-
-    /// Slice of the document between code‑point offsets `[start, end)`,
-    /// as an iterator over byte slices.
-    fn slice(&self, start: usize, end: usize) -> impl Iterator<Item = &[u8]> + '_;
+    /// Characters in the given range.
+    fn chars(&self, range: Range<usize>) -> impl Iterator<Item = Character> + '_;
 
     /// Revision identifier; increments on text mutations or transaction commits.
     fn revision(&self) -> u64;

@@ -188,8 +188,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.update_dirty(is_dirty);
 
         let total_lines = self.active_document().buffer.get_total_lines();
-        let buffer_size = self.active_document().buffer.get_before_gap().len()
-            + self.active_document().buffer.get_after_gap().len();
+        let buffer_size = self.active_document().buffer.len();
         self.state
             .update_buffer_stats(total_lines, buffer_size, line_ending);
 

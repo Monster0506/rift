@@ -9,6 +9,7 @@
 //! - Line counting and indexing via tree metadata
 //! - Immutable buffer backing (Original) and append-only buffer (Add)
 
+use crate::character::Character;
 use std::cmp::max;
 use std::sync::Arc;
 
@@ -22,7 +23,7 @@ pub enum BufferSource {
 pub struct Piece {
     pub source: BufferSource,
     pub start: usize,
-    pub len: usize,
+    pub len: usize, // Length in Characters
 }
 
 #[derive(Clone, Debug)]
@@ -32,24 +33,26 @@ struct Node {
     piece: Piece,
 
     // Metadata
-    len: usize,      // Length in bytes of this subtree
+    len: usize,      // Length in Characters of this subtree
+    byte_len: usize, // Length in bytes (UTF-8) of this subtree
     newlines: usize, // Number of newlines in this subtree
     piece_newlines: usize,
-    height: usize, // Height for AVL balancing
+    piece_byte_len: usize, // Cached byte length of the piece
+    height: usize,         // Height for AVL balancing
 }
 
 /// A Piece Table backed by an AVL Tree (Rope).
 #[derive(Clone)]
 pub struct PieceTable {
-    original: Arc<Vec<u8>>,
-    add: Vec<u8>,
+    original: Arc<Vec<Character>>,
+    add: Vec<Character>,
     root: Option<Box<Node>>,
 }
 
 impl PieceTable {
-    pub fn new(original: Vec<u8>) -> Self {
+    pub fn new(original: Vec<Character>) -> Self {
         let len = original.len();
-        let newlines = count_newlines(&original);
+        let (newlines, byte_len) = count_stats(&original);
         let piece = Piece {
             source: BufferSource::Original,
             start: 0,
@@ -62,8 +65,10 @@ impl PieceTable {
                 right: None,
                 piece,
                 len,
+                byte_len,
                 newlines,
                 piece_newlines: newlines,
+                piece_byte_len: byte_len,
                 height: 1,
             }))
         } else {
@@ -81,11 +86,15 @@ impl PieceTable {
         self.root.as_ref().map_or(0, |n| n.len)
     }
 
+    pub fn byte_len(&self) -> usize {
+        self.root.as_ref().map_or(0, |n| n.byte_len)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    pub fn insert(&mut self, pos: usize, text: &[u8]) {
+    pub fn insert(&mut self, pos: usize, text: &[Character]) {
         if text.is_empty() {
             return;
         }
@@ -100,20 +109,18 @@ impl PieceTable {
             len: add_len,
         };
 
-        let newlines = count_newlines(text);
+        let (newlines, byte_len) = count_stats(text);
         let new_node = Box::new(Node {
             left: None,
             right: None,
             piece: new_piece,
             len: add_len,
+            byte_len,
             newlines,
             piece_newlines: newlines,
+            piece_byte_len: byte_len,
             height: 1,
         });
-
-        // Insert logic: Split tree at pos, insert new node, merge.
-        // For simplicity in this prototype, we'll use a naive approach or a simple split/concat if we had it.
-        // Since implementing full AVL split/merge is complex, we will implement a basic insert into the tree.
 
         self.root = insert_node(self.root.take(), pos, new_node, &self.original, &self.add);
     }
@@ -136,24 +143,24 @@ impl PieceTable {
         self.root.as_ref().map_or(0, |n| n.newlines) + 1
     }
 
-    pub fn byte_at(&self, pos: usize) -> u8 {
+    pub fn char_at(&self, pos: usize) -> Character {
         if pos >= self.len() {
             panic!("Index out of bounds");
         }
-        get_byte_recursive(self.root.as_deref(), pos, &self.original, &self.add)
+        get_char_recursive(self.root.as_deref(), pos, &self.original, &self.add)
     }
 
-    /// Get a chunk of text starting at the given byte offset.
-    /// Used for Tree-sitter integration.
-    pub fn get_chunk_at_byte(&self, pos: usize) -> &[u8] {
-        if pos >= self.len() {
-            return &[];
+    /// Get the Character at the given index.
+    pub fn get(&self, index: usize) -> Option<Character> {
+        if index >= self.len() {
+            None
+        } else {
+            Some(self.char_at(index))
         }
-        get_chunk_at_byte_recursive(self.root.as_deref(), pos, &self.original, &self.add)
     }
 
     pub fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
-        let mut result = Vec::with_capacity(range.len());
+        let mut result = Vec::new();
         collect_bytes_range(
             self.root.as_deref(),
             range,
@@ -164,16 +171,24 @@ impl PieceTable {
         result
     }
 
-    pub fn chunks_in_range(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = &[u8]> {
-        let mut chunks = Vec::new();
-        collect_chunks_range(
+    /// Collect Characters in a range
+    pub fn chars_on_line(&self, line_idx: usize) -> Vec<Character> {
+        let start = self.line_start_offset(line_idx);
+        let end = if line_idx + 1 >= self.get_line_count() {
+            self.len()
+        } else {
+            self.line_start_offset(line_idx + 1)
+        };
+
+        let mut result = Vec::with_capacity(end - start);
+        collect_chars_range(
             self.root.as_deref(),
-            range,
+            start..end,
             &self.original,
             &self.add,
-            &mut chunks,
+            &mut result,
         );
-        chunks.into_iter()
+        result
     }
 
     pub fn line_start_offset(&self, line_idx: usize) -> usize {
@@ -188,7 +203,7 @@ impl PieceTable {
         find_nth_newline_end(self.root.as_deref(), line_idx, &self.original, &self.add)
     }
 
-    pub fn line_at_byte(&self, pos: usize) -> usize {
+    pub fn line_at_char(&self, pos: usize) -> usize {
         if pos >= self.len() {
             return self.get_line_count().saturating_sub(1);
         }
@@ -198,9 +213,13 @@ impl PieceTable {
 
 impl std::fmt::Display for PieceTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut bytes = Vec::with_capacity(self.len());
-        collect_bytes(self.root.as_deref(), &self.original, &self.add, &mut bytes);
-        write!(f, "{}", String::from_utf8_lossy(&bytes))
+        // This is inefficient but functional for Debug/Display
+        let mut chars = Vec::with_capacity(self.len());
+        collect_chars(self.root.as_deref(), &self.original, &self.add, &mut chars);
+        for ch in chars {
+            ch.render(f)?;
+        }
+        Ok(())
     }
 }
 
@@ -214,6 +233,10 @@ fn update(node: &mut Box<Node>) {
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
     let right_len = node.right.as_ref().map_or(0, |n| n.len);
     node.len = left_len + node.piece.len + right_len;
+
+    let left_byte_len = node.left.as_ref().map_or(0, |n| n.byte_len);
+    let right_byte_len = node.right.as_ref().map_or(0, |n| n.byte_len);
+    node.byte_len = left_byte_len + node.piece_byte_len + right_byte_len;
 
     let left_nl = node.left.as_ref().map_or(0, |n| n.newlines);
     let right_nl = node.right.as_ref().map_or(0, |n| n.newlines);
@@ -243,7 +266,6 @@ fn balance(mut node: Box<Node>) -> Box<Node> {
     node
 }
 
-// Simplified rotation placeholders - full AVL implementation requires careful metadata management
 fn rotate_right(mut node: Box<Node>) -> Box<Node> {
     let mut new_root = node.left.take().unwrap();
     node.left = new_root.right.take();
@@ -279,8 +301,8 @@ fn rotate_right_left(mut node: Box<Node>) -> Box<Node> {
 fn split(
     root: Option<Box<Node>>,
     pos: usize,
-    original: &[u8],
-    add: &[u8],
+    original: &[Character],
+    add: &[Character],
 ) -> (Option<Box<Node>>, Option<Box<Node>>) {
     match root {
         None => (None, None),
@@ -338,9 +360,11 @@ fn split(
                         right: None,
                         piece: p1,
                         len: 0,
+                        byte_len: 0,
                         newlines: 0,
                         piece_newlines: 0, // will update
-                        height: 1,         // will update
+                        piece_byte_len: 0,
+                        height: 1, // will update
                     });
                     let mut n1 = n1;
                     update_node_metadata(&mut n1, original, add);
@@ -350,9 +374,11 @@ fn split(
                         right: right_child,
                         piece: p2,
                         len: 0,
+                        byte_len: 0,
                         newlines: 0,
-                        piece_newlines: 0, // will update
-                        height: 1,         // will update
+                        piece_newlines: 0,
+                        piece_byte_len: 0,
+                        height: 1, // will update
                     });
                     let mut n2 = n2;
                     update_node_metadata(&mut n2, original, add);
@@ -415,8 +441,8 @@ fn insert_node(
     root: Option<Box<Node>>,
     pos: usize,
     new_node: Box<Node>,
-    original: &[u8],
-    add: &[u8],
+    original: &[Character],
+    add: &[Character],
 ) -> Option<Box<Node>> {
     let (left, right) = split(root, pos, original, add);
     Some(join_with_root(left, new_node, right))
@@ -424,91 +450,82 @@ fn insert_node(
 
 // --- Helpers ---
 
-fn count_newlines(bytes: &[u8]) -> usize {
-    bytes.iter().filter(|&&b| b == b'\n').count()
+fn count_stats(chars: &[Character]) -> (usize, usize) {
+    let mut newlines = 0;
+    let mut byte_len = 0;
+    for c in chars {
+        if *c == Character::Newline {
+            newlines += 1;
+        }
+        byte_len += c.len_utf8();
+    }
+    (newlines, byte_len)
 }
 
-fn get_piece_newlines(piece: &Piece, original: &[u8], add: &[u8]) -> usize {
-    let slice = match piece.source {
+fn get_piece_slice<'a>(
+    piece: &Piece,
+    original: &'a [Character],
+    add: &'a [Character],
+) -> &'a [Character] {
+    match piece.source {
         BufferSource::Original => &original[piece.start..piece.start + piece.len],
         BufferSource::Add => &add[piece.start..piece.start + piece.len],
-    };
-    count_newlines(slice)
+    }
 }
 
-fn update_node_metadata(node: &mut Box<Node>, original: &[u8], add: &[u8]) {
+fn update_node_metadata(node: &mut Box<Node>, original: &[Character], add: &[Character]) {
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
     let right_len = node.right.as_ref().map_or(0, |n| n.len);
     node.len = left_len + node.piece.len + right_len;
 
+    let left_byte_len = node.left.as_ref().map_or(0, |n| n.byte_len);
+    let right_byte_len = node.right.as_ref().map_or(0, |n| n.byte_len);
+
+    let slice = get_piece_slice(&node.piece, original, add);
+    let (piece_nl, piece_bytes) = count_stats(slice);
+
+    node.piece_newlines = piece_nl;
+    node.piece_byte_len = piece_bytes;
+
+    node.byte_len = left_byte_len + piece_bytes + right_byte_len;
+
     let left_nl = node.left.as_ref().map_or(0, |n| n.newlines);
     let right_nl = node.right.as_ref().map_or(0, |n| n.newlines);
-    let piece_nl = get_piece_newlines(&node.piece, original, add);
-    node.piece_newlines = piece_nl;
     node.newlines = left_nl + piece_nl + right_nl;
 
     node.height = 1 + max(height(&node.left), height(&node.right));
 }
 
-fn collect_bytes(node: Option<&Node>, original: &[u8], add: &[u8], out: &mut Vec<u8>) {
+fn collect_chars(
+    node: Option<&Node>,
+    original: &[Character],
+    add: &[Character],
+    out: &mut Vec<Character>,
+) {
     if let Some(n) = node {
-        collect_bytes(n.left.as_deref(), original, add, out);
-        let slice = match n.piece.source {
-            BufferSource::Original => &original[n.piece.start..n.piece.start + n.piece.len],
-            BufferSource::Add => &add[n.piece.start..n.piece.start + n.piece.len],
-        };
-        out.extend_from_slice(slice);
-        collect_bytes(n.right.as_deref(), original, add, out);
+        collect_chars(n.left.as_deref(), original, add, out);
+        out.extend_from_slice(get_piece_slice(&n.piece, original, add));
+        collect_chars(n.right.as_deref(), original, add, out);
     }
 }
 
-fn get_byte_recursive(node: Option<&Node>, pos: usize, original: &[u8], add: &[u8]) -> u8 {
+fn get_char_recursive(
+    node: Option<&Node>,
+    pos: usize,
+    original: &[Character],
+    add: &[Character],
+) -> Character {
     let node = node.unwrap();
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
 
     if pos < left_len {
-        get_byte_recursive(node.left.as_deref(), pos, original, add)
+        get_char_recursive(node.left.as_deref(), pos, original, add)
     } else if pos < left_len + node.piece.len {
         let offset = pos - left_len;
-        let slice = match node.piece.source {
-            BufferSource::Original => {
-                &original[node.piece.start..node.piece.start + node.piece.len]
-            }
-            BufferSource::Add => &add[node.piece.start..node.piece.start + node.piece.len],
-        };
+        let slice = get_piece_slice(&node.piece, original, add);
         slice[offset]
     } else {
-        get_byte_recursive(
-            node.right.as_deref(),
-            pos - left_len - node.piece.len,
-            original,
-            add,
-        )
-    }
-}
-
-fn get_chunk_at_byte_recursive<'a>(
-    node: Option<&'a Node>,
-    pos: usize,
-    original: &'a [u8],
-    add: &'a [u8],
-) -> &'a [u8] {
-    let node = node.unwrap();
-    let left_len = node.left.as_ref().map_or(0, |n| n.len);
-
-    if pos < left_len {
-        get_chunk_at_byte_recursive(node.left.as_deref(), pos, original, add)
-    } else if pos < left_len + node.piece.len {
-        let offset = pos - left_len;
-        let slice = match node.piece.source {
-            BufferSource::Original => {
-                &original[node.piece.start..node.piece.start + node.piece.len]
-            }
-            BufferSource::Add => &add[node.piece.start..node.piece.start + node.piece.len],
-        };
-        &slice[offset..]
-    } else {
-        get_chunk_at_byte_recursive(
+        get_char_recursive(
             node.right.as_deref(),
             pos - left_len - node.piece.len,
             original,
@@ -520,8 +537,8 @@ fn get_chunk_at_byte_recursive<'a>(
 fn collect_bytes_range(
     node: Option<&Node>,
     range: std::ops::Range<usize>,
-    original: &[u8],
-    add: &[u8],
+    original: &[Character],
+    add: &[Character],
     out: &mut Vec<u8>,
 ) {
     if let Some(n) = node {
@@ -541,11 +558,17 @@ fn collect_bytes_range(
             let p_start = std::cmp::max(range.start, left_len) - left_len;
             let p_end = std::cmp::min(range.end, current_len) - left_len;
 
-            let slice = match n.piece.source {
-                BufferSource::Original => &original[n.piece.start..n.piece.start + n.piece.len],
-                BufferSource::Add => &add[n.piece.start..n.piece.start + n.piece.len],
-            };
-            out.extend_from_slice(&slice[p_start..p_end]);
+            let slice = get_piece_slice(&n.piece, original, add);
+            for ch in &slice[p_start..p_end] {
+                // use std::fmt::Write;
+                // Reconstruct bytes logic: simplified.
+                // We should use Character::render to a byte buffer?
+                // Character::render uses fmt::Write (String).
+                // We can render to local string and push bytes.
+                let mut buf = String::new();
+                let _ = ch.render(&mut buf);
+                out.extend_from_slice(buf.as_bytes());
+            }
         }
 
         // Check intersection with right child
@@ -557,12 +580,12 @@ fn collect_bytes_range(
     }
 }
 
-fn collect_chunks_range<'a>(
-    node: Option<&'a Node>,
+fn collect_chars_range(
+    node: Option<&Node>,
     range: std::ops::Range<usize>,
-    original: &'a [u8],
-    add: &'a [u8],
-    out: &mut Vec<&'a [u8]>,
+    original: &[Character],
+    add: &[Character],
+    out: &mut Vec<Character>,
 ) {
     if let Some(n) = node {
         let left_len = n.left.as_ref().map_or(0, |n| n.len);
@@ -573,7 +596,7 @@ fn collect_chunks_range<'a>(
         if range.start < left_len {
             let l_start = range.start;
             let l_end = std::cmp::min(range.end, left_len);
-            collect_chunks_range(n.left.as_deref(), l_start..l_end, original, add, out);
+            collect_chars_range(n.left.as_deref(), l_start..l_end, original, add, out);
         }
 
         // Check intersection with current piece
@@ -581,45 +604,42 @@ fn collect_chunks_range<'a>(
             let p_start = std::cmp::max(range.start, left_len) - left_len;
             let p_end = std::cmp::min(range.end, current_len) - left_len;
 
-            let slice = match n.piece.source {
-                BufferSource::Original => &original[n.piece.start..n.piece.start + n.piece.len],
-                BufferSource::Add => &add[n.piece.start..n.piece.start + n.piece.len],
-            };
-            out.push(&slice[p_start..p_end]);
+            let slice = get_piece_slice(&n.piece, original, add);
+            out.extend_from_slice(&slice[p_start..p_end]);
         }
 
         // Check intersection with right child
         if range.end > current_len {
             let r_start = std::cmp::max(range.start, current_len) - current_len;
             let r_end = range.end - current_len;
-            collect_chunks_range(n.right.as_deref(), r_start..r_end, original, add, out);
+            collect_chars_range(n.right.as_deref(), r_start..r_end, original, add, out);
         }
     }
 }
 
-fn find_nth_newline_end(node: Option<&Node>, target: usize, original: &[u8], add: &[u8]) -> usize {
+fn find_nth_newline_end(
+    node: Option<&Node>,
+    target: usize,
+    original: &[Character],
+    add: &[Character],
+) -> usize {
     let node = node.unwrap();
     let left_nl = node.left.as_ref().map_or(0, |n| n.newlines);
 
     if target <= left_nl {
         find_nth_newline_end(node.left.as_deref(), target, original, add)
     } else {
-        let piece_nl = get_piece_newlines(&node.piece, original, add);
+        let slice = get_piece_slice(&node.piece, original, add);
+        let (piece_nl, _) = count_stats(slice);
         let current_nl = left_nl + piece_nl;
 
         if target <= current_nl {
             // In this piece
             let needed_in_piece = target - left_nl;
-            let slice = match node.piece.source {
-                BufferSource::Original => {
-                    &original[node.piece.start..node.piece.start + node.piece.len]
-                }
-                BufferSource::Add => &add[node.piece.start..node.piece.start + node.piece.len],
-            };
 
             let mut count = 0;
-            for (i, &b) in slice.iter().enumerate() {
-                if b == b'\n' {
+            for (i, c) in slice.iter().enumerate() {
+                if *c == Character::Newline {
                     count += 1;
                     if count == needed_in_piece {
                         let left_len = node.left.as_ref().map_or(0, |n| n.len);
@@ -639,7 +659,12 @@ fn find_nth_newline_end(node: Option<&Node>, target: usize, original: &[u8], add
     }
 }
 
-fn get_line_at_pos(node: Option<&Node>, pos: usize, original: &[u8], add: &[u8]) -> usize {
+fn get_line_at_pos(
+    node: Option<&Node>,
+    pos: usize,
+    original: &[Character],
+    add: &[Character],
+) -> usize {
     let node = node.unwrap();
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
 
@@ -651,18 +676,14 @@ fn get_line_at_pos(node: Option<&Node>, pos: usize, original: &[u8], add: &[u8])
         if pos < left_len + node.piece.len {
             // In this piece
             let offset = pos - left_len;
-            let slice = match node.piece.source {
-                BufferSource::Original => {
-                    &original[node.piece.start..node.piece.start + node.piece.len]
-                }
-                BufferSource::Add => &add[node.piece.start..node.piece.start + node.piece.len],
-            };
+            let slice = get_piece_slice(&node.piece, original, add);
 
-            let piece_nl_before = count_newlines(&slice[..offset]);
+            let (piece_nl_before, _) = count_stats(&slice[..offset]);
             left_nl + piece_nl_before
         } else {
             // In right child
-            let piece_nl = get_piece_newlines(&node.piece, original, add);
+            let slice = get_piece_slice(&node.piece, original, add);
+            let (piece_nl, _) = count_stats(slice);
             left_nl
                 + piece_nl
                 + get_line_at_pos(

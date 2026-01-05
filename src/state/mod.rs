@@ -463,10 +463,10 @@ mod tests {
         use crate::layer::Cell;
         let mut content = OverlayContent {
             left: vec![
-                vec![Cell::new(b'a')],
-                vec![Cell::new(b'b')],
-                vec![Cell::new(b'c')],
-                vec![Cell::new(b'd')],
+                vec![Cell::from_char('a')],
+                vec![Cell::from_char('b')],
+                vec![Cell::from_char('c')],
+                vec![Cell::from_char('d')],
             ],
             right: Vec::new(),
             left_width_percent: 50,

@@ -386,14 +386,15 @@ impl DoubleBuffer {
             term.move_cursor(batch.row as u16, batch.start_col as u16)?;
         }
 
-        let mut output = Vec::with_capacity(batch.cells.len() * 4);
+        // Use String buffer for formatting Character
+        let mut output = String::with_capacity(batch.cells.len() * 4);
 
         for (i, cell) in batch.cells.iter().enumerate() {
             // Check if we need to change colors
             if cell.fg != *current_fg || cell.bg != *current_bg {
                 // Flush current output before color change
                 if !output.is_empty() {
-                    term.write(&output)?;
+                    term.write(output.as_bytes())?;
                     output.clear();
                 }
 
@@ -416,7 +417,11 @@ impl DoubleBuffer {
                 *current_bg = cell.bg;
             }
 
-            output.extend_from_slice(&cell.content);
+            // Render Character to string buffer
+            // We use cell.content.render(&mut output)
+            cell.content
+                .render(&mut output)
+                .map_err(|e| format!("Failed to render character: {e}"))?;
 
             // Update last cursor position
             *last_cursor_pos = Some((batch.row, batch.start_col + i + 1));
@@ -424,7 +429,7 @@ impl DoubleBuffer {
 
         // Flush remaining output
         if !output.is_empty() {
-            term.write(&output)?;
+            term.write(output.as_bytes())?;
         }
 
         Ok(())

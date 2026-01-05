@@ -55,15 +55,8 @@ impl Syntax {
     }
 
     pub fn parse(&mut self, text: &TextBuffer) {
-        let tree = self.parser.parse_with(
-            &mut |byte, _| {
-                if byte >= text.len() {
-                    return &[] as &[u8];
-                }
-                text.get_chunk_at_byte(byte)
-            },
-            self.tree.as_ref(),
-        );
+        let full_text = text.to_string();
+        let tree = self.parser.parse(full_text, self.tree.as_ref());
         self.tree = tree;
     }
 
@@ -97,14 +90,16 @@ impl Syntax {
         {
             let root_node = tree.root_node();
 
+            let full_text = text.to_string();
+            let full_bytes = full_text.as_bytes();
+
             if let Some(r) = range {
                 query_cursor.set_byte_range(r);
             } else {
-                query_cursor.set_byte_range(0..text.len());
+                query_cursor.set_byte_range(0..full_bytes.len());
             }
 
-            // Using TextProvider implementation for TextBuffer to avoid full copy
-            let mut matches = query_cursor.matches(query, root_node, text);
+            let mut matches = query_cursor.matches(query, root_node, full_bytes);
 
             while let Some(m) = matches.next() {
                 for capture in m.captures {
@@ -115,19 +110,6 @@ impl Syntax {
             }
         }
         result
-    }
-}
-
-/// Implementation of Tree-sitter's TextProvider to allow efficient querying
-/// without copying the entire buffer into a contiguous slice.
-impl<'a> tree_sitter::TextProvider<&'a [u8]> for &'a TextBuffer {
-    type I = std::vec::IntoIter<&'a [u8]>;
-
-    fn text(&mut self, node: tree_sitter::Node<'_>) -> Self::I {
-        let range = node.byte_range();
-        // collect into pointers to existing pieces, no data copy
-        let chunks: Vec<&'a [u8]> = self.line_index.chunks_in_range(range).collect();
-        chunks.into_iter()
     }
 }
 #[cfg(test)]
