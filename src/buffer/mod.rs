@@ -156,6 +156,16 @@ impl TextBuffer {
         self.line_index.line_count()
     }
 
+    /// Convert byte offset to character index
+    pub fn byte_to_char(&self, byte_offset: usize) -> usize {
+        self.line_index.byte_to_char(byte_offset)
+    }
+
+    /// Convert character index to byte offset
+    pub fn char_to_byte(&self, char_index: usize) -> usize {
+        self.line_index.char_to_byte(char_index)
+    }
+
     /// Get bytes for a specific line (excluding trailing newline)
     /// Note: This reconstructs bytes from Characters.
     #[must_use]

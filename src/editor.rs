@@ -418,7 +418,6 @@ impl<T: TerminalBackend> Editor<T> {
         let doc_id = self.tab_order[self.current_tab];
 
         // Find all matches first to populate state for highlighting
-        // TODO: Move this into Document too eventually, or listen for search events
         self.update_search_highlights();
 
         let doc = self.documents.get_mut(&doc_id).unwrap();

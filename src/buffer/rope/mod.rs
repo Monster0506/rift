@@ -209,6 +209,23 @@ impl PieceTable {
         }
         get_line_at_pos(self.root.as_deref(), pos, &self.original, &self.add)
     }
+
+    /// Convert character index to byte offset
+    pub fn char_to_byte(&self, char_index: usize) -> usize {
+        if char_index >= self.len() {
+            return self.byte_len();
+        }
+        get_byte_offset_recursive(self.root.as_deref(), char_index, &self.original, &self.add)
+    }
+
+    /// Convert byte offset to character index
+    /// Returns the index of the character containing the byte, or the char starting at that byte.
+    pub fn byte_to_char(&self, byte_offset: usize) -> usize {
+        if byte_offset >= self.byte_len() {
+            return self.len();
+        }
+        get_char_idx_recursive(self.root.as_deref(), byte_offset, &self.original, &self.add)
+    }
 }
 
 impl std::fmt::Display for PieceTable {
@@ -695,6 +712,101 @@ fn get_line_at_pos(
         }
     }
 }
+
+fn get_byte_offset_recursive(
+    node: Option<&Node>,
+    char_pos: usize,
+    original: &[Character],
+    add: &[Character],
+) -> usize {
+    let node = node.unwrap();
+    let left_len = node.left.as_ref().map_or(0, |n| n.len);
+    let left_byte_len = node.left.as_ref().map_or(0, |n| n.byte_len);
+
+    if char_pos < left_len {
+        get_byte_offset_recursive(node.left.as_deref(), char_pos, original, add)
+    } else if char_pos < left_len + node.piece.len {
+        // In this piece
+        let offset = char_pos - left_len;
+        let slice = get_piece_slice(&node.piece, original, add);
+
+        // Sum byte len of `offset` characters
+        let mut piece_bytes = 0;
+        for i in 0..offset {
+            piece_bytes += slice[i].len_utf8();
+        }
+        left_byte_len + piece_bytes
+    } else {
+        // In right child
+        left_byte_len
+            + node.piece_byte_len
+            + get_byte_offset_recursive(
+                node.right.as_deref(),
+                char_pos - left_len - node.piece.len,
+                original,
+                add,
+            )
+    }
+}
+
+fn get_char_idx_recursive(
+    node: Option<&Node>,
+    byte_pos: usize,
+    original: &[Character],
+    add: &[Character],
+) -> usize {
+    let node = node.unwrap();
+    let left_byte_len = node.left.as_ref().map_or(0, |n| n.byte_len);
+    let left_len = node.left.as_ref().map_or(0, |n| n.len);
+
+    if byte_pos < left_byte_len {
+        get_char_idx_recursive(node.left.as_deref(), byte_pos, original, add)
+    } else if byte_pos < left_byte_len + node.piece_byte_len {
+        // In this piece
+        let target_in_piece = byte_pos - left_byte_len;
+        let slice = get_piece_slice(&node.piece, original, add);
+
+        let mut current_bytes = 0;
+        for (i, c) in slice.iter().enumerate() {
+            let clen = c.len_utf8();
+            if current_bytes + clen > target_in_piece {
+                // The byte is within this character
+                return left_len + i;
+            }
+            current_bytes += clen;
+            // If we hit exact match (start of next char), loop continues
+            if current_bytes == target_in_piece {
+                // Technically points to start of next char,
+                // but loop will likely continue to next iteration where we'll hit condition?
+                // No, if `byte_pos` points to start of char, `current_bytes` matches `target_in_piece`.
+                // We need to return `i+1`?
+                // Wait.
+                // If `byte_pos` is 0, `target` is 0. `current` starts 0.
+                // Loop 0: `clen`=1. `0+1 > 0` is true. Returns `left_len + 0`. Correct.
+
+                // If `byte_pos` is 1 (start of 2nd char). `target` is 1.
+                // Loop 0: `c`='A' (1 byte). `0+1 > 1` is FALSE.
+                // `current` becomes 1. `1 == 1`.
+                // Loop 1: `c`='B'. `1+1 > 1` is true. Match. Returns `left_len + 1`. Correct.
+            }
+        }
+        // Should have found it in this piece
+        left_len + slice.len()
+    } else {
+        // In right child
+        left_len
+            + node.piece.len
+            + get_char_idx_recursive(
+                node.right.as_deref(),
+                byte_pos - left_byte_len - node.piece_byte_len,
+                original,
+                add,
+            )
+    }
+}
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod conversion_tests;

@@ -74,6 +74,16 @@ impl LineIndex {
         self.table.char_at(pos)
     }
 
+    /// Convert byte offset to character index
+    pub fn byte_to_char(&self, byte_offset: usize) -> usize {
+        self.table.byte_to_char(byte_offset)
+    }
+
+    /// Convert character index to byte offset
+    pub fn char_to_byte(&self, char_index: usize) -> usize {
+        self.table.char_to_byte(char_index)
+    }
+
     // For compatibility with consumers expecting bytes, we might need helpers
     // but ideally they should move to Character.
 
