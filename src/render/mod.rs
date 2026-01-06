@@ -15,8 +15,6 @@ use crate::buffer::api::BufferView;
 /// - All rendering is layer-based and composited before output to terminal.
 use crate::buffer::TextBuffer;
 use crate::character::Character;
-// use crate::color::theme::Theme;
-// use crate::color::theme::SyntaxColors;
 use crate::color::Color;
 use crate::command_line::CommandLine;
 use crate::error::RiftError;
@@ -438,6 +436,10 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &RenderContext) -> Result<(),
     let visible_rows = viewport.visible_rows().saturating_sub(1); // Reserve one row for status bar
     let visible_cols = viewport.visible_cols();
 
+    // Optimized highlight cursor
+    let highlights = ctx.highlights.unwrap_or(&[]);
+    let mut highlight_idx = 0;
+
     for i in 0..visible_rows {
         let line_num = top_line + i;
 
@@ -515,20 +517,39 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &RenderContext) -> Result<(),
                         .any(|m| m.range.contains(&abs_char_offset));
 
                 // 2. Check for syntax highlighting (Byte range based)
-                let syntax_fg = if let Some(highlights) = ctx.highlights {
-                    let mut color = None;
-                    // TODO: Optimize this linear scan
-                    for (range, capture) in highlights.iter() {
-                        if range.contains(&current_byte_offset) {
-                            if let Some(syntax_colors) = &ctx.state.settings.syntax_colors {
-                                color = Some(map_capture_to_color(capture, syntax_colors));
-                            }
+                let syntax_fg = if highlights.is_empty() {
+                    editor_fg
+                } else {
+                    // Fast-forward cursor past ended highlights
+                    // Since we process in byte order, we can safely discard highlights that end before current pos
+                    while highlight_idx < highlights.len() {
+                        if highlights[highlight_idx].0.end <= current_byte_offset {
+                            highlight_idx += 1;
+                        } else {
                             break;
                         }
                     }
+
+                    // Check current possible highlights
+                    let mut color = None;
+                    // We only check from highlight_idx onwards.
+                    // And we can stop as soon as we see a highlight starting AFTER current pos.
+                    for j in highlight_idx..highlights.len() {
+                        let (range, capture) = &highlights[j];
+                        if range.start > current_byte_offset {
+                            break; // Future highlight, cannot match
+                        }
+                        // start <= current < end  (since we skipped ends <= current)
+                        // Range logic: start..end means start <= x < end
+                        // If range.end > current_byte_offset, then it contains it.
+                        if range.end > current_byte_offset {
+                            if let Some(syntax_colors) = &ctx.state.settings.syntax_colors {
+                                color = Some(map_capture_to_color(capture, syntax_colors));
+                            }
+                            break; // First match wins
+                        }
+                    }
                     color.or(editor_fg)
-                } else {
-                    editor_fg
                 };
 
                 // Update byte offset for next char (O(1))

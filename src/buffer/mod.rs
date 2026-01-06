@@ -188,16 +188,9 @@ impl TextBuffer {
 
     /// Get a chunk of text starting at the given byte offset.
     /// Used for Tree-sitter integration.
-    /// This is now tricky because strict Character abstraction.
-    /// We will return bytes_range from current char index?
-    /// Tree-sitter works on bytes. We might need to map byte offset -> char offset.
-    /// This is complex. For now, we stub or use simple mapping if 1-to-1.
-    /// But Character is NOT 1-to-1 with bytes necessarily if we inserted Unicode chars.
-    /// If we want Tree-sitter, we need byte_len in PieceTable nodes (which we added).
-    /// But we need API for byte_to_char_idx.
+
     pub fn get_chunk_at_byte(&self, _pos: usize) -> &[u8] {
-        // TODO: Implement proper byte-to-char mapping and chunking for Tree-sitter.
-        // For now return empty to avoid panic, or implement panic to find usage.
+        // Returned empty as stub; Tree-sitter integration uses `to_logical_bytes` + `parse_with` callback now.
         &[]
     }
 
