@@ -20,92 +20,23 @@ use crate::search::{find_next, SearchDirection};
 /// Calculate the current visual column position on the current line
 /// Accounts for tab width when calculating visual position
 fn calculate_current_column(buf: &TextBuffer, tab_width: usize) -> usize {
-    let line = buf.get_line();
-    let before_gap = buf.get_before_gap();
-    let mut current_line = 0;
-    let mut line_start = 0;
+    use crate::buffer::api::BufferView;
+    let cursor = buf.cursor();
+    let line_idx = buf.line_index.get_line_at(cursor);
+    let line_start = buf.line_index.get_start(line_idx).unwrap_or(0);
+
+    // Iterate chars from line start to cursor
     let mut col = 0;
-
-    // Find the start of the current line
-    for (i, &byte) in before_gap.iter().enumerate() {
-        if byte == b'\n' {
-            if current_line == line {
-                // Found the line, calculate visual column up to gap position
-                let line_bytes = &before_gap[line_start..i];
-                for &b in line_bytes {
-                    if b == b'\t' {
-                        col = ((col / tab_width) + 1) * tab_width;
-                    } else {
-                        col += 1;
-                    }
-                }
-                return col;
-            }
-            current_line += 1;
-            line_start = i + 1;
-            col = 0;
-        }
-    }
-
-    // If we're at the gap position on the current line
-    if current_line == line {
-        let line_bytes = &before_gap[line_start..];
-        for &b in line_bytes {
-            if b == b'\t' {
-                col = ((col / tab_width) + 1) * tab_width;
-            } else {
-                col += 1;
-            }
-        }
-        return col;
-    }
-
-    // Check after_gap - need to include before_gap bytes from line_start
-    let after_gap = buf.get_after_gap();
-    // First, calculate column for before_gap portion of this line
-    let before_line_bytes = &before_gap[line_start..];
-    for &b in before_line_bytes {
-        if b == b'\t' {
+    // We can't easily slice buf.chars(range) efficiently without a proper iterator but checking our BufferView
+    // implementation: chars(range) is implemented.
+    for ch in BufferView::chars(buf, line_start..cursor) {
+        if ch == crate::character::Character::Tab {
             col = ((col / tab_width) + 1) * tab_width;
         } else {
-            col += 1;
+            col += ch.render_width(col, tab_width);
         }
     }
-
-    // Now process after_gap bytes
-    for (i, &byte) in after_gap.iter().enumerate() {
-        if byte == b'\n' {
-            if current_line == line {
-                // Found the line in after_gap, include bytes up to this newline
-                let after_line_bytes = &after_gap[..i];
-                for &b in after_line_bytes {
-                    if b == b'\t' {
-                        col = ((col / tab_width) + 1) * tab_width;
-                    } else {
-                        col += 1;
-                    }
-                }
-                return col;
-            }
-            current_line += 1;
-            col = 0;
-        }
-    }
-
-    // If we're at the end of the current line (after gap, no newline found)
-    if current_line == line {
-        // Include all remaining after_gap bytes
-        for b in after_gap {
-            if b == b'\t' {
-                col = ((col / tab_width) + 1) * tab_width;
-            } else {
-                col += 1;
-            }
-        }
-        return col;
-    }
-
-    0
+    col
 }
 
 /// Execute a command on the editor buffer
@@ -169,6 +100,12 @@ pub fn execute_command(
                     }
                     Motion::PreviousSentence => {
                         buf.move_sentence_backward();
+                    }
+                    Motion::NextBigWord => {
+                        buf.move_big_word_right();
+                    }
+                    Motion::PreviousBigWord => {
+                        buf.move_big_word_left();
                     }
                     Motion::NextMatch => {
                         if let Some(query) = last_search_query {
@@ -245,6 +182,12 @@ pub fn execute_command(
                     }
                     Motion::PreviousSentence => {
                         doc.buffer.move_sentence_backward();
+                    }
+                    Motion::NextBigWord => {
+                        doc.buffer.move_big_word_right();
+                    }
+                    Motion::PreviousBigWord => {
+                        doc.buffer.move_big_word_left();
                     }
                     Motion::NextMatch => {
                         let buf = &mut doc.buffer;

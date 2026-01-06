@@ -1,6 +1,7 @@
 //! Rendering system
 //! Handles drawing the editor UI to the terminal using layers
 
+use crate::buffer::api::BufferView;
 /// ## render/ Invariants
 ///
 /// - Rendering reads editor state and buffer contents only.
@@ -13,7 +14,7 @@
 ///   in the state update phase, not during rendering).
 /// - All rendering is layer-based and composited before output to terminal.
 use crate::buffer::TextBuffer;
-use crate::color::theme::SyntaxColors;
+use crate::character::Character;
 use crate::color::Color;
 use crate::command_line::CommandLine;
 use crate::error::RiftError;
@@ -418,76 +419,6 @@ pub fn render<T: TerminalBackend>(
 }
 
 /// Map syntax highlight capture names to colors
-fn highlight_color(capture_name: &str, theme_colors: Option<&SyntaxColors>) -> Option<Color> {
-    // Handle sub-scopes (e.g., function.builtin -> function)
-    let base_name = capture_name.split('.').next().unwrap_or(capture_name);
-
-    if let Some(theme) = theme_colors {
-        match capture_name {
-            crate::constants::captures::CONSTRUCTOR => return Some(theme.constructor),
-            "function.builtin" | crate::constants::captures::BUILTIN => return Some(theme.builtin),
-            _ => {}
-        }
-
-        match base_name {
-            crate::constants::captures::KEYWORD => return Some(theme.keyword),
-            crate::constants::captures::TYPE => return Some(theme.type_def),
-            crate::constants::captures::FUNCTION => return Some(theme.function),
-            crate::constants::captures::STRING => return Some(theme.string),
-            crate::constants::captures::NUMBER => return Some(theme.number),
-            crate::constants::captures::CONSTANT => return Some(theme.constant),
-            crate::constants::captures::BOOLEAN => return Some(theme.boolean),
-            crate::constants::captures::COMMENT => return Some(theme.comment),
-            crate::constants::captures::VARIABLE => return Some(theme.variable),
-            "parameter" => return Some(theme.parameter),
-            crate::constants::captures::PROPERTY | crate::constants::captures::FIELD => {
-                return Some(theme.property)
-            }
-            crate::constants::captures::ATTRIBUTE | crate::constants::captures::LABEL => {
-                return Some(theme.attribute)
-            }
-            crate::constants::captures::NAMESPACE | crate::constants::captures::MODULE => {
-                return Some(theme.namespace)
-            }
-            crate::constants::captures::OPERATOR => return Some(theme.operator),
-            crate::constants::captures::PUNCTUATION => return Some(theme.punctuation),
-            crate::constants::captures::CONSTRUCTOR => return Some(theme.constructor),
-            crate::constants::captures::BUILTIN => return Some(theme.builtin),
-            _ => {}
-        }
-    }
-
-    // Fallback to hardcoded defaults if no theme colors specified or unknown capture
-    match base_name {
-        crate::constants::captures::KEYWORD => Some(Color::Magenta),
-        crate::constants::captures::TYPE => Some(Color::Yellow),
-        crate::constants::captures::FUNCTION | crate::constants::captures::CONSTRUCTOR => {
-            Some(Color::Blue)
-        }
-        crate::constants::captures::STRING => Some(Color::Green),
-        crate::constants::captures::NUMBER
-        | crate::constants::captures::CONSTANT
-        | crate::constants::captures::BOOLEAN => Some(Color::Yellow),
-        crate::constants::captures::COMMENT => Some(Color::DarkGrey),
-        crate::constants::captures::VARIABLE => Some(Color::Cyan),
-        "parameter" => Some(Color::White),
-        crate::constants::captures::PROPERTY | crate::constants::captures::FIELD => {
-            Some(Color::Blue)
-        }
-        crate::constants::captures::ATTRIBUTE | crate::constants::captures::LABEL => {
-            Some(Color::Yellow)
-        }
-        crate::constants::captures::NAMESPACE | crate::constants::captures::MODULE => {
-            Some(Color::Cyan)
-        }
-        crate::constants::captures::OPERATOR => Some(Color::White),
-        crate::constants::captures::PUNCTUATION => Some(Color::White),
-        crate::constants::captures::ESCAPE | crate::constants::captures::EMBEDDED => {
-            Some(Color::Grey)
-        }
-        _ => None,
-    }
-}
 
 /// Render buffer content to the content layer
 fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), String> {
@@ -508,6 +439,10 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
     let visible_rows = viewport.visible_rows().saturating_sub(1); // Reserve one row for status bar
     let visible_cols = viewport.visible_cols();
 
+    // Optimized highlight cursor
+    let highlights = ctx.highlights.unwrap_or(&[]);
+    let mut highlight_idx = 0;
+
     for i in 0..visible_rows {
         let line_num = top_line + i;
 
@@ -521,68 +456,107 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
                     layer.set_cell(
                         i,
                         col,
-                        Cell::new(ch as u8).with_colors(editor_fg, editor_bg),
+                        Cell::new(Character::from(ch)).with_colors(editor_fg, editor_bg),
                     );
                 }
                 // Draw separator
                 layer.set_cell(
                     i,
                     gutter_width - 1,
-                    Cell::new(b' ').with_colors(editor_fg, editor_bg),
+                    Cell::new(Character::from(' ')).with_colors(editor_fg, editor_bg),
                 );
             } else {
                 // Empty gutter for non-existent lines
                 for col in 0..gutter_width {
-                    layer.set_cell(i, col, Cell::new(b' ').with_colors(editor_fg, editor_bg));
+                    layer.set_cell(
+                        i,
+                        col,
+                        Cell::new(Character::from(' ')).with_colors(editor_fg, editor_bg),
+                    );
                 }
             }
         }
 
         if line_num < buf.get_total_lines() {
-            let line_start_byte = buf.line_index.get_start(line_num).unwrap_or(0);
-            let line_bytes = buf.get_line_bytes(line_num);
-            let line_str = String::from_utf8_lossy(&line_bytes);
+            let line_start_char = buf.line_index.get_start(line_num).unwrap_or(0);
+            // End of line for rendering (exclude newline usually, but chars() includes it if in range)
+            // PieceTable line usually ends with newline.
+            // visual rendering usually stops before newline or handles it.
+            // We'll iterate until newline or end of line.
+            // Buffers chars iterator is simplest.
+            let line_end_char = buf
+                .line_index
+                .get_end(line_num, buf.len())
+                .unwrap_or(buf.len());
 
-            // Write line content
-            // We need to skip visual columns based on viewport.left_col
             let content_cols = visible_cols.saturating_sub(gutter_width);
             let mut visual_col = 0;
             let mut rendered_col = 0;
             let left_col = viewport.left_col();
-            let mut byte_offset_in_line = 0usize;
+            let mut char_idx_in_line = 0usize;
 
-            for ch in line_str.chars() {
+            // Initialize byte offset for the line (O(log N))
+            let mut current_byte_offset = buf.char_to_byte(line_start_char);
+
+            for ch in buf.chars(line_start_char..line_end_char) {
                 if rendered_col >= content_cols {
                     break;
                 }
 
-                // Calculate absolute byte offset for this character
-                let abs_byte_offset = line_start_byte + byte_offset_in_line;
-                let char_len = ch.len_utf8();
-                let abs_end = abs_byte_offset + char_len;
+                // Stop at newline if present (render logic usually ignores newline char itself)
+                if ch == Character::Newline {
+                    break;
+                }
 
-                // 1. Check for search match (highest priority)
+                // Calculate absolute location
+                let abs_char_offset = line_start_char + char_idx_in_line;
+
+                // 1. Check for search match (Character range based)
                 let is_match = !ctx.state.search_matches.is_empty()
-                    && ctx.state.search_matches.iter().any(|m| {
-                        let start = std::cmp::max(m.range.start, abs_byte_offset);
-                        let end = std::cmp::min(m.range.end, abs_end);
-                        start < end
-                    });
-
-                // 2. Check for syntax highlighting
-                let syntax_fg = if let Some(highlights) = ctx.highlights {
-                    // Find all highlights containing this byte and pick the most specific one (shortest range)
-                    highlights
+                    && ctx
+                        .state
+                        .search_matches
                         .iter()
-                        .filter(|(range, _)| range.contains(&abs_byte_offset))
-                        .min_by_key(|(range, _)| range.end - range.start)
-                        .and_then(|(_, name)| {
-                            highlight_color(name, ctx.state.settings.syntax_colors.as_ref())
-                        })
-                        .or(editor_fg)
-                } else {
+                        .any(|m| m.range.contains(&abs_char_offset));
+
+                // 2. Check for syntax highlighting (Byte range based)
+                let syntax_fg = if highlights.is_empty() {
                     editor_fg
+                } else {
+                    // Fast-forward cursor past ended highlights
+                    // Since we process in byte order, we can safely discard highlights that end before current pos
+                    while highlight_idx < highlights.len() {
+                        if highlights[highlight_idx].0.end <= current_byte_offset {
+                            highlight_idx += 1;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    // Check current possible highlights
+                    let mut color = None;
+                    // We only check from highlight_idx onwards.
+                    // And we can stop as soon as we see a highlight starting AFTER current pos.
+                    for j in highlight_idx..highlights.len() {
+                        let (range, capture) = &highlights[j];
+                        if range.start > current_byte_offset {
+                            break; // Future highlight, cannot match
+                        }
+                        // start <= current < end  (since we skipped ends <= current)
+                        // Range logic: start..end means start <= x < end
+                        // If range.end > current_byte_offset, then it contains it.
+                        if range.end > current_byte_offset {
+                            if let Some(syntax_colors) = &ctx.state.settings.syntax_colors {
+                                color = Some(map_capture_to_color(capture, syntax_colors));
+                            }
+                            break; // First match wins
+                        }
+                    }
+                    color.or(editor_fg)
                 };
+
+                // Update byte offset for next char (O(1))
+                current_byte_offset += ch.len_utf8();
 
                 // Determine final colors
                 let (fg, bg) = if is_match {
@@ -591,27 +565,25 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
                     (syntax_fg, editor_bg)
                 };
 
-                // Track visual column (handling tabs and wide chars)
-                let char_width = if ch == '\t' {
+                // Visual width
+                let char_width = if ch == Character::Tab {
                     ctx.tab_width - (visual_col % ctx.tab_width)
                 } else {
-                    UnicodeWidthChar::width(ch).unwrap_or(1)
+                    ch.render_width(visual_col, ctx.tab_width)
                 };
 
                 let next_visual_col = visual_col + char_width;
 
-                // If any part of this character is visible (>= left_col)
+                // Render
                 if next_visual_col > left_col {
-                    // Only render if we haven't exceeded width
                     if rendered_col < content_cols {
                         let display_col = rendered_col + gutter_width;
                         if display_col < visible_cols {
-                            layer.set_cell(i, display_col, Cell::from_char(ch).with_colors(fg, bg));
+                            layer.set_cell(i, display_col, Cell::new(ch).with_colors(fg, bg));
 
-                            // For wide characters, fill the remaining columns with empty content
                             if char_width > 1 {
                                 let empty_cell = Cell {
-                                    content: Vec::new(),
+                                    content: Character::from(' '), // Placeholder
                                     fg,
                                     bg,
                                 };
@@ -622,26 +594,75 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
                                 }
                             }
                         }
-                        rendered_col += char_width; // Advance by visual width
+                        rendered_col += char_width;
                     }
                 }
                 visual_col = next_visual_col;
-                byte_offset_in_line += char_len;
+                char_idx_in_line += 1;
             }
 
             // Pad with spaces
             for col in (rendered_col + gutter_width)..visible_cols {
-                layer.set_cell(i, col, Cell::new(b' ').with_colors(editor_fg, editor_bg));
+                layer.set_cell(
+                    i,
+                    col,
+                    Cell::from_char(' ').with_colors(editor_fg, editor_bg),
+                );
             }
         } else {
             // Empty line - fill with spaces
             for col in gutter_width..visible_cols {
-                layer.set_cell(i, col, Cell::new(b' ').with_colors(editor_fg, editor_bg));
+                layer.set_cell(
+                    i,
+                    col,
+                    Cell::from_char(' ').with_colors(editor_fg, editor_bg),
+                );
             }
         }
     }
 
     Ok(())
+}
+
+fn map_capture_to_color(
+    capture: &str,
+    colors: &crate::color::theme::SyntaxColors,
+) -> crate::color::Color {
+    use crate::constants::captures;
+    match capture {
+        captures::KEYWORD | "keyword.control" | "keyword.operator" | "keyword.function" => {
+            colors.keyword
+        }
+        captures::FUNCTION | "function.builtin" | "function.method" | "function.macro" => {
+            colors.function
+        }
+        captures::TYPE | "type.builtin" | "type.definition" | "class" | "struct" | "enum" => {
+            colors.type_def
+        }
+        captures::STRING | "string.special" => colors.string,
+        captures::NUMBER | "float" => colors.number,
+        captures::CONSTANT | "constant.builtin" | "constant.macro" => colors.constant,
+        captures::BOOLEAN => colors.boolean,
+        captures::COMMENT | "comment.line" | "comment.block" | "comment.documentation" => {
+            colors.comment
+        }
+        captures::VARIABLE
+        | "variable.builtin"
+        | "variable.parameter"
+        | "variable.other.member" => colors.variable,
+        captures::PARAMETER => colors.parameter,
+        captures::PROPERTY | captures::FIELD => colors.property,
+        captures::ATTRIBUTE | "attribute.builtin" => colors.attribute,
+        captures::MODULE | captures::NAMESPACE => colors.namespace,
+        captures::OPERATOR => colors.operator,
+        captures::PUNCTUATION
+        | "punctuation.delimiter"
+        | "punctuation.bracket"
+        | "punctuation.special" => colors.punctuation,
+        captures::CONSTRUCTOR => colors.constructor,
+        captures::BUILTIN => colors.builtin,
+        _ => colors.variable, // Fallback
+    }
 }
 
 /// Calculate the cursor column position accounting for tab width and wide characters
@@ -650,25 +671,44 @@ pub fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) 
         return 0;
     }
 
-    let line_bytes = buf.get_line_bytes(line);
-    let cursor_offset = buf.cursor() - buf.line_index.get_start(line).unwrap_or(0);
+    let line_start = buf.line_index.get_start(line).unwrap_or(0);
+    // Cursor is absolute char index
+    let cursor_pos = buf.cursor();
+    let target_char_idx = if cursor_pos > line_start {
+        cursor_pos - line_start
+    } else {
+        0
+    };
 
-    // Calculate visual column up to cursor offset
+    // We iterate chars from line start up to cursor
+    // Bounds check? cursor_pos should be <= len.
+    // get_line_start gives us start.
+    // We iterate chars.
+
     let mut col = 0;
-    let mut current_byte = 0;
-    let line_str = String::from_utf8_lossy(&line_bytes);
+    let mut current_idx = 0;
 
-    for ch in line_str.chars() {
-        if current_byte >= cursor_offset {
+    // Iterate manually over line
+    // We don't have `chars_at(line_start, count)` easily exposed except via chars(Range)
+    // We can use chars(Range)
+    let end = buf.len(); // cap at buffer end
+
+    for ch in BufferView::chars(buf, line_start..end) {
+        if current_idx >= target_char_idx {
             break;
         }
 
-        if ch == '\t' {
+        if ch == Character::Newline {
+            // Cursor on newline?
+            break;
+        }
+
+        if ch == Character::Tab {
             col += tab_width - (col % tab_width);
         } else {
-            col += UnicodeWidthChar::width(ch).unwrap_or(1);
+            col += ch.render_width(col, tab_width);
         }
-        current_byte += ch.len_utf8();
+        current_idx += 1;
     }
 
     col
@@ -748,7 +788,7 @@ fn render_notifications(
                 layer.set_cell(
                     current_row,
                     start_col + i,
-                    Cell::new(b' ').with_colors(Some(Color::White), Some(color)),
+                    Cell::new(Character::from(' ')).with_colors(Some(Color::White), Some(color)),
                 );
             }
 
@@ -765,7 +805,7 @@ fn render_notifications(
                 // Handle wide characters
                 if ch_width > 1 {
                     let empty_cell = Cell {
-                        content: Vec::new(),
+                        content: Character::from(' '),
                         fg: Some(Color::White),
                         bg: Some(color),
                     };

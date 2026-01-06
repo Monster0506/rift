@@ -1,4 +1,9 @@
 use super::*;
+use crate::character::Character;
+
+fn chars(s: &str) -> Vec<Character> {
+    s.chars().map(Character::from).collect()
+}
 
 #[test]
 fn test_new_line_index() {
@@ -11,7 +16,7 @@ fn test_new_line_index() {
 #[test]
 fn test_insert_basic() {
     let mut idx = LineIndex::new();
-    idx.insert(0, b"Hello");
+    idx.insert(0, &chars("Hello"));
     assert_eq!(idx.len(), 5);
     assert_eq!(idx.line_count(), 1);
     assert_eq!(idx.get_start(0), Some(0));
@@ -20,17 +25,17 @@ fn test_insert_basic() {
 #[test]
 fn test_insert_newlines() {
     let mut idx = LineIndex::new();
-    idx.insert(0, b"Line 1\nLine 2");
+    idx.insert(0, &chars("Line 1\nLine 2"));
     assert_eq!(idx.line_count(), 2);
     assert_eq!(idx.get_start(0), Some(0));
-    assert_eq!(idx.get_start(1), Some(7)); // "Line 1\n" is 7 bytes
+    assert_eq!(idx.get_start(1), Some(7)); // "Line 1\n" is 7 chars
 }
 
 #[test]
 fn test_get_end() {
     let mut idx = LineIndex::new();
     // "Line 1\nLine 2"
-    idx.insert(0, b"Line 1\nLine 2");
+    idx.insert(0, &chars("Line 1\nLine 2"));
     let total_len = idx.len();
 
     // Line 0: "Line 1" (len 6). Newline at 6.
@@ -46,7 +51,7 @@ fn test_get_end() {
 #[test]
 fn test_get_line_at() {
     let mut idx = LineIndex::new();
-    idx.insert(0, b"A\nB\nC");
+    idx.insert(0, &chars("A\nB\nC"));
     // 0: 'A', 1: '\n' -> Line 0
     // 2: 'B', 3: '\n' -> Line 1
     // 4: 'C'          -> Line 2
@@ -61,7 +66,7 @@ fn test_get_line_at() {
 #[test]
 fn test_delete() {
     let mut idx = LineIndex::new();
-    idx.insert(0, b"Line 1\nLine 2");
+    idx.insert(0, &chars("Line 1\nLine 2"));
     // Delete "\nLine " (indices 6 to 11)
     // "Line 12"
     idx.delete(6, 6);
@@ -72,11 +77,11 @@ fn test_delete() {
 }
 
 #[test]
-fn test_byte_access() {
+fn test_char_access() {
     let mut idx = LineIndex::new();
-    idx.insert(0, b"Hello");
-    assert_eq!(idx.byte_at(0), b'H');
-    assert_eq!(idx.byte_at(4), b'o');
+    idx.insert(0, &chars("Hello"));
+    assert_eq!(idx.char_at(0), Character::from('H'));
+    assert_eq!(idx.char_at(4), Character::from('o'));
 
     let range = idx.bytes_range(1..4);
     assert_eq!(range, b"ell");

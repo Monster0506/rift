@@ -1,7 +1,9 @@
 //! Tests for rendering system
 
 use crate::buffer::TextBuffer;
+use crate::character::Character;
 use crate::key::Key;
+use crate::layer::Cell;
 use crate::layer::{Layer, LayerCompositor, LayerPriority};
 use crate::mode::Mode;
 use crate::render::{
@@ -619,9 +621,18 @@ fn test_render_line_numbers_enabled() {
     let content_layer = compositor.get_layer_mut(LayerPriority::CONTENT);
     // Gutter width for 2 lines should be 1 (digit) + 1 (padding) = 2
     // Line 1: "1 "
-    assert_eq!(content_layer.get_cell(0, 0).unwrap().content, vec![b'1']);
-    assert_eq!(content_layer.get_cell(0, 1).unwrap().content, vec![b' ']);
-    assert_eq!(content_layer.get_cell(0, 2).unwrap().content, vec![b'l']); // Content starts here
+    assert_eq!(
+        content_layer.get_cell(0, 0).unwrap().content,
+        Character::from('1')
+    );
+    assert_eq!(
+        content_layer.get_cell(0, 1).unwrap().content,
+        Character::from(' ')
+    );
+    assert_eq!(
+        content_layer.get_cell(0, 2).unwrap().content,
+        Character::from('l')
+    ); // Content starts here
 }
 
 #[test]
@@ -656,7 +667,10 @@ fn test_render_line_numbers_disabled() {
 
     let content_layer = compositor.get_layer_mut(LayerPriority::CONTENT);
     // Should start immediately with content
-    assert_eq!(content_layer.get_cell(0, 0).unwrap().content, vec![b'l']);
+    assert_eq!(
+        content_layer.get_cell(0, 0).unwrap().content,
+        Character::from('l')
+    );
 }
 
 #[test]
@@ -691,10 +705,22 @@ fn test_render_line_numbers_gutter_width() {
     let content_layer = compositor.get_layer_mut(LayerPriority::CONTENT);
     // Gutter width: 3 digits + 1 padding = 4
     // Line 1: "  1 "
-    assert_eq!(content_layer.get_cell(0, 0).unwrap().content, vec![b' ']);
-    assert_eq!(content_layer.get_cell(0, 1).unwrap().content, vec![b' ']);
-    assert_eq!(content_layer.get_cell(0, 2).unwrap().content, vec![b'1']);
-    assert_eq!(content_layer.get_cell(0, 3).unwrap().content, vec![b' ']);
+    assert_eq!(
+        content_layer.get_cell(0, 0).unwrap().content,
+        Character::from(' ')
+    );
+    assert_eq!(
+        content_layer.get_cell(0, 1).unwrap().content,
+        Character::from(' ')
+    );
+    assert_eq!(
+        content_layer.get_cell(0, 2).unwrap().content,
+        Character::from('1')
+    );
+    assert_eq!(
+        content_layer.get_cell(0, 3).unwrap().content,
+        Character::from(' ')
+    );
 }
 
 #[test]
@@ -762,12 +788,18 @@ fn test_no_redraw_on_noop() {
 
     // Verify content was rendered
     let content_layer = compositor.get_layer_mut(LayerPriority::CONTENT);
-    assert_eq!(content_layer.get_cell(0, 0).unwrap().content, vec![b't']);
+    assert_eq!(
+        content_layer.get_cell(0, 0).unwrap().content,
+        Character::from('t')
+    );
 
     // 2. Manually "vandalize" the layer content
     // If selective redrawing works, this change should PERSIST because render() will skip this layer.
-    content_layer.set_cell(0, 0, crate::layer::Cell::new(b'X'));
-    assert_eq!(content_layer.get_cell(0, 0).unwrap().content, vec![b'X']);
+    content_layer.set_cell(0, 0, Cell::from_char('X'));
+    assert_eq!(
+        content_layer.get_cell(0, 0).unwrap().content,
+        Character::from('X')
+    );
 
     // 3. Second render - should skip CONTENT layer because state hasn't changed
     render(
@@ -792,7 +824,7 @@ fn test_no_redraw_on_noop() {
     let content_layer_after = compositor.get_layer_mut(LayerPriority::CONTENT);
     assert_eq!(
         content_layer_after.get_cell(0, 0).unwrap().content,
-        vec![b'X'],
+        Character::from('X'),
         "Layer was re-rendered despite identical state!"
     );
 }
@@ -829,7 +861,7 @@ fn test_redraw_on_change() {
     // Vandalize
     compositor
         .get_layer_mut(LayerPriority::CONTENT)
-        .set_cell(0, 0, crate::layer::Cell::new(b'X'));
+        .set_cell(0, 0, Cell::from_char('X'));
 
     // Change state (insert a char)
     buf.insert_char('!').unwrap();
@@ -854,7 +886,10 @@ fn test_redraw_on_change() {
 
     // The 'X' should be GONE (replaced by 't' from "test!")
     let content_layer = compositor.get_layer_mut(LayerPriority::CONTENT);
-    assert_eq!(content_layer.get_cell(0, 0).unwrap().content, vec![b't']);
+    assert_eq!(
+        content_layer.get_cell(0, 0).unwrap().content,
+        Character::from('t')
+    );
 }
 
 // ============================================================================
@@ -966,7 +1001,7 @@ fn test_render_search_highlights() {
 
     // Check "world" (start) - should be highlighted
     let cell_w = content_layer.get_cell(0, 6).unwrap();
-    assert_eq!(cell_w.content, vec![b'w']);
+    assert_eq!(cell_w.content, Character::from('w'));
     assert_eq!(cell_w.bg, Some(crate::color::Color::Yellow));
     assert_eq!(cell_w.fg, Some(crate::color::Color::Black));
 }

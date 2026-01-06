@@ -118,8 +118,9 @@ fn test_execute_insert_ctrl_char() {
     let mut doc = create_doc();
     // Ctrl+A should insert \u{1}
     execute_command(Command::InsertChar('\u{1}'), &mut doc, false, 8, 24, None).unwrap();
-    let text = doc.buffer.to_string();
-    assert_eq!(text.as_bytes()[0], 1); // Ctrl+A = 1
+    // Verify using char_at because to_string() uses Display which renders ^A for control chars
+    use crate::character::Character;
+    assert_eq!(doc.buffer.char_at(0), Some(Character::Control(1)));
 }
 
 #[test]

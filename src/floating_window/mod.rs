@@ -13,6 +13,7 @@
 use crate::color::Color;
 use crate::constants;
 
+use crate::character::Character;
 use crate::layer::{Cell, Layer};
 
 /// Internal layout context for rendering
@@ -498,13 +499,21 @@ impl FloatingWindow {
                 // Pad with spaces
                 for i in line.len().min(content_width)..content_width {
                     let col = start_col + 1 + i;
-                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                    layer.set_cell(
+                        row,
+                        col,
+                        Cell::new(Character::from(' ')).with_colors(fg, bg),
+                    );
                 }
             } else {
                 // Empty line - fill with spaces
                 for i in 0..content_width {
                     let col = start_col + 1 + i;
-                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                    layer.set_cell(
+                        row,
+                        col,
+                        Cell::new(Character::from(' ')).with_colors(fg, bg),
+                    );
                 }
             }
 
@@ -584,7 +593,11 @@ impl FloatingWindow {
                 // Empty line - fill with spaces
                 for i in 0..width {
                     let col = start_col + i;
-                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                    layer.set_cell(
+                        row,
+                        col,
+                        Cell::new(Character::from(' ')).with_colors(fg, bg),
+                    );
                 }
             }
         }
@@ -656,7 +669,11 @@ impl FloatingWindow {
                 // Empty line - fill with spaces
                 for i in 0..content_width {
                     let col = start_col + 1 + i;
-                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                    layer.set_cell(
+                        row,
+                        col,
+                        Cell::new(Character::from(' ')).with_colors(fg, bg),
+                    );
                 }
             }
 
@@ -729,7 +746,11 @@ impl FloatingWindow {
                 // Empty line - fill with spaces
                 for i in 0..width {
                     let col = start_col + i;
-                    layer.set_cell(row, col, Cell::new(b' ').with_colors(fg, bg));
+                    layer.set_cell(
+                        row,
+                        col,
+                        Cell::new(Character::from(' ')).with_colors(fg, bg),
+                    );
                 }
             }
         }

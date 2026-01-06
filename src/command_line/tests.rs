@@ -1,5 +1,6 @@
 //! Tests for command line
 
+use crate::character::Character;
 use crate::command_line::CommandLine;
 use crate::layer::{Layer, LayerPriority};
 use crate::state::CommandLineWindowSettings;
@@ -36,12 +37,12 @@ fn test_command_line_render_to_layer() {
     // The `:` prompt should be at window_row+1 (content row), window_col+1 (after left border)
     let cell = layer.get_cell(window_row as usize + 1, window_col as usize + 1);
     assert!(cell.is_some());
-    assert_eq!(cell.unwrap().content, vec![b':']);
+    assert_eq!(cell.unwrap().content, Character::from(':'));
 
     // The 't' from 'test' should be at window_col + 2
     let cell = layer.get_cell(window_row as usize + 1, window_col as usize + 2);
     assert!(cell.is_some());
-    assert_eq!(cell.unwrap().content, vec![b't']);
+    assert_eq!(cell.unwrap().content, Character::from('t'));
 }
 
 #[test]
@@ -112,5 +113,5 @@ fn test_command_line_with_custom_border_chars() {
     // Check top-left corner has custom border character
     let cell = layer.get_cell(window_row as usize, window_col as usize);
     assert!(cell.is_some());
-    assert_eq!(cell.unwrap().content, vec![b'+']);
+    assert_eq!(cell.unwrap().content, Character::from('+'));
 }

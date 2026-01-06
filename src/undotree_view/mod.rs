@@ -2,6 +2,7 @@
 //!
 //! Renders the undo history as a vertical "git-graph" style tree.
 
+use crate::character::Character;
 use crate::history::{EditSeq, UndoTree};
 
 /// Render the undo tree to a list of lines (Cells) and a mapping of sequences
@@ -73,10 +74,10 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
                 } else if item.is_some() {
                     Cell::from_char('│').with_fg(branch_color)
                 } else {
-                    Cell::new(b' ')
+                    Cell::new(Character::from(' '))
                 };
                 conn_line.push(cell);
-                conn_line.push(Cell::new(b' '));
+                conn_line.push(Cell::new(Character::from(' ')));
             }
             lines.push(conn_line);
             sequences.push(EditSeq::MAX)
@@ -101,14 +102,14 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
                     Cell::from_char(NODE_CHAR).with_fg(node_color)
                 }
             } else if col_indices.contains(&c) {
-                Cell::new(b' ')
+                Cell::new(Character::from(' '))
             } else if item.is_some() {
                 Cell::from_char('│').with_fg(branch_color)
             } else {
-                Cell::new(b' ')
+                Cell::new(Character::from(' '))
             };
             final_row.push(cell);
-            final_row.push(Cell::new(b' '));
+            final_row.push(Cell::new(Character::from(' ')));
         }
 
         // 2. Draw Text part

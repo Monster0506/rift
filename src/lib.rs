@@ -2,6 +2,7 @@
 
 pub mod action;
 pub mod buffer;
+pub mod character;
 pub mod color;
 pub mod command;
 pub mod command_line;

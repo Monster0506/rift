@@ -138,7 +138,25 @@ impl Theme {
                 b: 255,
             }, // #FFFFFF - Pure white
             Color::Rgb { r: 0, g: 0, b: 0 }, // #000000 - Pure black
-            None,                            // Default syntax for now
+            Some(SyntaxColors {
+                keyword: Color::DarkMagenta,
+                function: Color::DarkBlue,
+                type_def: Color::DarkYellow,
+                string: Color::DarkGreen,
+                number: Color::DarkCyan,
+                constant: Color::DarkCyan,
+                boolean: Color::DarkCyan,
+                comment: Color::DarkGrey,
+                variable: Color::Black,
+                parameter: Color::Black,
+                property: Color::Black,
+                attribute: Color::Black,
+                namespace: Color::Black,
+                operator: Color::Black,
+                punctuation: Color::Black,
+                constructor: Color::DarkYellow,
+                builtin: Color::DarkBlue,
+            }),
         )
     }
 
@@ -158,7 +176,25 @@ impl Theme {
                 g: 224,
                 b: 224,
             }, // #E0E0E0 - Light gray
-            None,
+            Some(SyntaxColors {
+                keyword: Color::Magenta,
+                function: Color::Blue,
+                type_def: Color::Yellow,
+                string: Color::Green,
+                number: Color::Cyan,
+                constant: Color::Cyan,
+                boolean: Color::Cyan,
+                comment: Color::Grey,
+                variable: Color::White,
+                parameter: Color::White,
+                property: Color::White,
+                attribute: Color::White,
+                namespace: Color::White,
+                operator: Color::White,
+                punctuation: Color::White,
+                constructor: Color::Yellow,
+                builtin: Color::Blue,
+            }),
         )
     }
 

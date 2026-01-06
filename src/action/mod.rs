@@ -31,6 +31,10 @@ pub enum Motion {
     NextWord,
     /// Move to the previous word
     PreviousWord,
+    /// Move to the next big word (whitespace delimited)
+    NextBigWord,
+    /// Move to the previous big word (whitespace delimited)
+    PreviousBigWord,
     /// Move to the next paragraph
     NextParagraph,
     /// Move to the previous paragraph

@@ -104,7 +104,7 @@ impl UserSettings {
     /// Create default user settings
     #[must_use]
     pub fn new() -> Self {
-        UserSettings {
+        let mut settings = UserSettings {
             show_line_numbers: true,    // Default to showing line numbers
             default_border_chars: None, // None means use FloatingWindow defaults
             command_line_window: CommandLineWindowSettings::default(),
@@ -116,7 +116,13 @@ impl UserSettings {
             tab_width: 4,
             expand_tabs: true,
             syntax_colors: None,
-        }
+        };
+
+        // Apply default Dark theme
+        let default_theme = Theme::dark();
+        settings.apply_theme(&default_theme);
+
+        settings
     }
 
     /// Apply a theme to the settings using the theme handler
@@ -463,10 +469,10 @@ mod tests {
         use crate::layer::Cell;
         let mut content = OverlayContent {
             left: vec![
-                vec![Cell::new(b'a')],
-                vec![Cell::new(b'b')],
-                vec![Cell::new(b'c')],
-                vec![Cell::new(b'd')],
+                vec![Cell::from_char('a')],
+                vec![Cell::from_char('b')],
+                vec![Cell::from_char('c')],
+                vec![Cell::from_char('d')],
             ],
             right: Vec::new(),
             left_width_percent: 50,

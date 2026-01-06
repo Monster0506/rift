@@ -9,6 +9,7 @@
 //! - The compositor manages all layer creation and compositing.
 //! - Layer modifications only affect that layer's buffer.
 
+use crate::character::Character;
 use crate::color::Color;
 use crate::screen_buffer::{DoubleBuffer, FrameStats};
 use std::collections::BTreeMap;
@@ -92,8 +93,8 @@ impl LayerPriority {
 /// A cell in the terminal buffer
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
-    /// The character to display (UTF-8 encoded bytes)
-    pub content: Vec<u8>,
+    /// The character to display
+    pub content: Character,
     /// Foreground color (None = default)
     pub fg: Option<Color>,
     /// Background color (None = default)
@@ -102,9 +103,9 @@ pub struct Cell {
 
 impl Cell {
     /// Create a new cell with the given character
-    pub fn new(ch: u8) -> Self {
+    pub fn new(ch: Character) -> Self {
         Self {
-            content: vec![ch],
+            content: ch,
             fg: None,
             bg: None,
         }
@@ -112,32 +113,32 @@ impl Cell {
 
     /// Convert cell content to char (best effort)
     pub fn to_char(&self) -> char {
-        std::str::from_utf8(&self.content)
-            .unwrap_or("?")
-            .chars()
-            .next()
-            .unwrap_or('?')
+        self.content.to_char_lossy()
     }
 
     /// Create a new cell with UTF-8 content
+    /// Note: This expects a single char bytes, or will map to Character
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        Self {
-            content: bytes.to_vec(),
-            fg: None,
-            bg: None,
+        if let Ok(s) = std::str::from_utf8(bytes) {
+            if let Some(c) = s.chars().next() {
+                return Self::new(Character::from(c));
+            }
+        }
+        if !bytes.is_empty() {
+            Self::new(Character::Byte(bytes[0]))
+        } else {
+            Self::empty()
         }
     }
 
     /// Create a new cell from a char
     pub fn from_char(ch: char) -> Self {
-        let mut buf = [0u8; 4];
-        let s = ch.encode_utf8(&mut buf);
-        Self::from_bytes(s.as_bytes())
+        Self::new(Character::from(ch))
     }
 
     /// Create an empty (space) cell
     pub fn empty() -> Self {
-        Self::new(b' ')
+        Self::from_char(' ')
     }
 
     /// Set foreground color
@@ -320,30 +321,29 @@ impl Layer {
         }
     }
 
-    /// Write a string of bytes at the given position
-    /// Each byte becomes a separate cell
-    pub fn write_bytes(&mut self, row: usize, start_col: usize, bytes: &[u8]) {
-        for (i, &byte) in bytes.iter().enumerate() {
+    /// Write a string of text at the given position from a string slice
+    pub fn write_str(&mut self, row: usize, start_col: usize, text: &str) {
+        for (i, ch) in text.chars().enumerate() {
             let col = start_col + i;
             if col < self.cols {
-                self.set_cell(row, col, Cell::new(byte));
+                self.set_cell(row, col, Cell::from_char(ch));
             }
         }
     }
 
-    /// Write a string of bytes with colors at the given position
-    pub fn write_bytes_colored(
+    /// Write a string of text with colors at the given position
+    pub fn write_str_colored(
         &mut self,
         row: usize,
         start_col: usize,
-        bytes: &[u8],
+        text: &str,
         fg: Option<Color>,
         bg: Option<Color>,
     ) {
-        for (i, &byte) in bytes.iter().enumerate() {
+        for (i, ch) in text.chars().enumerate() {
             let col = start_col + i;
             if col < self.cols {
-                self.set_cell(row, col, Cell::new(byte).with_colors(fg, bg));
+                self.set_cell(row, col, Cell::from_char(ch).with_colors(fg, bg));
             }
         }
     }
@@ -351,7 +351,13 @@ impl Layer {
     /// Write UTF-8 content at the given position
     /// Handles multi-byte characters by putting them in a single cell
     pub fn write_utf8(&mut self, row: usize, col: usize, content: &[u8]) -> bool {
-        self.set_cell(row, col, Cell::from_bytes(content))
+        // Parse content to string then Character
+        let s = String::from_utf8_lossy(content);
+        if let Some(c) = s.chars().next() {
+            self.set_cell(row, col, Cell::from_char(c))
+        } else {
+            false
+        }
     }
 
     /// Write a character at the given position
@@ -359,11 +365,16 @@ impl Layer {
         self.set_cell(row, col, Cell::from_char(ch))
     }
 
+    /// Write a Character at the given position
+    pub fn write_character(&mut self, row: usize, col: usize, ch: Character) -> bool {
+        self.set_cell(row, col, Cell::new(ch))
+    }
+
     /// Fill a row with a character
-    pub fn fill_row(&mut self, row: usize, ch: u8, fg: Option<Color>, bg: Option<Color>) {
+    pub fn fill_row(&mut self, row: usize, ch: char, fg: Option<Color>, bg: Option<Color>) {
         if row < self.rows {
             for col in 0..self.cols {
-                self.set_cell(row, col, Cell::new(ch).with_colors(fg, bg));
+                self.set_cell(row, col, Cell::from_char(ch).with_colors(fg, bg));
             }
         }
     }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::buffer::api::BufferView;
+use crate::character::Character;
 
 // --- Mock Buffer Implementation ---
 
@@ -36,12 +37,16 @@ impl BufferView for MockBuffer {
         start
     }
 
-    fn line_bytes(&self, line: usize) -> impl Iterator<Item = &[u8]> + '_ {
-        std::iter::once(self.lines[line].as_bytes())
-    }
-
-    fn slice(&self, _start: usize, _end: usize) -> impl Iterator<Item = &[u8]> + '_ {
-        std::iter::empty()
+    fn chars(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = Character> + '_ {
+        self.lines
+            .iter()
+            .flat_map(|line| {
+                let mut chars: Vec<Character> = line.chars().map(Character::from).collect();
+                chars.push(Character::Newline);
+                chars
+            })
+            .skip(range.start)
+            .take(range.end - range.start)
     }
 
     fn revision(&self) -> u64 {
@@ -135,17 +140,17 @@ fn test_unicode_offsets() {
     let buffer = MockBuffer::new(&["Héllo world"]);
 
     // Search "world"
-    // "Héllo " is 7 bytes ('é' is 2 bytes). "world" starts at 7.
+    // "Héllo " is 6 chars. "world" starts at 6.
     let res = find_next(&buffer, 0, "world", SearchDirection::Forward).unwrap();
     assert!(res.is_some());
     let m = res.unwrap();
-    assert_eq!(m.range, 7..12);
+    assert_eq!(m.range, 6..11);
 
     // Search "é"
     let res = find_next(&buffer, 0, "é", SearchDirection::Forward).unwrap();
     assert!(res.is_some());
     let m = res.unwrap();
-    assert_eq!(m.range, 1..3);
+    assert_eq!(m.range, 1..2);
 }
 
 #[test]

@@ -5,6 +5,7 @@
 //! where possible.
 
 use super::rope::PieceTable;
+use crate::character::Character;
 
 #[derive(Clone)]
 pub struct LineIndex {
@@ -49,11 +50,11 @@ impl LineIndex {
     }
 
     pub fn get_line_at(&self, pos: usize) -> usize {
-        self.table.line_at_byte(pos)
+        self.table.line_at_char(pos)
     }
 
-    pub fn insert(&mut self, pos: usize, bytes: &[u8]) {
-        self.table.insert(pos, bytes);
+    pub fn insert(&mut self, pos: usize, chars: &[Character]) {
+        self.table.insert(pos, chars);
     }
 
     pub fn delete(&mut self, pos: usize, len: usize) {
@@ -69,20 +70,25 @@ impl LineIndex {
         self.table.is_empty()
     }
 
-    pub fn byte_at(&self, pos: usize) -> u8 {
-        self.table.byte_at(pos)
+    pub fn char_at(&self, pos: usize) -> Character {
+        self.table.char_at(pos)
     }
 
-    pub fn get_chunk_at_byte(&self, pos: usize) -> &[u8] {
-        self.table.get_chunk_at_byte(pos)
+    /// Convert byte offset to character index
+    pub fn byte_to_char(&self, byte_offset: usize) -> usize {
+        self.table.byte_to_char(byte_offset)
     }
+
+    /// Convert character index to byte offset
+    pub fn char_to_byte(&self, char_index: usize) -> usize {
+        self.table.char_to_byte(char_index)
+    }
+
+    // For compatibility with consumers expecting bytes, we might need helpers
+    // but ideally they should move to Character.
 
     pub fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
         self.table.bytes_range(range)
-    }
-
-    pub fn chunks_in_range(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = &[u8]> {
-        self.table.chunks_in_range(range)
     }
 }
 
