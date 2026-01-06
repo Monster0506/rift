@@ -625,30 +625,40 @@ fn map_capture_to_color(
     capture: &str,
     colors: &crate::color::theme::SyntaxColors,
 ) -> crate::color::Color {
+    use crate::constants::captures;
     match capture {
-        "keyword" | "keyword.control" | "keyword.operator" | "keyword.function" => colors.keyword,
-        "function" | "function.builtin" | "function.method" | "function.macro" => colors.function,
-        "type" | "type.builtin" | "type.definition" | "class" | "struct" | "enum" => {
+        captures::KEYWORD | "keyword.control" | "keyword.operator" | "keyword.function" => {
+            colors.keyword
+        }
+        captures::FUNCTION | "function.builtin" | "function.method" | "function.macro" => {
+            colors.function
+        }
+        captures::TYPE | "type.builtin" | "type.definition" | "class" | "struct" | "enum" => {
             colors.type_def
         }
-        "string" | "string.special" => colors.string,
-        "number" | "float" => colors.number,
-        "constant" | "constant.builtin" | "constant.macro" => colors.constant,
-        "boolean" => colors.boolean,
-        "comment" | "comment.line" | "comment.block" | "comment.documentation" => colors.comment,
-        "variable" | "variable.builtin" | "variable.parameter" | "variable.other.member" => {
-            colors.variable
+        captures::STRING | "string.special" => colors.string,
+        captures::NUMBER | "float" => colors.number,
+        captures::CONSTANT | "constant.builtin" | "constant.macro" => colors.constant,
+        captures::BOOLEAN => colors.boolean,
+        captures::COMMENT | "comment.line" | "comment.block" | "comment.documentation" => {
+            colors.comment
         }
-        "parameter" => colors.parameter,
-        "property" | "field" => colors.property,
-        "attribute" | "attribute.builtin" => colors.attribute,
-        "module" | "namespace" => colors.namespace,
-        "operator" => colors.operator,
-        "punctuation" | "punctuation.delimiter" | "punctuation.bracket" | "punctuation.special" => {
-            colors.punctuation
-        }
-        "constructor" => colors.constructor,
-        _ => colors.variable, // access default? or fg?
+        captures::VARIABLE
+        | "variable.builtin"
+        | "variable.parameter"
+        | "variable.other.member" => colors.variable,
+        captures::PARAMETER => colors.parameter,
+        captures::PROPERTY | captures::FIELD => colors.property,
+        captures::ATTRIBUTE | "attribute.builtin" => colors.attribute,
+        captures::MODULE | captures::NAMESPACE => colors.namespace,
+        captures::OPERATOR => colors.operator,
+        captures::PUNCTUATION
+        | "punctuation.delimiter"
+        | "punctuation.bracket"
+        | "punctuation.special" => colors.punctuation,
+        captures::CONSTRUCTOR => colors.constructor,
+        captures::BUILTIN => colors.builtin,
+        _ => colors.variable, // Fallback
     }
 }
 

@@ -115,6 +115,7 @@ pub mod captures {
     pub const KEYWORD: &str = "keyword";
     pub const LABEL: &str = "label";
     pub const OPERATOR: &str = "operator";
+    pub const PARAMETER: &str = "parameter";
     pub const PROPERTY: &str = "property";
     pub const PUNCTUATION: &str = "punctuation";
     pub const STRING: &str = "string";
