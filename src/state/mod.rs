@@ -421,13 +421,13 @@ impl State {
     /// Move command line cursor to previous word start
     pub fn move_command_line_word_left(&mut self) {
         self.command_line_cursor =
-            crate::string_nav::previous_word_start(&self.command_line, self.command_line_cursor);
+            crate::movement::boundaries::prev_word(&self.command_line, self.command_line_cursor);
     }
 
     /// Move command line cursor to next word start
     pub fn move_command_line_word_right(&mut self) {
         self.command_line_cursor =
-            crate::string_nav::next_word_start(&self.command_line, self.command_line_cursor);
+            crate::movement::boundaries::next_word(&self.command_line, self.command_line_cursor);
     }
 
     /// Move command line cursor to end

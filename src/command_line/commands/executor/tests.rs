@@ -1153,9 +1153,6 @@ fn test_substitute_parsing_weird_behavior_percent() {
     let command_parser =
         crate::command_line::commands::parser::CommandParser::new(settings_registry);
 
-    // :s % /ABC/XYZ
-    // The user noted this behaves nicely/weirdly.
-    // Here % is the first char of args, so it becomes the separator.
     let input = "s % /ABC/XYZ";
     let command = command_parser.parse(input);
 
@@ -1167,9 +1164,6 @@ fn test_substitute_parsing_weird_behavior_percent() {
             range,
             bangs,
         } => {
-            // Separator is %.
-            // Rest of string is " /ABC/XYZ"
-            // Since no other % is found, pattern consumes everything.
             assert_eq!(pattern, " /ABC/XYZ");
             assert_eq!(replacement, "");
             assert_eq!(flags, "");

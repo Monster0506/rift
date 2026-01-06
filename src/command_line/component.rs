@@ -65,11 +65,11 @@ impl Component for CommandLineComponent {
                 EventResult::Consumed
             }
             Key::CtrlArrowLeft => {
-                self.cursor = crate::string_nav::previous_word_start(&self.content, self.cursor);
+                self.cursor = crate::movement::boundaries::prev_word(&self.content, self.cursor);
                 EventResult::Consumed
             }
             Key::CtrlArrowRight => {
-                self.cursor = crate::string_nav::next_word_start(&self.content, self.cursor);
+                self.cursor = crate::movement::boundaries::next_word(&self.content, self.cursor);
                 EventResult::Consumed
             }
             Key::Home => {

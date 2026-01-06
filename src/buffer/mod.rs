@@ -11,7 +11,7 @@ use std::ops::Range;
 
 pub mod api;
 pub mod line_index;
-pub mod rope; // Exposed specifically for Tree-sitter
+pub mod rope;
 use line_index::LineIndex;
 
 /// Text buffer using a Piece Table for efficient insertion and deletion.
@@ -188,7 +188,6 @@ impl TextBuffer {
 
     /// Get a chunk of text starting at the given byte offset.
     /// Used for Tree-sitter integration.
-
     pub fn get_chunk_at_byte(&self, _pos: usize) -> &[u8] {
         // Returned empty as stub; Tree-sitter integration uses `to_logical_bytes` + `parse_with` callback now.
         &[]
@@ -291,124 +290,12 @@ impl TextBuffer {
     // Legacy/Helper methods relying on Character properties
 
     pub fn move_word_right(&mut self) -> bool {
-        self.move_generic_word_right(false)
-    }
-
-    pub fn move_big_word_right(&mut self) -> bool {
-        self.move_generic_word_right(true)
-    }
-
-    fn move_generic_word_right(&mut self, big_word: bool) -> bool {
-        let len = self.len();
-        if self.cursor >= len {
-            return false;
-        }
-        let start_pos = self.cursor;
-
-        let get_cat = |c: Character| -> u8 {
-            if c.to_char_lossy().is_whitespace() {
-                0 // Whitespace
-            } else if big_word {
-                1 // Non-whitespace (Big Word)
-            } else if c.to_char_lossy().is_alphanumeric() || c.to_char_lossy() == '_' {
-                2 // Alphanumeric
-            } else {
-                3 // Symbol
-            }
-        };
-
-        if let Some(curr) = self.char_at(self.cursor) {
-            let start_cat = get_cat(curr);
-
-            // 1. Skip current word category
-            while self.cursor < len {
-                match self.char_at(self.cursor) {
-                    Some(c) if get_cat(c) == start_cat => {
-                        self.move_right();
-                    }
-                    _ => break,
-                }
-            }
-
-            // 2. Skip whitespace if we weren't already on whitespace
-            if start_cat != 0 {
-                while self.cursor < len {
-                    match self.char_at(self.cursor) {
-                        Some(c) if get_cat(c) == 0 => {
-                            self.move_right();
-                        }
-                        _ => break,
-                    }
-                }
-            }
-        }
-
-        self.cursor != start_pos
+        crate::movement::buffer::move_word_right(self)
     }
 
     pub fn move_word_left(&mut self) -> bool {
-        self.move_generic_word_left(false)
+        crate::movement::buffer::move_word_left(self)
     }
-
-    pub fn move_big_word_left(&mut self) -> bool {
-        self.move_generic_word_left(true)
-    }
-
-    fn move_generic_word_left(&mut self, big_word: bool) -> bool {
-        if self.cursor == 0 {
-            return false;
-        }
-        let start_pos = self.cursor;
-
-        let get_cat = |c: Character| -> u8 {
-            if c.to_char_lossy().is_whitespace() {
-                0 // Whitespace
-            } else if big_word {
-                1 // Non-whitespace (Big Word)
-            } else if c.to_char_lossy().is_alphanumeric() || c.to_char_lossy() == '_' {
-                2 // Alphanumeric
-            } else {
-                3 // Symbol
-            }
-        };
-
-        self.move_left();
-
-        // 1. Skip whitespace backwards
-        while self.cursor > 0 {
-            match self.char_at(self.cursor) {
-                Some(c) if get_cat(c) == 0 => {
-                    self.move_left();
-                }
-                _ => break,
-            }
-        }
-
-        // 2. Find start of current category
-        if let Some(curr) = self.char_at(self.cursor) {
-            let target_cat = get_cat(curr);
-            if target_cat == 0 {
-                // Still whitespace? Means start of file is whitespace
-                return true;
-            }
-
-            while self.cursor > 0 {
-                let prev_pos = self.cursor - 1;
-                match self.char_at(prev_pos) {
-                    Some(pc) if get_cat(pc) == target_cat => {
-                        self.move_left();
-                    }
-                    _ => break,
-                }
-            }
-        }
-
-        self.cursor != start_pos
-    }
-
-    // ... move_paragraph, move_sentence ...
-    // Reuse existing logic but adapt to Character. Use simple stub for now if complex?
-    // User wants "Cascading type errors...". I should try to keep functionality.
 
     pub fn move_paragraph_forward(&mut self) -> bool {
         let current_line = self.get_line();
@@ -483,12 +370,9 @@ impl TextBuffer {
         while pos < len {
             if let Some(c) = self.char_at(pos) {
                 if is_terminator(c) {
-                    // Spec: "move to next sentence punctuation if any on the current line, else move to the end of the line or next line."
-
                     // Found punctuation.
                     // If we are just starting, ensure we actually move.
                     if pos == start_pos {
-                        // Skip it to find next? No, behavior is usually jump TO end of sentence or START of next.
                         // Impl: Jump to start of next sentence.
                     }
 
@@ -496,14 +380,6 @@ impl TextBuffer {
                     let next_pos = pos + 1;
                     if next_pos >= len || self.char_at(next_pos).map_or(true, is_whitespace) {
                         // Found sentence boundary.
-
-                        // Per user spec: "move to next sentence punctuation if any on the current line"
-                        // But also "next sentence punctuation".
-                        // Let's implement standard "end of sentence" + skip whitespace logic,
-                        // but ensure we handle newlines as soft barriers if requested?
-                        // User said: "else move to the end of the line or next line".
-
-                        // Current logic: skips whitespace to find start of NEXT sentence.
                         pos = next_pos;
                         while pos < len {
                             if let Some(wc) = self.char_at(pos) {
@@ -517,13 +393,7 @@ impl TextBuffer {
                         return true;
                     }
                 } else if c == Character::Newline {
-                    // User spec: "else move to the end of the line or next line"
-                    // If we hit a newline and haven't found punctuation yet provided we moved.
                     if pos > start_pos {
-                        // We are at newline.
-                        // Move past it to start of next line?
-                        // "move to the end of the line or next line".
-                        // Let's stop AT the start of next line (which is pos + 1).
                         self.cursor = pos + 1;
                         return true;
                     }
