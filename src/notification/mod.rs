@@ -125,9 +125,6 @@ impl NotificationManager {
 
     /// Add an error notification (convenience)
     pub fn error(&mut self, message: impl Into<String>) -> u64 {
-        // Errors default to no TTL (must be dismissed?) or longer TTL?
-        // Let's stick to longer TTL for now as per "popup notifications" usually disappear.
-        // User feedback can adjust this.
         self.add(
             NotificationType::Error,
             message,
@@ -149,9 +146,6 @@ impl NotificationManager {
         self.notifications.is_empty()
     }
 
-    /// Get active (non-expired) notifications
-    /// This also lazily prunes expired notifications?
-    /// No, let's have explicit prune. And `iter_active` just returns iterator.
     pub fn iter_active(&self) -> std::slice::Iter<'_, Notification> {
         self.notifications.iter()
     }

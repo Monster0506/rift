@@ -64,6 +64,28 @@ impl Component for CommandLineComponent {
                 }
                 EventResult::Consumed
             }
+            Key::CtrlArrowLeft => {
+                self.cursor = crate::movement::boundaries::prev_word(&self.content, self.cursor);
+                EventResult::Consumed
+            }
+            Key::CtrlArrowRight => {
+                self.cursor = crate::movement::boundaries::next_word(&self.content, self.cursor);
+                EventResult::Consumed
+            }
+            Key::Home => {
+                self.cursor = 0;
+                EventResult::Consumed
+            }
+            Key::End => {
+                self.cursor = self.content.len();
+                EventResult::Consumed
+            }
+            Key::Delete => {
+                if self.cursor < self.content.len() {
+                    self.content.remove(self.cursor);
+                }
+                EventResult::Consumed
+            }
             Key::Enter => {
                 // Determine action based on prompt or context?
                 // For now, we assume the creator of the component knows context,

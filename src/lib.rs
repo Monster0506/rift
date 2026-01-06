@@ -18,6 +18,7 @@ pub mod key;
 pub mod key_handler;
 pub mod layer;
 pub mod mode;
+pub mod movement;
 pub mod notification;
 pub mod render;
 pub mod screen_buffer;

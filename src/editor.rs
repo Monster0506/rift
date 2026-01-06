@@ -344,6 +344,9 @@ impl<T: TerminalBackend> Editor<T> {
                     None => continue,
                 };
 
+                // Update debug info
+                self.state.update_keypress(key_press);
+
                 let modal_result = self
                     .modal
                     .as_mut()
@@ -647,6 +650,32 @@ impl<T: TerminalBackend> Editor<T> {
                 if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
             {
                 self.state.move_command_line_end();
+            }
+            Command::Move(crate::action::Motion::PreviousWord, _)
+                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
+            {
+                self.state.error_manager.notifications_mut().info(format!(
+                    "Moving word left. Cursor before: {}",
+                    self.state.command_line_cursor
+                ));
+                self.state.move_command_line_word_left();
+                self.state.error_manager.notifications_mut().info(format!(
+                    "Moved word left. Cursor after: {}",
+                    self.state.command_line_cursor
+                ));
+            }
+            Command::Move(crate::action::Motion::NextWord, _)
+                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
+            {
+                self.state.error_manager.notifications_mut().info(format!(
+                    "Moving word right. Cursor before: {}",
+                    self.state.command_line_cursor
+                ));
+                self.state.move_command_line_word_right();
+                self.state.error_manager.notifications_mut().info(format!(
+                    "Moved word right. Cursor after: {}",
+                    self.state.command_line_cursor
+                ));
             }
             Command::DeleteForward
                 if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>

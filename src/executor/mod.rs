@@ -102,10 +102,12 @@ pub fn execute_command(
                         buf.move_sentence_backward();
                     }
                     Motion::NextBigWord => {
-                        buf.move_big_word_right();
+                        // Big word support removed - use regular word movement
+                        buf.move_word_right();
                     }
                     Motion::PreviousBigWord => {
-                        buf.move_big_word_left();
+                        // Big word support removed - use regular word movement
+                        buf.move_word_left();
                     }
                     Motion::NextMatch => {
                         if let Some(query) = last_search_query {
@@ -184,10 +186,12 @@ pub fn execute_command(
                         doc.buffer.move_sentence_backward();
                     }
                     Motion::NextBigWord => {
-                        doc.buffer.move_big_word_right();
+                        // Big word support removed - use regular word movement
+                        doc.buffer.move_word_right();
                     }
                     Motion::PreviousBigWord => {
-                        doc.buffer.move_big_word_left();
+                        // Big word support removed - use regular word movement
+                        doc.buffer.move_word_left();
                     }
                     Motion::NextMatch => {
                         let buf = &mut doc.buffer;

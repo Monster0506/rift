@@ -418,6 +418,18 @@ impl State {
         self.command_line_cursor = 0;
     }
 
+    /// Move command line cursor to previous word start
+    pub fn move_command_line_word_left(&mut self) {
+        self.command_line_cursor =
+            crate::movement::boundaries::prev_word(&self.command_line, self.command_line_cursor);
+    }
+
+    /// Move command line cursor to next word start
+    pub fn move_command_line_word_right(&mut self) {
+        self.command_line_cursor =
+            crate::movement::boundaries::next_word(&self.command_line, self.command_line_cursor);
+    }
+
     /// Move command line cursor to end
     pub fn move_command_line_end(&mut self) {
         self.command_line_cursor = self.command_line.len();
@@ -461,59 +473,4 @@ impl Default for State {
 
 #[cfg(test)]
 #[path = "tests.rs"]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_overlay_navigation_skip_connectors() {
-        use crate::layer::Cell;
-        let mut content = OverlayContent {
-            left: vec![
-                vec![Cell::from_char('a')],
-                vec![Cell::from_char('b')],
-                vec![Cell::from_char('c')],
-                vec![Cell::from_char('d')],
-            ],
-            right: Vec::new(),
-            left_width_percent: 50,
-            cursor: 0,
-            // 0: selectable, 1: skip, 2: skip, 3: selectable
-            selectable: vec![true, false, false, true],
-            sequences: vec![1, u64::MAX, u64::MAX, 2],
-            right_scroll: 0,
-        };
-
-        // Test Down
-        content.move_cursor_down();
-        assert_eq!(content.cursor, 3, "Should skip indices 1 and 2");
-
-        content.move_cursor_down();
-        assert_eq!(content.cursor, 3, "Should stay at bottom");
-
-        // Test Up
-        content.move_cursor_up();
-        assert_eq!(content.cursor, 0, "Should skip indices 2 and 1");
-
-        content.move_cursor_up();
-        assert_eq!(content.cursor, 0, "Should stay at top");
-    }
-
-    #[test]
-    fn test_overlay_navigation_empty() {
-        let mut content = OverlayContent {
-            left: Vec::new(),
-            right: Vec::new(),
-            left_width_percent: 50,
-            cursor: 0,
-            selectable: Vec::new(),
-            sequences: Vec::new(),
-            right_scroll: 0,
-        };
-
-        content.move_cursor_down();
-        assert_eq!(content.cursor, 0);
-
-        content.move_cursor_up();
-        assert_eq!(content.cursor, 0);
-    }
-}
+mod tests;
