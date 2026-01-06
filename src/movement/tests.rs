@@ -145,6 +145,193 @@ fn test_buffer_empty() {
     assert!(!move_word_left(&mut buffer));
 }
 
+// Sentence movement tests
+
+#[test]
+fn test_sentence_forward_basic() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer
+        .insert_str("First sentence. Second sentence.")
+        .unwrap();
+    buffer.move_to_start();
+
+    assert!(move_sentence_forward(&mut buffer));
+    assert_eq!(buffer.cursor(), 16); // After "First sentence. " -> "Second"
+}
+
+#[test]
+fn test_sentence_forward_multiple() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer.insert_str("One. Two! Three?").unwrap();
+    buffer.move_to_start();
+
+    assert!(move_sentence_forward(&mut buffer));
+    assert_eq!(buffer.cursor(), 5); // After "One. "
+
+    assert!(move_sentence_forward(&mut buffer));
+    assert_eq!(buffer.cursor(), 10); // After "Two! "
+
+    assert!(move_sentence_forward(&mut buffer));
+    assert_eq!(buffer.cursor(), 16); // End
+}
+
+#[test]
+fn test_sentence_forward_newline() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer.insert_str("First line\nSecond line").unwrap();
+    buffer.move_to_start();
+
+    assert!(move_sentence_forward(&mut buffer));
+    assert_eq!(buffer.cursor(), 11); // After newline
+}
+
+#[test]
+fn test_sentence_forward_no_punctuation() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer.insert_str("No punctuation here").unwrap();
+    buffer.move_to_start();
+
+    assert!(move_sentence_forward(&mut buffer));
+    assert_eq!(buffer.cursor(), 19); // Moves to end
+}
+
+#[test]
+fn test_sentence_backward_basic() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer
+        .insert_str("First sentence. Second sentence.")
+        .unwrap();
+    buffer.move_to_end();
+
+    assert!(move_sentence_backward(&mut buffer));
+    assert_eq!(buffer.cursor(), 16); // Start of "Second"
+}
+
+#[test]
+fn test_sentence_backward_multiple() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer.insert_str("One. Two! Three?").unwrap();
+    buffer.move_to_end();
+
+    assert!(move_sentence_backward(&mut buffer));
+    assert_eq!(buffer.cursor(), 10); // Start of "Three"
+
+    assert!(move_sentence_backward(&mut buffer));
+    assert_eq!(buffer.cursor(), 5); // Start of "Two"
+
+    assert!(move_sentence_backward(&mut buffer));
+    assert_eq!(buffer.cursor(), 0); // Start
+}
+
+#[test]
+fn test_sentence_at_boundary() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer.insert_str("Test.").unwrap();
+    buffer.move_to_start();
+
+    assert!(!move_sentence_backward(&mut buffer)); // Already at start
+}
+
+#[test]
+fn test_sentence_empty_buffer() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+
+    assert!(!move_sentence_forward(&mut buffer));
+    assert!(!move_sentence_backward(&mut buffer));
+}
+
+// Paragraph movement tests
+
+#[test]
+fn test_paragraph_forward_basic() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer
+        .insert_str("First paragraph.\n\nSecond paragraph.")
+        .unwrap();
+    buffer.move_to_start();
+
+    assert!(move_paragraph_forward(&mut buffer));
+    assert_eq!(buffer.cursor(), 17); // At empty line
+}
+
+#[test]
+fn test_paragraph_forward_multiple_empty_lines() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer.insert_str("Para one.\n\n\nPara two.").unwrap();
+    buffer.move_to_start();
+
+    assert!(move_paragraph_forward(&mut buffer));
+    assert_eq!(buffer.cursor(), 10); // First empty line
+}
+
+#[test]
+fn test_paragraph_forward_no_empty_lines() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer
+        .insert_str("Line one.\nLine two.\nLine three.")
+        .unwrap();
+    buffer.move_to_start();
+
+    assert!(move_paragraph_forward(&mut buffer));
+    assert_eq!(buffer.cursor(), 31); // Moves to end
+}
+
+#[test]
+fn test_paragraph_backward_basic() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer
+        .insert_str("First paragraph.\n\nSecond paragraph.")
+        .unwrap();
+    buffer.move_to_end();
+
+    assert!(move_paragraph_backward(&mut buffer));
+    assert_eq!(buffer.cursor(), 17); // At empty line
+}
+
+#[test]
+fn test_paragraph_backward_from_middle() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer
+        .insert_str("Para one.\n\nPara two.\n\nPara three.")
+        .unwrap();
+    // Position cursor in "Para three"
+    buffer.set_cursor(24).unwrap();
+
+    assert!(move_paragraph_backward(&mut buffer));
+    assert_eq!(buffer.cursor(), 21); // Empty line before "Para two"
+}
+
+#[test]
+fn test_paragraph_backward_no_empty_lines() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer.insert_str("Line one.\nLine two.").unwrap();
+    buffer.move_to_end();
+
+    assert!(move_paragraph_backward(&mut buffer));
+    assert_eq!(buffer.cursor(), 0); // Moves to start
+}
+
+#[test]
+fn test_paragraph_at_boundary() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer.insert_str("Single line.").unwrap();
+    buffer.move_to_start();
+
+    assert!(!move_paragraph_backward(&mut buffer)); // Already at start
+
+    buffer.move_to_end();
+    assert!(!move_paragraph_forward(&mut buffer));
+    assert_eq!(buffer.cursor(), 12); // At end
+}
+
+#[test]
+fn test_paragraph_empty_buffer() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+
+    assert!(!move_paragraph_forward(&mut buffer));
+    assert!(!move_paragraph_backward(&mut buffer));
+}
+
 #[test]
 fn test_classify_char() {
     assert_eq!(classify_char(' '), CharClass::Whitespace);
