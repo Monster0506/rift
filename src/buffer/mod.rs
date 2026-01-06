@@ -11,7 +11,7 @@ use std::ops::Range;
 
 pub mod api;
 pub mod line_index;
-pub mod rope;
+pub mod rope; // Exposed specifically for Tree-sitter
 use line_index::LineIndex;
 
 /// Text buffer using a Piece Table for efficient insertion and deletion.
@@ -199,6 +199,21 @@ impl TextBuffer {
         // TODO: Implement proper byte-to-char mapping and chunking for Tree-sitter.
         // For now return empty to avoid panic, or implement panic to find usage.
         &[]
+    }
+
+    /// Get the logical byte content of the buffer (matching parse tree offsets)
+    pub fn to_logical_bytes(&self) -> Vec<u8> {
+        self.line_index.table.to_logical_bytes()
+    }
+
+    /// Get an iterator over the characters
+    pub fn iter(&self) -> crate::buffer::rope::PieceTableIterator {
+        self.line_index.table.iter()
+    }
+
+    /// Get an iterator starting at a specific character index
+    pub fn iter_at(&self, pos: usize) -> crate::buffer::rope::PieceTableIterator {
+        self.line_index.table.iter_at(pos)
     }
 
     pub fn char_at(&self, pos: usize) -> Option<Character> {

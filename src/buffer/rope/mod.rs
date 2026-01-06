@@ -226,6 +226,99 @@ impl PieceTable {
         }
         get_char_idx_recursive(self.root.as_deref(), byte_offset, &self.original, &self.add)
     }
+
+    /// Get an O(N) iterator over the characters
+    pub fn iter(&self) -> PieceTableIterator {
+        PieceTableIterator::new(self.root.as_deref(), &self.original, &self.add)
+    }
+
+    /// Collect all logical bytes (UTF-8) from the buffer
+    pub fn to_logical_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(self.byte_len());
+        for c in self.iter() {
+            c.encode_utf8(&mut buf);
+        }
+        buf
+    }
+
+    /// Get an iterator starting at a specific character index
+    pub fn iter_at(&self, start_pos: usize) -> PieceTableIterator {
+        let mut iter = self.iter();
+        if start_pos > 0 {
+            // Optimization TODO: Implement proper seek in iterator
+            for _ in 0..start_pos {
+                iter.next();
+            }
+        }
+        iter
+    }
+}
+
+/// efficient O(N) iterator for PieceTable
+pub struct PieceTableIterator<'a> {
+    stack: Vec<&'a Node>,
+    current_piece: Option<&'a [Character]>,
+    current_piece_idx: usize,
+    original: &'a [Character],
+    add: &'a [Character],
+}
+
+impl<'a> PieceTableIterator<'a> {
+    fn new(root: Option<&'a Node>, original: &'a [Character], add: &'a [Character]) -> Self {
+        let mut iter = Self {
+            stack: Vec::new(),
+            current_piece: None,
+            current_piece_idx: 0,
+            original,
+            add,
+        };
+        if let Some(node) = root {
+            iter.push_left(node);
+        }
+        iter
+    }
+
+    fn push_left(&mut self, mut node: &'a Node) {
+        self.stack.push(node);
+        while let Some(left) = &node.left {
+            self.stack.push(left);
+            node = left;
+        }
+    }
+}
+
+impl<'a> Iterator for PieceTableIterator<'a> {
+    type Item = Character;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(slice) = self.current_piece {
+            if self.current_piece_idx < slice.len() {
+                let c = slice[self.current_piece_idx];
+                self.current_piece_idx += 1;
+                return Some(c);
+            } else {
+                self.current_piece = None;
+            }
+        }
+
+        if let Some(node) = self.stack.pop() {
+            let slice = get_piece_slice(&node.piece, self.original, self.add);
+            if !slice.is_empty() {
+                self.current_piece = Some(slice);
+                self.current_piece_idx = 1;
+                if let Some(right) = &node.right {
+                    self.push_left(right);
+                }
+                return Some(slice[0]);
+            } else {
+                if let Some(right) = &node.right {
+                    self.push_left(right);
+                }
+                return self.next();
+            }
+        }
+        None
+    }
 }
 
 impl std::fmt::Display for PieceTable {
@@ -810,3 +903,9 @@ mod tests;
 
 #[cfg(test)]
 mod conversion_tests;
+
+#[cfg(test)]
+mod iterator_tests;
+
+#[cfg(test)]
+mod logical_bytes_tests;

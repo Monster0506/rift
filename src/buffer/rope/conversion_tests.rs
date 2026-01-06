@@ -1,4 +1,3 @@
-use super::*;
 use crate::buffer::rope::PieceTable;
 use crate::character::Character;
 

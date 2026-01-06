@@ -490,6 +490,9 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &RenderContext) -> Result<(),
             let left_col = viewport.left_col();
             let mut char_idx_in_line = 0usize;
 
+            // Initialize byte offset for the line (O(log N))
+            let mut current_byte_offset = buf.char_to_byte(line_start_char);
+
             for ch in buf.chars(line_start_char..line_end_char) {
                 if rendered_col >= content_cols {
                     break;
@@ -502,14 +505,8 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &RenderContext) -> Result<(),
 
                 // Calculate absolute location
                 let abs_char_offset = line_start_char + char_idx_in_line;
-                // Note: Range matching uses Character index now?
-                // SearchMatch.range is now Character range (set in search/mod.rs logic).
-                // But check: did search/mod.rs set it to Byte or Char index?
-                // I converted byte_to_char_idx. So it is Char index.
-                // TextBuffer.cursor() is Char index.
-                // So everything should be consistent.
 
-                // 1. Check for search match
+                // 1. Check for search match (Character range based)
                 let is_match = !ctx.state.search_matches.is_empty()
                     && ctx
                         .state
@@ -517,58 +514,25 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &RenderContext) -> Result<(),
                         .iter()
                         .any(|m| m.range.contains(&abs_char_offset));
 
-                // 2. Check for syntax highlighting
-                // Tree-sitter works on BYTES. `ctx.highlights` ranges are BYTE ranges!
-                // This is a PROBLEM.
-                // Syntax highlighter (treear-sitter) returns byte ranges.
-                // We are iterating Characters.
-                // We need to know the BYTE offset of the current character to check highlights.
-                // `PieceTable` nodes have `byte_len`.
-                // But fast lookup of byte offset for every char is expensive if we don't track it.
-                //
-                // However, we can track accumulated byte offset.
-                // `line_start_byte` is needed. `buf.line_index.get_start` returns CHAR index.
-                // `buf` needs `get_line_start_byte(line)`?
-                // PieceTable supports it but maybe not exposed via LineIndex efficiently yet?
-                //
-                // Pragmata: For now, we can approximate or ignore syntax highlighting correctness if mixed chars.
-                // OR calculate byte offset as we go.
-                // If we assume strict UTF-8 char lengths for Unicode, we can fallback to `ch.len_utf8()`.
-                // `start_byte` of line? `TextBuffer` doesn't easily convert line char idx to byte idx without walking.
-                //
-                // Let's rely on `ch.len_utf8()` for relative byte offset from line start.
-                // But we need absolute byte offset for syntax highlighting?
-                // The `ctx.highlights` are filtered by viewport maybe?
-                // If `ctx.highlights` are absolute, we need absolute byte offset.
-                // `buf.line_index` doesn't give absolute byte offset of line quickly?
-                //
-                // TODO: Fix syntax highlighting byte offsets.
-                // For now, let's assume valid UTF-8 and accumulate len_utf8.
-                // We need `line_start_byte`.
-                // If we don't have it, we might have broken syntax highlighting offset.
-                //
-                // HACK: `TextBuffer` has `get_line_bytes(line)` which returns Vec<u8>.
-                // We can assume valid accumulation.
-                // To get absolute start byte: that's hard efficiently without `byte_len` node search.
-                //
-                // Let's assume `syntax` module will be refactored to Provide Character Ranges later?
-                // Or we accept broken highlights for this step.
-                // I'll define `abs_byte_offset` as `0` plus accumulation, but that resets every line.
-                // `highlights` likely absolute.
-                // I will Comment this out or assume 0 for now to fix compilation.
-                // Or I can fetch `line_start_byte` if I expose it.
-                // `TextBuffer` -> `LineIndex` -> `PieceTable` -> `line_start_byte(line)`.
-                // I didn't expose `line_start_byte`.
+                // 2. Check for syntax highlighting (Byte range based)
+                let syntax_fg = if let Some(highlights) = ctx.highlights {
+                    let mut color = None;
+                    // TODO: Optimize this linear scan
+                    for (range, capture) in highlights.iter() {
+                        if range.contains(&current_byte_offset) {
+                            if let Some(syntax_colors) = &ctx.state.settings.syntax_colors {
+                                color = Some(map_capture_to_color(capture, syntax_colors));
+                            }
+                            break;
+                        }
+                    }
+                    color.or(editor_fg)
+                } else {
+                    editor_fg
+                };
 
-                let syntax_fg = editor_fg; // syntax highlighting disabled temporarily
-                                           /*
-                                           let syntax_fg = if let Some(highlights) = ctx.highlights {
-                                               // ... verify ranges ...
-                                               editor_fg
-                                           } else {
-                                               editor_fg
-                                           };
-                                           */
+                // Update byte offset for next char (O(1))
+                current_byte_offset += ch.len_utf8();
 
                 // Determine final colors
                 let (fg, bg) = if is_match {
@@ -634,6 +598,37 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &RenderContext) -> Result<(),
     }
 
     Ok(())
+}
+
+fn map_capture_to_color(
+    capture: &str,
+    colors: &crate::color::theme::SyntaxColors,
+) -> crate::color::Color {
+    match capture {
+        "keyword" | "keyword.control" | "keyword.operator" | "keyword.function" => colors.keyword,
+        "function" | "function.builtin" | "function.method" | "function.macro" => colors.function,
+        "type" | "type.builtin" | "type.definition" | "class" | "struct" | "enum" => {
+            colors.type_def
+        }
+        "string" | "string.special" => colors.string,
+        "number" | "float" => colors.number,
+        "constant" | "constant.builtin" | "constant.macro" => colors.constant,
+        "boolean" => colors.boolean,
+        "comment" | "comment.line" | "comment.block" | "comment.documentation" => colors.comment,
+        "variable" | "variable.builtin" | "variable.parameter" | "variable.other.member" => {
+            colors.variable
+        }
+        "parameter" => colors.parameter,
+        "property" | "field" => colors.property,
+        "attribute" | "attribute.builtin" => colors.attribute,
+        "module" | "namespace" => colors.namespace,
+        "operator" => colors.operator,
+        "punctuation" | "punctuation.delimiter" | "punctuation.bracket" | "punctuation.special" => {
+            colors.punctuation
+        }
+        "constructor" => colors.constructor,
+        _ => colors.variable, // access default? or fg?
+    }
 }
 
 /// Calculate the cursor column position accounting for tab width and wide characters

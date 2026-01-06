@@ -63,6 +63,21 @@ impl Character {
         }
     }
 
+    /// Encode the character as UTF-8 bytes into a buffer
+    pub fn encode_utf8(&self, buf: &mut Vec<u8>) {
+        match self {
+            Character::Unicode(c) => {
+                let mut b = [0; 4];
+                let s = c.encode_utf8(&mut b);
+                buf.extend_from_slice(s.as_bytes());
+            }
+            Character::Byte(b) => buf.push(*b),
+            Character::Tab => buf.push(b'\t'),
+            Character::Newline => buf.push(b'\n'),
+            Character::Control(b) => buf.push(*b),
+        }
+    }
+
     /// Convert to char if possible (best effort for display/search)
     pub fn to_char_lossy(&self) -> char {
         match self {
@@ -101,3 +116,7 @@ impl From<u8> for Character {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "character_tests.rs"]
+mod tests;

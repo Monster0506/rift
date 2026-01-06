@@ -55,8 +55,43 @@ impl Syntax {
     }
 
     pub fn parse(&mut self, text: &TextBuffer) {
-        let full_text = text.to_string();
-        let tree = self.parser.parse(full_text, self.tree.as_ref());
+        // Use parse_with to avoid allocating the entire file as a string.
+        // We serve chunks of ~1KB.
+        let mut iter = text.iter();
+        let mut position = 0;
+
+        let mut callback = |byte_offset: usize, _point: tree_sitter::Point| -> Vec<u8> {
+            if byte_offset != position {
+                // Seek needed (rare in sequential parse)
+                // Seek cost: O(log N) to find char index, then O(N) linear advance if just advancing?
+                // Actually `iter_at` calls `iter.next()` N times for now. That is slow O(N).
+                // BUT, `byte_to_char` is O(log N).
+                // If we implemented true seek, it would be fast.
+                // For now, let's use the provided API.
+                let char_idx = text.byte_to_char(byte_offset);
+                iter = text.iter_at(char_idx);
+                position = byte_offset;
+            }
+
+            // Generate a chunk
+            // 1KB chunk size
+            let mut buf = Vec::with_capacity(1024);
+            // We need to keep reading until buf is somewhat full.
+            // Be careful to update `position` correctly based on written bytes.
+            for _ in 0..256 {
+                // ~256 chars might be 256-1024 bytes
+                if let Some(c) = iter.next() {
+                    c.encode_utf8(&mut buf);
+                } else {
+                    break;
+                }
+            }
+
+            position += buf.len();
+            buf
+        };
+
+        let tree = self.parser.parse_with(&mut callback, self.tree.as_ref());
         self.tree = tree;
     }
 
@@ -90,8 +125,8 @@ impl Syntax {
         {
             let root_node = tree.root_node();
 
-            let full_text = text.to_string();
-            let full_bytes = full_text.as_bytes();
+            // Use logical bytes to match the parse tree (which used parse_with + encode_utf8)
+            let full_bytes = text.to_logical_bytes();
 
             if let Some(r) = range {
                 query_cursor.set_byte_range(r);
@@ -99,7 +134,8 @@ impl Syntax {
                 query_cursor.set_byte_range(0..full_bytes.len());
             }
 
-            let mut matches = query_cursor.matches(query, root_node, full_bytes);
+            // query_cursor.matches expects a slice. We pass our owned vector as slice.
+            let mut matches = query_cursor.matches(query, root_node, full_bytes.as_slice());
 
             while let Some(m) = matches.next() {
                 for capture in m.captures {
