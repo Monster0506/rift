@@ -18,6 +18,7 @@ fn create_default_statusdrawstate() -> StatusDrawState {
         mode: Mode::Normal,
         pending_key: None,
         pending_count: 0,
+        last_keypress: None,
         file_name: "".to_string(),
         is_dirty: false,
         cols: 80,

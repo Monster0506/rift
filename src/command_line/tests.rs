@@ -115,3 +115,45 @@ fn test_command_line_with_custom_border_chars() {
     assert!(cell.is_some());
     assert_eq!(cell.unwrap().content, Character::from('+'));
 }
+
+#[test]
+fn test_command_line_word_movement() {
+    // We need to test State logic, but State is in another module.
+    // Rather than mocking State, we can test the logic if we could access it.
+    // Since we are in crate::command_line::tests, we can import State.
+    use crate::state::State;
+
+    let mut state = State::new();
+    state.command_line = "hello world".to_string();
+    // Cursor at end: "hello world|" (index 11)
+    state.command_line_cursor = 11;
+
+    // Move Left (Word)
+    state.move_command_line_word_left();
+    // Should skip "world" and land on space or start of world?
+    // Implementation: skips whitespace (none), skips word chars ("dlrow"). Stops at space.
+    // Index of space is 5. "hello" is 0-4. Space is 5.
+    // Wait. "hello" (5 chars). Space is 5th char? 0,1,2,3,4. Space is 5.
+    // "world" is 6,7,8,9,10.
+    // Cursor initially at 11.
+    // Skip word chars: 10,9,8,7,6. Stop at 5.
+    // Cursor initially at 11.
+    // Logic confirms it moves to 6 (start of 'world').
+    assert_eq!(
+        state.command_line_cursor, 6,
+        "Should move to start of 'world'"
+    );
+
+    // Move Left (Word) again
+    state.move_command_line_word_left();
+    // Logic confirms it moves to 0 (start of 'hello').
+    assert_eq!(state.command_line_cursor, 0, "Should move to start");
+
+    // Move Right (Word)
+    state.move_command_line_word_right();
+    // Logic confirms it moves to 6 (start of 'world').
+    assert_eq!(
+        state.command_line_cursor, 6,
+        "Should move to start of 'world'"
+    );
+}

@@ -60,6 +60,7 @@ pub struct StatusDrawState {
     pub mode: Mode,
     pub pending_key: Option<crate::key::Key>,
     pub pending_count: usize,
+    pub last_keypress: Option<crate::key::Key>,
     pub file_name: String,
     pub is_dirty: bool,
     pub cursor: CursorInfo,
@@ -249,6 +250,7 @@ pub fn render<T: TerminalBackend>(
         mode: ctx.current_mode,
         pending_key: ctx.pending_key,
         pending_count: ctx.pending_count,
+        last_keypress: ctx.state.last_keypress,
         file_name: ctx.state.file_name.clone(),
         is_dirty: ctx.state.is_dirty,
         cursor: CursorInfo {

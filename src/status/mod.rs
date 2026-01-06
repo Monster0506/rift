@@ -211,10 +211,14 @@ impl StatusBar {
         file_name: &str,
         cursor: &CursorInfo,
         total_lines: usize,
+        last_keypress: Option<Key>,
         _debug_mode: bool,
     ) -> String {
         let mut parts = Vec::new();
         parts.push(format!("File: {}", file_name));
+        if let Some(key) = last_keypress {
+            parts.push(format!("Last: {}", Self::format_key(key)));
+        }
         parts.push(format!("Pos: {}:{}", cursor.row + 1, cursor.col + 1));
         parts.push(format!("Lines: {}", total_lines));
         parts.join(" | ")
@@ -331,6 +335,7 @@ impl StatusBar {
                 &state.file_name,
                 &state.cursor,
                 state.total_lines,
+                state.last_keypress,
                 state.debug_mode,
             );
             if !debug_str.is_empty() {

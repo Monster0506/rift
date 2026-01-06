@@ -262,13 +262,14 @@ impl Document {
                 ),
             );
 
-            // Note: InputEdit technically expects byte offsets.
-            // We are passing char indices. This works for 1-byte chars but is imprecise for multi-byte.
-            // TODO: Fix byte offset calculation for tree-sitter.
+            // Calculate byte offsets for Tree-sitter
+            let start_byte = self.buffer.char_to_byte(cursor - 1);
+            let old_end_byte = self.buffer.char_to_byte(cursor);
+
             let edit = InputEdit {
-                start_byte: cursor - 1,
-                old_end_byte: cursor,
-                new_end_byte: cursor - 1,
+                start_byte,
+                old_end_byte,
+                new_end_byte: start_byte,
                 start_position,
                 old_end_position,
                 new_end_position: start_position,

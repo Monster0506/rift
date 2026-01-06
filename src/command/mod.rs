@@ -301,16 +301,12 @@ impl Dispatcher {
                     Direction::Right => Command::Move(Motion::EndOfLine, 1),
                     _ => Command::Noop,
                 },
-                InputIntent::Move(dir, Granularity::Word) => {
-                    // TODO: Implement word-wise movement for command line
-                    // For now, fall back to character movement
-                    match dir {
-                        Direction::Left => Command::Move(Motion::Left, 1),
-                        Direction::Right => Command::Move(Motion::Right, 1),
-                        Direction::Up => Command::Move(Motion::Up, 1),
-                        Direction::Down => Command::Move(Motion::Down, 1),
-                    }
-                }
+                InputIntent::Move(dir, Granularity::Word) => match dir {
+                    Direction::Left => Command::Move(Motion::PreviousWord, 1),
+                    Direction::Right => Command::Move(Motion::NextWord, 1),
+                    Direction::Up => Command::Move(Motion::PreviousParagraph, 1),
+                    Direction::Down => Command::Move(Motion::NextParagraph, 1),
+                },
                 InputIntent::Move(dir, _) => match dir {
                     Direction::Left => Command::Move(Motion::Left, 1),
                     Direction::Right => Command::Move(Motion::Right, 1),
@@ -338,6 +334,12 @@ impl Dispatcher {
                     Direction::Left => Command::Move(Motion::StartOfLine, 1),
                     Direction::Right => Command::Move(Motion::EndOfLine, 1),
                     _ => Command::Noop,
+                },
+                InputIntent::Move(dir, Granularity::Word) => match dir {
+                    Direction::Left => Command::Move(Motion::PreviousWord, 1),
+                    Direction::Right => Command::Move(Motion::NextWord, 1),
+                    Direction::Up => Command::Move(Motion::PreviousParagraph, 1),
+                    Direction::Down => Command::Move(Motion::NextParagraph, 1),
                 },
                 InputIntent::Move(dir, _) => match dir {
                     Direction::Left => Command::Move(Motion::Left, 1),

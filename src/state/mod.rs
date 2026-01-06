@@ -418,6 +418,18 @@ impl State {
         self.command_line_cursor = 0;
     }
 
+    /// Move command line cursor to previous word start
+    pub fn move_command_line_word_left(&mut self) {
+        self.command_line_cursor =
+            crate::string_nav::previous_word_start(&self.command_line, self.command_line_cursor);
+    }
+
+    /// Move command line cursor to next word start
+    pub fn move_command_line_word_right(&mut self) {
+        self.command_line_cursor =
+            crate::string_nav::next_word_start(&self.command_line, self.command_line_cursor);
+    }
+
     /// Move command line cursor to end
     pub fn move_command_line_end(&mut self) {
         self.command_line_cursor = self.command_line.len();
