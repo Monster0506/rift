@@ -51,8 +51,17 @@ pub trait BufferView {
     /// Code‑point offset of the start of `line` (0‑based).
     fn line_start(&self, line: usize) -> usize;
 
+    type CharIter<'a>: Iterator<Item = Character> + Clone + 'a
+    where
+        Self: 'a;
+
+    /// Iterator starting at the given code-point offset.
+    fn iter_at(&self, pos: usize) -> Self::CharIter<'_>;
+
     /// Characters in the given range.
-    fn chars(&self, range: Range<usize>) -> impl Iterator<Item = Character> + '_;
+    fn chars(&self, range: Range<usize>) -> impl Iterator<Item = Character> + '_ {
+        self.iter_at(range.start).take(range.end - range.start)
+    }
 
     /// Revision identifier; increments on text mutations or transaction commits.
     fn revision(&self) -> u64;

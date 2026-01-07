@@ -185,7 +185,7 @@ impl CommandExecutor {
                 bangs: _,
             } => {
                 match crate::search::find_all(&document.buffer, &pattern) {
-                    Ok(mut matches) => {
+                    Ok((mut matches, _stats)) => {
                         let is_global_subst = flags.contains('g');
                         let whole_file = range.as_deref() == Some("%");
 
@@ -261,7 +261,7 @@ impl CommandExecutor {
 
                             // Re-run search to update highlights
                             match crate::search::find_all(&document.buffer, &pattern) {
-                                Ok(new_matches) => state.search_matches = new_matches,
+                                Ok((new_matches, _)) => state.search_matches = new_matches,
                                 Err(_) => state.search_matches.clear(),
                             }
                         }

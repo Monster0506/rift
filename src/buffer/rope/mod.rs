@@ -228,7 +228,7 @@ impl PieceTable {
     }
 
     /// Get an O(N) iterator over the characters
-    pub fn iter(&self) -> PieceTableIterator {
+    pub fn iter(&self) -> PieceTableIterator<'_> {
         PieceTableIterator::new(self.root.as_deref(), &self.original, &self.add)
     }
 
@@ -242,21 +242,21 @@ impl PieceTable {
     }
 
     /// Get an iterator starting at a specific character index
-    pub fn iter_at(&self, start_pos: usize) -> PieceTableIterator {
-        let mut iter = self.iter();
-        if start_pos > 0 {
-            // Optimization TODO: Implement proper seek in iterator
-            for _ in 0..start_pos {
-                iter.next();
-            }
-        }
-        iter
+    pub fn iter_at(&self, start_pos: usize) -> PieceTableIterator<'_> {
+        PieceTableIterator::new_at(self.root.as_deref(), start_pos, &self.original, &self.add)
     }
 }
 
 /// efficient O(N) iterator for PieceTable
+// Max stack depth for AVL tree iterator. 64 is sufficient for 2^64 elements.
+const MAX_STACK: usize = 64;
+
+/// efficient O(N) iterator for PieceTable
+#[derive(Clone)]
 pub struct PieceTableIterator<'a> {
-    stack: Vec<&'a Node>,
+    // Fixed size stack to avoid allocation on clone
+    stack: [Option<&'a Node>; MAX_STACK],
+    stack_top: usize,
     current_piece: Option<&'a [Character]>,
     current_piece_idx: usize,
     original: &'a [Character],
@@ -266,23 +266,96 @@ pub struct PieceTableIterator<'a> {
 impl<'a> PieceTableIterator<'a> {
     fn new(root: Option<&'a Node>, original: &'a [Character], add: &'a [Character]) -> Self {
         let mut iter = Self {
-            stack: Vec::new(),
+            stack: [None; MAX_STACK],
+            stack_top: 0,
             current_piece: None,
             current_piece_idx: 0,
             original,
             add,
         };
         if let Some(node) = root {
-            iter.push_left(node);
+            iter.push_node(node);
         }
         iter
     }
 
-    fn push_left(&mut self, mut node: &'a Node) {
-        self.stack.push(node);
+    fn new_at(
+        root: Option<&'a Node>,
+        start_pos: usize,
+        original: &'a [Character],
+        add: &'a [Character],
+    ) -> Self {
+        let mut iter = Self {
+            stack: [None; MAX_STACK],
+            stack_top: 0,
+            current_piece: None,
+            current_piece_idx: 0,
+            original,
+            add,
+        };
+
+        let mut current = root;
+        let mut remaining = start_pos;
+
+        while let Some(node) = current {
+            let left_len = node.left.as_ref().map_or(0, |n| n.len);
+
+            if remaining < left_len {
+                // Target is in left subtree
+                iter.push_stack(node);
+                current = node.left.as_deref();
+            } else if remaining < left_len + node.piece.len {
+                // Target is in this node's piece
+                let offset = remaining - left_len;
+                let slice = get_piece_slice(&node.piece, original, add);
+
+                iter.current_piece = Some(slice);
+                iter.current_piece_idx = offset;
+
+                // Push right child to be processed after this piece
+                if let Some(right) = &node.right {
+                    iter.push_node(right);
+                }
+
+                // Stack already contains ancestors (from "going left")
+                return iter;
+            } else {
+                // Target is in right subtree
+                remaining -= left_len + node.piece.len;
+                // Don't push this node since we're past it
+                current = node.right.as_deref();
+            }
+        }
+
+        iter
+    }
+
+    fn push_stack(&mut self, node: &'a Node) {
+        if self.stack_top < MAX_STACK {
+            self.stack[self.stack_top] = Some(node);
+            self.stack_top += 1;
+        } else {
+            // In a real scenario, this should not happen due to tree height properties
+            // But we silence it or panic.
+            // panic!("PieceTableIterator stack overflow");
+        }
+    }
+
+    // Pushes node and traverses all the way left
+    fn push_node(&mut self, mut node: &'a Node) {
+        self.push_stack(node);
         while let Some(left) = &node.left {
-            self.stack.push(left);
+            self.push_stack(left);
             node = left;
+        }
+    }
+
+    fn pop_stack(&mut self) -> Option<&'a Node> {
+        if self.stack_top > 0 {
+            self.stack_top -= 1;
+            self.stack[self.stack_top]
+        } else {
+            None
         }
     }
 }
@@ -291,33 +364,36 @@ impl<'a> Iterator for PieceTableIterator<'a> {
     type Item = Character;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(slice) = self.current_piece {
-            if self.current_piece_idx < slice.len() {
-                let c = slice[self.current_piece_idx];
-                self.current_piece_idx += 1;
-                return Some(c);
-            } else {
-                self.current_piece = None;
+        loop {
+            if let Some(slice) = self.current_piece {
+                if self.current_piece_idx < slice.len() {
+                    let c = slice[self.current_piece_idx];
+                    self.current_piece_idx += 1;
+                    return Some(c);
+                } else {
+                    self.current_piece = None;
+                }
             }
-        }
 
-        if let Some(node) = self.stack.pop() {
-            let slice = get_piece_slice(&node.piece, self.original, self.add);
-            if !slice.is_empty() {
-                self.current_piece = Some(slice);
-                self.current_piece_idx = 1;
-                if let Some(right) = &node.right {
-                    self.push_left(right);
+            if let Some(node) = self.pop_stack() {
+                let slice = get_piece_slice(&node.piece, self.original, self.add);
+                if !slice.is_empty() {
+                    self.current_piece = Some(slice);
+                    self.current_piece_idx = 0; // Start at 0
+                    if let Some(right) = &node.right {
+                        self.push_node(right);
+                    }
+                    // Loop again to consume from current_piece
+                } else {
+                    // Empty piece, just traverse right
+                    if let Some(right) = &node.right {
+                        self.push_node(right);
+                    }
                 }
-                return Some(slice[0]);
             } else {
-                if let Some(right) = &node.right {
-                    self.push_left(right);
-                }
-                return self.next();
+                return None;
             }
         }
-        None
     }
 }
 

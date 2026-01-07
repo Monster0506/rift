@@ -11,7 +11,7 @@
 use crate::buffer::api::BufferView;
 use crate::error::{ErrorType, RiftError};
 use haystack::{BufferHaystack, BufferHaystackContext};
-use monster_regex::{Regex, parse_rift_format};
+use monster_regex::{parse_rift_format, Regex};
 use std::ops::Range;
 
 mod haystack;
@@ -28,18 +28,40 @@ pub struct SearchMatch {
     pub range: Range<usize>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct SearchStats {
+    pub compilation_time: std::time::Duration,
+    pub index_time: std::time::Duration,
+    pub search_time: std::time::Duration,
+}
+
 /// Find all occurrences of the pattern in the buffer.
-pub fn find_all(buffer: &impl BufferView, query: &str) -> Result<Vec<SearchMatch>, RiftError> {
+pub fn find_all(
+    buffer: &impl BufferView,
+    query: &str,
+) -> Result<(Vec<SearchMatch>, SearchStats), RiftError> {
+    let t0 = std::time::Instant::now();
     let (re, _) = compile_regex(query)?;
+    let t1 = std::time::Instant::now();
+
     let context = BufferHaystackContext::new(buffer);
     let haystack = context.make_haystack();
+    let t2 = std::time::Instant::now();
 
     let mut matches = Vec::new();
     for m in re.find_all_from(haystack) {
         matches.push(convert_match(&haystack, m));
     }
+    let t3 = std::time::Instant::now();
 
-    Ok(matches)
+    Ok((
+        matches,
+        SearchStats {
+            compilation_time: t1 - t0,
+            index_time: t2 - t1,
+            search_time: t3 - t2,
+        },
+    ))
 }
 
 /// Find the next occurrence of the pattern in the buffer.
@@ -48,24 +70,30 @@ pub fn find_next(
     start_pos: usize,
     query: &str,
     direction: SearchDirection,
-) -> Result<Option<SearchMatch>, RiftError> {
+) -> Result<(Option<SearchMatch>, SearchStats), RiftError> {
+    let t0 = std::time::Instant::now();
     let (re, _) = compile_regex(query)?;
+    let t1 = std::time::Instant::now();
+
     let context = BufferHaystackContext::new(buffer);
     let haystack = context.make_haystack();
+    let t2 = std::time::Instant::now();
 
-    match direction {
+    let result = match direction {
         SearchDirection::Forward => {
             // We need to map `start_pos` (code-point offset) to a byte offset for the regex engine.
             let start_byte = char_to_byte_offset(buffer, start_pos);
 
             // Search from start_byte
             if let Some(m) = re.find_from_at(haystack, start_byte) {
-                return Ok(Some(convert_match(&haystack, m)));
-            }
-
-            // Wrap around: Search from 0
-            if let Some(m) = re.find_from(haystack) {
-                return Ok(Some(convert_match(&haystack, m)));
+                Some(convert_match(&haystack, m))
+            } else {
+                // Wrap around: Search from 0
+                if let Some(m) = re.find_from(haystack) {
+                    Some(convert_match(&haystack, m))
+                } else {
+                    None
+                }
             }
         }
         SearchDirection::Backward => {
@@ -82,24 +110,37 @@ pub fn find_next(
             }
 
             if let Some(m) = last_valid_match {
-                return Ok(Some(convert_match(&haystack, m)));
-            }
-
-            // Wrap around: Find the very last match in the file
-            let mut very_last = None;
-            for m in re.find_all_from(haystack) {
-                very_last = Some(m);
-            }
-            if let Some(m) = very_last {
-                // Check if it's actually after start_pos (it effectively wraps to the end)
-                if m.start >= start_byte {
-                    return Ok(Some(convert_match(&haystack, m)));
+                Some(convert_match(&haystack, m))
+            } else {
+                // Wrap around: Find the very last match in the file
+                let mut very_last = None;
+                for m in re.find_all_from(haystack) {
+                    very_last = Some(m);
+                }
+                if let Some(m) = very_last {
+                    // Check if it's actually after start_pos (it effectively wraps to the end)
+                    if m.start >= start_byte {
+                        Some(convert_match(&haystack, m))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
                 }
             }
         }
-    }
+    };
 
-    Ok(None)
+    let t3 = std::time::Instant::now();
+
+    Ok((
+        result,
+        SearchStats {
+            compilation_time: t1 - t0,
+            index_time: t2 - t1,
+            search_time: t3 - t2,
+        },
+    ))
 }
 
 fn convert_match<B: BufferView + ?Sized>(
@@ -229,7 +270,11 @@ fn find_line_index(buffer: &impl BufferView, pos: usize) -> usize {
         }
     }
 
-    if low > 0 { low - 1 } else { 0 }
+    if low > 0 {
+        low - 1
+    } else {
+        0
+    }
 }
 
 #[cfg(test)]

@@ -715,13 +715,19 @@ impl Document {
     }
 
     /// Perform a search in the document
-    /// Returns the match if found
+    /// Returns the match if found, along with timing statistics
     pub fn perform_search(
         &self,
         query: &str,
         direction: SearchDirection,
         skip_current: bool,
-    ) -> Result<Option<crate::search::SearchMatch>, RiftError> {
+    ) -> Result<
+        (
+            Option<crate::search::SearchMatch>,
+            crate::search::SearchStats,
+        ),
+        RiftError,
+    > {
         let mut cursor = self.buffer.cursor();
 
         // If searching forward and skipping current, advance cursor to avoid
@@ -731,8 +737,7 @@ impl Document {
         }
 
         match find_next(&self.buffer, cursor, query, direction) {
-            Ok(Some(m)) => Ok(Some(m)),
-            Ok(None) => Ok(None),
+            Ok((m, stats)) => Ok((m, stats)),
             Err(e) => Err(RiftError::new(
                 ErrorType::Execution,
                 crate::constants::errors::SEARCH_ERROR,
@@ -745,7 +750,7 @@ impl Document {
     pub fn find_all_matches(
         &self,
         query: &str,
-    ) -> Result<Vec<crate::search::SearchMatch>, RiftError> {
+    ) -> Result<(Vec<crate::search::SearchMatch>, crate::search::SearchStats), RiftError> {
         crate::search::find_all(&self.buffer, query)
     }
 

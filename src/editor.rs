@@ -201,8 +201,8 @@ impl<T: TerminalBackend> Editor<T> {
         // Calculate visible range for syntax highlighting
         let start_line = self.render_system.viewport.top_line();
         let end_line = start_line + self.render_system.viewport.visible_rows();
-        let start_byte = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
-        let end_byte = if end_line < doc.buffer.get_total_lines() {
+        let start_char = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
+        let end_char = if end_line < doc.buffer.get_total_lines() {
             doc.buffer
                 .line_index
                 .get_start(end_line)
@@ -210,6 +210,10 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             doc.buffer.len()
         };
+
+        // Convert to byte offsets for tree-sitter
+        let start_byte = doc.buffer.char_to_byte(start_char);
+        let end_byte = doc.buffer.char_to_byte(end_char);
 
         let highlights = if let Some(syntax) = doc.syntax.as_mut() {
             Some(syntax.highlights(&doc.buffer, Some(start_byte..end_byte)))
@@ -290,6 +294,11 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Perform a search in the document
     fn perform_search(&mut self, query: &str, direction: SearchDirection, skip_current: bool) {
+        self.state.notify(
+            crate::notification::NotificationType::Info,
+            format!("Searching for '{}'...", query),
+        );
+        let _ = self.force_full_redraw();
         // Find all matches first to populate state for highlighting
         self.update_search_highlights();
 
@@ -298,14 +307,26 @@ impl<T: TerminalBackend> Editor<T> {
             .active_document_mut()
             .expect("No active document");
         match doc.perform_search(query, direction, skip_current) {
-            Ok(Some(m)) => {
+            Ok((Some(m), stats)) => {
                 // Move cursor to start of match
                 let _ = doc.buffer.set_cursor(m.range.start);
-            }
-            Ok(None) => {
+
+                // Log stats
                 self.state.notify(
                     crate::notification::NotificationType::Info,
-                    format!("Pattern not found: {}", query),
+                    format!(
+                        "Search stats: Compile: {:?}, Index: {:?}, Search: {:?}",
+                        stats.compilation_time, stats.index_time, stats.search_time
+                    ),
+                );
+            }
+            Ok((None, stats)) => {
+                self.state.notify(
+                    crate::notification::NotificationType::Info,
+                    format!(
+                        "Pattern not found: {} (Index: {:?})",
+                        query, stats.index_time
+                    ),
                 );
             }
             Err(e) => {
@@ -419,7 +440,11 @@ impl<T: TerminalBackend> Editor<T> {
                                         self.handle_execution_result(execution_result);
                                     }
                                     ComponentAction::ExecuteSearch(query) => {
+                                        if let Some(modal) = &self.modal {
+                                            self.render_system.compositor.clear_layer(modal.layer);
+                                        }
                                         self.modal = None;
+                                        self.set_mode(Mode::Normal);
                                         if !query.is_empty() {
                                             self.state.last_search_query = Some(query.clone());
                                             self.perform_search(
@@ -773,11 +798,12 @@ impl<T: TerminalBackend> Editor<T> {
         // updates parse tree
         let doc = document_manager.active_document_mut().unwrap();
 
-        // Calculate visible range for syntax highlighting optimization
+        // Calculate visible range for syntax highlighting
         let start_line = render_system.viewport.top_line();
         let end_line = start_line + render_system.viewport.visible_rows();
-        let start_byte = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
-        let end_byte = if end_line < doc.buffer.get_total_lines() {
+
+        let start_char = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
+        let end_char = if end_line < doc.buffer.get_total_lines() {
             doc.buffer
                 .line_index
                 .get_start(end_line)
@@ -786,16 +812,18 @@ impl<T: TerminalBackend> Editor<T> {
             doc.buffer.len()
         };
 
+        // Convert to byte offsets for tree-sitter
+        let start_byte = doc.buffer.char_to_byte(start_char);
+        let end_byte = doc.buffer.char_to_byte(end_char);
+
         let highlights = if let Some(syntax) = doc.syntax.as_mut() {
             Some(syntax.highlights(&doc.buffer, Some(start_byte..end_byte)))
         } else {
             None
         };
 
-        let buf = &doc.buffer;
-
         let ctx = render::DrawContext {
-            buf,
+            buf: &doc.buffer,
             viewport: &render_system.viewport,
             state,
             current_mode: *current_mode,
@@ -1190,7 +1218,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(query) = self.state.last_search_query.clone() {
             let doc = self.document_manager.active_document_mut().unwrap();
             match doc.find_all_matches(&query) {
-                Ok(matches) => {
+                Ok((matches, _)) => {
                     self.state.search_matches = matches;
                 }
                 Err(_) => {

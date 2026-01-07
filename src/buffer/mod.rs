@@ -7,7 +7,6 @@ use crate::buffer::api::BufferView;
 use crate::character::Character;
 use crate::error::RiftError;
 use std::fmt::{self, Display};
-use std::ops::Range;
 
 pub mod api;
 pub mod line_index;
@@ -199,12 +198,12 @@ impl TextBuffer {
     }
 
     /// Get an iterator over the characters
-    pub fn iter(&self) -> crate::buffer::rope::PieceTableIterator {
+    pub fn iter(&self) -> crate::buffer::rope::PieceTableIterator<'_> {
         self.line_index.table.iter()
     }
 
     /// Get an iterator starting at a specific character index
-    pub fn iter_at(&self, pos: usize) -> crate::buffer::rope::PieceTableIterator {
+    pub fn iter_at(&self, pos: usize) -> crate::buffer::rope::PieceTableIterator<'_> {
         self.line_index.table.iter_at(pos)
     }
 
@@ -333,33 +332,10 @@ impl BufferView for TextBuffer {
         self.line_index.get_line_start(line)
     }
 
-    fn chars(&self, range: Range<usize>) -> impl Iterator<Item = Character> + '_ {
-        struct CharIter<'a> {
-            buffer: &'a TextBuffer,
-            current: usize,
-            end: usize,
-        }
+    type CharIter<'a> = crate::buffer::rope::PieceTableIterator<'a>;
 
-        impl<'a> Iterator for CharIter<'a> {
-            type Item = Character;
-            fn next(&mut self) -> Option<Self::Item> {
-                if self.current >= self.end {
-                    None
-                } else {
-                    let c = self.buffer.char_at(self.current);
-                    if c.is_some() {
-                        self.current += 1;
-                    }
-                    c
-                }
-            }
-        }
-
-        CharIter {
-            buffer: self,
-            current: range.start,
-            end: range.end,
-        }
+    fn iter_at(&self, pos: usize) -> Self::CharIter<'_> {
+        self.iter_at(pos)
     }
 
     fn revision(&self) -> u64 {

@@ -112,7 +112,7 @@ pub fn execute_command(
                     Motion::NextMatch => {
                         if let Some(query) = last_search_query {
                             let start = buf.cursor().saturating_add(1);
-                            if let Ok(Some(m)) =
+                            if let Ok((Some(m), _stats)) =
                                 find_next(buf, start, query, SearchDirection::Forward)
                             {
                                 buf.set_cursor(m.range.start)?;
@@ -121,7 +121,7 @@ pub fn execute_command(
                     }
                     Motion::PreviousMatch => {
                         if let Some(query) = last_search_query {
-                            if let Ok(Some(m)) =
+                            if let Ok((Some(m), _stats)) =
                                 find_next(buf, buf.cursor(), query, SearchDirection::Backward)
                             {
                                 buf.set_cursor(m.range.start)?;
@@ -197,7 +197,7 @@ pub fn execute_command(
                         let buf = &mut doc.buffer;
                         if let Some(query) = last_search_query {
                             let start = buf.cursor().saturating_add(1);
-                            if let Ok(Some(m)) =
+                            if let Ok((Some(m), _stats)) =
                                 find_next(buf, start, query, SearchDirection::Forward)
                             {
                                 buf.set_cursor(m.range.start)?;
@@ -207,7 +207,7 @@ pub fn execute_command(
                     Motion::PreviousMatch => {
                         let buf = &mut doc.buffer;
                         if let Some(query) = last_search_query {
-                            if let Ok(Some(m)) =
+                            if let Ok((Some(m), _stats)) =
                                 find_next(buf, buf.cursor(), query, SearchDirection::Backward)
                             {
                                 buf.set_cursor(m.range.start)?;
