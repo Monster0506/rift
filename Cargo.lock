@@ -155,9 +155,9 @@ dependencies = [
 
 [[package]]
 name = "monster-regex"
-version = "0.1.0-alpha.7"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36ab75fc6d50560d602b8f63714b10a85d75a9761f9bc5f62e30c3722d8367a2"
+checksum = "cf6dd03ba2b4e5f1c5d24141f73d56b801f2eb06ce013efe282bf2c5085319c2"
 
 [[package]]
 name = "once_cell"

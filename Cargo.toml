@@ -10,7 +10,7 @@ bundled-python = ["dep:tree-sitter-python"]
 
 [dependencies]
 crossterm = "0.28.1"
-monster-regex = "0.1.0-alpha.7"
+monster-regex = "0.1.2"
 unicode-width = "0.2.2"
 streaming-iterator = "0.1.9"
 libloading = "0.9.0"
