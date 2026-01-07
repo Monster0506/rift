@@ -65,6 +65,11 @@ pub trait BufferView {
 
     /// Revision identifier; increments on text mutations or transaction commits.
     fn revision(&self) -> u64;
+
+    /// Access to line cache if available (for Tier 2 search optimization)
+    fn line_cache(&self) -> Option<&std::cell::RefCell<crate::buffer::line_cache::LineCache>> {
+        None
+    }
 }
 
 /// Builder for accumulating operations in a transaction.

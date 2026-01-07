@@ -8,9 +8,13 @@ use crate::character::Character;
 use crate::error::RiftError;
 use std::fmt::{self, Display};
 
+use std::cell::RefCell;
+
 pub mod api;
+pub mod line_cache;
 pub mod line_index;
 pub mod rope;
+use line_cache::LineCache;
 use line_index::LineIndex;
 
 /// Text buffer using a Piece Table for efficient insertion and deletion.
@@ -22,6 +26,8 @@ pub struct TextBuffer {
     cursor: usize,
     /// Monotonic revision counter for change detection
     pub revision: u64,
+    /// Cache for regex matching lines
+    pub line_cache: RefCell<LineCache>,
 }
 
 impl TextBuffer {
@@ -32,6 +38,7 @@ impl TextBuffer {
             line_index: LineIndex::new(),
             cursor: 0,
             revision: 0,
+            line_cache: RefCell::new(LineCache::new()),
         })
     }
 
@@ -340,6 +347,10 @@ impl BufferView for TextBuffer {
 
     fn revision(&self) -> u64 {
         self.revision
+    }
+
+    fn line_cache(&self) -> Option<&std::cell::RefCell<crate::buffer::line_cache::LineCache>> {
+        Some(&self.line_cache)
     }
 }
 

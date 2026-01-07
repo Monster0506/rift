@@ -35,8 +35,139 @@ pub struct SearchStats {
     pub search_time: std::time::Duration,
 }
 
+mod literal_search;
+use crate::search::literal_search::find_literal;
+
 /// Find all occurrences of the pattern in the buffer.
 pub fn find_all(
+    buffer: &impl BufferView,
+    query: &str,
+) -> Result<(Vec<SearchMatch>, SearchStats), RiftError> {
+    let t0 = std::time::Instant::now();
+
+    // Classification
+    // Tier 1: Literal Search
+
+    // We need a robust Classifier.
+    let tier = classify_query(query);
+
+    match tier {
+        SearchTier::Literal => {
+            // Unescape metadata if needed? "hello" -> "hello"
+            // If user typed "/hello/", pattern is "hello".
+            let pattern = extract_pattern(query);
+            let t1 = std::time::Instant::now();
+            let mut matches = Vec::new();
+            let mut start_pos = 0;
+            while let Some(m) = find_literal(buffer, &pattern, start_pos) {
+                matches.push(m.clone());
+                start_pos = m.range.end;
+            }
+            let t3 = std::time::Instant::now();
+            Ok((
+                matches,
+                SearchStats {
+                    compilation_time: t1 - t0,
+                    index_time: std::time::Duration::from_nanos(0), // No indexing for literal
+                    search_time: t3 - t1,
+                },
+            ))
+        }
+        SearchTier::LineScoped => {
+            let (re, _) = compile_regex(query)?;
+            // Note: compile_regex forces multiline=true.
+            // For line-scoped, we run per line.
+            // We need to ensure we don't cross lines.
+            // But if we run on *substrings* (lines), we simulate line boundaries.
+
+            let t1 = std::time::Instant::now();
+            let t2 = std::time::Instant::now(); // Index start (access cache)
+
+            let mut matches = Vec::new();
+
+            // Try to get cache lock
+            if let Some(cache_cell) = buffer.line_cache() {
+                let mut cache = cache_cell.borrow_mut();
+                let current_rev = buffer.revision();
+
+                for line_idx in 0..buffer.line_count() {
+                    let line_text = cache.get_or_insert(line_idx, current_rev, || {
+                        // Materialize line
+                        let start = buffer.line_start(line_idx);
+                        let end = if line_idx + 1 < buffer.line_count() {
+                            buffer.line_start(line_idx + 1)
+                        } else {
+                            buffer.len()
+                        };
+                        // We need string.
+                        buffer
+                            .chars(start..end)
+                            .map(|c| c.to_char_lossy())
+                            .collect()
+                    });
+
+                    // Search in line_text
+                    // Note: line_text might include newline at end?
+                    // Collect chars includes it.
+                    // Regex on "foo\n" might behave differently than "foo".
+                    // But if it's line-scoped, we handle it.
+
+                    // Use monster-regex on &str
+                    // We need a way to reuse the regex engine without creating it every line?
+                    // re is already complied.
+
+                    // monster-regex doesn't support searching &str directly fast without wrapping?
+                    // It does: re.find_all(text).
+
+                    // We need to map relative match to absolute.
+                    let line_start_offset_char = buffer.line_start(line_idx); // This is O(log N) usually.
+
+                    // find_all returns Matches with byte offsets usually?
+                    // monster-regex Match has .start, .end which are bytes IN THE HAYSTACK.
+                    // Here haystack is line_text (String).
+
+                    // We need to convert line_text byte offset -> line_text char offset -> absolute char offset.
+                    // This double conversion is expensive?
+                    // "line_text char offset" + "line_start_offset_char" = "absolute char offset".
+
+                    // Optimization: If line contains only ASCII, char_offset == byte_offset.
+                    // But generally we need:
+                    //   match_byte_start -> match_char_start (in string)
+
+                    let haystack = line_text;
+                    for m in re.find_all(haystack) {
+                        let relative_char_start = haystack[..m.start].chars().count();
+                        let match_len_chars = haystack[m.start..m.end].chars().count();
+
+                        let abs_start = line_start_offset_char + relative_char_start;
+                        let abs_end = abs_start + match_len_chars;
+
+                        matches.push(SearchMatch {
+                            range: abs_start..abs_end,
+                        });
+                    }
+                }
+            } else {
+                // No cache available, fallback to full search or uncached tier 2?
+                // Fallback to full for now.
+                return find_all_full_tier(buffer, query);
+            }
+
+            let t3 = std::time::Instant::now();
+            Ok((
+                matches,
+                SearchStats {
+                    compilation_time: t1 - t0,
+                    index_time: t2 - t1, // Negligible or part of search
+                    search_time: t3 - t2,
+                },
+            ))
+        }
+        SearchTier::Full => find_all_full_tier(buffer, query),
+    }
+}
+
+fn find_all_full_tier(
     buffer: &impl BufferView,
     query: &str,
 ) -> Result<(Vec<SearchMatch>, SearchStats), RiftError> {
@@ -62,6 +193,44 @@ pub fn find_all(
             search_time: t3 - t2,
         },
     ))
+}
+
+#[derive(Debug)]
+enum SearchTier {
+    Literal,
+    LineScoped,
+    Full,
+}
+
+fn classify_query(query: &str) -> SearchTier {
+    let pattern = extract_pattern(query);
+    if is_literal(&pattern) {
+        SearchTier::Literal
+    } else if is_line_scoped(&pattern) {
+        SearchTier::LineScoped
+    } else {
+        SearchTier::Full
+    }
+}
+
+fn extract_pattern(query: &str) -> String {
+    if query.starts_with('/') {
+        if let Ok((pat, _)) = parse_rift_format(query) {
+            return pat;
+        }
+    }
+    query.to_string()
+}
+
+fn is_literal(pattern: &str) -> bool {
+    !pattern.chars().any(|c| ".^$*+?()[]{}|\\".contains(c))
+}
+
+fn is_line_scoped(pattern: &str) -> bool {
+    // If it contains \n, it's full.
+    // If it contains \s, it might match newline.
+    // Conservative check:
+    !pattern.contains("\\n") && !pattern.contains("\\s") && !pattern.contains("(?s)")
 }
 
 /// Find the next occurrence of the pattern in the buffer.
