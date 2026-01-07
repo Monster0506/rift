@@ -58,6 +58,16 @@ impl BufferView for MockBuffer {
         self.chars[pos..].iter().copied()
     }
 
+    type ChunkIter<'a> = std::iter::Once<&'a [Character]>;
+
+    fn iter_chunks_at(&self, pos: usize) -> Self::ChunkIter<'_> {
+        if pos >= self.chars.len() {
+            std::iter::once(&self.chars[self.chars.len()..])
+        } else {
+            std::iter::once(&self.chars[pos..])
+        }
+    }
+
     fn revision(&self) -> u64 {
         0
     }

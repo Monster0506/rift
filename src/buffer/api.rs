@@ -55,8 +55,15 @@ pub trait BufferView {
     where
         Self: 'a;
 
+    type ChunkIter<'a>: Iterator<Item = &'a [crate::character::Character]> + Clone + 'a
+    where
+        Self: 'a;
+
     /// Iterator starting at the given code-point offset.
     fn iter_at(&self, pos: usize) -> Self::CharIter<'_>;
+
+    /// Iterator over chunks starting at the given code-point offset.
+    fn iter_chunks_at(&self, pos: usize) -> Self::ChunkIter<'_>;
 
     /// Characters in the given range.
     fn chars(&self, range: Range<usize>) -> impl Iterator<Item = Character> + '_ {

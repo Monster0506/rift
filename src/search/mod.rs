@@ -53,13 +53,42 @@ pub fn find_all(
 
     match tier {
         SearchTier::Literal => {
-            // Unescape metadata if needed? "hello" -> "hello"
-            // If user typed "/hello/", pattern is "hello".
-            let pattern = extract_pattern(query);
+            let pattern_orig = extract_pattern(query);
+            let (pattern, check_anchor) =
+                if pattern_orig.starts_with('^') && is_literal(&pattern_orig[1..]) {
+                    (pattern_orig[1..].to_string(), true)
+                } else {
+                    (pattern_orig, false)
+                };
+
             let t1 = std::time::Instant::now();
             let mut matches = Vec::new();
             let mut start_pos = 0;
+
             while let Some(m) = find_literal(buffer, &pattern, start_pos) {
+                if check_anchor {
+                    // Check if match is at line start
+                    let is_start = if m.range.start == 0 {
+                        true
+                    } else {
+                        // Check previous char for newline
+                        if let Some(c) = buffer.iter_at(m.range.start - 1).next() {
+                            c.to_char_lossy() == '\n'
+                        } else {
+                            false
+                        }
+                    };
+
+                    if !is_start {
+                        // Skip this match, look for next one
+                        // Important: Advance just past start, not whole match, to ensure we don't miss overlapping starts?
+                        // Literals don't usually overlap in a way that matters here (e.g. "fn" inside "afn").
+                        // But advancing by 1 is safe.
+                        start_pos = m.range.start + 1;
+                        continue;
+                    }
+                }
+
                 matches.push(m.clone());
                 start_pos = m.range.end;
             }
@@ -74,11 +103,30 @@ pub fn find_all(
             ))
         }
         SearchTier::LineScoped => {
-            let (re, _) = compile_regex(query)?;
-            // Note: compile_regex forces multiline=true.
-            // For line-scoped, we run per line.
-            // We need to ensure we don't cross lines.
-            // But if we run on *substrings* (lines), we simulate line boundaries.
+            // ... existing line scoped implementation ...
+
+            let (re, pattern) = compile_regex(query)?;
+            let is_anchored = pattern.starts_with('^');
+
+            // Optimization: Inspect filter char for anchored search
+            let filter_char = if is_anchored {
+                // Skip ^
+                let mut chars = pattern.chars().skip(1);
+                if let Some(c) = chars.next() {
+                    // Only use if next char is regular literal (not regex syntax)
+                    if c.is_alphanumeric() {
+                        Some(c)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            // Smart case detection (same as Tier 1)
+            let case_sensitive = is_anchored && pattern.chars().any(char::is_uppercase);
 
             let t1 = std::time::Instant::now();
             let t2 = std::time::Instant::now(); // Index start (access cache)
@@ -90,7 +138,26 @@ pub fn find_all(
                 let mut cache = cache_cell.borrow_mut();
                 let current_rev = buffer.revision();
 
-                for line_idx in 0..buffer.line_count() {
+                'line_loop: for line_idx in 0..buffer.line_count() {
+                    let line_start_offset_char = buffer.line_start(line_idx);
+
+                    // Pre-filter for anchored search
+                    if let Some(fc) = filter_char {
+                        if let Some(c) = buffer.iter_at(line_start_offset_char).next() {
+                            let ch = c.to_char_lossy();
+                            if case_sensitive {
+                                if ch != fc {
+                                    continue 'line_loop;
+                                }
+                            } else {
+                                // Simple case-insensitive check
+                                if ch.to_lowercase().next() != fc.to_lowercase().next() {
+                                    continue 'line_loop;
+                                }
+                            }
+                        }
+                    }
+
                     let line_text = cache.get_or_insert(line_idx, current_rev, || {
                         // Materialize line
                         let start = buffer.line_start(line_idx);
@@ -106,50 +173,35 @@ pub fn find_all(
                             .collect()
                     });
 
-                    // Search in line_text
-                    // Note: line_text might include newline at end?
-                    // Collect chars includes it.
-                    // Regex on "foo\n" might behave differently than "foo".
-                    // But if it's line-scoped, we handle it.
-
-                    // Use monster-regex on &str
-                    // We need a way to reuse the regex engine without creating it every line?
-                    // re is already complied.
-
-                    // monster-regex doesn't support searching &str directly fast without wrapping?
-                    // It does: re.find_all(text).
-
-                    // We need to map relative match to absolute.
-                    let line_start_offset_char = buffer.line_start(line_idx); // This is O(log N) usually.
-
-                    // find_all returns Matches with byte offsets usually?
-                    // monster-regex Match has .start, .end which are bytes IN THE HAYSTACK.
-                    // Here haystack is line_text (String).
-
-                    // We need to convert line_text byte offset -> line_text char offset -> absolute char offset.
-                    // This double conversion is expensive?
-                    // "line_text char offset" + "line_start_offset_char" = "absolute char offset".
-
-                    // Optimization: If line contains only ASCII, char_offset == byte_offset.
-                    // But generally we need:
-                    //   match_byte_start -> match_char_start (in string)
-
                     let haystack = line_text;
-                    for m in re.find_all(haystack) {
-                        let relative_char_start = haystack[..m.start].chars().count();
-                        let match_len_chars = haystack[m.start..m.end].chars().count();
 
-                        let abs_start = line_start_offset_char + relative_char_start;
-                        let abs_end = abs_start + match_len_chars;
+                    if is_anchored {
+                        // Use find_all(...).next() to stop after first match/attempt
+                        if let Some(m) = re.find_all(haystack).next() {
+                            let match_len_chars = haystack[m.start..m.end].chars().count();
+                            let abs_start = line_start_offset_char; // relative start is 0
+                            let abs_end = abs_start + match_len_chars;
 
-                        matches.push(SearchMatch {
-                            range: abs_start..abs_end,
-                        });
+                            matches.push(SearchMatch {
+                                range: abs_start..abs_end,
+                            });
+                        }
+                    } else {
+                        // Standard line search
+                        for m in re.find_all(haystack) {
+                            let relative_char_start = haystack[..m.start].chars().count();
+                            let match_len_chars = haystack[m.start..m.end].chars().count();
+
+                            let abs_start = line_start_offset_char + relative_char_start;
+                            let abs_end = abs_start + match_len_chars;
+
+                            matches.push(SearchMatch {
+                                range: abs_start..abs_end,
+                            });
+                        }
                     }
                 }
             } else {
-                // No cache available, fallback to full search or uncached tier 2?
-                // Fallback to full for now.
                 return find_all_full_tier(buffer, query);
             }
 
@@ -158,7 +210,7 @@ pub fn find_all(
                 matches,
                 SearchStats {
                     compilation_time: t1 - t0,
-                    index_time: t2 - t1, // Negligible or part of search
+                    index_time: t2 - t1,
                     search_time: t3 - t2,
                 },
             ))
@@ -204,6 +256,11 @@ enum SearchTier {
 
 fn classify_query(query: &str) -> SearchTier {
     let pattern = extract_pattern(query);
+    // Check anchored literal
+    // Allow ^literal (len > 1 to avoid just ^)
+    if pattern.starts_with('^') && pattern.len() > 1 && is_literal(&pattern[1..]) {
+        return SearchTier::Literal;
+    }
     if is_literal(&pattern) {
         SearchTier::Literal
     } else if is_line_scoped(&pattern) {
@@ -227,10 +284,10 @@ fn is_literal(pattern: &str) -> bool {
 }
 
 fn is_line_scoped(pattern: &str) -> bool {
-    // If it contains \n, it's full.
-    // If it contains \s, it might match newline.
-    // Conservative check:
-    !pattern.contains("\\n") && !pattern.contains("\\s") && !pattern.contains("(?s)")
+    // If it contains \n, it's full (unless explicitly handled, but for now we fallback).
+    // Relaxed: \s is allowed in LineScoped (might match newline locally if line includes it,
+    // but typically implies line-local search in editors).
+    !pattern.contains("\\n") && !pattern.contains("(?s)")
 }
 
 /// Find the next occurrence of the pattern in the buffer.

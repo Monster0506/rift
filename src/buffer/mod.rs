@@ -345,6 +345,12 @@ impl BufferView for TextBuffer {
         self.iter_at(pos)
     }
 
+    type ChunkIter<'a> = crate::buffer::rope::PieceTableChunkIterator<'a>;
+
+    fn iter_chunks_at(&self, pos: usize) -> Self::ChunkIter<'_> {
+        self.line_index.table.iter_chunks_at(pos)
+    }
+
     fn revision(&self) -> u64 {
         self.revision
     }

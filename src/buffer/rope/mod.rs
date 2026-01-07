@@ -245,6 +245,11 @@ impl PieceTable {
     pub fn iter_at(&self, start_pos: usize) -> PieceTableIterator<'_> {
         PieceTableIterator::new_at(self.root.as_deref(), start_pos, &self.original, &self.add)
     }
+
+    /// Get a chunk iterator starting at a specific character index
+    pub fn iter_chunks_at(&self, start_pos: usize) -> PieceTableChunkIterator<'_> {
+        PieceTableChunkIterator::new_at(self.root.as_deref(), start_pos, &self.original, &self.add)
+    }
 }
 
 /// efficient O(N) iterator for PieceTable
@@ -386,6 +391,128 @@ impl<'a> Iterator for PieceTableIterator<'a> {
                     // Loop again to consume from current_piece
                 } else {
                     // Empty piece, just traverse right
+                    if let Some(right) = &node.right {
+                        self.push_node(right);
+                    }
+                }
+            } else {
+                return None;
+            }
+        }
+    }
+}
+
+/// Iterator that yields chunks (&[Character]) instead of single characters.
+/// This allows for vectorized/optimized processing of contiguous segments.
+#[derive(Clone)]
+pub struct PieceTableChunkIterator<'a> {
+    // Reusing the same logic as PieceTableIterator but yielding slices
+    stack: [Option<&'a Node>; MAX_STACK],
+    stack_top: usize,
+    current_piece: Option<&'a [Character]>,
+    current_piece_idx: usize,
+    original: &'a [Character],
+    add: &'a [Character],
+}
+
+impl<'a> PieceTableChunkIterator<'a> {
+    fn new_at(
+        root: Option<&'a Node>,
+        start_pos: usize,
+        original: &'a [Character],
+        add: &'a [Character],
+    ) -> Self {
+        // Same logic as PieceTableIterator::new_at, just creates ChunkIterator
+        let mut iter = Self {
+            stack: [None; MAX_STACK],
+            stack_top: 0,
+            current_piece: None,
+            current_piece_idx: 0,
+            original,
+            add,
+        };
+
+        let mut current = root;
+        let mut remaining = start_pos;
+
+        while let Some(node) = current {
+            let left_len = node.left.as_ref().map_or(0, |n| n.len);
+
+            if remaining < left_len {
+                iter.push_stack(node);
+                current = node.left.as_deref();
+            } else if remaining < left_len + node.piece.len {
+                let offset = remaining - left_len;
+                let slice = get_piece_slice(&node.piece, original, add);
+
+                iter.current_piece = Some(slice);
+                iter.current_piece_idx = offset;
+
+                if let Some(right) = &node.right {
+                    iter.push_node(right);
+                }
+                return iter;
+            } else {
+                remaining -= left_len + node.piece.len;
+                current = node.right.as_deref();
+            }
+        }
+        iter
+    }
+
+    fn push_stack(&mut self, node: &'a Node) {
+        if self.stack_top < MAX_STACK {
+            self.stack[self.stack_top] = Some(node);
+            self.stack_top += 1;
+        }
+    }
+
+    fn push_node(&mut self, mut node: &'a Node) {
+        self.push_stack(node);
+        while let Some(left) = &node.left {
+            self.push_stack(left);
+            node = left;
+        }
+    }
+
+    fn pop_stack(&mut self) -> Option<&'a Node> {
+        if self.stack_top > 0 {
+            self.stack_top -= 1;
+            self.stack[self.stack_top]
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> Iterator for PieceTableChunkIterator<'a> {
+    type Item = &'a [Character];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // If we have a current piece, check if there's rest of it
+            if let Some(slice) = self.current_piece {
+                if self.current_piece_idx < slice.len() {
+                    let chunk = &slice[self.current_piece_idx..];
+                    // Advance index to end effectively consuming the chunk
+                    self.current_piece_idx = slice.len();
+                    return Some(chunk);
+                } else {
+                    self.current_piece = None;
+                }
+            }
+
+            // Fetch next piece from tree
+            if let Some(node) = self.pop_stack() {
+                let slice = get_piece_slice(&node.piece, self.original, self.add);
+                if !slice.is_empty() {
+                    self.current_piece = Some(slice);
+                    self.current_piece_idx = 0;
+                    if let Some(right) = &node.right {
+                        self.push_node(right);
+                    }
+                    // Loop again to consume
+                } else {
                     if let Some(right) = &node.right {
                         self.push_node(right);
                     }
