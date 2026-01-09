@@ -77,6 +77,13 @@ pub trait BufferView {
     fn line_cache(&self) -> Option<&std::cell::RefCell<crate::buffer::line_cache::LineCache>> {
         None
     }
+
+    /// Access to byte line map cache if available (for search index optimization)
+    fn byte_line_map(
+        &self,
+    ) -> Option<&std::cell::RefCell<Option<crate::buffer::byte_map::ByteLineMap>>> {
+        None
+    }
 }
 
 /// Builder for accumulating operations in a transaction.

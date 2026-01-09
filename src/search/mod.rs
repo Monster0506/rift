@@ -11,7 +11,7 @@
 use crate::buffer::api::BufferView;
 use crate::error::{ErrorType, RiftError};
 use haystack::{BufferHaystack, BufferHaystackContext};
-use monster_regex::{parse_rift_format, Regex};
+use monster_regex::{parse_rift_format, Haystack, Regex};
 use std::ops::Range;
 
 mod haystack;
@@ -215,6 +215,33 @@ pub fn find_all(
                 },
             ))
         }
+        SearchTier::Incremental => {
+            let t0 = std::time::Instant::now();
+            let (re, _) = compile_regex(query)?;
+            let t1 = std::time::Instant::now();
+
+            let context = BufferHaystackContext::new(buffer);
+            let haystack = context.make_haystack();
+            let t2 = std::time::Instant::now();
+
+            let mut matches = Vec::new();
+            let search_iter = IncrementalSearch::new(re, haystack);
+
+            for m in search_iter {
+                matches.push(m);
+            }
+
+            let t3 = std::time::Instant::now();
+            Ok((
+                matches,
+                SearchStats {
+                    compilation_time: t1 - t0,
+                    index_time: t2 - t1,
+                    search_time: t3 - t2,
+                },
+            ))
+        }
+
         SearchTier::Full => find_all_full_tier(buffer, query),
     }
 }
@@ -252,6 +279,7 @@ enum SearchTier {
     Literal,
     LineScoped,
     Full,
+    Incremental,
 }
 
 fn classify_query(query: &str) -> SearchTier {
@@ -266,7 +294,61 @@ fn classify_query(query: &str) -> SearchTier {
     } else if is_line_scoped(&pattern) {
         SearchTier::LineScoped
     } else {
-        SearchTier::Full
+        // Check for capability/complexity
+        if check_complexity(&pattern) {
+            SearchTier::Incremental
+        } else {
+            SearchTier::Full
+        }
+    }
+}
+
+use monster_regex::{AstNode, CharClass, Parser};
+
+fn check_complexity(pattern: &str) -> bool {
+    let flags = monster_regex::Flags::default(); // we effectively only care about structure
+    let mut parser = Parser::new(pattern, flags);
+    if let Ok(ast) = parser.parse() {
+        // If parsing fails, we fallback to Full/Backup anyway or it will err later.
+        // Check AST for specific features.
+        ast.iter().any(is_node_complex)
+    } else {
+        // If we can't parse it, assume it's simple or broken (will fail compile).
+        // Let's assume false and let compile_regex handle error.
+        false
+    }
+}
+
+fn is_node_complex(node: &AstNode) -> bool {
+    match node {
+        AstNode::ZeroOrMore { node, .. } | AstNode::OneOrMore { node, .. } => {
+            // Unbounded repetition. Check if inner is broad (like Dot or large class)
+            is_broad_match(node) || is_node_complex(node)
+        }
+        AstNode::Range {
+            max: None, node, ..
+        } => is_broad_match(node) || is_node_complex(node),
+        // Recursion for other containers
+        AstNode::Group { nodes, .. } => nodes.iter().any(is_node_complex),
+        AstNode::Alternation(nodes_vec) => {
+            // nodes_vec is Vec<Vec<AstNode>>
+            nodes_vec.iter().any(|alt| alt.iter().any(is_node_complex))
+        }
+        AstNode::LookAhead { nodes, .. } | AstNode::LookBehind { nodes, .. } => {
+            // Lookarounds are complex by nature, but maybe handled by Backtracking perfectly fine?
+            // The user specifically mentioned "unbounded repetition".
+            // Let's return true if they contain complexity.
+            nodes.iter().any(is_node_complex)
+        }
+        _ => false,
+    }
+}
+
+fn is_broad_match(node: &AstNode) -> bool {
+    match node {
+        AstNode::CharClass(CharClass::Dot) => true,
+        AstNode::CharClass(CharClass::Set { negated: true, .. }) => true, // [^a] matches almost everything
+        _ => false,
     }
 }
 
@@ -380,24 +462,182 @@ fn convert_match<B: BufferView + ?Sized>(
     }
 }
 
+use monster_regex::engine::backtracking::BacktrackingRegexEngine;
+use monster_regex::engine::linear::LinearRegexEngine;
+use std::sync::Arc;
+
+/// A wrapper around either a Linear or Backtracking regex.
+///
+/// This allows us to prefer the O(n) Linear engine when possible, but fallback
+/// to Backtracking for patterns that use unsupported features (like lookarounds).
+/// We use Arc to enable cheap cloning for incremental search iterators.
+#[derive(Clone)]
+pub enum RiftRegex {
+    Linear(Arc<Regex<LinearRegexEngine>>),
+    Backtracking(Arc<Regex<BacktrackingRegexEngine>>),
+}
+
+impl RiftRegex {
+    pub fn find_all<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> Box<dyn Iterator<Item = monster_regex::Match> + 'a> {
+        match self {
+            RiftRegex::Linear(re) => Box::new(re.as_ref().find_all(text)),
+            RiftRegex::Backtracking(re) => Box::new(re.as_ref().find_all(text)),
+        }
+    }
+
+    pub fn find_all_from<'a, H: Haystack + Clone + 'a>(
+        &'a self,
+        haystack: H,
+    ) -> Box<dyn Iterator<Item = monster_regex::Match> + 'a>
+    where
+        <LinearRegexEngine as monster_regex::engine::RegexEngine>::Regex:
+            monster_regex::engine::CompiledRegexHaystack,
+        <BacktrackingRegexEngine as monster_regex::engine::RegexEngine>::Regex:
+            monster_regex::engine::CompiledRegexHaystack,
+    {
+        // monster_regex find_all_from returns FindMatchesIterator which implements Iterator.
+        match self {
+            RiftRegex::Linear(re) => Box::new(re.as_ref().find_all_from(haystack)),
+            RiftRegex::Backtracking(re) => Box::new(re.as_ref().find_all_from(haystack)),
+        }
+    }
+
+    pub fn find_from_at<H: Haystack + Clone>(
+        &self,
+        haystack: H,
+        start: usize,
+    ) -> Option<monster_regex::Match>
+    where
+        <LinearRegexEngine as monster_regex::engine::RegexEngine>::Regex:
+            monster_regex::engine::CompiledRegexHaystack,
+        <BacktrackingRegexEngine as monster_regex::engine::RegexEngine>::Regex:
+            monster_regex::engine::CompiledRegexHaystack,
+    {
+        match self {
+            RiftRegex::Linear(re) => re.as_ref().find_from_at(haystack, start),
+            RiftRegex::Backtracking(re) => re.as_ref().find_from_at(haystack, start),
+        }
+    }
+
+    pub fn find_from<H: Haystack + Clone>(&self, haystack: H) -> Option<monster_regex::Match>
+    where
+        <LinearRegexEngine as monster_regex::engine::RegexEngine>::Regex:
+            monster_regex::engine::CompiledRegexHaystack,
+        <BacktrackingRegexEngine as monster_regex::engine::RegexEngine>::Regex:
+            monster_regex::engine::CompiledRegexHaystack,
+    {
+        match self {
+            RiftRegex::Linear(re) => re.as_ref().find_from(haystack),
+            RiftRegex::Backtracking(re) => re.as_ref().find_from(haystack),
+        }
+    }
+
+    pub fn find_at(&self, text: &str, start: usize) -> Option<monster_regex::Match> {
+        // Fallback to find(text[start..]) and adjust offset?
+        // Linear engine doesn't expose find_at on &str directly in Regex wrapper easily without Slice?
+        // Actually the Backtracking engine implementation of find_at did slice.
+        // Let's use standard find() on slice.
+        if start > text.len() {
+            return None;
+        }
+        match self {
+            RiftRegex::Linear(re) => {
+                re.as_ref()
+                    .find(&text[start..])
+                    .map(|m| monster_regex::Match {
+                        start: m.start + start,
+                        end: m.end + start,
+                    })
+            }
+            RiftRegex::Backtracking(re) => {
+                re.as_ref()
+                    .find(&text[start..])
+                    .map(|m| monster_regex::Match {
+                        start: m.start + start,
+                        end: m.end + start,
+                    })
+            }
+        }
+    }
+}
+
+/// Iterator for incremental search.
+/// Owns the Regex (via Arc) and the Haystack Context keeps buffer alive.
+pub struct IncrementalSearch<'a, B: BufferView + ?Sized> {
+    regex: RiftRegex,
+    haystack: BufferHaystack<'a, B>,
+    pos: usize,
+}
+
+impl<'a, B: BufferView + ?Sized> IncrementalSearch<'a, B> {
+    pub fn new(regex: RiftRegex, haystack: BufferHaystack<'a, B>) -> Self {
+        Self {
+            regex,
+            haystack,
+            pos: 0,
+        }
+    }
+}
+
+impl<'a, B: BufferView + ?Sized> Iterator for IncrementalSearch<'a, B> {
+    type Item = SearchMatch;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let m = self.regex.find_from_at(self.haystack, self.pos)?;
+
+        // Update position for next iteration
+        if m.end == m.start {
+            // Empty match: must advance by 1 to avoid infinite loop
+            self.pos = m.end + 1;
+        } else {
+            self.pos = m.end;
+        }
+
+        Some(convert_match(&self.haystack, m))
+    }
+}
+
+/// Create an incremental search iterator.
+///
+/// Requires a pre-built `BufferHaystackContext`. This allows the context (which may be expensive to build)
+/// to be reused or cached by the caller.
+pub fn find_iter<'a, 'c, B: BufferView + ?Sized>(
+    context: &'c BufferHaystackContext<'a, B>,
+    query: &str,
+) -> Result<IncrementalSearch<'c, B>, RiftError> {
+    let (re, _) = compile_regex(query)?;
+    let haystack = context.make_haystack();
+    Ok(IncrementalSearch::new(re, haystack))
+}
+
 /// Compile query into Regex
-fn compile_regex(query: &str) -> Result<(Regex, String), RiftError> {
+pub fn compile_regex(query: &str) -> Result<(RiftRegex, String), RiftError> {
     let is_rift_format = query.contains('/');
 
-    if is_rift_format {
+    let (pattern, mut flags) = if is_rift_format {
         let query_for_parser = if query.starts_with('/') {
             std::borrow::Cow::Borrowed(query)
         } else {
             std::borrow::Cow::Owned(format!("/{}", query))
         };
 
-        let (pattern, mut flags) = parse_rift_format(&query_for_parser).map_err(|e| {
+        let (pat, flags) = parse_rift_format(&query_for_parser).map_err(|e| {
             RiftError::new(ErrorType::Internal, "REGEX_PARSE_ERROR", format!("{:?}", e))
         })?;
+        (pat, flags)
+    } else {
+        (query.to_string(), monster_regex::Flags::default())
+    };
 
-        // Force multiline mode to match legacy line-by-line behavior where ^/$ matched line boundaries
-        flags.multiline = true;
+    // Force multiline mode
+    flags.multiline = true;
 
+    // 1. Try Linear Engine (purer, O(n))
+    // heuristic: if it has anchors, fallback to backtracking for now (debugging)
+    if pattern.contains('^') || pattern.contains('$') {
         let re = Regex::new(&pattern, flags).map_err(|e| {
             RiftError::new(
                 ErrorType::Internal,
@@ -405,20 +645,22 @@ fn compile_regex(query: &str) -> Result<(Regex, String), RiftError> {
                 format!("{:?}", e),
             )
         })?;
-        Ok((re, pattern))
-    } else {
-        let mut flags = monster_regex::Flags::default();
-        // Force multiline mode
-        flags.multiline = true;
+        return Ok((RiftRegex::Backtracking(Arc::new(re)), pattern));
+    }
 
-        let re = Regex::new(query, flags).map_err(|e| {
-            RiftError::new(
-                ErrorType::Internal,
-                "REGEX_COMPILE_ERROR",
-                format!("{:?}", e),
-            )
-        })?;
-        Ok((re, query.to_string()))
+    match Regex::new_linear(&pattern, flags) {
+        Ok(re) => Ok((RiftRegex::Linear(Arc::new(re)), pattern)),
+        Err(_) => {
+            // 2. Fallback to Backtracking Engine (supports lookarounds, backrefs, etc.)
+            let re = Regex::new(&pattern, flags).map_err(|e| {
+                RiftError::new(
+                    ErrorType::Internal,
+                    "REGEX_COMPILE_ERROR",
+                    format!("{:?}", e),
+                )
+            })?;
+            Ok((RiftRegex::Backtracking(Arc::new(re)), pattern))
+        }
     }
 }
 
@@ -506,3 +748,7 @@ fn find_line_index(buffer: &impl BufferView, pos: usize) -> usize {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "capability_test.rs"]
+mod capability_test;

@@ -11,6 +11,7 @@ use std::fmt::{self, Display};
 use std::cell::RefCell;
 
 pub mod api;
+pub mod byte_map;
 pub mod line_cache;
 pub mod line_index;
 pub mod rope;
@@ -28,6 +29,8 @@ pub struct TextBuffer {
     pub revision: u64,
     /// Cache for regex matching lines
     pub line_cache: RefCell<LineCache>,
+    /// Cache for byte offsets of line starts (expensive to compute)
+    pub byte_map_cache: RefCell<Option<crate::buffer::byte_map::ByteLineMap>>,
 }
 
 impl TextBuffer {
@@ -39,6 +42,7 @@ impl TextBuffer {
             cursor: 0,
             revision: 0,
             line_cache: RefCell::new(LineCache::new()),
+            byte_map_cache: RefCell::new(None),
         })
     }
 
@@ -357,6 +361,12 @@ impl BufferView for TextBuffer {
 
     fn line_cache(&self) -> Option<&std::cell::RefCell<crate::buffer::line_cache::LineCache>> {
         Some(&self.line_cache)
+    }
+
+    fn byte_line_map(
+        &self,
+    ) -> Option<&std::cell::RefCell<Option<crate::buffer::byte_map::ByteLineMap>>> {
+        Some(&self.byte_map_cache)
     }
 }
 

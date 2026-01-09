@@ -11,6 +11,56 @@ pub struct BufferHaystackContext<'a, B: BufferView + ?Sized> {
 
 impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
     pub fn new(buffer: &'a B) -> Self {
+        // Try to use cached byte map
+        if let Some(cell) = buffer.byte_line_map() {
+            let mut cache = cell.borrow_mut();
+            let current_rev = buffer.revision();
+
+            // Check cache validity (revision match)
+            if let Some(map) = cache.as_ref() {
+                if map.revision == current_rev {
+                    // Cache hit!
+                    return Self {
+                        buffer,
+                        line_byte_starts: map.line_starts.clone(),
+                    };
+                }
+            }
+
+            // Cache miss or stale: rebuild
+            let line_count = buffer.line_count();
+            let mut line_byte_starts = Vec::with_capacity(line_count + 1);
+            let mut current_offset = 0;
+            line_byte_starts.push(0);
+
+            for i in 0..line_count {
+                let start = buffer.line_start(i);
+                let end = if i + 1 < line_count {
+                    buffer.line_start(i + 1)
+                } else {
+                    buffer.len()
+                };
+                let mut line_len = 0;
+                for c in buffer.chars(start..end) {
+                    line_len += c.len_utf8();
+                }
+                current_offset += line_len;
+                line_byte_starts.push(current_offset);
+            }
+
+            // Update cache
+            *cache = Some(crate::buffer::byte_map::ByteLineMap::new(
+                line_byte_starts.clone(),
+                current_rev,
+            ));
+
+            return Self {
+                buffer,
+                line_byte_starts,
+            };
+        }
+
+        // No cache available fallback
         let line_count = buffer.line_count();
         let mut line_byte_starts = Vec::with_capacity(line_count + 1);
         let mut current_offset = 0;
@@ -243,5 +293,68 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
             }
         }
         true
+    }
+
+    fn find_byte(&self, byte: u8, pos: usize) -> Option<usize> {
+        let (mut line_idx, mut offset_in_line) = self.find_line_for_byte(pos)?;
+
+        // Iterate line by line
+        while line_idx < self.buffer.line_count() {
+            let start = self.buffer.line_start(line_idx);
+            let end = if line_idx + 1 < self.buffer.line_count() {
+                self.buffer.line_start(line_idx + 1)
+            } else {
+                self.buffer.len()
+            };
+
+            let mut current_byte = 0;
+            for c in self.buffer.chars(start..end) {
+                let len = c.len_utf8();
+
+                if current_byte >= offset_in_line {
+                    // Check bytes of this character
+                    match c {
+                        Character::Unicode(ch) => {
+                            let mut buf = [0u8; 4];
+                            let s = ch.encode_utf8(&mut buf);
+                            if let Some(idx) = s.as_bytes().iter().position(|&b| b == byte) {
+                                let offset_from_line_start = self.line_byte_starts[line_idx];
+                                return Some(offset_from_line_start + current_byte + idx);
+                            }
+                        }
+                        Character::Byte(b) => {
+                            if b == byte {
+                                let offset_from_line_start = self.line_byte_starts[line_idx];
+                                return Some(offset_from_line_start + current_byte);
+                            }
+                        }
+                        Character::Tab => {
+                            if byte == b'\t' {
+                                let offset_from_line_start = self.line_byte_starts[line_idx];
+                                return Some(offset_from_line_start + current_byte);
+                            }
+                        }
+                        Character::Newline => {
+                            if byte == b'\n' {
+                                let offset_from_line_start = self.line_byte_starts[line_idx];
+                                return Some(offset_from_line_start + current_byte);
+                            }
+                        }
+                        Character::Control(b) => {
+                            if b == byte {
+                                let offset_from_line_start = self.line_byte_starts[line_idx];
+                                return Some(offset_from_line_start + current_byte);
+                            }
+                        }
+                    }
+                }
+                current_byte += len;
+            }
+            // Move to next line
+            line_idx += 1;
+            offset_in_line = 0;
+        }
+
+        None
     }
 }
