@@ -1,5 +1,5 @@
 use crate::error::{ErrorType, RiftError};
-use libloading::{Library, Symbol};
+use libloading::Library;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tree_sitter::Language;
@@ -83,59 +83,14 @@ impl LanguageLoader {
         }
 
         // Fall back to dynamic loading
-        self.load_language_dynamic(lang_name)
-    }
 
-    /// Load a language dynamically from a shared library
-    fn load_language_dynamic(&self, lang_name: &str) -> Result<LoadedLanguage, RiftError> {
-        // Platform specific filename
-        #[cfg(target_os = "windows")]
-        let filename = format!("tree-sitter-{}.dll", lang_name);
-        #[cfg(not(target_os = "windows"))]
-        let filename = format!("libtree-sitter-{}.so", lang_name);
-
-        let library_path = self.grammar_dir.join(&filename);
-
-        println!("Loading grammar from: {:?}", library_path); // DEBUG
-
-        if !library_path.exists() {
-            return Err(RiftError::new(
-                ErrorType::Io,
-                "GRAMMAR_NOT_FOUND",
-                format!("Grammar file not found: {:?}", library_path),
-            ));
-        }
-
-        unsafe {
-            let library = Library::new(&library_path).map_err(|e| {
-                RiftError::new(
-                    ErrorType::Internal,
-                    "LOAD_FAILED",
-                    format!("Failed to load library: {}", e),
-                )
-            })?;
-
-            let library = Arc::new(library);
-
-            // Symbol name is usually tree_sitter_<lang_name>
-            let symbol_name = format!("tree_sitter_{}", lang_name.replace("-", "_"));
-            let constructor: Symbol<unsafe extern "C" fn() -> Language> =
-                library.get(symbol_name.as_bytes()).map_err(|e| {
-                    RiftError::new(
-                        ErrorType::Internal,
-                        "SYMBOL_NOT_FOUND",
-                        format!("Symbol {} not found: {}", symbol_name, e),
-                    )
-                })?;
-
-            let language = constructor();
-
-            Ok(LoadedLanguage {
-                language,
-                library: Some(library),
-                name: lang_name.to_string(),
-            })
-        }
+        // self.load_language_dynamic(lang_name)
+        // Ok(LoadedLanguage::bundled(Language::new(), "rust"))
+        Err(RiftError::new(
+            ErrorType::Internal,
+            "LANGUAGE_NOT_FOUND",
+            format!("Language {} not found", lang_name),
+        ))
     }
 
     /// Load a query file for a language (e.g., "highlights")

@@ -445,6 +445,18 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
     let highlights = ctx.highlights.unwrap_or(&[]);
     let mut highlight_idx = 0;
 
+    // Optimized search match cursor
+    let search_matches = &ctx.state.search_matches;
+    // Find the first match that could possibly be visible (ends after viewport start)
+    // We want the first match where m.end > first_visible_char
+    let first_visible_char = buf.line_index.get_start(top_line).unwrap_or(0);
+    // partition_point returns the index of the first element satisfying the condition?
+    // No, partition_point returns index of first element where predicate is FALSE.
+    // We want first element where `m.range.end > first_visible_char`.
+    // So predicate is `m.range.end <= first_visible_char`.
+    let mut search_match_idx =
+        search_matches.partition_point(|m| m.range.end <= first_visible_char);
+
     for i in 0..visible_rows {
         let line_num = top_line + i;
 
@@ -514,12 +526,29 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
                 let abs_char_offset = line_start_char + char_idx_in_line;
 
                 // 1. Check for search match (Character range based)
-                let is_match = !ctx.state.search_matches.is_empty()
-                    && ctx
-                        .state
-                        .search_matches
-                        .iter()
-                        .any(|m| m.range.contains(&abs_char_offset));
+                let mut is_match = false;
+                if !search_matches.is_empty() {
+                    // Advance search cursor past matches that end before current char
+                    while search_match_idx < search_matches.len() {
+                        if search_matches[search_match_idx].range.end <= abs_char_offset {
+                            search_match_idx += 1;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    // Check if current match contains char
+                    if search_match_idx < search_matches.len() {
+                        let m = &search_matches[search_match_idx];
+                        if m.range.start <= abs_char_offset {
+                            // m.range.end > abs_char_offset is guaranteed by loop above
+                            // So abs_char_offset < m.range.end.
+                            // Thus abs_char_offset in [start, end)
+                            is_match = true;
+                        }
+                        // If start > abs_char_offset, then it's a future match, not this one.
+                    }
+                }
 
                 // 2. Check for syntax highlighting (Byte range based)
                 let syntax_fg = if highlights.is_empty() {

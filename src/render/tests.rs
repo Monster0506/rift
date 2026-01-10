@@ -1006,3 +1006,66 @@ fn test_render_search_highlights() {
     assert_eq!(cell_w.bg, Some(crate::color::Color::Yellow));
     assert_eq!(cell_w.fg, Some(crate::color::Color::Black));
 }
+#[test]
+fn test_render_search_highlights_complex() {
+    let mut term = MockTerminal::new(10, 80);
+    let mut buf = TextBuffer::new(100).unwrap();
+    // "hello world\nagain world"
+    buf.insert_str("hello world\nagain world").unwrap();
+    // Line 0: "hello world" (11 chars)
+    // Line 1: "again world" (11 chars)
+
+    let viewport = Viewport::new(10, 80);
+    let mut state = State::new();
+    state.settings.show_line_numbers = false;
+
+    // mock matches
+    use crate::search::SearchMatch;
+    // Match 1: "hello" (0..5) - Visible
+    // Match 2: "world" (6..11) - Visible
+    // Match 3: "again" (12..17) - Visible
+    state.search_matches = vec![
+        SearchMatch { range: 0..5 },
+        SearchMatch { range: 6..11 },
+        SearchMatch { range: 12..17 },
+    ];
+
+    let mut compositor = LayerCompositor::new(10, 80);
+    let mut cache = RenderCache::default();
+
+    render(
+        &mut term,
+        &mut compositor,
+        DrawContext {
+            buf: &buf,
+            viewport: &viewport,
+            current_mode: Mode::Normal,
+            pending_key: None,
+            pending_count: 0,
+            state: &state,
+            needs_clear: true,
+            tab_width: 4,
+            highlights: None,
+        },
+        &mut cache,
+    )
+    .unwrap();
+
+    let content_layer = compositor.get_layer_mut(LayerPriority::CONTENT);
+
+    // Check "hello" (0,0) - Highlighted
+    let cell = content_layer.get_cell(0, 0).unwrap();
+    assert_eq!(cell.bg, Some(crate::color::Color::Yellow));
+
+    // Check " " (0,5) - Not Highlighted
+    let cell = content_layer.get_cell(0, 5).unwrap();
+    assert_eq!(cell.bg, state.settings.editor_bg);
+
+    // Check "world" (0,6) - Highlighted
+    let cell = content_layer.get_cell(0, 6).unwrap();
+    assert_eq!(cell.bg, Some(crate::color::Color::Yellow));
+
+    // Check "again" (1,0) - Highlighted
+    let cell = content_layer.get_cell(1, 0).unwrap();
+    assert_eq!(cell.bg, Some(crate::color::Color::Yellow));
+}

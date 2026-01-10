@@ -63,26 +63,24 @@ impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
         // No cache available fallback
         let line_count = buffer.line_count();
         let mut line_byte_starts = Vec::with_capacity(line_count + 1);
-        let mut current_offset = 0;
 
         line_byte_starts.push(0);
         for i in 0..line_count {
-            let start = buffer.line_start(i);
-            let end = if i + 1 < line_count {
-                buffer.line_start(i + 1)
+            // OPTIMIZATION: Use efficient char_to_byte lookup if available
+            // This changes complexity from O(N) where N=total chars to O(L*log N) where L=lines
+            // for implementations like PieceTable/Rope.
+
+            // We want to push the start of the NEXT line (or total length if at end).
+            // line_byte_starts already contains start of line 0 (0).
+
+            let next_line_start_byte = if i + 1 < line_count {
+                let next_char = buffer.line_start(i + 1);
+                buffer.char_to_byte(next_char)
             } else {
-                buffer.len()
+                buffer.char_to_byte(buffer.len())
             };
 
-            let mut line_len = 0;
-
-            for c in buffer.chars(start..end) {
-                line_len += c.len_utf8();
-            }
-
-            // If the buffer actually contains newlines, we accumulate them here.
-            current_offset += line_len;
-            line_byte_starts.push(current_offset);
+            line_byte_starts.push(next_line_start_byte);
         }
 
         Self {

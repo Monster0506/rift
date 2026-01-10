@@ -84,6 +84,22 @@ pub trait BufferView {
     ) -> Option<&std::cell::RefCell<Option<crate::buffer::byte_map::ByteLineMap>>> {
         None
     }
+
+    /// Convert character index to byte offset (efficient O(log N) or better)
+    fn char_to_byte(&self, char_index: usize) -> usize {
+        // Default implementation falls back to iteration (slow)
+        // Implementors should override this!
+        let mut byte_offset = 0;
+        let mut char_count = 0;
+        for c in self.chars(0..self.len()) {
+            if char_count == char_index {
+                return byte_offset;
+            }
+            byte_offset += c.len_utf8();
+            char_count += 1;
+        }
+        byte_offset
+    }
 }
 
 /// Builder for accumulating operations in a transaction.

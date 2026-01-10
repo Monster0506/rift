@@ -368,6 +368,10 @@ impl BufferView for TextBuffer {
     ) -> Option<&std::cell::RefCell<Option<crate::buffer::byte_map::ByteLineMap>>> {
         Some(&self.byte_map_cache)
     }
+
+    fn char_to_byte(&self, char_index: usize) -> usize {
+        self.char_to_byte(char_index)
+    }
 }
 
 #[cfg(test)]
