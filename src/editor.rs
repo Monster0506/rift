@@ -314,39 +314,23 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Perform a search in the document
     fn perform_search(&mut self, query: &str, direction: SearchDirection, skip_current: bool) {
-        self.state.notify(
-            crate::notification::NotificationType::Info,
-            format!("Searching for '{}'...", query),
-        );
-        let _ = self.force_full_redraw();
         // Find all matches first to populate state for highlighting
         self.update_search_highlights();
+        let _ = self.force_full_redraw();
 
         let doc = self
             .document_manager
             .active_document_mut()
             .expect("No active document");
         match doc.perform_search(query, direction, skip_current) {
-            Ok((Some(m), stats)) => {
+            Ok((Some(m), _stats)) => {
                 // Move cursor to start of match
                 let _ = doc.buffer.set_cursor(m.range.start);
-
-                // Log stats
-                self.state.notify(
-                    crate::notification::NotificationType::Info,
-                    format!(
-                        "Search stats: Compile: {:?}, Index: {:?}, Search: {:?}",
-                        stats.compilation_time, stats.index_time, stats.search_time
-                    ),
-                );
             }
-            Ok((None, stats)) => {
+            Ok((None, _stats)) => {
                 self.state.notify(
-                    crate::notification::NotificationType::Info,
-                    format!(
-                        "Pattern not found: {} (Index: {:?})",
-                        query, stats.index_time
-                    ),
+                    crate::notification::NotificationType::Warning,
+                    format!("Pattern not found: {}", query),
                 );
             }
             Err(e) => {
