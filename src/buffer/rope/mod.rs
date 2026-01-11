@@ -42,7 +42,7 @@ struct Node {
 }
 
 /// A Piece Table backed by an AVL Tree (Rope).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PieceTable {
     original: Arc<Vec<Character>>,
     add: Vec<Character>,
@@ -92,6 +92,10 @@ impl PieceTable {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub fn chunks<'a>(&'a self) -> PieceTableChunkIterator<'a> {
+        PieceTableChunkIterator::new(self.root.as_deref(), &self.original, &self.add)
     }
 
     pub fn insert(&mut self, pos: usize, text: &[Character]) {
@@ -411,6 +415,10 @@ pub struct PieceTableChunkIterator<'a> {
 }
 
 impl<'a> PieceTableChunkIterator<'a> {
+    fn new(root: Option<&'a Node>, original: &'a [Character], add: &'a [Character]) -> Self {
+        Self::new_at(root, 0, original, add)
+    }
+
     fn new_at(
         root: Option<&'a Node>,
         start_pos: usize,

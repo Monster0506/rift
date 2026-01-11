@@ -4,18 +4,26 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
+pub mod jobs;
+
+use std::any::Any;
+
 /// Sealed trait for job payloads to ensure type safety.
-pub trait JobPayload: Send + std::fmt::Debug + 'static {}
+pub trait JobPayload: Any + Send + std::fmt::Debug + 'static {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn into_any(self: Box<Self>) -> Box<dyn Any>;
+}
 
 /// Message sent from a background job to the editor.
 #[derive(Debug)]
 pub enum JobMessage {
-    /// Job started with ID
-    Started(usize),
+    /// Job started with ID and silent flag
+    Started(usize, bool),
     /// Progress update: Job ID, percentage (0-100), status message
     Progress(usize, u32, String),
-    /// Job finished successfully
-    Finished(usize),
+    /// Job finished successfully with ID and silent flag
+    Finished(usize, bool),
     /// Job failed with error message
     Error(usize, String),
     /// Job cancelled (terminal state)
@@ -67,11 +75,20 @@ pub trait Job: Send + std::fmt::Debug + 'static {
     /// * The job SHOULD check `sender.send(...)` results AND `cancellation_signal.is_cancelled()`.
     /// * If cancelled, the job SHOULD exit as soon as possible.
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal);
+
+    /// Whether this job should trigger notifications in the editor.
+    fn is_silent(&self) -> bool {
+        false
+    }
 }
 
 impl Job for Box<dyn Job> {
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         (*self).run(id, sender, signal);
+    }
+
+    fn is_silent(&self) -> bool {
+        (**self).is_silent()
     }
 }
 
@@ -110,11 +127,12 @@ impl JobManager {
         let signal = CancellationSignal {
             cancelled: cancellation_token.clone(),
         };
+        let silent = job.is_silent();
         let job_box = Box::new(job);
 
         let handle = thread::spawn(move || {
             // Signal start
-            if sender.send(JobMessage::Started(id)).is_ok() {
+            if sender.send(JobMessage::Started(id, silent)).is_ok() {
                 job_box.run(id, sender, signal);
             }
         });
@@ -131,6 +149,8 @@ impl JobManager {
         id
     }
 
+    // ... rest of implementation updated for enum match ...
+
     /// Get the receiver to poll for messages.
     /// The editor should call `receiver.try_recv()` to get messages without blocking.
     pub fn receiver(&self) -> &Receiver<JobMessage> {
@@ -141,7 +161,7 @@ impl JobManager {
     /// This should be called by the editor when it processes a message.
     pub fn update_job_state(&mut self, message: &JobMessage) {
         match message {
-            JobMessage::Finished(id) => {
+            JobMessage::Finished(id, _) => {
                 if let Some(job) = self.jobs.get_mut(id) {
                     job.state = JobState::Finished;
                 }
@@ -210,12 +230,6 @@ impl Drop for JobManager {
         for job in self.jobs.values() {
             job.cancellation_token.store(true, Ordering::Relaxed);
         }
-        // When JobManager is dropped (e.g. editor shutdown), the sender is dropped.
-        // Jobs attempting to send messages will get an error, helping them exit.
-        // We generally can't forcibly join all threads here without potentially blocking the UI thread (main thread)
-        // for too long, but for correctness, we should try to allow them to exit.
-        // However, if we block on join, a stuck job could hang the editor exit.
-        // So we will just let them detach, but since the channel is closed, they should exit naturally.
     }
 }
 
