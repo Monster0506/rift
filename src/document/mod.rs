@@ -384,6 +384,12 @@ impl Document {
         self.revision != self.last_saved_revision
     }
 
+    /// Get the current revision number
+    #[must_use]
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
     /// Check if document is empty
     #[must_use]
     pub fn is_empty(&self) -> bool {

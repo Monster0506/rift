@@ -70,7 +70,7 @@ impl Job for FileSaveJob {
 
         // Helper to handle IO errors and send Error message
         let do_write = || -> std::io::Result<()> {
-            let mut file = fs::File::create(&temp_path)?;
+            let file = fs::File::create(&temp_path)?;
             let line_ending_bytes = self.line_ending.as_bytes();
 
             // Buffering for performance
@@ -124,7 +124,7 @@ impl Job for FileSaveJob {
                         path: self.path.clone(),
                     };
                     let _ = sender.send(JobMessage::Custom(id, Box::new(result)));
-                    let _ = sender.send(JobMessage::Finished(id, false));
+                    let _ = sender.send(JobMessage::Finished(id, true));
                 } else {
                     // Clean up temp file
                     let _ = fs::remove_file(&temp_path);
@@ -137,6 +137,10 @@ impl Job for FileSaveJob {
                 let _ = sender.send(JobMessage::Error(id, e.to_string()));
             }
         }
+    }
+
+    fn is_silent(&self) -> bool {
+        true
     }
 }
 
@@ -225,7 +229,7 @@ impl Job for FileLoadJob {
             Ok(result) => {
                 if !signal.is_cancelled() {
                     let _ = sender.send(JobMessage::Custom(id, Box::new(result)));
-                    let _ = sender.send(JobMessage::Finished(id, false));
+                    let _ = sender.send(JobMessage::Finished(id, true));
                 } else {
                     let _ = sender.send(JobMessage::Cancelled(id));
                 }
@@ -238,5 +242,9 @@ impl Job for FileLoadJob {
                 }
             }
         }
+    }
+
+    fn is_silent(&self) -> bool {
+        true
     }
 }

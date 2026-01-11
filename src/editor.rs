@@ -7,7 +7,6 @@ use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::document::{Document, DocumentId};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::executor::execute_command;
-use crate::job_manager::jobs::{FileLoadJob, FileLoadResult, FileSaveJob, FileSaveResult};
 use crate::key_handler::{KeyAction, KeyHandler};
 use crate::layer::LayerPriority;
 use crate::mode::Mode;
@@ -144,7 +143,9 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = editor.document_manager.active_document() {
             let table = doc.buffer.line_index.table.clone();
             let revision = doc.buffer.revision;
-            let job = crate::job_manager::jobs::CacheWarmingJob::new(table, revision);
+            let job =
+                crate::job_manager::jobs::cache_warming::CacheWarmingJob::new(table, revision);
+
             editor.job_manager.spawn(job);
         }
 
@@ -266,11 +267,10 @@ impl<T: TerminalBackend> Editor<T> {
         let start_byte = doc.buffer.char_to_byte(start_char);
         let end_byte = doc.buffer.char_to_byte(end_char);
 
-        let highlights = if let Some(syntax) = doc.syntax.as_mut() {
-            Some(syntax.highlights(Some(start_byte..end_byte)))
-        } else {
-            None
-        };
+        let highlights = doc
+            .syntax
+            .as_mut()
+            .map(|syntax| syntax.highlights(Some(start_byte..end_byte)));
 
         let ctx = render::DrawContext {
             buf: &doc.buffer,
@@ -335,7 +335,10 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 // Not open, create placeholder and async load
                 let doc_id = self.document_manager.create_placeholder(&path_str)?;
-                let job = FileLoadJob::new(doc_id, path.clone());
+                let job = crate::job_manager::jobs::file_operations::FileLoadJob::new(
+                    doc_id,
+                    path.clone(),
+                );
                 self.job_manager.spawn(job);
                 self.state.notify(
                     crate::notification::NotificationType::Info,
@@ -354,7 +357,10 @@ impl<T: TerminalBackend> Editor<T> {
                             message: crate::constants::errors::MSG_UNSAVED_CHANGES.to_string(),
                         });
                     }
-                    let job = FileLoadJob::new(doc.id, path.to_path_buf());
+                    let job = crate::job_manager::jobs::file_operations::FileLoadJob::new(
+                        doc.id,
+                        path.to_path_buf(),
+                    );
                     self.job_manager.spawn(job);
                     self.state.notify(
                         crate::notification::NotificationType::Info,
@@ -914,11 +920,10 @@ impl<T: TerminalBackend> Editor<T> {
         let start_byte = doc.buffer.char_to_byte(start_char);
         let end_byte = doc.buffer.char_to_byte(end_char);
 
-        let highlights = if let Some(syntax) = doc.syntax.as_mut() {
-            Some(syntax.highlights(Some(start_byte..end_byte)))
-        } else {
-            None
-        };
+        let highlights = doc
+            .syntax
+            .as_mut()
+            .map(|syntax| syntax.highlights(Some(start_byte..end_byte)));
 
         let ctx = render::DrawContext {
             buf: &doc.buffer,
@@ -1022,14 +1027,14 @@ impl<T: TerminalBackend> Editor<T> {
                 // Save document ASYNC
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     if let Some(path) = doc.path() {
-                        let job = FileSaveJob::new(
+                        let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
                             doc.id,
                             doc.buffer.line_index.table.clone(),
                             path.to_path_buf(),
                             doc.options.line_ending,
-                            doc.buffer.revision,
+                            doc.revision(),
                         );
-                        let id = self.job_manager.spawn(job);
+                        let _id = self.job_manager.spawn(job);
                         self.state.notify(
                             crate::notification::NotificationType::Info,
                             format!("Saving {}...", path.display()),
@@ -1055,7 +1060,7 @@ impl<T: TerminalBackend> Editor<T> {
                             doc.path().unwrap().to_path_buf(),
                             doc.buffer.line_index.table.clone(),
                             doc.options.line_ending,
-                            doc.buffer.revision,
+                            doc.revision(),
                         ))
                     } else if let Some(path) = &self.state.file_path {
                         Ok((
@@ -1063,7 +1068,7 @@ impl<T: TerminalBackend> Editor<T> {
                             std::path::PathBuf::from(path),
                             doc.buffer.line_index.table.clone(),
                             doc.options.line_ending,
-                            doc.buffer.revision,
+                            doc.revision(),
                         ))
                     } else {
                         Err(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))
@@ -1072,8 +1077,13 @@ impl<T: TerminalBackend> Editor<T> {
 
                 match res {
                     Ok((doc_id, path, table, line_ending, revision)) => {
-                        let job =
-                            FileSaveJob::new(doc_id, table, path.clone(), line_ending, revision);
+                        let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
+                            doc_id,
+                            table,
+                            path.clone(),
+                            line_ending,
+                            revision,
+                        );
                         let id = self.job_manager.spawn(job);
                         self.pending_quit_job_id = Some(id);
                         self.state.notify(
@@ -1399,24 +1409,44 @@ impl<T: TerminalBackend> Editor<T> {
                 let any_payload = payload.into_any();
 
                 // Try FileSaveResult
-                let any_payload = match any_payload.downcast::<FileSaveResult>() {
+                let any_payload = match any_payload
+                    .downcast::<crate::job_manager::jobs::file_operations::FileSaveResult>(
+                ) {
                     Ok(res) => {
                         if let Some(doc) = self.document_manager.get_document_mut(res.document_id) {
                             doc.mark_as_saved(res.revision);
                             doc.set_path(res.path.clone());
+
+                            // Update cached filename in state
+                            let display_name = doc.display_name().to_string();
+                            self.state.update_filename(display_name);
                         }
+
+                        // Show success notification
+                        self.state.notify(
+                            crate::notification::NotificationType::Success,
+                            format!("Written to {}", res.path.display()),
+                        );
+
                         if self.pending_quit_job_id == Some(id) {
                             self.should_quit = true;
                         }
+
+                        // Sync state and redraw to update dirty indicator
+                        self.sync_state_with_active_document();
+                        let _ = self.force_full_redraw();
+
                         self.job_manager
-                            .update_job_state(&JobMessage::Finished(id, false));
+                            .update_job_state(&JobMessage::Finished(id, true));
                         return Ok(());
                     }
                     Err(p) => p,
                 };
 
                 // Try FileLoadResult
-                let any_payload = match any_payload.downcast::<FileLoadResult>() {
+                let any_payload = match any_payload
+                    .downcast::<crate::job_manager::jobs::file_operations::FileLoadResult>(
+                ) {
                     Ok(res) => {
                         // Scope for doc mutation
                         let warming_data = if let Some(doc) =
@@ -1436,8 +1466,9 @@ impl<T: TerminalBackend> Editor<T> {
 
                         // Spawn cache warming if data extracted
                         if let Some((table, revision)) = warming_data {
-                            let job =
-                                crate::job_manager::jobs::CacheWarmingJob::new(table, revision);
+                            let job = crate::job_manager::jobs::cache_warming::CacheWarmingJob::new(
+                                table, revision,
+                            );
                             self.job_manager.spawn(job);
                         }
 

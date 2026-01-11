@@ -66,7 +66,7 @@ impl SyntaxParseJob {
 }
 
 impl Job for SyntaxParseJob {
-    fn run(mut self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
+    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
         }
@@ -82,7 +82,7 @@ impl Job for SyntaxParseJob {
         } = *self;
 
         // Parse
-        let mut text = buffer; // buffer is now local
+        let text = buffer; // buffer is now local
         let mut iter = text.iter();
         let mut position = 0;
 
