@@ -140,7 +140,9 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = editor.document_manager.active_document() {
             let table = doc.buffer.line_index.table.clone();
             let revision = doc.buffer.revision;
-            let job = crate::job_manager::jobs::CacheWarmingJob::new(table, revision);
+            let job =
+                crate::job_manager::jobs::cache_warming::CacheWarmingJob::new(table, revision);
+
             editor.job_manager.spawn(job);
         }
 
@@ -358,7 +360,9 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.active_document() {
             let table = doc.buffer.line_index.table.clone();
             let revision = doc.buffer.revision;
-            let job = crate::job_manager::jobs::CacheWarmingJob::new(table, revision);
+            let job =
+                crate::job_manager::jobs::cache_warming::CacheWarmingJob::new(table, revision);
+
             self.job_manager.spawn(job);
         }
 
@@ -900,11 +904,10 @@ impl<T: TerminalBackend> Editor<T> {
         let start_byte = doc.buffer.char_to_byte(start_char);
         let end_byte = doc.buffer.char_to_byte(end_char);
 
-        let highlights = if let Some(syntax) = doc.syntax.as_mut() {
-            Some(syntax.highlights(Some(start_byte..end_byte)))
-        } else {
-            None
-        };
+        let highlights = doc
+            .syntax
+            .as_mut()
+            .map(|syntax| syntax.highlights(Some(start_byte..end_byte)));
 
         let ctx = render::DrawContext {
             buf: &doc.buffer,
