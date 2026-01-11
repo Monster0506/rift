@@ -149,10 +149,9 @@ impl JobManager {
             if matches!(
                 job.state,
                 JobState::Finished | JobState::Failed | JobState::Cancelled
-            ) {
-                if job.handle.is_finished() {
-                    finished_ids.push(*id);
-                }
+            ) && job.handle.is_finished()
+            {
+                finished_ids.push(*id);
             }
         }
 
