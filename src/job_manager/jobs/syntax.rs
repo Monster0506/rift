@@ -82,30 +82,9 @@ impl Job for SyntaxParseJob {
         } = *self;
 
         // Parse
-        let text = buffer; // buffer is now local
-        let mut iter = text.iter();
-        let mut position = 0;
-
-        let mut callback = |byte_offset: usize, _point: tree_sitter::Point| -> Vec<u8> {
-            if byte_offset != position {
-                let char_idx = text.byte_to_char(byte_offset);
-                iter = text.iter_at(char_idx);
-                position = byte_offset;
-            }
-
-            let mut buf = Vec::with_capacity(1024);
-            for _ in 0..256 {
-                if let Some(c) = iter.next() {
-                    c.encode_utf8(&mut buf);
-                } else {
-                    break;
-                }
-            }
-            position += buf.len();
-            buf
-        };
-
-        let tree = parser.parse_with(&mut callback, old_tree.as_ref());
+        let text = buffer;
+        let source_code = text.to_string();
+        let tree = parser.parse(&source_code, old_tree.as_ref());
 
         if signal.is_cancelled() {
             return;

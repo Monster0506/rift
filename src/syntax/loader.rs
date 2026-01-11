@@ -37,17 +37,21 @@ impl LanguageLoader {
         })?;
 
         let lang_name = match extension {
-            "rs" => "rust",
-            "c" => "c",
-            "cc" | "cpp" | "cxx" => "cpp",
-            "py" => "python",
-            "js" => "javascript",
-            "ts" => "typescript",
+            "c" | "h" => "c",
+            "cc" | "cpp" | "cxx" | "hpp" => "cpp",
+            "css" => "css",
             "go" => "go",
             "html" => "html",
-            "css" => "css",
+            "js" | "jsx" | "mjs" => "javascript",
             "json" => "json",
             "lua" => "lua",
+            "md" | "markdown" => "markdown",
+            "py" => "python",
+            "rs" => "rust",
+            "sh" | "bash" | "zsh" => "bash",
+            "ts" => "typescript",
+            "tsx" => "tsx",
+            "yaml" | "yml" => "yaml",
             _ => {
                 return Err(RiftError::new(
                     ErrorType::Internal,
@@ -64,20 +68,8 @@ impl LanguageLoader {
     #[allow(unused_variables)]
     pub fn load_language(&self, lang_name: &str) -> Result<LoadedLanguage, RiftError> {
         #[cfg(feature = "treesitter")]
-        {
-            if lang_name == "rust" {
-                return Ok(LoadedLanguage::bundled(
-                    tree_sitter_rust::LANGUAGE.into(),
-                    "rust",
-                ));
-            }
-
-            if lang_name == "python" {
-                return Ok(LoadedLanguage::bundled(
-                    tree_sitter_python::LANGUAGE.into(),
-                    "python",
-                ));
-            }
+        if let Some((lang, _)) = get_bundled_language(lang_name) {
+            return Ok(LoadedLanguage::bundled(lang, lang_name));
         }
 
         Err(RiftError::new(
@@ -93,12 +85,8 @@ impl LanguageLoader {
         // Check for bundled queries first (when feature is enabled)
         if query_name == "highlights" {
             #[cfg(feature = "treesitter")]
-            {
-                if lang_name == "rust" {
-                    return Ok(tree_sitter_rust::HIGHLIGHTS_QUERY.to_string());
-                } else if lang_name == "python" {
-                    return Ok(tree_sitter_python::HIGHLIGHTS_QUERY.to_string());
-                }
+            if let Some((_, query)) = get_bundled_language(lang_name) {
+                return Ok(query.to_string());
             }
         }
 
@@ -110,5 +98,72 @@ impl LanguageLoader {
                 query_name, lang_name
             ),
         ))
+    }
+}
+
+#[cfg(feature = "treesitter")]
+fn get_bundled_language(lang_name: &str) -> Option<(Language, &'static str)> {
+    match lang_name {
+        "rust" => Some((
+            tree_sitter_rust::LANGUAGE.into(),
+            tree_sitter_rust::HIGHLIGHTS_QUERY,
+        )),
+        "python" => Some((
+            tree_sitter_python::LANGUAGE.into(),
+            tree_sitter_python::HIGHLIGHTS_QUERY,
+        )),
+        "c" => Some((
+            tree_sitter_c::LANGUAGE.into(),
+            tree_sitter_c::HIGHLIGHT_QUERY,
+        )),
+        "cpp" => Some((
+            tree_sitter_cpp::LANGUAGE.into(),
+            tree_sitter_cpp::HIGHLIGHT_QUERY,
+        )),
+        "javascript" => Some((
+            tree_sitter_javascript::LANGUAGE.into(),
+            tree_sitter_javascript::HIGHLIGHT_QUERY,
+        )),
+        "typescript" => Some((
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            tree_sitter_typescript::HIGHLIGHTS_QUERY,
+        )),
+        "tsx" => Some((
+            tree_sitter_typescript::LANGUAGE_TSX.into(),
+            tree_sitter_typescript::HIGHLIGHTS_QUERY,
+        )),
+        "go" => Some((
+            tree_sitter_go::LANGUAGE.into(),
+            tree_sitter_go::HIGHLIGHTS_QUERY,
+        )),
+        "html" => Some((
+            tree_sitter_html::LANGUAGE.into(),
+            tree_sitter_html::HIGHLIGHTS_QUERY,
+        )),
+        "css" => Some((
+            tree_sitter_css::LANGUAGE.into(),
+            tree_sitter_css::HIGHLIGHTS_QUERY,
+        )),
+        "json" => Some((
+            tree_sitter_json::LANGUAGE.into(),
+            tree_sitter_json::HIGHLIGHTS_QUERY,
+        )),
+        "lua" => Some((
+            tree_sitter_lua::LANGUAGE.into(),
+            tree_sitter_lua::HIGHLIGHTS_QUERY,
+        )),
+        "markdown" => Some((
+            tree_sitter_md::LANGUAGE.into(),
+            tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
+        )),
+        "yaml" => Some((
+            tree_sitter_yaml::LANGUAGE.into(),
+            tree_sitter_yaml::HIGHLIGHTS_QUERY,
+        )),
+        "bash" => Some((
+            tree_sitter_bash::LANGUAGE.into(),
+            tree_sitter_bash::HIGHLIGHT_QUERY,
+        )),
+        _ => None,
     }
 }
