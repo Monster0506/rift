@@ -7,6 +7,7 @@ use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::document::{Document, DocumentId};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::executor::execute_command;
+use crate::job_manager::jobs::{FileLoadJob, FileLoadResult, FileSaveJob, FileSaveResult};
 use crate::key_handler::{KeyAction, KeyHandler};
 use crate::layer::LayerPriority;
 use crate::mode::Mode;
@@ -36,6 +37,8 @@ pub struct Editor<T: TerminalBackend> {
     pub modal: Option<ActiveModal>,
     /// Background job manager
     pub job_manager: crate::job_manager::JobManager,
+    /// Job ID required to finish before quitting
+    pending_quit_job_id: Option<usize>,
 }
 
 /// Helper struct to track active modal and its layer
@@ -134,6 +137,7 @@ impl<T: TerminalBackend> Editor<T> {
             language_loader,
             modal: None,
             job_manager: crate::job_manager::JobManager::new(),
+            pending_quit_job_id: None,
         };
 
         // Trigger background search cache warming for initial document
@@ -315,51 +319,61 @@ impl<T: TerminalBackend> Editor<T> {
     /// it if not found). If file_path is None, it reloads the current active
     /// document.
     pub fn open_file(&mut self, file_path: Option<String>, force: bool) -> Result<(), RiftError> {
-        self.document_manager.open_file(file_path, force)?;
+        // Logic split: if path provided, check if open. If not open, async load.
+        // If path provided and open, switch to it (via manager).
+        // If no path, reload active (async).
 
-        // Ensure syntax is loaded for the new/reloaded document
-        let doc_id_to_spawn = if let Some(doc) = self.document_manager.active_document_mut() {
-            if doc.syntax.is_none() {
-                if let Some(path) = doc.path() {
-                    let path = path.to_path_buf();
-                    if let Ok(loaded) = self.language_loader.load_language_for_file(&path) {
-                        let highlights = self
-                            .language_loader
-                            .load_query(&loaded.name, "highlights")
-                            .ok()
-                            .and_then(|source| {
-                                tree_sitter::Query::new(&loaded.language, &source).ok()
-                            })
-                            .map(Arc::new);
-                        if let Ok(syntax) = crate::syntax::Syntax::new(loaded, highlights) {
-                            doc.set_syntax(syntax);
-                            Some(doc.id)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
+        if let Some(path_str) = file_path {
+            let path = std::path::PathBuf::from(&path_str);
+            if self
+                .document_manager
+                .find_open_document_index(&path)
+                .is_some()
+            {
+                // Already open, use manager to switch
+                self.document_manager.open_file(Some(path_str), force)?;
             } else {
-                None
+                // Not open, create placeholder and async load
+                let doc_id = self.document_manager.create_placeholder(&path_str)?;
+                let job = FileLoadJob::new(doc_id, path.clone());
+                self.job_manager.spawn(job);
+                self.state.notify(
+                    crate::notification::NotificationType::Info,
+                    format!("Loading {}...", path_str),
+                );
             }
         } else {
-            None
-        };
-
-        if let Some(doc_id) = doc_id_to_spawn {
-            self.spawn_syntax_parse_job(doc_id);
-        }
-
-        // Trigger background search cache warming
-        if let Some(doc) = self.document_manager.active_document() {
-            let table = doc.buffer.line_index.table.clone();
-            let revision = doc.buffer.revision;
-            let job = crate::job_manager::jobs::CacheWarmingJob::new(table, revision);
-            self.job_manager.spawn(job);
+            // Reload current
+            if let Some(doc) = self.document_manager.active_document() {
+                if let Some(path) = doc.path() {
+                    if !force && doc.is_dirty() {
+                        return Err(RiftError {
+                            severity: ErrorSeverity::Warning,
+                            kind: ErrorType::Execution,
+                            code: crate::constants::errors::UNSAVED_CHANGES.to_string(),
+                            message: crate::constants::errors::MSG_UNSAVED_CHANGES.to_string(),
+                        });
+                    }
+                    let job = FileLoadJob::new(doc.id, path.to_path_buf());
+                    self.job_manager.spawn(job);
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        "Reloading...".to_string(),
+                    );
+                } else {
+                    return Err(RiftError::new(
+                        ErrorType::Execution,
+                        crate::constants::errors::NO_PATH,
+                        "No file name",
+                    ));
+                }
+            } else {
+                return Err(RiftError::new(
+                    ErrorType::Internal,
+                    crate::constants::errors::INTERNAL_ERROR,
+                    "No active document",
+                ));
+            }
         }
 
         self.sync_state_with_active_document();
@@ -984,51 +998,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Save document to file
-    ///
-    /// Returns error message string if save fails
-    fn save_document(&mut self) -> Result<(), RiftError> {
-        use std::path::PathBuf;
-
-        // Get file path from state (executor may have updated it)
-        let file_path = self
-            .state
-            .file_path
-            .clone()
-            .ok_or_else(|| RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))?;
-
-        // Update document path if it changed in state
-        {
-            let doc = self.active_document();
-            if doc.path() != Some(std::path::Path::new(&file_path)) {
-                doc.set_path(PathBuf::from(&file_path));
-            }
-        }
-
-        // Save document
-        let res = {
-            let doc = self.active_document();
-            if doc.has_path() {
-                doc.save().map_err(|e| {
-                    RiftError::new(
-                        ErrorType::Io,
-                        "SAVE_FAILED",
-                        format!("Failed to write {file_path}: {e}"),
-                    )
-                })
-            } else {
-                Err(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))
-            }
-        };
-
-        if res.is_ok() {
-            // Update cached filename after save (handles save_as case)
-            let display_name = self.active_document().display_name().to_string();
-            self.state.update_filename(display_name);
-        }
-        res
-    }
-
     pub fn term_mut(&mut self) -> &mut T {
         &mut self.term
     }
@@ -1050,28 +1019,70 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             ExecutionResult::Write => {
-                // Save document
+                // Save document ASYNC
                 if let Some(doc) = self.document_manager.active_document_mut() {
-                    if let Err(e) = doc.save() {
-                        self.state.handle_error(e);
+                    if let Some(path) = doc.path() {
+                        let job = FileSaveJob::new(
+                            doc.id,
+                            doc.buffer.line_index.table.clone(),
+                            path.to_path_buf(),
+                            doc.options.line_ending,
+                            doc.buffer.revision,
+                        );
+                        let id = self.job_manager.spawn(job);
+                        self.state.notify(
+                            crate::notification::NotificationType::Info,
+                            format!("Saving {}...", path.display()),
+                        );
+                    } else {
+                        self.state.handle_error(RiftError::new(
+                            ErrorType::Io,
+                            "NO_FILENAME",
+                            "No file name",
+                        ));
                     }
                 }
                 self.state.clear_command_line();
                 self.close_active_modal();
             }
             ExecutionResult::WriteAndQuit => {
-                // Save document, then quit if successful
-                if let Err(e) = self.save_document() {
-                    self.state.handle_error(e);
-                } else {
-                    let filename = self.state.file_name.clone();
-                    self.state.notify(
-                        crate::notification::NotificationType::Success,
-                        format!("Written to {filename}"),
-                    );
+                // Save ASYNC then Quit
+                let res = {
+                    let doc = self.document_manager.active_document().unwrap();
+                    if doc.has_path() {
+                        Ok((
+                            doc.id,
+                            doc.path().unwrap().to_path_buf(),
+                            doc.buffer.line_index.table.clone(),
+                            doc.options.line_ending,
+                            doc.buffer.revision,
+                        ))
+                    } else if let Some(path) = &self.state.file_path {
+                        Ok((
+                            doc.id,
+                            std::path::PathBuf::from(path),
+                            doc.buffer.line_index.table.clone(),
+                            doc.options.line_ending,
+                            doc.buffer.revision,
+                        ))
+                    } else {
+                        Err(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))
+                    }
+                };
+
+                match res {
+                    Ok((doc_id, path, table, line_ending, revision)) => {
+                        let job =
+                            FileSaveJob::new(doc_id, table, path.clone(), line_ending, revision);
+                        let id = self.job_manager.spawn(job);
+                        self.pending_quit_job_id = Some(id);
+                        self.state.notify(
+                            crate::notification::NotificationType::Info,
+                            format!("Saving {} and quitting...", path.display()),
+                        );
+                    }
+                    Err(e) => self.state.handle_error(e),
                 }
-                // Save successful, now quit
-                self.should_quit = true;
                 self.state.clear_command_line();
                 self.close_active_modal();
             }
@@ -1384,8 +1395,60 @@ impl<T: TerminalBackend> Editor<T> {
                     format!("Job {} cancelled", id),
                 );
             }
-            JobMessage::Custom(_id, payload) => {
+            JobMessage::Custom(id, payload) => {
                 let any_payload = payload.into_any();
+
+                // Try FileSaveResult
+                let any_payload = match any_payload.downcast::<FileSaveResult>() {
+                    Ok(res) => {
+                        if let Some(doc) = self.document_manager.get_document_mut(res.document_id) {
+                            doc.mark_as_saved(res.revision);
+                            doc.set_path(res.path.clone());
+                        }
+                        if self.pending_quit_job_id == Some(id) {
+                            self.should_quit = true;
+                        }
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, false));
+                        return Ok(());
+                    }
+                    Err(p) => p,
+                };
+
+                // Try FileLoadResult
+                let any_payload = match any_payload.downcast::<FileLoadResult>() {
+                    Ok(res) => {
+                        // Scope for doc mutation
+                        let warming_data = if let Some(doc) =
+                            self.document_manager.get_document_mut(res.document_id)
+                        {
+                            doc.apply_loaded_content(res.line_index, res.line_ending);
+                            // Extract data for cache warming
+                            let table = doc.buffer.line_index.table.clone();
+                            let revision = doc.buffer.revision;
+                            Some((table, revision))
+                        } else {
+                            None
+                        };
+
+                        // Spawn syntax parse (requires self)
+                        self.spawn_syntax_parse_job(res.document_id);
+
+                        // Spawn cache warming if data extracted
+                        if let Some((table, revision)) = warming_data {
+                            let job =
+                                crate::job_manager::jobs::CacheWarmingJob::new(table, revision);
+                            self.job_manager.spawn(job);
+                        }
+
+                        self.sync_state_with_active_document();
+                        let _ = self.force_full_redraw();
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, false));
+                        return Ok(());
+                    }
+                    Err(p) => p,
+                };
 
                 // Try SyntaxParseResult
                 match any_payload.downcast::<SyntaxParseResult>() {

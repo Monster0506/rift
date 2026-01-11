@@ -302,6 +302,29 @@ pub struct BufferInfo {
     pub is_current: bool,
 }
 
+impl DocumentManager {
+    /// Create a placeholder document for async loading
+    pub fn create_placeholder(&mut self, path: impl AsRef<Path>) -> Result<DocumentId, RiftError> {
+        let mut doc = Document::new(self.next_document_id).map_err(|e| {
+            RiftError::new(
+                ErrorType::Internal,
+                crate::constants::errors::INTERNAL_ERROR,
+                e.to_string(),
+            )
+        })?;
+        doc.set_path(path.as_ref());
+        let id = doc.id;
+        self.add_document(doc);
+        Ok(id)
+    }
+
+    /// Find if a document with the given path is already open
+    /// Returns the tab index if found
+    pub fn find_open_document_index(&self, path: &Path) -> Option<usize> {
+        self.find_open_document(path)
+    }
+}
+
 impl Default for DocumentManager {
     fn default() -> Self {
         Self::new()

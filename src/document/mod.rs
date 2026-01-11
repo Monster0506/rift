@@ -760,6 +760,38 @@ impl Document {
         Self::apply_replay_path_to_buffer(&mut preview_buffer, &path);
         Ok(preview_buffer.to_string())
     }
+
+    /// Mark the document as saved at a specific revision
+    pub fn mark_as_saved(&mut self, revision: u64) {
+        self.last_saved_revision = revision;
+    }
+
+    /// Apply content loaded from a background job
+    pub fn apply_loaded_content(
+        &mut self,
+        line_index: crate::buffer::line_index::LineIndex,
+        line_ending: LineEnding,
+    ) {
+        // Create new text buffer wrapping the loaded line index
+        // We reuse the current capacity logic or just new
+        let mut buffer = TextBuffer::new(4096).unwrap_or_else(|_| {
+            // Should not happen as capacity is just recommendation
+            // and we are replacing line_index anyway.
+            panic!("Failed to create buffer")
+        });
+
+        buffer.line_index = line_index;
+        // Construct the buffer revision as 0 for new file
+        buffer.revision = 0;
+
+        self.buffer = buffer;
+        self.options.line_ending = line_ending;
+        self.revision = 0;
+        self.last_saved_revision = 0;
+        self.history = UndoTree::new();
+        self.current_transaction = None;
+        self.syntax = None; // Needs re-parsing
+    }
 }
 
 #[cfg(test)]
