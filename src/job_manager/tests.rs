@@ -21,7 +21,7 @@ impl Job for TestJob {
         }
 
         if self.succeed {
-            let _ = sender.send(JobMessage::Finished(id));
+            let _ = sender.send(JobMessage::Finished(id, false));
         } else {
             let _ = sender.send(JobMessage::Error(id, "Failed artificially".to_string()));
         }
@@ -41,14 +41,14 @@ fn test_job_lifecycle() {
 
     // We should receive Started
     let msg = receiver.recv().unwrap();
-    matches!(msg, JobMessage::Started(mid) if mid == id);
+    matches!(msg, JobMessage::Started(mid, _) if mid == id);
 
     // We should receive progress
     loop {
         let msg = receiver.recv().unwrap();
         match msg {
             JobMessage::Progress(mid, _, _) => assert_eq!(mid, id),
-            JobMessage::Finished(mid) => {
+            JobMessage::Finished(mid, _) => {
                 assert_eq!(mid, id);
                 break;
             }

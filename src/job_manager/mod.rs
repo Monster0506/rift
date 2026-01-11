@@ -2,18 +2,26 @@ use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 
+pub mod jobs;
+
+use std::any::Any;
+
 /// Sealed trait for job payloads to ensure type safety.
-pub trait JobPayload: Send + std::fmt::Debug + 'static {}
+pub trait JobPayload: Any + Send + std::fmt::Debug + 'static {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn into_any(self: Box<Self>) -> Box<dyn Any>;
+}
 
 /// Message sent from a background job to the editor.
 #[derive(Debug)]
 pub enum JobMessage {
-    /// Job started with ID
-    Started(usize),
+    /// Job started with ID and silent flag
+    Started(usize, bool),
     /// Progress update: Job ID, percentage (0-100), status message
     Progress(usize, u32, String),
-    /// Job finished successfully
-    Finished(usize),
+    /// Job finished successfully with ID and silent flag
+    Finished(usize, bool),
     /// Job failed with error message
     Error(usize, String),
     /// Job cancelled (terminal state)
@@ -50,11 +58,20 @@ pub trait Job: Send + std::fmt::Debug + 'static {
     /// * The job MUST NOT access global editor state.
     /// * The job SHOULD check `sender.send(...)` results; if it fails, the editor is gone/cancelled, and the job SHOULD exit.
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>);
+
+    /// Whether this job should trigger notifications in the editor.
+    fn is_silent(&self) -> bool {
+        false
+    }
 }
 
 impl Job for Box<dyn Job> {
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>) {
         (*self).run(id, sender);
+    }
+
+    fn is_silent(&self) -> bool {
+        (**self).is_silent()
     }
 }
 
@@ -89,11 +106,12 @@ impl JobManager {
         self.next_job_id += 1;
 
         let sender = self.sender.clone();
+        let silent = job.is_silent();
         let job_box = Box::new(job);
 
         let handle = thread::spawn(move || {
             // Signal start
-            if sender.send(JobMessage::Started(id)).is_ok() {
+            if sender.send(JobMessage::Started(id, silent)).is_ok() {
                 job_box.run(id, sender);
             }
         });
@@ -109,6 +127,8 @@ impl JobManager {
         id
     }
 
+    // ... rest of implementation updated for enum match ...
+
     /// Get the receiver to poll for messages.
     /// The editor should call `receiver.try_recv()` to get messages without blocking.
     pub fn receiver(&self) -> &Receiver<JobMessage> {
@@ -119,7 +139,7 @@ impl JobManager {
     /// This should be called by the editor when it processes a message.
     pub fn update_job_state(&mut self, message: &JobMessage) {
         match message {
-            JobMessage::Finished(id) => {
+            JobMessage::Finished(id, _) => {
                 if let Some(job) = self.jobs.get_mut(id) {
                     job.state = JobState::Finished;
                 }

@@ -130,7 +130,7 @@ impl<T: TerminalBackend> Editor<T> {
             state.update_filename(doc.display_name().to_string());
         }
 
-        Ok(Self {
+        let mut editor = Self {
             term: terminal,
             render_system,
             document_manager,
@@ -145,7 +145,17 @@ impl<T: TerminalBackend> Editor<T> {
             language_loader,
             modal: None,
             job_manager: crate::job_manager::JobManager::new(),
-        })
+        };
+
+        // Trigger background search cache warming for initial document
+        if let Some(doc) = editor.document_manager.active_document() {
+            let table = doc.buffer.line_index.table.clone();
+            let revision = doc.buffer.revision;
+            let job = crate::job_manager::jobs::CacheWarmingJob::new(table, revision);
+            editor.job_manager.spawn(job);
+        }
+
+        Ok(editor)
     }
 
     /// Get the ID of the active document
@@ -288,6 +298,14 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
             }
+        }
+
+        // Trigger background search cache warming
+        if let Some(doc) = self.document_manager.active_document() {
+            let table = doc.buffer.line_index.table.clone();
+            let revision = doc.buffer.revision;
+            let job = crate::job_manager::jobs::CacheWarmingJob::new(table, revision);
+            self.job_manager.spawn(job);
         }
 
         self.sync_state_with_active_document();
@@ -1239,9 +1257,8 @@ impl<T: TerminalBackend> Editor<T> {
         self.job_manager.update_job_state(&message);
 
         match message {
-            JobMessage::Started(id) => {
-                // Optional: log to debug or status
-                if self.state.debug_mode {
+            JobMessage::Started(id, silent) => {
+                if !silent {
                     self.state.notify(
                         crate::notification::NotificationType::Info,
                         format!("Job {} started", id),
@@ -1256,11 +1273,13 @@ impl<T: TerminalBackend> Editor<T> {
                     format!("Job Progress ({}%): {}", percentage, msg),
                 );
             }
-            JobMessage::Finished(id) => {
-                self.state.notify(
-                    crate::notification::NotificationType::Success,
-                    format!("Job {} finished", id),
-                );
+            JobMessage::Finished(id, silent) => {
+                if !silent {
+                    self.state.notify(
+                        crate::notification::NotificationType::Success,
+                        format!("Job {} finished", id),
+                    );
+                }
 
                 // Cleanup? The manager handles cleanup of joined threads later,
                 // but we might want to trigger it eventually.
@@ -1278,8 +1297,25 @@ impl<T: TerminalBackend> Editor<T> {
                     format!("Job {} cancelled", id),
                 );
             }
-            JobMessage::Custom(_id, _payload) => {
-                // Handle custom payloads if implemented
+            JobMessage::Custom(_id, payload) => {
+                // Downcast to ByteLineMap
+                if let Ok(map) = payload
+                    .into_any()
+                    .downcast::<crate::buffer::byte_map::ByteLineMap>()
+                {
+                    // Update active document if revision matches
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        if doc.buffer.revision == map.revision {
+                            *doc.buffer.byte_map_cache.borrow_mut() = Some(*map);
+                            if self.state.debug_mode {
+                                self.state.notify(
+                                    crate::notification::NotificationType::Info,
+                                    "Search cache warmed".to_string(),
+                                );
+                            }
+                        }
+                    }
+                }
             }
         }
 

@@ -14,3 +14,14 @@ impl ByteLineMap {
         }
     }
 }
+impl crate::job_manager::JobPayload for ByteLineMap {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+}
