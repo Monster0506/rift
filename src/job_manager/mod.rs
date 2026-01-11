@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 /// Sealed trait for job payloads to ensure type safety.
@@ -22,6 +24,19 @@ pub enum JobMessage {
     Custom(usize, Box<dyn JobPayload>),
 }
 
+/// Signal used to check if a job has been cancelled.
+#[derive(Debug, Clone)]
+pub struct CancellationSignal {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl CancellationSignal {
+    /// Check if the job has been cancelled.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Relaxed)
+    }
+}
+
 /// State of a background job
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobState {
@@ -35,6 +50,7 @@ pub enum JobState {
 pub struct JobHandle {
     pub handle: JoinHandle<()>,
     pub state: JobState,
+    pub cancellation_token: Arc<AtomicBool>,
 }
 
 /// Trait defining a background job.
@@ -48,13 +64,14 @@ pub trait Job: Send + std::fmt::Debug + 'static {
     ///
     /// # Invariants
     /// * The job MUST NOT access global editor state.
-    /// * The job SHOULD check `sender.send(...)` results; if it fails, the editor is gone/cancelled, and the job SHOULD exit.
-    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>);
+    /// * The job SHOULD check `sender.send(...)` results AND `cancellation_signal.is_cancelled()`.
+    /// * If cancelled, the job SHOULD exit as soon as possible.
+    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal);
 }
 
 impl Job for Box<dyn Job> {
-    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>) {
-        (*self).run(id, sender);
+    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
+        (*self).run(id, sender, signal);
     }
 }
 
@@ -89,12 +106,16 @@ impl JobManager {
         self.next_job_id += 1;
 
         let sender = self.sender.clone();
+        let cancellation_token = Arc::new(AtomicBool::new(false));
+        let signal = CancellationSignal {
+            cancelled: cancellation_token.clone(),
+        };
         let job_box = Box::new(job);
 
         let handle = thread::spawn(move || {
             // Signal start
             if sender.send(JobMessage::Started(id)).is_ok() {
-                job_box.run(id, sender);
+                job_box.run(id, sender, signal);
             }
         });
 
@@ -103,6 +124,7 @@ impl JobManager {
             JobHandle {
                 handle,
                 state: JobState::Running,
+                cancellation_token,
             },
         );
 
@@ -166,17 +188,13 @@ impl JobManager {
     }
 
     /// Cancel a specific job.
-    /// Note: This only marks it as cancelled in the manager and drops the handle from our map if we wanted to enforce detachment,
-    /// but since we need to join it, we can't force-kill a thread in Rust safe code.
-    /// The job must cooperate by checking the channel.
-    /// For now, we just mark state. Real cancellation requires the job to check an AtomicBool or channel.
-    /// Since we are using channel disconnection as a signal (in Drop), explicit cancellation of a single job
-    /// is harder without a per-job control channel.
-    /// For this v0, we will assume generic "cancellation" is mostly "editor shutdown".
-    /// If we need per-job cancellation, we would need to pass a cancellation token to `run`.
-    pub fn cancel_job(&mut self, _id: usize) {
-        // TODO: Implement per-job cancellation via AtomicBool or similar if needed.
-        // For now, this is a placeholder.
+    /// This sets the cancellation flag and marks the state as Cancelled.
+    /// The job thread is expected to notice the flag and exit.
+    pub fn cancel_job(&mut self, id: usize) {
+        if let Some(job) = self.jobs.get_mut(&id) {
+            job.cancellation_token.store(true, Ordering::Relaxed);
+            job.state = JobState::Cancelled;
+        }
     }
 }
 
@@ -188,6 +206,10 @@ impl Default for JobManager {
 
 impl Drop for JobManager {
     fn drop(&mut self) {
+        // Signal cancellation to all jobs
+        for job in self.jobs.values() {
+            job.cancellation_token.store(true, Ordering::Relaxed);
+        }
         // When JobManager is dropped (e.g. editor shutdown), the sender is dropped.
         // Jobs attempting to send messages will get an error, helping them exit.
         // We generally can't forcibly join all threads here without potentially blocking the UI thread (main thread)

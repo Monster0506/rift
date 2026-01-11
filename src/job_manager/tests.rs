@@ -8,9 +8,13 @@ struct TestJob {
 }
 
 impl Job for TestJob {
-    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>) {
+    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         // Simulate work
         for i in 0..5 {
+            if signal.is_cancelled() {
+                let _ = sender.send(JobMessage::Cancelled(id));
+                return;
+            }
             if sender
                 .send(JobMessage::Progress(id, i * 20, format!("Step {}", i + 1)))
                 .is_err()
@@ -79,4 +83,37 @@ fn test_manager_state_update() {
     let cleaned = manager.cleanup_finished_jobs();
     assert!(cleaned.contains(&id));
     assert!(!manager.jobs.contains_key(&id));
+}
+
+#[test]
+fn test_job_cancellation() {
+    let mut manager = JobManager::new();
+    // Long running job
+    let job = TestJob {
+        duration_ms: 1000,
+        succeed: true,
+    };
+    let id = manager.spawn(job);
+
+    // Wait a bit then cancel
+    thread::sleep(Duration::from_millis(10));
+    manager.cancel_job(id);
+
+    let receiver = manager.receiver();
+    // Should get Started
+    let _ = receiver.recv();
+
+    // Drain until cancelled or finished
+    let mut cancelled = false;
+    while let Ok(msg) = receiver.recv_timeout(Duration::from_millis(200)) {
+        match msg {
+            JobMessage::Cancelled(mid) if mid == id => {
+                cancelled = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    assert!(cancelled, "Job should have received cancelled message");
 }
