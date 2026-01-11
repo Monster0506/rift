@@ -575,7 +575,6 @@ impl UndoTree {
         let path = self.compute_replay_path(self.current, target)?;
 
         // Update internal state (last_visited_child) along the redo path
-        // Find ancestors again for path calculation (could optimize but keeping it simple)
         let current_ancestors = self.get_ancestors(self.current);
         let target_ancestors = self.get_ancestors(target);
         let common_ancestor = self.find_common_ancestor(&current_ancestors, &target_ancestors);

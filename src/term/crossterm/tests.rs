@@ -13,12 +13,7 @@ fn test_crossterm_backend_new() {
 #[test]
 fn test_get_size() {
     let backend = CrosstermBackend::new().unwrap();
-    // Can't test init in unit tests (requires actual terminal)
-    // But we can test that get_size returns a valid size structure
-    // when terminal is initialized
     let size_result = backend.get_size();
-    // This might fail if not in a real terminal, so we just check it doesn't panic
-    // In a real terminal, it should return Ok(Size { rows: > 0, cols: > 0 })
     assert!(size_result.is_ok() || size_result.is_err());
 }
 

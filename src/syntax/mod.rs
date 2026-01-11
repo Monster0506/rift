@@ -62,12 +62,6 @@ impl Syntax {
 
         let mut callback = |byte_offset: usize, _point: tree_sitter::Point| -> Vec<u8> {
             if byte_offset != position {
-                // Seek needed (rare in sequential parse)
-                // Seek cost: O(log N) to find char index, then O(N) linear advance if just advancing?
-                // Actually `iter_at` calls `iter.next()` N times for now. That is slow O(N).
-                // BUT, `byte_to_char` is O(log N).
-                // If we implemented true seek, it would be fast.
-                // For now, let's use the provided API.
                 let char_idx = text.byte_to_char(byte_offset);
                 iter = text.iter_at(char_idx);
                 position = byte_offset;

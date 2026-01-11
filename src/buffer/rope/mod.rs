@@ -198,8 +198,6 @@ impl PieceTable {
         if line_idx >= self.get_line_count() {
             return self.len();
         }
-        // We want the position after the (line_idx)th newline (1-based count of newlines essentially)
-        // If line_idx is 1, we want position after 1st newline.
         find_nth_newline_end(self.root.as_deref(), line_idx, &self.original, &self.add)
     }
 
@@ -340,9 +338,7 @@ impl<'a> PieceTableIterator<'a> {
             self.stack[self.stack_top] = Some(node);
             self.stack_top += 1;
         } else {
-            // In a real scenario, this should not happen due to tree height properties
-            // But we silence it or panic.
-            // panic!("PieceTableIterator stack overflow");
+            panic!("PieceTableIterator stack overflow");
         }
     }
 
@@ -406,7 +402,6 @@ impl<'a> Iterator for PieceTableIterator<'a> {
 /// This allows for vectorized/optimized processing of contiguous segments.
 #[derive(Clone)]
 pub struct PieceTableChunkIterator<'a> {
-    // Reusing the same logic as PieceTableIterator but yielding slices
     stack: [Option<&'a Node>; MAX_STACK],
     stack_top: usize,
     current_piece: Option<&'a [Character]>,
@@ -512,10 +507,8 @@ impl<'a> Iterator for PieceTableChunkIterator<'a> {
                         self.push_node(right);
                     }
                     // Loop again to consume
-                } else {
-                    if let Some(right) = &node.right {
-                        self.push_node(right);
-                    }
+                } else if let Some(right) = &node.right {
+                    self.push_node(right);
                 }
             } else {
                 return None;
@@ -526,7 +519,6 @@ impl<'a> Iterator for PieceTableChunkIterator<'a> {
 
 impl std::fmt::Display for PieceTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // This is inefficient but functional for Debug/Display
         let mut chars = Vec::with_capacity(self.len());
         collect_chars(self.root.as_deref(), &self.original, &self.add, &mut chars);
         for ch in chars {
@@ -1028,8 +1020,8 @@ fn get_byte_offset_recursive(
 
         // Sum byte len of `offset` characters
         let mut piece_bytes = 0;
-        for i in 0..offset {
-            piece_bytes += slice[i].len_utf8();
+        for item in slice.iter().take(offset) {
+            piece_bytes += item.len_utf8();
         }
         left_byte_len + piece_bytes
     } else {
@@ -1071,20 +1063,7 @@ fn get_char_idx_recursive(
             }
             current_bytes += clen;
             // If we hit exact match (start of next char), loop continues
-            if current_bytes == target_in_piece {
-                // Technically points to start of next char,
-                // but loop will likely continue to next iteration where we'll hit condition?
-                // No, if `byte_pos` points to start of char, `current_bytes` matches `target_in_piece`.
-                // We need to return `i+1`?
-                // Wait.
-                // If `byte_pos` is 0, `target` is 0. `current` starts 0.
-                // Loop 0: `clen`=1. `0+1 > 0` is true. Returns `left_len + 0`. Correct.
-
-                // If `byte_pos` is 1 (start of 2nd char). `target` is 1.
-                // Loop 0: `c`='A' (1 byte). `0+1 > 1` is FALSE.
-                // `current` becomes 1. `1 == 1`.
-                // Loop 1: `c`='B'. `1+1 > 1` is true. Match. Returns `left_len + 1`. Correct.
-            }
+            if current_bytes == target_in_piece {}
         }
         // Should have found it in this piece
         left_len + slice.len()

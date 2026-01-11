@@ -420,8 +420,6 @@ pub fn render<T: TerminalBackend>(
     Ok(cursor_info)
 }
 
-/// Map syntax highlight capture names to colors
-
 /// Render buffer content to the content layer
 fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), String> {
     let buf = ctx.buf;
@@ -447,13 +445,7 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
 
     // Optimized search match cursor
     let search_matches = &ctx.state.search_matches;
-    // Find the first match that could possibly be visible (ends after viewport start)
-    // We want the first match where m.end > first_visible_char
     let first_visible_char = buf.line_index.get_start(top_line).unwrap_or(0);
-    // partition_point returns the index of the first element satisfying the condition?
-    // No, partition_point returns index of first element where predicate is FALSE.
-    // We want first element where `m.range.end > first_visible_char`.
-    // So predicate is `m.range.end <= first_visible_char`.
     let mut search_match_idx =
         search_matches.partition_point(|m| m.range.end <= first_visible_char);
 
@@ -507,12 +499,11 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
             let mut visual_col = 0;
             let mut rendered_col = 0;
             let left_col = viewport.left_col();
-            let mut char_idx_in_line = 0usize;
 
             // Initialize byte offset for the line (O(log N))
             let mut current_byte_offset = buf.char_to_byte(line_start_char);
 
-            for ch in buf.chars(line_start_char..line_end_char) {
+            for (char_idx_in_line, ch) in buf.chars(line_start_char..line_end_char).enumerate() {
                 if rendered_col >= content_cols {
                     break;
                 }
@@ -568,8 +559,8 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
                     let mut color = None;
                     // We only check from highlight_idx onwards.
                     // And we can stop as soon as we see a highlight starting AFTER current pos.
-                    for j in highlight_idx..highlights.len() {
-                        let (range, capture) = &highlights[j];
+                    for item in highlights.iter().skip(highlight_idx) {
+                        let (range, capture) = item;
                         if range.start > current_byte_offset {
                             break; // Future highlight, cannot match
                         }
@@ -606,30 +597,28 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
                 let next_visual_col = visual_col + char_width;
 
                 // Render
-                if next_visual_col > left_col {
-                    if rendered_col < content_cols {
-                        let display_col = rendered_col + gutter_width;
-                        if display_col < visible_cols {
-                            layer.set_cell(i, display_col, Cell::new(ch).with_colors(fg, bg));
+                if next_visual_col > left_col && rendered_col < content_cols {
+                    let display_col = rendered_col + gutter_width;
+                    if display_col < visible_cols {
+                        layer.set_cell(i, display_col, Cell::new(ch).with_colors(fg, bg));
 
-                            if char_width > 1 {
-                                let empty_cell = Cell {
-                                    content: Character::from(' '), // Placeholder
-                                    fg,
-                                    bg,
-                                };
-                                for k in 1..char_width {
-                                    if display_col + k < visible_cols {
-                                        layer.set_cell(i, display_col + k, empty_cell.clone());
-                                    }
+                        if char_width > 1 {
+                            let empty_cell = Cell {
+                                content: Character::from(' '), // Placeholder
+                                fg,
+                                bg,
+                            };
+                            for k in 1..char_width {
+                                if display_col + k < visible_cols {
+                                    layer.set_cell(i, display_col + k, empty_cell.clone());
                                 }
                             }
                         }
-                        rendered_col += char_width;
                     }
+                    rendered_col += char_width;
                 }
+
                 visual_col = next_visual_col;
-                char_idx_in_line += 1;
             }
 
             // Pad with spaces
@@ -705,11 +694,7 @@ pub fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) 
     let line_start = buf.line_index.get_start(line).unwrap_or(0);
     // Cursor is absolute char index
     let cursor_pos = buf.cursor();
-    let target_char_idx = if cursor_pos > line_start {
-        cursor_pos - line_start
-    } else {
-        0
-    };
+    let target_char_idx = cursor_pos.saturating_sub(line_start);
 
     // We iterate chars from line start up to cursor
     // Bounds check? cursor_pos should be <= len.
@@ -717,14 +702,11 @@ pub fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) 
     // We iterate chars.
 
     let mut col = 0;
-    let mut current_idx = 0;
 
-    // Iterate manually over line
-    // We don't have `chars_at(line_start, count)` easily exposed except via chars(Range)
-    // We can use chars(Range)
     let end = buf.len(); // cap at buffer end
 
-    for ch in BufferView::chars(buf, line_start..end) {
+    // Iterate manually over line
+    for (current_idx, ch) in BufferView::chars(buf, line_start..end).enumerate() {
         if current_idx >= target_char_idx {
             break;
         }
@@ -739,7 +721,6 @@ pub fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) 
         } else {
             col += ch.render_width(col, tab_width);
         }
-        current_idx += 1;
     }
 
     col

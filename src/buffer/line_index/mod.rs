@@ -84,9 +84,6 @@ impl LineIndex {
         self.table.char_to_byte(char_index)
     }
 
-    // For compatibility with consumers expecting bytes, we might need helpers
-    // but ideally they should move to Character.
-
     pub fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
         self.table.bytes_range(range)
     }

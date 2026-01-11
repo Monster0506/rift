@@ -27,8 +27,6 @@ fn calculate_current_column(buf: &TextBuffer, tab_width: usize) -> usize {
 
     // Iterate chars from line start to cursor
     let mut col = 0;
-    // We can't easily slice buf.chars(range) efficiently without a proper iterator but checking our BufferView
-    // implementation: chars(range) is implemented.
     for ch in BufferView::chars(buf, line_start..cursor) {
         if ch == crate::character::Character::Tab {
             col = ((col / tab_width) + 1) * tab_width;
@@ -220,9 +218,6 @@ pub fn execute_command(
 
             if end > start {
                 // Forward deletion (e.g. dw)
-                // Cursor is at end. We want to delete [start, end).
-                // Move back to end (which we are at), then delete backward.
-                // Wait, if we are at end, deleting backward works.
                 let len = end - start;
                 for _ in 0..len {
                     // Use Document's delete_backward to track edits
@@ -230,8 +225,6 @@ pub fn execute_command(
                 }
             } else if end < start {
                 // Backward deletion (e.g. db)
-                // Cursor is at end. We want to delete [end, start).
-                // We are at end. delete_forward deletes chars to the right.
                 let len = start - end;
                 for _ in 0..len {
                     doc.delete_forward();

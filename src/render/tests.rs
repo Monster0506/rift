@@ -925,7 +925,6 @@ fn test_wrap_text_needs_wrapping() {
 fn test_wrap_text_long_word() {
     // If a word is longer than width, it should still be included (though layout might break visually,
     // the wrapping function shouldn't infinite loop or panic)
-    // Current implementation will put it on its own line but won't split the word
     let text = "a verylongword indeed";
     let wrapped = crate::render::wrap_text(text, 5);
     assert_eq!(
@@ -1012,8 +1011,6 @@ fn test_render_search_highlights_complex() {
     let mut buf = TextBuffer::new(100).unwrap();
     // "hello world\nagain world"
     buf.insert_str("hello world\nagain world").unwrap();
-    // Line 0: "hello world" (11 chars)
-    // Line 1: "again world" (11 chars)
 
     let viewport = Viewport::new(10, 80);
     let mut state = State::new();

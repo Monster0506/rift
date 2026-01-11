@@ -486,7 +486,6 @@ impl FloatingWindow {
             if let Some(line) = content.get(content_row) {
                 for (i, cell) in line.iter().take(content_width).enumerate() {
                     let col = start_col + 1 + i;
-                    // Use cell as is, but if it has no colors, apply window defaults?
                     let mut final_cell = cell.clone();
                     if final_cell.fg.is_none() {
                         final_cell.fg = fg;

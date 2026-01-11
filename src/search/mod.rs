@@ -80,10 +80,6 @@ pub fn find_all(
                     };
 
                     if !is_start {
-                        // Skip this match, look for next one
-                        // Important: Advance just past start, not whole match, to ensure we don't miss overlapping starts?
-                        // Literals don't usually overlap in a way that matters here (e.g. "fn" inside "afn").
-                        // But advancing by 1 is safe.
                         start_pos = m.range.start + 1;
                         continue;
                     }
@@ -112,16 +108,7 @@ pub fn find_all(
             let filter_char = if is_anchored {
                 // Skip ^
                 let mut chars = pattern.chars().skip(1);
-                if let Some(c) = chars.next() {
-                    // Only use if next char is regular literal (not regex syntax)
-                    if c.is_alphanumeric() {
-                        Some(c)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
+                chars.next().filter(|&c| c.is_alphanumeric())
             } else {
                 None
             };
@@ -313,8 +300,7 @@ fn check_complexity(pattern: &str) -> bool {
         // Check AST for specific features.
         ast.iter().any(is_node_complex)
     } else {
-        // If we can't parse it, assume it's simple or broken (will fail compile).
-        // Let's assume false and let compile_regex handle error.
+        // Failed to parse as AST. Treat as simple/literal for now; compile_regex will handle errors.
         false
     }
 }
@@ -335,9 +321,7 @@ fn is_node_complex(node: &AstNode) -> bool {
             nodes_vec.iter().any(|alt| alt.iter().any(is_node_complex))
         }
         AstNode::LookAhead { nodes, .. } | AstNode::LookBehind { nodes, .. } => {
-            // Lookarounds are complex by nature, but maybe handled by Backtracking perfectly fine?
-            // The user specifically mentioned "unbounded repetition".
-            // Let's return true if they contain complexity.
+            // Lookarounds imply complexity.
             nodes.iter().any(is_node_complex)
         }
         _ => false,
@@ -366,9 +350,6 @@ fn is_literal(pattern: &str) -> bool {
 }
 
 fn is_line_scoped(pattern: &str) -> bool {
-    // If it contains \n, it's full (unless explicitly handled, but for now we fallback).
-    // Relaxed: \s is allowed in LineScoped (might match newline locally if line includes it,
-    // but typically implies line-local search in editors).
     !pattern.contains("\\n") && !pattern.contains("(?s)")
 }
 
@@ -397,11 +378,7 @@ pub fn find_next(
                 Some(convert_match(&haystack, m))
             } else {
                 // Wrap around: Search from 0
-                if let Some(m) = re.find_from(haystack) {
-                    Some(convert_match(&haystack, m))
-                } else {
-                    None
-                }
+                re.find_from(haystack).map(|m| convert_match(&haystack, m))
             }
         }
         SearchDirection::Backward => {
@@ -426,7 +403,6 @@ pub fn find_next(
                     very_last = Some(m);
                 }
                 if let Some(m) = very_last {
-                    // Check if it's actually after start_pos (it effectively wraps to the end)
                     if m.start >= start_byte {
                         Some(convert_match(&haystack, m))
                     } else {
@@ -467,10 +443,6 @@ use monster_regex::engine::linear::LinearRegexEngine;
 use std::sync::Arc;
 
 /// A wrapper around either a Linear or Backtracking regex.
-///
-/// This allows us to prefer the O(n) Linear engine when possible, but fallback
-/// to Backtracking for patterns that use unsupported features (like lookarounds).
-/// We use Arc to enable cheap cloning for incremental search iterators.
 #[derive(Clone)]
 pub enum RiftRegex {
     Linear(Arc<Regex<LinearRegexEngine>>),
@@ -536,10 +508,7 @@ impl RiftRegex {
     }
 
     pub fn find_at(&self, text: &str, start: usize) -> Option<monster_regex::Match> {
-        // Fallback to find(text[start..]) and adjust offset?
-        // Linear engine doesn't expose find_at on &str directly in Regex wrapper easily without Slice?
-        // Actually the Backtracking engine implementation of find_at did slice.
-        // Let's use standard find() on slice.
+        // Use standard slicing for find_at, consistent with backtracking implementation
         if start > text.len() {
             return None;
         }
@@ -694,13 +663,11 @@ fn char_to_byte_offset(buffer: &impl BufferView, char_pos: usize) -> usize {
         buffer.len()
     };
 
-    let mut chars_counted = 0;
-    for c in buffer.chars(start..end) {
+    for (chars_counted, c) in buffer.chars(start..end).enumerate() {
         if chars_counted == char_offset_in_line {
             break;
         }
         current_byte += c.len_utf8();
-        chars_counted += 1;
     }
 
     current_byte

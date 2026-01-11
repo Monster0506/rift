@@ -26,7 +26,7 @@ impl Character {
             Character::Unicode(c) => write!(out, "{}", c),
             Character::Byte(b) => write!(out, "\\x{:02X}", b),
             Character::Tab => write!(out, "\t"),
-            Character::Newline => write!(out, "\n"),
+            Character::Newline => writeln!(out),
             Character::Control(b) => {
                 // Control chars are usually 0x00-0x1F. We map them to ^@, ^A, etc.
                 // 0 -> @ (64)

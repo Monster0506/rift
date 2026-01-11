@@ -98,14 +98,7 @@ pub fn resolve_input(key: Key) -> Option<InputIntent> {
                 None
             }
         }
-        // Handle control codes if needed?
-        // Current Insert mode logic handled Ctrl+Char -> InsertByte.
-        // We can replicate that if desired, or leave it to specific handlers.
-        // For "shared input", usually we only care about text.
-        // But let's support the existing behavior:
         Key::Ctrl(ch) => {
-            // Handle ctrl logic if we want to emulate existing insert mode behavior
-            // "Ctrl+A" -> '\u{1}'
             let ctrl_char = if ch.is_ascii_lowercase() {
                 (ch - b'a' + 1) as char
             } else if ch.is_ascii_uppercase() {

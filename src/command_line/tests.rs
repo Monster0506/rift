@@ -118,9 +118,6 @@ fn test_command_line_with_custom_border_chars() {
 
 #[test]
 fn test_command_line_word_movement() {
-    // We need to test State logic, but State is in another module.
-    // Rather than mocking State, we can test the logic if we could access it.
-    // Since we are in crate::command_line::tests, we can import State.
     use crate::state::State;
 
     let mut state = State::new();
@@ -130,15 +127,7 @@ fn test_command_line_word_movement() {
 
     // Move Left (Word)
     state.move_command_line_word_left();
-    // Should skip "world" and land on space or start of world?
-    // Implementation: skips whitespace (none), skips word chars ("dlrow"). Stops at space.
-    // Index of space is 5. "hello" is 0-4. Space is 5.
-    // Wait. "hello" (5 chars). Space is 5th char? 0,1,2,3,4. Space is 5.
-    // "world" is 6,7,8,9,10.
-    // Cursor initially at 11.
-    // Skip word chars: 10,9,8,7,6. Stop at 5.
-    // Cursor initially at 11.
-    // Logic confirms it moves to 6 (start of 'world').
+
     assert_eq!(
         state.command_line_cursor, 6,
         "Should move to start of 'world'"

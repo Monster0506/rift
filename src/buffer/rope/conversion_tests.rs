@@ -40,10 +40,7 @@ fn test_unicode_conversion() {
     // byte -> char
     assert_eq!(pt.byte_to_char(0), 0);
     assert_eq!(pt.byte_to_char(1), 1);
-    // Bytes 2, 3, 4 are inside the crab.
-    // Usually mapping byte offset -> char index implies "which char contains this byte"
-    // or "which char starts before or at this byte".
-    // Let's assume strict boundaries for now, or "char containing".
+    // Verify byteToChar mapping behavior for interior bytes
     // Robust implementations often map interior bytes to the start of the char.
     assert_eq!(pt.byte_to_char(2), 1);
     assert_eq!(pt.byte_to_char(3), 1);

@@ -17,16 +17,12 @@ impl MockBuffer {
         let mut line_starts = Vec::new();
         let mut offset = 0;
 
-        for (i, line) in lines.iter().enumerate() {
+        for (_, line) in lines.iter().enumerate() {
             line_starts.push(offset);
             for c in line.chars() {
                 chars.push(Character::from(c));
                 offset += 1;
             }
-            // Add implicit newline for all but arguably the last?
-            // Previous implementation: "Assume implicit newline after every line" (lines 24-25 in viewed file).
-            // "self.lines.iter().map(|l| l.chars().count() + 1).sum()"
-            // Yes, checks out.
             chars.push(Character::Newline);
             offset += 1;
         }
@@ -291,46 +287,21 @@ fn test_find_iter_incremental() {
     assert_eq!(m1.range, 0..5);
 
     let m2 = iter.next().unwrap();
-    // "hello world" (11) + \n (1) = 12. "hello again" starts at 12.
     assert_eq!(m2.range, 12..17);
 
     assert!(iter.next().is_none());
 }
 #[test]
 fn test_find_all_incremental_integration() {
-    // A pattern that triggers Incremental tier (unbounded repetition + broad match)
-    // "fn.*" would default to line-scoped if it didn't have \n, but .* is complex?
-    // Wait, capability check says .* is complex.
-    let pattern = "fn.*";
-    // Wait, is "fn.*" complex? check_complexity(".*") is true.
-    // "fn.*" parses as Literal("fn") then ZeroOrMore(Dot).
-    // is_node_complex(ZeroOrMore(Dot)) is true if Dot is broad. Yes.
-    // So "fn.*" should trigger Incremental.
-
-    // However, "fn.*" on a single line is fine. But Incremental supports it anyway.
-
     let buffer = MockBuffer::new(&["fn foo() {", "    return;", "}"]);
-    // "fn.*" matches "fn foo() {"
 
-    let (matches, stats) = find_all(&buffer, "fn.*").unwrap();
+    let (matches, _) = find_all(&buffer, "fn.*").unwrap();
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0].range, 0..10);
 
-    // Test multiline complex pattern
-    // "fn.*\\n.*return"
-    // This is complex.
     let query = "fn.*\\n.*return";
     let (matches2, _) = find_all(&buffer, query).unwrap();
     assert_eq!(matches2.len(), 1);
-    // Range: "fn foo() {\n    return"
-    // "fn foo() {": 10 chars + \n (1) = 11
-    // "    return": 10 chars.
-    // Total 0..21 ?
-    // Line 0: "fn foo() {" (length 10)
-    // Line 1: "    return;" (length 11)
-    // Matches "fn foo() {\n    return" -> 0..11 + 10 = 21.
-    // "return" length is 6. "    " is 4. total 10.
-    // So 0..21.
 
     assert_eq!(matches2[0].range, 0..21);
 }

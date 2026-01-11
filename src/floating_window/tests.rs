@@ -157,9 +157,7 @@ fn test_floating_window_content_truncation() {
     // Cell at position 10 should be 'i' (10th char, 0-indexed = 9)
     let cell = layer.get_cell(pos.0 as usize, pos.1 as usize + 9);
     assert!(cell.is_some());
-    assert_eq!(cell.unwrap().content, Character::from(' ')); // 'a' from "a very" - wait, let me check
-
-    // Actually "This is a " is 10 chars, so position 9 (0-indexed) = ' ' (space after 'a')
+    assert_eq!(cell.unwrap().content, Character::from(' '));
 }
 
 #[test]
