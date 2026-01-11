@@ -91,19 +91,8 @@ impl<T: TerminalBackend> Editor<T> {
             document_manager.add_document(new_doc);
         }
 
-        // Try to load syntax for the active document
-        if let Some(doc) = document_manager.active_document_mut() {
-            if let Some(path) = doc.path() {
-                if let Ok(loaded_lang) = language_loader.load_language_for_file(path) {
-                    let highlights = language_loader
-                        .load_query(&loaded_lang.name, "highlights")
-                        .ok();
-                    if let Ok(syntax) = crate::syntax::Syntax::new(loaded_lang, highlights) {
-                        doc.set_syntax(syntax);
-                    }
-                }
-            }
-        }
+        // Syntax loading moved to post-initialization
+        // ...
 
         // Initialize terminal (clears screen, enters raw mode, etc.)
         // We do this AFTER loading the document so we don't mess up the terminal
@@ -153,6 +142,51 @@ impl<T: TerminalBackend> Editor<T> {
             let revision = doc.buffer.revision;
             let job = crate::job_manager::jobs::CacheWarmingJob::new(table, revision);
             editor.job_manager.spawn(job);
+        }
+
+        // Trigger initial syntax parse
+        if let Some(doc) = editor.document_manager.active_document_mut() {
+            if let Some(path) = doc.path() {
+                let path = path.to_path_buf();
+                // Load language
+                if let Ok(loaded) = editor.language_loader.load_language_for_file(&path) {
+                    // Load and compile query
+                    // Load and compile query
+                    let highlights_query = editor
+                        .language_loader
+                        .load_query(&loaded.name, "highlights")
+                        .ok()
+                        .and_then(|source| tree_sitter::Query::new(&loaded.language, &source).ok())
+                        .map(Arc::new);
+
+                    if let Ok(syntax) = crate::syntax::Syntax::new(loaded, highlights_query) {
+                        doc.set_syntax(syntax);
+                        let doc_id = doc.id;
+                        editor.spawn_syntax_parse_job(doc_id);
+                    }
+                }
+            }
+        }
+
+        // Trigger initial syntax parse
+        if let Some(doc) = editor.document_manager.active_document_mut() {
+            if let Some(path) = doc.path() {
+                let path = path.to_path_buf();
+                // Load language
+                if let Ok(loaded) = editor.language_loader.load_language_for_file(&path) {
+                    let highlights = editor
+                        .language_loader
+                        .load_query(&loaded.name, "highlights")
+                        .ok()
+                        .and_then(|source| tree_sitter::Query::new(&loaded.language, &source).ok())
+                        .map(Arc::new);
+                    if let Ok(syntax) = crate::syntax::Syntax::new(loaded, highlights) {
+                        doc.set_syntax(syntax);
+                        let doc_id = doc.id;
+                        editor.spawn_syntax_parse_job(doc_id);
+                    }
+                }
+            }
         }
 
         Ok(editor)
@@ -229,7 +263,7 @@ impl<T: TerminalBackend> Editor<T> {
         let end_byte = doc.buffer.char_to_byte(end_char);
 
         let highlights = if let Some(syntax) = doc.syntax.as_mut() {
-            Some(syntax.highlights(&doc.buffer, Some(start_byte..end_byte)))
+            Some(syntax.highlights(Some(start_byte..end_byte)))
         } else {
             None
         };
@@ -284,20 +318,40 @@ impl<T: TerminalBackend> Editor<T> {
         self.document_manager.open_file(file_path, force)?;
 
         // Ensure syntax is loaded for the new/reloaded document
-        if let Some(doc) = self.document_manager.active_document_mut() {
+        let doc_id_to_spawn = if let Some(doc) = self.document_manager.active_document_mut() {
             if doc.syntax.is_none() {
                 if let Some(path) = doc.path() {
-                    if let Ok(loaded_lang) = self.language_loader.load_language_for_file(path) {
+                    let path = path.to_path_buf();
+                    if let Ok(loaded) = self.language_loader.load_language_for_file(&path) {
                         let highlights = self
                             .language_loader
-                            .load_query(&loaded_lang.name, "highlights")
-                            .ok();
-                        if let Ok(syntax) = crate::syntax::Syntax::new(loaded_lang, highlights) {
+                            .load_query(&loaded.name, "highlights")
+                            .ok()
+                            .and_then(|source| {
+                                tree_sitter::Query::new(&loaded.language, &source).ok()
+                            })
+                            .map(Arc::new);
+                        if let Ok(syntax) = crate::syntax::Syntax::new(loaded, highlights) {
                             doc.set_syntax(syntax);
+                            Some(doc.id)
+                        } else {
+                            None
                         }
+                    } else {
+                        None
                     }
+                } else {
+                    None
                 }
+            } else {
+                None
             }
+        } else {
+            None
+        };
+
+        if let Some(doc_id) = doc_id_to_spawn {
+            self.spawn_syntax_parse_job(doc_id);
         }
 
         // Trigger background search cache warming
@@ -355,7 +409,7 @@ impl<T: TerminalBackend> Editor<T> {
             const MAX_JOB_MESSAGES: usize = 10;
             while processed_jobs < MAX_JOB_MESSAGES {
                 if let Ok(msg) = self.job_manager.receiver().try_recv() {
-                    self.handle_job_message(msg);
+                    self.handle_job_message(msg)?;
                     processed_jobs += 1;
                 } else {
                     break;
@@ -412,6 +466,11 @@ impl<T: TerminalBackend> Editor<T> {
                                                 crate::constants::errors::UNDO_ERROR,
                                                 format!("Failed to go to sequence {}: {}", seq, e),
                                             ));
+                                        }
+                                        if let Some(doc_id) =
+                                            self.document_manager.active_document_id()
+                                        {
+                                            self.spawn_syntax_parse_job(doc_id);
                                         }
                                         // Close modal
                                         self.close_active_modal();
@@ -562,6 +621,10 @@ impl<T: TerminalBackend> Editor<T> {
                         // Mark document dirty is handled by Document methods now
                         // Update search highlights if active
                         self.update_search_highlights();
+                        // If buffer changed, re-parse syntax
+                        if let Some(doc_id) = self.document_manager.active_document_id() {
+                            self.spawn_syntax_parse_job(doc_id);
+                        }
                     }
                 }
 
@@ -838,7 +901,7 @@ impl<T: TerminalBackend> Editor<T> {
         let end_byte = doc.buffer.char_to_byte(end_char);
 
         let highlights = if let Some(syntax) = doc.syntax.as_mut() {
-            Some(syntax.highlights(&doc.buffer, Some(start_byte..end_byte)))
+            Some(syntax.highlights(Some(start_byte..end_byte)))
         } else {
             None
         };
@@ -1113,6 +1176,9 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 self.state.clear_command_line();
                 self.update_search_highlights();
+                if let Some(doc_id) = self.document_manager.active_document_id() {
+                    self.spawn_syntax_parse_job(doc_id);
+                }
             }
             ExecutionResult::Redo { count } => {
                 let doc = self.document_manager.active_document_mut().unwrap();
@@ -1133,6 +1199,9 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 self.state.clear_command_line();
                 self.update_search_highlights();
+                if let Some(doc_id) = self.document_manager.active_document_id() {
+                    self.spawn_syntax_parse_job(doc_id);
+                }
             }
             ExecutionResult::UndoGoto { seq } => {
                 let doc = self.document_manager.active_document_mut().unwrap();
@@ -1142,6 +1211,9 @@ impl<T: TerminalBackend> Editor<T> {
                             crate::notification::NotificationType::Info,
                             format!("Jumped to edit #{}", seq),
                         );
+                        if let Some(doc_id) = self.document_manager.active_document_id() {
+                            self.spawn_syntax_parse_job(doc_id);
+                        }
                     }
                     Err(e) => {
                         self.state.handle_error(RiftError::new(
@@ -1233,14 +1305,45 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    fn spawn_syntax_parse_job(&mut self, doc_id: crate::document::DocumentId) {
+        use crate::job_manager::jobs::syntax::SyntaxParseJob;
+        use tree_sitter::Parser;
+
+        if let Some(doc) = self.document_manager.get_document(doc_id) {
+            if let Some(syntax) = &doc.syntax {
+                // Create parser
+                let mut parser = Parser::new();
+                if parser.set_language(&syntax.language).is_err() {
+                    return;
+                }
+
+                let job = SyntaxParseJob::new(
+                    doc.buffer.clone(),
+                    parser,
+                    doc.syntax.as_ref().and_then(|s| s.tree.clone()),
+                    doc.syntax.as_ref().and_then(|s| s.highlights_query.clone()),
+                    doc.syntax
+                        .as_ref()
+                        .map(|s| s.language_name.clone())
+                        .unwrap_or_default(),
+                    doc_id,
+                );
+
+                self.job_manager.spawn(job);
+            }
+        }
+    }
+
     /// Handle a message from a background job
-    fn handle_job_message(&mut self, message: crate::job_manager::JobMessage) {
+    fn handle_job_message(&mut self, msg: crate::job_manager::JobMessage) -> Result<(), RiftError> {
+        use crate::job_manager::jobs::syntax::SyntaxParseResult;
         use crate::job_manager::JobMessage;
+        // Parser import not needed here
 
         // Update manager state
-        self.job_manager.update_job_state(&message);
+        self.job_manager.update_job_state(&msg);
 
-        match message {
+        match msg {
             JobMessage::Started(id, silent) => {
                 if !silent {
                     self.state.notify(
@@ -1282,20 +1385,34 @@ impl<T: TerminalBackend> Editor<T> {
                 );
             }
             JobMessage::Custom(_id, payload) => {
-                // Downcast to ByteLineMap
-                if let Ok(map) = payload
-                    .into_any()
-                    .downcast::<crate::buffer::byte_map::ByteLineMap>()
-                {
-                    // Update active document if revision matches
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        if doc.buffer.revision == map.revision {
-                            *doc.buffer.byte_map_cache.borrow_mut() = Some(*map);
-                            if self.state.debug_mode {
-                                self.state.notify(
-                                    crate::notification::NotificationType::Info,
-                                    "Search cache warmed".to_string(),
-                                );
+                let any_payload = payload.into_any();
+
+                // Try SyntaxParseResult
+                match any_payload.downcast::<SyntaxParseResult>() {
+                    Ok(result) => {
+                        let doc_id = result.document_id;
+                        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                            if let Some(syntax) = &mut doc.syntax {
+                                syntax.update_from_result(*result);
+                                self.force_full_redraw()?;
+                            }
+                        }
+                    }
+                    Err(any_payload) => {
+                        // Try ByteLineMap (CacheWarmingJob)
+                        if let Ok(map) =
+                            any_payload.downcast::<crate::buffer::byte_map::ByteLineMap>()
+                        {
+                            if let Some(doc) = self.document_manager.active_document_mut() {
+                                if doc.buffer.revision == map.revision {
+                                    *doc.buffer.byte_map_cache.borrow_mut() = Some(*map);
+                                    if self.state.debug_mode {
+                                        self.state.notify(
+                                            crate::notification::NotificationType::Info,
+                                            "Search cache warmed".to_string(),
+                                        );
+                                    }
+                                }
                             }
                         }
                     }
@@ -1305,6 +1422,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Periodic cleanup of finished jobs
         self.job_manager.cleanup_finished_jobs();
+        Ok(())
     }
 
     /// Update search highlights based on current buffer state

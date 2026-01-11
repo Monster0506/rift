@@ -127,10 +127,6 @@ impl Document {
 
     pub fn set_syntax(&mut self, syntax: Syntax) {
         self.syntax = Some(syntax);
-        // Initial parse
-        if let Some(s) = &mut self.syntax {
-            s.parse(&self.buffer);
-        }
     }
 
     // --- Mutation Wrappers ---
@@ -180,7 +176,7 @@ impl Document {
         };
 
         if let Some(syntax) = &mut self.syntax {
-            syntax.update(edit, &self.buffer);
+            syntax.update_tree(&edit);
         }
 
         Ok(())
@@ -220,7 +216,7 @@ impl Document {
         };
 
         if let Some(syntax) = &mut self.syntax {
-            syntax.update(edit, &self.buffer);
+            syntax.update_tree(&edit);
         }
         Ok(())
     }
@@ -278,7 +274,7 @@ impl Document {
             };
 
             if let Some(syntax) = &mut self.syntax {
-                syntax.update(edit, &self.buffer);
+                syntax.update_tree(&edit);
             }
             return true;
         }
@@ -332,7 +328,7 @@ impl Document {
             };
 
             if let Some(syntax) = &mut self.syntax {
-                syntax.update(edit, &self.buffer);
+                syntax.update_tree(&edit);
             }
             return true;
         }
@@ -525,7 +521,8 @@ impl Document {
 
         // Force full reparse (incremental parse would have stale positions)
         if let Some(syntax) = &mut self.syntax {
-            syntax.reparse(&self.buffer);
+            // Invalidate tree so next job forces full parse
+            syntax.tree = None;
         }
 
         true
@@ -559,7 +556,7 @@ impl Document {
 
         // Force full reparse (incremental parse would have stale positions)
         if let Some(syntax) = &mut self.syntax {
-            syntax.reparse(&self.buffer);
+            syntax.tree = None;
         }
 
         true
@@ -708,7 +705,7 @@ impl Document {
 
         // Force full reparse
         if let Some(syntax) = &mut self.syntax {
-            syntax.reparse(&self.buffer);
+            syntax.tree = None;
         }
 
         Ok(())

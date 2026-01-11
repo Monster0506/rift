@@ -119,7 +119,7 @@ impl UserSettings {
         };
 
         // Apply default Dark theme
-        let default_theme = Theme::dark();
+        let default_theme = Theme::gruvbox();
         settings.apply_theme(&default_theme);
 
         settings

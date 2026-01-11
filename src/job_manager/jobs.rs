@@ -4,6 +4,8 @@ use crate::character::Character;
 use crate::job_manager::{CancellationSignal, Job, JobMessage};
 use std::sync::mpsc::Sender;
 
+pub mod syntax;
+
 /// Job to warm the search cache (byte offsets for lines)
 #[derive(Debug)]
 pub struct CacheWarmingJob {

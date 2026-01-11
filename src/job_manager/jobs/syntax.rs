@@ -1,0 +1,160 @@
+use crate::buffer::TextBuffer;
+use crate::job_manager::{CancellationSignal, Job, JobMessage};
+use std::sync::mpsc::Sender;
+use streaming_iterator::StreamingIterator;
+use tree_sitter::{Parser, Query, QueryCursor, Tree};
+
+#[derive(Debug)]
+pub struct SyntaxParseResult {
+    pub tree: Option<Tree>,
+    pub highlights: Vec<(std::ops::Range<usize>, String)>,
+    pub language_name: String,
+    pub document_id: u64,
+}
+
+impl crate::job_manager::JobPayload for SyntaxParseResult {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+}
+
+// Manual Debug because Parser and TextBuffer might not impl Debug
+pub struct SyntaxParseJob {
+    buffer: TextBuffer,
+    parser: Parser,
+    old_tree: Option<Tree>,
+    highlights_query: Option<std::sync::Arc<Query>>,
+    language_name: String,
+    document_id: u64,
+}
+
+impl std::fmt::Debug for SyntaxParseJob {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SyntaxParseJob")
+            .field("language_name", &self.language_name)
+            .field("buffer_len", &self.buffer.len())
+            .field("has_old_tree", &self.old_tree.is_some())
+            .field("has_query", &self.highlights_query.is_some())
+            .finish()
+    }
+}
+
+impl SyntaxParseJob {
+    pub fn new(
+        buffer: TextBuffer,
+        parser: Parser,
+        old_tree: Option<Tree>,
+        highlights_query: Option<std::sync::Arc<Query>>,
+        language_name: String,
+        document_id: u64,
+    ) -> Self {
+        Self {
+            buffer,
+            parser,
+            old_tree,
+            highlights_query,
+            language_name,
+            document_id,
+        }
+    }
+}
+
+impl Job for SyntaxParseJob {
+    fn run(mut self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
+        if signal.is_cancelled() {
+            return;
+        }
+
+        // Destructure to avoid partial moves
+        let SyntaxParseJob {
+            buffer,
+            mut parser,
+            old_tree,
+            highlights_query,
+            language_name,
+            document_id,
+        } = *self;
+
+        // Parse
+        let mut text = buffer; // buffer is now local
+        let mut iter = text.iter();
+        let mut position = 0;
+
+        let mut callback = |byte_offset: usize, _point: tree_sitter::Point| -> Vec<u8> {
+            if byte_offset != position {
+                let char_idx = text.byte_to_char(byte_offset);
+                iter = text.iter_at(char_idx);
+                position = byte_offset;
+            }
+
+            let mut buf = Vec::with_capacity(1024);
+            for _ in 0..256 {
+                if let Some(c) = iter.next() {
+                    c.encode_utf8(&mut buf);
+                } else {
+                    break;
+                }
+            }
+            position += buf.len();
+            buf
+        };
+
+        let tree = parser.parse_with(&mut callback, old_tree.as_ref());
+
+        if signal.is_cancelled() {
+            return;
+        }
+
+        // Highlights
+        let mut highlights = Vec::new();
+        if let (Some(tree), Some(query)) = (&tree, &highlights_query) {
+            let root_node = tree.root_node();
+            let full_bytes = text.to_logical_bytes();
+
+            let mut cursor = QueryCursor::new();
+            cursor.set_byte_range(0..full_bytes.len());
+
+            let mut matches = cursor.matches(query, root_node, full_bytes.as_slice());
+
+            while let Some(m) = matches.next() {
+                if signal.is_cancelled() {
+                    return;
+                }
+                for capture in m.captures {
+                    let range = capture.node.byte_range();
+                    let capture_name = query.capture_names()[capture.index as usize].to_string();
+                    highlights.push((range, capture_name));
+                }
+            }
+        }
+
+        let result = SyntaxParseResult {
+            tree,
+            highlights,
+            language_name,
+            document_id,
+        };
+
+        let _ = sender.send(JobMessage::Custom(id, Box::new(result)));
+        // Return parser back? No, parser is consumed. We need to reconstruct it or pass it back if we want to reuse it.
+        // But Job consumes Self. Parser is cheap enough to create new? No, set_language is cheap.
+        // Actually, we might want to return the parser in the result so the main thread can reuse it for the next job.
+        // But Parser is not Clone. We can put it in the result.
+        // Wait, the result must be JobPayload (Any + Send + Debug). Parser is Send? Yes. Debug? No, tree-sitter Parser doesn't implement Debug in older versions, checking recent... 0.20+ usually does.
+        // Let's assume we create a new parser next time or pass it back.
+        // For efficiency, maintaining one parser instance per document is better.
+        // Let's allow SyntaxParseResult to carry the parser back.
+
+        let _ = sender.send(JobMessage::Finished(id, true));
+    }
+
+    fn is_silent(&self) -> bool {
+        true
+    }
+}
