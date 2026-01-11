@@ -7,6 +7,7 @@ use monster_regex::{Haystack, HaystackCursor};
 pub struct BufferHaystackContext<'a, B: BufferView + ?Sized> {
     buffer: &'a B,
     line_byte_starts: Vec<usize>,
+    line_char_starts: Vec<usize>,
 }
 
 impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
@@ -23,6 +24,7 @@ impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
                     return Self {
                         buffer,
                         line_byte_starts: map.line_starts.clone(),
+                        line_char_starts: map.line_char_starts.clone(),
                     };
                 }
             }
@@ -30,8 +32,11 @@ impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
             // Cache miss or stale: rebuild
             let line_count = buffer.line_count();
             let mut line_byte_starts = Vec::with_capacity(line_count + 1);
+            let mut line_char_starts = Vec::with_capacity(line_count + 1);
             let mut current_offset = 0;
+            let mut current_char_offset = 0; // Track char offset
             line_byte_starts.push(0);
+            line_char_starts.push(0);
 
             for i in 0..line_count {
                 let start = buffer.line_start(i);
@@ -41,44 +46,60 @@ impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
                     buffer.len()
                 };
                 let mut line_len = 0;
+                let mut line_char_len = 0;
                 for c in buffer.chars(start..end) {
                     line_len += c.len_utf8();
+                    line_char_len += 1;
                 }
                 current_offset += line_len;
+                current_char_offset += line_char_len;
                 line_byte_starts.push(current_offset);
+                line_char_starts.push(current_char_offset);
             }
 
             // Update cache
             *cache = Some(crate::buffer::byte_map::ByteLineMap::new(
                 line_byte_starts.clone(),
+                line_char_starts.clone(),
                 current_rev,
             ));
 
             return Self {
                 buffer,
                 line_byte_starts,
+                line_char_starts,
             };
         }
 
-        // No cache available fallback
+        // No cache available fallback (unlikely in Editor but possible in tests)
         let line_count = buffer.line_count();
         let mut line_byte_starts = Vec::with_capacity(line_count + 1);
+        let mut line_char_starts = Vec::with_capacity(line_count + 1);
 
         line_byte_starts.push(0);
+        line_char_starts.push(0);
+        // Note: In fallback without cache, we might not have efficient way to get char starts without scanning.
+        // But this path is for "BufferView without byte_line_map support" (e.g. MockBuffer).
+        // MockBuffer is small, so we can iterate.
+        // Or we can rely on `buffer.line_start` if available.
+
         for i in 0..line_count {
-            let next_line_start_byte = if i + 1 < line_count {
-                let next_char = buffer.line_start(i + 1);
-                buffer.char_to_byte(next_char)
+            let next_line_start_char = if i + 1 < line_count {
+                buffer.line_start(i + 1)
             } else {
-                buffer.char_to_byte(buffer.len())
+                buffer.len()
             };
 
+            let next_line_start_byte = buffer.char_to_byte(next_line_start_char);
+
             line_byte_starts.push(next_line_start_byte);
+            line_char_starts.push(next_line_start_char);
         }
 
         Self {
             buffer,
             line_byte_starts,
+            line_char_starts,
         }
     }
 
@@ -86,6 +107,7 @@ impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
         BufferHaystack {
             buffer: self.buffer,
             line_byte_starts: &self.line_byte_starts,
+            line_char_starts: &self.line_char_starts,
         }
     }
 }
@@ -101,6 +123,7 @@ impl<'a, B: BufferView + ?Sized> Copy for BufferHaystack<'a, B> {}
 pub struct BufferHaystack<'a, B: BufferView + ?Sized> {
     buffer: &'a B,
     line_byte_starts: &'a [usize],
+    line_char_starts: &'a [usize],
 }
 
 impl<'a, B: BufferView + ?Sized> BufferHaystack<'a, B> {
@@ -203,22 +226,35 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
 
         let (line_idx, offset_in_line) = self.find_line_for_byte(pos)?;
 
-        let start = self.buffer.line_start(line_idx);
-        let end = if line_idx + 1 < self.buffer.line_count() {
-            self.buffer.line_start(line_idx + 1)
-        } else {
-            self.buffer.len()
-        };
+        // Critical Optimization: Use cached char start for the line
+        // buffer.line_start(i) is slow for huge lines/files (O(N) scan).
+        // line_char_starts[line_idx] is O(1) lookup.
+        let line_start_char_idx = self.line_char_starts[line_idx];
+
+        // offset_in_line is byte offset within the line.
+        // We need to find the character at that byte offset.
 
         let mut current_byte = 0;
-        for c in self.buffer.chars(start..end) {
+        // Start iterating from the *line start* (using fast iter_at via char index)
+        // buffer.iter_at is O(log N)
+        // This avoids scanning from the beginning of a huge piece.
+        let iter = self.buffer.iter_at(line_start_char_idx);
+
+        for c in iter {
             if current_byte == offset_in_line {
                 return Some((c.to_char_lossy(), c.len_utf8()));
             }
             current_byte += c.len_utf8();
             if current_byte > offset_in_line {
-                return None;
+                return None; // Mid-character
             }
+            // Check if we passed newline (end of line scope for this haystack logic)
+            // Actually, haystack treats the whole file as contiguous bytes,
+            // but `find_line_for_byte` segments it.
+            // We just need to ensure we don't go forever.
+            // The loop naturally terminates if we overshoot offset_in_line.
+            // But for safety/correctness if multiple lines involved?
+            // find_line_for_byte guarantees pos is within line boundary bytes.
         }
 
         None
@@ -230,20 +266,19 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
         }
         let (line_idx, offset_in_line_prev) = self.find_line_for_byte(pos - 1)?;
 
-        let start = self.buffer.line_start(line_idx);
-        let end = if line_idx + 1 < self.buffer.line_count() {
-            self.buffer.line_start(line_idx + 1)
-        } else {
-            self.buffer.len()
-        };
+        let line_start_char_idx = self.line_char_starts[line_idx];
+        let iter = self.buffer.iter_at(line_start_char_idx);
 
         let mut current_byte = 0;
-        for c in self.buffer.chars(start..end) {
+        for c in iter {
             let len = c.len_utf8();
             if current_byte + len == offset_in_line_prev + 1 {
                 return Some(c.to_char_lossy());
             }
             current_byte += len;
+            if current_byte > offset_in_line_prev {
+                break;
+            }
         }
         None
     }
@@ -287,23 +322,37 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
     }
 
     fn find_byte(&self, byte: u8, pos: usize) -> Option<usize> {
+        if pos >= *self.line_byte_starts.last()? {
+            return None;
+        }
+
+        // Find line for start byte
         let (mut line_idx, mut offset_in_line) = self.find_line_for_byte(pos)?;
 
         // Iterate line by line
         while line_idx < self.buffer.line_count() {
-            let start = self.buffer.line_start(line_idx);
-            let end = if line_idx + 1 < self.buffer.line_count() {
-                self.buffer.line_start(line_idx + 1)
-            } else {
-                self.buffer.len()
-            };
+            let line_start_char_idx = self.line_char_starts[line_idx];
+            // Iterate from start of this line
+            let iter = self.buffer.iter_at(line_start_char_idx);
 
             let mut current_byte = 0;
-            for c in self.buffer.chars(start..end) {
+            // Limit iteration to this line?
+            // iter_at iterates to end of buffer. We need to stop at next line start or just count bytes.
+            // We can check if we exceeded line byte length.
+
+            for c in iter {
                 let len = c.len_utf8();
+
+                // Check if we crossed into next line?
+                // Actually easier: iterate chars, check bytes.
+                // But we need to update `line_idx` manually if we cross lines which iter doesn't tell us easily
+                // unless we check newline char.
 
                 if current_byte >= offset_in_line {
                     // Check bytes of this character
+                    // ... (match c logic) ...
+                    // Since match c logic is just "does this char contain byte?", we can use it.
+
                     match c {
                         Character::Unicode(ch) => {
                             let mut buf = [0u8; 4];
@@ -330,6 +379,15 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
                                 let offset_from_line_start = self.line_byte_starts[line_idx];
                                 return Some(offset_from_line_start + current_byte);
                             }
+                            // Move to next line logic
+                            // If we found it, returned. If not, and it's newline, we are entering next line.
+                            // But line_idx increments?
+                            // Actually, loop structure "iterate line by line" is better preserved
+                            // by breaking at newline and continuing outer loop.
+                            line_idx += 1;
+                            offset_in_line = 0;
+                            // Need to break inner loop to get next line_start_char_idx from array
+                            break;
                         }
                         Character::Control(b) => {
                             if b == byte {
@@ -341,9 +399,13 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
                 }
                 current_byte += len;
             }
-            // Move to next line
-            line_idx += 1;
-            offset_in_line = 0;
+
+            // If we broke out due to newline, we continue while loop.
+            // If we ran out of chars (EOF), loop finishes.
+            if line_idx >= self.line_char_starts.len() {
+                // Safety
+                break;
+            }
         }
 
         None

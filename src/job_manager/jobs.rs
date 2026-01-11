@@ -23,10 +23,13 @@ impl CacheWarmingJob {
 impl Job for CacheWarmingJob {
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         let mut line_starts = Vec::new();
-        line_starts.push(0); // Line 0 starts at byte 0
+        let mut line_char_starts = Vec::new(); // New: Cache char offsets
+        line_starts.push(0);
+        line_char_starts.push(0);
 
         // Fast/optimized scanning using chunks
         let mut current_byte_offset = 0;
+        let mut current_char_offset = 0;
 
         // We only need to check for newlines.
         // PieceTableChunkIterator yields &[Character].
@@ -41,15 +44,17 @@ impl Job for CacheWarmingJob {
             for char in chunk {
                 let len = char.len_utf8();
                 current_byte_offset += len;
+                current_char_offset += 1;
 
                 if matches!(char, Character::Newline) {
                     line_starts.push(current_byte_offset);
+                    line_char_starts.push(current_char_offset);
                 }
             }
         }
 
         // Construct the result
-        let result = ByteLineMap::new(line_starts, self.revision);
+        let result = ByteLineMap::new(line_starts, line_char_starts, self.revision);
 
         // Send back
         let _ = sender.send(JobMessage::Custom(id, Box::new(result)));

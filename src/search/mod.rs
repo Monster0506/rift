@@ -637,26 +637,40 @@ pub fn compile_regex(query: &str) -> Result<(RiftRegex, String), RiftError> {
 /// This matches the logic of `BufferHaystack`'s virtual buffer (byte counting).
 fn char_to_byte_offset(buffer: &impl BufferView, char_pos: usize) -> usize {
     let line_idx = find_line_index(buffer, char_pos);
-    let line_start = buffer.line_start(line_idx);
-    let char_offset_in_line = char_pos - line_start;
+    let line_start_char = buffer.line_start(line_idx);
+    let offset_in_line_chars = char_pos.saturating_sub(line_start_char);
 
-    let mut current_byte = 0;
+    let mut byte_offset = 0;
+    let mut found_start = false;
 
-    // 1. Sum previous lines
-    for i in 0..line_idx {
-        let start = buffer.line_start(i);
-        let end = if i + 1 < buffer.line_count() {
-            buffer.line_start(i + 1)
-        } else {
-            buffer.len()
-        };
-        for c in buffer.chars(start..end) {
-            current_byte += c.len_utf8();
+    // Fast path: use cached byte map
+    if let Some(cell) = buffer.byte_line_map() {
+        if let Some(map) = cell.borrow().as_ref() {
+            if map.revision == buffer.revision() && line_idx < map.line_starts.len() {
+                byte_offset = map.line_starts[line_idx];
+                found_start = true;
+            }
         }
     }
 
-    // 2. Add bytes in current line up to char_offset_in_line
-    let start = buffer.line_start(line_idx);
+    if !found_start {
+        // Slow path: Sum previous lines manually (O(N))
+        for i in 0..line_idx {
+            let start = buffer.line_start(i);
+            let end = if i + 1 < buffer.line_count() {
+                buffer.line_start(i + 1)
+            } else {
+                buffer.len()
+            };
+            for c in buffer.chars(start..end) {
+                byte_offset += c.len_utf8();
+            }
+        }
+    }
+
+    // Add byte offset within the current line
+    // We only need to iterate "offset_in_line_chars" characters
+    let start = line_start_char;
     let end = if line_idx + 1 < buffer.line_count() {
         buffer.line_start(line_idx + 1)
     } else {
@@ -664,13 +678,13 @@ fn char_to_byte_offset(buffer: &impl BufferView, char_pos: usize) -> usize {
     };
 
     for (chars_counted, c) in buffer.chars(start..end).enumerate() {
-        if chars_counted == char_offset_in_line {
+        if chars_counted == offset_in_line_chars {
             break;
         }
-        current_byte += c.len_utf8();
+        byte_offset += c.len_utf8();
     }
 
-    current_byte
+    byte_offset
 }
 
 /// Helper to find which line index a code-point offset belongs to.

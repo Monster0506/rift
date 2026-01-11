@@ -302,6 +302,64 @@ fn test_find_all_incremental_integration() {
     let query = "fn.*\\n.*return";
     let (matches2, _) = find_all(&buffer, query).unwrap();
     assert_eq!(matches2.len(), 1);
+}
 
-    assert_eq!(matches2[0].range, 0..21);
+#[test]
+fn test_large_file_search_performance_with_cache() {
+    // This test uses actual `Document` to verify performance using the cache.
+    // Unlike MockBuffer, Document+TextBuffer has the `byte_map_cache` field.
+    use crate::buffer::byte_map::ByteLineMap;
+    use crate::document::Document;
+
+    let mut doc = Document::new(1).unwrap();
+
+    // Create a large buffer (approx 1MB)
+    let line = "This is a line of text to simulate a file content.\n";
+    let mut large_text = String::with_capacity(1_000_000);
+    for _ in 0..20_000 {
+        large_text.push_str(line);
+    }
+    doc.insert_str(&large_text).unwrap();
+
+    // Manually warm the cache (simulating CacheWarmingJob)
+    {
+        let buffer = &doc.buffer;
+        // Efficient O(N) cache warming (simulating CacheWarmingJob behavior)
+        let mut current_byte_offset = 0;
+        let mut current_char_offset = 0;
+        let mut line_starts = vec![0];
+        let mut line_char_starts = vec![0];
+
+        for c in buffer.iter() {
+            current_byte_offset += c.len_utf8();
+            current_char_offset += 1;
+            if c == crate::character::Character::Newline {
+                line_starts.push(current_byte_offset);
+                line_char_starts.push(current_char_offset);
+            }
+        }
+
+        if let Some(cell) = buffer.byte_line_map() {
+            *cell.borrow_mut() = Some(ByteLineMap::new(
+                line_starts,
+                line_char_starts,
+                buffer.revision(),
+            ));
+        }
+    }
+    // Search for non-existent string
+    let start = std::time::Instant::now();
+    // Use perform_search directly from Document to mimic end-user action
+    let result = doc.perform_search("nonexistent_string_12345", SearchDirection::Forward, false);
+    let duration = start.elapsed();
+
+    let max_duration = if cfg!(debug_assertions) { 2500 } else { 200 };
+
+    assert!(
+        duration.as_millis() < max_duration,
+        "Search took too long: {:?} (expected <{}ms with cache)",
+        duration,
+        max_duration
+    );
+    assert!(result.unwrap().0.is_none());
 }

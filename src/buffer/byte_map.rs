@@ -3,13 +3,15 @@
 #[derive(Debug, Clone)]
 pub struct ByteLineMap {
     pub line_starts: Vec<usize>,
+    pub line_char_starts: Vec<usize>,
     pub revision: u64,
 }
 
 impl ByteLineMap {
-    pub fn new(line_starts: Vec<usize>, revision: u64) -> Self {
+    pub fn new(line_starts: Vec<usize>, line_char_starts: Vec<usize>, revision: u64) -> Self {
         Self {
             line_starts,
+            line_char_starts,
             revision,
         }
     }
