@@ -1,6 +1,3 @@
-//! Command executor
-//! Executes parsed commands and updates editor state
-
 use crate::buffer::api::BufferView;
 use crate::command_line::commands::ParsedCommand;
 use crate::command_line::settings::SettingsRegistry;
@@ -10,7 +7,7 @@ use crate::state::State;
 use crate::state::UserSettings;
 
 /// Result of executing a command
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum ExecutionResult {
     /// Command executed successfully
     Success,
@@ -62,7 +59,47 @@ pub enum ExecutionResult {
     UndoTree {
         content: crate::state::OverlayContent,
     },
+    /// Spawn a background job
+    SpawnJob(Box<dyn crate::job_manager::Job>),
 }
+
+impl PartialEq for ExecutionResult {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Success, Self::Success) => true,
+            (Self::Quit { bangs: b1 }, Self::Quit { bangs: b2 }) => b1 == b2,
+            (Self::Write, Self::Write) => true,
+            (Self::WriteAndQuit, Self::WriteAndQuit) => true,
+            (Self::Failure, Self::Failure) => true,
+            (Self::Redraw, Self::Redraw) => true,
+            (
+                Self::Edit {
+                    path: p1,
+                    bangs: b1,
+                },
+                Self::Edit {
+                    path: p2,
+                    bangs: b2,
+                },
+            ) => p1 == p2 && b1 == b2,
+            (Self::BufferNext { bangs: b1 }, Self::BufferNext { bangs: b2 }) => b1 == b2,
+            (Self::BufferPrevious { bangs: b1 }, Self::BufferPrevious { bangs: b2 }) => b1 == b2,
+            (Self::BufferList, Self::BufferList) => true,
+            (Self::NotificationClear { bangs: b1 }, Self::NotificationClear { bangs: b2 }) => {
+                b1 == b2
+            }
+            (Self::Undo { count: c1 }, Self::Undo { count: c2 }) => c1 == c2,
+            (Self::Redo { count: c1 }, Self::Redo { count: c2 }) => c1 == c2,
+            (Self::UndoGoto { seq: s1 }, Self::UndoGoto { seq: s2 }) => s1 == s2,
+            (Self::Checkpoint, Self::Checkpoint) => true,
+            (Self::UndoTree { .. }, Self::UndoTree { .. }) => true, // Ignore content for equality check
+            (Self::SpawnJob(_), Self::SpawnJob(_)) => true, // Ignore job content for equality
+            _ => false,
+        }
+    }
+}
+
+impl Eq for ExecutionResult {}
 
 /// Command executor
 pub struct CommandExecutor;

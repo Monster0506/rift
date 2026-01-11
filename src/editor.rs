@@ -34,6 +34,8 @@ pub struct Editor<T: TerminalBackend> {
     language_loader: Arc<crate::syntax::loader::LanguageLoader>,
     /// Active modal component (overlay)
     pub modal: Option<ActiveModal>,
+    /// Background job manager
+    pub job_manager: crate::job_manager::JobManager,
 }
 
 /// Helper struct to track active modal and its layer
@@ -142,6 +144,7 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::document::definitions::create_document_settings_registry(),
             language_loader,
             modal: None,
+            job_manager: crate::job_manager::JobManager::new(),
         })
     }
 
@@ -346,6 +349,23 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Main event loop
         while !self.should_quit {
+            // Poll for job messages (throttled)
+            let mut processed_jobs = 0;
+            const MAX_JOB_MESSAGES: usize = 10;
+            while processed_jobs < MAX_JOB_MESSAGES {
+                if let Ok(msg) = self.job_manager.receiver().try_recv() {
+                    self.handle_job_message(msg);
+                    processed_jobs += 1;
+                } else {
+                    break;
+                }
+            }
+            // If we processed jobs, we might need a re-render if they affected state
+            if processed_jobs > 0 {
+                // For now, we'll just let the next loop iteration handle any render updates
+                // triggered by notifications or state changes.
+            }
+
             // Poll for input
             let timeout = self.state.settings.poll_timeout_ms;
             if self
@@ -1206,11 +1226,74 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Overlay);
                 should_close_modal = false;
             }
+            ExecutionResult::SpawnJob(job) => {
+                let id = self.job_manager.spawn(job);
+                self.state.notify(
+                    crate::notification::NotificationType::Info,
+                    format!("Job {} spawned", id),
+                );
+            }
         }
         if should_close_modal {
             self.close_active_modal();
             self.state.clear_command_line();
         }
+    }
+
+    /// Handle a message from a background job
+    fn handle_job_message(&mut self, message: crate::job_manager::JobMessage) {
+        use crate::job_manager::JobMessage;
+
+        // Update manager state
+        self.job_manager.update_job_state(&message);
+
+        match message {
+            JobMessage::Started(id) => {
+                // Optional: log to debug or status
+                if self.state.debug_mode {
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        format!("Job {} started", id),
+                    );
+                }
+            }
+            JobMessage::Progress(_id, percentage, msg) => {
+                // Show progress notification
+                // For now, just an info notification. A real progress bar would need UI support.
+                self.state.notify(
+                    crate::notification::NotificationType::Info,
+                    format!("Job Progress ({}%): {}", percentage, msg),
+                );
+            }
+            JobMessage::Finished(id) => {
+                self.state.notify(
+                    crate::notification::NotificationType::Success,
+                    format!("Job {} finished", id),
+                );
+
+                // Cleanup? The manager handles cleanup of joined threads later,
+                // but we might want to trigger it eventually.
+                // For now, manual cleanup or lazily is fine.
+            }
+            JobMessage::Error(id, err) => {
+                self.state.notify(
+                    crate::notification::NotificationType::Error,
+                    format!("Job {} failed: {}", id, err),
+                );
+            }
+            JobMessage::Cancelled(id) => {
+                self.state.notify(
+                    crate::notification::NotificationType::Warning,
+                    format!("Job {} cancelled", id),
+                );
+            }
+            JobMessage::Custom(_id, _payload) => {
+                // Handle custom payloads if implemented
+            }
+        }
+
+        // Periodic cleanup of finished jobs
+        self.job_manager.cleanup_finished_jobs();
     }
 
     /// Update search highlights based on current buffer state
