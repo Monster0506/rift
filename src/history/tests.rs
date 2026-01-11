@@ -531,7 +531,6 @@ fn test_undo_tree_deep_branching() {
     for i in 0..5 {
         tree.undo(); // Back to seq=0
 
-        // Actually need to be at seq=1 to branch
         if tree.can_redo() {
             tree.redo();
         } else {

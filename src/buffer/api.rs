@@ -90,13 +90,11 @@ pub trait BufferView {
         // Default implementation falls back to iteration (slow)
         // Implementors should override this!
         let mut byte_offset = 0;
-        let mut char_count = 0;
-        for c in self.chars(0..self.len()) {
+        for (char_count, c) in self.chars(0..self.len()).enumerate() {
             if char_count == char_index {
                 return byte_offset;
             }
             byte_offset += c.len_utf8();
-            char_count += 1;
         }
         byte_offset
     }

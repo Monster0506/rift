@@ -5,7 +5,7 @@ use crate::search::SearchMatch;
 ///
 /// Fast scan for simple string literals without regex compilation overhead.
 /// Uses the BufferView iterator directly to find matches.
-pub fn find_literal<'a, V>(view: &'a V, pattern: &str, start_pos: usize) -> Option<SearchMatch>
+pub fn find_literal<V>(view: &V, pattern: &str, start_pos: usize) -> Option<SearchMatch>
 where
     V: BufferView,
 {
@@ -28,7 +28,7 @@ where
     }
 }
 
-fn find_literal_exact<'a, V>(view: &'a V, pattern: &str, start_pos: usize) -> Option<SearchMatch>
+fn find_literal_exact<V>(view: &V, pattern: &str, start_pos: usize) -> Option<SearchMatch>
 where
     V: BufferView,
 {
@@ -36,10 +36,10 @@ where
     let pattern_len = pattern_chars.len();
     let first_char = pattern_chars[0];
 
-    let mut chunk_iter = view.iter_chunks_at(start_pos);
+    let chunk_iter = view.iter_chunks_at(start_pos);
     let mut current_pos = start_pos;
 
-    while let Some(chunk) = chunk_iter.next() {
+    for chunk in chunk_iter {
         for (idx, &c) in chunk.iter().enumerate() {
             // to_char_lossy is cheap for Unicode/Byte chars
             let ch = c.to_char_lossy();
@@ -77,26 +77,10 @@ where
     None
 }
 
-fn find_literal_ignore_case<'a, V>(
-    view: &'a V,
-    pattern: &str,
-    start_pos: usize,
-) -> Option<SearchMatch>
+fn find_literal_ignore_case<V>(view: &V, pattern: &str, start_pos: usize) -> Option<SearchMatch>
 where
     V: BufferView,
 {
-    // Pre-process pattern to lowercase for comparison
-    // Note: one char in pattern could map to multiple in lowercase (e.g. German sharp s).
-    // For simplicity/performance in Tier 1, we assume 1-to-1 or 1-to-many char mapping is handled by equality.
-    // Wait, simple iteration assumes 1-to-1 code points mostly.
-    // If pattern "SS" matches "ß", lengths differ.
-    // Tier 1 literal search is "literal". "ß" != "SS".
-    // We just compare to_lowercase() == to_lowercase().
-    // We assume pattern length in chars matches target length in chars for simplicity,
-    // OR we just match sequence.
-    // Let's use standard char iteration.
-
-    // Optimization: If pattern is ASCII, use ASCII fast path.
     if pattern.is_ascii() {
         return find_literal_ignore_case_ascii(view, pattern, start_pos);
     }
@@ -105,24 +89,13 @@ where
     let pattern_lower_str = pattern.to_lowercase();
     let pattern_lower: Vec<char> = pattern_lower_str.chars().collect();
     let first_char_lower = pattern_lower[0];
-    // This is tricky because `to_lowercase` returns iterator.
-    // And "First char" in haystack might expand to multiple?
-    // Let's rely on simple char-by-char lowercase comparison. If lengths diverge, it's not a "literal" match in the simple sense.
-    // But safely, we should fallback to regex for complex unicode casing?
-    // No, user wants speed.
-    // Let's implement simple 1-to-1 check where possible.
 
-    let mut chunk_iter = view.iter_chunks_at(start_pos);
+    let chunk_iter = view.iter_chunks_at(start_pos);
     let mut current_pos = start_pos;
 
-    while let Some(chunk) = chunk_iter.next() {
+    for chunk in chunk_iter {
         for (idx, &c) in chunk.iter().enumerate() {
             let ch = c.to_char_lossy();
-            // Check if starts match
-            // We can't easily check one-to-many here without buffering.
-            // Given the constraints and "Literal" tier definition, we only support
-            // queries where character counts match (simple case insensitivity).
-            // If pattern is "foo", we match "Foo".Lengths same.
 
             if ch.to_lowercase().next() == Some(first_char_lower) {
                 // Check rest
@@ -139,8 +112,8 @@ where
     None
 }
 
-fn find_literal_ignore_case_ascii<'a, V>(
-    view: &'a V,
+fn find_literal_ignore_case_ascii<V>(
+    view: &V,
     pattern: &str,
     start_pos: usize,
 ) -> Option<SearchMatch>
@@ -151,10 +124,10 @@ where
     let pattern_len = pattern_bytes.len();
     let first_byte = pattern_bytes[0].to_ascii_lowercase();
 
-    let mut chunk_iter = view.iter_chunks_at(start_pos);
+    let chunk_iter = view.iter_chunks_at(start_pos);
     let mut current_pos = start_pos;
 
-    while let Some(chunk) = chunk_iter.next() {
+    for chunk in chunk_iter {
         for (idx, &c) in chunk.iter().enumerate() {
             let ch = c.to_char_lossy();
             if ch.is_ascii() {
@@ -180,12 +153,10 @@ where
                                 range: match_start..match_start + pattern_len,
                             });
                         }
-                    } else {
-                        if check_match_ignore_case_ascii(view, match_start, pattern_bytes) {
-                            return Some(SearchMatch {
-                                range: match_start..match_start + pattern_len,
-                            });
-                        }
+                    } else if check_match_ignore_case_ascii(view, match_start, pattern_bytes) {
+                        return Some(SearchMatch {
+                            range: match_start..match_start + pattern_len,
+                        });
                     }
                 }
             }
@@ -213,7 +184,6 @@ fn check_match_ignore_case<V: BufferView>(view: &V, start: usize, pattern_lower:
     let mut iter = view.iter_at(start);
     for &pc in pattern_lower {
         if let Some(c) = iter.next() {
-            // This is slightly incorrect if one char maps to multiple, but fits Tier 1 "simple" heuristic
             if c.to_char_lossy().to_lowercase().next() != Some(pc) {
                 return false;
             }

@@ -224,15 +224,6 @@ impl Layer {
 
     /// Add a dirty rectangle to the tracking list
     pub fn add_dirty_rect(&mut self, rect: Rect) {
-        // If we already have a full screen rect (implied if we hit limit, but good to check),
-        // or if the new rect covers everything, just reset to full screen.
-        // For simplicity, we just implement the merging logic.
-
-        // Strategy:
-        // 1. Try to merge with existing adjacent/overlapping rects
-        // 2. If count > MAX, collapse all to one bounding box
-
-        // Try to merge with existing rects
         let mut merged = false;
         for existing in &mut self.dirty_rects {
             if existing.intersects(&rect) || existing.is_adjacent(&rect) {
@@ -473,7 +464,7 @@ impl LayerCompositor {
             // Mark all remaining layers as fully dirty to ensure correct composition.
             for layer in self.layers.values_mut() {
                 layer.clear(); // Resets to full dirty rect
-                               // Wait, clear() erases content. We just want to mark dirty.
+                               // Mark as dirty explicitly without clearing content.
                 layer.dirty_rects.clear();
                 layer.dirty_rects.push(Rect::new(
                     0,

@@ -40,8 +40,6 @@ fn test_git_graph_render() {
         println!("{}", line_str);
     }
 
-    // Assertions logic would be complex on strings, but visual inspect in stdout is key.
-    // Check Tip 5 produces @
     let l0: String = lines[0].iter().map(|c| c.to_char()).collect();
     assert!(l0.contains("@"));
     assert!(l0.contains("Msg5"));

@@ -87,10 +87,6 @@ impl Component for CommandLineComponent {
                 EventResult::Consumed
             }
             Key::Enter => {
-                // Determine action based on prompt or context?
-                // For now, we assume the creator of the component knows context,
-                // but ComponentAction needs to distinguish.
-                // Actually the prompt is a good indicator: ':' -> Command, '/' -> Search
                 if self.prompt == '/' {
                     EventResult::Action(Box::new(ComponentAction::ExecuteSearch(
                         self.content.clone(),

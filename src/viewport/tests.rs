@@ -186,12 +186,6 @@ fn test_viewport_horizontal_scrolling() {
 
     // 3. Cursor moves just off screen to right
     viewport.update(0, 20, total_lines, 0);
-    // Should scroll. We want cursor at right edge (index 19 in Viewport relative).
-    // so left_col = 20 - 19 = 1.
-    // Wait, let's check logic:
-    // right_limit = left_col + content_width - 1
-    // content_width = 20.
-    // left_col = cursor_col - content_width + 1 = 20 - 20 + 1 = 1.
     assert_eq!(viewport.left_col(), 1);
 
     // 4. Cursor moves way to right

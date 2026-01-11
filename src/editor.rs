@@ -271,7 +271,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.document_manager.open_file(file_path, force)?;
 
         // Ensure syntax is loaded for the new/reloaded document
-        // This is a bit duplicative of new() but necessary
         if let Some(doc) = self.document_manager.active_document_mut() {
             if doc.syntax.is_none() {
                 if let Some(path) = doc.path() {
@@ -1018,14 +1017,6 @@ impl<T: TerminalBackend> Editor<T> {
             }
             ExecutionResult::BufferNext { bangs: _bangs } => {
                 // Use document manager to switch tabs
-                if _bangs > 0 {
-                    // Last buffer not directly supported like this in manager yet, but logic is simple
-                    // Assume 'last' means last in list?
-                    // Actually, let's just stick to next for now or implement last if needed.
-                    // The original code went to last index.
-                    // Let's implement switching logic here or delegate
-                    // let len = 0; // removed unused
-                }
                 self.document_manager.switch_next_tab();
 
                 self.sync_state_with_active_document();

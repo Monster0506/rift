@@ -110,7 +110,7 @@ pub fn move_sentence_forward(buffer: &mut TextBuffer) -> bool {
             if is_terminator(c) {
                 // Check if next char is whitespace or EOF (standard sentence definition)
                 let next_pos = pos + 1;
-                if next_pos >= len || buffer.char_at(next_pos).map_or(true, is_whitespace) {
+                if next_pos >= len || buffer.char_at(next_pos).is_none_or(is_whitespace) {
                     // Found sentence boundary - skip to start of next sentence
                     pos = next_pos;
                     while pos < len {
@@ -124,11 +124,9 @@ pub fn move_sentence_forward(buffer: &mut TextBuffer) -> bool {
                     let _ = buffer.set_cursor(pos);
                     return true;
                 }
-            } else if c == Character::Newline {
-                if pos > start_pos {
-                    let _ = buffer.set_cursor(pos + 1);
-                    return true;
-                }
+            } else if c == Character::Newline && pos > start_pos {
+                let _ = buffer.set_cursor(pos + 1);
+                return true;
             }
         }
         pos += 1;
@@ -158,8 +156,7 @@ pub fn move_sentence_backward(buffer: &mut TextBuffer) -> bool {
         if let Some(c) = buffer.char_at(pos) {
             if is_terminator(c) {
                 let next_pos = pos + 1;
-                if next_pos < buffer.len() && buffer.char_at(next_pos).map_or(false, is_whitespace)
-                {
+                if next_pos < buffer.len() && buffer.char_at(next_pos).is_some_and(is_whitespace) {
                     // Found terminator + whitespace - skip to start of next sentence
                     let mut s = next_pos;
                     while s < buffer.len() {

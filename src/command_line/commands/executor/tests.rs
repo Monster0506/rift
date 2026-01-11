@@ -395,8 +395,6 @@ fn test_execute_set_number_missing_value() {
     let mut state = State::new();
     let original_value = state.settings.show_line_numbers;
 
-    // When value is None, it should be treated as "true" by the parser
-    // But the executor expects a value, so this should error
     let command = ParsedCommand::Set {
         option: "number".to_string(),
         value: None,
