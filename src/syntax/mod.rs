@@ -1,7 +1,6 @@
 use crate::buffer::TextBuffer;
 use crate::error::RiftError;
-use libloading::Library;
-use std::sync::Arc;
+
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{InputEdit, Parser, Query, QueryCursor, Tree};
 
@@ -11,7 +10,6 @@ pub struct Syntax {
     parser: Parser,
     pub tree: Option<Tree>,
     #[allow(dead_code)]
-    library: Option<Arc<Library>>,
     #[allow(dead_code)]
     language_name: String,
     pub highlights_query: Option<Query>,
@@ -47,7 +45,7 @@ impl Syntax {
         Ok(Self {
             parser,
             tree: None,
-            library: loaded.library,
+
             language_name: loaded.name,
             highlights_query,
             query_cursor: QueryCursor::new(),

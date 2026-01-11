@@ -1,14 +1,10 @@
 use crate::error::{ErrorType, RiftError};
-use libloading::Library;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use tree_sitter::Language;
 
 /// Handle to a loaded language, keeping the library alive
 pub struct LoadedLanguage {
     pub language: Language,
-    /// Library handle - None for bundled grammars, Some for dynamically loaded
-    pub library: Option<Arc<Library>>,
     pub name: String,
 }
 
@@ -18,19 +14,20 @@ impl LoadedLanguage {
     pub fn bundled(language: Language, name: &str) -> Self {
         Self {
             language,
-            library: None,
             name: name.to_string(),
         }
     }
 }
 
 pub struct LanguageLoader {
-    grammar_dir: PathBuf,
+    _grammar_dir: PathBuf,
 }
 
 impl LanguageLoader {
     pub fn new(grammar_dir: PathBuf) -> Self {
-        Self { grammar_dir }
+        Self {
+            _grammar_dir: grammar_dir,
+        }
     }
 
     /// Load a language based on file extension
@@ -64,69 +61,44 @@ impl LanguageLoader {
     }
 
     /// Load a specific language by name (e.g., "rust")
+    #[allow(unused_variables)]
     pub fn load_language(&self, lang_name: &str) -> Result<LoadedLanguage, RiftError> {
-        // Check for bundled grammars first (when feature is enabled)
-        #[cfg(feature = "bundled-rust")]
-        if lang_name == "rust" {
-            return Ok(LoadedLanguage::bundled(
-                tree_sitter_rust::LANGUAGE.into(),
-                "rust",
-            ));
+        #[cfg(feature = "treesitter")]
+        {
+            if lang_name == "rust" {
+                return Ok(LoadedLanguage::bundled(
+                    tree_sitter_rust::LANGUAGE.into(),
+                    "rust",
+                ));
+            }
+
+            if lang_name == "python" {
+                return Ok(LoadedLanguage::bundled(
+                    tree_sitter_python::LANGUAGE.into(),
+                    "python",
+                ));
+            }
         }
 
-        #[cfg(feature = "bundled-python")]
-        if lang_name == "python" {
-            return Ok(LoadedLanguage::bundled(
-                tree_sitter_python::LANGUAGE.into(),
-                "python",
-            ));
-        }
-
-        // Fall back to dynamic loading
-
-        // self.load_language_dynamic(lang_name)
-        // Ok(LoadedLanguage::bundled(Language::new(), "rust"))
         Err(RiftError::new(
             ErrorType::Internal,
             "LANGUAGE_NOT_FOUND",
-            format!("Language {} not found", lang_name),
+            format!("Language {} not found or feature not enabled", lang_name),
         ))
     }
 
     /// Load a query file for a language (e.g., "highlights")
+    #[allow(unused_variables)]
     pub fn load_query(&self, lang_name: &str, query_name: &str) -> Result<String, RiftError> {
         // Check for bundled queries first (when feature is enabled)
         if query_name == "highlights" {
-            #[cfg(feature = "bundled-rust")]
-            if lang_name == "rust" {
-                return Ok(tree_sitter_rust::HIGHLIGHTS_QUERY.to_string());
-            }
-
-            #[cfg(feature = "bundled-python")]
-            if lang_name == "python" {
-                return Ok(tree_sitter_python::HIGHLIGHTS_QUERY.to_string());
-            }
-        }
-
-        let filename = format!("{}.scm", query_name);
-        // Search structure: grammar_dir/queries/lang/query.scm OR grammar_dir/lang/query.scm
-        let paths = [
-            self.grammar_dir
-                .join("queries")
-                .join(lang_name)
-                .join(&filename),
-            self.grammar_dir.join(lang_name).join(&filename),
-        ];
-
-        for path in &paths {
-            if path.exists() {
-                return std::fs::read_to_string(path).map_err(|e| {
-                    RiftError::new(
-                        ErrorType::Io,
-                        "READ_FAILED",
-                        format!("Failed to read query file {:?}: {}", path, e),
-                    )
-                });
+            #[cfg(feature = "treesitter")]
+            {
+                if lang_name == "rust" {
+                    return Ok(tree_sitter_rust::HIGHLIGHTS_QUERY.to_string());
+                } else if lang_name == "python" {
+                    return Ok(tree_sitter_python::HIGHLIGHTS_QUERY.to_string());
+                }
             }
         }
 
@@ -134,8 +106,8 @@ impl LanguageLoader {
             ErrorType::Io,
             "QUERY_NOT_FOUND",
             format!(
-                "Query {} for {} not found in grammar dir {:?}",
-                query_name, lang_name, self.grammar_dir
+                "Query {} for {} not found (bundled only)",
+                query_name, lang_name
             ),
         ))
     }
