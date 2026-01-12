@@ -255,8 +255,6 @@ impl CommandExecutor {
                         }
 
                         // Filter matches based on global flag
-                        matches.sort_by_key(|m| m.range.start);
-
                         let mut valid_matches = Vec::new();
                         let mut last_line_idx = None;
 
