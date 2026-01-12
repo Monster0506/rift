@@ -12,11 +12,6 @@ readme = "README.md"
 [[bin]]
 name = "rift"
 path = "src/main.rs"
-license = "MIT"
-description = "A vim-like text editor"
-authors = ["monster0506 <tjraklovits@gmail.com>"]
-repository = "https://github.com/monster0506/rift"
-readme = "README.md"
 
 [features]
 default = []

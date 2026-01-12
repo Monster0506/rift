@@ -402,12 +402,11 @@ impl<T: TerminalBackend> Editor<T> {
                 let _ = doc.buffer.set_cursor(m.range.start);
             }
             Ok((None, _stats)) => {
-                self.state.notify(
-                    crate::notification::NotificationType::Warning,
-                    format!("Pattern not found: {}", query),
-                );
+                // No match found - don't move cursor, no notification needed
+                // The user can see from the cursor position that nothing was found
             }
             Err(e) => {
+                // Actual search error (e.g., regex compilation failure)
                 self.state.notify(
                     crate::notification::NotificationType::Error,
                     format!("Search error: {}", e),
