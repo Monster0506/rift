@@ -15,7 +15,7 @@ use super::classify::{classify_char, CharClass};
 ///
 /// # Examples
 /// ```rust
-/// use rift::movement::boundaries::next_word;
+/// use monster_rift::movement::boundaries::next_word;
 ///
 /// assert_eq!(next_word("hello world", 0), 6);
 /// assert_eq!(next_word("foo->bar", 0), 3);
@@ -57,7 +57,7 @@ pub fn next_word(text: &str, start: usize) -> usize {
 ///
 /// # Examples
 /// ```
-/// use rift::movement::boundaries::prev_word;
+/// use monster_rift::movement::boundaries::prev_word;
 ///
 /// assert_eq!(prev_word("hello world", 11), 6);
 /// assert_eq!(prev_word("foo->bar", 8), 5);

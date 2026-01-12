@@ -1171,3 +1171,92 @@ fn test_substitute_parsing_weird_behavior_percent() {
         _ => panic!("Expected Substitute command, got {:?}", command),
     }
 }
+
+#[test]
+fn test_substitute_undo_redo() {
+    let mut state = State::new();
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+
+    // Initial content
+    document.buffer.insert_str("foo bar foo").unwrap();
+    document.buffer.set_cursor(0).unwrap();
+    let original_text = document.buffer.to_string();
+
+    // Perform substitute (global on line)
+    let command = ParsedCommand::Substitute {
+        pattern: "foo".to_string(),
+        replacement: "baz".to_string(),
+        flags: "g".to_string(),
+        range: None,
+        bangs: 0,
+    };
+
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    assert_eq!(result, ExecutionResult::Redraw);
+    assert_eq!(document.buffer.to_string(), "baz bar baz");
+
+    // Undo the substitute
+    assert!(document.undo());
+    assert_eq!(document.buffer.to_string(), original_text);
+
+    // Redo the substitute
+    assert!(document.redo());
+    assert_eq!(document.buffer.to_string(), "baz bar baz");
+
+    // Undo again
+    assert!(document.undo());
+    assert_eq!(document.buffer.to_string(), original_text);
+}
+
+#[test]
+fn test_substitute_whole_file_undo() {
+    let mut state = State::new();
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+
+    // Initial content with multiple lines
+    document
+        .buffer
+        .insert_str("foo\nbar\nfoo\nbaz\nfoo")
+        .unwrap();
+    document.buffer.set_cursor(0).unwrap();
+    let original_text = document.buffer.to_string();
+
+    // Perform whole-file substitute
+    let command = ParsedCommand::Substitute {
+        pattern: "foo".to_string(),
+        replacement: "qux".to_string(),
+        flags: "g".to_string(),
+        range: Some("%".to_string()),
+        bangs: 0,
+    };
+
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    assert_eq!(result, ExecutionResult::Redraw);
+    assert_eq!(document.buffer.to_string(), "qux\nbar\nqux\nbaz\nqux");
+
+    // Undo should restore all three substitutions as one operation
+    assert!(document.undo());
+    assert_eq!(document.buffer.to_string(), original_text);
+
+    // Redo should reapply all three substitutions
+    assert!(document.redo());
+    assert_eq!(document.buffer.to_string(), "qux\nbar\nqux\nbaz\nqux");
+}

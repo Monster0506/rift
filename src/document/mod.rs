@@ -335,6 +335,79 @@ impl Document {
         false
     }
 
+    /// Delete a range of characters
+    /// This method integrates with the undo system
+    pub fn delete_range(&mut self, start: usize, end: usize) -> Result<(), RiftError> {
+        if start >= end {
+            return Ok(()); // Nothing to delete
+        }
+
+        if end > self.buffer.len() {
+            return Err(RiftError::new(
+                crate::error::ErrorType::Internal,
+                "INVALID_RANGE",
+                format!(
+                    "End position {} out of bounds (len: {})",
+                    end,
+                    self.buffer.len()
+                ),
+            ));
+        }
+
+        // Capture deleted text before deletion
+        use crate::buffer::api::BufferView;
+        let deleted_text: String = self
+            .buffer
+            .chars(start..end)
+            .map(|c| c.to_char_lossy())
+            .collect();
+
+        let history_start = self.byte_to_position(start);
+        let history_end = self.byte_to_position(end);
+
+        let start_position = self.get_point(start);
+        let old_end_position = self.get_point(end);
+
+        // Position cursor at start and delete characters one by one
+        self.buffer.set_cursor(start)?;
+        let count = end - start;
+        for _ in 0..count {
+            if !self.buffer.delete_forward() {
+                break;
+            }
+        }
+
+        self.mark_dirty();
+
+        // Record to undo history
+        self.record_edit(
+            EditOperation::Delete {
+                range: Range::new(history_start, history_end),
+                deleted_text: deleted_text.clone(),
+            },
+            &format!("Delete {} chars", count),
+        );
+
+        // Calculate byte offsets for Tree-sitter
+        let start_byte = self.buffer.char_to_byte(start);
+        let old_end_byte = self.buffer.char_to_byte(start + count);
+
+        let edit = InputEdit {
+            start_byte,
+            old_end_byte,
+            new_end_byte: start_byte,
+            start_position,
+            old_end_position,
+            new_end_position: start_position,
+        };
+
+        if let Some(syntax) = &mut self.syntax {
+            syntax.update_tree(&edit);
+        }
+
+        Ok(())
+    }
+
     /// Save document to its current path
     pub fn save(&mut self) -> Result<(), RiftError> {
         let path = self.file_path.as_ref().ok_or_else(|| {

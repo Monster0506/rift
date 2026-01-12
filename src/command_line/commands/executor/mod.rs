@@ -254,11 +254,7 @@ impl CommandExecutor {
                             return ExecutionResult::Failure;
                         }
 
-                        // Apply replacements
-                        matches.sort_by_key(|m| std::cmp::Reverse(m.range.start));
-
-                        let mut changes_made = 0;
-
+                        // Filter matches based on global flag
                         matches.sort_by_key(|m| m.range.start);
 
                         let mut valid_matches = Vec::new();
@@ -275,25 +271,45 @@ impl CommandExecutor {
                             valid_matches.push(m);
                         }
 
-                        // Sort reverse for application
+                        if valid_matches.is_empty() {
+                            state.handle_error(RiftError::new(
+                                ErrorType::Execution,
+                                "PATTERN_NOT_FOUND",
+                                format!("Pattern not found: {pattern}"),
+                            ));
+                            return ExecutionResult::Failure;
+                        }
+
+                        // Begin transaction to group all substitutions
+                        document.begin_transaction(format!(
+                            "Substitute: {} → {}",
+                            pattern, replacement
+                        ));
+
+                        // Sort reverse for application (to maintain offsets)
                         valid_matches.sort_by_key(|m| std::cmp::Reverse(m.range.start));
 
+                        let mut changes_made = 0;
                         for m in valid_matches {
-                            // Delete
-                            let range_len = m.range.end - m.range.start;
-                            document.buffer.line_index.delete(m.range.start, range_len);
+                            // Delete the matched text using undo-aware method
+                            if let Err(e) = document.delete_range(m.range.start, m.range.end) {
+                                state.handle_error(e);
+                                continue;
+                            }
 
-                            // Reset cursor to 0 because direct delete might have made current cursor OOB
-                            document.buffer.move_to_start();
+                            // Insert replacement text using undo-aware method
+                            if let Err(e) = document.insert_str(&replacement) {
+                                state.handle_error(e);
+                                continue;
+                            }
 
-                            // Insert
-                            let _ = document.buffer.set_cursor(m.range.start); // Set cursor
-                            let _ = document.buffer.insert_str(&replacement); // Insert at cursor
                             changes_made += 1;
                         }
 
+                        // Commit transaction
+                        document.commit_transaction();
+
                         if changes_made > 0 {
-                            document.buffer.revision += 1;
                             state.last_search_query = Some(pattern.clone());
 
                             // Re-run search to update highlights
