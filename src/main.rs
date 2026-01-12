@@ -15,8 +15,8 @@
 /// - Input handling never mutates editor state directly.
 /// - Panics or early exits always restore terminal state.
 /// - Editor behavior is deterministic for a given sequence of commands.
-use rift::editor::Editor;
-use rift::term::crossterm::CrosstermBackend;
+use monster_rift::editor::Editor;
+use monster_rift::term::crossterm::CrosstermBackend;
 
 fn main() {
     // Parse command line arguments
