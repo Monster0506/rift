@@ -1034,10 +1034,6 @@ impl<T: TerminalBackend> Editor<T> {
                             doc.revision(),
                         );
                         let _id = self.job_manager.spawn(job);
-                        self.state.notify(
-                            crate::notification::NotificationType::Info,
-                            format!("Saving {}...", path.display()),
-                        );
                     } else {
                         self.state.handle_error(RiftError::new(
                             ErrorType::Io,
