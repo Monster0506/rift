@@ -187,3 +187,39 @@ fn test_select_view_scrolling() {
     assert_eq!(view.selected_line, Some(0));
     assert_eq!(view.left_scroll, 0);
 }
+
+#[test]
+fn test_select_view_initial_scroll() {
+    use crate::layer::Cell;
+    use crate::layer::{Layer, LayerPriority};
+
+    let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 10, 80);
+    let mut view = SelectView::new();
+
+    // Add 20 lines
+    let content: Vec<Vec<Cell>> = (0..20)
+        .map(|i| format!("Line {}", i).chars().map(Cell::from_char).collect())
+        .collect();
+    view.set_left_content(content);
+
+    // Initial state: select line 14.
+    // Viewport height is 7 (10*0.9 - 2).
+    // Visible range would be [0, 7) if scroll is 0.
+    // 14 is out of bounds.
+    // Should scroll to make 14 visible at bottom?
+    // 14 - 7 + 1 = 8. Range [8, 15). 14 is inside.
+    view.set_selected_line(Some(14));
+
+    // Render to trigger auto-scroll
+    view.render(&mut layer);
+
+    // Check scroll
+    assert!(view.left_scroll > 0);
+    assert_eq!(view.left_scroll, 8); // 14 - 7 + 1
+
+    // Case 2: scroll too far down, select top
+    view.set_left_scroll(10);
+    view.set_selected_line(Some(2));
+    view.render(&mut layer);
+    assert_eq!(view.left_scroll, 2);
+}

@@ -362,10 +362,6 @@ impl<T: TerminalBackend> Editor<T> {
                         path.to_path_buf(),
                     );
                     self.job_manager.spawn(job);
-                    self.state.notify(
-                        crate::notification::NotificationType::Info,
-                        "Reloading...".to_string(),
-                    );
                 } else {
                     return Err(RiftError::new(
                         ErrorType::Execution,
@@ -1457,16 +1453,39 @@ impl<T: TerminalBackend> Editor<T> {
                             // Extract data for cache warming
                             let table = doc.buffer.line_index.table.clone();
                             let revision = doc.buffer.revision;
-                            Some((table, revision))
+                            let path = doc.path().map(|p| p.to_path_buf());
+                            Some((table, revision, path))
                         } else {
                             None
                         };
+
+                        // Re-initialize syntax
+                        if let Some((_, _, Some(path))) = &warming_data {
+                            if let Ok(loaded) = self.language_loader.load_language_for_file(path) {
+                                let highlights = self
+                                    .language_loader
+                                    .load_query(&loaded.name, "highlights")
+                                    .ok()
+                                    .and_then(|source| {
+                                        tree_sitter::Query::new(&loaded.language, &source).ok()
+                                    })
+                                    .map(Arc::new);
+
+                                if let Ok(syntax) = crate::syntax::Syntax::new(loaded, highlights) {
+                                    if let Some(doc) =
+                                        self.document_manager.get_document_mut(res.document_id)
+                                    {
+                                        doc.set_syntax(syntax);
+                                    }
+                                }
+                            }
+                        }
 
                         // Spawn syntax parse (requires self)
                         self.spawn_syntax_parse_job(res.document_id);
 
                         // Spawn cache warming if data extracted
-                        if let Some((table, revision)) = warming_data {
+                        if let Some((table, revision, _)) = warming_data {
                             let job = crate::job_manager::jobs::cache_warming::CacheWarmingJob::new(
                                 table, revision,
                             );
@@ -1475,8 +1494,14 @@ impl<T: TerminalBackend> Editor<T> {
 
                         self.sync_state_with_active_document();
                         let _ = self.force_full_redraw();
+
+                        self.state.notify(
+                            crate::notification::NotificationType::Success,
+                            format!("Loaded {}", res.path.display()),
+                        );
+
                         self.job_manager
-                            .update_job_state(&JobMessage::Finished(id, false));
+                            .update_job_state(&JobMessage::Finished(id, true));
                         return Ok(());
                     }
                     Err(p) => p,

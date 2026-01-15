@@ -321,6 +321,17 @@ impl SelectView {
 
         self.last_content_height = content_height;
 
+        // Auto-scroll to selected line if needed
+        if let Some(selected) = self.selected_line {
+            if content_height > 0 {
+                if selected < self.left_scroll {
+                    self.left_scroll = selected;
+                } else if selected >= self.left_scroll + content_height {
+                    self.left_scroll = selected + 1 - content_height;
+                }
+            }
+        }
+
         let left_width = (content_width * self.left_width_percent as usize) / 100;
         let right_width = content_width.saturating_sub(left_width).saturating_sub(1); // -1 for divider
 
