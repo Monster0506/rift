@@ -1256,7 +1256,9 @@ impl<T: TerminalBackend> Editor<T> {
                 use crate::component::EventResult;
                 use crate::select_view::SelectView;
 
-                let mut view = SelectView::new().with_left_width(content.left_width_percent);
+                let mut view = SelectView::new()
+                    .with_left_width(content.left_width_percent)
+                    .with_colors(self.state.settings.editor_fg, self.state.settings.editor_bg);
                 view.set_left_content(content.left);
                 view.set_right_content(content.right);
                 view.set_selected_line(Some(content.cursor));

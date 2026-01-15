@@ -32,6 +32,10 @@ pub struct SelectView {
     selected_line: Option<usize>,
     /// Mask of selectable lines (true = selectable)
     selectable_lines: Vec<bool>,
+    /// Foreground color
+    fg: Option<Color>,
+    /// Background color
+    bg: Option<Color>,
 
     // Callbacks
     on_select: Option<Box<dyn FnMut(usize) -> EventResult>>,
@@ -52,6 +56,8 @@ impl SelectView {
             right_scroll: 0,
             selected_line: None,
             selectable_lines: Vec::new(),
+            fg: None,
+            bg: None,
             on_select: None,
             on_cancel: None,
             on_change: None,
@@ -91,6 +97,14 @@ impl SelectView {
     #[must_use]
     pub fn with_selectable(mut self, selectable: Vec<bool>) -> Self {
         self.selectable_lines = selectable;
+        self
+    }
+
+    /// Set foreground and background colors
+    #[must_use]
+    pub fn with_colors(mut self, fg: Option<Color>, bg: Option<Color>) -> Self {
+        self.fg = fg;
+        self.bg = bg;
         self
     }
 
@@ -267,11 +281,16 @@ impl SelectView {
         let width = width.max(20);
         let height = height.max(5);
 
-        let style = WindowStyle::new()
+        let mut style = WindowStyle::new()
             .with_border(true)
-            .with_reverse_video(false)
-            .with_fg(Color::White)
-            .with_bg(Color::Black);
+            .with_reverse_video(false);
+
+        if let Some(c) = self.fg {
+            style = style.with_fg(c);
+        }
+        if let Some(c) = self.bg {
+            style = style.with_bg(c);
+        }
 
         let window = FloatingWindow::with_style(WindowPosition::Center, width, height, style);
 
