@@ -6,6 +6,7 @@
 //! - Branches preserve alternative edit histories
 //! - Checkpoints enable efficient navigation to distant states
 
+use crate::character::Character;
 use std::collections::HashMap;
 use std::time::SystemTime;
 
@@ -57,25 +58,28 @@ pub enum EditOperation {
     /// Insert text at position
     Insert {
         position: Position,
-        text: String,
+        text: Vec<Character>,
         len: usize,
     },
 
     /// Delete text in range
-    Delete { range: Range, deleted_text: String },
+    Delete {
+        range: Range,
+        deleted_text: Vec<Character>,
+    },
 
     /// Replace text (atomic delete + insert)
     Replace {
         range: Range,
-        old_text: String,
-        new_text: String,
+        old_text: Vec<Character>,
+        new_text: Vec<Character>,
     },
 
     /// Multi-line block change (e.g., reformat, sort lines)
     BlockChange {
         range: Range,
-        old_content: Vec<String>,
-        new_content: Vec<String>,
+        old_content: Vec<Vec<Character>>,
+        new_content: Vec<Vec<Character>>,
     },
 }
 
@@ -112,9 +116,13 @@ impl EditOperation {
                 range: Range::new(
                     *position,
                     Position::new(
-                        position.line + text.matches('\n').count() as u32,
-                        if text.contains('\n') {
-                            text.rsplit('\n').next().map_or(0, |s| s.len() as u32)
+                        position.line
+                            + text.iter().filter(|c| **c == Character::Newline).count() as u32,
+                        if text.contains(&Character::Newline) {
+                            text.iter()
+                                .rev()
+                                .take_while(|c| **c != Character::Newline)
+                                .count() as u32
                         } else {
                             position.col + text.len() as u32
                         },
@@ -140,9 +148,17 @@ impl EditOperation {
                 range: Range::new(
                     range.start,
                     Position::new(
-                        range.start.line + new_text.matches('\n').count() as u32,
-                        if new_text.contains('\n') {
-                            new_text.rsplit('\n').next().map_or(0, |s| s.len() as u32)
+                        range.start.line
+                            + new_text
+                                .iter()
+                                .filter(|c| **c == Character::Newline)
+                                .count() as u32,
+                        if new_text.contains(&Character::Newline) {
+                            new_text
+                                .iter()
+                                .rev()
+                                .take_while(|c| **c != Character::Newline)
+                                .count() as u32
                         } else {
                             range.start.col + new_text.len() as u32
                         },
@@ -197,14 +213,24 @@ impl EditOperation {
         match self {
             EditOperation::Insert { text, .. } => {
                 if text.len() <= 20 {
-                    format!("Insert '{}'", text.replace('\n', "\\n"))
+                    let s: String = text
+                        .iter()
+                        .map(|c| c.to_char_lossy())
+                        .collect::<String>()
+                        .replace('\n', "\\n");
+                    format!("Insert '{}'", s)
                 } else {
                     format!("Insert {} chars", text.len())
                 }
             }
             EditOperation::Delete { deleted_text, .. } => {
                 if deleted_text.len() <= 20 {
-                    format!("Delete '{}'", deleted_text.replace('\n', "\\n"))
+                    let s: String = deleted_text
+                        .iter()
+                        .map(|c| c.to_char_lossy())
+                        .collect::<String>()
+                        .replace('\n', "\\n");
+                    format!("Delete '{}'", s)
                 } else {
                     format!("Delete {} chars", deleted_text.len())
                 }
@@ -281,15 +307,15 @@ impl EditTransaction {
 /// Snapshot for checkpoint nodes (delta strategy)
 #[derive(Clone, Debug)]
 pub struct DocumentSnapshot {
-    pub full_text: String,
+    pub full_text: Vec<Character>,
     pub byte_count: usize,
     pub line_count: u32,
 }
 
 impl DocumentSnapshot {
-    pub fn new(text: String) -> Self {
+    pub fn new(text: Vec<Character>) -> Self {
         let byte_count = text.len();
-        let line_count = text.matches('\n').count() as u32 + 1;
+        let line_count = text.iter().filter(|c| **c == Character::Newline).count() as u32 + 1;
         Self {
             full_text: text,
             byte_count,

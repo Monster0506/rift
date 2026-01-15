@@ -150,15 +150,16 @@ impl Document {
         self.mark_dirty();
 
         // Record to undo history
-        let mut text = String::new();
-        text.push(ch);
+        let mut text = Vec::new();
+        text.push(crate::character::Character::from(ch));
+        let ch_str = ch.to_string();
         self.record_edit(
             EditOperation::Insert {
                 position: history_pos,
                 text: text.clone(),
                 len: ch.len_utf8(),
             },
-            &format!("Insert '{}'", if ch == '\n' { "\\n" } else { &text }),
+            &format!("Insert '{}'", if ch == '\n' { "\\n" } else { &ch_str }),
         );
 
         let added_bytes = ch.len_utf8();
@@ -192,10 +193,12 @@ impl Document {
 
         // Record to undo history
         if !s.is_empty() {
+            let text: Vec<crate::character::Character> =
+                s.chars().map(crate::character::Character::from).collect();
             self.record_edit(
                 EditOperation::Insert {
                     position: history_pos,
-                    text: s.to_string(),
+                    text,
                     len: s.len(),
                 },
                 &format!("Insert {} chars", s.len()),
@@ -245,10 +248,11 @@ impl Document {
             self.mark_dirty();
 
             // Record to undo history
+            let deleted_text_vec = vec![deleted_char];
             self.record_edit(
                 EditOperation::Delete {
                     range: Range::new(history_start, history_end),
-                    deleted_text: deleted_text.clone(),
+                    deleted_text: deleted_text_vec,
                 },
                 &format!(
                     "Delete '{}'",
@@ -303,10 +307,11 @@ impl Document {
             self.mark_dirty();
 
             // Record to undo history
+            let deleted_text_vec = vec![deleted_char];
             self.record_edit(
                 EditOperation::Delete {
                     range: Range::new(history_start, history_end),
-                    deleted_text: deleted_text.clone(),
+                    deleted_text: deleted_text_vec,
                 },
                 &format!(
                     "Delete '{}'",
@@ -356,11 +361,8 @@ impl Document {
 
         // Capture deleted text before deletion
         use crate::buffer::api::BufferView;
-        let deleted_text: String = self
-            .buffer
-            .chars(start..end)
-            .map(|c| c.to_char_lossy())
-            .collect();
+        let deleted_chars: Vec<crate::character::Character> =
+            self.buffer.chars(start..end).collect();
 
         let history_start = self.byte_to_position(start);
         let history_end = self.byte_to_position(end);
@@ -383,7 +385,7 @@ impl Document {
         self.record_edit(
             EditOperation::Delete {
                 range: Range::new(history_start, history_end),
-                deleted_text: deleted_text.clone(),
+                deleted_text: deleted_chars,
             },
             &format!("Delete {} chars", count),
         );
@@ -657,7 +659,7 @@ impl Document {
                     .unwrap_or(0);
                 let char_offset = line_start + position.col as usize;
                 let _ = buffer.set_cursor(char_offset);
-                let _ = buffer.insert_str(text);
+                let _ = buffer.insert_chars(&text);
             }
             EditOperation::Delete { range, .. } => {
                 // Convert range to char offsets
@@ -701,7 +703,7 @@ impl Document {
                     buffer.delete_forward();
                 }
                 // Insert new content
-                let _ = buffer.insert_str(new_text);
+                let _ = buffer.insert_chars(new_text);
             }
             EditOperation::BlockChange {
                 range, new_content, ..
@@ -724,8 +726,12 @@ impl Document {
                     buffer.delete_forward();
                 }
                 // Insert new content
-                let new_text = new_content.join("\n");
-                let _ = buffer.insert_str(&new_text);
+                for (i, line) in new_content.iter().enumerate() {
+                    if i > 0 {
+                        let _ = buffer.insert_character(crate::character::Character::Newline);
+                    }
+                    let _ = buffer.insert_chars(line);
+                }
             }
         }
     }
@@ -763,11 +769,8 @@ impl Document {
         use crate::history::DocumentSnapshot;
 
         // Build snapshot from buffer characters
-        let full_text: String = self
-            .buffer
-            .chars(0..self.buffer.len())
-            .map(|c| c.to_char_lossy())
-            .collect();
+        let full_text: Vec<crate::character::Character> =
+            self.buffer.chars(0..self.buffer.len()).collect();
 
         let snapshot = DocumentSnapshot::new(full_text);
         self.history.checkpoint(snapshot);

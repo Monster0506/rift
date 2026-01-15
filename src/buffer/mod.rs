@@ -111,6 +111,11 @@ impl TextBuffer {
         self.insert_chars(&[character])
     }
 
+    /// Insert a single Character at the cursor position
+    pub fn insert_character(&mut self, ch: Character) -> Result<(), RiftError> {
+        self.insert_chars(&[ch])
+    }
+
     /// Insert bytes at the cursor position
     pub fn insert_bytes(&mut self, bytes: &[u8]) -> Result<(), RiftError> {
         let chars: Vec<Character> = bytes.iter().map(|&b| Character::from(b)).collect();
@@ -123,8 +128,8 @@ impl TextBuffer {
         self.insert_chars(&chars)
     }
 
-    /// Internal insert helper
-    fn insert_chars(&mut self, chars: &[Character]) -> Result<(), RiftError> {
+    /// Internal insert helper - exposed for Document
+    pub fn insert_chars(&mut self, chars: &[Character]) -> Result<(), RiftError> {
         self.line_index.insert(self.cursor, chars);
         self.cursor += chars.len();
         self.revision += 1;

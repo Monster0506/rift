@@ -29,7 +29,7 @@ fn test_range_is_empty() {
 fn test_insert_operation_inverse() {
     let insert = EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "hello".to_string(),
+        text: "hello".chars().map(Character::from).collect(),
         len: 5,
     };
 
@@ -40,7 +40,8 @@ fn test_insert_operation_inverse() {
             deleted_text,
         } => {
             assert_eq!(range.start, Position::new(0, 0));
-            assert_eq!(deleted_text, "hello");
+            let expected: Vec<Character> = "hello".chars().map(Character::from).collect();
+            assert_eq!(deleted_text, expected);
         }
         _ => panic!("Expected Delete operation"),
     }
@@ -50,7 +51,7 @@ fn test_insert_operation_inverse() {
 fn test_delete_operation_inverse() {
     let delete = EditOperation::Delete {
         range: Range::new(Position::new(0, 0), Position::new(0, 5)),
-        deleted_text: "hello".to_string(),
+        deleted_text: "hello".chars().map(Character::from).collect(),
     };
 
     let inverse = delete.inverse();
@@ -61,7 +62,8 @@ fn test_delete_operation_inverse() {
             len,
         } => {
             assert_eq!(position, Position::new(0, 0));
-            assert_eq!(text, "hello");
+            let expected: Vec<Character> = "hello".chars().map(Character::from).collect();
+            assert_eq!(text, expected);
             assert_eq!(len, 5);
         }
         _ => panic!("Expected Insert operation"),
@@ -72,8 +74,8 @@ fn test_delete_operation_inverse() {
 fn test_replace_operation_inverse() {
     let replace = EditOperation::Replace {
         range: Range::new(Position::new(0, 0), Position::new(0, 5)),
-        old_text: "hello".to_string(),
-        new_text: "world".to_string(),
+        old_text: "hello".chars().map(Character::from).collect(),
+        new_text: "world".chars().map(Character::from).collect(),
     };
 
     let inverse = replace.inverse();
@@ -81,8 +83,10 @@ fn test_replace_operation_inverse() {
         EditOperation::Replace {
             old_text, new_text, ..
         } => {
-            assert_eq!(old_text, "world");
-            assert_eq!(new_text, "hello");
+            let expected_old: Vec<Character> = "world".chars().map(Character::from).collect();
+            let expected_new: Vec<Character> = "hello".chars().map(Character::from).collect();
+            assert_eq!(old_text, expected_old);
+            assert_eq!(new_text, expected_new);
         }
         _ => panic!("Expected Replace operation"),
     }
@@ -92,14 +96,14 @@ fn test_replace_operation_inverse() {
 fn test_operation_estimated_size() {
     let insert = EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "hello".to_string(),
+        text: "hello".chars().map(Character::from).collect(),
         len: 5,
     };
     assert!(insert.estimated_size() > 5);
 
     let delete = EditOperation::Delete {
         range: Range::new(Position::new(0, 0), Position::new(0, 10)),
-        deleted_text: "0123456789".to_string(),
+        deleted_text: "0123456789".chars().map(Character::from).collect(),
     };
     assert!(delete.estimated_size() > 10);
 }
@@ -108,14 +112,14 @@ fn test_operation_estimated_size() {
 fn test_operation_description() {
     let insert = EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "hi".to_string(),
+        text: "hi".chars().map(Character::from).collect(),
         len: 2,
     };
     assert!(insert.description().contains("Insert"));
 
     let delete = EditOperation::Delete {
         range: Range::new(Position::new(0, 0), Position::new(0, 2)),
-        deleted_text: "hi".to_string(),
+        deleted_text: "hi".chars().map(Character::from).collect(),
     };
     assert!(delete.description().contains("Delete"));
 }
@@ -136,7 +140,7 @@ fn test_transaction_record() {
     let mut tx = EditTransaction::new("Insert hello");
     tx.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "hello".to_string(),
+        text: "hello".chars().map(Character::from).collect(),
         len: 5,
     });
 
@@ -149,12 +153,12 @@ fn test_transaction_inverse() {
     let mut tx = EditTransaction::new("Multiple ops");
     tx.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "a".to_string(),
+        text: vec![Character::from('a')],
         len: 1,
     });
     tx.record(EditOperation::Insert {
         position: Position::new(0, 1),
-        text: "b".to_string(),
+        text: vec![Character::from('b')],
         len: 1,
     });
 
@@ -164,12 +168,16 @@ fn test_transaction_inverse() {
     assert_eq!(inverse.len(), 2);
     // First inverse should be for "b" (last op)
     match &inverse[0] {
-        EditOperation::Delete { deleted_text, .. } => assert_eq!(deleted_text, "b"),
+        EditOperation::Delete { deleted_text, .. } => {
+            assert_eq!(deleted_text, &vec![Character::from('b')])
+        }
         _ => panic!("Expected Delete"),
     }
     // Second inverse should be for "a" (first op)
     match &inverse[1] {
-        EditOperation::Delete { deleted_text, .. } => assert_eq!(deleted_text, "a"),
+        EditOperation::Delete { deleted_text, .. } => {
+            assert_eq!(deleted_text, &vec![Character::from('a')])
+        }
         _ => panic!("Expected Delete"),
     }
 }
@@ -193,7 +201,7 @@ fn test_undo_tree_push() {
     let mut tx = EditTransaction::new("Insert hello");
     tx.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "hello".to_string(),
+        text: "hello".chars().map(Character::from).collect(),
         len: 5,
     });
 
@@ -212,7 +220,7 @@ fn test_undo_tree_basic_undo_redo() {
     let mut tx1 = EditTransaction::new("Insert a");
     tx1.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "a".to_string(),
+        text: vec![Character::from('a')],
         len: 1,
     });
     tree.push(tx1, None);
@@ -221,7 +229,7 @@ fn test_undo_tree_basic_undo_redo() {
     let mut tx2 = EditTransaction::new("Insert b");
     tx2.record(EditOperation::Insert {
         position: Position::new(0, 1),
-        text: "b".to_string(),
+        text: vec![Character::from('b')],
         len: 1,
     });
     tree.push(tx2, None);
@@ -257,7 +265,7 @@ fn test_undo_tree_branching() {
     let mut tx1 = EditTransaction::new("Insert a");
     tx1.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "a".to_string(),
+        text: vec![Character::from('a')],
         len: 1,
     });
     tree.push(tx1, None);
@@ -266,7 +274,7 @@ fn test_undo_tree_branching() {
     let mut tx2 = EditTransaction::new("Insert b");
     tx2.record(EditOperation::Insert {
         position: Position::new(0, 1),
-        text: "b".to_string(),
+        text: vec![Character::from('b')],
         len: 1,
     });
     tree.push(tx2, None);
@@ -279,7 +287,7 @@ fn test_undo_tree_branching() {
     let mut tx3 = EditTransaction::new("Insert c");
     tx3.record(EditOperation::Insert {
         position: Position::new(0, 1),
-        text: "c".to_string(),
+        text: vec![Character::from('c')],
         len: 1,
     });
     tree.push(tx3, None);
@@ -304,7 +312,7 @@ fn test_undo_tree_goto_branch() {
     let mut tx1 = EditTransaction::new("Base");
     tx1.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "base".to_string(),
+        text: "base".chars().map(Character::from).collect(),
         len: 4,
     });
     tree.push(tx1, None); // seq=1
@@ -312,7 +320,7 @@ fn test_undo_tree_goto_branch() {
     let mut tx2 = EditTransaction::new("Branch A");
     tx2.record(EditOperation::Insert {
         position: Position::new(0, 4),
-        text: "A".to_string(),
+        text: vec![Character::from('A')],
         len: 1,
     });
     tree.push(tx2, None); // seq=2
@@ -322,7 +330,7 @@ fn test_undo_tree_goto_branch() {
     let mut tx3 = EditTransaction::new("Branch B");
     tx3.record(EditOperation::Insert {
         position: Position::new(0, 4),
-        text: "B".to_string(),
+        text: vec![Character::from('B')],
         len: 1,
     });
     tree.push(tx3, None); // seq=3
@@ -350,7 +358,7 @@ fn test_undo_tree_clear() {
         let mut tx = EditTransaction::new(format!("Edit {}", i));
         tx.record(EditOperation::Insert {
             position: Position::new(0, i as u32),
-            text: i.to_string(),
+            text: i.to_string().chars().map(Character::from).collect(),
             len: 1,
         });
         tree.push(tx, None);
@@ -371,7 +379,7 @@ fn test_undo_tree_clear() {
 
 #[test]
 fn test_document_snapshot() {
-    let snap = DocumentSnapshot::new("Hello\nWorld\n".to_string());
+    let snap = DocumentSnapshot::new("Hello\nWorld\n".chars().map(Character::from).collect());
     assert_eq!(snap.byte_count, 12);
     assert_eq!(snap.line_count, 3); // "Hello", "World", ""
 }
@@ -388,7 +396,7 @@ fn test_undo_tree_memory_tracking() {
     let mut tx = EditTransaction::new("Large insert");
     tx.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "a".repeat(1000),
+        text: "a".repeat(1000).chars().map(Character::from).collect(),
         len: 1000,
     });
     tree.push(tx, None);
@@ -405,7 +413,7 @@ fn test_undo_tree_multiple_undo_redo_cycles() {
         let mut tx = EditTransaction::new(format!("Edit {}", i));
         tx.record(EditOperation::Insert {
             position: Position::new(0, i as u32),
-            text: format!("{}", i),
+            text: format!("{}", i).chars().map(Character::from).collect(),
             len: 1,
         });
         tree.push(tx, None);
@@ -434,7 +442,7 @@ fn test_undo_tree_multiple_undo_redo_cycles() {
     let mut tx = EditTransaction::new("Branch edit");
     tx.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "X".to_string(),
+        text: vec![Character::from('X')],
         len: 1,
     });
     tree.push(tx, None);
@@ -451,7 +459,7 @@ fn test_undo_tree_cannot_redo_after_new_edit() {
     let mut tx1 = EditTransaction::new("First");
     tx1.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "a".to_string(),
+        text: vec![Character::from('a')],
         len: 1,
     });
     tree.push(tx1, None);
@@ -459,7 +467,7 @@ fn test_undo_tree_cannot_redo_after_new_edit() {
     let mut tx2 = EditTransaction::new("Second");
     tx2.record(EditOperation::Insert {
         position: Position::new(0, 1),
-        text: "b".to_string(),
+        text: vec![Character::from('b')],
         len: 1,
     });
     tree.push(tx2, None);
@@ -472,7 +480,7 @@ fn test_undo_tree_cannot_redo_after_new_edit() {
     let mut tx3 = EditTransaction::new("New branch");
     tx3.record(EditOperation::Insert {
         position: Position::new(0, 1),
-        text: "c".to_string(),
+        text: vec![Character::from('c')],
         len: 1,
     });
     tree.push(tx3, None);
@@ -504,7 +512,7 @@ fn test_undo_tree_goto_branch_invalid() {
     let mut tx = EditTransaction::new("Edit");
     tx.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "a".to_string(),
+        text: vec![Character::from('a')],
         len: 1,
     });
     tree.push(tx, None);
@@ -522,7 +530,7 @@ fn test_undo_tree_deep_branching() {
     let mut tx = EditTransaction::new("Root");
     tx.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "root".to_string(),
+        text: "root".chars().map(Character::from).collect(),
         len: 4,
     });
     tree.push(tx, None); // seq=1
@@ -538,7 +546,7 @@ fn test_undo_tree_deep_branching() {
             let mut tx = EditTransaction::new("Root");
             tx.record(EditOperation::Insert {
                 position: Position::new(0, 0),
-                text: "root".to_string(),
+                text: "root".chars().map(Character::from).collect(),
                 len: 4,
             });
             tree.push(tx, None);
@@ -547,7 +555,7 @@ fn test_undo_tree_deep_branching() {
         let mut tx = EditTransaction::new(format!("Branch {}", i));
         tx.record(EditOperation::Insert {
             position: Position::new(0, 4),
-            text: format!("{}", i),
+            text: format!("{}", i).chars().map(Character::from).collect(),
             len: 1,
         });
         tree.push(tx, None);
@@ -565,7 +573,7 @@ fn test_undo_tree_transaction_with_multiple_ops() {
     for i in 0..10 {
         tx.record(EditOperation::Insert {
             position: Position::new(0, i as u32),
-            text: format!("{}", i),
+            text: format!("{}", i).chars().map(Character::from).collect(),
             len: 1,
         });
     }
@@ -586,8 +594,15 @@ fn test_undo_tree_transaction_with_multiple_ops() {
 fn test_block_change_operation_inverse() {
     let op = EditOperation::BlockChange {
         range: Range::new(Position::new(0, 0), Position::new(2, 0)),
-        old_content: vec!["line1".to_string(), "line2".to_string()],
-        new_content: vec!["new1".to_string(), "new2".to_string(), "new3".to_string()],
+        old_content: vec![
+            "line1".chars().map(Character::from).collect(),
+            "line2".chars().map(Character::from).collect(),
+        ],
+        new_content: vec![
+            "new1".chars().map(Character::from).collect(),
+            "new2".chars().map(Character::from).collect(),
+            "new3".chars().map(Character::from).collect(),
+        ],
     };
 
     let inverse = op.inverse();
@@ -598,8 +613,21 @@ fn test_block_change_operation_inverse() {
             ..
         } => {
             // Swapped
-            assert_eq!(old_content, vec!["new1", "new2", "new3"]);
-            assert_eq!(new_content, vec!["line1", "line2"]);
+            assert_eq!(
+                old_content,
+                vec![
+                    "new1".chars().map(Character::from).collect::<Vec<_>>(),
+                    "new2".chars().map(Character::from).collect(),
+                    "new3".chars().map(Character::from).collect()
+                ]
+            );
+            assert_eq!(
+                new_content,
+                vec![
+                    "line1".chars().map(Character::from).collect::<Vec<_>>(),
+                    "line2".chars().map(Character::from).collect()
+                ]
+            );
         }
         _ => panic!("Expected BlockChange"),
     }
@@ -609,7 +637,7 @@ fn test_block_change_operation_inverse() {
 fn test_operation_description_long_text() {
     let insert = EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "a".repeat(100),
+        text: "a".repeat(100).chars().map(Character::from).collect(),
         len: 100,
     };
     let desc = insert.description();
@@ -631,7 +659,7 @@ fn test_redo_at_leaf_returns_none() {
     let mut tx = EditTransaction::new("Edit");
     tx.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "a".to_string(),
+        text: vec![Character::from('a')],
         len: 1,
     });
     tree.push(tx, None);
@@ -651,7 +679,7 @@ fn test_goto_seq_same_position() {
     let mut tx = EditTransaction::new("Edit");
     tx.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "a".to_string(),
+        text: vec![Character::from('a')],
         len: 1,
     });
     tree.push(tx, None);
@@ -671,7 +699,7 @@ fn test_goto_seq_backward() {
         let mut tx = EditTransaction::new(format!("Edit {}", i));
         tx.record(EditOperation::Insert {
             position: Position::new(0, i as u32),
-            text: format!("{}", i),
+            text: format!("{}", i).chars().map(Character::from).collect(),
             len: 1,
         });
         tree.push(tx, None);
@@ -695,7 +723,7 @@ fn test_goto_seq_forward() {
         let mut tx = EditTransaction::new(format!("Edit {}", i));
         tx.record(EditOperation::Insert {
             position: Position::new(0, i as u32),
-            text: format!("{}", i),
+            text: format!("{}", i).chars().map(Character::from).collect(),
             len: 1,
         });
         tree.push(tx, None);
@@ -723,7 +751,7 @@ fn test_goto_seq_to_root() {
         let mut tx = EditTransaction::new(format!("Edit {}", i));
         tx.record(EditOperation::Insert {
             position: Position::new(0, i as u32),
-            text: format!("{}", i),
+            text: format!("{}", i).chars().map(Character::from).collect(),
             len: 1,
         });
         tree.push(tx, None);
@@ -748,7 +776,7 @@ fn test_goto_seq_cross_branch() {
     let mut tx1 = EditTransaction::new("Edit 1");
     tx1.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "a".to_string(),
+        text: vec![Character::from('a')],
         len: 1,
     });
     tree.push(tx1, None); // seq=1
@@ -756,7 +784,7 @@ fn test_goto_seq_cross_branch() {
     let mut tx2 = EditTransaction::new("Edit 2");
     tx2.record(EditOperation::Insert {
         position: Position::new(0, 1),
-        text: "b".to_string(),
+        text: vec![Character::from('b')],
         len: 1,
     });
     tree.push(tx2, None); // seq=2
@@ -769,7 +797,7 @@ fn test_goto_seq_cross_branch() {
     let mut tx3 = EditTransaction::new("Edit 3");
     tx3.record(EditOperation::Insert {
         position: Position::new(0, 1),
-        text: "c".to_string(),
+        text: vec![Character::from('c')],
         len: 1,
     });
     tree.push(tx3, None); // seq=3
@@ -802,7 +830,7 @@ fn test_goto_seq_updates_last_visited_child() {
     let mut tx1 = EditTransaction::new("Edit 1");
     tx1.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "a".to_string(),
+        text: vec![Character::from('a')],
         len: 1,
     });
     tree.push(tx1, None); // seq=1
@@ -810,7 +838,7 @@ fn test_goto_seq_updates_last_visited_child() {
     let mut tx2 = EditTransaction::new("Edit 2");
     tx2.record(EditOperation::Insert {
         position: Position::new(0, 1),
-        text: "b".to_string(),
+        text: vec![Character::from('b')],
         len: 1,
     });
     tree.push(tx2, None); // seq=2
@@ -820,7 +848,7 @@ fn test_goto_seq_updates_last_visited_child() {
     let mut tx3 = EditTransaction::new("Edit 3");
     tx3.record(EditOperation::Insert {
         position: Position::new(0, 1),
-        text: "c".to_string(),
+        text: vec![Character::from('c')],
         len: 1,
     });
     tree.push(tx3, None); // seq=3
@@ -849,7 +877,7 @@ fn test_compute_replay_path() {
     let mut tx1 = EditTransaction::new("Edit 1");
     tx1.record(EditOperation::Insert {
         position: Position::new(0, 0),
-        text: "a".to_string(),
+        text: vec![Character::from('a')],
         len: 1,
     });
     tree.push(tx1, None); // seq=1
@@ -857,7 +885,7 @@ fn test_compute_replay_path() {
     let mut tx2 = EditTransaction::new("Edit 2");
     tx2.record(EditOperation::Insert {
         position: Position::new(0, 1),
-        text: "b".to_string(),
+        text: vec![Character::from('b')],
         len: 1,
     });
     tree.push(tx2, None); // seq=2
@@ -867,7 +895,7 @@ fn test_compute_replay_path() {
     let mut tx3 = EditTransaction::new("Edit 3");
     tx3.record(EditOperation::Insert {
         position: Position::new(0, 1),
-        text: "c".to_string(),
+        text: vec![Character::from('c')],
         len: 1,
     });
     tree.push(tx3, None); // seq=3

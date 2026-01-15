@@ -90,3 +90,26 @@ fn test_switching_tabs() {
 fn test_open_existing_file_switches_tab() {
     let _manager = create_manager();
 }
+
+#[test]
+fn test_undo_binary_data() {
+    let mut doc = Document::new(1).unwrap();
+    // Insert binary byte directly into buffer to simulate file load (invalid UTF-8)
+    // 0xFF is not a valid UTF-8 byte
+    let binary_char = crate::character::Character::Byte(0xFF);
+    doc.buffer.insert_character(binary_char).unwrap();
+
+    assert_eq!(doc.buffer.len(), 1);
+    assert_eq!(doc.buffer.char_at(0), Some(binary_char));
+
+    // Delete it using Document API (which should record it in history)
+    doc.delete_range(0, 1).unwrap();
+    assert_eq!(doc.buffer.len(), 0);
+
+    // Undo
+    doc.undo();
+
+    // Verify the ORIGINAL byte is restored, not a replacement character
+    assert_eq!(doc.buffer.len(), 1);
+    assert_eq!(doc.buffer.char_at(0), Some(binary_char));
+}
