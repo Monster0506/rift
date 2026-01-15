@@ -362,10 +362,7 @@ impl<T: TerminalBackend> Editor<T> {
                         path.to_path_buf(),
                     );
                     self.job_manager.spawn(job);
-                    self.state.notify(
-                        crate::notification::NotificationType::Info,
-                        "Reloading...".to_string(),
-                    );
+                    // Reloading... notification removed
                 } else {
                     return Err(RiftError::new(
                         ErrorType::Execution,
@@ -1498,8 +1495,14 @@ impl<T: TerminalBackend> Editor<T> {
 
                         self.sync_state_with_active_document();
                         let _ = self.force_full_redraw();
+
+                        self.state.notify(
+                            crate::notification::NotificationType::Success,
+                            format!("Loaded {}", res.path.display()),
+                        );
+
                         self.job_manager
-                            .update_job_state(&JobMessage::Finished(id, false));
+                            .update_job_state(&JobMessage::Finished(id, true));
                         return Ok(());
                     }
                     Err(p) => p,
