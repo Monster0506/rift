@@ -982,18 +982,22 @@ impl<T: TerminalBackend> Editor<T> {
         match mode {
             Mode::Command => {
                 let settings = self.state.settings.command_line_window.clone();
+                let fg = self.state.settings.editor_fg;
+                let bg = self.state.settings.editor_bg;
                 self.modal = Some(ActiveModal {
                     component: Box::new(crate::command_line::component::CommandLineComponent::new(
-                        ':', settings,
+                        ':', settings, fg, bg,
                     )),
                     layer: LayerPriority::FLOATING_WINDOW,
                 });
             }
             Mode::Search => {
                 let settings = self.state.settings.command_line_window.clone();
+                let fg = self.state.settings.editor_fg;
+                let bg = self.state.settings.editor_bg;
                 self.modal = Some(ActiveModal {
                     component: Box::new(crate::command_line::component::CommandLineComponent::new(
-                        '/', settings,
+                        '/', settings, fg, bg,
                     )),
                     layer: LayerPriority::FLOATING_WINDOW,
                 });

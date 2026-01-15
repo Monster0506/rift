@@ -1,3 +1,4 @@
+use crate::color::Color;
 use crate::component::{Component, EventResult};
 use crate::editor::ComponentAction;
 use crate::key::Key;
@@ -10,16 +11,25 @@ pub struct CommandLineComponent {
     prompt: char,
     settings: CommandLineWindowSettings,
     last_cursor_pos: Option<(u16, u16)>,
+    fg: Option<Color>,
+    bg: Option<Color>,
 }
 
 impl CommandLineComponent {
-    pub fn new(prompt: char, settings: CommandLineWindowSettings) -> Self {
+    pub fn new(
+        prompt: char,
+        settings: CommandLineWindowSettings,
+        fg: Option<Color>,
+        bg: Option<Color>,
+    ) -> Self {
         Self {
             content: String::new(),
             cursor: 0,
             prompt,
             settings,
             last_cursor_pos: None,
+            fg,
+            bg,
         }
     }
 
@@ -111,8 +121,8 @@ impl Component for CommandLineComponent {
         let options = RenderOptions {
             default_border_chars: None, // Use default
             window_settings: &self.settings,
-            fg: None, // Use default
-            bg: None, // Use default
+            fg: self.fg,
+            bg: self.bg,
             prompt: self.prompt,
         };
 

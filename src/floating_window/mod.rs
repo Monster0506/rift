@@ -100,7 +100,7 @@ pub struct WindowStyle {
     pub fg: Option<Color>,
     /// Background color for window content
     pub bg: Option<Color>,
-    /// Whether to use reverse video (swap fg/bg to black/white)
+    /// Whether to use reverse video (swap fg/bg)
     pub reverse_video: bool,
 }
 
@@ -160,10 +160,7 @@ impl WindowStyle {
     /// Get the effective colors (applying reverse video if set)
     fn effective_colors(&self) -> (Option<Color>, Option<Color>) {
         if self.reverse_video {
-            (
-                Some(self.bg.unwrap_or(Color::Black)),
-                Some(self.fg.unwrap_or(Color::White)),
-            )
+            (self.bg, self.fg)
         } else {
             (self.fg, self.bg)
         }
