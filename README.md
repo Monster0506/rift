@@ -5,6 +5,7 @@ This is a vim-like text editor.
 I use this daily and primarily. 
 
 Implemented:
+- Quite a lot more than the below items, I just haven't updated this in a while due to actually working on it.
 - Undo and redo with hybrid delta+checkpointing approach
 - Fancy undotree (with colors)
 - Syntax highlighting
