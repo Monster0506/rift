@@ -142,3 +142,48 @@ fn test_select_view_on_change_propagation() {
         _ => panic!("Expected Action, got {:?}", result),
     }
 }
+
+#[test]
+fn test_select_view_scrolling() {
+    use crate::key::Key;
+    use crate::layer::Cell;
+    use crate::layer::{Layer, LayerPriority};
+
+    // Create a small layer: 10 rows.
+    // SelectView uses 90% height. 10 * 0.9 = 9.
+    // Subtract 2 for borders = 7 content height.
+    let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 10, 80);
+    let mut view = SelectView::new();
+
+    // Add 10 lines (more than 7)
+    let content: Vec<Vec<Cell>> = (0..10)
+        .map(|i| format!("Line {}", i).chars().map(Cell::from_char).collect())
+        .collect();
+    view.set_left_content(content);
+
+    // Initial state
+    view.set_selected_line(Some(0));
+    assert_eq!(view.left_scroll, 0);
+
+    // Render to calculate height
+    view.render(&mut layer);
+
+    // Move down 6 times (0 -> 6). Should be visible.
+    for _ in 0..6 {
+        view.handle_input(Key::ArrowDown);
+    }
+    assert_eq!(view.selected_line, Some(6));
+    assert_eq!(view.left_scroll, 0);
+
+    // Move down to 7. Should scroll.
+    view.handle_input(Key::ArrowDown); // selected 7
+    assert_eq!(view.selected_line, Some(7));
+    assert_eq!(view.left_scroll, 1);
+
+    // Move up to 0. Should scroll back.
+    for _ in 0..7 {
+        view.handle_input(Key::ArrowUp);
+    }
+    assert_eq!(view.selected_line, Some(0));
+    assert_eq!(view.left_scroll, 0);
+}

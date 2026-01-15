@@ -36,6 +36,8 @@ pub struct SelectView {
     fg: Option<Color>,
     /// Background color
     bg: Option<Color>,
+    /// Last rendered content height (for scrolling calculations)
+    last_content_height: usize,
 
     // Callbacks
     on_select: Option<Box<dyn FnMut(usize) -> EventResult>>,
@@ -58,6 +60,7 @@ impl SelectView {
             selectable_lines: Vec::new(),
             fg: None,
             bg: None,
+            last_content_height: 0,
             on_select: None,
             on_cancel: None,
             on_change: None,
@@ -202,6 +205,18 @@ impl SelectView {
         while next < len {
             if self.is_selectable(next) {
                 self.selected_line = Some(next);
+
+                // Adjust scroll if we moved off the bottom
+                if self.last_content_height > 0 {
+                    let bottom_visible = self.left_scroll + self.last_content_height;
+                    // If next is at or below the bottom visible line
+                    if next >= bottom_visible {
+                        // Scroll so that 'next' is the new bottom line
+                        // visible range: [next - height + 1, next + 1)
+                        self.left_scroll = next + 1 - self.last_content_height;
+                    }
+                }
+
                 if let Some(cb) = self.on_change.as_mut() {
                     let result = cb(next);
                     match result {
@@ -240,6 +255,12 @@ impl SelectView {
             next -= 1;
             if self.is_selectable(next) {
                 self.selected_line = Some(next);
+
+                // Adjust scroll if we moved off the top
+                if next < self.left_scroll {
+                    self.left_scroll = next;
+                }
+
                 if let Some(cb) = self.on_change.as_mut() {
                     let result = cb(next);
                     match result {
@@ -269,7 +290,7 @@ impl SelectView {
     /// Render the split view to a layer
     ///
     /// The split view takes up 90% of the terminal dimensions (centered)
-    pub fn render(&self, layer: &mut Layer) {
+    pub fn render(&mut self, layer: &mut Layer) {
         let term_rows = layer.rows();
         let term_cols = layer.cols();
 
@@ -297,6 +318,8 @@ impl SelectView {
         // Calculate pane widths (content area, minus border)
         let content_width = width.saturating_sub(2); // -2 for left/right borders
         let content_height = height.saturating_sub(2); // -2 for top/bottom borders
+
+        self.last_content_height = content_height;
 
         let left_width = (content_width * self.left_width_percent as usize) / 100;
         let right_width = content_width.saturating_sub(left_width).saturating_sub(1); // -1 for divider
