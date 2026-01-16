@@ -14,6 +14,7 @@ pub mod error;
 pub mod executor;
 pub mod floating_window;
 pub mod history;
+pub mod input_box;
 pub mod job_manager;
 pub mod key;
 pub mod key_handler;
