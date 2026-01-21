@@ -94,4 +94,9 @@ pub enum ParsedCommand {
     UndoTree {
         bangs: usize,
     },
+    /// Open file explorer
+    Explore {
+        path: Option<String>,
+        bangs: usize,
+    },
 }

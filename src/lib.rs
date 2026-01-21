@@ -12,6 +12,7 @@ pub mod document;
 pub mod editor;
 pub mod error;
 pub mod executor;
+pub mod file_explorer;
 pub mod floating_window;
 pub mod history;
 pub mod input_box;

@@ -150,8 +150,7 @@ impl Document {
         self.mark_dirty();
 
         // Record to undo history
-        let mut text = Vec::new();
-        text.push(crate::character::Character::from(ch));
+        let text = vec![crate::character::Character::from(ch)];
         let ch_str = ch.to_string();
         self.record_edit(
             EditOperation::Insert {
@@ -659,7 +658,7 @@ impl Document {
                     .unwrap_or(0);
                 let char_offset = line_start + position.col as usize;
                 let _ = buffer.set_cursor(char_offset);
-                let _ = buffer.insert_chars(&text);
+                let _ = buffer.insert_chars(text);
             }
             EditOperation::Delete { range, .. } => {
                 // Convert range to char offsets

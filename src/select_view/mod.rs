@@ -189,7 +189,7 @@ impl SelectView {
     }
 
     /// Move selection down, skipping non-selectable lines
-    fn move_selection_down(&mut self) -> EventResult {
+    pub fn move_selection_down(&mut self) -> EventResult {
         let len = if !self.selectable_lines.is_empty() {
             self.selectable_lines.len()
         } else {
@@ -235,7 +235,7 @@ impl SelectView {
     }
 
     /// Move selection up, skipping non-selectable lines
-    fn move_selection_up(&mut self) -> EventResult {
+    pub fn move_selection_up(&mut self) -> EventResult {
         let len = if !self.selectable_lines.is_empty() {
             self.selectable_lines.len()
         } else {
@@ -285,6 +285,11 @@ impl SelectView {
     /// Set selected line index
     pub fn set_selected_line(&mut self, line: Option<usize>) {
         self.selected_line = line;
+    }
+
+    /// Get selected line index
+    pub fn selected_line(&self) -> Option<usize> {
+        self.selected_line
     }
 
     /// Render the split view to a layer

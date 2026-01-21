@@ -517,6 +517,19 @@ fn parse_undotree(
     ParsedCommand::UndoTree { bangs }
 }
 
+fn parse_explore(
+    _registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    let path = if !args.is_empty() {
+        Some(args[0].to_string())
+    } else {
+        None
+    };
+    ParsedCommand::Explore { path, bangs }
+}
+
 /// Static registry of all commands
 pub const COMMANDS: &[CommandDescriptor] = &[
     CommandDescriptor {
@@ -680,6 +693,13 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         aliases: &["ut"],
         description: "Open undo tree visualization",
         factory: Some(parse_undotree),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "explore",
+        aliases: &["E", "file"],
+        description: "Open file explorer",
+        factory: Some(parse_explore),
         subcommands: &[],
     },
 ];

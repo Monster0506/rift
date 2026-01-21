@@ -17,6 +17,8 @@ use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
 use crate::key::Key;
 use crate::layer::{Cell, Layer};
 
+pub type ValidationFunction = std::sync::Arc<dyn Fn(&str) -> bool + Send + Sync>;
+
 /// Configuration for InputBox
 #[derive(Clone)]
 pub struct InputBoxConfig {
@@ -31,7 +33,7 @@ pub struct InputBoxConfig {
     /// Width of the input box (content width)
     pub width: usize,
     /// Custom validation function
-    pub validator: Option<std::sync::Arc<dyn Fn(&str) -> bool + Send + Sync>>,
+    pub validator: Option<ValidationFunction>,
 }
 
 impl Default for InputBoxConfig {
@@ -96,6 +98,11 @@ impl InputBox {
         self.cursor_idx = self.content.chars().count();
         self.validate();
         self
+    }
+
+    /// Get current content
+    pub fn content(&self) -> &str {
+        &self.content
     }
 
     /// Set submit callback
@@ -228,6 +235,12 @@ impl InputBox {
     }
 }
 
+impl Default for InputBox {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Component for InputBox {
     fn handle_input(&mut self, key: Key) -> EventResult {
         // Resolve input using shared logic
@@ -299,14 +312,10 @@ impl Component for InputBox {
             } else {
                 String::new()
             }
+        } else if let Some(mask) = self.config.mask_char {
+            std::iter::repeat_n(mask, self.content.chars().count()).collect()
         } else {
-            if let Some(mask) = self.config.mask_char {
-                std::iter::repeat(mask)
-                    .take(self.content.chars().count())
-                    .collect()
-            } else {
-                self.content.clone()
-            }
+            self.content.clone()
         };
 
         let visible_slice: String = display_text

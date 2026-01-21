@@ -340,10 +340,6 @@ impl<T: TerminalBackend> Editor<T> {
                     path.clone(),
                 );
                 self.job_manager.spawn(job);
-                self.state.notify(
-                    crate::notification::NotificationType::Info,
-                    format!("Loading {}...", path_str),
-                );
             }
         } else {
             // Reload current
@@ -554,8 +550,40 @@ impl<T: TerminalBackend> Editor<T> {
                                         self.close_active_modal();
                                     }
                                 }
+                                continue;
                             }
-                            continue;
+
+                            // Explorer Action Logic matches via ownership downcast
+                            if let Ok(action) =
+                                any.downcast::<crate::file_explorer::ExplorerAction>()
+                            {
+                                match *action {
+                                    crate::file_explorer::ExplorerAction::SpawnJob(job) => {
+                                        self.job_manager.spawn(job);
+                                    }
+                                    crate::file_explorer::ExplorerAction::OpenFile(path) => {
+                                        if let Err(e) = self.open_file(
+                                            Some(path.to_string_lossy().to_string()),
+                                            false,
+                                        ) {
+                                            self.state.handle_error(e);
+                                        } else {
+                                            // opening file should probably close explorer?
+                                            // Ranger usually does.
+                                            self.close_active_modal();
+                                            // Force redraw handled by open_file/handle_execution_result logic usually but we called open_file directly.
+                                            let _ = self.force_full_redraw();
+                                        }
+                                    }
+                                    crate::file_explorer::ExplorerAction::Notify(kind, msg) => {
+                                        self.state.notify(kind, msg);
+                                    }
+                                    crate::file_explorer::ExplorerAction::Close => {
+                                        self.close_active_modal();
+                                    }
+                                }
+                                continue;
+                            }
                         }
                     }
                 }
@@ -1316,6 +1344,43 @@ impl<T: TerminalBackend> Editor<T> {
                     format!("Job {} spawned", id),
                 );
             }
+            ExecutionResult::Explore { path } => {
+                let initial_path = if let Some(p) = path {
+                    std::path::PathBuf::from(p)
+                } else if let Some(doc) = self.document_manager.active_document() {
+                    if let Some(p) = doc.path() {
+                        if p.is_dir() {
+                            p.to_path_buf()
+                        } else {
+                            p.parent().unwrap_or(p).to_path_buf()
+                        }
+                    } else {
+                        std::env::current_dir().unwrap_or_default()
+                    }
+                } else {
+                    std::env::current_dir().unwrap_or_default()
+                };
+
+                // Create explorer
+                let mut explorer = crate::file_explorer::FileExplorer::new(initial_path);
+
+                // Theme it
+                explorer = explorer
+                    .with_colors(self.state.settings.editor_fg, self.state.settings.editor_bg);
+
+                // Spawn initial list job
+                let job = explorer.create_list_job();
+                self.job_manager.spawn(job);
+
+                self.modal = Some(ActiveModal {
+                    component: Box::new(explorer),
+                    // Use FLOATING_WINDOW or POPUP? UndoTree uses POPUP.
+                    layer: crate::layer::LayerPriority::POPUP,
+                });
+                self.set_mode(Mode::Overlay);
+                // Don't close modal immediately
+                should_close_modal = false;
+            }
         }
         if should_close_modal {
             self.close_active_modal();
@@ -1362,28 +1427,51 @@ impl<T: TerminalBackend> Editor<T> {
         self.job_manager.update_job_state(&msg);
 
         match msg {
-            JobMessage::Started(id, silent) => {
-                if !silent {
-                    self.state.notify(
-                        crate::notification::NotificationType::Info,
-                        format!("Job {} started", id),
-                    );
-                }
+            JobMessage::Started(_, _) => {
+                // Silent start
             }
-            JobMessage::Progress(_id, percentage, msg) => {
-                // Show progress notification
-                // For now, just an info notification. A real progress bar would need UI support.
-                self.state.notify(
-                    crate::notification::NotificationType::Info,
-                    format!("Job Progress ({}%): {}", percentage, msg),
-                );
+            JobMessage::Progress(_id, _percentage, _msg) => {
+                // Silent progress
             }
             JobMessage::Finished(id, silent) => {
-                if !silent {
-                    self.state.notify(
-                        crate::notification::NotificationType::Success,
-                        format!("Job {} finished", id),
-                    );
+                // Propagate to Explorer if active
+                if let Some(modal) = self.modal.as_mut() {
+                    if let Some(explorer) = modal
+                        .component
+                        .as_any_mut()
+                        .downcast_mut::<crate::file_explorer::FileExplorer>()
+                    {
+                        let res = explorer.handle_job_message(JobMessage::Finished(id, silent));
+                        // Handle actions (duplicate logic from Custom handling, cleaner to extract but inline for now)
+                        if let crate::component::EventResult::Action(any) = res {
+                            if let Ok(action) =
+                                any.downcast::<crate::file_explorer::ExplorerAction>()
+                            {
+                                match *action {
+                                    crate::file_explorer::ExplorerAction::SpawnJob(job) => {
+                                        self.job_manager.spawn(job);
+                                    }
+                                    crate::file_explorer::ExplorerAction::OpenFile(path) => {
+                                        if let Err(e) = self.open_file(
+                                            Some(path.to_string_lossy().to_string()),
+                                            false,
+                                        ) {
+                                            self.state.handle_error(e);
+                                        } else {
+                                            self.close_active_modal();
+                                            let _ = self.force_full_redraw();
+                                        }
+                                    }
+                                    crate::file_explorer::ExplorerAction::Notify(kind, msg) => {
+                                        self.state.notify(kind, msg);
+                                    }
+                                    crate::file_explorer::ExplorerAction::Close => {
+                                        self.close_active_modal();
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Cleanup? The manager handles cleanup of joined threads later,
@@ -1403,6 +1491,54 @@ impl<T: TerminalBackend> Editor<T> {
                 );
             }
             JobMessage::Custom(id, payload) => {
+                // Intercept Explorer messages
+                if payload
+                    .as_any()
+                    .is::<crate::job_manager::jobs::explorer::DirectoryListing>()
+                    || payload
+                        .as_any()
+                        .is::<crate::job_manager::jobs::explorer::FilePreview>()
+                {
+                    if let Some(modal) = self.modal.as_mut() {
+                        if let Some(explorer) = modal
+                            .component
+                            .as_any_mut()
+                            .downcast_mut::<crate::file_explorer::FileExplorer>(
+                        ) {
+                            let res = explorer.handle_job_message(JobMessage::Custom(id, payload));
+                            if let crate::component::EventResult::Action(any) = res {
+                                if let Ok(action) =
+                                    any.downcast::<crate::file_explorer::ExplorerAction>()
+                                {
+                                    match *action {
+                                        crate::file_explorer::ExplorerAction::SpawnJob(job) => {
+                                            self.job_manager.spawn(job);
+                                        }
+                                        crate::file_explorer::ExplorerAction::OpenFile(path) => {
+                                            if let Err(e) = self.open_file(
+                                                Some(path.to_string_lossy().to_string()),
+                                                false,
+                                            ) {
+                                                self.state.handle_error(e);
+                                            } else {
+                                                self.close_active_modal();
+                                                let _ = self.force_full_redraw();
+                                            }
+                                        }
+                                        crate::file_explorer::ExplorerAction::Notify(kind, msg) => {
+                                            self.state.notify(kind, msg);
+                                        }
+                                        crate::file_explorer::ExplorerAction::Close => {
+                                            self.close_active_modal();
+                                        }
+                                    }
+                                }
+                            }
+                            return Ok(());
+                        }
+                    }
+                }
+
                 let any_payload = payload.into_any();
 
                 // Try FileSaveResult
@@ -1494,11 +1630,6 @@ impl<T: TerminalBackend> Editor<T> {
 
                         self.sync_state_with_active_document();
                         let _ = self.force_full_redraw();
-
-                        self.state.notify(
-                            crate::notification::NotificationType::Success,
-                            format!("Loaded {}", res.path.display()),
-                        );
 
                         self.job_manager
                             .update_job_state(&JobMessage::Finished(id, true));

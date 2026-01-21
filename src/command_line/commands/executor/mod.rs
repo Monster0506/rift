@@ -61,6 +61,10 @@ pub enum ExecutionResult {
     },
     /// Spawn a background job
     SpawnJob(Box<dyn crate::job_manager::Job>),
+    /// Open file explorer
+    Explore {
+        path: Option<String>,
+    },
 }
 
 impl PartialEq for ExecutionResult {
@@ -94,6 +98,7 @@ impl PartialEq for ExecutionResult {
             (Self::Checkpoint, Self::Checkpoint) => true,
             (Self::UndoTree { .. }, Self::UndoTree { .. }) => true, // Ignore content for equality check
             (Self::SpawnJob(_), Self::SpawnJob(_)) => true, // Ignore job content for equality
+            (Self::Explore { path: p1 }, Self::Explore { path: p2 }) => p1 == p2,
             _ => false,
         }
     }
@@ -362,6 +367,7 @@ impl CommandExecutor {
                 };
                 ExecutionResult::UndoTree { content }
             }
+            ParsedCommand::Explore { path, bangs: _ } => ExecutionResult::Explore { path },
         }
     }
 }
