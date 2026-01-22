@@ -69,10 +69,10 @@ impl<'a> CellBatch<'a> {
 /// Maintains current and previous frame buffers to compute minimal diffs
 /// for efficient terminal rendering.
 pub struct DoubleBuffer {
-    /// Current frame buffer
-    current: Vec<Vec<Cell>>,
-    /// Previous frame buffer
-    previous: Vec<Vec<Cell>>,
+    /// Current frame buffer (flat)
+    current: Vec<Cell>,
+    /// Previous frame buffer (flat)
+    previous: Vec<Cell>,
     /// Number of rows
     rows: usize,
     /// Number of columns
@@ -84,8 +84,9 @@ pub struct DoubleBuffer {
 impl DoubleBuffer {
     /// Create a new double buffer with the given dimensions
     pub fn new(rows: usize, cols: usize) -> Self {
-        let current = vec![vec![Cell::empty(); cols]; rows];
-        let previous = vec![vec![Cell::empty(); cols]; rows];
+        let size = rows * cols;
+        let current = vec![Cell::empty(); size];
+        let previous = vec![Cell::empty(); size];
         Self {
             current,
             previous,
@@ -105,26 +106,35 @@ impl DoubleBuffer {
         self.cols
     }
 
-    /// Get mutable access to the current buffer
-    /// Use this to write new frame content
-    pub fn current_mut(&mut self) -> &mut Vec<Vec<Cell>> {
+    /// Helper to get index from row/col
+    #[inline]
+    fn idx(&self, row: usize, col: usize) -> usize {
+        row * self.cols + col
+    }
+
+    /// Get mutable access to the current buffer (logic adapter for existing code)
+    /// Note: This reconstructs a Vec<Vec<Cell>> view which is expensive.
+    /// Existing code expects &mut Vec<Vec<Cell>>.
+    /// To support flattening without breaking massive API changes, we provide specific accessors
+    /// and a temporary adapter if absolutely needed, OR update callsites.
+    ///
+    /// checking `src/layer/mod.rs` - `composite` accesses buffer via `current_mut() -> &mut Vec<Vec<Cell>>`
+    /// We MUST update `LayerCompositor::composite` to use `set_cell` or direct slice access.
+    /// For now, let's provide a way to get mutable slice.
+    pub fn current_slice_mut(&mut self) -> &mut [Cell] {
         &mut self.current
     }
 
     /// Get read-only access to the current buffer
-    pub fn current(&self) -> &Vec<Vec<Cell>> {
+    pub fn current_slice(&self) -> &[Cell] {
         &self.current
-    }
-
-    /// Get read-only access to the previous buffer
-    pub fn previous(&self) -> &Vec<Vec<Cell>> {
-        &self.previous
     }
 
     /// Set a cell in the current buffer
     pub fn set_cell(&mut self, row: usize, col: usize, cell: Cell) -> bool {
         if row < self.rows && col < self.cols {
-            self.current[row][col] = cell;
+            let idx = self.idx(row, col);
+            self.current[idx] = cell;
             true
         } else {
             false
@@ -134,7 +144,8 @@ impl DoubleBuffer {
     /// Get a cell from the current buffer
     pub fn get_cell(&self, row: usize, col: usize) -> Option<&Cell> {
         if row < self.rows && col < self.cols {
-            Some(&self.current[row][col])
+            let idx = self.idx(row, col);
+            Some(&self.current[idx])
         } else {
             None
         }
@@ -146,11 +157,12 @@ impl DoubleBuffer {
             if row_idx >= self.rows {
                 break;
             }
+            let start = self.idx(row_idx, 0);
             for (col_idx, cell) in row.iter().enumerate() {
                 if col_idx >= self.cols {
                     break;
                 }
-                self.current[row_idx][col_idx] = cell.clone();
+                self.current[start + col_idx] = cell.clone();
             }
         }
     }
@@ -158,19 +170,16 @@ impl DoubleBuffer {
     /// Resize the buffer to new dimensions
     /// Forces a full redraw on next diff
     pub fn resize(&mut self, new_rows: usize, new_cols: usize) {
-        let mut new_current = vec![vec![Cell::empty(); new_cols]; new_rows];
-        let new_previous = vec![vec![Cell::empty(); new_cols]; new_rows];
+        let new_size = new_rows * new_cols;
+        let mut new_current = vec![Cell::empty(); new_size];
+        let new_previous = vec![Cell::empty(); new_size];
 
         // Copy existing content where possible
-        for (r, row) in self.current.iter().enumerate() {
-            if r >= new_rows {
-                break;
-            }
-            for (c, cell) in row.iter().enumerate() {
-                if c >= new_cols {
-                    break;
-                }
-                new_current[r][c] = cell.clone();
+        for r in 0..self.rows.min(new_rows) {
+            for c in 0..self.cols.min(new_cols) {
+                let old_idx = self.idx(r, c);
+                let new_idx = r * new_cols + c;
+                new_current[new_idx] = self.current[old_idx].clone();
             }
         }
 
@@ -199,18 +208,23 @@ impl DoubleBuffer {
         if row >= self.rows || col >= self.cols {
             return false;
         }
-        self.current[row][col] != self.previous[row][col]
+        let idx = self.idx(row, col);
+        self.current[idx] != self.previous[idx]
     }
 
     /// Iterate over all changed cells
     /// Returns individual cell changes (not batched)
     pub fn iter_changes(&self) -> impl Iterator<Item = CellChange<'_>> {
         let force = self.force_full_redraw;
-        (0..self.rows).flat_map(move |row| {
-            (0..self.cols).filter_map(move |col| {
-                let curr = &self.current[row][col];
-                let prev = &self.previous[row][col];
+        let cols = self.cols;
+        self.current
+            .iter()
+            .zip(self.previous.iter())
+            .enumerate()
+            .filter_map(move |(i, (curr, prev))| {
                 if force || curr != prev {
+                    let row = i / cols;
+                    let col = i % cols;
                     Some(CellChange {
                         row,
                         col,
@@ -220,7 +234,6 @@ impl DoubleBuffer {
                     None
                 }
             })
-        })
     }
 
     /// Get batched changes for efficient rendering
@@ -234,12 +247,14 @@ impl DoubleBuffer {
         };
 
         for row_idx in 0..self.rows {
+            let row_start_idx = self.idx(row_idx, 0);
             let mut batch_start: Option<usize> = None;
             let mut batch_cells: Vec<&Cell> = Vec::new();
 
             for col_idx in 0..self.cols {
-                let curr = &self.current[row_idx][col_idx];
-                let prev = &self.previous[row_idx][col_idx];
+                let idx = row_start_idx + col_idx;
+                let curr = &self.current[idx];
+                let prev = &self.previous[idx];
                 let changed = self.force_full_redraw || curr != prev;
 
                 if changed {
@@ -275,20 +290,14 @@ impl DoubleBuffer {
     /// Swap buffers after rendering
     /// Copies current to previous and clears force_full_redraw
     pub fn swap(&mut self) {
-        for row_idx in 0..self.rows {
-            for col_idx in 0..self.cols {
-                self.previous[row_idx][col_idx] = self.current[row_idx][col_idx].clone();
-            }
-        }
+        self.previous.clone_from(&self.current);
         self.force_full_redraw = false;
     }
 
     /// Clear the current buffer (fill with empty cells)
     pub fn clear(&mut self) {
-        for row in &mut self.current {
-            for cell in row.iter_mut() {
-                *cell = Cell::empty();
-            }
+        for cell in &mut self.current {
+            *cell = Cell::empty();
         }
     }
 
@@ -303,11 +312,9 @@ impl DoubleBuffer {
         if self.force_full_redraw {
             stats.changed_cells = stats.total_cells;
         } else {
-            for row_idx in 0..self.rows {
-                for col_idx in 0..self.cols {
-                    if self.current[row_idx][col_idx] != self.previous[row_idx][col_idx] {
-                        stats.changed_cells += 1;
-                    }
+            for (curr, prev) in self.current.iter().zip(self.previous.iter()) {
+                if curr != prev {
+                    stats.changed_cells += 1;
                 }
             }
         }
@@ -388,33 +395,47 @@ impl DoubleBuffer {
 
         // Use String buffer for formatting Character
         let mut output = String::with_capacity(batch.cells.len() * 4);
+        // Commands buffer for color changes
+        let mut cmd_buf = Vec::new();
 
         for (i, cell) in batch.cells.iter().enumerate() {
             // Check if we need to change colors
             if cell.fg != *current_fg || cell.bg != *current_bg {
-                // Flush current output before color change
+                // Flush current text output before color change
                 if !output.is_empty() {
                     term.write(output.as_bytes())?;
                     output.clear();
                 }
 
-                // Build color commands
-                let mut color_buf = Vec::new();
-                queue!(color_buf, ResetColor)
-                    .map_err(|e| format!("Failed to reset colors: {e}"))?;
+                cmd_buf.clear();
 
-                if let Some(fg) = cell.fg {
-                    queue!(color_buf, SetForegroundColor(fg.to_crossterm()))
-                        .map_err(|e| format!("Failed to set fg: {e}"))?;
-                }
-                if let Some(bg) = cell.bg {
-                    queue!(color_buf, SetBackgroundColor(bg.to_crossterm()))
-                        .map_err(|e| format!("Failed to set bg: {e}"))?;
+                let need_reset = (cell.fg.is_none() && current_fg.is_some())
+                    || (cell.bg.is_none() && current_bg.is_some());
+
+                if need_reset {
+                    queue!(cmd_buf, ResetColor)
+                        .map_err(|e| format!("Failed to reset colors: {e}"))?;
+                    *current_fg = None;
+                    *current_bg = None;
                 }
 
-                term.write(&color_buf)?;
-                *current_fg = cell.fg;
-                *current_bg = cell.bg;
+                if cell.fg != *current_fg {
+                    if let Some(fg) = cell.fg {
+                        queue!(cmd_buf, SetForegroundColor(fg.to_crossterm()))
+                            .map_err(|e| format!("Failed to set fg: {e}"))?;
+                        *current_fg = Some(fg);
+                    }
+                }
+
+                if cell.bg != *current_bg {
+                    if let Some(bg) = cell.bg {
+                        queue!(cmd_buf, SetBackgroundColor(bg.to_crossterm()))
+                            .map_err(|e| format!("Failed to set bg: {e}"))?;
+                        *current_bg = Some(bg);
+                    }
+                }
+
+                term.write(&cmd_buf)?;
             }
 
             // Render Character to string buffer

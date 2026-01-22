@@ -167,10 +167,14 @@ fn test_compositor_compositing_single_layer() {
     layer.set_cell(0, 0, Cell::from_char('A'));
     layer.set_cell(1, 1, Cell::from_char('B'));
 
-    let composited = compositor.get_composited();
-    assert_eq!(composited[0][0].content, Character::from('A'));
-    assert_eq!(composited[1][1].content, Character::from('B'));
-    assert_eq!(composited[2][2].content, Character::from(' ')); // Empty cells are spaces
+    let composited = compositor.get_composited_slice();
+    // Flat buffer: indexing = row * cols + col
+    // (0,0) = 0
+    assert_eq!(composited[0].content, Character::from('A'));
+    // (1,1) = 1*3 + 1 = 4
+    assert_eq!(composited[4].content, Character::from('B'));
+    // (2,2) = 2*3 + 2 = 8
+    assert_eq!(composited[8].content, Character::from(' ')); // Empty cells are spaces
 }
 
 #[test]
@@ -189,10 +193,11 @@ fn test_compositor_layering_order() {
         layer.set_cell(1, 1, Cell::from_char('B'));
     }
 
-    let composited = compositor.get_composited();
+    let composited = compositor.get_composited_slice();
 
     // Higher priority layer should win
-    assert_eq!(composited[1][1].content, Character::from('B'));
+    // (1,1) = 4
+    assert_eq!(composited[4].content, Character::from('B'));
 }
 
 #[test]
@@ -215,14 +220,14 @@ fn test_compositor_transparency() {
         // (0, 0) and (0, 2) are None - transparent
     }
 
-    let composited = compositor.get_composited();
+    let composited = compositor.get_composited_slice();
 
-    // Position (0, 0): content layer shows through
-    assert_eq!(composited[0][0].content, Character::from('A'));
-    // Position (0, 1): floating window overrides
-    assert_eq!(composited[0][1].content, Character::from('X'));
-    // Position (0, 2): content layer shows through
-    assert_eq!(composited[0][2].content, Character::from('C'));
+    // Position (0, 0) = 0: content layer shows through
+    assert_eq!(composited[0].content, Character::from('A'));
+    // Position (0, 1) = 1: floating window overrides
+    assert_eq!(composited[1].content, Character::from('X'));
+    // Position (0, 2) = 2: content layer shows through
+    assert_eq!(composited[2].content, Character::from('C'));
 }
 
 #[test]
@@ -238,9 +243,9 @@ fn test_compositor_colors_preserved() {
             .with_bg(Color::Blue),
     );
 
-    let composited = compositor.get_composited();
-    assert_eq!(composited[0][0].fg, Some(Color::Red));
-    assert_eq!(composited[0][0].bg, Some(Color::Blue));
+    let composited = compositor.get_composited_slice();
+    assert_eq!(composited[0].fg, Some(Color::Red));
+    assert_eq!(composited[0].bg, Some(Color::Blue));
 }
 
 #[test]
@@ -258,8 +263,9 @@ fn test_compositor_resize() {
     assert_eq!(compositor.cols(), 5);
 
     // Content should be preserved
-    let composited = compositor.get_composited();
-    assert_eq!(composited[0][0].content, Character::from('A'));
+    let composited = compositor.get_composited_slice();
+    // (0,0) = 0
+    assert_eq!(composited[0].content, Character::from('A'));
 }
 
 #[test]
@@ -330,24 +336,29 @@ fn test_compositor_multiple_layers() {
         layer.set_cell(2, 7, Cell::from_char(']'));
     }
 
-    let composited = compositor.get_composited();
+    let composited = compositor.get_composited_slice();
 
     // Content shows through where no higher layer
-    assert_eq!(composited[0][0].content, Character::from('.'));
+    // (0,0) = 0
+    assert_eq!(composited[0].content, Character::from('.'));
 
     // Status bar overrides content
-    assert_eq!(composited[4][0].content, Character::from('-'));
-    assert_eq!(composited[4][0].fg, Some(Color::Green));
+    // (4,0) = 4*10 + 0 = 40
+    assert_eq!(composited[40].content, Character::from('-'));
+    assert_eq!(composited[40].fg, Some(Color::Green));
 
     // Floating window overrides content
-    assert_eq!(composited[2][4].content, Character::from('['));
-    assert_eq!(composited[2][5].content, Character::from('O'));
-    assert_eq!(composited[2][6].content, Character::from('K'));
-    assert_eq!(composited[2][7].content, Character::from(']'));
+    // (2,4) = 2*10 + 4 = 24
+    assert_eq!(composited[24].content, Character::from('['));
+    assert_eq!(composited[25].content, Character::from('O'));
+    assert_eq!(composited[26].content, Character::from('K'));
+    assert_eq!(composited[27].content, Character::from(']'));
 
     // Content still visible around floating window
-    assert_eq!(composited[2][3].content, Character::from('.'));
-    assert_eq!(composited[2][8].content, Character::from('.'));
+    // (2,3) = 23
+    assert_eq!(composited[23].content, Character::from('.'));
+    // (2,8) = 28
+    assert_eq!(composited[28].content, Character::from('.'));
 }
 
 #[test]
@@ -441,7 +452,7 @@ fn test_compositor_dirty_rect_optimization() {
     assert!(compositor.has_dirty());
 
     // Get composited - logic should only update that one cell + others should remain
-    let composited = compositor.get_composited();
-    assert_eq!(composited[2][2].content, Character::from('X'));
-    assert_eq!(composited[0][0].content, Character::from('.')); // Should still be dot
+    let composited = compositor.get_composited_slice();
+    assert_eq!(composited[12].content, Character::from('X')); // 2*5 + 2 = 12
+    assert_eq!(composited[0].content, Character::from('.')); // Should still be dot
 }

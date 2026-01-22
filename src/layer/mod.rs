@@ -253,6 +253,17 @@ impl Layer {
         self.dirty_rects.clear();
     }
 
+    /// Mark the entire layer as dirty without changing content
+    pub fn mark_fully_dirty(&mut self) {
+        self.dirty_rects.clear();
+        self.dirty_rects.push(Rect::new(
+            0,
+            0,
+            self.rows.saturating_sub(1),
+            self.cols.saturating_sub(1),
+        ));
+    }
+
     /// Clear all cells in the layer (make transparent)
     pub fn clear(&mut self) {
         for row in &mut self.cells {
@@ -463,15 +474,7 @@ impl LayerCompositor {
         if removed.is_some() {
             // Mark all remaining layers as fully dirty to ensure correct composition.
             for layer in self.layers.values_mut() {
-                layer.clear(); // Resets to full dirty rect
-                               // Mark as dirty explicitly without clearing content.
-                layer.dirty_rects.clear();
-                layer.dirty_rects.push(Rect::new(
-                    0,
-                    0,
-                    self.rows.saturating_sub(1),
-                    self.cols.saturating_sub(1),
-                ));
+                layer.mark_fully_dirty();
             }
         }
         removed
@@ -526,26 +529,14 @@ impl LayerCompositor {
             return;
         }
 
-        let buffer = self.buffer.current_mut();
-
         // Process each dirty rect
         for rect in dirty_rects {
             // Iterate over every pixel in the dirty rect
-            for (r, bufrow) in buffer
-                .iter_mut()
-                .enumerate()
-                .take(rect.end_row + 1)
-                .skip(rect.start_row)
-            {
+            for r in rect.start_row..=rect.end_row {
                 if r >= self.rows {
                     continue;
                 }
-                for (c, bufcol) in bufrow
-                    .iter_mut()
-                    .enumerate()
-                    .take(rect.end_col + 1)
-                    .skip(rect.start_col)
-                {
+                for c in rect.start_col..=rect.end_col {
                     if c >= self.cols {
                         continue;
                     }
@@ -560,9 +551,9 @@ impl LayerCompositor {
                     }
 
                     if let Some(cell) = final_cell {
-                        *bufcol = cell;
+                        self.buffer.set_cell(r, c, cell);
                     } else {
-                        *bufcol = Cell::empty();
+                        self.buffer.set_cell(r, c, Cell::empty());
                     }
                 }
             }
@@ -576,11 +567,11 @@ impl LayerCompositor {
 
     /// Get the composited buffer (read-only)
     /// Automatically composites if any layer is dirty
-    pub fn get_composited(&mut self) -> &Vec<Vec<Cell>> {
+    pub fn get_composited_slice(&mut self) -> &[Cell] {
         if self.has_dirty() {
             self.composite();
         }
-        self.buffer.current()
+        self.buffer.current_slice()
     }
 
     /// Render the composited output to the terminal using double buffering
