@@ -185,6 +185,11 @@ fn test_theme_coverage() {
         "yaml",
         "html",
         "css",
+        "java",
+        "c_sharp",
+        "ruby",
+        "php",
+        "zig",
     ];
 
     let theme = Theme::dark();

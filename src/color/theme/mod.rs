@@ -187,6 +187,11 @@ impl Theme {
             ("media", Color::DarkMagenta),
             ("supports", Color::DarkMagenta),
             ("field", Color::Black), // Property
+            (C_IMPORT, Color::DarkMagenta),
+            (CHARACTER, Color::DarkGreen),
+            (MODULE_BUILTIN, Color::DarkBlue),
+            (SPELL, Color::Black),
+            (MODULE, Color::DarkYellow),
         ]);
 
         Theme::new(
@@ -246,6 +251,11 @@ impl Theme {
             ("media", Color::Magenta),
             ("supports", Color::Magenta),
             ("field", Color::White), // Property
+            (C_IMPORT, Color::Magenta),
+            (CHARACTER, Color::Green),
+            (MODULE_BUILTIN, Color::Blue),
+            (SPELL, Color::White),
+            (MODULE, Color::Yellow),
         ]);
 
         Theme::new(
@@ -537,6 +547,39 @@ impl Theme {
                     b: 136,
                 },
             ), // Blue
+            (
+                C_IMPORT,
+                Color::Rgb {
+                    r: 142,
+                    g: 192,
+                    b: 124,
+                },
+            ), // Aqua
+            (
+                CHARACTER,
+                Color::Rgb {
+                    r: 152,
+                    g: 151,
+                    b: 26,
+                },
+            ), // Green
+            (
+                MODULE_BUILTIN,
+                Color::Rgb {
+                    r: 69,
+                    g: 133,
+                    b: 136,
+                },
+            ), // Blue
+            (SPELL, fg),
+            (
+                MODULE,
+                Color::Rgb {
+                    r: 127,
+                    g: 162,
+                    b: 172,
+                },
+            ), // Blue
         ]);
 
         Theme::new(
@@ -803,13 +846,38 @@ impl Theme {
                 },
             ), // Purple
             (
-                "field",
+                C_IMPORT,
                 Color::Rgb {
-                    r: 136,
-                    g: 192,
-                    b: 208,
+                    r: 180,
+                    g: 142,
+                    b: 173,
                 },
-            ), // Cyan
+            ), // Purple
+            (
+                CHARACTER,
+                Color::Rgb {
+                    r: 163,
+                    g: 190,
+                    b: 140,
+                },
+            ), // Green
+            (
+                MODULE_BUILTIN,
+                Color::Rgb {
+                    r: 143,
+                    g: 188,
+                    b: 187,
+                },
+            ), // Cyan/Teal
+            (SPELL, fg),
+            (
+                MODULE,
+                Color::Rgb {
+                    r: 129,
+                    g: 161,
+                    b: 193,
+                },
+            ), // Blue
         ]);
 
         Theme::new(

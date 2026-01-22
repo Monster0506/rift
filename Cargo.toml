@@ -30,6 +30,12 @@ treesitter = [
     "dep:tree-sitter-rust",
     "dep:tree-sitter-typescript",
     "dep:tree-sitter-yaml",
+    "dep:tree-sitter-java",
+    "dep:tree-sitter-c-sharp",
+    "dep:tree-sitter-ruby",
+    "dep:tree-sitter-php",
+    "dep:tree-sitter-zig",
+
 ]
 
 [dependencies]
@@ -54,6 +60,12 @@ tree-sitter-python = { version = "0.25", optional = true }
 tree-sitter-rust = { version = "0.24", optional = true }
 tree-sitter-typescript = { version = "0.23.2", optional = true }
 tree-sitter-yaml = { version = "0.7.2", optional = true }
+tree-sitter-java = { version = "0.23.5", optional = true }
+tree-sitter-c-sharp = { version = "0.23.1", optional = true }
+tree-sitter-ruby = { version = "0.23.1", optional = true }
+tree-sitter-php = { version = "0.24.2", optional = true }
+tree-sitter-zig = { version = "1.1.2", optional = true }
+
 
 [dev-dependencies]
 tempfile = "3.24.0"

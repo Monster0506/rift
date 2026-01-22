@@ -52,6 +52,12 @@ impl LanguageLoader {
             "ts" => "typescript",
             "tsx" => "tsx",
             "yaml" | "yml" => "yaml",
+            "java" => "java",
+            "cs" => "c_sharp",
+            "rb" => "ruby",
+            "php" => "php",
+            "zig" => "zig",
+
             _ => {
                 return Err(RiftError::new(
                     ErrorType::Internal,
@@ -84,6 +90,15 @@ impl LanguageLoader {
     pub fn load_query(&self, lang_name: &str, query_name: &str) -> Result<String, RiftError> {
         // Check for bundled queries first (when feature is enabled)
         if query_name == "highlights" {
+            #[cfg(feature = "treesitter")]
+            if lang_name == "cpp" {
+                return Ok(format!(
+                    "{}\n{}",
+                    tree_sitter_c::HIGHLIGHT_QUERY,
+                    tree_sitter_cpp::HIGHLIGHT_QUERY
+                ));
+            }
+
             #[cfg(feature = "treesitter")]
             if let Some((_, query)) = get_bundled_language(lang_name) {
                 return Ok(query.to_string());
@@ -164,6 +179,24 @@ fn get_bundled_language(lang_name: &str) -> Option<(Language, &'static str)> {
             tree_sitter_bash::LANGUAGE.into(),
             tree_sitter_bash::HIGHLIGHT_QUERY,
         )),
+        "java" => Some((
+            tree_sitter_java::LANGUAGE.into(),
+            tree_sitter_java::HIGHLIGHTS_QUERY,
+        )),
+        "c_sharp" => Some((tree_sitter_c_sharp::LANGUAGE.into(), "")),
+        "ruby" => Some((
+            tree_sitter_ruby::LANGUAGE.into(),
+            tree_sitter_ruby::HIGHLIGHTS_QUERY,
+        )),
+        "php" => Some((
+            tree_sitter_php::LANGUAGE_PHP.into(),
+            tree_sitter_php::HIGHLIGHTS_QUERY,
+        )),
+        "zig" => Some((
+            tree_sitter_zig::LANGUAGE.into(),
+            tree_sitter_zig::HIGHLIGHTS_QUERY,
+        )),
+
         _ => None,
     }
 }

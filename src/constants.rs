@@ -210,4 +210,8 @@ pub mod captures {
     // Explicit keywords found in coverage test
     pub const KEYWORD_IMPORT: &str = "import";
     pub const KEYWORD_DIRECTIVE: &str = "keyword.directive";
+    pub const C_IMPORT: &str = "cImport";
+    pub const CHARACTER: &str = "character";
+    pub const MODULE_BUILTIN: &str = "module.builtin";
+    pub const SPELL: &str = "spell";
 }
