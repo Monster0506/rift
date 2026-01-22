@@ -163,3 +163,93 @@ fn test_theme_variant() {
     let nordic = Theme::nordic();
     assert_eq!(nordic.variant, ThemeVariant::Dark);
 }
+
+#[test]
+#[cfg(feature = "treesitter")]
+fn test_theme_coverage() {
+    use crate::syntax::loader::LanguageLoader;
+    use std::path::PathBuf;
+
+    let languages = vec![
+        "rust",
+        "python",
+        "c",
+        "cpp",
+        "javascript",
+        "typescript",
+        "go",
+        "lua",
+        "json",
+        "bash",
+        "markdown",
+        "yaml",
+        "html",
+        "css",
+    ];
+
+    let theme = Theme::dark();
+    let syntax = theme
+        .syntax
+        .as_ref()
+        .expect("Dark theme must have syntax colors");
+    let loader = LanguageLoader::new(PathBuf::from(""));
+
+    let mut missing_captures = Vec::new();
+
+    for lang in languages {
+        // Load highlights query
+        let query_source = match loader.load_query(lang, "highlights") {
+            Ok(q) => q,
+            Err(_) => {
+                continue;
+            }
+        };
+
+        // Simple parser to extract @capture.name
+        let mut chars = query_source.char_indices().peekable();
+        while let Some((i, c)) = chars.next() {
+            if c == '@' {
+                // Found potential capture
+                let start = i;
+                let mut end = i + 1;
+                while let Some(&(j, ch)) = chars.peek() {
+                    if ch.is_alphanumeric() || ch == '.' || ch == '_' || ch == '-' {
+                        chars.next();
+                        end = j + 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                let capture = &query_source[start..end];
+                // capture includes leading @
+                if capture.trim_start_matches('@').trim().is_empty() {
+                    continue;
+                }
+
+                // Verify if theme handles it
+                if syntax.get_color(capture).is_none() {
+                    missing_captures.push(format!("{} in {}", capture, lang));
+                }
+            }
+        }
+    }
+
+    if !missing_captures.is_empty() {
+        // Deduplicate
+        missing_captures.sort();
+        missing_captures.dedup();
+
+        // Write to file
+        use std::io::Write;
+        let mut file = std::fs::File::create("missing_captures.txt").unwrap();
+        for capture in &missing_captures {
+            writeln!(file, "{}", capture).unwrap();
+        }
+
+        panic!(
+            "Found {} missing captures. See missing_captures.txt",
+            missing_captures.len()
+        );
+    }
+}

@@ -55,7 +55,7 @@ impl ThemeHandler for DefaultThemeHandler {
         settings.editor_fg = Some(theme.foreground);
 
         // Apply syntax colors
-        settings.syntax_colors = theme.syntax;
+        settings.syntax_colors = theme.syntax.clone();
     }
 }
 
@@ -63,26 +63,43 @@ impl ThemeHandler for DefaultThemeHandler {
 /// In the future, this could be made configurable or passed as a parameter
 static THEME_HANDLER: DefaultThemeHandler = DefaultThemeHandler;
 
+use std::collections::HashMap;
+
 /// Syntax highlighting colors for a theme
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxColors {
-    pub keyword: Color,
-    pub function: Color,
-    pub type_def: Color,
-    pub string: Color,
-    pub number: Color,
-    pub constant: Color,
-    pub boolean: Color,
-    pub comment: Color,
-    pub variable: Color,
-    pub parameter: Color,
-    pub property: Color,
-    pub attribute: Color,
-    pub namespace: Color,
-    pub operator: Color,
-    pub punctuation: Color,
-    pub constructor: Color,
-    pub builtin: Color,
+    pub colors: HashMap<String, Color>,
+}
+
+impl SyntaxColors {
+    /// Create syntax colors from a list of base colors
+    pub fn from_base_colors(base: &[(&str, Color)]) -> Self {
+        Self {
+            colors: base.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
+        }
+    }
+
+    pub fn get_color(&self, capture: &str) -> Option<Color> {
+        // 1. Normalize (remove leading @ and trim)
+        let clean_capture = capture.trim_start_matches('@').trim();
+
+        // 2. Try exact match
+        if let Some(color) = self.colors.get(clean_capture) {
+            return Some(*color);
+        }
+
+        // 3. Fallback components (e.g., "function.builtin" -> "function")
+        let mut part = clean_capture;
+        while let Some(dot_index) = part.rfind('.') {
+            part = &part[0..dot_index];
+            if let Some(color) = self.colors.get(part) {
+                return Some(*color);
+            }
+        }
+
+        // 4. Return None to let caller fall back to editor foreground
+        None
+    }
 }
 
 /// Editor theme definition
@@ -129,6 +146,49 @@ impl Theme {
     /// Get the light theme
     #[must_use]
     pub fn light() -> Self {
+        use crate::constants::captures::*;
+        let syntax = SyntaxColors::from_base_colors(&[
+            (KEYWORD, Color::DarkMagenta),
+            (FUNCTION, Color::DarkBlue),
+            (TYPE, Color::DarkYellow),
+            (STRING, Color::DarkGreen),
+            (NUMBER, Color::DarkCyan),
+            (CONSTANT, Color::DarkCyan),
+            (BOOLEAN, Color::DarkCyan),
+            (COMMENT, Color::DarkGrey),
+            (VARIABLE, Color::Black),
+            (PARAMETER, Color::Black),
+            (PROPERTY, Color::Black),
+            (ATTRIBUTE, Color::Black),
+            (NAMESPACE, Color::Black),
+            (OPERATOR, Color::Black),
+            (PUNCTUATION, Color::Black),
+            (CONSTRUCTOR, Color::DarkYellow),
+            (BUILTIN, Color::DarkBlue),
+            (TEXT_TITLE, Color::DarkBlue),
+            (TEXT_LITERAL, Color::DarkGreen),
+            (TEXT_REFERENCE, Color::DarkYellow), // Distinct from URI
+            (TEXT_URI, Color::DarkCyan),         // Distinct from Reference
+            // New mappings from coverage check
+            (TAG, Color::DarkBlue),
+            (LABEL, Color::DarkYellow),
+            (ESCAPE, Color::DarkCyan),
+            ("method", Color::DarkBlue),
+            ("conditional", Color::DarkMagenta),
+            ("repeat", Color::DarkMagenta),
+            ("preproc", Color::DarkMagenta),
+            ("delimiter", Color::Black),
+            ("embedded", Color::Black), // Plain text
+            ("none", Color::Black),
+            // CSS/At-rules
+            ("charset", Color::DarkMagenta),
+            ("import", Color::DarkMagenta),
+            ("keyframes", Color::DarkMagenta),
+            ("media", Color::DarkMagenta),
+            ("supports", Color::DarkMagenta),
+            ("field", Color::Black), // Property
+        ]);
+
         Theme::new(
             crate::constants::themes::LIGHT,
             ThemeVariant::Light,
@@ -138,31 +198,56 @@ impl Theme {
                 b: 255,
             }, // #FFFFFF - Pure white
             Color::Rgb { r: 0, g: 0, b: 0 }, // #000000 - Pure black
-            Some(SyntaxColors {
-                keyword: Color::DarkMagenta,
-                function: Color::DarkBlue,
-                type_def: Color::DarkYellow,
-                string: Color::DarkGreen,
-                number: Color::DarkCyan,
-                constant: Color::DarkCyan,
-                boolean: Color::DarkCyan,
-                comment: Color::DarkGrey,
-                variable: Color::Black,
-                parameter: Color::Black,
-                property: Color::Black,
-                attribute: Color::Black,
-                namespace: Color::Black,
-                operator: Color::Black,
-                punctuation: Color::Black,
-                constructor: Color::DarkYellow,
-                builtin: Color::DarkBlue,
-            }),
+            Some(syntax),
         )
     }
 
     /// Get the dark theme
     #[must_use]
     pub fn dark() -> Self {
+        use crate::constants::captures::*;
+        let syntax = SyntaxColors::from_base_colors(&[
+            (KEYWORD, Color::Magenta),
+            (FUNCTION, Color::Blue),
+            (TYPE, Color::Yellow),
+            (STRING, Color::Green),
+            (NUMBER, Color::Cyan),
+            (CONSTANT, Color::Cyan),
+            (BOOLEAN, Color::Cyan),
+            (COMMENT, Color::Grey),
+            (VARIABLE, Color::White),
+            (PARAMETER, Color::White),
+            (PROPERTY, Color::White),
+            (ATTRIBUTE, Color::White),
+            (NAMESPACE, Color::White),
+            (OPERATOR, Color::White),
+            (PUNCTUATION, Color::White),
+            (CONSTRUCTOR, Color::Yellow),
+            (BUILTIN, Color::Blue),
+            (TEXT_TITLE, Color::Blue),
+            (TEXT_LITERAL, Color::Green),
+            (TEXT_REFERENCE, Color::Yellow), // Distinct from URI
+            (TEXT_URI, Color::Cyan),         // Distinct from Reference
+            // New mappings from coverage check
+            (TAG, Color::Blue),
+            (LABEL, Color::Yellow),
+            (ESCAPE, Color::Cyan),
+            ("method", Color::Blue),
+            ("conditional", Color::Magenta),
+            ("repeat", Color::Magenta),
+            ("preproc", Color::Magenta),
+            ("delimiter", Color::White),
+            ("embedded", Color::White),
+            ("none", Color::White),
+            // CSS/At-rules
+            ("charset", Color::Magenta),
+            ("import", Color::Magenta),
+            ("keyframes", Color::Magenta),
+            ("media", Color::Magenta),
+            ("supports", Color::Magenta),
+            ("field", Color::White), // Property
+        ]);
+
         Theme::new(
             crate::constants::themes::DARK,
             ThemeVariant::Dark,
@@ -176,115 +261,283 @@ impl Theme {
                 g: 224,
                 b: 224,
             }, // #E0E0E0 - Light gray
-            Some(SyntaxColors {
-                keyword: Color::Magenta,
-                function: Color::Blue,
-                type_def: Color::Yellow,
-                string: Color::Green,
-                number: Color::Cyan,
-                constant: Color::Cyan,
-                boolean: Color::Cyan,
-                comment: Color::Grey,
-                variable: Color::White,
-                parameter: Color::White,
-                property: Color::White,
-                attribute: Color::White,
-                namespace: Color::White,
-                operator: Color::White,
-                punctuation: Color::White,
-                constructor: Color::Yellow,
-                builtin: Color::Blue,
-            }),
+            Some(syntax),
         )
     }
 
     /// Get the gruvbox theme (dark variant)
     #[must_use]
     pub fn gruvbox() -> Self {
+        use crate::constants::captures::*;
         let fg = Color::Rgb {
             r: 235,
             g: 219,
             b: 178,
         };
-        let syntax = SyntaxColors {
-            keyword: Color::Rgb {
-                r: 251,
-                g: 73,
-                b: 52,
-            }, // #fb4934
-            function: Color::Rgb {
-                r: 238,
-                g: 189,
-                b: 53,
-            }, // #eebd35
-            type_def: Color::Rgb {
-                r: 142,
-                g: 192,
-                b: 124,
-            }, // #8ec07c
-            string: Color::Rgb {
-                r: 152,
-                g: 151,
-                b: 26,
-            }, // #98971a
-            number: Color::Rgb {
-                r: 177,
-                g: 98,
-                b: 134,
-            }, // #b16286
-            constant: Color::Rgb {
-                r: 212,
-                g: 135,
-                b: 156,
-            }, // #D4879C
-            boolean: Color::Rgb {
-                r: 214,
-                g: 93,
-                b: 14,
-            }, // #d65d0e
-            comment: Color::Rgb {
-                r: 102,
-                g: 92,
-                b: 84,
-            }, // #665c54
-            variable: Color::Rgb {
-                r: 127,
-                g: 162,
-                b: 172,
-            }, // #7fa2ac
-            parameter: Color::Rgb {
-                r: 69,
-                g: 133,
-                b: 136,
-            }, // #458588
-            property: Color::Rgb {
-                r: 69,
-                g: 133,
-                b: 136,
-            }, // #458588
-            attribute: Color::Rgb {
-                r: 69,
-                g: 133,
-                b: 136,
-            }, // #458588
-            namespace: Color::Rgb {
-                r: 127,
-                g: 162,
-                b: 172,
-            }, // #7fa2ac
-            operator: fg,
-            punctuation: fg,
-            constructor: Color::Rgb {
-                r: 142,
-                g: 192,
-                b: 124,
-            }, // #8ec07c
-            builtin: Color::Rgb {
-                r: 69,
-                g: 133,
-                b: 136,
-            }, // #458588
-        };
+        let syntax = SyntaxColors::from_base_colors(&[
+            (
+                KEYWORD,
+                Color::Rgb {
+                    r: 251,
+                    g: 73,
+                    b: 52,
+                },
+            ), // #fb4934
+            (
+                FUNCTION,
+                Color::Rgb {
+                    r: 238,
+                    g: 189,
+                    b: 53,
+                },
+            ), // #eebd35
+            (
+                TYPE,
+                Color::Rgb {
+                    r: 142,
+                    g: 192,
+                    b: 124,
+                },
+            ), // #8ec07c
+            (
+                STRING,
+                Color::Rgb {
+                    r: 152,
+                    g: 151,
+                    b: 26,
+                },
+            ), // #98971a
+            (
+                NUMBER,
+                Color::Rgb {
+                    r: 177,
+                    g: 98,
+                    b: 134,
+                },
+            ), // #b16286
+            (
+                CONSTANT,
+                Color::Rgb {
+                    r: 212,
+                    g: 135,
+                    b: 156,
+                },
+            ), // #D4879C
+            (
+                BOOLEAN,
+                Color::Rgb {
+                    r: 214,
+                    g: 93,
+                    b: 14,
+                },
+            ), // #d65d0e
+            (
+                COMMENT,
+                Color::Rgb {
+                    r: 102,
+                    g: 92,
+                    b: 84,
+                },
+            ), // #665c54
+            (
+                VARIABLE,
+                Color::Rgb {
+                    r: 127,
+                    g: 162,
+                    b: 172,
+                },
+            ), // #7fa2ac
+            (
+                PARAMETER,
+                Color::Rgb {
+                    r: 69,
+                    g: 133,
+                    b: 136,
+                },
+            ), // #458588
+            (
+                PROPERTY,
+                Color::Rgb {
+                    r: 69,
+                    g: 133,
+                    b: 136,
+                },
+            ), // #458588
+            (
+                ATTRIBUTE,
+                Color::Rgb {
+                    r: 69,
+                    g: 133,
+                    b: 136,
+                },
+            ), // #458588
+            (
+                NAMESPACE,
+                Color::Rgb {
+                    r: 127,
+                    g: 162,
+                    b: 172,
+                },
+            ), // #7fa2ac
+            (OPERATOR, fg),
+            (PUNCTUATION, fg),
+            (
+                CONSTRUCTOR,
+                Color::Rgb {
+                    r: 142,
+                    g: 192,
+                    b: 124,
+                },
+            ), // #8ec07c
+            (
+                BUILTIN,
+                Color::Rgb {
+                    r: 69,
+                    g: 133,
+                    b: 136,
+                },
+            ), // #458588
+            (
+                TEXT_TITLE,
+                Color::Rgb {
+                    r: 238,
+                    g: 189,
+                    b: 53,
+                },
+            ), // Yellow
+            (
+                TEXT_LITERAL,
+                Color::Rgb {
+                    r: 152,
+                    g: 151,
+                    b: 26,
+                },
+            ), // Green
+            (
+                TEXT_REFERENCE,
+                Color::Rgb {
+                    r: 250,
+                    g: 189,
+                    b: 47,
+                },
+            ), // Yellow #fabd2f
+            (
+                TEXT_URI,
+                Color::Rgb {
+                    r: 131,
+                    g: 165,
+                    b: 152,
+                },
+            ), // Blue #83a598
+            // Extensions
+            (
+                TAG,
+                Color::Rgb {
+                    r: 142,
+                    g: 192,
+                    b: 124,
+                },
+            ), // Aqua/Green
+            (
+                LABEL,
+                Color::Rgb {
+                    r: 250,
+                    g: 189,
+                    b: 47,
+                },
+            ), // Yellow
+            (
+                ESCAPE,
+                Color::Rgb {
+                    r: 214,
+                    g: 93,
+                    b: 14,
+                },
+            ), // Orange
+            (
+                "method",
+                Color::Rgb {
+                    r: 238,
+                    g: 189,
+                    b: 53,
+                },
+            ), // Yellow
+            (
+                "conditional",
+                Color::Rgb {
+                    r: 251,
+                    g: 73,
+                    b: 52,
+                },
+            ), // Red
+            (
+                "repeat",
+                Color::Rgb {
+                    r: 251,
+                    g: 73,
+                    b: 52,
+                },
+            ), // Red
+            (
+                "preproc",
+                Color::Rgb {
+                    r: 142,
+                    g: 192,
+                    b: 124,
+                },
+            ), // Aqua
+            ("delimiter", fg),
+            ("embedded", fg),
+            ("none", fg),
+            (
+                "charset",
+                Color::Rgb {
+                    r: 251,
+                    g: 73,
+                    b: 52,
+                },
+            ), // Red
+            (
+                "import",
+                Color::Rgb {
+                    r: 142,
+                    g: 192,
+                    b: 124,
+                },
+            ), // Aqua
+            (
+                "keyframes",
+                Color::Rgb {
+                    r: 251,
+                    g: 73,
+                    b: 52,
+                },
+            ), // Red
+            (
+                "media",
+                Color::Rgb {
+                    r: 251,
+                    g: 73,
+                    b: 52,
+                },
+            ), // Red
+            (
+                "supports",
+                Color::Rgb {
+                    r: 251,
+                    g: 73,
+                    b: 52,
+                },
+            ), // Red
+            (
+                "field",
+                Color::Rgb {
+                    r: 69,
+                    g: 133,
+                    b: 136,
+                },
+            ), // Blue
+        ]);
 
         Theme::new(
             crate::constants::themes::GRUVBOX,
@@ -302,82 +555,262 @@ impl Theme {
     /// Get the nordic theme
     #[must_use]
     pub fn nordic() -> Self {
+        use crate::constants::captures::*;
         let fg = Color::Rgb {
             r: 187,
             g: 195,
             b: 212,
         }; // #BBC3D4
-        let syntax = SyntaxColors {
-            keyword: Color::Rgb {
-                r: 180,
-                g: 142,
-                b: 173,
-            }, // #B48EAD
-            function: Color::Rgb {
-                r: 136,
-                g: 192,
-                b: 208,
-            }, // #88C0D0
-            type_def: Color::Rgb {
-                r: 129,
-                g: 161,
-                b: 193,
-            }, // #81A1C1
-            string: Color::Rgb {
-                r: 163,
-                g: 190,
-                b: 140,
-            }, // #A3BE8C
-            number: Color::Rgb {
-                r: 180,
-                g: 142,
-                b: 173,
-            }, // #B48EAD
-            constant: Color::Rgb {
-                r: 208,
-                g: 135,
-                b: 112,
-            }, // #D08770
-            boolean: Color::Rgb {
-                r: 208,
-                g: 135,
-                b: 112,
-            }, // #D08770
-            comment: Color::Rgb {
-                r: 76,
-                g: 86,
-                b: 106,
-            }, // #4C566A
-            variable: fg,
-            parameter: fg,
-            property: Color::Rgb {
-                r: 136,
-                g: 192,
-                b: 208,
-            }, // #88C0D0
-            attribute: Color::Rgb {
-                r: 143,
-                g: 188,
-                b: 187,
-            }, // #8FBCBB
-            namespace: Color::Rgb {
-                r: 129,
-                g: 161,
-                b: 193,
-            }, // #81A1C1
-            operator: fg,
-            punctuation: fg,
-            constructor: Color::Rgb {
-                r: 129,
-                g: 161,
-                b: 193,
-            }, // #81A1C1
-            builtin: Color::Rgb {
-                r: 143,
-                g: 188,
-                b: 187,
-            }, // #8FBCBB
-        };
+        let syntax = SyntaxColors::from_base_colors(&[
+            (
+                KEYWORD,
+                Color::Rgb {
+                    r: 180,
+                    g: 142,
+                    b: 173,
+                },
+            ), // #B48EAD
+            (
+                FUNCTION,
+                Color::Rgb {
+                    r: 136,
+                    g: 192,
+                    b: 208,
+                },
+            ), // #88C0D0
+            (
+                TYPE,
+                Color::Rgb {
+                    r: 129,
+                    g: 161,
+                    b: 193,
+                },
+            ), // #81A1C1
+            (
+                STRING,
+                Color::Rgb {
+                    r: 163,
+                    g: 190,
+                    b: 140,
+                },
+            ), // #A3BE8C
+            (
+                NUMBER,
+                Color::Rgb {
+                    r: 180,
+                    g: 142,
+                    b: 173,
+                },
+            ), // #B48EAD
+            (
+                CONSTANT,
+                Color::Rgb {
+                    r: 208,
+                    g: 135,
+                    b: 112,
+                },
+            ), // #D08770
+            (
+                BOOLEAN,
+                Color::Rgb {
+                    r: 208,
+                    g: 135,
+                    b: 112,
+                },
+            ), // #D08770
+            (
+                COMMENT,
+                Color::Rgb {
+                    r: 76,
+                    g: 86,
+                    b: 106,
+                },
+            ), // #4C566A
+            (VARIABLE, fg),
+            (PARAMETER, fg),
+            (
+                PROPERTY,
+                Color::Rgb {
+                    r: 136,
+                    g: 192,
+                    b: 208,
+                },
+            ), // #88C0D0
+            (
+                ATTRIBUTE,
+                Color::Rgb {
+                    r: 143,
+                    g: 188,
+                    b: 187,
+                },
+            ), // #8FBCBB
+            (
+                NAMESPACE,
+                Color::Rgb {
+                    r: 129,
+                    g: 161,
+                    b: 193,
+                },
+            ), // #81A1C1
+            (OPERATOR, fg),
+            (PUNCTUATION, fg),
+            (
+                CONSTRUCTOR,
+                Color::Rgb {
+                    r: 129,
+                    g: 161,
+                    b: 193,
+                },
+            ), // #81A1C1
+            (
+                BUILTIN,
+                Color::Rgb {
+                    r: 143,
+                    g: 188,
+                    b: 187,
+                },
+            ), // #8FBCBB
+            (
+                TEXT_TITLE,
+                Color::Rgb {
+                    r: 136,
+                    g: 192,
+                    b: 208,
+                },
+            ), // #88C0D0
+            (
+                TEXT_LITERAL,
+                Color::Rgb {
+                    r: 163,
+                    g: 190,
+                    b: 140,
+                },
+            ), // #A3BE8C
+            (
+                TEXT_REFERENCE,
+                Color::Rgb {
+                    r: 235,
+                    g: 203,
+                    b: 139,
+                },
+            ), // Yellow #EBCB8B
+            (
+                TEXT_URI,
+                Color::Rgb {
+                    r: 143,
+                    g: 188,
+                    b: 187,
+                },
+            ), // Cyan #8FBCBB
+            // Extensions
+            (
+                TAG,
+                Color::Rgb {
+                    r: 129,
+                    g: 161,
+                    b: 193,
+                },
+            ), // Blue
+            (
+                LABEL,
+                Color::Rgb {
+                    r: 235,
+                    g: 203,
+                    b: 139,
+                },
+            ), // Yellow
+            (
+                ESCAPE,
+                Color::Rgb {
+                    r: 208,
+                    g: 135,
+                    b: 112,
+                },
+            ), // Orange
+            (
+                "method",
+                Color::Rgb {
+                    r: 136,
+                    g: 192,
+                    b: 208,
+                },
+            ), // Cyan
+            (
+                "conditional",
+                Color::Rgb {
+                    r: 180,
+                    g: 142,
+                    b: 173,
+                },
+            ), // Purple
+            (
+                "repeat",
+                Color::Rgb {
+                    r: 180,
+                    g: 142,
+                    b: 173,
+                },
+            ), // Purple
+            (
+                "preproc",
+                Color::Rgb {
+                    r: 129,
+                    g: 161,
+                    b: 193,
+                },
+            ), // Blue
+            ("delimiter", fg),
+            ("embedded", fg),
+            ("none", fg),
+            (
+                "charset",
+                Color::Rgb {
+                    r: 180,
+                    g: 142,
+                    b: 173,
+                },
+            ), // Purple
+            (
+                "import",
+                Color::Rgb {
+                    r: 129,
+                    g: 161,
+                    b: 193,
+                },
+            ), // Blue
+            (
+                "keyframes",
+                Color::Rgb {
+                    r: 180,
+                    g: 142,
+                    b: 173,
+                },
+            ), // Purple
+            (
+                "media",
+                Color::Rgb {
+                    r: 180,
+                    g: 142,
+                    b: 173,
+                },
+            ), // Purple
+            (
+                "supports",
+                Color::Rgb {
+                    r: 180,
+                    g: 142,
+                    b: 173,
+                },
+            ), // Purple
+            (
+                "field",
+                Color::Rgb {
+                    r: 136,
+                    g: 192,
+                    b: 208,
+                },
+            ), // Cyan
+        ]);
 
         Theme::new(
             crate::constants::themes::NORDIC,

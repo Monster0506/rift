@@ -569,7 +569,7 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
                         // If range.end > current_byte_offset, then it contains it.
                         if range.end > current_byte_offset {
                             if let Some(syntax_colors) = &ctx.state.settings.syntax_colors {
-                                color = Some(map_capture_to_color(capture, syntax_colors));
+                                color = syntax_colors.get_color(capture);
                             }
                             break; // First match wins
                         }
@@ -642,47 +642,6 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
     }
 
     Ok(())
-}
-
-fn map_capture_to_color(
-    capture: &str,
-    colors: &crate::color::theme::SyntaxColors,
-) -> crate::color::Color {
-    use crate::constants::captures;
-    match capture {
-        captures::KEYWORD | "keyword.control" | "keyword.operator" | "keyword.function" => {
-            colors.keyword
-        }
-        captures::FUNCTION | "function.builtin" | "function.method" | "function.macro" => {
-            colors.function
-        }
-        captures::TYPE | "type.builtin" | "type.definition" | "class" | "struct" | "enum" => {
-            colors.type_def
-        }
-        captures::STRING | "string.special" => colors.string,
-        captures::NUMBER | "float" => colors.number,
-        captures::CONSTANT | "constant.builtin" | "constant.macro" => colors.constant,
-        captures::BOOLEAN => colors.boolean,
-        captures::COMMENT | "comment.line" | "comment.block" | "comment.documentation" => {
-            colors.comment
-        }
-        captures::VARIABLE
-        | "variable.builtin"
-        | "variable.parameter"
-        | "variable.other.member" => colors.variable,
-        captures::PARAMETER => colors.parameter,
-        captures::PROPERTY | captures::FIELD => colors.property,
-        captures::ATTRIBUTE | "attribute.builtin" => colors.attribute,
-        captures::MODULE | captures::NAMESPACE => colors.namespace,
-        captures::OPERATOR => colors.operator,
-        captures::PUNCTUATION
-        | "punctuation.delimiter"
-        | "punctuation.bracket"
-        | "punctuation.special" => colors.punctuation,
-        captures::CONSTRUCTOR => colors.constructor,
-        captures::BUILTIN => colors.builtin,
-        _ => colors.variable, // Fallback
-    }
 }
 
 /// Calculate the cursor column position accounting for tab width and wide characters
