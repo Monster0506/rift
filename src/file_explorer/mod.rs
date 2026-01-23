@@ -86,128 +86,6 @@ impl FileExplorer {
         ))
     }
 
-    pub fn handle_job_message(&mut self, message: JobMessage) -> EventResult {
-        match message {
-            JobMessage::Custom(_, payload) => {
-                if let Some(listing) = payload.as_any().downcast_ref::<DirectoryListing>() {
-                    // LEFT PANE: Directory update
-                    // Check if this listing is for our current path (avoid race conditions from old jobs)
-                    if listing.path == self.current_path {
-                        self.entries = listing.entries.clone();
-                        self.selected_indices.clear();
-                        self.update_view();
-
-                        // Trigger preview for first item if exists
-                        if !self.entries.is_empty() {
-                            let idx = 0; // Reset to top
-                            self.select_view.set_selected_line(Some(idx));
-                            self.select_view.set_left_scroll(0); // Reset scroll
-                            return self.create_preview_action(idx);
-                        } else {
-                            // Log empty directory for debugging
-                            return EventResult::Action(Box::new(ExplorerAction::Notify(
-                                crate::notification::NotificationType::Warning,
-                                format!("Directory is empty: {:?}", self.current_path),
-                            )));
-                        }
-                    }
-                    // RIGHT PANE: Directory Preview
-                    else {
-                        // Check if this listing matches our currently selected entry (directory preview)
-                        if let Some(visual_idx) = self.select_view.selected_line() {
-                            if let Some(entry_idx) = self.get_entry_index(visual_idx) {
-                                if let Some(entry) = self.entries.get(entry_idx) {
-                                    if entry.path == listing.path {
-                                        // This job result is for the currently selected directory!
-                                        let mut content = Vec::new();
-                                        for entry in &listing.entries {
-                                            let mut row = Vec::new();
-                                            // Icon
-                                            if entry.is_dir {
-                                                row.push(Cell::from_char('D').with_fg(Color::Blue));
-                                            } else {
-                                                row.push(
-                                                    Cell::from_char('F').with_fg(Color::White),
-                                                );
-                                            }
-                                            row.push(Cell::from_char(' '));
-
-                                            // Name
-                                            let color = if entry.is_dir {
-                                                Color::Blue
-                                            } else {
-                                                Color::White
-                                            };
-                                            for c in entry.name.chars() {
-                                                row.push(Cell::from_char(c).with_fg(color));
-                                            }
-                                            content.push(row);
-                                        }
-
-                                        if content.is_empty() {
-                                            content.push(vec![
-                                                Cell::from_char('<')
-                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
-                                                Cell::from_char('e')
-                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
-                                                Cell::from_char('m')
-                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
-                                                Cell::from_char('p')
-                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
-                                                Cell::from_char('t')
-                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
-                                                Cell::from_char('y')
-                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
-                                                Cell::from_char('>')
-                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
-                                            ]);
-                                        }
-
-                                        // Update Cache
-                                        self.preview_cache
-                                            .insert(listing.path.clone(), content.clone());
-
-                                        self.select_view.set_right_content(content);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if let Some(preview) = payload.as_any().downcast_ref::<FilePreview>() {
-                    // Update right pane
-                    if let Some(visual_idx) = self.select_view.selected_line() {
-                        if let Some(entry_idx) = self.get_entry_index(visual_idx) {
-                            if let Some(entry) = self.entries.get(entry_idx) {
-                                if entry.path == preview.path {
-                                    let content: Vec<Vec<Cell>> = preview
-                                        .content
-                                        .lines()
-                                        .map(|line| line.chars().map(Cell::from_char).collect())
-                                        .collect();
-
-                                    // Update Cache
-                                    self.preview_cache
-                                        .insert(preview.path.clone(), content.clone());
-
-                                    self.select_view.set_right_content(content);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            JobMessage::Finished(_, silent) => {
-                if !silent {
-                    return EventResult::Action(Box::new(ExplorerAction::SpawnJob(
-                        self.create_list_job(),
-                    )));
-                }
-            }
-            _ => {}
-        }
-        EventResult::Consumed
-    }
-
     fn update_view(&mut self) {
         let mut content = Vec::new();
 
@@ -342,6 +220,128 @@ fn format_size(bytes: u64) -> String {
 }
 
 impl Component for FileExplorer {
+    fn handle_job_message(&mut self, message: JobMessage) -> EventResult {
+        match message {
+            JobMessage::Custom(_, payload) => {
+                if let Some(listing) = payload.as_any().downcast_ref::<DirectoryListing>() {
+                    // LEFT PANE: Directory update
+                    // Check if this listing is for our current path (avoid race conditions from old jobs)
+                    if listing.path == self.current_path {
+                        self.entries = listing.entries.clone();
+                        self.selected_indices.clear();
+                        self.update_view();
+
+                        // Trigger preview for first item if exists
+                        if !self.entries.is_empty() {
+                            let idx = 0; // Reset to top
+                            self.select_view.set_selected_line(Some(idx));
+                            self.select_view.set_left_scroll(0); // Reset scroll
+                            return self.create_preview_action(idx);
+                        } else {
+                            // Log empty directory for debugging
+                            return EventResult::Action(Box::new(ExplorerAction::Notify(
+                                crate::notification::NotificationType::Warning,
+                                format!("Directory is empty: {:?}", self.current_path),
+                            )));
+                        }
+                    }
+                    // RIGHT PANE: Directory Preview
+                    else {
+                        // Check if this listing matches our currently selected entry (directory preview)
+                        if let Some(visual_idx) = self.select_view.selected_line() {
+                            if let Some(entry_idx) = self.get_entry_index(visual_idx) {
+                                if let Some(entry) = self.entries.get(entry_idx) {
+                                    if entry.path == listing.path {
+                                        // This job result is for the currently selected directory!
+                                        let mut content = Vec::new();
+                                        for entry in &listing.entries {
+                                            let mut row = Vec::new();
+                                            // Icon
+                                            if entry.is_dir {
+                                                row.push(Cell::from_char('D').with_fg(Color::Blue));
+                                            } else {
+                                                row.push(
+                                                    Cell::from_char('F').with_fg(Color::White),
+                                                );
+                                            }
+                                            row.push(Cell::from_char(' '));
+
+                                            // Name
+                                            let color = if entry.is_dir {
+                                                Color::Blue
+                                            } else {
+                                                Color::White
+                                            };
+                                            for c in entry.name.chars() {
+                                                row.push(Cell::from_char(c).with_fg(color));
+                                            }
+                                            content.push(row);
+                                        }
+
+                                        if content.is_empty() {
+                                            content.push(vec![
+                                                Cell::from_char('<')
+                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
+                                                Cell::from_char('e')
+                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
+                                                Cell::from_char('m')
+                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
+                                                Cell::from_char('p')
+                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
+                                                Cell::from_char('t')
+                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
+                                                Cell::from_char('y')
+                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
+                                                Cell::from_char('>')
+                                                    .with_fg(self.fg.unwrap_or(Color::DarkGrey)),
+                                            ]);
+                                        }
+
+                                        // Update Cache
+                                        self.preview_cache
+                                            .insert(listing.path.clone(), content.clone());
+
+                                        self.select_view.set_right_content(content);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if let Some(preview) = payload.as_any().downcast_ref::<FilePreview>() {
+                    // Update right pane
+                    if let Some(visual_idx) = self.select_view.selected_line() {
+                        if let Some(entry_idx) = self.get_entry_index(visual_idx) {
+                            if let Some(entry) = self.entries.get(entry_idx) {
+                                if entry.path == preview.path {
+                                    let content: Vec<Vec<Cell>> = preview
+                                        .content
+                                        .lines()
+                                        .map(|line| line.chars().map(Cell::from_char).collect())
+                                        .collect();
+
+                                    // Update Cache
+                                    self.preview_cache
+                                        .insert(preview.path.clone(), content.clone());
+
+                                    self.select_view.set_right_content(content);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            JobMessage::Finished(_, silent) => {
+                if !silent {
+                    return EventResult::Action(Box::new(ExplorerAction::SpawnJob(
+                        self.create_list_job(),
+                    )));
+                }
+            }
+            _ => {}
+        }
+        EventResult::Consumed
+    }
+
     fn handle_input(&mut self, key: Key) -> EventResult {
         if self.input_box.is_some() {
             let (result, submit_content) = if let Some(ib) = self.input_box.as_mut() {

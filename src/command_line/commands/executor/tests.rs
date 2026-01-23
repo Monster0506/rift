@@ -1260,3 +1260,68 @@ fn test_substitute_whole_file_undo() {
     assert!(document.redo());
     assert_eq!(document.buffer.to_string(), "qux\nbar\nqux\nbaz\nqux");
 }
+#[test]
+fn test_execute_undotree() {
+    let mut state = State::new();
+    let command = ParsedCommand::UndoTree { bangs: 0 };
+
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    if let ExecutionResult::OpenComponent {
+        component: _,
+        initial_job,
+    } = result
+    {
+        assert!(initial_job.is_none());
+    } else {
+        panic!(
+            "Expected OpenComponent result for UndoTree, got {:?}",
+            result
+        );
+    }
+}
+
+#[test]
+fn test_execute_explore() {
+    let mut state = State::new();
+    let command = ParsedCommand::Explore {
+        path: None,
+        bangs: 0,
+    };
+
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    if let ExecutionResult::OpenComponent {
+        component: _,
+        initial_job,
+    } = result
+    {
+        assert!(
+            initial_job.is_some(),
+            "Explore should have an initial job (listing)"
+        );
+    } else {
+        panic!(
+            "Expected OpenComponent result for Explore, got {:?}",
+            result
+        );
+    }
+}

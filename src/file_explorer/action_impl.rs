@@ -1,5 +1,5 @@
 use super::ExplorerAction;
-use crate::editor::actions::{EditorAction, EditorContext};
+use crate::editor_api::{EditorAction, EditorContext};
 use crate::error::RiftError;
 
 impl EditorAction for ExplorerAction {
