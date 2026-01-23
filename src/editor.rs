@@ -272,6 +272,8 @@ impl<T: TerminalBackend> Editor<T> {
             .as_mut()
             .map(|syntax| syntax.highlights(Some(start_byte..end_byte)));
 
+        let capture_names = doc.syntax.as_ref().map(|s| s.capture_names());
+
         let state = render::RenderState {
             buf: &doc.buffer,
             state: &self.state,
@@ -281,6 +283,7 @@ impl<T: TerminalBackend> Editor<T> {
             needs_clear: true,
             tab_width: doc.options.tab_width,
             highlights: highlights.as_deref(),
+            capture_map: capture_names,
             modal: self.modal.as_mut(),
         };
 
@@ -944,6 +947,8 @@ impl<T: TerminalBackend> Editor<T> {
             .as_mut()
             .map(|syntax| syntax.highlights(Some(start_byte..end_byte)));
 
+        let capture_names = doc.syntax.as_ref().map(|s| s.capture_names());
+
         let state = render::RenderState {
             buf: &doc.buffer,
             state,
@@ -953,6 +958,7 @@ impl<T: TerminalBackend> Editor<T> {
             needs_clear,
             tab_width: doc.options.tab_width,
             highlights: highlights.as_deref(),
+            capture_map: capture_names,
             modal: self.modal.as_mut(),
         };
 
@@ -1604,7 +1610,9 @@ impl<T: TerminalBackend> Editor<T> {
                         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
                             if let Some(syntax) = &mut doc.syntax {
                                 syntax.update_from_result(*result);
-                                self.force_full_redraw()?;
+                                // Use render(false) instead of force_full_redraw to reduce flickering.
+                                // The RenderSystem will use highlights_hash to detect changes.
+                                self.render(false)?;
                             }
                         }
                     }

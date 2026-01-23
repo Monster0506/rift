@@ -21,7 +21,7 @@ pub struct Syntax {
     pub language_name: String,
 
     // Cache
-    cached_highlights: Vec<(std::ops::Range<usize>, String)>,
+    cached_highlights: Vec<(std::ops::Range<usize>, u32)>,
 }
 
 impl Syntax {
@@ -63,7 +63,7 @@ impl Syntax {
     pub fn highlights(
         &self,
         range: Option<std::ops::Range<usize>>,
-    ) -> Vec<(std::ops::Range<usize>, String)> {
+    ) -> Vec<(std::ops::Range<usize>, u32)> {
         if let Some(r) = range {
             self.cached_highlights
                 .iter()
@@ -72,6 +72,15 @@ impl Syntax {
                 .collect()
         } else {
             self.cached_highlights.clone()
+        }
+    }
+
+    /// Get capture names from the query
+    pub fn capture_names(&self) -> &[&str] {
+        if let Some(query) = &self.highlights_query {
+            query.capture_names()
+        } else {
+            &[]
         }
     }
 }

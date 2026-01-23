@@ -46,6 +46,8 @@ pub struct ContentDrawState {
     pub tab_width: usize,
     /// Whether to show line numbers
     pub show_line_numbers: bool,
+    /// Hash/Generation of highlights to trigger redraw on syntax update
+    pub highlights_hash: u64,
     /// Current gutter width
     pub gutter_width: usize,
     /// Number of search matches (to trigger redraw on search)
@@ -148,7 +150,8 @@ pub struct RenderState<'a> {
     pub state: &'a State,
     pub needs_clear: bool,
     pub tab_width: usize,
-    pub highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
+    pub highlights: Option<&'a [(std::ops::Range<usize>, u32)]>,
+    pub capture_map: Option<&'a [&'a str]>,
     pub modal: Option<&'a mut crate::editor::ActiveModal>,
 }
 
@@ -162,7 +165,8 @@ pub struct DrawContext<'a> {
     pub state: &'a State,
     pub needs_clear: bool,
     pub tab_width: usize,
-    pub highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
+    pub highlights: Option<&'a [(std::ops::Range<usize>, u32)]>,
+    pub capture_map: Option<&'a [&'a str]>,
     pub modal: Option<&'a mut crate::editor::ActiveModal>,
 }
 
@@ -283,13 +287,19 @@ pub(crate) fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> R
 
                     let mut color = None;
                     for item in highlights.iter().skip(highlight_idx) {
-                        let (range, capture) = item;
+                        let (range, capture_idx) = item;
                         if range.start > current_byte_offset {
                             break;
                         }
                         if range.end > current_byte_offset {
                             if let Some(syntax_colors) = &ctx.state.settings.syntax_colors {
-                                color = syntax_colors.get_color(capture);
+                                if let Some(capture_map) = ctx.capture_map {
+                                    if let Some(capture_name) =
+                                        capture_map.get(*capture_idx as usize)
+                                    {
+                                        color = syntax_colors.get_color(capture_name);
+                                    }
+                                }
                             }
                             break;
                         }
