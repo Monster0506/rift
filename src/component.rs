@@ -2,14 +2,23 @@ use crate::key::Key;
 use crate::layer::Layer;
 
 /// Result of processing a key event
-#[derive(Debug)]
 pub enum EventResult {
     /// Event was invalid or not handled
     Ignored,
     /// Event was handled
     Consumed,
     /// Event triggered an action with a payload
-    Action(Box<dyn std::any::Any>),
+    Action(Box<dyn crate::editor::actions::EditorAction>),
+}
+
+impl std::fmt::Debug for EventResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Ignored => write!(f, "Ignored"),
+            Self::Consumed => write!(f, "Consumed"),
+            Self::Action(_) => write!(f, "Action(...)"),
+        }
+    }
 }
 
 impl PartialEq for EventResult {
@@ -17,7 +26,7 @@ impl PartialEq for EventResult {
         match (self, other) {
             (Self::Ignored, Self::Ignored) => true,
             (Self::Consumed, Self::Consumed) => true,
-            (Self::Action(_), Self::Action(_)) => false, // Cannot compare Any
+            (Self::Action(_), Self::Action(_)) => false, // Cannot compare Action
             _ => false,
         }
     }

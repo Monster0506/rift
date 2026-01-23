@@ -1,6 +1,8 @@
 //! Editor core
 //! Main editor logic that ties everything together
 
+pub mod actions;
+
 use crate::command::{Command, Dispatcher};
 use crate::command_line::commands::{CommandExecutor, CommandParser, ExecutionResult};
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
@@ -461,125 +463,11 @@ impl<T: TerminalBackend> Editor<T> {
                     match result {
                         EventResult::Consumed => continue,
                         EventResult::Ignored => continue,
-                        EventResult::Action(any) => {
-                            if let Some(action) = any.downcast_ref::<ComponentAction>() {
-                                match action {
-                                    ComponentAction::UndoTreeGoto(seq) => {
-                                        let doc =
-                                            self.document_manager.active_document_mut().unwrap();
-                                        if let Err(e) = doc.goto_seq(*seq) {
-                                            self.state.handle_error(RiftError::new(
-                                                ErrorType::Execution,
-                                                crate::constants::errors::UNDO_ERROR,
-                                                format!("Failed to go to sequence {}: {}", seq, e),
-                                            ));
-                                        }
-                                        if let Some(doc_id) =
-                                            self.document_manager.active_document_id()
-                                        {
-                                            self.spawn_syntax_parse_job(doc_id);
-                                        }
-                                        // Close modal
-                                        self.close_active_modal();
-                                    }
-                                    ComponentAction::UndoTreeCancel => {
-                                        self.close_active_modal();
-                                    }
-                                    ComponentAction::UndoTreePreview(seq) => {
-                                        let doc = self.document_manager.active_document().unwrap();
-                                        if let Ok(preview_text) = doc.preview_at_seq(*seq) {
-                                            use crate::layer::Cell;
-                                            let mut content = Vec::new();
-                                            for line in preview_text.lines() {
-                                                let cells: Vec<Cell> =
-                                                    line.chars().map(Cell::from_char).collect();
-                                                content.push(cells);
-                                            }
-
-                                            if let Some(modal) = self.modal.as_mut() {
-                                                if let Some(view) = modal
-                                                    .component
-                                                    .as_any_mut()
-                                                    .downcast_mut::<crate::select_view::SelectView>(
-                                                ) {
-                                                    view.set_right_content(content);
-                                                }
-                                            }
-                                        }
-                                        self.update_and_render()?;
-                                    }
-                                    ComponentAction::ExecuteCommand(cmd) => {
-                                        // Sync legacy state for consistency
-                                        self.state.command_line = cmd.clone();
-
-                                        // Parse and execute the command
-                                        let parsed_command = self.command_parser.parse(cmd);
-                                        let execution_result = CommandExecutor::execute(
-                                            parsed_command.clone(),
-                                            &mut self.state,
-                                            self.document_manager
-                                                .active_document_mut()
-                                                .expect("active document missing"),
-                                            &self.settings_registry,
-                                            &self.document_settings_registry,
-                                        );
-
-                                        self.handle_execution_result(execution_result);
-                                    }
-                                    ComponentAction::ExecuteSearch(query) => {
-                                        if let Some(modal) = &self.modal {
-                                            self.render_system.compositor.clear_layer(modal.layer);
-                                        }
-                                        self.modal = None;
-                                        self.set_mode(Mode::Normal);
-                                        if !query.is_empty() {
-                                            self.state.last_search_query = Some(query.clone());
-                                            self.perform_search(
-                                                query,
-                                                SearchDirection::Forward,
-                                                false,
-                                            );
-                                        }
-                                        self.close_active_modal();
-                                    }
-                                    ComponentAction::CancelMode => {
-                                        self.close_active_modal();
-                                    }
-                                }
-                                continue;
+                        EventResult::Action(action) => {
+                            if let Err(e) = action.execute(self) {
+                                self.state.handle_error(e);
                             }
-
-                            // Explorer Action Logic matches via ownership downcast
-                            if let Ok(action) =
-                                any.downcast::<crate::file_explorer::ExplorerAction>()
-                            {
-                                match *action {
-                                    crate::file_explorer::ExplorerAction::SpawnJob(job) => {
-                                        self.job_manager.spawn(job);
-                                    }
-                                    crate::file_explorer::ExplorerAction::OpenFile(path) => {
-                                        if let Err(e) = self.open_file(
-                                            Some(path.to_string_lossy().to_string()),
-                                            false,
-                                        ) {
-                                            self.state.handle_error(e);
-                                        } else {
-                                            // opening file should probably close explorer?
-                                            // Ranger usually does.
-                                            self.close_active_modal();
-                                            // Force redraw handled by open_file/handle_execution_result logic usually but we called open_file directly.
-                                            let _ = self.force_full_redraw();
-                                        }
-                                    }
-                                    crate::file_explorer::ExplorerAction::Notify(kind, msg) => {
-                                        self.state.notify(kind, msg);
-                                    }
-                                    crate::file_explorer::ExplorerAction::Close => {
-                                        self.close_active_modal();
-                                    }
-                                }
-                                continue;
-                            }
+                            continue;
                         }
                     }
                 }
@@ -734,11 +622,12 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Insert);
             }
             Command::EnterCommandMode => {
+                self.state.clear_command_line();
                 self.set_mode(Mode::Command);
             }
             Command::EnterSearchMode => {
-                self.set_mode(Mode::Search);
                 self.state.clear_command_line();
+                self.set_mode(Mode::Search);
             }
             Command::ExecuteSearch => {
                 let query = self.state.command_line.clone();
@@ -1401,33 +1290,9 @@ impl<T: TerminalBackend> Editor<T> {
                         .downcast_mut::<crate::file_explorer::FileExplorer>()
                     {
                         let res = explorer.handle_job_message(JobMessage::Finished(id, silent));
-                        // Handle actions (duplicate logic from Custom handling, cleaner to extract but inline for now)
-                        if let crate::component::EventResult::Action(any) = res {
-                            if let Ok(action) =
-                                any.downcast::<crate::file_explorer::ExplorerAction>()
-                            {
-                                match *action {
-                                    crate::file_explorer::ExplorerAction::SpawnJob(job) => {
-                                        self.job_manager.spawn(job);
-                                    }
-                                    crate::file_explorer::ExplorerAction::OpenFile(path) => {
-                                        if let Err(e) = self.open_file(
-                                            Some(path.to_string_lossy().to_string()),
-                                            false,
-                                        ) {
-                                            self.state.handle_error(e);
-                                        } else {
-                                            self.close_active_modal();
-                                            let _ = self.force_full_redraw();
-                                        }
-                                    }
-                                    crate::file_explorer::ExplorerAction::Notify(kind, msg) => {
-                                        self.state.notify(kind, msg);
-                                    }
-                                    crate::file_explorer::ExplorerAction::Close => {
-                                        self.close_active_modal();
-                                    }
-                                }
+                        if let crate::component::EventResult::Action(action) = res {
+                            if let Err(e) = action.execute(self) {
+                                self.state.handle_error(e);
                             }
                         }
                     }
@@ -1465,32 +1330,9 @@ impl<T: TerminalBackend> Editor<T> {
                             .downcast_mut::<crate::file_explorer::FileExplorer>(
                         ) {
                             let res = explorer.handle_job_message(JobMessage::Custom(id, payload));
-                            if let crate::component::EventResult::Action(any) = res {
-                                if let Ok(action) =
-                                    any.downcast::<crate::file_explorer::ExplorerAction>()
-                                {
-                                    match *action {
-                                        crate::file_explorer::ExplorerAction::SpawnJob(job) => {
-                                            self.job_manager.spawn(job);
-                                        }
-                                        crate::file_explorer::ExplorerAction::OpenFile(path) => {
-                                            if let Err(e) = self.open_file(
-                                                Some(path.to_string_lossy().to_string()),
-                                                false,
-                                            ) {
-                                                self.state.handle_error(e);
-                                            } else {
-                                                self.close_active_modal();
-                                                let _ = self.force_full_redraw();
-                                            }
-                                        }
-                                        crate::file_explorer::ExplorerAction::Notify(kind, msg) => {
-                                            self.state.notify(kind, msg);
-                                        }
-                                        crate::file_explorer::ExplorerAction::Close => {
-                                            self.close_active_modal();
-                                        }
-                                    }
+                            if let crate::component::EventResult::Action(action) = res {
+                                if let Err(e) = action.execute(self) {
+                                    self.state.handle_error(e);
                                 }
                             }
                             return Ok(());
@@ -1658,6 +1500,9 @@ impl<T: TerminalBackend> Drop for Editor<T> {
         self.term.deinit();
     }
 }
+
+mod component_action_impl;
+mod context_impl;
 
 #[cfg(test)]
 #[path = "tests.rs"]

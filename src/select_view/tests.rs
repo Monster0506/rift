@@ -1,4 +1,6 @@
 use super::*;
+use crate::editor::actions::{EditorAction, EditorContext};
+use crate::error::RiftError;
 #[allow(unused_imports)]
 use crate::layer::Layer;
 
@@ -114,13 +116,27 @@ fn test_select_view_callbacks() {
     }
 }
 
+// Test action for on_change propagation
+#[derive(Debug, Clone)]
+struct TestAction(usize);
+
+impl EditorAction for TestAction {
+    fn execute(self: Box<Self>, _ctx: &mut dyn EditorContext) -> Result<(), RiftError> {
+        Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+// SAFETY: TestAction contains only usize which is Send
+unsafe impl Send for TestAction {}
+
 #[test]
 fn test_select_view_on_change_propagation() {
     use crate::component::EventResult;
     use crate::key::Key;
-
-    #[derive(Debug, PartialEq, Clone)]
-    struct TestAction(usize);
 
     let mut view = SelectView::new()
         .with_selectable(vec![true, true])
@@ -133,7 +149,7 @@ fn test_select_view_on_change_propagation() {
 
     match result {
         EventResult::Action(action) => {
-            if let Some(test_action) = action.downcast_ref::<TestAction>() {
+            if let Some(test_action) = action.as_any().downcast_ref::<TestAction>() {
                 assert_eq!(test_action.0, 1);
             } else {
                 panic!("Action was not TestAction");

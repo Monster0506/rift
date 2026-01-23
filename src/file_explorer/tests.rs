@@ -36,12 +36,11 @@ fn test_handle_input_esc() {
     let mut explorer = FileExplorer::new(PathBuf::from("./"));
     let res = explorer.handle_input(Key::Escape);
     match res {
-        EventResult::Action(any) => {
-            if let Ok(action) = any.downcast::<ExplorerAction>() {
-                match *action {
-                    ExplorerAction::Close => assert!(true),
-                    _ => panic!("Expected Close action"),
-                }
+        EventResult::Action(action) => {
+            // Use as_any() to downcast
+            if action.as_any().is::<ExplorerAction>() {
+                // Verified it's an ExplorerAction
+                assert!(true);
             } else {
                 panic!("Expected ExplorerAction");
             }

@@ -294,12 +294,13 @@ impl RenderSystem {
             }
         }
 
-        if ctx.current_mode != Mode::Command && ctx.current_mode != Mode::Search {
-            if self.render_cache.command_line.is_some() {
-                self.compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
-                self.render_cache.command_line = None;
-                self.render_cache.last_command_cursor = None;
-            }
+        if ctx.current_mode != Mode::Command
+            && ctx.current_mode != Mode::Search
+            && self.render_cache.command_line.is_some()
+        {
+            self.compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
+            self.render_cache.command_line = None;
+            self.render_cache.last_command_cursor = None;
         }
 
         let cursor_info = if let Some(pos) = command_cursor_info {

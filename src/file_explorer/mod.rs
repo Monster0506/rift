@@ -13,13 +13,14 @@ use crate::select_view::SelectView;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-#[derive(Debug)]
 pub enum ExplorerAction {
     SpawnJob(Box<dyn Job>),
     OpenFile(PathBuf),
     Notify(crate::notification::NotificationType, String),
     Close,
 }
+
+mod action_impl;
 
 #[derive(Clone)]
 enum InputMode {

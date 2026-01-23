@@ -92,6 +92,16 @@ impl Job for Box<dyn Job> {
     }
 }
 
+impl Job for Box<dyn Job + Send> {
+    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
+        (*self).run(id, sender, signal);
+    }
+
+    fn is_silent(&self) -> bool {
+        (**self).is_silent()
+    }
+}
+
 /// Manages background jobs.
 pub struct JobManager {
     /// Sender to clone for new jobs
