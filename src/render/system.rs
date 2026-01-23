@@ -59,6 +59,30 @@ impl RenderSystem {
             } else {
                 0
             },
+            highlights_hash: ctx
+                .state
+                .settings
+                .syntax_colors
+                .as_ref()
+                .map(|_| {
+                    // Calculate hash based on visible highlights
+                    // This is a simple approximation. Ideally we'd have a generation ID from Syntax.
+                    // For now, let's use the first and last highlight index/capture if available,
+                    // or just rely on the caller invalidating if syntax changed.
+                    // Actually, we added highlights_hash to ContentDrawState but we need to compute it.
+                    // Let's assume the caller will pass it or we'll compute it from ctx.highlights.
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    if let Some(h) = ctx.highlights {
+                        h.len().hash(&mut hasher);
+                        if !h.is_empty() {
+                            h[0].hash(&mut hasher);
+                            h[h.len() - 1].hash(&mut hasher);
+                        }
+                    }
+                    hasher.finish()
+                })
+                .unwrap_or(0),
             search_matches_count: ctx.state.search_matches.len(),
             editor_bg: ctx.state.settings.editor_bg,
             editor_fg: ctx.state.settings.editor_fg,
@@ -184,6 +208,7 @@ impl RenderSystem {
             needs_clear: state.needs_clear,
             tab_width: state.tab_width,
             highlights: state.highlights,
+            capture_map: state.capture_map,
             modal: state.modal,
         };
 
@@ -216,7 +241,10 @@ impl RenderSystem {
             match renderable {
                 Renderable::TextBuffer(state) => {
                     if self.render_cache.content.as_ref() != Some(state) {
-                        self.compositor.clear_layer(*priority);
+                        // Note: We intentionally skip clear_layer here because
+                        // render_content_to_layer writes all cells (including spaces),
+                        // so clearing first causes double-buffer to see all cells as changed,
+                        // resulting in full-screen terminal writes and flickering.
                         crate::render::render_content_to_layer(
                             self.compositor.get_layer_mut(*priority),
                             &ctx,

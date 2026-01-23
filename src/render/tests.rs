@@ -229,6 +229,7 @@ fn test_render_does_not_clear_screen() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -258,6 +259,7 @@ fn test_render_cursor_positioning() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -286,6 +288,7 @@ fn test_render_empty_buffer() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -317,6 +320,7 @@ fn test_render_multiline_buffer() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -353,6 +357,7 @@ fn test_render_file_loaded_at_start() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -399,6 +404,7 @@ fn test_render_viewport_scrolling() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -429,6 +435,7 @@ fn test_render_viewport_edge_cases() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -458,6 +465,7 @@ fn test_render_large_buffer() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -495,6 +503,7 @@ fn test_render_cursor_at_viewport_boundaries() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -532,6 +541,7 @@ fn test_render_cursor_at_viewport_boundaries() {
                 needs_clear: false,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -604,6 +614,7 @@ fn test_render_line_numbers_enabled() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -649,6 +660,7 @@ fn test_render_line_numbers_disabled() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -684,6 +696,7 @@ fn test_render_line_numbers_gutter_width() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -734,6 +747,7 @@ fn test_render_cursor_position_with_line_numbers() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -762,6 +776,7 @@ fn test_no_redraw_on_noop() {
                 needs_clear: true,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )
@@ -795,6 +810,7 @@ fn test_no_redraw_on_noop() {
                 needs_clear: false,
                 tab_width: 4,
                 highlights: None,
+                capture_map: None,
                 modal: None,
             },
         )

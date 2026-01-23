@@ -7,7 +7,7 @@ use tree_sitter::{Parser, Query, QueryCursor, Tree};
 #[derive(Debug)]
 pub struct SyntaxParseResult {
     pub tree: Option<Tree>,
-    pub highlights: Vec<(std::ops::Range<usize>, String)>,
+    pub highlights: Vec<(std::ops::Range<usize>, u32)>,
     pub language_name: String,
     pub document_id: u64,
 }
@@ -107,8 +107,9 @@ impl Job for SyntaxParseJob {
                 }
                 for capture in m.captures {
                     let range = capture.node.byte_range();
-                    let capture_name = query.capture_names()[capture.index as usize].to_string();
-                    highlights.push((range, capture_name));
+                    // Store index instead of allocating string
+                    let capture_index = capture.index;
+                    highlights.push((range, capture_index));
                 }
             }
         }
