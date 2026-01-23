@@ -272,9 +272,8 @@ impl<T: TerminalBackend> Editor<T> {
             .as_mut()
             .map(|syntax| syntax.highlights(Some(start_byte..end_byte)));
 
-        let ctx = render::DrawContext {
+        let state = render::RenderState {
             buf: &doc.buffer,
-            viewport: &self.render_system.viewport,
             state: &self.state,
             current_mode: self.current_mode,
             pending_key: self.dispatcher.pending_key(),
@@ -282,21 +281,18 @@ impl<T: TerminalBackend> Editor<T> {
             needs_clear: true,
             tab_width: doc.options.tab_width,
             highlights: highlights.as_deref(),
+            modal: self.modal.as_mut(),
         };
 
-        render::full_redraw(
-            &mut self.term,
-            &mut self.render_system.compositor,
-            ctx,
-            &mut self.render_system.render_cache,
-        )
-        .map_err(|e| {
-            RiftError::new(
-                ErrorType::Io,
-                crate::constants::errors::RENDER_FAILED,
-                e.to_string(),
-            )
-        })?;
+        self.render_system
+            .force_full_redraw(&mut self.term, state)
+            .map_err(|e| {
+                RiftError::new(
+                    ErrorType::Io,
+                    crate::constants::errors::RENDER_FAILED,
+                    e.to_string(),
+                )
+            })?;
 
         Ok(())
     }
@@ -948,9 +944,8 @@ impl<T: TerminalBackend> Editor<T> {
             .as_mut()
             .map(|syntax| syntax.highlights(Some(start_byte..end_byte)));
 
-        let ctx = render::DrawContext {
+        let state = render::RenderState {
             buf: &doc.buffer,
-            viewport: &render_system.viewport,
             state,
             current_mode: *current_mode,
             pending_key: dispatcher.pending_key(),
@@ -958,30 +953,10 @@ impl<T: TerminalBackend> Editor<T> {
             needs_clear,
             tab_width: doc.options.tab_width,
             highlights: highlights.as_deref(),
+            modal: self.modal.as_mut(),
         };
 
-        let _ = render::render(
-            term,
-            &mut render_system.compositor,
-            ctx,
-            &mut render_system.render_cache,
-        )?;
-
-        // Render modal if active
-        if let Some(ref mut modal) = self.modal {
-            let layer = self.render_system.compositor.get_layer_mut(modal.layer);
-            modal.component.render(layer);
-            // Re-composite and render
-            let _ = self
-                .render_system
-                .compositor
-                .render_to_terminal(term, false)?;
-
-            // Explicitly set cursor if modal requests it
-            if let Some((row, col)) = modal.component.cursor_position() {
-                term.move_cursor(row, col)?;
-            }
-        }
+        let _ = render_system.render(term, state)?;
 
         Ok(())
     }
@@ -1005,26 +980,10 @@ impl<T: TerminalBackend> Editor<T> {
 
         match mode {
             Mode::Command => {
-                let settings = self.state.settings.command_line_window.clone();
-                let fg = self.state.settings.editor_fg;
-                let bg = self.state.settings.editor_bg;
-                self.modal = Some(ActiveModal {
-                    component: Box::new(crate::command_line::component::CommandLineComponent::new(
-                        ':', settings, fg, bg,
-                    )),
-                    layer: LayerPriority::FLOATING_WINDOW,
-                });
+                // Command line handled via RenderSystem state
             }
             Mode::Search => {
-                let settings = self.state.settings.command_line_window.clone();
-                let fg = self.state.settings.editor_fg;
-                let bg = self.state.settings.editor_bg;
-                self.modal = Some(ActiveModal {
-                    component: Box::new(crate::command_line::component::CommandLineComponent::new(
-                        '/', settings, fg, bg,
-                    )),
-                    layer: LayerPriority::FLOATING_WINDOW,
-                });
+                // Search line handled via RenderSystem state
             }
             _ => {}
         }

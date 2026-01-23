@@ -16,17 +16,16 @@ use crate::buffer::api::BufferView;
 use crate::buffer::TextBuffer;
 use crate::character::Character;
 use crate::color::Color;
-use crate::command_line::CommandLine;
-use crate::error::RiftError;
 use crate::key::Key;
-use crate::layer::{Cell, Layer, LayerCompositor, LayerPriority};
+use crate::layer::{Cell, Layer};
 use crate::mode::Mode;
 use crate::state::State;
-use crate::status::StatusBar;
-use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
+
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+pub mod components;
+pub mod ecs;
 pub mod system;
 pub use system::RenderSystem;
 
@@ -140,31 +139,20 @@ impl RenderCache {
     }
 }
 
-/// Force a full redraw of all components by invalidating cache and clearing layers
-pub fn full_redraw<T: TerminalBackend>(
-    term: &mut T,
-    compositor: &mut LayerCompositor,
-    ctx: DrawContext,
-    cache: &mut RenderCache,
-) -> Result<CursorPosition, RiftError> {
-    // 1. Invalidate all cache entries
-    cache.invalidate_all();
-
-    // 2. Force clear all compositor layers to be absolutely sure
-    compositor.clear_layer(LayerPriority::CONTENT);
-    compositor.clear_layer(LayerPriority::STATUS_BAR);
-    compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
-    compositor.clear_layer(LayerPriority::NOTIFICATION);
-
-    // 3. Ensure we clear the terminal via context
-    let mut ctx = ctx;
-    ctx.needs_clear = true;
-
-    // 4. Perform a regular render pass
-    render(term, compositor, ctx, cache)
+/// External state passed to RenderSystem::render
+pub struct RenderState<'a> {
+    pub buf: &'a TextBuffer,
+    pub current_mode: Mode,
+    pub pending_key: Option<Key>,
+    pub pending_count: usize,
+    pub state: &'a State,
+    pub needs_clear: bool,
+    pub tab_width: usize,
+    pub highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
+    pub modal: Option<&'a mut crate::editor::ActiveModal>,
 }
 
-/// Context for rendering
+/// Context for rendering passed to helpers
 pub struct DrawContext<'a> {
     pub buf: &'a TextBuffer,
     pub viewport: &'a Viewport,
@@ -175,6 +163,7 @@ pub struct DrawContext<'a> {
     pub needs_clear: bool,
     pub tab_width: usize,
     pub highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
+    pub modal: Option<&'a mut crate::editor::ActiveModal>,
 }
 
 /// Cursor position information returned from layer-based rendering
@@ -184,266 +173,26 @@ pub enum CursorPosition {
     Absolute(u16, u16),
 }
 
-/// Render the editor interface using the layer compositor
-///
-/// This is the main rendering function that composites multiple layers:
-/// 1. CONTENT layer - the text buffer
-/// 2. STATUS_BAR layer - the status line at bottom
-/// 3. FLOATING_WINDOW layer - command line and dialogs (when in command mode)
-/// 4. NOTIFICATION layer - notifications (when in command mode)
-///
-/// Returns the cursor position for the terminal.
-pub fn render<T: TerminalBackend>(
-    term: &mut T,
-    compositor: &mut LayerCompositor,
-    ctx: DrawContext,
-    cache: &mut RenderCache,
-) -> Result<CursorPosition, RiftError> {
-    // Resize compositor if needed
-    if compositor.rows() != ctx.viewport.visible_rows()
-        || compositor.cols() != ctx.viewport.visible_cols()
-    {
-        compositor.resize(ctx.viewport.visible_rows(), ctx.viewport.visible_cols());
-        cache.invalidate_all();
-    }
-
-    // 1. Render content to CONTENT layer
-    let current_content_state = ContentDrawState {
-        revision: ctx.buf.revision,
-        top_line: ctx.viewport.top_line(),
-        left_col: ctx.viewport.left_col(),
-        rows: ctx.viewport.visible_rows(),
-        tab_width: ctx.tab_width,
-        show_line_numbers: ctx.state.settings.show_line_numbers,
-        gutter_width: if ctx.state.settings.show_line_numbers {
-            ctx.state.gutter_width
-        } else {
-            0
-        },
-        search_matches_count: ctx.state.search_matches.len(),
-        editor_bg: ctx.state.settings.editor_bg,
-        editor_fg: ctx.state.settings.editor_fg,
-        theme: ctx.state.settings.theme.clone(),
-    };
-
-    if cache.content.as_ref() != Some(&current_content_state) {
-        compositor.clear_layer(LayerPriority::CONTENT);
-        render_content_to_layer(compositor.get_layer_mut(LayerPriority::CONTENT), &ctx)?;
-        cache.content = Some(current_content_state);
-    }
-    // Calculate search match info
-    let (search_match_index, search_total_matches) = if !ctx.state.search_matches.is_empty() {
-        let cursor_offset = ctx.buf.cursor();
-        let idx = ctx
-            .state
-            .search_matches
-            .iter()
-            .position(|m| {
-                // Check if cursor is contained in match range or at start
-                m.range.contains(&cursor_offset) || m.range.start == cursor_offset
-            })
-            .map(|i| i + 1); // 1-based index
-        (idx, ctx.state.search_matches.len())
-    } else {
-        (None, 0)
-    };
-
-    // 2. Render status bar to STATUS_BAR layer (always updated if relevant state changes)
-    let current_status_state = StatusDrawState {
-        mode: ctx.current_mode,
-        pending_key: ctx.pending_key,
-        pending_count: ctx.pending_count,
-        last_keypress: ctx.state.last_keypress,
-        file_name: ctx.state.file_name.clone(),
-        is_dirty: ctx.state.is_dirty,
-        cursor: CursorInfo {
-            row: ctx.state.cursor_pos.0,
-            col: ctx.state.cursor_pos.1,
-        },
-        total_lines: ctx.state.total_lines,
-        debug_mode: ctx.state.debug_mode,
-        cols: ctx.viewport.visible_cols(),
-        search_query: ctx.state.last_search_query.clone(),
-        search_match_index,
-        search_total_matches,
-        reverse_video: ctx.state.settings.status_line.reverse_video,
-        editor_bg: ctx.state.settings.editor_bg,
-        editor_fg: ctx.state.settings.editor_fg,
-    };
-
-    if cache.status.as_ref() != Some(&current_status_state) {
-        compositor.clear_layer(LayerPriority::STATUS_BAR);
-        StatusBar::render_to_layer(
-            compositor.get_layer_mut(LayerPriority::STATUS_BAR),
-            &current_status_state,
-        );
-        cache.status = Some(current_status_state);
-    }
-
-    // 3. Command line / Floating window
-    let mut command_cursor_info = None;
-    let current_command_state =
-        if ctx.current_mode == Mode::Command || ctx.current_mode == Mode::Search {
-            Some(CommandDrawState {
-                content: ctx.state.command_line.clone(),
-                cursor: CursorInfo {
-                    row: 0, // Command line is single line for now
-                    col: ctx.state.command_line_cursor,
-                },
-                width: ctx.viewport.visible_cols(),
-                height: ctx.state.settings.command_line_window.height,
-                has_border: ctx.state.settings.command_line_window.border,
-                reverse_video: ctx.state.settings.command_line_window.reverse_video,
-                editor_bg: ctx.state.settings.editor_bg,
-                editor_fg: ctx.state.settings.editor_fg,
-            })
-        } else {
-            None
-        };
-
-    if cache.command_line.as_ref() != current_command_state.as_ref() {
-        if current_command_state.is_some() {
-            compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
-            // Render command line
-            let layer = compositor.get_layer_mut(LayerPriority::FLOATING_WINDOW);
-            let default_border_chars = ctx.state.settings.default_border_chars.clone();
-            let (window_row, window_col, _, offset) = CommandLine::render_to_layer(
-                layer,
-                ctx.viewport,
-                &ctx.state.command_line,
-                ctx.state.command_line_cursor,
-                crate::command_line::RenderOptions {
-                    default_border_chars,
-                    window_settings: &ctx.state.settings.command_line_window,
-                    fg: ctx.state.settings.editor_fg,
-                    bg: ctx.state.settings.editor_bg,
-                    prompt: if ctx.current_mode == Mode::Search {
-                        '/'
-                    } else {
-                        ':'
-                    },
-                },
-            );
-
-            // Calculate cursor position in command window
-            let (cursor_row, cursor_col) = CommandLine::calculate_cursor_position(
-                (window_row, window_col),
-                ctx.state.command_line_cursor,
-                offset,
-                ctx.state.settings.command_line_window.border,
-            );
-            command_cursor_info = Some(CursorPosition::Absolute(cursor_row, cursor_col));
-            cache.last_command_cursor = command_cursor_info;
-        } else {
-            // Transitioned from Command/Search mode to something else
-            compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
-            cache.last_command_cursor = None;
-        }
-        cache.command_line = current_command_state;
-    } else if current_command_state.is_some() {
-        // Cache hit, retrieve cursor info
-        command_cursor_info = cache.last_command_cursor;
-    }
-
-    // 4. Render notifications
-    let current_notification_state = NotificationDrawState {
-        generation: ctx.state.error_manager.notifications().generation,
-        count: ctx
-            .state
-            .error_manager
-            .notifications()
-            .iter_active()
-            .count(),
-    };
-
-    if cache.notifications.as_ref() != Some(&current_notification_state) {
-        compositor.clear_layer(LayerPriority::NOTIFICATION);
-        render_notifications(
-            compositor.get_layer_mut(LayerPriority::NOTIFICATION),
-            ctx.state,
-            ctx.viewport.visible_rows(),
-            ctx.viewport.visible_cols(),
-        );
-        cache.notifications = Some(current_notification_state);
-    }
-
-    // Determine final cursor position
-    let cursor_info = if let Some(pos) = command_cursor_info {
-        pos
-    } else {
-        // Calculate normal cursor position
-        let cursor_line = ctx.buf.get_line();
-        let cursor_line_in_viewport = if cursor_line >= ctx.viewport.top_line()
-            && cursor_line < ctx.viewport.top_line() + ctx.viewport.visible_rows()
-        {
-            cursor_line - ctx.viewport.top_line()
-        } else {
-            0
-        };
-
-        // Gutter width is cached in state
-        let gutter_width = if ctx.state.settings.show_line_numbers {
-            ctx.state.gutter_width
-        } else {
-            0
-        };
-
-        let cursor_col = calculate_cursor_column(ctx.buf, cursor_line, ctx.tab_width);
-
-        // Add gutter width to cursor column
-        // Subtract left_col for horizontal scrolling
-        let visual_cursor_col = cursor_col.saturating_sub(ctx.viewport.left_col());
-
-        // Ensure cursor doesn't go onto gutter or past right edge
-        let display_col =
-            (visual_cursor_col + gutter_width).min(ctx.viewport.visible_cols().saturating_sub(1));
-
-        CursorPosition::Absolute(cursor_line_in_viewport as u16, display_col as u16)
-    };
-
-    // 5. Render composited output to terminal
-    let stats = compositor
-        .render_to_terminal(term, false)
-        .map_err(|e| RiftError::new(crate::error::ErrorType::Renderer, "RENDER_FAILED", e))?;
-
-    // 6. Position cursor
-    if stats.changed_cells > 0 || cache.last_cursor_pos != Some(cursor_info) {
-        match cursor_info {
-            CursorPosition::Absolute(row, col) => {
-                term.move_cursor(row, col)?;
-            }
-        }
-        cache.last_cursor_pos = Some(cursor_info);
-    }
-    term.show_cursor()?;
-
-    Ok(cursor_info)
-}
-
 /// Render buffer content to the content layer
-fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), String> {
+pub(crate) fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), String> {
     let buf = ctx.buf;
     let viewport = ctx.viewport;
     let editor_bg = ctx.state.settings.editor_bg;
     let editor_fg = ctx.state.settings.editor_fg;
 
-    // Gutter width is based on total lines
     let gutter_width = if ctx.state.settings.show_line_numbers {
         ctx.state.gutter_width
     } else {
         0
     };
 
-    // Render visible lines
     let top_line = viewport.top_line();
-    let visible_rows = viewport.visible_rows().saturating_sub(1); // Reserve one row for status bar
+    let visible_rows = viewport.visible_rows().saturating_sub(1);
     let visible_cols = viewport.visible_cols();
 
-    // Optimized highlight cursor
     let highlights = ctx.highlights.unwrap_or(&[]);
     let mut highlight_idx = 0;
 
-    // Optimized search match cursor
     let search_matches = &ctx.state.search_matches;
     let first_visible_char = buf.line_index.get_start(top_line).unwrap_or(0);
     let mut search_match_idx =
@@ -452,12 +201,9 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
     for i in 0..visible_rows {
         let line_num = top_line + i;
 
-        // Draw line numbers
         if gutter_width > 0 {
             if line_num < ctx.state.total_lines {
-                // Show number for valid lines
                 let line_str = format!("{:width$}", line_num + 1, width = gutter_width - 1);
-                // Draw line number
                 for (col, ch) in line_str.chars().enumerate() {
                     layer.set_cell(
                         i,
@@ -465,14 +211,12 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
                         Cell::new(Character::from(ch)).with_colors(editor_fg, editor_bg),
                     );
                 }
-                // Draw separator
                 layer.set_cell(
                     i,
                     gutter_width - 1,
                     Cell::new(Character::from(' ')).with_colors(editor_fg, editor_bg),
                 );
             } else {
-                // Empty gutter for non-existent lines
                 for col in 0..gutter_width {
                     layer.set_cell(
                         i,
@@ -485,11 +229,6 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
 
         if line_num < buf.get_total_lines() {
             let line_start_char = buf.line_index.get_start(line_num).unwrap_or(0);
-            // End of line for rendering (exclude newline usually, but chars() includes it if in range)
-            // PieceTable line usually ends with newline.
-            // visual rendering usually stops before newline or handles it.
-            // We'll iterate until newline or end of line.
-            // Buffers chars iterator is simplest.
             let line_end_char = buf
                 .line_index
                 .get_end(line_num, buf.len())
@@ -500,7 +239,6 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
             let mut rendered_col = 0;
             let left_col = viewport.left_col();
 
-            // Initialize byte offset for the line (O(log N))
             let mut current_byte_offset = buf.char_to_byte(line_start_char);
 
             for (char_idx_in_line, ch) in buf.chars(line_start_char..line_end_char).enumerate() {
@@ -508,18 +246,14 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
                     break;
                 }
 
-                // Stop at newline if present (render logic usually ignores newline char itself)
                 if ch == Character::Newline {
                     break;
                 }
 
-                // Calculate absolute location
                 let abs_char_offset = line_start_char + char_idx_in_line;
 
-                // 1. Check for search match (Character range based)
                 let mut is_match = false;
                 if !search_matches.is_empty() {
-                    // Advance search cursor past matches that end before current char
                     while search_match_idx < search_matches.len() {
                         if search_matches[search_match_idx].range.end <= abs_char_offset {
                             search_match_idx += 1;
@@ -528,25 +262,17 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
                         }
                     }
 
-                    // Check if current match contains char
                     if search_match_idx < search_matches.len() {
                         let m = &search_matches[search_match_idx];
                         if m.range.start <= abs_char_offset {
-                            // m.range.end > abs_char_offset is guaranteed by loop above
-                            // So abs_char_offset < m.range.end.
-                            // Thus abs_char_offset in [start, end)
                             is_match = true;
                         }
-                        // If start > abs_char_offset, then it's a future match, not this one.
                     }
                 }
 
-                // 2. Check for syntax highlighting (Byte range based)
                 let syntax_fg = if highlights.is_empty() {
                     editor_fg
                 } else {
-                    // Fast-forward cursor past ended highlights
-                    // Since we process in byte order, we can safely discard highlights that end before current pos
                     while highlight_idx < highlights.len() {
                         if highlights[highlight_idx].0.end <= current_byte_offset {
                             highlight_idx += 1;
@@ -555,39 +281,30 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
                         }
                     }
 
-                    // Check current possible highlights
                     let mut color = None;
-                    // We only check from highlight_idx onwards.
-                    // And we can stop as soon as we see a highlight starting AFTER current pos.
                     for item in highlights.iter().skip(highlight_idx) {
                         let (range, capture) = item;
                         if range.start > current_byte_offset {
-                            break; // Future highlight, cannot match
+                            break;
                         }
-                        // start <= current < end  (since we skipped ends <= current)
-                        // Range logic: start..end means start <= x < end
-                        // If range.end > current_byte_offset, then it contains it.
                         if range.end > current_byte_offset {
                             if let Some(syntax_colors) = &ctx.state.settings.syntax_colors {
                                 color = syntax_colors.get_color(capture);
                             }
-                            break; // First match wins
+                            break;
                         }
                     }
                     color.or(editor_fg)
                 };
 
-                // Update byte offset for next char (O(1))
                 current_byte_offset += ch.len_utf8();
 
-                // Determine final colors
                 let (fg, bg) = if is_match {
                     (Some(Color::Black), Some(Color::Yellow))
                 } else {
                     (syntax_fg, editor_bg)
                 };
 
-                // Visual width
                 let char_width = if ch == Character::Tab {
                     ctx.tab_width - (visual_col % ctx.tab_width)
                 } else {
@@ -596,7 +313,6 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
 
                 let next_visual_col = visual_col + char_width;
 
-                // Render
                 if next_visual_col > left_col && rendered_col < content_cols {
                     let display_col = rendered_col + gutter_width;
                     if display_col < visible_cols {
@@ -604,7 +320,7 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
 
                         if char_width > 1 {
                             let empty_cell = Cell {
-                                content: Character::from(' '), // Placeholder
+                                content: Character::from(' '),
                                 fg,
                                 bg,
                             };
@@ -621,7 +337,6 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
                 visual_col = next_visual_col;
             }
 
-            // Pad with spaces
             for col in (rendered_col + gutter_width)..visible_cols {
                 layer.set_cell(
                     i,
@@ -630,7 +345,6 @@ fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), S
                 );
             }
         } else {
-            // Empty line - fill with spaces
             for col in gutter_width..visible_cols {
                 layer.set_cell(
                     i,
@@ -716,7 +430,7 @@ pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
 }
 
 /// Render notifications to the notification layer
-fn render_notifications(
+pub(crate) fn render_notifications(
     layer: &mut Layer,
     state: &State,
     viewport_rows: usize,
