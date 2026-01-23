@@ -174,9 +174,9 @@ impl Default for Cell {
 pub struct Layer {
     /// The priority (z-order) of this layer
     priority: LayerPriority,
-    /// Grid of cells - outer vec is rows, inner vec is columns
+    /// Flat grid of cells - index = row * cols + col
     /// None = transparent, Some = content
-    cells: Vec<Vec<Option<Cell>>>,
+    cells: Vec<Option<Cell>>,
     /// List of dirty rectangles that need compositing
     dirty_rects: Vec<Rect>,
     /// Number of rows in the layer
@@ -191,7 +191,7 @@ impl Layer {
 
     /// Create a new layer with the given dimensions
     pub fn new(priority: LayerPriority, rows: usize, cols: usize) -> Self {
-        let cells = vec![vec![None; cols]; rows];
+        let cells = vec![None; rows * cols];
         Self {
             priority,
             cells,
@@ -287,10 +287,8 @@ impl Layer {
 
     /// Clear all cells in the layer (make transparent)
     pub fn clear(&mut self) {
-        for row in &mut self.cells {
-            for cell in row.iter_mut() {
-                *cell = None;
-            }
+        for cell in self.cells.iter_mut() {
+            *cell = None;
         }
         self.dirty_rects.clear();
         self.dirty_rects.push(Rect::new(
@@ -301,18 +299,25 @@ impl Layer {
         ));
     }
 
+    /// Helper to get index from row/col
+    #[inline]
+    fn idx(&self, row: usize, col: usize) -> usize {
+        row * self.cols + col
+    }
+
     /// Set a cell at the given position
     /// Returns false if position is out of bounds
     pub fn set_cell(&mut self, row: usize, col: usize, cell: Cell) -> bool {
         if row < self.rows && col < self.cols {
+            let idx = self.idx(row, col);
             // Optimization: only mark dirty if cell actually changed
-            let changed = match &self.cells[row][col] {
+            let changed = match &self.cells[idx] {
                 Some(current) => current != &cell,
                 None => true,
             };
 
             if changed {
-                self.cells[row][col] = Some(cell);
+                self.cells[idx] = Some(cell);
                 self.add_dirty_rect(Rect::new(row, col, row, col));
             }
             true
@@ -324,9 +329,10 @@ impl Layer {
     /// Set a cell to transparent at the given position
     pub fn clear_cell(&mut self, row: usize, col: usize) -> bool {
         if row < self.rows && col < self.cols {
-            let changed = self.cells[row][col].is_some();
+            let idx = self.idx(row, col);
+            let changed = self.cells[idx].is_some();
             if changed {
-                self.cells[row][col] = None;
+                self.cells[idx] = None;
                 self.add_dirty_rect(Rect::new(row, col, row, col));
             }
             true
@@ -338,7 +344,8 @@ impl Layer {
     /// Get a cell at the given position
     pub fn get_cell(&self, row: usize, col: usize) -> Option<&Cell> {
         if row < self.rows && col < self.cols {
-            self.cells[row][col].as_ref()
+            let idx = self.idx(row, col);
+            self.cells[idx].as_ref()
         } else {
             None
         }
@@ -414,18 +421,14 @@ impl Layer {
     /// Resize the layer to new dimensions
     /// Content is preserved where possible
     pub fn resize(&mut self, new_rows: usize, new_cols: usize) {
-        let mut new_cells = vec![vec![None; new_cols]; new_rows];
+        let mut new_cells = vec![None; new_rows * new_cols];
 
         // Copy existing content
-        for (r, row) in self.cells.iter().enumerate() {
-            if r >= new_rows {
-                break;
-            }
-            for (c, cell) in row.iter().enumerate() {
-                if c >= new_cols {
-                    break;
-                }
-                new_cells[r][c] = cell.clone();
+        for r in 0..self.rows.min(new_rows) {
+            for c in 0..self.cols.min(new_cols) {
+                let old_idx = self.idx(r, c);
+                let new_idx = r * new_cols + c;
+                new_cells[new_idx] = self.cells[old_idx].clone();
             }
         }
 

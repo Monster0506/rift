@@ -26,7 +26,9 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub mod components;
 pub mod ecs;
+pub mod pipeline;
 pub mod system;
+pub use pipeline::*;
 pub use system::RenderSystem;
 
 /// Explicitly tracked cursor information for rendering comparison
@@ -142,6 +144,7 @@ impl RenderCache {
 }
 
 /// External state passed to RenderSystem::render
+/// External state passed to RenderSystem::render
 pub struct RenderState<'a> {
     pub buf: &'a TextBuffer,
     pub current_mode: Mode,
@@ -194,178 +197,194 @@ pub(crate) fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> R
     let visible_rows = viewport.visible_rows().saturating_sub(1);
     let visible_cols = viewport.visible_cols();
 
-    let highlights = ctx.highlights.unwrap_or(&[]);
-    let mut highlight_idx = 0;
-
     let search_matches = &ctx.state.search_matches;
     let first_visible_char = buf.line_index.get_start(top_line).unwrap_or(0);
+
+    // State tracked across lines for performance
     let mut search_match_idx =
         search_matches.partition_point(|m| m.range.end <= first_visible_char);
+    let mut highlight_idx = 0;
 
     for i in 0..visible_rows {
         let line_num = top_line + i;
 
         if gutter_width > 0 {
-            if line_num < ctx.state.total_lines {
-                let line_str = format!("{:width$}", line_num + 1, width = gutter_width - 1);
-                for (col, ch) in line_str.chars().enumerate() {
-                    layer.set_cell(
-                        i,
-                        col,
-                        Cell::new(Character::from(ch)).with_colors(editor_fg, editor_bg),
-                    );
-                }
-                layer.set_cell(
-                    i,
-                    gutter_width - 1,
-                    Cell::new(Character::from(' ')).with_colors(editor_fg, editor_bg),
-                );
-            } else {
-                for col in 0..gutter_width {
-                    layer.set_cell(
-                        i,
-                        col,
-                        Cell::new(Character::from(' ')).with_colors(editor_fg, editor_bg),
-                    );
-                }
-            }
+            render_gutter(
+                layer,
+                line_num,
+                i,
+                gutter_width,
+                ctx.state.total_lines,
+                editor_fg,
+                editor_bg,
+            );
         }
 
-        if line_num < buf.get_total_lines() {
-            let line_start_char = buf.line_index.get_start(line_num).unwrap_or(0);
-            let line_end_char = buf
-                .line_index
-                .get_end(line_num, buf.len())
-                .unwrap_or(buf.len());
-
-            let content_cols = visible_cols.saturating_sub(gutter_width);
-            let mut visual_col = 0;
-            let mut rendered_col = 0;
-            let left_col = viewport.left_col();
-
-            let mut current_byte_offset = buf.char_to_byte(line_start_char);
-
-            for (char_idx_in_line, ch) in buf.chars(line_start_char..line_end_char).enumerate() {
-                if rendered_col >= content_cols {
-                    break;
-                }
-
-                if ch == Character::Newline {
-                    break;
-                }
-
-                let abs_char_offset = line_start_char + char_idx_in_line;
-
-                let mut is_match = false;
-                if !search_matches.is_empty() {
-                    while search_match_idx < search_matches.len() {
-                        if search_matches[search_match_idx].range.end <= abs_char_offset {
-                            search_match_idx += 1;
-                        } else {
-                            break;
-                        }
-                    }
-
-                    if search_match_idx < search_matches.len() {
-                        let m = &search_matches[search_match_idx];
-                        if m.range.start <= abs_char_offset {
-                            is_match = true;
-                        }
-                    }
-                }
-
-                let syntax_fg = if highlights.is_empty() {
-                    editor_fg
-                } else {
-                    while highlight_idx < highlights.len() {
-                        if highlights[highlight_idx].0.end <= current_byte_offset {
-                            highlight_idx += 1;
-                        } else {
-                            break;
-                        }
-                    }
-
-                    let mut color = None;
-                    for item in highlights.iter().skip(highlight_idx) {
-                        let (range, capture_idx) = item;
-                        if range.start > current_byte_offset {
-                            break;
-                        }
-                        if range.end > current_byte_offset {
-                            if let Some(syntax_colors) = &ctx.state.settings.syntax_colors {
-                                if let Some(capture_map) = ctx.capture_map {
-                                    if let Some(capture_name) =
-                                        capture_map.get(*capture_idx as usize)
-                                    {
-                                        color = syntax_colors.get_color(capture_name);
-                                    }
-                                }
-                            }
-                            break;
-                        }
-                    }
-                    color.or(editor_fg)
-                };
-
-                current_byte_offset += ch.len_utf8();
-
-                let (fg, bg) = if is_match {
-                    (Some(Color::Black), Some(Color::Yellow))
-                } else {
-                    (syntax_fg, editor_bg)
-                };
-
-                let char_width = if ch == Character::Tab {
-                    ctx.tab_width - (visual_col % ctx.tab_width)
-                } else {
-                    ch.render_width(visual_col, ctx.tab_width)
-                };
-
-                let next_visual_col = visual_col + char_width;
-
-                if next_visual_col > left_col && rendered_col < content_cols {
-                    let display_col = rendered_col + gutter_width;
-                    if display_col < visible_cols {
-                        layer.set_cell(i, display_col, Cell::new(ch).with_colors(fg, bg));
-
-                        if char_width > 1 {
-                            let empty_cell = Cell {
-                                content: Character::from(' '),
-                                fg,
-                                bg,
-                            };
-                            for k in 1..char_width {
-                                if display_col + k < visible_cols {
-                                    layer.set_cell(i, display_col + k, empty_cell.clone());
-                                }
-                            }
-                        }
-                    }
-                    rendered_col += char_width;
-                }
-
-                visual_col = next_visual_col;
-            }
-
-            for col in (rendered_col + gutter_width)..visible_cols {
-                layer.set_cell(
-                    i,
-                    col,
-                    Cell::from_char(' ').with_colors(editor_fg, editor_bg),
-                );
-            }
-        } else {
-            for col in gutter_width..visible_cols {
-                layer.set_cell(
-                    i,
-                    col,
-                    Cell::from_char(' ').with_colors(editor_fg, editor_bg),
-                );
-            }
-        }
+        render_line(
+            layer,
+            ctx,
+            RenderLineConfig {
+                line_num,
+                row_idx: i,
+                gutter_width,
+                visible_cols,
+                default_fg: editor_fg,
+                default_bg: editor_bg,
+            },
+            &mut highlight_idx,
+            &mut search_match_idx,
+        );
     }
 
     Ok(())
+}
+
+fn render_gutter(
+    layer: &mut Layer,
+    line_num: usize,
+    row_idx: usize,
+    gutter_width: usize,
+    total_lines: usize,
+    fg: Option<Color>,
+    bg: Option<Color>,
+) {
+    if line_num < total_lines {
+        let line_str = format!("{:width$}", line_num + 1, width = gutter_width - 1);
+        for (col, ch) in line_str.chars().enumerate() {
+            layer.set_cell(
+                row_idx,
+                col,
+                Cell::new(Character::from(ch)).with_colors(fg, bg),
+            );
+        }
+        layer.set_cell(
+            row_idx,
+            gutter_width - 1,
+            Cell::new(Character::from(' ')).with_colors(fg, bg),
+        );
+    } else {
+        for col in 0..gutter_width {
+            layer.set_cell(
+                row_idx,
+                col,
+                Cell::new(Character::from(' ')).with_colors(fg, bg),
+            );
+        }
+    }
+}
+
+struct RenderLineConfig {
+    line_num: usize,
+    row_idx: usize,
+    gutter_width: usize,
+    visible_cols: usize,
+    default_fg: Option<Color>,
+    default_bg: Option<Color>,
+}
+
+fn render_line(
+    layer: &mut Layer,
+    ctx: &DrawContext,
+    config: RenderLineConfig,
+    highlight_idx: &mut usize,
+    search_match_idx: &mut usize,
+) {
+    let buf = ctx.buf;
+    if config.line_num >= buf.get_total_lines() {
+        // Render empty line (past end of buffer)
+        for col in config.gutter_width..config.visible_cols {
+            layer.set_cell(
+                config.row_idx,
+                col,
+                Cell::from_char(' ').with_colors(config.default_fg, config.default_bg),
+            );
+        }
+        return;
+    }
+
+    let source = LineSource::new(buf, config.line_num);
+    let highlights = ctx.highlights.unwrap_or(&[]);
+    let search_matches = &ctx.state.search_matches;
+
+    // Decorate
+    let syntax = SyntaxDecorator::new(
+        source,
+        highlights,
+        highlight_idx,
+        ctx.state.settings.syntax_colors.as_ref(), // UserSettings has crate::color::theme::SyntaxColors
+        ctx.capture_map,
+    );
+
+    let search = SearchDecorator::new(syntax, search_matches, search_match_idx);
+
+    // Layout
+    let layout = TabLayout::new(search, ctx.tab_width);
+
+    let content_cols = config.visible_cols.saturating_sub(config.gutter_width);
+    let mut rendered_col = 0;
+
+    // Calculate the absolute column at the left edge of the screen (horizontal scroll)
+    let left_col = ctx.viewport.left_col();
+
+    // Internal tracker for absolute visual column (including horizontal scroll)
+    let mut current_visual_col = 0;
+
+    for item in layout {
+        if rendered_col >= content_cols {
+            break;
+        }
+
+        if item.char == Character::Newline {
+            break;
+        }
+
+        let width = item.width;
+        let next_visual_col = current_visual_col + width;
+
+        // Check visibility against viewport
+        if next_visual_col > left_col {
+            // Item is at least partially visible
+
+            // Calculate where to draw in the layer (relative to gutter)
+            let display_col = rendered_col + config.gutter_width;
+
+            if display_col < config.visible_cols {
+                let fg = item.fg.or(config.default_fg);
+                let bg = item.bg.or(config.default_bg);
+
+                layer.set_cell(
+                    config.row_idx,
+                    display_col,
+                    Cell::new(item.char).with_colors(fg, bg),
+                );
+
+                if width > 1 {
+                    let empty_cell = Cell {
+                        content: Character::from(' '),
+                        fg,
+                        bg,
+                    };
+                    for k in 1..width {
+                        if display_col + k < config.visible_cols {
+                            layer.set_cell(config.row_idx, display_col + k, empty_cell.clone());
+                        }
+                    }
+                }
+            }
+            rendered_col += width;
+        }
+
+        current_visual_col = next_visual_col;
+    }
+
+    // Fill remaining line with background
+    for col in (rendered_col + config.gutter_width)..config.visible_cols {
+        layer.set_cell(
+            config.row_idx,
+            col,
+            Cell::from_char(' ').with_colors(config.default_fg, config.default_bg),
+        );
+    }
 }
 
 /// Calculate the cursor column position accounting for tab width and wide characters
