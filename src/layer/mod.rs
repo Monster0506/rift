@@ -237,14 +237,35 @@ impl Layer {
             self.dirty_rects.push(rect);
         }
 
-        // Check cap
-        if self.dirty_rects.len() > Self::MAX_DIRTY_RECTS {
-            let mut bounding_box = self.dirty_rects[0];
-            for r in &self.dirty_rects[1..] {
-                bounding_box = bounding_box.union(r);
+        // Compact list if too large
+        while self.dirty_rects.len() > Self::MAX_DIRTY_RECTS {
+            let mut best_pair = (0, 1);
+            let mut min_growth = usize::MAX;
+
+            for i in 0..self.dirty_rects.len() {
+                for j in (i + 1)..self.dirty_rects.len() {
+                    let r1 = self.dirty_rects[i];
+                    let r2 = self.dirty_rects[j];
+                    let union = r1.union(&r2);
+
+                    let area_r1 = (r1.end_row - r1.start_row + 1) * (r1.end_col - r1.start_col + 1);
+                    let area_r2 = (r2.end_row - r2.start_row + 1) * (r2.end_col - r2.start_col + 1);
+                    let area_union = (union.end_row - union.start_row + 1)
+                        * (union.end_col - union.start_col + 1);
+
+                    let growth = area_union.saturating_sub(area_r1 + area_r2);
+                    if growth < min_growth {
+                        min_growth = growth;
+                        best_pair = (i, j);
+                    }
+                }
             }
-            self.dirty_rects.clear();
-            self.dirty_rects.push(bounding_box);
+
+            // Merge best pair
+            let (i, j) = best_pair;
+            let r2 = self.dirty_rects.remove(j); // Remove higher index first
+            let r1 = self.dirty_rects.remove(i);
+            self.dirty_rects.push(r1.union(&r2));
         }
     }
 
@@ -541,12 +562,14 @@ impl LayerCompositor {
                         continue;
                     }
 
-                    // Re-evaluate this pixel's final value by iterating bottom-up
+                    // Re-evaluate this pixel's final value by iterating Top-Down (highest priority first)
+                    // This allows early exit (occlusion culling)
                     let mut final_cell: Option<Cell> = None;
 
-                    for layer in self.layers.values() {
+                    for layer in self.layers.values().rev() {
                         if let Some(cell) = layer.get_cell(r, c) {
                             final_cell = Some(cell.clone());
+                            break;
                         }
                     }
 

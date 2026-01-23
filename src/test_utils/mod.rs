@@ -124,6 +124,10 @@ impl TerminalBackend for MockTerminal {
         Ok(())
     }
 
+    fn flush(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+
     fn get_size(&self) -> Result<Size, String> {
         Ok(Size {
             rows: self.size.0,

@@ -414,21 +414,27 @@ fn test_layer_dirty_rects_capping() {
     layer.mark_clean();
 
     // Add 11 non-overlapping, non-adjacent rects
+    // These are far enough apart that the smart merger won't proactively merge them
+    // unless forced by the cap.
     for i in 0..11 {
         layer.add_dirty_rect(Rect::new(i * 2, i * 2, i * 2, i * 2));
     }
 
-    // Should have collapsed to 1
+    // Old behavior collapsed to 1. New behavior maintains MAX_DIRTY_RECTS (10) for better precision.
+    let count = layer.get_dirty_rects().len();
     assert_eq!(
-        layer.get_dirty_rects().len(),
-        1,
-        "Should collapse dirty rects when exceeding cap"
+        count, 10,
+        "Should only collapse enough to meet the cap (10), preserving precision"
     );
 
-    // Check bounding box covers everything
-    let rect = layer.get_dirty_rects()[0];
-    assert!(rect.start_row <= 0);
-    assert!(rect.end_row >= 20); // 10*2 = 20
+    // Verify coverage: The union of all dirty rects should cover the range 0..=20
+    let mut union = layer.get_dirty_rects()[0];
+    for r in &layer.get_dirty_rects()[1..] {
+        union = union.union(r);
+    }
+
+    assert!(union.start_row <= 0);
+    assert!(union.end_row >= 20); // 10*2 = 20
 }
 
 #[test]

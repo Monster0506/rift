@@ -36,6 +36,9 @@ pub trait TerminalBackend {
     /// Write bytes to stdout
     fn write(&mut self, bytes: &[u8]) -> Result<(), String>;
 
+    /// Flush output buffer
+    fn flush(&mut self) -> Result<(), String>;
+
     /// Get terminal dimensions
     fn get_size(&self) -> Result<Size, String>;
 

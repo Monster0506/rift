@@ -211,16 +211,22 @@ fn test_double_buffer_invalidate() {
 }
 
 #[test]
-fn test_double_buffer_clear() {
+fn test_double_buffer_clear_content() {
     let mut buffer = DoubleBuffer::new(3, 3);
     buffer.set_cell(0, 0, Cell::from_char('X'));
     buffer.set_cell(1, 1, Cell::from_char('Y'));
 
-    buffer.clear();
+    buffer.clear_content();
 
     // All cells should be empty (space)
     assert_eq!(buffer.get_cell(0, 0).unwrap().content, Character::from(' '));
     assert_eq!(buffer.get_cell(1, 1).unwrap().content, Character::from(' '));
+}
+
+#[test]
+fn test_double_buffer_clear_error() {
+    let mut buffer = DoubleBuffer::new(3, 3);
+    assert!(buffer.clear().is_err());
 }
 
 #[test]
@@ -344,4 +350,29 @@ fn test_double_buffer_get_stats() {
     assert_eq!(stats.total_cells, 9);
     assert_eq!(stats.changed_cells, 2);
     assert!(!stats.full_redraw);
+}
+
+#[test]
+fn test_double_buffer_dirty_rect_expansion() {
+    let mut buffer = DoubleBuffer::new(10, 10);
+    buffer.swap(); // Clear full redraw
+
+    // Touch top-left
+    buffer.set_cell(0, 0, Cell::from_char('A'));
+    // Touch bottom-right
+    buffer.set_cell(9, 9, Cell::from_char('Z'));
+
+    let (batches, stats) = buffer.get_batched_changes();
+    assert_eq!(stats.changed_cells, 2);
+
+    // The dirty rect should have expanded to cover (0,0) to (9,9)
+    // Correctness check: we FOUND the changes.
+    // If dirty rect logic was broken (e.g. stayed at 0,0), we wouldn't find 9,9.
+
+    let contents: Vec<char> = batches
+        .iter()
+        .flat_map(|b| b.cells.iter().map(|c| c.to_char()))
+        .collect();
+    assert!(contents.contains(&'A'));
+    assert!(contents.contains(&'Z'));
 }

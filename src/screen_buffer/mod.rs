@@ -11,7 +11,7 @@
 //! - Resize operations force a full redraw on next diff
 
 use crate::color::Color;
-use crate::layer::Cell;
+use crate::layer::{Cell, Rect};
 
 /// Statistics about a rendered frame
 #[derive(Debug, Clone, Default)]
@@ -79,6 +79,8 @@ pub struct DoubleBuffer {
     cols: usize,
     /// Whether the next diff should be a full redraw
     force_full_redraw: bool,
+    /// Dirty rectangle for the current frame
+    frame_dirty_rect: Option<Rect>,
 }
 
 impl DoubleBuffer {
@@ -93,6 +95,7 @@ impl DoubleBuffer {
             rows,
             cols,
             force_full_redraw: true, // First frame is always full
+            frame_dirty_rect: None,
         }
     }
 
@@ -135,6 +138,14 @@ impl DoubleBuffer {
         if row < self.rows && col < self.cols {
             let idx = self.idx(row, col);
             self.current[idx] = cell;
+
+            // Update frame dirty rect
+            let rect = Rect::new(row, col, row, col);
+            if let Some(existing) = self.frame_dirty_rect {
+                self.frame_dirty_rect = Some(existing.union(&rect));
+            } else {
+                self.frame_dirty_rect = Some(rect);
+            }
             true
         } else {
             false
@@ -165,6 +176,13 @@ impl DoubleBuffer {
                 self.current[start + col_idx] = cell.clone();
             }
         }
+        // Mark full screen dirty on copy
+        self.frame_dirty_rect = Some(Rect::new(
+            0,
+            0,
+            self.rows.saturating_sub(1),
+            self.cols.saturating_sub(1),
+        ));
     }
 
     /// Resize the buffer to new dimensions
@@ -188,6 +206,7 @@ impl DoubleBuffer {
         self.rows = new_rows;
         self.cols = new_cols;
         self.force_full_redraw = true;
+        self.frame_dirty_rect = None; // Reset dirty rect, full redraw takes precedence
     }
 
     /// Force a full redraw on the next diff
@@ -246,12 +265,37 @@ impl DoubleBuffer {
             full_redraw: self.force_full_redraw,
         };
 
-        for row_idx in 0..self.rows {
+        // Determine scan range
+        let (start_row, end_row, start_col, end_col) = if self.force_full_redraw {
+            (
+                0,
+                self.rows.saturating_sub(1),
+                0,
+                self.cols.saturating_sub(1),
+            )
+        } else if let Some(rect) = self.frame_dirty_rect {
+            (rect.start_row, rect.end_row, rect.start_col, rect.end_col)
+        } else {
+            // Nothing dirty
+            return (batches, stats);
+        };
+
+        for row_idx in start_row..=end_row {
+            // Ensure bounds
+            if row_idx >= self.rows {
+                break;
+            }
+
             let row_start_idx = self.idx(row_idx, 0);
             let mut batch_start: Option<usize> = None;
             let mut batch_cells: Vec<&Cell> = Vec::new();
 
-            for col_idx in 0..self.cols {
+            // Optimization: Only scan potentially dirty columns
+            for col_idx in start_col..=end_col {
+                if col_idx >= self.cols {
+                    break;
+                }
+
                 let idx = row_start_idx + col_idx;
                 let curr = &self.current[idx];
                 let prev = &self.previous[idx];
@@ -292,13 +336,28 @@ impl DoubleBuffer {
     pub fn swap(&mut self) {
         self.previous.clone_from(&self.current);
         self.force_full_redraw = false;
+        self.frame_dirty_rect = None;
     }
 
     /// Clear the current buffer (fill with empty cells)
-    pub fn clear(&mut self) {
+    pub fn clear(&mut self) -> Result<(), String> {
+        return Err(
+            "Use clear_cell or specialized method. clear() ambiguous on buffering strategy"
+                .to_string(),
+        );
+    }
+
+    /// Clear content (fill with empty)
+    pub fn clear_content(&mut self) {
         for cell in &mut self.current {
             *cell = Cell::empty();
         }
+        self.frame_dirty_rect = Some(Rect::new(
+            0,
+            0,
+            self.rows.saturating_sub(1),
+            self.cols.saturating_sub(1),
+        ));
     }
 
     /// Get frame statistics for the current diff
@@ -360,6 +419,8 @@ impl DoubleBuffer {
         let mut reset_buf = Vec::new();
         queue!(reset_buf, ResetColor).map_err(|e| format!("Failed to reset colors: {e}"))?;
         term.write(&reset_buf)?;
+
+        term.flush().map_err(|e| format!("Failed to flush: {e}"))?;
 
         // Swap buffers: copy current to previous for next frame
         self.swap();
