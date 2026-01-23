@@ -1,3 +1,4 @@
+use crate::job_manager::JobMessage;
 use crate::key::Key;
 use crate::layer::Layer;
 
@@ -40,6 +41,11 @@ pub trait Component {
 
     /// Render the component to the given layer
     fn render(&mut self, layer: &mut Layer);
+
+    /// Handle a message from a background job
+    fn handle_job_message(&mut self, _msg: JobMessage) -> EventResult {
+        EventResult::Ignored
+    }
 
     /// Get the cursor position for this component (absolute terminal coordinates)
     /// Returns None if the component doesn't want the cursor.

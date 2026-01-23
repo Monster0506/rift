@@ -3,7 +3,7 @@ use crate::error::RiftError;
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
 
-impl<T: TerminalBackend> crate::editor::actions::EditorContext for Editor<T> {
+impl<T: TerminalBackend> crate::editor_api::EditorContext for Editor<T> {
     fn active_document_id(&self) -> Option<crate::document::DocumentId> {
         self.document_manager.active_document_id()
     }

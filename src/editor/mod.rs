@@ -10,7 +10,7 @@ use crate::document::{Document, DocumentId};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::executor::execute_command;
 use crate::key_handler::{KeyAction, KeyHandler};
-use crate::layer::LayerPriority;
+
 use crate::mode::Mode;
 use crate::render;
 use crate::screen_buffer::FrameStats;
@@ -50,9 +50,6 @@ pub struct ActiveModal {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ComponentAction {
-    UndoTreeGoto(u64),
-    UndoTreePreview(u64),
-    UndoTreeCancel,
     ExecuteCommand(String),
     ExecuteSearch(String),
     CancelMode,
@@ -1127,70 +1124,6 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::Checkpoint => {
                 // Already handled in executor
             }
-            ExecutionResult::UndoTree { content } => {
-                // Close command line first
-                self.close_active_modal();
-
-                use crate::component::EventResult;
-                use crate::select_view::SelectView;
-
-                let mut view = SelectView::new()
-                    .with_left_width(content.left_width_percent)
-                    .with_colors(self.state.settings.editor_fg, self.state.settings.editor_bg);
-                view.set_left_content(content.left);
-                view.set_right_content(content.right);
-                view.set_selected_line(Some(content.cursor));
-                let view = view.with_selectable(content.selectable.clone());
-
-                let sequences = content.sequences;
-                let seqs_select = sequences.clone();
-                let seqs_change = sequences.clone();
-
-                let mut view = view
-                    .on_select(move |idx| {
-                        if let Some(&seq) = seqs_select.get(idx) {
-                            if seq != crate::history::EditSeq::MAX {
-                                return EventResult::Action(Box::new(
-                                    ComponentAction::UndoTreeGoto(seq),
-                                ));
-                            }
-                        }
-                        EventResult::Consumed
-                    })
-                    .on_change(move |idx| {
-                        if let Some(&seq) = seqs_change.get(idx) {
-                            if seq != crate::history::EditSeq::MAX {
-                                return EventResult::Action(Box::new(
-                                    ComponentAction::UndoTreePreview(seq),
-                                ));
-                            }
-                        }
-                        EventResult::Consumed
-                    })
-                    .on_cancel(|| EventResult::Action(Box::new(ComponentAction::UndoTreeCancel)));
-
-                // Trigger initial preview
-                let doc = self.document_manager.active_document().unwrap();
-                if let Some(&seq) = sequences.get(content.cursor) {
-                    if seq != crate::history::EditSeq::MAX {
-                        if let Ok(preview_text) = doc.preview_at_seq(seq) {
-                            use crate::layer::Cell;
-                            let mut preview_content = Vec::new();
-                            for line in preview_text.lines() {
-                                let cells: Vec<Cell> = line.chars().map(Cell::from_char).collect();
-                                preview_content.push(cells);
-                            }
-                            view.set_right_content(preview_content);
-                        }
-                    }
-                }
-                self.modal = Some(ActiveModal {
-                    component: Box::new(view),
-                    layer: LayerPriority::POPUP,
-                });
-                self.set_mode(Mode::Overlay);
-                should_close_modal = false;
-            }
             ExecutionResult::SpawnJob(job) => {
                 let id = self.job_manager.spawn(job);
                 self.state.notify(
@@ -1198,42 +1131,24 @@ impl<T: TerminalBackend> Editor<T> {
                     format!("Job {} spawned", id),
                 );
             }
-            ExecutionResult::Explore { path } => {
-                let initial_path = if let Some(p) = path {
-                    std::path::PathBuf::from(p)
-                } else if let Some(doc) = self.document_manager.active_document() {
-                    if let Some(p) = doc.path() {
-                        if p.is_dir() {
-                            p.to_path_buf()
-                        } else {
-                            p.parent().unwrap_or(p).to_path_buf()
-                        }
-                    } else {
-                        std::env::current_dir().unwrap_or_default()
-                    }
-                } else {
-                    std::env::current_dir().unwrap_or_default()
-                };
-
-                // Create explorer
-                let mut explorer = crate::file_explorer::FileExplorer::new(initial_path);
-
-                // Theme it
-                explorer = explorer
-                    .with_colors(self.state.settings.editor_fg, self.state.settings.editor_bg);
-
-                // Spawn initial list job
-                let job = explorer.create_list_job();
-                self.job_manager.spawn(job);
+            ExecutionResult::OpenComponent {
+                component,
+                initial_job,
+            } => {
+                // Close command line first (if not already handled by logic ensuring modals are exclusive)
+                // Actually close_active_modal() clears mode.
+                self.close_active_modal();
 
                 self.modal = Some(ActiveModal {
-                    component: Box::new(explorer),
-                    // Use FLOATING_WINDOW or POPUP? UndoTree uses POPUP.
+                    component,
                     layer: crate::layer::LayerPriority::POPUP,
                 });
                 self.set_mode(Mode::Overlay);
-                // Don't close modal immediately
                 should_close_modal = false;
+
+                if let Some(job) = initial_job {
+                    self.job_manager.spawn(job);
+                }
             }
         }
         if should_close_modal {
@@ -1288,18 +1203,14 @@ impl<T: TerminalBackend> Editor<T> {
                 // Silent progress
             }
             JobMessage::Finished(id, silent) => {
-                // Propagate to Explorer if active
+                // Propagate to generic component if active
                 if let Some(modal) = self.modal.as_mut() {
-                    if let Some(explorer) = modal
+                    let res = modal
                         .component
-                        .as_any_mut()
-                        .downcast_mut::<crate::file_explorer::FileExplorer>()
-                    {
-                        let res = explorer.handle_job_message(JobMessage::Finished(id, silent));
-                        if let crate::component::EventResult::Action(action) = res {
-                            if let Err(e) = action.execute(self) {
-                                self.state.handle_error(e);
-                            }
+                        .handle_job_message(JobMessage::Finished(id, silent));
+                    if let crate::component::EventResult::Action(action) = res {
+                        if let Err(e) = action.execute(self) {
+                            self.state.handle_error(e);
                         }
                     }
                 }
@@ -1321,31 +1232,36 @@ impl<T: TerminalBackend> Editor<T> {
                 );
             }
             JobMessage::Custom(id, payload) => {
-                // Intercept Explorer messages
-                if payload
-                    .as_any()
-                    .is::<crate::job_manager::jobs::explorer::DirectoryListing>()
-                    || payload
-                        .as_any()
-                        .is::<crate::job_manager::jobs::explorer::FilePreview>()
-                {
+                // Check for core types first to avoid moving payload if it's for Editor
+                let is_core = {
+                    let any = payload.as_any();
+                    any.is::<crate::job_manager::jobs::file_operations::FileSaveResult>()
+                        || any.is::<crate::job_manager::jobs::file_operations::FileLoadResult>()
+                        || any.is::<SyntaxParseResult>()
+                        || any.is::<crate::buffer::byte_map::ByteLineMap>()
+                };
+
+                // Intercept generic component messages if not core
+                if !is_core {
                     if let Some(modal) = self.modal.as_mut() {
-                        if let Some(explorer) = modal
+                        let res = modal
                             .component
-                            .as_any_mut()
-                            .downcast_mut::<crate::file_explorer::FileExplorer>(
-                        ) {
-                            let res = explorer.handle_job_message(JobMessage::Custom(id, payload));
-                            if let crate::component::EventResult::Action(action) = res {
+                            .handle_job_message(JobMessage::Custom(id, payload));
+                        match res {
+                            crate::component::EventResult::Action(action) => {
                                 if let Err(e) = action.execute(self) {
                                     self.state.handle_error(e);
                                 }
+                                return Ok(());
                             }
-                            return Ok(());
+                            crate::component::EventResult::Consumed => return Ok(()),
+                            crate::component::EventResult::Ignored => return Ok(()),
                         }
                     }
                 }
 
+                // If we are here, it MUST be a core type (or we have no modal).
+                // If we have no modal and it's !is_core, we proceed to try downcast, which will fail nicely.
                 let any_payload = payload.into_any();
 
                 // Try FileSaveResult
