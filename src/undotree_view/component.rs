@@ -1,11 +1,9 @@
 use crate::component::{Component, EventResult};
 use crate::history::EditSeq;
 use crate::history::UndoTree;
+use crate::message::{AppMessage, UndoTreeMessage};
 use crate::select_view::SelectView;
 use crate::state::UserSettings;
-use crate::undotree_view::actions::{
-    UndoTreeCancelAction, UndoTreeGotoAction, UndoTreePreviewAction,
-};
 use crate::undotree_view::render_tree;
 
 pub fn create_undo_tree_component(
@@ -33,7 +31,9 @@ pub fn create_undo_tree_component(
         .on_select(move |idx| {
             if let Some(&seq) = seqs_select.get(idx) {
                 if seq != EditSeq::MAX {
-                    return EventResult::Action(Box::new(UndoTreeGotoAction { seq }));
+                    return EventResult::Message(AppMessage::UndoTree(UndoTreeMessage::Goto(
+                        seq as usize,
+                    )));
                 }
             }
             EventResult::Consumed
@@ -41,12 +41,14 @@ pub fn create_undo_tree_component(
         .on_change(move |idx| {
             if let Some(&seq) = seqs_change.get(idx) {
                 if seq != EditSeq::MAX {
-                    return EventResult::Action(Box::new(UndoTreePreviewAction { seq }));
+                    return EventResult::Message(AppMessage::UndoTree(UndoTreeMessage::Preview(
+                        seq as usize,
+                    )));
                 }
             }
             EventResult::Consumed
         })
-        .on_cancel(|| EventResult::Action(Box::new(UndoTreeCancelAction)));
+        .on_cancel(|| EventResult::Message(AppMessage::UndoTree(UndoTreeMessage::Cancel)));
 
     Box::new(view)
 }

@@ -48,13 +48,6 @@ pub struct ActiveModal {
     pub layer: crate::layer::LayerPriority,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum ComponentAction {
-    ExecuteCommand(String),
-    ExecuteSearch(String),
-    CancelMode,
-}
-
 impl<T: TerminalBackend> Editor<T> {
     /// Create a new editor instance
     pub fn new(terminal: T) -> Result<Self, RiftError> {
@@ -463,8 +456,8 @@ impl<T: TerminalBackend> Editor<T> {
                     match result {
                         EventResult::Consumed => continue,
                         EventResult::Ignored => continue,
-                        EventResult::Action(action) => {
-                            if let Err(e) = action.execute(self) {
+                        EventResult::Message(msg) => {
+                            if let Err(e) = self.handle_message(msg) {
                                 self.state.handle_error(e);
                             }
                             continue;
@@ -1208,8 +1201,8 @@ impl<T: TerminalBackend> Editor<T> {
                     let res = modal
                         .component
                         .handle_job_message(JobMessage::Finished(id, silent));
-                    if let crate::component::EventResult::Action(action) = res {
-                        if let Err(e) = action.execute(self) {
+                    if let crate::component::EventResult::Message(msg) = res {
+                        if let Err(e) = self.handle_message(msg) {
                             self.state.handle_error(e);
                         }
                     }
@@ -1248,8 +1241,8 @@ impl<T: TerminalBackend> Editor<T> {
                             .component
                             .handle_job_message(JobMessage::Custom(id, payload));
                         match res {
-                            crate::component::EventResult::Action(action) => {
-                                if let Err(e) = action.execute(self) {
+                            crate::component::EventResult::Message(msg) => {
+                                if let Err(e) = self.handle_message(msg) {
                                     self.state.handle_error(e);
                                 }
                                 return Ok(());
@@ -1417,6 +1410,155 @@ impl<T: TerminalBackend> Editor<T> {
             self.state.search_matches.clear();
         }
     }
+
+    /// Execute a command line string
+    fn execute_command_line(&mut self, cmd: String) {
+        let parsed_command = self.command_parser.parse(&cmd);
+        let execution_result = CommandExecutor::execute(
+            parsed_command,
+            &mut self.state,
+            self.document_manager
+                .active_document_mut()
+                .expect("active document missing"),
+            &self.settings_registry,
+            &self.document_settings_registry,
+        );
+
+        self.handle_execution_result(execution_result);
+    }
+
+    /// Handle application messages from components
+    fn handle_message(&mut self, msg: crate::message::AppMessage) -> Result<(), RiftError> {
+        use crate::message::AppMessage;
+        match msg {
+            AppMessage::FileExplorer(m) => self.handle_file_explorer_message(m),
+            AppMessage::CommandLine(m) => self.handle_command_line_message(m),
+            AppMessage::UndoTree(m) => self.handle_undo_tree_message(m),
+            AppMessage::Generic(m) => self.handle_generic_message(m),
+        }
+    }
+
+    fn handle_file_explorer_message(
+        &mut self,
+        msg: crate::message::FileExplorerMessage,
+    ) -> Result<(), RiftError> {
+        use crate::message::FileExplorerMessage;
+        match msg {
+            FileExplorerMessage::SpawnJob(job) => {
+                self.job_manager.spawn(job);
+            }
+            FileExplorerMessage::OpenFile(path) => {
+                if let Err(e) = self.open_file(Some(path.to_string_lossy().to_string()), false) {
+                    return Err(e);
+                } else {
+                    self.close_active_modal();
+                    let _ = self.force_full_redraw();
+                }
+            }
+            FileExplorerMessage::Notify(kind, msg) => {
+                self.state.notify(kind, msg);
+            }
+            FileExplorerMessage::Close => {
+                self.close_active_modal();
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_command_line_message(
+        &mut self,
+        msg: crate::message::CommandLineMessage,
+    ) -> Result<(), RiftError> {
+        use crate::message::CommandLineMessage;
+        match msg {
+            CommandLineMessage::ExecuteCommand(cmd) => {
+                self.execute_command_line(cmd);
+                self.state.clear_command_line();
+                self.close_active_modal();
+            }
+            CommandLineMessage::ExecuteSearch(query) => {
+                if !query.is_empty() {
+                    self.perform_search(&query, SearchDirection::Forward, false);
+                }
+                self.state.clear_command_line();
+                self.close_active_modal();
+            }
+            CommandLineMessage::CancelMode => {
+                self.state.clear_command_line();
+                self.close_active_modal();
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_undo_tree_message(
+        &mut self,
+        msg: crate::message::UndoTreeMessage,
+    ) -> Result<(), RiftError> {
+        use crate::message::UndoTreeMessage;
+        match msg {
+            UndoTreeMessage::Goto(seq) => {
+                let doc_id = self.active_document_id();
+                {
+                    let doc = self.active_document();
+                    doc.goto_seq(seq as u64).map_err(|e| {
+                        RiftError::new(ErrorType::Execution, "UNDO_ERROR", e.to_string())
+                    })?;
+                }
+                self.spawn_syntax_parse_job(doc_id); // Replaces trigger_syntax_highlighting logic
+                self.close_active_modal();
+            }
+            UndoTreeMessage::Preview(seq) => {
+                let content = {
+                    let doc = self.active_document();
+                    if let Ok(preview_text) = doc.preview_at_seq(seq as u64) {
+                        use crate::layer::Cell;
+                        let mut content = Vec::new();
+                        for line in preview_text.lines() {
+                            let cells: Vec<Cell> = line.chars().map(Cell::from_char).collect();
+                            content.push(cells);
+                        }
+                        Some(content)
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(content) = content {
+                    if let Some(modal) = self.modal.as_mut() {
+                        if let Some(view) = modal
+                            .component
+                            .as_any_mut()
+                            .downcast_mut::<crate::select_view::SelectView>()
+                        {
+                            view.set_right_content(content);
+                        }
+                    }
+                }
+                self.force_full_redraw()?;
+            }
+            UndoTreeMessage::Cancel => {
+                self.close_active_modal();
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_generic_message(
+        &mut self,
+        msg: crate::message::GenericMessage,
+    ) -> Result<(), RiftError> {
+        use crate::message::GenericMessage;
+        match msg {
+            GenericMessage::SpawnJob(job) => {
+                self.job_manager.spawn(job);
+            }
+            GenericMessage::Notify(kind, msg) => {
+                self.state.notify(kind, msg);
+            }
+        }
+        Ok(())
+    }
 }
 
 impl<T: TerminalBackend> Drop for Editor<T> {
@@ -1425,7 +1567,6 @@ impl<T: TerminalBackend> Drop for Editor<T> {
     }
 }
 
-mod component_action_impl;
 mod context_impl;
 
 #[cfg(test)]
