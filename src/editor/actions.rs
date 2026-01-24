@@ -1,1 +1,1 @@
-pub use crate::editor_api::{EditorAction, EditorContext, JobId};
+pub use crate::editor_api::{EditorContext, JobId};

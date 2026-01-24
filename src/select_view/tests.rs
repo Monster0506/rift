@@ -1,7 +1,5 @@
 use super::*;
-use crate::editor::actions::{EditorAction, EditorContext};
-use crate::error::RiftError;
-#[allow(unused_imports)]
+
 use crate::layer::Layer;
 
 #[test]
@@ -116,46 +114,35 @@ fn test_select_view_callbacks() {
     }
 }
 
-// Test action for on_change propagation
-#[derive(Debug, Clone)]
-struct TestAction(usize);
-
-impl EditorAction for TestAction {
-    fn execute(self: Box<Self>, _ctx: &mut dyn EditorContext) -> Result<(), RiftError> {
-        Ok(())
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
-// SAFETY: TestAction contains only usize which is Send
-unsafe impl Send for TestAction {}
-
 #[test]
 fn test_select_view_on_change_propagation() {
     use crate::component::EventResult;
     use crate::key::Key;
+    use crate::message::{AppMessage, GenericMessage};
+    use crate::notification::NotificationType;
 
     let mut view = SelectView::new()
         .with_selectable(vec![true, true])
-        .on_change(|idx| EventResult::Action(Box::new(TestAction(idx))));
+        .on_change(|idx| {
+            EventResult::Message(AppMessage::Generic(GenericMessage::Notify(
+                NotificationType::Info,
+                format!("Selected {}", idx),
+            )))
+        });
 
     view.set_selected_line(Some(0));
 
-    // Move down -> invokes on_change(1) -> returns Action(TestAction(1))
+    // Move down -> invokes on_change(1) -> returns Message(...)
     let result = view.handle_input(Key::ArrowDown);
 
     match result {
-        EventResult::Action(action) => {
-            if let Some(test_action) = action.as_any().downcast_ref::<TestAction>() {
-                assert_eq!(test_action.0, 1);
-            } else {
-                panic!("Action was not TestAction");
-            }
+        EventResult::Message(AppMessage::Generic(GenericMessage::Notify(
+            NotificationType::Info,
+            msg,
+        ))) => {
+            assert_eq!(msg, "Selected 1");
         }
-        _ => panic!("Expected Action, got {:?}", result),
+        _ => panic!("Expected Message(Generic(Notify)), got {:?}", result),
     }
 }
 

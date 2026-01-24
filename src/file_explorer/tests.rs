@@ -33,18 +33,16 @@ fn test_with_colors() {
 
 #[test]
 fn test_handle_input_esc() {
+    use crate::message::{AppMessage, FileExplorerMessage};
     let mut explorer = FileExplorer::new(PathBuf::from("./"));
     let res = explorer.handle_input(Key::Escape);
     match res {
-        EventResult::Action(action) => {
-            // Use as_any() to downcast
-            if action.as_any().is::<ExplorerAction>() {
-                // Verified it's an ExplorerAction
-                assert!(true);
-            } else {
-                panic!("Expected ExplorerAction");
-            }
+        EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::Close)) => {
+            assert!(true);
         }
-        _ => panic!("Expected Action"),
+        _ => panic!(
+            "Expected Message(AppMessage::FileExplorer(Close)), got {:?}",
+            res
+        ),
     }
 }
