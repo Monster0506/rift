@@ -341,10 +341,10 @@ impl DoubleBuffer {
 
     /// Clear the current buffer (fill with empty cells)
     pub fn clear(&mut self) -> Result<(), String> {
-        return Err(
+        Err(
             "Use clear_cell or specialized method. clear() ambiguous on buffering strategy"
                 .to_string(),
-        );
+        )
     }
 
     /// Clear content (fill with empty)

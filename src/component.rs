@@ -1,15 +1,25 @@
+use crate::job_manager::JobMessage;
 use crate::key::Key;
 use crate::layer::Layer;
 
 /// Result of processing a key event
-#[derive(Debug)]
 pub enum EventResult {
     /// Event was invalid or not handled
     Ignored,
     /// Event was handled
     Consumed,
     /// Event triggered an action with a payload
-    Action(Box<dyn std::any::Any>),
+    Message(crate::message::AppMessage),
+}
+
+impl std::fmt::Debug for EventResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Ignored => write!(f, "Ignored"),
+            Self::Consumed => write!(f, "Consumed"),
+            Self::Message(_) => write!(f, "Message(...)"),
+        }
+    }
 }
 
 impl PartialEq for EventResult {
@@ -17,7 +27,9 @@ impl PartialEq for EventResult {
         match (self, other) {
             (Self::Ignored, Self::Ignored) => true,
             (Self::Consumed, Self::Consumed) => true,
-            (Self::Action(_), Self::Action(_)) => false, // Cannot compare Any
+            // Cannot compare Message easily without deriving PartialEq on AppMessage
+            // For now we act like they are different
+            (Self::Message(_), Self::Message(_)) => false,
             _ => false,
         }
     }
@@ -31,6 +43,11 @@ pub trait Component {
 
     /// Render the component to the given layer
     fn render(&mut self, layer: &mut Layer);
+
+    /// Handle a message from a background job
+    fn handle_job_message(&mut self, _msg: JobMessage) -> EventResult {
+        EventResult::Ignored
+    }
 
     /// Get the cursor position for this component (absolute terminal coordinates)
     /// Returns None if the component doesn't want the cursor.

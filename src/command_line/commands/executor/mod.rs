@@ -7,7 +7,6 @@ use crate::state::State;
 use crate::state::UserSettings;
 
 /// Result of executing a command
-#[derive(Debug)]
 pub enum ExecutionResult {
     /// Command executed successfully
     Success,
@@ -55,16 +54,13 @@ pub enum ExecutionResult {
     },
     /// Checkpoint created successfully
     Checkpoint,
-    /// Open undo tree visualization
-    UndoTree {
-        content: crate::state::OverlayContent,
+    /// Open a generic component (overlay)
+    OpenComponent {
+        component: Box<dyn crate::component::Component>,
+        initial_job: Option<Box<dyn crate::job_manager::Job>>,
     },
     /// Spawn a background job
     SpawnJob(Box<dyn crate::job_manager::Job>),
-    /// Open file explorer
-    Explore {
-        path: Option<String>,
-    },
 }
 
 impl PartialEq for ExecutionResult {
@@ -96,10 +92,44 @@ impl PartialEq for ExecutionResult {
             (Self::Redo { count: c1 }, Self::Redo { count: c2 }) => c1 == c2,
             (Self::UndoGoto { seq: s1 }, Self::UndoGoto { seq: s2 }) => s1 == s2,
             (Self::Checkpoint, Self::Checkpoint) => true,
-            (Self::UndoTree { .. }, Self::UndoTree { .. }) => true, // Ignore content for equality check
+            (Self::OpenComponent { .. }, Self::OpenComponent { .. }) => true, // Ignore content for equality check
             (Self::SpawnJob(_), Self::SpawnJob(_)) => true, // Ignore job content for equality
-            (Self::Explore { path: p1 }, Self::Explore { path: p2 }) => p1 == p2,
             _ => false,
+        }
+    }
+}
+impl std::fmt::Debug for ExecutionResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Success => write!(f, "Success"),
+            Self::Quit { bangs } => f.debug_struct("Quit").field("bangs", bangs).finish(),
+            Self::Write => write!(f, "Write"),
+            Self::WriteAndQuit => write!(f, "WriteAndQuit"),
+            Self::Failure => write!(f, "Failure"),
+            Self::Redraw => write!(f, "Redraw"),
+            Self::Edit { path, bangs } => f
+                .debug_struct("Edit")
+                .field("path", path)
+                .field("bangs", bangs)
+                .finish(),
+            Self::BufferNext { bangs } => {
+                f.debug_struct("BufferNext").field("bangs", bangs).finish()
+            }
+            Self::BufferPrevious { bangs } => f
+                .debug_struct("BufferPrevious")
+                .field("bangs", bangs)
+                .finish(),
+            Self::BufferList => write!(f, "BufferList"),
+            Self::NotificationClear { bangs } => f
+                .debug_struct("NotificationClear")
+                .field("bangs", bangs)
+                .finish(),
+            Self::Undo { count } => write!(f, "Undo({:?})", count),
+            Self::Redo { count } => write!(f, "Redo({:?})", count),
+            Self::UndoGoto { seq } => write!(f, "UndoGoto({})", seq),
+            Self::Checkpoint => write!(f, "Checkpoint"),
+            Self::OpenComponent { .. } => write!(f, "OpenComponent(...)"),
+            Self::SpawnJob(_) => write!(f, "SpawnJob(...)"),
         }
     }
 }
@@ -348,26 +378,41 @@ impl CommandExecutor {
                 ExecutionResult::Checkpoint
             }
             ParsedCommand::UndoTree { bangs: _ } => {
-                let (lines, _seqs, cursor) = crate::undotree_view::render_tree(&document.history);
-
-                // Create overlay content
-                use crate::history::EditSeq;
-                let selectable = _seqs.iter().map(|&s| s != EditSeq::MAX).collect();
-
-                let preview: Vec<Vec<crate::layer::Cell>> = Vec::new();
-
-                let content = crate::state::OverlayContent {
-                    left: lines,
-                    right: preview, // Placeholder
-                    left_width_percent: 50,
-                    cursor,
-                    selectable,
-                    sequences: _seqs,
-                    right_scroll: 0,
-                };
-                ExecutionResult::UndoTree { content }
+                let component = crate::undotree_view::component::create_undo_tree_component(
+                    &document.history,
+                    &state.settings,
+                );
+                ExecutionResult::OpenComponent {
+                    component,
+                    initial_job: None,
+                }
             }
-            ParsedCommand::Explore { path, bangs: _ } => ExecutionResult::Explore { path },
+            ParsedCommand::Explore { path, bangs: _ } => {
+                let initial_path = if let Some(p) = path {
+                    std::path::PathBuf::from(p)
+                } else {
+                    // Check if document has path
+                    if let Some(p) = document.path() {
+                        if p.is_dir() {
+                            p.to_path_buf()
+                        } else {
+                            p.parent().unwrap_or(p).to_path_buf()
+                        }
+                    } else {
+                        std::env::current_dir().unwrap_or_default()
+                    }
+                };
+
+                let mut explorer = crate::file_explorer::FileExplorer::new(initial_path);
+                explorer = explorer.with_colors(state.settings.editor_fg, state.settings.editor_bg);
+
+                let job = explorer.create_list_job();
+
+                ExecutionResult::OpenComponent {
+                    component: Box::new(explorer),
+                    initial_job: Some(job),
+                }
+            }
         }
     }
 }

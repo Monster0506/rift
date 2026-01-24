@@ -147,3 +147,5 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+pub mod component;
