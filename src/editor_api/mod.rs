@@ -49,12 +49,3 @@ pub trait EditorContext {
     /// Clear the command line state
     fn clear_command_line(&mut self);
 }
-
-/// A generic action that performs operations on the editor
-pub trait EditorAction: Send {
-    /// Execute the action using the provided context
-    fn execute(self: Box<Self>, ctx: &mut dyn EditorContext) -> Result<(), RiftError>;
-
-    /// As any for downcasting if needed
-    fn as_any(&self) -> &dyn std::any::Any;
-}

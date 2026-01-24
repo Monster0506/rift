@@ -13,14 +13,7 @@ use crate::select_view::SelectView;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-pub enum ExplorerAction {
-    SpawnJob(Box<dyn Job>),
-    OpenFile(PathBuf),
-    Notify(crate::notification::NotificationType, String),
-    Close,
-}
-
-mod action_impl;
+use crate::message::{AppMessage, FileExplorerMessage};
 
 #[derive(Clone)]
 enum InputMode {
@@ -177,13 +170,18 @@ impl FileExplorer {
 
             if entry.is_dir {
                 // Spawn preview job for directory
-                return EventResult::Action(Box::new(ExplorerAction::SpawnJob(Box::new(
-                    DirectoryListJob::new(entry.path.clone(), self.show_hidden),
-                ))));
+                return EventResult::Message(AppMessage::FileExplorer(
+                    FileExplorerMessage::SpawnJob(Box::new(DirectoryListJob::new(
+                        entry.path.clone(),
+                        self.show_hidden,
+                    ))),
+                ));
             } else {
-                return EventResult::Action(Box::new(ExplorerAction::SpawnJob(Box::new(
-                    FilePreviewJob::new(entry.path.clone()),
-                ))));
+                return EventResult::Message(AppMessage::FileExplorer(
+                    FileExplorerMessage::SpawnJob(Box::new(FilePreviewJob::new(
+                        entry.path.clone(),
+                    ))),
+                ));
             }
         }
         EventResult::Ignored
@@ -239,10 +237,12 @@ impl Component for FileExplorer {
                             return self.create_preview_action(idx);
                         } else {
                             // Log empty directory for debugging
-                            return EventResult::Action(Box::new(ExplorerAction::Notify(
-                                crate::notification::NotificationType::Warning,
-                                format!("Directory is empty: {:?}", self.current_path),
-                            )));
+                            return EventResult::Message(AppMessage::FileExplorer(
+                                FileExplorerMessage::Notify(
+                                    crate::notification::NotificationType::Warning,
+                                    format!("Directory is empty: {:?}", self.current_path),
+                                ),
+                            ));
                         }
                     }
                     // RIGHT PANE: Directory Preview
@@ -332,9 +332,9 @@ impl Component for FileExplorer {
             }
             JobMessage::Finished(_, silent) => {
                 if !silent {
-                    return EventResult::Action(Box::new(ExplorerAction::SpawnJob(
-                        self.create_list_job(),
-                    )));
+                    return EventResult::Message(AppMessage::FileExplorer(
+                        FileExplorerMessage::SpawnJob(self.create_list_job()),
+                    ));
                 }
             }
             _ => {}
@@ -365,7 +365,7 @@ impl Component for FileExplorer {
         // Normal Mode
         match key {
             Key::Char('q') | Key::Escape => {
-                return EventResult::Action(Box::new(ExplorerAction::Close));
+                return EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::Close));
             }
             Key::Char('j') | Key::ArrowDown => {
                 let res = self.select_view.handle_input(key);
@@ -388,22 +388,22 @@ impl Component for FileExplorer {
                             if entry.is_dir {
                                 self.current_path = entry.path.clone();
                                 self.preview_cache.clear(); // Clear cache on directory change
-                                return EventResult::Action(Box::new(ExplorerAction::SpawnJob(
-                                    self.create_list_job(),
-                                )));
+                                return EventResult::Message(AppMessage::FileExplorer(
+                                    FileExplorerMessage::SpawnJob(self.create_list_job()),
+                                ));
                             } else {
-                                return EventResult::Action(Box::new(ExplorerAction::OpenFile(
-                                    entry.path.clone(),
-                                )));
+                                return EventResult::Message(AppMessage::FileExplorer(
+                                    FileExplorerMessage::OpenFile(entry.path.clone()),
+                                ));
                             }
                         }
                     } else {
                         // Header selected (..)
                         if let Some(parent) = self.current_path.parent() {
                             self.current_path = parent.to_path_buf();
-                            return EventResult::Action(Box::new(ExplorerAction::SpawnJob(
-                                self.create_list_job(),
-                            )));
+                            return EventResult::Message(AppMessage::FileExplorer(
+                                FileExplorerMessage::SpawnJob(self.create_list_job()),
+                            ));
                         }
                     }
                 }
@@ -411,9 +411,9 @@ impl Component for FileExplorer {
             Key::Backspace | Key::Char('-') => {
                 if let Some(parent) = self.current_path.parent() {
                     self.current_path = parent.to_path_buf();
-                    return EventResult::Action(Box::new(ExplorerAction::SpawnJob(
-                        self.create_list_job(),
-                    )));
+                    return EventResult::Message(AppMessage::FileExplorer(
+                        FileExplorerMessage::SpawnJob(self.create_list_job()),
+                    ));
                 }
             }
             Key::Char(' ') => {
@@ -441,15 +441,15 @@ impl Component for FileExplorer {
             Key::Char('R') => {
                 // Manual refresh
                 self.preview_cache.clear(); // Clear cache on refresh
-                return EventResult::Action(Box::new(ExplorerAction::SpawnJob(
-                    self.create_list_job(),
-                )));
+                return EventResult::Message(AppMessage::FileExplorer(
+                    FileExplorerMessage::SpawnJob(self.create_list_job()),
+                ));
             }
             Key::Char('.') => {
                 self.show_hidden = !self.show_hidden;
-                return EventResult::Action(Box::new(ExplorerAction::SpawnJob(
-                    self.create_list_job(),
-                )));
+                return EventResult::Message(AppMessage::FileExplorer(
+                    FileExplorerMessage::SpawnJob(self.create_list_job()),
+                ));
             }
             Key::Char('l') => {
                 self.show_metadata = !self.show_metadata;
@@ -541,35 +541,35 @@ impl FileExplorer {
             InputMode::NewFile => {
                 let is_dir = content.ends_with("/");
                 let path = self.current_path.join(content);
-                EventResult::Action(Box::new(ExplorerAction::SpawnJob(Box::new(
-                    FsCreateJob::new(path, is_dir),
-                ))))
+                EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::SpawnJob(
+                    Box::new(FsCreateJob::new(path, is_dir)),
+                )))
             }
             InputMode::NewDir => {
                 let path = self.current_path.join(content);
-                EventResult::Action(Box::new(ExplorerAction::SpawnJob(Box::new(
-                    FsCreateJob::new(path, true),
-                ))))
+                EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::SpawnJob(
+                    Box::new(FsCreateJob::new(path, true)),
+                )))
             }
             InputMode::Rename(old_path) => {
                 let new_path = old_path.parent().unwrap().join(content);
-                EventResult::Action(Box::new(ExplorerAction::SpawnJob(Box::new(
-                    FsMoveJob::new(old_path, new_path),
-                ))))
+                EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::SpawnJob(
+                    Box::new(FsMoveJob::new(old_path, new_path)),
+                )))
             }
             InputMode::Copy(old_path) => {
                 let new_path = old_path.parent().unwrap().join(content);
 
-                EventResult::Action(Box::new(ExplorerAction::SpawnJob(Box::new(
-                    FsCopyJob::new(old_path, new_path),
-                ))))
+                EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::SpawnJob(
+                    Box::new(FsCopyJob::new(old_path, new_path)),
+                )))
             }
             InputMode::DeleteConfirm(targets) => {
                 if content.to_lowercase() == "y" || content.to_lowercase() == "yes" {
                     if !targets.is_empty() {
-                        EventResult::Action(Box::new(ExplorerAction::SpawnJob(Box::new(
-                            FsBatchDeleteJob::new(targets),
-                        ))))
+                        EventResult::Message(AppMessage::FileExplorer(
+                            FileExplorerMessage::SpawnJob(Box::new(FsBatchDeleteJob::new(targets))),
+                        ))
                     } else {
                         EventResult::Consumed
                     }

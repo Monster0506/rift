@@ -9,7 +9,7 @@ pub enum EventResult {
     /// Event was handled
     Consumed,
     /// Event triggered an action with a payload
-    Action(Box<dyn crate::editor::actions::EditorAction>),
+    Message(crate::message::AppMessage),
 }
 
 impl std::fmt::Debug for EventResult {
@@ -17,7 +17,7 @@ impl std::fmt::Debug for EventResult {
         match self {
             Self::Ignored => write!(f, "Ignored"),
             Self::Consumed => write!(f, "Consumed"),
-            Self::Action(_) => write!(f, "Action(...)"),
+            Self::Message(_) => write!(f, "Message(...)"),
         }
     }
 }
@@ -27,7 +27,9 @@ impl PartialEq for EventResult {
         match (self, other) {
             (Self::Ignored, Self::Ignored) => true,
             (Self::Consumed, Self::Consumed) => true,
-            (Self::Action(_), Self::Action(_)) => false, // Cannot compare Action
+            // Cannot compare Message easily without deriving PartialEq on AppMessage
+            // For now we act like they are different
+            (Self::Message(_), Self::Message(_)) => false,
             _ => false,
         }
     }

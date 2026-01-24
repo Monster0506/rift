@@ -1,8 +1,8 @@
 use crate::color::Color;
 use crate::component::{Component, EventResult};
-use crate::editor::ComponentAction;
 use crate::key::Key;
 use crate::layer::Layer;
+use crate::message::{AppMessage, CommandLineMessage};
 use crate::state::CommandLineWindowSettings;
 /// Component header for command line input
 pub struct CommandLineComponent {
@@ -98,16 +98,18 @@ impl Component for CommandLineComponent {
             }
             Key::Enter => {
                 if self.prompt == '/' {
-                    EventResult::Action(Box::new(ComponentAction::ExecuteSearch(
-                        self.content.clone(),
-                    )))
+                    EventResult::Message(AppMessage::CommandLine(
+                        CommandLineMessage::ExecuteSearch(self.content.clone()),
+                    ))
                 } else {
-                    EventResult::Action(Box::new(ComponentAction::ExecuteCommand(
-                        self.content.clone(),
-                    )))
+                    EventResult::Message(AppMessage::CommandLine(
+                        CommandLineMessage::ExecuteCommand(self.content.clone()),
+                    ))
                 }
             }
-            Key::Escape => EventResult::Action(Box::new(ComponentAction::CancelMode)),
+            Key::Escape => {
+                EventResult::Message(AppMessage::CommandLine(CommandLineMessage::CancelMode))
+            }
             _ => EventResult::Ignored,
         }
     }

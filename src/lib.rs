@@ -21,7 +21,7 @@ pub mod job_manager;
 pub mod key;
 pub mod key_handler;
 pub mod layer;
-
+pub mod message;
 pub mod mode;
 pub mod movement;
 pub mod notification;
