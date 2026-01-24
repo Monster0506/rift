@@ -4,7 +4,9 @@ use crate::syntax::loader::LoadedLanguage;
 use std::sync::Arc;
 use tree_sitter::{InputEdit, Query, Tree};
 
+pub mod interval_tree;
 pub mod loader;
+use crate::syntax::interval_tree::IntervalTree;
 
 #[derive(Clone, Debug)]
 pub enum SyntaxNotification {
@@ -21,7 +23,7 @@ pub struct Syntax {
     pub language_name: String,
 
     // Cache
-    cached_highlights: Vec<(std::ops::Range<usize>, u32)>,
+    cached_highlights: IntervalTree<u32>,
 }
 
 impl Syntax {
@@ -35,7 +37,7 @@ impl Syntax {
             tree: None,
             highlights_query,
             language_name: loaded.name,
-            cached_highlights: Vec::new(),
+            cached_highlights: IntervalTree::default(),
         })
     }
 
@@ -49,10 +51,6 @@ impl Syntax {
         self.cached_highlights = result.highlights;
     }
 
-    /// Update the tree with an edit (synchronous, fast)
-    /// This keeps the tree in sync with buffer edits before the background job runs?
-    /// Actually, if we use background jobs, we might not want to touch `tree` here unless we want to keep it valid for incidental queries.
-    /// Tree-sitter's `tree.edit()` is fast. We should do it.
     pub fn update_tree(&mut self, edit: &InputEdit) {
         if let Some(tree) = &mut self.tree {
             tree.edit(edit);
@@ -65,13 +63,12 @@ impl Syntax {
         range: Option<std::ops::Range<usize>>,
     ) -> Vec<(std::ops::Range<usize>, u32)> {
         if let Some(r) = range {
+            self.cached_highlights.query(r)
+        } else {
             self.cached_highlights
                 .iter()
-                .filter(|(h_range, _)| h_range.start < r.end && h_range.end > r.start)
-                .cloned()
+                .map(|(r, v)| (r.clone(), *v))
                 .collect()
-        } else {
-            self.cached_highlights.clone()
         }
     }
 

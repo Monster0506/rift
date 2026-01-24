@@ -1,5 +1,6 @@
 use crate::buffer::TextBuffer;
 use crate::job_manager::{CancellationSignal, Job, JobMessage};
+use crate::syntax::interval_tree::IntervalTree;
 use std::sync::mpsc::Sender;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor, Tree};
@@ -7,7 +8,7 @@ use tree_sitter::{Parser, Query, QueryCursor, Tree};
 #[derive(Debug)]
 pub struct SyntaxParseResult {
     pub tree: Option<Tree>,
-    pub highlights: Vec<(std::ops::Range<usize>, u32)>,
+    pub highlights: IntervalTree<u32>,
     pub language_name: String,
     pub document_id: u64,
 }
@@ -116,20 +117,12 @@ impl Job for SyntaxParseJob {
 
         let result = SyntaxParseResult {
             tree,
-            highlights,
+            highlights: IntervalTree::new(highlights),
             language_name,
             document_id,
         };
 
         let _ = sender.send(JobMessage::Custom(id, Box::new(result)));
-        // Return parser back? No, parser is consumed. We need to reconstruct it or pass it back if we want to reuse it.
-        // But Job consumes Self. Parser is cheap enough to create new? No, set_language is cheap.
-        // Actually, we might want to return the parser in the result so the main thread can reuse it for the next job.
-        // But Parser is not Clone. We can put it in the result.
-        // Wait, the result must be JobPayload (Any + Send + Debug). Parser is Send? Yes. Debug? No, tree-sitter Parser doesn't implement Debug in older versions, checking recent... 0.20+ usually does.
-        // Let's assume we create a new parser next time or pass it back.
-        // For efficiency, maintaining one parser instance per document is better.
-        // Let's allow SyntaxParseResult to carry the parser back.
 
         let _ = sender.send(JobMessage::Finished(id, true));
     }
