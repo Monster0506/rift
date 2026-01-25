@@ -103,6 +103,11 @@ harness = false
 name = "job_bench"
 harness = false
 
+[[bench]]
+name = "input_bench"
+harness = false
+
+
 
 
 
