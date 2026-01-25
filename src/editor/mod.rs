@@ -10,6 +10,7 @@ use crate::document::{Document, DocumentId};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::executor::execute_command;
 use crate::key_handler::{KeyAction, KeyHandler};
+use crate::keymap::KeyMap;
 
 use crate::mode::Mode;
 use crate::render;
@@ -40,6 +41,7 @@ pub struct Editor<T: TerminalBackend> {
     pub job_manager: crate::job_manager::JobManager,
     /// Job ID required to finish before quitting
     pending_quit_job_id: Option<usize>,
+    pub keymap: KeyMap,
 }
 
 /// Helper struct to track active modal and its layer
@@ -129,7 +131,100 @@ impl<T: TerminalBackend> Editor<T> {
             modal: None,
             job_manager: crate::job_manager::JobManager::new(),
             pending_quit_job_id: None,
+            keymap: KeyMap::new(),
         };
+
+        // Register default keymaps
+        use crate::key::Key;
+        use crate::keymap::KeyContext;
+
+        // File Explorer Defaults
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::Char('q'), "explorer:close");
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::Escape, "explorer:close");
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::Char('j'), "explorer:down");
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::ArrowDown, "explorer:down");
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::Char('k'), "explorer:up");
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::ArrowUp, "explorer:up");
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::Enter, "explorer:select");
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::Backspace, "explorer:parent");
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::Char('-'), "explorer:parent");
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char(' '),
+            "explorer:toggle_selection",
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('a'),
+            "explorer:select_all",
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('u'),
+            "explorer:clear_selection",
+        );
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::Char('R'), "explorer:refresh");
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('.'),
+            "explorer:toggle_hidden",
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('l'),
+            "explorer:toggle_metadata",
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('n'),
+            "explorer:new_file",
+        );
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::Char('N'), "explorer:new_dir");
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::Char('d'), "explorer:delete");
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::Char('r'), "explorer:rename");
+        editor
+            .keymap
+            .register(KeyContext::FileExplorer, Key::Char('c'), "explorer:copy");
+
+        // Normal Mode Defaults - Integrating standard movement
+        editor
+            .keymap
+            .register(KeyContext::Global, Key::Char('h'), "editor:move_left");
+        editor
+            .keymap
+            .register(KeyContext::Global, Key::Char('j'), "editor:move_down");
+        editor
+            .keymap
+            .register(KeyContext::Global, Key::Char('k'), "editor:move_up");
+        editor
+            .keymap
+            .register(KeyContext::Global, Key::Char('l'), "editor:move_right");
 
         // Trigger background search cache warming for initial document
         if let Some(doc) = editor.document_manager.active_document() {
@@ -445,6 +540,52 @@ impl<T: TerminalBackend> Editor<T> {
                 // Update debug info
                 self.state.update_keypress(key_press);
 
+                use crate::component::EventResult;
+                use crate::keymap::KeyContext;
+
+                // 1. Resolve Context
+                let context = if let Some(modal) = &self.modal {
+                    modal.component.get_context()
+                } else {
+                    // Map mode to context (simplified)
+                    match self.current_mode {
+                        Mode::Normal => KeyContext::Global, // Using Global for Normal defaults
+                        Mode::Insert => KeyContext::Insert,
+                        _ => KeyContext::Global,
+                    }
+                };
+
+                // 2. Lookup Action in KeyMap
+                if let Some(action_ref) = self.keymap.get_action(context, key_press) {
+                    let action_id = action_ref.to_string();
+                    // 3. Dispatch Action
+                    let handled = if let Some(modal) = &mut self.modal {
+                        match modal.component.handle_action(&action_id) {
+                            EventResult::Consumed => true,
+                            EventResult::Message(msg) => {
+                                if let Err(e) = self.handle_message(msg) {
+                                    self.state.handle_error(e);
+                                }
+                                true
+                            }
+                            EventResult::Ignored => false,
+                        }
+                    } else {
+                        self.handle_global_action(&action_id)
+                    };
+
+                    if handled {
+                        // If action handled, we still need to render
+                        self.update_state_and_render(
+                            key_press,
+                            crate::key_handler::KeyAction::Continue,
+                            crate::command::Command::Noop,
+                        )?;
+                        continue;
+                    }
+                }
+
+                // Fallback to legacy input handling
                 let modal_result = self
                     .modal
                     .as_mut()
@@ -595,6 +736,47 @@ impl<T: TerminalBackend> Editor<T> {
                 // No special action needed
             }
         }
+    }
+
+    /// Handle global actions (from KeyMap)
+    fn handle_global_action(&mut self, action: &str) -> bool {
+        use crate::action::Motion;
+        use crate::command::Command;
+
+        let command = match action {
+            "editor:move_left" => Command::Move(Motion::Left, 1),
+            "editor:move_right" => Command::Move(Motion::Right, 1),
+            "editor:move_up" => Command::Move(Motion::Up, 1),
+            "editor:move_down" => Command::Move(Motion::Down, 1),
+            _ => return false,
+        };
+
+        // Execute immediately
+        // Note: For now this bypasses Dispatcher state (counts, etc) for simplicity
+        // in this refactor.
+        self.handle_mode_management(command);
+
+        // If it's a buffer command, execute it
+        // Copied logic from run loop - ideally should be shared
+        let current_mode = self.current_mode;
+        // Simplified check for now
+        if current_mode == Mode::Normal || current_mode == Mode::Insert {
+            let viewport_height = self.render_system.viewport.visible_rows();
+            let doc = self.document_manager.active_document_mut().unwrap();
+            let expand_tabs = doc.options.expand_tabs;
+            let tab_width = doc.options.tab_width;
+
+            let _ = execute_command(
+                command,
+                doc,
+                expand_tabs,
+                tab_width,
+                viewport_height,
+                self.state.last_search_query.as_deref(),
+            );
+        }
+
+        true
     }
 
     /// Switch between modes based on command, and handle commandline input

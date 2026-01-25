@@ -1,5 +1,6 @@
 use crate::job_manager::JobMessage;
 use crate::key::Key;
+use crate::keymap::KeyContext;
 use crate::layer::Layer;
 
 /// Result of processing a key event
@@ -41,6 +42,11 @@ pub trait Component {
     /// Returns EventResult::Consumed if the input was handled
     fn handle_input(&mut self, key: Key) -> EventResult;
 
+    /// Handle a named action and return a result
+    fn handle_action(&mut self, _action: &str) -> EventResult {
+        EventResult::Ignored
+    }
+
     /// Render the component to the given layer
     fn render(&mut self, layer: &mut Layer);
 
@@ -53,6 +59,11 @@ pub trait Component {
     /// Returns None if the component doesn't want the cursor.
     fn cursor_position(&self) -> Option<(u16, u16)> {
         None
+    }
+
+    /// Get the context for keybindings
+    fn get_context(&self) -> KeyContext {
+        KeyContext::Global
     }
 
     /// Downcast to concrete type

@@ -7,6 +7,7 @@ use crate::job_manager::jobs::explorer::{
 use crate::job_manager::jobs::fs::{FsBatchDeleteJob, FsCopyJob, FsCreateJob, FsMoveJob};
 use crate::job_manager::{Job, JobMessage};
 use crate::key::Key;
+use crate::keymap::KeyContext;
 use crate::layer::Cell;
 use crate::layer::Layer;
 use crate::select_view::SelectView;
@@ -342,6 +343,168 @@ impl Component for FileExplorer {
         EventResult::Consumed
     }
 
+    fn handle_action(&mut self, action: &str) -> EventResult {
+        // Handle input box actions if active (though usually input box catches keys first)
+        if self.input_box.is_some() {
+            return EventResult::Ignored;
+        }
+
+        match action {
+            "explorer:close" => {
+                EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::Close))
+            }
+            "explorer:down" => {
+                let res = self.select_view.handle_input(Key::ArrowDown); // SelectView doesn't support actions yet
+                if let Some(idx) = self.select_view.selected_line() {
+                    return self.create_preview_action(idx);
+                }
+                res
+            }
+            "explorer:up" => {
+                let res = self.select_view.handle_input(Key::ArrowUp);
+                if let Some(idx) = self.select_view.selected_line() {
+                    return self.create_preview_action(idx);
+                }
+                res
+            }
+            "explorer:select" => {
+                if let Some(visual_idx) = self.select_view.selected_line() {
+                    if let Some(entry_idx) = self.get_entry_index(visual_idx) {
+                        if let Some(entry) = self.entries.get(entry_idx) {
+                            if entry.is_dir {
+                                self.current_path = entry.path.clone();
+                                self.preview_cache.clear();
+                                return EventResult::Message(AppMessage::FileExplorer(
+                                    FileExplorerMessage::SpawnJob(self.create_list_job()),
+                                ));
+                            } else {
+                                return EventResult::Message(AppMessage::FileExplorer(
+                                    FileExplorerMessage::OpenFile(entry.path.clone()),
+                                ));
+                            }
+                        }
+                    } else {
+                        // Header selected (..)
+                        if let Some(parent) = self.current_path.parent() {
+                            self.current_path = parent.to_path_buf();
+                            return EventResult::Message(AppMessage::FileExplorer(
+                                FileExplorerMessage::SpawnJob(self.create_list_job()),
+                            ));
+                        }
+                    }
+                }
+                EventResult::Consumed
+            }
+            "explorer:parent" => {
+                if let Some(parent) = self.current_path.parent() {
+                    self.current_path = parent.to_path_buf();
+                    EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::SpawnJob(
+                        self.create_list_job(),
+                    )))
+                } else {
+                    EventResult::Consumed
+                }
+            }
+            "explorer:toggle_selection" => {
+                if let Some(visual_idx) = self.select_view.selected_line() {
+                    if let Some(idx) = self.get_entry_index(visual_idx) {
+                        if self.selected_indices.contains(&idx) {
+                            self.selected_indices.remove(&idx);
+                        } else {
+                            self.selected_indices.insert(idx);
+                        }
+                        self.update_view();
+                    }
+                }
+                EventResult::Consumed
+            }
+            "explorer:select_all" => {
+                for i in 0..self.entries.len() {
+                    self.selected_indices.insert(i);
+                }
+                self.update_view();
+                EventResult::Consumed
+            }
+            "explorer:clear_selection" => {
+                self.selected_indices.clear();
+                self.update_view();
+                EventResult::Consumed
+            }
+            "explorer:refresh" => {
+                self.preview_cache.clear();
+                EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::SpawnJob(
+                    self.create_list_job(),
+                )))
+            }
+            "explorer:toggle_hidden" => {
+                self.show_hidden = !self.show_hidden;
+                EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::SpawnJob(
+                    self.create_list_job(),
+                )))
+            }
+            "explorer:toggle_metadata" => {
+                self.show_metadata = !self.show_metadata;
+                self.update_view();
+                EventResult::Consumed
+            }
+            "explorer:new_file" => {
+                self.open_input_box("New File", "Filename...", InputMode::NewFile);
+                EventResult::Consumed
+            }
+            "explorer:new_dir" => {
+                self.open_input_box("New Directory", "Directory name...", InputMode::NewDir);
+                EventResult::Consumed
+            }
+            "explorer:delete" => {
+                let mut targets = Vec::new();
+                for idx in &self.selected_indices {
+                    if let Some(e) = self.entries.get(*idx) {
+                        targets.push(e.path.clone());
+                    }
+                }
+                if targets.is_empty() {
+                    if let Some(visual_idx) = self.select_view.selected_line() {
+                        if let Some(idx) = self.get_entry_index(visual_idx) {
+                            if let Some(e) = self.entries.get(idx) {
+                                targets.push(e.path.clone());
+                            }
+                        }
+                    }
+                }
+
+                if !targets.is_empty() {
+                    self.open_input_box("Delete? (y/n)", "", InputMode::DeleteConfirm(targets));
+                }
+                EventResult::Consumed
+            }
+            "explorer:rename" => {
+                if let Some(visual_idx) = self.select_view.selected_line() {
+                    if let Some(idx) = self.get_entry_index(visual_idx) {
+                        if let Some(e) = self.entries.get(idx) {
+                            let name = e.name.clone();
+                            let path = e.path.clone();
+                            self.open_input_box("Rename to", &name, InputMode::Rename(path));
+                        }
+                    }
+                }
+                EventResult::Consumed
+            }
+            "explorer:copy" => {
+                if let Some(visual_idx) = self.select_view.selected_line() {
+                    if let Some(idx) = self.get_entry_index(visual_idx) {
+                        if let Some(e) = self.entries.get(idx) {
+                            let name = e.name.clone();
+                            let path = e.path.clone();
+                            self.open_input_box("Copy to", &name, InputMode::Copy(path));
+                        }
+                    }
+                }
+                EventResult::Consumed
+            }
+            _ => EventResult::Ignored,
+        }
+    }
+
     fn handle_input(&mut self, key: Key) -> EventResult {
         if self.input_box.is_some() {
             let (result, submit_content) = if let Some(ib) = self.input_box.as_mut() {
@@ -362,157 +525,7 @@ impl Component for FileExplorer {
             return result;
         }
 
-        // Normal Mode
-        match key {
-            Key::Char('q') | Key::Escape => {
-                return EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::Close));
-            }
-            Key::Char('j') | Key::ArrowDown => {
-                let res = self.select_view.handle_input(key);
-                if let Some(idx) = self.select_view.selected_line() {
-                    return self.create_preview_action(idx);
-                }
-                return res;
-            }
-            Key::Char('k') | Key::ArrowUp => {
-                let res = self.select_view.handle_input(key);
-                if let Some(idx) = self.select_view.selected_line() {
-                    return self.create_preview_action(idx);
-                }
-                return res;
-            }
-            Key::Enter => {
-                if let Some(visual_idx) = self.select_view.selected_line() {
-                    if let Some(entry_idx) = self.get_entry_index(visual_idx) {
-                        if let Some(entry) = self.entries.get(entry_idx) {
-                            if entry.is_dir {
-                                self.current_path = entry.path.clone();
-                                self.preview_cache.clear(); // Clear cache on directory change
-                                return EventResult::Message(AppMessage::FileExplorer(
-                                    FileExplorerMessage::SpawnJob(self.create_list_job()),
-                                ));
-                            } else {
-                                return EventResult::Message(AppMessage::FileExplorer(
-                                    FileExplorerMessage::OpenFile(entry.path.clone()),
-                                ));
-                            }
-                        }
-                    } else {
-                        // Header selected (..)
-                        if let Some(parent) = self.current_path.parent() {
-                            self.current_path = parent.to_path_buf();
-                            return EventResult::Message(AppMessage::FileExplorer(
-                                FileExplorerMessage::SpawnJob(self.create_list_job()),
-                            ));
-                        }
-                    }
-                }
-            }
-            Key::Backspace | Key::Char('-') => {
-                if let Some(parent) = self.current_path.parent() {
-                    self.current_path = parent.to_path_buf();
-                    return EventResult::Message(AppMessage::FileExplorer(
-                        FileExplorerMessage::SpawnJob(self.create_list_job()),
-                    ));
-                }
-            }
-            Key::Char(' ') => {
-                if let Some(visual_idx) = self.select_view.selected_line() {
-                    if let Some(idx) = self.get_entry_index(visual_idx) {
-                        if self.selected_indices.contains(&idx) {
-                            self.selected_indices.remove(&idx);
-                        } else {
-                            self.selected_indices.insert(idx);
-                        }
-                        self.update_view();
-                    }
-                }
-            }
-            Key::Char('a') => {
-                for i in 0..self.entries.len() {
-                    self.selected_indices.insert(i);
-                }
-                self.update_view();
-            }
-            Key::Char('u') => {
-                self.selected_indices.clear();
-                self.update_view();
-            }
-            Key::Char('R') => {
-                // Manual refresh
-                self.preview_cache.clear(); // Clear cache on refresh
-                return EventResult::Message(AppMessage::FileExplorer(
-                    FileExplorerMessage::SpawnJob(self.create_list_job()),
-                ));
-            }
-            Key::Char('.') => {
-                self.show_hidden = !self.show_hidden;
-                return EventResult::Message(AppMessage::FileExplorer(
-                    FileExplorerMessage::SpawnJob(self.create_list_job()),
-                ));
-            }
-            Key::Char('l') => {
-                self.show_metadata = !self.show_metadata;
-                self.update_view();
-            }
-            Key::Char('n') => {
-                // New File
-                self.open_input_box("New File", "Filename...", InputMode::NewFile);
-            }
-            Key::Char('N') => {
-                // New Dir
-                self.open_input_box("New Directory", "Directory name...", InputMode::NewDir);
-            }
-            Key::Char('d') => {
-                // Delete
-                let mut targets = Vec::new();
-                for idx in &self.selected_indices {
-                    if let Some(e) = self.entries.get(*idx) {
-                        targets.push(e.path.clone());
-                    }
-                }
-                if targets.is_empty() {
-                    if let Some(visual_idx) = self.select_view.selected_line() {
-                        if let Some(idx) = self.get_entry_index(visual_idx) {
-                            if let Some(e) = self.entries.get(idx) {
-                                targets.push(e.path.clone());
-                            }
-                        }
-                    }
-                }
-
-                if !targets.is_empty() {
-                    self.open_input_box("Delete? (y/n)", "", InputMode::DeleteConfirm(targets));
-                }
-            }
-            Key::Char('r') => {
-                // Rename
-                if let Some(visual_idx) = self.select_view.selected_line() {
-                    if let Some(idx) = self.get_entry_index(visual_idx) {
-                        if let Some(e) = self.entries.get(idx) {
-                            let name = e.name.clone();
-                            let path = e.path.clone();
-                            self.open_input_box("Rename to", &name, InputMode::Rename(path));
-                        }
-                    }
-                }
-            }
-            Key::Char('c') => {
-                // Copy
-                if let Some(visual_idx) = self.select_view.selected_line() {
-                    if let Some(idx) = self.get_entry_index(visual_idx) {
-                        if let Some(e) = self.entries.get(idx) {
-                            let name = e.name.clone();
-                            let path = e.path.clone();
-                            self.open_input_box("Copy to", &name, InputMode::Copy(path));
-                        }
-                    }
-                }
-            }
-
-            _ => return EventResult::Ignored,
-        }
-        EventResult::Consumed
+        EventResult::Ignored
     }
 
     fn render(&mut self, layer: &mut Layer) {
@@ -521,6 +534,10 @@ impl Component for FileExplorer {
         if let Some(ib) = self.input_box.as_mut() {
             ib.render(layer);
         }
+    }
+
+    fn get_context(&self) -> KeyContext {
+        KeyContext::FileExplorer
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
