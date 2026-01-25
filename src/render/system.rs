@@ -4,7 +4,7 @@ use crate::render::components::{Rect, Renderable};
 use crate::render::ecs::World;
 use crate::render::{
     calculate_cursor_column, CommandDrawState, ContentDrawState, CursorPosition, DrawContext,
-    NotificationDrawState, RenderCache, RenderState, StatusDrawState,
+    NotificationDrawState, RenderState, StatusDrawState,
 };
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
@@ -17,7 +17,6 @@ use crate::status::StatusBar;
 pub struct RenderSystem {
     pub compositor: LayerCompositor,
     pub viewport: Viewport,
-    pub render_cache: RenderCache,
     pub world: World,
 
     // Persistent Entities
@@ -29,6 +28,8 @@ pub struct RenderSystem {
 
     // Rendering State
     last_render_version: u64,
+    last_cursor_pos: Option<CursorPosition>,
+    last_command_cursor: Option<CursorPosition>,
 }
 
 impl RenderSystem {
@@ -37,7 +38,6 @@ impl RenderSystem {
         Self {
             compositor: LayerCompositor::new(rows, cols),
             viewport: Viewport::new(rows, cols),
-            render_cache: RenderCache::default(),
             world: World::new(),
             content_entity: None,
             status_entity: None,
@@ -45,6 +45,8 @@ impl RenderSystem {
             notification_entity: None,
             modal_entity: None,
             last_render_version: 0,
+            last_cursor_pos: None,
+            last_command_cursor: None,
         }
     }
 
@@ -52,7 +54,6 @@ impl RenderSystem {
     pub fn resize(&mut self, rows: usize, cols: usize) {
         self.viewport.set_size(rows, cols);
         self.compositor.resize(rows, cols);
-        self.render_cache.invalidate_all();
 
         // Force full refresh
         self.world.clear();
@@ -62,10 +63,13 @@ impl RenderSystem {
         self.notification_entity = None;
         self.modal_entity = None;
         self.last_render_version = 0;
+        self.last_cursor_pos = None;
+        self.last_command_cursor = None;
     }
 
     /// Rebuild the ECS world from the current DrawContext
     // Static helper to avoid self-borrow issues
+    /// Update the ECS world components based on current context
     /// Update the ECS world components based on current context
     fn update_world(&mut self, ctx: &DrawContext) {
         self.world.tick();
@@ -73,8 +77,6 @@ impl RenderSystem {
         // 1. Content
         if self.content_entity.is_none() {
             self.content_entity = Some(self.world.create_entity());
-            // Ensure cache doesn't match new state if we just created entity
-            // (though resize invalidates cache so it should be fine)
         }
         let content_entity = self.content_entity.unwrap();
 
@@ -114,23 +116,18 @@ impl RenderSystem {
                 .unwrap_or(0),
         };
 
-        if self.render_cache.content.as_ref() != Some(&content_state) {
-            self.world.add_renderable(
-                content_entity,
-                Renderable::TextBuffer(content_state.clone()),
-            );
-            self.world.add_layer(content_entity, LayerPriority::CONTENT);
-            self.world.add_rect(
-                content_entity,
-                Rect::new(
-                    0,
-                    0,
-                    ctx.viewport.visible_rows(),
-                    ctx.viewport.visible_cols(),
-                ),
-            );
-            self.render_cache.content = Some(content_state);
-        }
+        self.world
+            .add_renderable(content_entity, Renderable::TextBuffer(content_state));
+        self.world.add_layer(content_entity, LayerPriority::CONTENT);
+        self.world.add_rect(
+            content_entity,
+            Rect::new(
+                0,
+                0,
+                ctx.viewport.visible_rows(),
+                ctx.viewport.visible_cols(),
+            ),
+        );
 
         // 2. Status Bar
         if self.status_entity.is_none() {
@@ -173,13 +170,10 @@ impl RenderSystem {
             editor_fg: ctx.state.settings.editor_fg,
         };
 
-        if self.render_cache.status.as_ref() != Some(&status_state) {
-            self.world
-                .add_renderable(status_entity, Renderable::StatusBar(status_state.clone()));
-            self.world
-                .add_layer(status_entity, LayerPriority::STATUS_BAR);
-            self.render_cache.status = Some(status_state);
-        }
+        self.world
+            .add_renderable(status_entity, Renderable::StatusBar(status_state));
+        self.world
+            .add_layer(status_entity, LayerPriority::STATUS_BAR);
 
         // 3. Command Line Window
         if ctx.current_mode == Mode::Command || ctx.current_mode == Mode::Search {
@@ -202,19 +196,15 @@ impl RenderSystem {
                 editor_fg: ctx.state.settings.editor_fg,
             };
 
-            if self.render_cache.command_line.as_ref() != Some(&command_state) {
-                self.world
-                    .add_renderable(command_entity, Renderable::Window(command_state.clone()));
-                self.world
-                    .add_layer(command_entity, LayerPriority::FLOATING_WINDOW);
-                self.render_cache.command_line = Some(command_state);
-            }
+            self.world
+                .add_renderable(command_entity, Renderable::Window(command_state));
+            self.world
+                .add_layer(command_entity, LayerPriority::FLOATING_WINDOW);
         } else if let Some(entity) = self.command_entity {
             // Mode changed, destroy entity
             self.world.destroy_entity(entity);
             self.command_entity = None;
-            self.render_cache.command_line = None;
-            self.render_cache.last_command_cursor = None;
+            self.last_command_cursor = None;
             // Also need to clear the layer
             self.compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
         }
@@ -235,25 +225,22 @@ impl RenderSystem {
                 .count(),
         };
 
-        if self.render_cache.notifications.as_ref() != Some(&notification_state) {
-            self.world.add_renderable(
-                notification_entity,
-                Renderable::Notification(notification_state.clone()),
-            );
-            self.world
-                .add_layer(notification_entity, LayerPriority::NOTIFICATION);
-            self.render_cache.notifications = Some(notification_state);
-        }
+        self.world.add_renderable(
+            notification_entity,
+            Renderable::Notification(notification_state),
+        );
+        self.world
+            .add_layer(notification_entity, LayerPriority::NOTIFICATION);
 
         // 5. Modal
         if let Some(ref modal) = ctx.modal {
             if self.modal_entity.is_none() {
                 self.modal_entity = Some(self.world.create_entity());
-                let modal_entity = self.modal_entity.unwrap();
-                self.world
-                    .add_renderable(modal_entity, Renderable::RefToModal);
-                self.world.add_layer(modal_entity, modal.layer);
             }
+            let modal_entity = self.modal_entity.unwrap();
+            self.world
+                .add_renderable(modal_entity, Renderable::RefToModal);
+            self.world.add_layer(modal_entity, modal.layer);
         } else if let Some(entity) = self.modal_entity {
             self.world.destroy_entity(entity);
             self.modal_entity = None;
@@ -373,9 +360,9 @@ impl RenderSystem {
                         );
                         let pos = CursorPosition::Absolute(cursor_row, cursor_col);
                         command_cursor_info = Some(pos);
-                        self.render_cache.last_command_cursor = Some(pos);
+                        self.last_command_cursor = Some(pos);
                     } else {
-                        command_cursor_info = self.render_cache.last_command_cursor;
+                        command_cursor_info = self.last_command_cursor;
                     }
                 }
                 Renderable::Notification(_) => {
@@ -399,13 +386,12 @@ impl RenderSystem {
             }
         }
 
-        // Cleanup command line cache if not command mode
         if ctx.current_mode != Mode::Command
             && ctx.current_mode != Mode::Search
-            && self.render_cache.command_line.is_some()
+            && self.last_command_cursor.is_some()
         {
-            // Handled in update_world via destruction, but update cache just in case if entities desync
-            // but update_world handles it.
+            self.compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
+            self.last_command_cursor = None;
         }
 
         let cursor_info = if let Some(pos) = command_cursor_info {
@@ -439,13 +425,13 @@ impl RenderSystem {
             .render_to_terminal(term, ctx.needs_clear)
             .map_err(|e| RiftError::new(crate::error::ErrorType::Renderer, "RENDER_FAILED", e))?;
 
-        if stats.changed_cells > 0 || self.render_cache.last_cursor_pos != Some(cursor_info) {
+        if stats.changed_cells > 0 || self.last_cursor_pos != Some(cursor_info) {
             match cursor_info {
                 CursorPosition::Absolute(row, col) => {
                     term.move_cursor(row, col)?;
                 }
             }
-            self.render_cache.last_cursor_pos = Some(cursor_info);
+            self.last_cursor_pos = Some(cursor_info);
         }
         term.show_cursor()?;
 
