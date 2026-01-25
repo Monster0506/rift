@@ -75,5 +75,8 @@ tempfile = "3.24.0"
 name = "buffer_bench"
 harness = false
 
+[[bench]]
+name = "render_bench"
+harness = false
 
 
