@@ -1,6 +1,5 @@
 use super::*;
 use crate::component::EventResult;
-use crate::key::Key;
 use std::path::PathBuf;
 
 #[test]
@@ -32,10 +31,12 @@ fn test_with_colors() {
 }
 
 #[test]
-fn test_handle_input_esc() {
+fn test_handle_action_close() {
+    use crate::action::{Action, FileExplorerAction};
     use crate::message::{AppMessage, FileExplorerMessage};
+
     let mut explorer = FileExplorer::new(PathBuf::from("./"));
-    let res = explorer.handle_input(Key::Escape);
+    let res = explorer.handle_action(&Action::Explorer(FileExplorerAction::Close));
     match res {
         EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::Close)) => {
             assert!(true);

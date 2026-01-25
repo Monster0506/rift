@@ -1279,6 +1279,7 @@ fn test_execute_undotree() {
     if let ExecutionResult::OpenComponent {
         component: _,
         initial_job,
+        initial_message: _,
     } = result
     {
         assert!(initial_job.is_none());
@@ -1312,6 +1313,7 @@ fn test_execute_explore() {
     if let ExecutionResult::OpenComponent {
         component: _,
         initial_job,
+        initial_message: _,
     } = result
     {
         assert!(

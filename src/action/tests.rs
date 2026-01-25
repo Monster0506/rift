@@ -10,8 +10,14 @@ fn test_motion_equals() {
 
 #[test]
 fn test_action_equals() {
-    assert_eq!(Action::Move(Motion::Left), Action::Move(Motion::Left));
-    assert_ne!(Action::Move(Motion::Left), Action::Move(Motion::Right));
+    assert_eq!(
+        Action::Editor(EditorAction::Move(Motion::Left)),
+        Action::Editor(EditorAction::Move(Motion::Left))
+    );
+    assert_ne!(
+        Action::Editor(EditorAction::Move(Motion::Left)),
+        Action::Editor(EditorAction::Move(Motion::Right))
+    );
 }
 
 #[test]

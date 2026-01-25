@@ -3,6 +3,7 @@
 
 pub mod actions;
 
+use crate::action::{Action, EditorAction, FileExplorerAction, Motion, UndoTreeAction};
 use crate::command::{Command, Dispatcher};
 use crate::command_line::commands::{CommandExecutor, CommandParser, ExecutionResult};
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
@@ -33,7 +34,7 @@ pub struct Editor<T: TerminalBackend> {
     command_parser: CommandParser,
     settings_registry: SettingsRegistry<UserSettings>,
     document_settings_registry: SettingsRegistry<crate::document::definitions::DocumentOptions>,
-    #[allow(dead_code)]
+    //#[allow(dead_code)]
     language_loader: Arc<crate::syntax::loader::LanguageLoader>,
     /// Active modal component (overlay)
     pub modal: Option<ActiveModal>,
@@ -87,9 +88,6 @@ impl<T: TerminalBackend> Editor<T> {
             document_manager.add_document(new_doc);
         }
 
-        // Syntax loading moved to post-initialization
-        // ...
-
         // Initialize terminal (clears screen, enters raw mode, etc.)
         // We do this AFTER loading the document so we don't mess up the terminal
         // if loading fails
@@ -139,92 +137,165 @@ impl<T: TerminalBackend> Editor<T> {
         use crate::keymap::KeyContext;
 
         // File Explorer Defaults
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::Char('q'), "explorer:close");
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::Escape, "explorer:close");
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::Char('j'), "explorer:down");
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::ArrowDown, "explorer:down");
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::Char('k'), "explorer:up");
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::ArrowUp, "explorer:up");
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::Enter, "explorer:select");
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::Backspace, "explorer:parent");
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::Char('-'), "explorer:parent");
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('q'),
+            Action::Explorer(FileExplorerAction::Close),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Escape,
+            Action::Explorer(FileExplorerAction::Close),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('j'),
+            Action::Explorer(FileExplorerAction::Down),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::ArrowDown,
+            Action::Explorer(FileExplorerAction::Down),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('k'),
+            Action::Explorer(FileExplorerAction::Up),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::ArrowUp,
+            Action::Explorer(FileExplorerAction::Up),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Enter,
+            Action::Explorer(FileExplorerAction::Select),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Backspace,
+            Action::Explorer(FileExplorerAction::Parent),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('-'),
+            Action::Explorer(FileExplorerAction::Parent),
+        );
         editor.keymap.register(
             KeyContext::FileExplorer,
             Key::Char(' '),
-            "explorer:toggle_selection",
+            Action::Explorer(FileExplorerAction::ToggleSelection),
         );
         editor.keymap.register(
             KeyContext::FileExplorer,
             Key::Char('a'),
-            "explorer:select_all",
+            Action::Explorer(FileExplorerAction::SelectAll),
         );
         editor.keymap.register(
             KeyContext::FileExplorer,
             Key::Char('u'),
-            "explorer:clear_selection",
+            Action::Explorer(FileExplorerAction::ClearSelection),
         );
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::Char('R'), "explorer:refresh");
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('R'),
+            Action::Explorer(FileExplorerAction::Refresh),
+        );
         editor.keymap.register(
             KeyContext::FileExplorer,
             Key::Char('.'),
-            "explorer:toggle_hidden",
+            Action::Explorer(FileExplorerAction::ToggleHidden),
         );
         editor.keymap.register(
             KeyContext::FileExplorer,
             Key::Char('l'),
-            "explorer:toggle_metadata",
+            Action::Explorer(FileExplorerAction::ToggleMetadata),
         );
         editor.keymap.register(
             KeyContext::FileExplorer,
             Key::Char('n'),
-            "explorer:new_file",
+            Action::Explorer(FileExplorerAction::NewFile),
         );
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::Char('N'), "explorer:new_dir");
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::Char('d'), "explorer:delete");
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::Char('r'), "explorer:rename");
-        editor
-            .keymap
-            .register(KeyContext::FileExplorer, Key::Char('c'), "explorer:copy");
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('N'),
+            Action::Explorer(FileExplorerAction::NewDir),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('d'),
+            Action::Explorer(FileExplorerAction::Delete),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('r'),
+            Action::Explorer(FileExplorerAction::Rename),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Char('c'),
+            Action::Explorer(FileExplorerAction::Copy),
+        );
+
+        // Undotree Defaults
+        editor.keymap.register(
+            KeyContext::UndoTree,
+            Key::Char('j'),
+            Action::UndoTree(UndoTreeAction::Down),
+        );
+        editor.keymap.register(
+            KeyContext::UndoTree,
+            Key::ArrowDown,
+            Action::UndoTree(UndoTreeAction::Down),
+        );
+        editor.keymap.register(
+            KeyContext::UndoTree,
+            Key::Char('k'),
+            Action::UndoTree(UndoTreeAction::Up),
+        );
+        editor.keymap.register(
+            KeyContext::UndoTree,
+            Key::ArrowUp,
+            Action::UndoTree(UndoTreeAction::Up),
+        );
+        editor.keymap.register(
+            KeyContext::UndoTree,
+            Key::Enter,
+            Action::UndoTree(UndoTreeAction::Select),
+        );
+        editor.keymap.register(
+            KeyContext::UndoTree,
+            Key::Escape,
+            Action::UndoTree(UndoTreeAction::Close),
+        );
+        editor.keymap.register(
+            KeyContext::UndoTree,
+            Key::Char('q'),
+            Action::UndoTree(UndoTreeAction::Close),
+        );
 
         // Normal Mode Defaults - Integrating standard movement
-        editor
-            .keymap
-            .register(KeyContext::Global, Key::Char('h'), "editor:move_left");
-        editor
-            .keymap
-            .register(KeyContext::Global, Key::Char('j'), "editor:move_down");
-        editor
-            .keymap
-            .register(KeyContext::Global, Key::Char('k'), "editor:move_up");
-        editor
-            .keymap
-            .register(KeyContext::Global, Key::Char('l'), "editor:move_right");
+        editor.keymap.register(
+            KeyContext::Global,
+            Key::Char('h'),
+            Action::Editor(EditorAction::Move(Motion::Left)),
+        );
+        editor.keymap.register(
+            KeyContext::Global,
+            Key::Char('j'),
+            Action::Editor(EditorAction::Move(Motion::Down)),
+        );
+        editor.keymap.register(
+            KeyContext::Global,
+            Key::Char('k'),
+            Action::Editor(EditorAction::Move(Motion::Up)),
+        );
+        editor.keymap.register(
+            KeyContext::Global,
+            Key::Char('l'),
+            Action::Editor(EditorAction::Move(Motion::Right)),
+        );
 
         // Trigger background search cache warming for initial document
         if let Some(doc) = editor.document_manager.active_document() {
@@ -557,10 +628,10 @@ impl<T: TerminalBackend> Editor<T> {
 
                 // 2. Lookup Action in KeyMap
                 if let Some(action_ref) = self.keymap.get_action(context, key_press) {
-                    let action_id = action_ref.to_string();
+                    let action = action_ref.clone();
                     // 3. Dispatch Action
                     let handled = if let Some(modal) = &mut self.modal {
-                        match modal.component.handle_action(&action_id) {
+                        match modal.component.handle_action(&action) {
                             EventResult::Consumed => true,
                             EventResult::Message(msg) => {
                                 if let Err(e) = self.handle_message(msg) {
@@ -571,7 +642,7 @@ impl<T: TerminalBackend> Editor<T> {
                             EventResult::Ignored => false,
                         }
                     } else {
-                        self.handle_global_action(&action_id)
+                        self.handle_action(&action)
                     };
 
                     if handled {
@@ -739,24 +810,54 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Handle global actions (from KeyMap)
-    fn handle_global_action(&mut self, action: &str) -> bool {
-        use crate::action::Motion;
-        use crate::command::Command;
+    fn handle_action(&mut self, action: &crate::action::Action) -> bool {
+        use crate::action::{Action, EditorAction};
 
-        let command = match action {
-            "editor:move_left" => Command::Move(Motion::Left, 1),
-            "editor:move_right" => Command::Move(Motion::Right, 1),
-            "editor:move_up" => Command::Move(Motion::Up, 1),
-            "editor:move_down" => Command::Move(Motion::Down, 1),
-            _ => return false,
+        let editor_action = match action {
+            Action::Editor(act) => act,
+            Action::Explorer(_) | Action::UndoTree(_) => return false, // Editor doesn't handle these directly
+            Action::Noop => return false,
         };
 
-        // Execute immediately
-        // Note: For now this bypasses Dispatcher state (counts, etc) for simplicity
-        // in this refactor.
-        self.handle_mode_management(command);
+        match editor_action {
+            EditorAction::Move(motion) => {
+                let command = crate::command::Command::Move(*motion, 1);
+                // Execute immediately
+                self.handle_mode_management(command);
+                self.execute_buffer_command(command)
+            }
+            EditorAction::EnterInsertMode => {
+                self.handle_mode_management(crate::command::Command::EnterInsertMode);
+                true
+            }
+            EditorAction::EnterInsertModeAfter => {
+                self.handle_mode_management(crate::command::Command::EnterInsertModeAfter);
+                true
+            }
+            EditorAction::EnterCommandMode => {
+                self.handle_mode_management(crate::command::Command::EnterCommandMode);
+                true
+            }
+            EditorAction::EnterSearchMode => {
+                self.handle_mode_management(crate::command::Command::EnterSearchMode);
+                true
+            }
+            EditorAction::Undo => self.execute_buffer_command(crate::command::Command::Undo),
+            EditorAction::Redo => self.execute_buffer_command(crate::command::Command::Redo),
+            EditorAction::Quit => {
+                self.should_quit = true;
+                true
+            }
+            EditorAction::Command(cmd) => {
+                let command = *cmd.clone();
+                self.handle_mode_management(command);
+                self.execute_buffer_command(command)
+            }
+        }
+    }
 
-        // If it's a buffer command, execute it
+    /// Helper to execute buffer commands
+    fn execute_buffer_command(&mut self, command: crate::command::Command) -> bool {
         // Copied logic from run loop - ideally should be shared
         let current_mode = self.current_mode;
         // Simplified check for now
@@ -774,9 +875,9 @@ impl<T: TerminalBackend> Editor<T> {
                 viewport_height,
                 self.state.last_search_query.as_deref(),
             );
+            return true;
         }
-
-        true
+        false
     }
 
     /// Switch between modes based on command, and handle commandline input
@@ -1309,6 +1410,7 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::OpenComponent {
                 component,
                 initial_job,
+                initial_message,
             } => {
                 // Close command line first (if not already handled by logic ensuring modals are exclusive)
                 // Actually close_active_modal() clears mode.
@@ -1323,6 +1425,12 @@ impl<T: TerminalBackend> Editor<T> {
 
                 if let Some(job) = initial_job {
                     self.job_manager.spawn(job);
+                }
+
+                if let Some(msg) = initial_message {
+                    if let Err(e) = self.handle_message(msg) {
+                        self.state.handle_error(e);
+                    }
                 }
             }
         }
@@ -1708,11 +1816,19 @@ impl<T: TerminalBackend> Editor<T> {
 
                 if let Some(content) = content {
                     if let Some(modal) = self.modal.as_mut() {
-                        if let Some(view) = modal
+                        // Try downcasting to UndoTreeComponent wrapper first
+                        if let Some(component) = modal
+                            .component
+                            .as_any_mut()
+                            .downcast_mut::<crate::undotree_view::component::UndoTreeComponent>(
+                        ) {
+                            component.view.set_right_content(content);
+                        } else if let Some(view) = modal
                             .component
                             .as_any_mut()
                             .downcast_mut::<crate::select_view::SelectView>()
                         {
+                            // Fallback for direct SelectView usage (if any legacy paths exist)
                             view.set_right_content(content);
                         }
                     }

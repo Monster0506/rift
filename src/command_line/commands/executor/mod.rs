@@ -58,6 +58,7 @@ pub enum ExecutionResult {
     OpenComponent {
         component: Box<dyn crate::component::Component>,
         initial_job: Option<Box<dyn crate::job_manager::Job>>,
+        initial_message: Option<crate::message::AppMessage>,
     },
     /// Spawn a background job
     SpawnJob(Box<dyn crate::job_manager::Job>),
@@ -378,13 +379,15 @@ impl CommandExecutor {
                 ExecutionResult::Checkpoint
             }
             ParsedCommand::UndoTree { bangs: _ } => {
-                let component = crate::undotree_view::component::create_undo_tree_component(
-                    &document.history,
-                    &state.settings,
-                );
+                let (component, initial_message) =
+                    crate::undotree_view::component::create_undo_tree_component(
+                        &document.history,
+                        &state.settings,
+                    );
                 ExecutionResult::OpenComponent {
                     component,
                     initial_job: None,
+                    initial_message,
                 }
             }
             ParsedCommand::Explore { path, bangs: _ } => {
@@ -411,6 +414,7 @@ impl CommandExecutor {
                 ExecutionResult::OpenComponent {
                     component: Box::new(explorer),
                     initial_job: Some(job),
+                    initial_message: None,
                 }
             }
         }

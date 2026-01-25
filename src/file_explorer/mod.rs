@@ -343,31 +343,38 @@ impl Component for FileExplorer {
         EventResult::Consumed
     }
 
-    fn handle_action(&mut self, action: &str) -> EventResult {
+    fn handle_action(&mut self, action: &crate::action::Action) -> EventResult {
         // Handle input box actions if active (though usually input box catches keys first)
         if self.input_box.is_some() {
             return EventResult::Ignored;
         }
 
-        match action {
-            "explorer:close" => {
+        use crate::action::{Action, FileExplorerAction};
+
+        let explorer_action = match action {
+            Action::Explorer(a) => a,
+            _ => return EventResult::Ignored,
+        };
+
+        match explorer_action {
+            FileExplorerAction::Close => {
                 EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::Close))
             }
-            "explorer:down" => {
+            FileExplorerAction::Down => {
                 let res = self.select_view.handle_input(Key::ArrowDown); // SelectView doesn't support actions yet
                 if let Some(idx) = self.select_view.selected_line() {
                     return self.create_preview_action(idx);
                 }
                 res
             }
-            "explorer:up" => {
+            FileExplorerAction::Up => {
                 let res = self.select_view.handle_input(Key::ArrowUp);
                 if let Some(idx) = self.select_view.selected_line() {
                     return self.create_preview_action(idx);
                 }
                 res
             }
-            "explorer:select" => {
+            FileExplorerAction::Select => {
                 if let Some(visual_idx) = self.select_view.selected_line() {
                     if let Some(entry_idx) = self.get_entry_index(visual_idx) {
                         if let Some(entry) = self.entries.get(entry_idx) {
@@ -395,7 +402,7 @@ impl Component for FileExplorer {
                 }
                 EventResult::Consumed
             }
-            "explorer:parent" => {
+            FileExplorerAction::Parent => {
                 if let Some(parent) = self.current_path.parent() {
                     self.current_path = parent.to_path_buf();
                     EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::SpawnJob(
@@ -405,7 +412,7 @@ impl Component for FileExplorer {
                     EventResult::Consumed
                 }
             }
-            "explorer:toggle_selection" => {
+            FileExplorerAction::ToggleSelection => {
                 if let Some(visual_idx) = self.select_view.selected_line() {
                     if let Some(idx) = self.get_entry_index(visual_idx) {
                         if self.selected_indices.contains(&idx) {
@@ -418,44 +425,44 @@ impl Component for FileExplorer {
                 }
                 EventResult::Consumed
             }
-            "explorer:select_all" => {
+            FileExplorerAction::SelectAll => {
                 for i in 0..self.entries.len() {
                     self.selected_indices.insert(i);
                 }
                 self.update_view();
                 EventResult::Consumed
             }
-            "explorer:clear_selection" => {
+            FileExplorerAction::ClearSelection => {
                 self.selected_indices.clear();
                 self.update_view();
                 EventResult::Consumed
             }
-            "explorer:refresh" => {
+            FileExplorerAction::Refresh => {
                 self.preview_cache.clear();
                 EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::SpawnJob(
                     self.create_list_job(),
                 )))
             }
-            "explorer:toggle_hidden" => {
+            FileExplorerAction::ToggleHidden => {
                 self.show_hidden = !self.show_hidden;
                 EventResult::Message(AppMessage::FileExplorer(FileExplorerMessage::SpawnJob(
                     self.create_list_job(),
                 )))
             }
-            "explorer:toggle_metadata" => {
+            FileExplorerAction::ToggleMetadata => {
                 self.show_metadata = !self.show_metadata;
                 self.update_view();
                 EventResult::Consumed
             }
-            "explorer:new_file" => {
+            FileExplorerAction::NewFile => {
                 self.open_input_box("New File", "Filename...", InputMode::NewFile);
                 EventResult::Consumed
             }
-            "explorer:new_dir" => {
+            FileExplorerAction::NewDir => {
                 self.open_input_box("New Directory", "Directory name...", InputMode::NewDir);
                 EventResult::Consumed
             }
-            "explorer:delete" => {
+            FileExplorerAction::Delete => {
                 let mut targets = Vec::new();
                 for idx in &self.selected_indices {
                     if let Some(e) = self.entries.get(*idx) {
@@ -477,7 +484,7 @@ impl Component for FileExplorer {
                 }
                 EventResult::Consumed
             }
-            "explorer:rename" => {
+            FileExplorerAction::Rename => {
                 if let Some(visual_idx) = self.select_view.selected_line() {
                     if let Some(idx) = self.get_entry_index(visual_idx) {
                         if let Some(e) = self.entries.get(idx) {
@@ -489,7 +496,7 @@ impl Component for FileExplorer {
                 }
                 EventResult::Consumed
             }
-            "explorer:copy" => {
+            FileExplorerAction::Copy => {
                 if let Some(visual_idx) = self.select_view.selected_line() {
                     if let Some(idx) = self.get_entry_index(visual_idx) {
                         if let Some(e) = self.entries.get(idx) {
@@ -501,7 +508,6 @@ impl Component for FileExplorer {
                 }
                 EventResult::Consumed
             }
-            _ => EventResult::Ignored,
         }
     }
 

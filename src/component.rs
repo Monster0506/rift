@@ -1,3 +1,4 @@
+use crate::action::Action;
 use crate::job_manager::JobMessage;
 use crate::key::Key;
 use crate::keymap::KeyContext;
@@ -43,7 +44,7 @@ pub trait Component {
     fn handle_input(&mut self, key: Key) -> EventResult;
 
     /// Handle a named action and return a result
-    fn handle_action(&mut self, _action: &str) -> EventResult {
+    fn handle_action(&mut self, _action: &Action) -> EventResult {
         EventResult::Ignored
     }
 
