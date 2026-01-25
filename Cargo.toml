@@ -91,6 +91,11 @@ harness = false
 name = "syntax_bench"
 harness = false
 
+[[bench]]
+name = "history_bench"
+harness = false
+
+
 
 
 
