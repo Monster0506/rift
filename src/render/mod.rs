@@ -103,46 +103,6 @@ pub struct NotificationDrawState {
     pub count: usize,
 }
 
-/// Cache for detecting changes in component drawing states
-#[derive(Debug, Clone, Default)]
-pub struct RenderCache {
-    pub content: Option<ContentDrawState>,
-    pub status: Option<StatusDrawState>,
-    pub command_line: Option<CommandDrawState>,
-    pub notifications: Option<NotificationDrawState>,
-    /// Last calculated cursor position for command mode
-    pub last_command_cursor: Option<CursorPosition>,
-    /// Last rendered cursor position
-    pub last_cursor_pos: Option<CursorPosition>,
-}
-
-impl RenderCache {
-    pub fn invalidate_all(&mut self) {
-        self.content = None;
-        self.status = None;
-        self.command_line = None;
-        self.notifications = None;
-        self.last_command_cursor = None;
-        self.last_cursor_pos = None;
-    }
-
-    pub fn invalidate_content(&mut self) {
-        self.content = None;
-    }
-
-    pub fn invalidate_status(&mut self) {
-        self.status = None;
-    }
-
-    pub fn invalidate_command_line(&mut self) {
-        self.command_line = None;
-    }
-
-    pub fn invalidate_notifications(&mut self) {
-        self.notifications = None;
-    }
-}
-
 /// External state passed to RenderSystem::render
 /// External state passed to RenderSystem::render
 pub struct RenderState<'a> {
