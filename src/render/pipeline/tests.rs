@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::character::Character;
 use crate::render::Color;
