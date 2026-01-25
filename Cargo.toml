@@ -95,6 +95,11 @@ harness = false
 name = "history_bench"
 harness = false
 
+[[bench]]
+name = "screen_bench"
+harness = false
+
+
 
 
 
