@@ -83,5 +83,15 @@ harness = false
 name = "search_bench"
 harness = false
 
+[[bench]]
+name = "movement_bench"
+harness = false
+
+[[bench]]
+name = "syntax_bench"
+harness = false
+
+
+
 
 
