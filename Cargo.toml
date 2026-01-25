@@ -68,4 +68,12 @@ tree-sitter-zig = { version = "1.1.2", optional = true }
 
 
 [dev-dependencies]
+criterion = { version = "0.8.1", features = ["html_reports"] }
 tempfile = "3.24.0"
+
+[[bench]]
+name = "buffer_bench"
+harness = false
+
+
+
