@@ -20,6 +20,7 @@ pub mod input_box;
 pub mod job_manager;
 pub mod key;
 pub mod key_handler;
+pub mod keymap;
 pub mod layer;
 pub mod message;
 pub mod mode;
