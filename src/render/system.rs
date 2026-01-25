@@ -19,6 +19,16 @@ pub struct RenderSystem {
     pub viewport: Viewport,
     pub render_cache: RenderCache,
     pub world: World,
+
+    // Persistent Entities
+    content_entity: Option<crate::render::ecs::EntityId>,
+    status_entity: Option<crate::render::ecs::EntityId>,
+    command_entity: Option<crate::render::ecs::EntityId>,
+    notification_entity: Option<crate::render::ecs::EntityId>,
+    modal_entity: Option<crate::render::ecs::EntityId>,
+
+    // Rendering State
+    last_render_version: u64,
 }
 
 impl RenderSystem {
@@ -29,6 +39,12 @@ impl RenderSystem {
             viewport: Viewport::new(rows, cols),
             render_cache: RenderCache::default(),
             world: World::new(),
+            content_entity: None,
+            status_entity: None,
+            command_entity: None,
+            notification_entity: None,
+            modal_entity: None,
+            last_render_version: 0,
         }
     }
 
@@ -37,15 +53,30 @@ impl RenderSystem {
         self.viewport.set_size(rows, cols);
         self.compositor.resize(rows, cols);
         self.render_cache.invalidate_all();
-        // World is ephemeral and cleared every frame, so no need to clear here explicitly,
-        // but for safety we can.
+
+        // Force full refresh
         self.world.clear();
+        self.content_entity = None;
+        self.status_entity = None;
+        self.command_entity = None;
+        self.notification_entity = None;
+        self.modal_entity = None;
+        self.last_render_version = 0;
     }
 
     /// Rebuild the ECS world from the current DrawContext
     // Static helper to avoid self-borrow issues
-    fn sync_world_static(world: &mut World, ctx: &DrawContext) {
-        world.clear();
+    /// Update the ECS world components based on current context
+    fn update_world(&mut self, ctx: &DrawContext) {
+        self.world.tick();
+
+        // 1. Content
+        if self.content_entity.is_none() {
+            self.content_entity = Some(self.world.create_entity());
+            // Ensure cache doesn't match new state if we just created entity
+            // (though resize invalidates cache so it should be fine)
+        }
+        let content_entity = self.content_entity.unwrap();
 
         let content_state = ContentDrawState {
             revision: ctx.buf.revision,
@@ -59,18 +90,16 @@ impl RenderSystem {
             } else {
                 0
             },
+            search_matches_count: ctx.state.search_matches.len(),
+            editor_bg: ctx.state.settings.editor_bg,
+            editor_fg: ctx.state.settings.editor_fg,
+            theme: ctx.state.settings.theme.clone(),
             highlights_hash: ctx
                 .state
                 .settings
                 .syntax_colors
                 .as_ref()
                 .map(|_| {
-                    // Calculate hash based on visible highlights
-                    // This is a simple approximation. Ideally we'd have a generation ID from Syntax.
-                    // For now, let's use the first and last highlight index/capture if available,
-                    // or just rely on the caller invalidating if syntax changed.
-                    // Actually, we added highlights_hash to ContentDrawState but we need to compute it.
-                    // Let's assume the caller will pass it or we'll compute it from ctx.highlights.
                     use std::hash::{Hash, Hasher};
                     let mut hasher = std::collections::hash_map::DefaultHasher::new();
                     if let Some(h) = ctx.highlights {
@@ -83,24 +112,31 @@ impl RenderSystem {
                     hasher.finish()
                 })
                 .unwrap_or(0),
-            search_matches_count: ctx.state.search_matches.len(),
-            editor_bg: ctx.state.settings.editor_bg,
-            editor_fg: ctx.state.settings.editor_fg,
-            theme: ctx.state.settings.theme.clone(),
         };
 
-        let content_entity = world.create_entity();
-        world.add_renderable(content_entity, Renderable::TextBuffer(content_state));
-        world.add_layer(content_entity, LayerPriority::CONTENT);
-        world.add_rect(
-            content_entity,
-            Rect::new(
-                0,
-                0,
-                ctx.viewport.visible_rows(),
-                ctx.viewport.visible_cols(),
-            ),
-        );
+        if self.render_cache.content.as_ref() != Some(&content_state) {
+            self.world.add_renderable(
+                content_entity,
+                Renderable::TextBuffer(content_state.clone()),
+            );
+            self.world.add_layer(content_entity, LayerPriority::CONTENT);
+            self.world.add_rect(
+                content_entity,
+                Rect::new(
+                    0,
+                    0,
+                    ctx.viewport.visible_rows(),
+                    ctx.viewport.visible_cols(),
+                ),
+            );
+            self.render_cache.content = Some(content_state);
+        }
+
+        // 2. Status Bar
+        if self.status_entity.is_none() {
+            self.status_entity = Some(self.world.create_entity());
+        }
+        let status_entity = self.status_entity.unwrap();
 
         let (search_match_index, search_total_matches) = if !ctx.state.search_matches.is_empty() {
             let cursor_offset = ctx.buf.cursor();
@@ -137,11 +173,21 @@ impl RenderSystem {
             editor_fg: ctx.state.settings.editor_fg,
         };
 
-        let status_entity = world.create_entity();
-        world.add_renderable(status_entity, Renderable::StatusBar(status_state));
-        world.add_layer(status_entity, LayerPriority::STATUS_BAR);
+        if self.render_cache.status.as_ref() != Some(&status_state) {
+            self.world
+                .add_renderable(status_entity, Renderable::StatusBar(status_state.clone()));
+            self.world
+                .add_layer(status_entity, LayerPriority::STATUS_BAR);
+            self.render_cache.status = Some(status_state);
+        }
 
+        // 3. Command Line Window
         if ctx.current_mode == Mode::Command || ctx.current_mode == Mode::Search {
+            if self.command_entity.is_none() {
+                self.command_entity = Some(self.world.create_entity());
+            }
+            let command_entity = self.command_entity.unwrap();
+
             let command_state = CommandDrawState {
                 content: ctx.state.command_line.clone(),
                 cursor: crate::render::CursorInfo {
@@ -156,10 +202,28 @@ impl RenderSystem {
                 editor_fg: ctx.state.settings.editor_fg,
             };
 
-            let command_entity = world.create_entity();
-            world.add_renderable(command_entity, Renderable::Window(command_state));
-            world.add_layer(command_entity, LayerPriority::FLOATING_WINDOW);
+            if self.render_cache.command_line.as_ref() != Some(&command_state) {
+                self.world
+                    .add_renderable(command_entity, Renderable::Window(command_state.clone()));
+                self.world
+                    .add_layer(command_entity, LayerPriority::FLOATING_WINDOW);
+                self.render_cache.command_line = Some(command_state);
+            }
+        } else if let Some(entity) = self.command_entity {
+            // Mode changed, destroy entity
+            self.world.destroy_entity(entity);
+            self.command_entity = None;
+            self.render_cache.command_line = None;
+            self.render_cache.last_command_cursor = None;
+            // Also need to clear the layer
+            self.compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
         }
+
+        // 4. Notifications
+        if self.notification_entity.is_none() {
+            self.notification_entity = Some(self.world.create_entity());
+        }
+        let notification_entity = self.notification_entity.unwrap();
 
         let notification_state = NotificationDrawState {
             generation: ctx.state.error_manager.notifications().generation,
@@ -171,17 +235,28 @@ impl RenderSystem {
                 .count(),
         };
 
-        let notification_entity = world.create_entity();
-        world.add_renderable(
-            notification_entity,
-            Renderable::Notification(notification_state),
-        );
-        world.add_layer(notification_entity, LayerPriority::NOTIFICATION);
+        if self.render_cache.notifications.as_ref() != Some(&notification_state) {
+            self.world.add_renderable(
+                notification_entity,
+                Renderable::Notification(notification_state.clone()),
+            );
+            self.world
+                .add_layer(notification_entity, LayerPriority::NOTIFICATION);
+            self.render_cache.notifications = Some(notification_state);
+        }
 
+        // 5. Modal
         if let Some(ref modal) = ctx.modal {
-            let modal_entity = world.create_entity();
-            world.add_renderable(modal_entity, Renderable::RefToModal);
-            world.add_layer(modal_entity, modal.layer);
+            if self.modal_entity.is_none() {
+                self.modal_entity = Some(self.world.create_entity());
+                let modal_entity = self.modal_entity.unwrap();
+                self.world
+                    .add_renderable(modal_entity, Renderable::RefToModal);
+                self.world.add_layer(modal_entity, modal.layer);
+            }
+        } else if let Some(entity) = self.modal_entity {
+            self.world.destroy_entity(entity);
+            self.modal_entity = None;
         }
     }
 
@@ -198,9 +273,11 @@ impl RenderSystem {
                 .resize(self.viewport.visible_rows(), self.viewport.visible_cols());
         }
 
+        // Clone viewport to avoid simultaneous borrow of self in update_world
+        let viewport = self.viewport.clone();
         let mut ctx = DrawContext {
             buf: state.buf,
-            viewport: &self.viewport,
+            viewport: &viewport,
             current_mode: state.current_mode,
             pending_key: state.pending_key,
             pending_count: state.pending_count,
@@ -212,12 +289,14 @@ impl RenderSystem {
             modal: state.modal,
         };
 
-        Self::sync_world_static(&mut self.world, &ctx);
+        // Update the ECS world
+        self.update_world(&ctx);
 
         if ctx.needs_clear {
-            self.render_cache.invalidate_all();
+            self.last_render_version = 0;
         }
 
+        // Gather entities to render
         let mut render_entities: Vec<_> = self
             .world
             .entities()
@@ -238,13 +317,15 @@ impl RenderSystem {
         let mut command_cursor_info = None;
 
         for (_entity, renderable, priority) in render_entities {
+            let version = self.world.renderables.get_version(_entity).unwrap_or(0);
+            let layer_needs_redraw =
+                version > self.last_render_version || self.last_render_version == 0;
+
             match renderable {
-                Renderable::TextBuffer(state) => {
-                    if self.render_cache.content.as_ref() != Some(state) {
+                Renderable::TextBuffer(_) => {
+                    if layer_needs_redraw {
                         // Note: We intentionally skip clear_layer here because
-                        // render_content_to_layer writes all cells (including spaces),
-                        // so clearing first causes double-buffer to see all cells as changed,
-                        // resulting in full-screen terminal writes and flickering.
+                        // render_content_to_layer writes all cells (including spaces)
                         crate::render::render_content_to_layer(
                             self.compositor.get_layer_mut(*priority),
                             &ctx,
@@ -252,18 +333,16 @@ impl RenderSystem {
                         .map_err(|e| {
                             RiftError::new(crate::error::ErrorType::Renderer, "RENDER_FAILED", e)
                         })?;
-                        self.render_cache.content = Some(state.clone());
                     }
                 }
                 Renderable::StatusBar(state) => {
-                    if self.render_cache.status.as_ref() != Some(state) {
+                    if layer_needs_redraw {
                         self.compositor.clear_layer(*priority);
                         StatusBar::render_to_layer(self.compositor.get_layer_mut(*priority), state);
-                        self.render_cache.status = Some(state.clone());
                     }
                 }
                 Renderable::Window(state) => {
-                    if self.render_cache.command_line.as_ref() != Some(state) {
+                    if layer_needs_redraw {
                         self.compositor.clear_layer(*priority);
                         let layer = self.compositor.get_layer_mut(*priority);
                         let default_border_chars = ctx.state.settings.default_border_chars.clone();
@@ -295,13 +374,12 @@ impl RenderSystem {
                         let pos = CursorPosition::Absolute(cursor_row, cursor_col);
                         command_cursor_info = Some(pos);
                         self.render_cache.last_command_cursor = Some(pos);
-                        self.render_cache.command_line = Some(state.clone());
                     } else {
                         command_cursor_info = self.render_cache.last_command_cursor;
                     }
                 }
-                Renderable::Notification(state) => {
-                    if self.render_cache.notifications.as_ref() != Some(state) {
+                Renderable::Notification(_) => {
+                    if layer_needs_redraw {
                         self.compositor.clear_layer(*priority);
                         crate::render::render_notifications(
                             self.compositor.get_layer_mut(*priority),
@@ -309,7 +387,6 @@ impl RenderSystem {
                             ctx.viewport.visible_rows(),
                             ctx.viewport.visible_cols(),
                         );
-                        self.render_cache.notifications = Some(state.clone());
                     }
                 }
                 Renderable::RefToModal => {
@@ -322,13 +399,13 @@ impl RenderSystem {
             }
         }
 
+        // Cleanup command line cache if not command mode
         if ctx.current_mode != Mode::Command
             && ctx.current_mode != Mode::Search
             && self.render_cache.command_line.is_some()
         {
-            self.compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
-            self.render_cache.command_line = None;
-            self.render_cache.last_command_cursor = None;
+            // Handled in update_world via destruction, but update cache just in case if entities desync
+            // but update_world handles it.
         }
 
         let cursor_info = if let Some(pos) = command_cursor_info {
@@ -371,6 +448,9 @@ impl RenderSystem {
             self.render_cache.last_cursor_pos = Some(cursor_info);
         }
         term.show_cursor()?;
+
+        // Update version reference
+        self.last_render_version = self.world.current_version;
 
         Ok(cursor_info)
     }
