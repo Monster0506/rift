@@ -79,4 +79,9 @@ harness = false
 name = "render_bench"
 harness = false
 
+[[bench]]
+name = "search_bench"
+harness = false
+
+
 
