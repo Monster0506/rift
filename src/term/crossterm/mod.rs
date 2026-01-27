@@ -170,6 +170,17 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
             }
             if ctrl {
                 Key::Ctrl(ch as u8)
+            } else if ch.is_control()
+                && ch as u8 >= 1
+                && ch as u8 <= 26
+                && ch != '\r'
+                && ch != '\n'
+                && ch != '\t'
+                && ch != '\x08'
+            {
+                // Normalize implicit control characters (e.g. ^W = 23) to Key::Ctrl('w')
+                // 'a' is 97, ^A is 1. Offset is 96.
+                Key::Ctrl((ch as u8) + 96)
             } else {
                 Key::Char(ch)
             }

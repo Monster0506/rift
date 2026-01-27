@@ -582,6 +582,11 @@ impl<T: TerminalBackend> Editor<T> {
             Action::Editor(EditorAction::Move(Motion::NextWord)),
         );
         editor.keymap.register(
+            KeyContext::Insert,
+            Key::Ctrl(b'w'),
+            Action::Editor(EditorAction::Delete(Motion::PreviousWord)),
+        );
+        editor.keymap.register(
             KeyContext::Command,
             Key::Escape,
             Action::Editor(EditorAction::EnterNormalMode),
@@ -682,6 +687,16 @@ impl<T: TerminalBackend> Editor<T> {
             KeyContext::Search,
             Key::CtrlArrowRight,
             Action::Editor(EditorAction::Move(Motion::NextWord)),
+        );
+        editor.keymap.register(
+            KeyContext::Command,
+            Key::Ctrl(b'w'),
+            Action::Editor(EditorAction::Delete(Motion::PreviousWord)),
+        );
+        editor.keymap.register(
+            KeyContext::Search,
+            Key::Ctrl(b'w'),
+            Action::Editor(EditorAction::Delete(Motion::PreviousWord)),
         );
 
         // Operators
@@ -1327,6 +1342,10 @@ impl<T: TerminalBackend> Editor<T> {
                     // Assuming left motion is backspace
                     if *motion == crate::action::Motion::Left {
                         self.handle_mode_management(crate::command::Command::DeleteFromCommandLine);
+                        return true;
+                    }
+                    if *motion == crate::action::Motion::PreviousWord {
+                        self.state.delete_word_back_command_line();
                         return true;
                     }
                 }

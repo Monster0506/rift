@@ -430,6 +430,17 @@ impl State {
             crate::movement::boundaries::next_word(&self.command_line, self.command_line_cursor);
     }
 
+    /// Delete word backwards in command line
+    pub fn delete_word_back_command_line(&mut self) {
+        let start =
+            crate::movement::boundaries::prev_word(&self.command_line, self.command_line_cursor);
+        if start < self.command_line_cursor {
+            self.command_line
+                .replace_range(start..self.command_line_cursor, "");
+            self.command_line_cursor = start;
+        }
+    }
+
     /// Move command line cursor to end
     pub fn move_command_line_end(&mut self) {
         self.command_line_cursor = self.command_line.len();
