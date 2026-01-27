@@ -126,3 +126,113 @@ fn test_handle_execution_result_buffer_navigation() {
     editor.handle_execution_result(ExecutionResult::BufferPrevious { bangs: 0 });
     assert_eq!(editor.document_manager.active_tab_index(), 2);
 }
+
+#[test]
+fn test_search_closes_on_success() {
+    let mut editor = create_editor();
+
+    // Open a file with content
+    editor
+        .open_file(Some("test.txt".to_string()), false)
+        .unwrap();
+    editor
+        .active_document()
+        .buffer
+        .insert_str("hello world")
+        .unwrap();
+
+    // Enter Search Mode
+    editor.handle_action(&crate::action::Action::Editor(
+        crate::action::EditorAction::EnterSearchMode,
+    ));
+    assert_eq!(editor.current_mode, Mode::Search);
+
+    // Type "hello"
+    for c in "hello".chars() {
+        editor.state.append_to_command_line(c);
+    }
+
+    // Submit Search
+    editor.handle_action(&crate::action::Action::Editor(
+        crate::action::EditorAction::Submit,
+    ));
+
+    // Verify: Mode Normal, Layer Cleared
+    assert_eq!(editor.current_mode, Mode::Normal);
+    editor.update_and_render().unwrap();
+
+    let layer = editor
+        .render_system
+        .compositor
+        .get_layer(crate::layer::LayerPriority::FLOATING_WINDOW)
+        .unwrap();
+    // Check if layer is empty
+    for row in 0..layer.rows() {
+        for col in 0..layer.cols() {
+            assert!(
+                layer.get_cell(row, col).is_none(),
+                "Layer should be empty on success"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_search_stays_open_on_failure() {
+    let mut editor = create_editor();
+
+    // Open a file with content
+    editor
+        .open_file(Some("test.txt".to_string()), false)
+        .unwrap();
+    editor
+        .active_document()
+        .buffer
+        .insert_str("hello world")
+        .unwrap();
+
+    // Enter Search Mode
+    editor.handle_action(&crate::action::Action::Editor(
+        crate::action::EditorAction::EnterSearchMode,
+    ));
+    assert_eq!(editor.current_mode, Mode::Search);
+
+    // Type "goodbye" (not in text)
+    for c in "goodbye".chars() {
+        editor.state.append_to_command_line(c);
+    }
+
+    // Submit Search
+    editor.handle_action(&crate::action::Action::Editor(
+        crate::action::EditorAction::Submit,
+    ));
+
+    // Verify: Mode Search, Layer NOT Cleared
+    assert_eq!(
+        editor.current_mode,
+        Mode::Search,
+        "Should stay in Search mode on failure"
+    );
+    editor.update_and_render().unwrap();
+
+    let layer = editor
+        .render_system
+        .compositor
+        .get_layer(crate::layer::LayerPriority::FLOATING_WINDOW);
+    assert!(layer.is_some(), "Layer should exist");
+    // Check if layer has content (search bar)
+    let layer = layer.unwrap();
+    let mut has_content = false;
+    for row in 0..layer.rows() {
+        for col in 0..layer.cols() {
+            if layer.get_cell(row, col).is_some() {
+                has_content = true;
+                break;
+            }
+        }
+        if has_content {
+            break;
+        }
+    }
+    assert!(has_content, "Search bar should remain visible on failure");
+}

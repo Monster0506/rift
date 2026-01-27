@@ -952,7 +952,12 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Perform a search in the document
-    fn perform_search(&mut self, query: &str, direction: SearchDirection, skip_current: bool) {
+    fn perform_search(
+        &mut self,
+        query: &str,
+        direction: SearchDirection,
+        skip_current: bool,
+    ) -> bool {
         // Find all matches first to populate state for highlighting
         self.update_search_highlights();
         let _ = self.force_full_redraw();
@@ -965,10 +970,12 @@ impl<T: TerminalBackend> Editor<T> {
             Ok((Some(m), _stats)) => {
                 // Move cursor to start of match
                 let _ = doc.buffer.set_cursor(m.range.start);
+                true
             }
             Ok((None, _stats)) => {
                 // No match found - don't move cursor, no notification needed
                 // The user can see from the cursor position that nothing was found
+                false
             }
             Err(e) => {
                 // Actual search error (e.g., regex compilation failure)
@@ -976,9 +983,9 @@ impl<T: TerminalBackend> Editor<T> {
                     crate::notification::NotificationType::Error,
                     format!("Search error: {}", e),
                 );
+                false
             }
         }
-        self.close_active_modal();
     }
 
     /// Run the editor main loop
@@ -1531,10 +1538,14 @@ impl<T: TerminalBackend> Editor<T> {
                 let query = self.state.command_line.clone();
                 if !query.is_empty() {
                     self.state.last_search_query = Some(query.clone());
-                    self.perform_search(&query, SearchDirection::Forward, false);
+                    if self.perform_search(&query, SearchDirection::Forward, false) {
+                        self.state.clear_command_line();
+                        self.set_mode(Mode::Normal);
+                    }
+                } else {
+                    self.state.clear_command_line();
+                    self.set_mode(Mode::Normal);
                 }
-                self.state.clear_command_line();
-                self.set_mode(Mode::Normal);
             }
 
             Command::ExecuteCommandLine => {
@@ -1751,9 +1762,13 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Set editor mode and update dispatcher
     fn set_mode(&mut self, mode: Mode) {
+        let old_mode = self.current_mode;
         self.current_mode = mode;
-        // self.dispatcher.set_mode(mode);
-        // Using internal state now
+        if (old_mode == Mode::Command || old_mode == Mode::Search) && mode != old_mode {
+            self.render_system
+                .compositor
+                .clear_layer(crate::layer::LayerPriority::FLOATING_WINDOW);
+        }
 
         // Clear operator if leaving OperatorPending (and not entering it)
         if mode != Mode::OperatorPending {
@@ -2403,10 +2418,14 @@ impl<T: TerminalBackend> Editor<T> {
             }
             CommandLineMessage::ExecuteSearch(query) => {
                 if !query.is_empty() {
-                    self.perform_search(&query, SearchDirection::Forward, false);
+                    if self.perform_search(&query, SearchDirection::Forward, false) {
+                        self.state.clear_command_line();
+                        self.close_active_modal();
+                    }
+                } else {
+                    self.state.clear_command_line();
+                    self.close_active_modal();
                 }
-                self.state.clear_command_line();
-                self.close_active_modal();
             }
             CommandLineMessage::CancelMode => {
                 self.state.clear_command_line();
