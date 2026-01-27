@@ -1,3 +1,4 @@
+pub mod defaults;
 pub mod trie;
 
 pub use self::trie::{MatchResult, TrieNode};
