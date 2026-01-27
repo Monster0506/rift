@@ -122,6 +122,7 @@ impl Dispatcher {
             Mode::Command => self.translate_command_mode(key),
             Mode::Search => self.translate_search_mode(key),
             Mode::Overlay => Command::Noop, // Overlay input handled by editor
+            Mode::OperatorPending => Command::Noop,
         }
     }
 

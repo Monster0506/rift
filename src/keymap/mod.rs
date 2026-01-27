@@ -1,3 +1,6 @@
+pub mod trie;
+
+pub use self::trie::{MatchResult, TrieNode};
 use crate::action::Action;
 use crate::key::Key;
 use std::collections::HashMap;
@@ -11,13 +14,15 @@ pub enum KeyContext {
     UndoTree,
     Normal,
     Insert,
+    Command,
+    Search,
     // Add other contexts as needed
 }
 
-/// KeyMap stores mappings from (Context, Key) -> Action ID
+/// KeyMap stores mappings from (Context, Key Sequence) -> Action
 #[derive(Debug, Clone)]
 pub struct KeyMap {
-    mappings: HashMap<KeyContext, HashMap<Key, Action>>,
+    mappings: HashMap<KeyContext, TrieNode>,
 }
 
 impl KeyMap {
@@ -27,12 +32,17 @@ impl KeyMap {
         }
     }
 
-    /// Register a new key binding
+    /// Register a new single-key binding
     pub fn register(&mut self, context: KeyContext, key: Key, action: Action) {
+        self.register_sequence(context, vec![key], action);
+    }
+
+    /// Register a sequence binding
+    pub fn register_sequence(&mut self, context: KeyContext, keys: Vec<Key>, action: Action) {
         self.mappings
             .entry(context)
             .or_default()
-            .insert(key, action);
+            .insert(&keys, action);
     }
 
     pub fn register_from_str(&mut self, context: KeyContext, key: Key, action_str: &str) {
@@ -44,25 +54,32 @@ impl KeyMap {
         }
     }
 
-    /// specific context -> global fallback
-    pub fn get_action(&self, context: KeyContext, key: Key) -> Option<&Action> {
+    /// Look up a key sequence
+    pub fn lookup<'a>(&'a self, context: KeyContext, keys: &[Key]) -> MatchResult<'a> {
         // First try specific context
-        if let Some(map) = self.mappings.get(&context) {
-            if let Some(action) = map.get(&key) {
-                return Some(action);
+        if let Some(trie) = self.mappings.get(&context) {
+            match trie.lookup(keys) {
+                MatchResult::None => {} // Continue to fallback
+                match_result => return match_result,
             }
         }
 
         // Fallback to Global context if not found in specific context
         if context != KeyContext::Global {
-            if let Some(map) = self.mappings.get(&KeyContext::Global) {
-                if let Some(action) = map.get(&key) {
-                    return Some(action);
-                }
+            if let Some(trie) = self.mappings.get(&KeyContext::Global) {
+                return trie.lookup(keys);
             }
         }
 
-        None
+        MatchResult::None
+    }
+
+    /// Legacy single-key compatibility (returns Action only if Exact match on single key)
+    pub fn get_action(&self, context: KeyContext, key: Key) -> Option<&Action> {
+        match self.lookup(context, &[key]) {
+            MatchResult::Exact(action) | MatchResult::Ambiguous(action) => Some(action),
+            _ => None,
+        }
     }
 }
 
@@ -94,6 +111,34 @@ mod tests {
     }
 
     #[test]
+    fn test_sequence() {
+        let mut map = KeyMap::new();
+        map.register_sequence(
+            KeyContext::Global,
+            vec![Key::Char('d'), Key::Char('d')],
+            Action::Editor(EditorAction::DeleteLine),
+        );
+
+        // Partial match
+        assert_eq!(
+            map.lookup(KeyContext::Global, &[Key::Char('d')]),
+            MatchResult::Prefix
+        );
+
+        // Exact match
+        assert_eq!(
+            map.lookup(KeyContext::Global, &[Key::Char('d'), Key::Char('d')]),
+            MatchResult::Exact(&Action::Editor(EditorAction::DeleteLine))
+        );
+
+        // No match
+        assert_eq!(
+            map.lookup(KeyContext::Global, &[Key::Char('x')]),
+            MatchResult::None
+        );
+    }
+
+    #[test]
     fn test_context_fallback() {
         let mut map = KeyMap::new();
         // Global binding
@@ -108,7 +153,7 @@ mod tests {
             KeyContext::FileExplorer,
             Key::Char('j'),
             Action::Editor(EditorAction::Move(Motion::Down)),
-        ); // Just using random action for test
+        );
 
         // Test specific context finding specific binding
         assert_eq!(

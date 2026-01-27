@@ -77,6 +77,7 @@ pub mod modes {
     pub const INSERT: &str = "INSERT";
     pub const COMMAND: &str = "COMMAND";
     pub const SEARCH: &str = "SEARCH";
+    pub const OPERATOR_PENDING: &str = "OPERATOR_PENDING";
     pub const OVERLAY: &str = "OVERLAY";
 }
 

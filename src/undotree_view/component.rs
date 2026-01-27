@@ -30,6 +30,8 @@ impl Component for UndoTreeComponent {
             }
             UndoTreeAction::Down => self.view.move_selection_down(),
             UndoTreeAction::Up => self.view.move_selection_up(),
+            UndoTreeAction::Top => self.view.move_selection_top(),
+            UndoTreeAction::Bottom => self.view.move_selection_bottom(),
             UndoTreeAction::Select => {
                 if let Some(_idx) = self.view.selected_line() {
                     // We need to re-trigger the on_select callback logic here for now

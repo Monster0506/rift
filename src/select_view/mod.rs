@@ -282,6 +282,72 @@ impl SelectView {
         self.selectable_lines.get(index).copied().unwrap_or(true)
     }
 
+    /// Move selection to top of list
+    pub fn move_selection_top(&mut self) -> EventResult {
+        let len = if !self.selectable_lines.is_empty() {
+            self.selectable_lines.len()
+        } else {
+            self.left_content.len()
+        };
+        if len == 0 {
+            return EventResult::Ignored;
+        }
+
+        // Find first selectable line
+        for i in 0..len {
+            if self.is_selectable(i) {
+                self.selected_line = Some(i);
+                self.left_scroll = 0; // Reset scroll to top
+
+                if let Some(cb) = self.on_change.as_mut() {
+                    let _ = cb(i);
+                }
+                if let Some(cb) = self.on_up.as_mut() {
+                    let _ = cb(i);
+                }
+                return EventResult::Consumed;
+            }
+        }
+        EventResult::Consumed
+    }
+
+    /// Move selection to bottom of list
+    pub fn move_selection_bottom(&mut self) -> EventResult {
+        let len = if !self.selectable_lines.is_empty() {
+            self.selectable_lines.len()
+        } else {
+            self.left_content.len()
+        };
+        if len == 0 {
+            return EventResult::Ignored;
+        }
+
+        // Find last selectable line
+        for i in (0..len).rev() {
+            if self.is_selectable(i) {
+                self.selected_line = Some(i);
+
+                // Adjust scroll to show bottom
+                if self.last_content_height > 0 {
+                    if i >= self.last_content_height {
+                        self.left_scroll = i + 1 - self.last_content_height;
+                    } else {
+                        self.left_scroll = 0;
+                    }
+                }
+
+                if let Some(cb) = self.on_change.as_mut() {
+                    let _ = cb(i);
+                }
+                if let Some(cb) = self.on_down.as_mut() {
+                    let _ = cb(i);
+                }
+                return EventResult::Consumed;
+            }
+        }
+        EventResult::Consumed
+    }
+
     /// Set selected line index
     pub fn set_selected_line(&mut self, line: Option<usize>) {
         self.selected_line = line;

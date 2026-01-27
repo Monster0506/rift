@@ -71,6 +71,16 @@ pub enum FileExplorerAction {
     Delete,
     Rename,
     Copy,
+    Top,
+    Bottom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperatorType {
+    Delete,
+    Change,
+    Yank,
+    // Format, Comment, etc.
 }
 
 /// Editor specific actions (wraps commands or motions)
@@ -79,13 +89,35 @@ pub enum EditorAction {
     Move(Motion),
     EnterInsertMode,
     EnterInsertModeAfter,
+    EnterNormalMode,
     EnterCommandMode,
     EnterSearchMode,
+    Delete(Motion),
+    DeleteLine,
+    InsertChar(char),
+    BufferNext,
+    BufferPrevious,
+    ToggleDebug,
+    Redraw,
+    Save,
+    SaveAndQuit,
+    OpenExplorer,
+    OpenUndoTree,
+    ShowBufferList,
+    ClearHighlights,
+    ClearNotifications,
+    ClearLastNotification,
+    Checkpoint,
+    /// Execute a command string (e.g. ":w", ":s/foo/bar")
+    RunCommand(String),
     Undo,
     Redo,
     Quit,
+    /// Pending Operator (d, c, y)
+    Operator(OperatorType),
     /// Generic wrapper for other commands
     Command(Box<Command>),
+    Submit,
 }
 
 /// Undotree specific actions
@@ -95,6 +127,8 @@ pub enum UndoTreeAction {
     Down,
     Up,
     Select,
+    Top,
+    Bottom,
 }
 
 /// Represents an action in the editor
@@ -134,25 +168,57 @@ impl FromStr for Action {
             "explorer:delete" => Ok(Action::Explorer(FileExplorerAction::Delete)),
             "explorer:rename" => Ok(Action::Explorer(FileExplorerAction::Rename)),
             "explorer:copy" => Ok(Action::Explorer(FileExplorerAction::Copy)),
+            "explorer:top" => Ok(Action::Explorer(FileExplorerAction::Top)),
+            "explorer:bottom" => Ok(Action::Explorer(FileExplorerAction::Bottom)),
 
             // Undotree Actions
             "undotree:close" => Ok(Action::UndoTree(UndoTreeAction::Close)),
             "undotree:down" => Ok(Action::UndoTree(UndoTreeAction::Down)),
             "undotree:up" => Ok(Action::UndoTree(UndoTreeAction::Up)),
             "undotree:select" => Ok(Action::UndoTree(UndoTreeAction::Select)),
+            "undotree:top" => Ok(Action::UndoTree(UndoTreeAction::Top)),
+            "undotree:bottom" => Ok(Action::UndoTree(UndoTreeAction::Bottom)),
 
             // Editor Actions - Movement
             "editor:move_left" => Ok(Action::Editor(EditorAction::Move(Motion::Left))),
             "editor:move_right" => Ok(Action::Editor(EditorAction::Move(Motion::Right))),
             "editor:move_up" => Ok(Action::Editor(EditorAction::Move(Motion::Up))),
             "editor:move_down" => Ok(Action::Editor(EditorAction::Move(Motion::Down))),
+            "editor:move_start_of_line" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::StartOfLine)))
+            }
+            "editor:move_end_of_line" => Ok(Action::Editor(EditorAction::Move(Motion::EndOfLine))),
 
             // Editor Actions - General
             "editor:enter_insert_mode" => Ok(Action::Editor(EditorAction::EnterInsertMode)),
+            "editor:enter_insert_mode_after" => {
+                Ok(Action::Editor(EditorAction::EnterInsertModeAfter))
+            }
+            "editor:enter_normal_mode" => Ok(Action::Editor(EditorAction::EnterNormalMode)),
             "editor:enter_command_mode" => Ok(Action::Editor(EditorAction::EnterCommandMode)),
+            "editor:enter_search_mode" => Ok(Action::Editor(EditorAction::EnterSearchMode)),
             "editor:undo" => Ok(Action::Editor(EditorAction::Undo)),
             "editor:redo" => Ok(Action::Editor(EditorAction::Redo)),
             "editor:quit" => Ok(Action::Editor(EditorAction::Quit)),
+            "editor:buffer_next" => Ok(Action::Editor(EditorAction::BufferNext)),
+            "editor:buffer_previous" => Ok(Action::Editor(EditorAction::BufferPrevious)),
+            "editor:delete_line" => Ok(Action::Editor(EditorAction::DeleteLine)),
+            "editor:delete_char" => Ok(Action::Editor(EditorAction::Delete(Motion::Right))),
+            "editor:delete_back" => Ok(Action::Editor(EditorAction::Delete(Motion::Left))),
+            "editor:toggle_debug" => Ok(Action::Editor(EditorAction::ToggleDebug)),
+            "editor:redraw" => Ok(Action::Editor(EditorAction::Redraw)),
+            "editor:save" => Ok(Action::Editor(EditorAction::Save)),
+            "editor:save_and_quit" => Ok(Action::Editor(EditorAction::SaveAndQuit)),
+            "editor:open_explorer" => Ok(Action::Editor(EditorAction::OpenExplorer)),
+            "editor:open_undotree" => Ok(Action::Editor(EditorAction::OpenUndoTree)),
+            "editor:show_buffer_list" => Ok(Action::Editor(EditorAction::ShowBufferList)),
+            "editor:clear_highlights" => Ok(Action::Editor(EditorAction::ClearHighlights)),
+            "editor:clear_notifications" => Ok(Action::Editor(EditorAction::ClearNotifications)),
+            "editor:clear_last_notification" => {
+                Ok(Action::Editor(EditorAction::ClearLastNotification))
+            }
+            "editor:checkpoint" => Ok(Action::Editor(EditorAction::Checkpoint)),
+            "editor:submit" => Ok(Action::Editor(EditorAction::Submit)),
 
             _ => Ok(Action::Noop),
         }

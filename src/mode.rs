@@ -13,4 +13,6 @@ pub enum Mode {
     Search,
     /// Overlay mode (split-view overlays like :undotree)
     Overlay,
+    /// Operator pending mode (e.g. after pressing 'd')
+    OperatorPending,
 }

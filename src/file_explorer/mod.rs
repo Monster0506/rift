@@ -374,6 +374,20 @@ impl Component for FileExplorer {
                 }
                 res
             }
+            FileExplorerAction::Top => {
+                let res = self.select_view.move_selection_top();
+                if let Some(idx) = self.select_view.selected_line() {
+                    return self.create_preview_action(idx);
+                }
+                res
+            }
+            FileExplorerAction::Bottom => {
+                let res = self.select_view.move_selection_bottom();
+                if let Some(idx) = self.select_view.selected_line() {
+                    return self.create_preview_action(idx);
+                }
+                res
+            }
             FileExplorerAction::Select => {
                 if let Some(visual_idx) = self.select_view.selected_line() {
                     if let Some(entry_idx) = self.get_entry_index(visual_idx) {

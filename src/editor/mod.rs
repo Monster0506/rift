@@ -10,7 +10,7 @@ use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::document::{Document, DocumentId};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::executor::execute_command;
-use crate::key_handler::{KeyAction, KeyHandler};
+use crate::key_handler::KeyAction;
 use crate::keymap::KeyMap;
 
 use crate::mode::Mode;
@@ -43,6 +43,10 @@ pub struct Editor<T: TerminalBackend> {
     /// Job ID required to finish before quitting
     pending_quit_job_id: Option<usize>,
     pub keymap: KeyMap,
+    // Input state
+    pending_keys: Vec<crate::key::Key>,
+    pending_count: usize,
+    pending_operator: Option<crate::action::OperatorType>,
 }
 
 /// Helper struct to track active modal and its layer
@@ -130,6 +134,9 @@ impl<T: TerminalBackend> Editor<T> {
             job_manager: crate::job_manager::JobManager::new(),
             pending_quit_job_id: None,
             keymap: KeyMap::new(),
+            pending_keys: Vec::new(),
+            pending_count: 0,
+            pending_operator: None,
         };
 
         // Register default keymaps
@@ -237,6 +244,26 @@ impl<T: TerminalBackend> Editor<T> {
             Key::Char('c'),
             Action::Explorer(FileExplorerAction::Copy),
         );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::Home,
+            Action::Explorer(FileExplorerAction::Top),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::End,
+            Action::Explorer(FileExplorerAction::Bottom),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::ArrowLeft,
+            Action::Explorer(FileExplorerAction::Parent),
+        );
+        editor.keymap.register(
+            KeyContext::FileExplorer,
+            Key::ArrowRight,
+            Action::Explorer(FileExplorerAction::Select),
+        );
 
         // Undotree Defaults
         editor.keymap.register(
@@ -274,27 +301,421 @@ impl<T: TerminalBackend> Editor<T> {
             Key::Char('q'),
             Action::UndoTree(UndoTreeAction::Close),
         );
-
-        // Normal Mode Defaults - Integrating standard movement
         editor.keymap.register(
-            KeyContext::Global,
+            KeyContext::UndoTree,
+            Key::Home,
+            Action::UndoTree(UndoTreeAction::Top),
+        );
+        editor.keymap.register(
+            KeyContext::UndoTree,
+            Key::End,
+            Action::UndoTree(UndoTreeAction::Bottom),
+        );
+
+        // Normal Mode Defaults
+        editor.keymap.register(
+            KeyContext::Normal,
             Key::Char('h'),
             Action::Editor(EditorAction::Move(Motion::Left)),
         );
         editor.keymap.register(
-            KeyContext::Global,
+            KeyContext::Normal,
             Key::Char('j'),
             Action::Editor(EditorAction::Move(Motion::Down)),
         );
         editor.keymap.register(
-            KeyContext::Global,
+            KeyContext::Normal,
             Key::Char('k'),
             Action::Editor(EditorAction::Move(Motion::Up)),
         );
         editor.keymap.register(
-            KeyContext::Global,
+            KeyContext::Normal,
             Key::Char('l'),
             Action::Editor(EditorAction::Move(Motion::Right)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('q'),
+            Action::Editor(EditorAction::Quit),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('n'),
+            Action::Editor(EditorAction::Move(Motion::NextMatch)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('N'),
+            Action::Editor(EditorAction::Move(Motion::PreviousMatch)),
+        );
+        // Word Motion
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('w'),
+            Action::Editor(EditorAction::Move(Motion::NextWord)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('b'),
+            Action::Editor(EditorAction::Move(Motion::PreviousWord)),
+        );
+        // Line Motion
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('0'),
+            Action::Editor(EditorAction::Move(Motion::StartOfLine)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('$'),
+            Action::Editor(EditorAction::Move(Motion::EndOfLine)),
+        );
+        // Paragraph Motion
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('}'),
+            Action::Editor(EditorAction::Move(Motion::NextParagraph)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('{'),
+            Action::Editor(EditorAction::Move(Motion::PreviousParagraph)),
+        );
+        // Sentence Motion
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char(')'),
+            Action::Editor(EditorAction::Move(Motion::NextSentence)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('('),
+            Action::Editor(EditorAction::Move(Motion::PreviousSentence)),
+        );
+        // Page Motion
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::PageUp,
+            Action::Editor(EditorAction::Move(Motion::PageUp)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::PageDown,
+            Action::Editor(EditorAction::Move(Motion::PageDown)),
+        );
+        // Undo/Redo
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('u'),
+            Action::Editor(EditorAction::Undo),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Ctrl(b'r'),
+            Action::Editor(EditorAction::Redo),
+        );
+        // Modes
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('i'),
+            Action::Editor(EditorAction::EnterInsertMode),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char(':'),
+            Action::Editor(EditorAction::EnterCommandMode),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('/'),
+            Action::Editor(EditorAction::EnterSearchMode),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('a'),
+            Action::Editor(EditorAction::EnterInsertModeAfter),
+        );
+        // Normal Mode Arrows/Home/End
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::ArrowLeft,
+            Action::Editor(EditorAction::Move(Motion::Left)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::ArrowRight,
+            Action::Editor(EditorAction::Move(Motion::Right)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::ArrowUp,
+            Action::Editor(EditorAction::Move(Motion::Up)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::ArrowDown,
+            Action::Editor(EditorAction::Move(Motion::Down)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Home,
+            Action::Editor(EditorAction::Move(Motion::StartOfLine)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::End,
+            Action::Editor(EditorAction::Move(Motion::EndOfLine)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::CtrlArrowLeft,
+            Action::Editor(EditorAction::Move(Motion::PreviousWord)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::CtrlArrowRight,
+            Action::Editor(EditorAction::Move(Motion::NextWord)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::CtrlArrowUp,
+            Action::Editor(EditorAction::Move(Motion::PreviousParagraph)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::CtrlArrowDown,
+            Action::Editor(EditorAction::Move(Motion::NextParagraph)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::CtrlHome,
+            Action::Editor(EditorAction::Move(Motion::StartOfFile)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::CtrlEnd,
+            Action::Editor(EditorAction::Move(Motion::EndOfFile)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('x'),
+            Action::Editor(EditorAction::Delete(Motion::Right)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('?'),
+            Action::Editor(EditorAction::ToggleDebug),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::Escape,
+            Action::Editor(EditorAction::EnterNormalMode),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::ArrowLeft,
+            Action::Editor(EditorAction::Move(Motion::Left)),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::ArrowRight,
+            Action::Editor(EditorAction::Move(Motion::Right)),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::ArrowUp,
+            Action::Editor(EditorAction::Move(Motion::Up)),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::ArrowDown,
+            Action::Editor(EditorAction::Move(Motion::Down)),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::Home,
+            Action::Editor(EditorAction::Move(Motion::StartOfLine)),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::End,
+            Action::Editor(EditorAction::Move(Motion::EndOfLine)),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::Backspace,
+            Action::Editor(EditorAction::Delete(Motion::Left)),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::Delete,
+            Action::Editor(EditorAction::Delete(Motion::Right)),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::Enter,
+            Action::Editor(EditorAction::InsertChar('\n')),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::Tab,
+            Action::Editor(EditorAction::InsertChar('\t')),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::PageUp,
+            Action::Editor(EditorAction::Move(Motion::PageUp)),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::PageDown,
+            Action::Editor(EditorAction::Move(Motion::PageDown)),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::CtrlArrowLeft,
+            Action::Editor(EditorAction::Move(Motion::PreviousWord)),
+        );
+        editor.keymap.register(
+            KeyContext::Insert,
+            Key::CtrlArrowRight,
+            Action::Editor(EditorAction::Move(Motion::NextWord)),
+        );
+        editor.keymap.register(
+            KeyContext::Command,
+            Key::Escape,
+            Action::Editor(EditorAction::EnterNormalMode),
+        );
+        editor.keymap.register(
+            KeyContext::Search,
+            Key::Escape,
+            Action::Editor(EditorAction::EnterNormalMode),
+        );
+        // Submit
+        editor.keymap.register(
+            KeyContext::Command,
+            Key::Enter,
+            Action::Editor(EditorAction::Submit),
+        );
+        editor.keymap.register(
+            KeyContext::Search,
+            Key::Enter,
+            Action::Editor(EditorAction::Submit),
+        );
+        // Backspace
+        editor.keymap.register(
+            KeyContext::Command,
+            Key::Backspace,
+            Action::Editor(EditorAction::Delete(Motion::Left)),
+        );
+        editor.keymap.register(
+            KeyContext::Search,
+            Key::Backspace,
+            Action::Editor(EditorAction::Delete(Motion::Left)),
+        );
+        editor.keymap.register(
+            KeyContext::Command,
+            Key::Delete,
+            Action::Editor(EditorAction::Delete(Motion::Right)),
+        );
+        editor.keymap.register(
+            KeyContext::Search,
+            Key::Delete,
+            Action::Editor(EditorAction::Delete(Motion::Right)),
+        );
+        editor.keymap.register(
+            KeyContext::Command,
+            Key::ArrowLeft,
+            Action::Editor(EditorAction::Move(Motion::Left)),
+        );
+        editor.keymap.register(
+            KeyContext::Search,
+            Key::ArrowLeft,
+            Action::Editor(EditorAction::Move(Motion::Left)),
+        );
+        editor.keymap.register(
+            KeyContext::Command,
+            Key::ArrowRight,
+            Action::Editor(EditorAction::Move(Motion::Right)),
+        );
+        editor.keymap.register(
+            KeyContext::Search,
+            Key::ArrowRight,
+            Action::Editor(EditorAction::Move(Motion::Right)),
+        );
+        editor.keymap.register(
+            KeyContext::Command,
+            Key::Home,
+            Action::Editor(EditorAction::Move(Motion::StartOfLine)),
+        );
+        editor.keymap.register(
+            KeyContext::Search,
+            Key::Home,
+            Action::Editor(EditorAction::Move(Motion::StartOfLine)),
+        );
+        editor.keymap.register(
+            KeyContext::Command,
+            Key::End,
+            Action::Editor(EditorAction::Move(Motion::EndOfLine)),
+        );
+        editor.keymap.register(
+            KeyContext::Search,
+            Key::End,
+            Action::Editor(EditorAction::Move(Motion::EndOfLine)),
+        );
+        editor.keymap.register(
+            KeyContext::Command,
+            Key::CtrlArrowLeft,
+            Action::Editor(EditorAction::Move(Motion::PreviousWord)),
+        );
+        editor.keymap.register(
+            KeyContext::Search,
+            Key::CtrlArrowLeft,
+            Action::Editor(EditorAction::Move(Motion::PreviousWord)),
+        );
+        editor.keymap.register(
+            KeyContext::Command,
+            Key::CtrlArrowRight,
+            Action::Editor(EditorAction::Move(Motion::NextWord)),
+        );
+        editor.keymap.register(
+            KeyContext::Search,
+            Key::CtrlArrowRight,
+            Action::Editor(EditorAction::Move(Motion::NextWord)),
+        );
+
+        // Operators
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('d'),
+            Action::Editor(EditorAction::Operator(crate::action::OperatorType::Delete)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('c'),
+            Action::Editor(EditorAction::Operator(crate::action::OperatorType::Change)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('y'),
+            Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
+        );
+
+        // Sequences
+        editor.keymap.register_sequence(
+            KeyContext::Normal,
+            vec![Key::Char('d'), Key::Char('d')],
+            Action::Editor(EditorAction::DeleteLine),
+        );
+        editor.keymap.register_sequence(
+            KeyContext::Normal,
+            vec![Key::Char('g'), Key::Char('g')],
+            Action::Editor(EditorAction::Move(Motion::StartOfFile)),
+        );
+        editor.keymap.register(
+            KeyContext::Normal,
+            Key::Char('G'),
+            Action::Editor(EditorAction::Move(Motion::EndOfFile)),
         );
 
         // Trigger background search cache warming for initial document
@@ -470,11 +891,6 @@ impl<T: TerminalBackend> Editor<T> {
     /// If file_path is Some, it opens that file (or creates a new document for
     /// it if not found). If file_path is None, it reloads the current active
     /// document.
-    /// Open a file in a new document or reload the current one
-    ///
-    /// If file_path is Some, it opens that file (or creates a new document for
-    /// it if not found). If file_path is None, it reloads the current active
-    /// document.
     pub fn open_file(&mut self, file_path: Option<String>, force: bool) -> Result<(), RiftError> {
         // Logic split: if path provided, check if open. If not open, async load.
         // If path provided and open, switch to it (via manager).
@@ -612,161 +1028,176 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.update_keypress(key_press);
 
                 use crate::component::EventResult;
-                use crate::keymap::KeyContext;
+                use crate::key::Key;
+                use crate::keymap::{KeyContext, MatchResult};
 
-                // 1. Resolve Context
-                let context = if let Some(modal) = &self.modal {
-                    modal.component.get_context()
-                } else {
-                    // Map mode to context (simplified)
-                    match self.current_mode {
-                        Mode::Normal => KeyContext::Global, // Using Global for Normal defaults
-                        Mode::Insert => KeyContext::Insert,
-                        _ => KeyContext::Global,
-                    }
-                };
-
-                // 2. Lookup Action in KeyMap
-                if let Some(action_ref) = self.keymap.get_action(context, key_press) {
-                    let action = action_ref.clone();
-                    // 3. Dispatch Action
-                    let handled = if let Some(modal) = &mut self.modal {
-                        match modal.component.handle_action(&action) {
-                            EventResult::Consumed => true,
-                            EventResult::Message(msg) => {
-                                if let Err(e) = self.handle_message(msg) {
-                                    self.state.handle_error(e);
-                                }
-                                true
-                            }
-                            EventResult::Ignored => false,
-                        }
-                    } else {
-                        self.handle_action(&action)
-                    };
-
-                    if handled {
-                        // If action handled, we still need to render
-                        self.update_state_and_render(
-                            key_press,
-                            crate::key_handler::KeyAction::Continue,
-                            crate::command::Command::Noop,
-                        )?;
-                        continue;
-                    }
+                // Handle special keys immediately
+                if let Key::Resize(cols, rows) = key_press {
+                    self.render_system.resize(rows as usize, cols as usize);
+                    self.update_and_render()?;
+                    continue;
                 }
 
-                // Fallback to legacy input handling
-                let modal_result = self
-                    .modal
-                    .as_mut()
-                    .map(|modal| modal.component.handle_input(key_press));
-
-                if let Some(result) = modal_result {
-                    use crate::component::EventResult;
-
-                    match result {
-                        EventResult::Consumed => continue,
-                        EventResult::Ignored => continue,
-                        EventResult::Message(msg) => {
-                            if let Err(e) = self.handle_message(msg) {
-                                self.state.handle_error(e);
-                            }
+                // Handle digits for count
+                // Only if pending_keys is empty (start of sequence)
+                // AND we are not in Insert mode (typing numbers)
+                if self.pending_keys.is_empty()
+                    && self.current_mode != Mode::Insert
+                    && self.current_mode != Mode::Command
+                    && self.current_mode != Mode::Search
+                {
+                    if let Key::Char(ch) = key_press {
+                        if ch.is_ascii_digit() && (ch != '0' || self.pending_count > 0) {
+                            let digit = ch.to_digit(10).unwrap() as usize;
+                            self.pending_count =
+                                self.pending_count.saturating_mul(10).saturating_add(digit);
+                            // Update UI? (Render pending count)
+                            self.update_state_and_render(
+                                key_press,
+                                crate::key_handler::KeyAction::Continue,
+                                crate::command::Command::Noop,
+                            )?;
                             continue;
                         }
                     }
                 }
 
-                // Process keypress through key handler
-                let current_mode = self.current_mode;
-                let action = KeyHandler::process_key(key_press, current_mode);
+                // Push key to pending buffer
+                self.pending_keys.push(key_press);
 
-                // Translate key to command (skip if action indicates special handling)
-                let cmd = match action {
-                    KeyAction::ExitInsertMode
-                    | KeyAction::ExitCommandMode
-                    | KeyAction::ToggleDebug
-                    | KeyAction::Resize(_, _) => {
-                        // Skip command translation for special actions
-                        Command::Noop
-                    }
-                    _ => self.dispatcher.translate_key(key_press),
-                };
-
-                // Execute command if it affects the buffer (and not in command
-                // mode)
-                let should_execute_buffer = current_mode != Mode::Command
-                    && current_mode != Mode::Search
-                    && !matches!(
-                        cmd,
-                        Command::EnterInsertMode
-                            | Command::EnterCommandMode
-                            | Command::EnterSearchMode
-                            | Command::AppendToCommandLine(_)
-                            | Command::DeleteFromCommandLine
-                            | Command::ExecuteCommandLine
-                            | Command::ExecuteSearch
-                            | Command::Quit
-                            | Command::Noop
-                            | Command::BufferNext
-                            | Command::BufferPrevious
-                    );
-
-                if should_execute_buffer {
-                    let viewport_height = self.render_system.viewport.visible_rows();
-
-                    // Wrap mutating commands (except Undo/Redo) in a transaction
-                    // Skip wrapping in Insert mode - it already has an open
-                    // transaction from mode entry
-                    let needs_transaction = cmd.is_mutating()
-                        && !matches!(cmd, Command::Undo | Command::Redo)
-                        && current_mode != Mode::Insert;
-
-                    let res = {
-                        let doc = self.document_manager.active_document_mut().unwrap();
-                        let expand_tabs = doc.options.expand_tabs;
-                        let tab_width = doc.options.tab_width;
-
-                        if needs_transaction {
-                            doc.begin_transaction(format!("{:?}", cmd));
+                // Input Processing Loop (allows backtracking)
+                loop {
+                    // 1. Resolve Context
+                    let context = if let Some(modal) = &self.modal {
+                        modal.component.get_context()
+                    } else {
+                        match self.current_mode {
+                            Mode::Normal => KeyContext::Normal,
+                            Mode::OperatorPending => KeyContext::Normal,
+                            Mode::Insert => KeyContext::Insert,
+                            Mode::Command => KeyContext::Command,
+                            Mode::Search => KeyContext::Search,
+                            _ => KeyContext::Global,
                         }
-
-                        let result = execute_command(
-                            cmd,
-                            doc,
-                            expand_tabs,
-                            tab_width,
-                            viewport_height,
-                            self.state.last_search_query.as_deref(),
-                        );
-
-                        if needs_transaction {
-                            doc.commit_transaction();
-                        }
-
-                        result
                     };
-                    if let Err(e) = res {
-                        self.state.handle_error(e);
-                    }
-                    if cmd.is_mutating() {
-                        // Mark document dirty is handled by Document methods now
-                        // Update search highlights if active
-                        self.update_search_highlights();
-                        // If buffer changed, re-parse syntax
-                        if let Some(doc_id) = self.document_manager.active_document_id() {
-                            self.spawn_syntax_parse_job(doc_id);
+
+                    // 2. Lookup Action in KeyMap
+                    let match_result = self.keymap.lookup(context, &self.pending_keys);
+
+                    match match_result {
+                        MatchResult::Exact(action) => {
+                            let action = action.clone();
+                            self.pending_keys.clear();
+
+                            // 3. Dispatch Action
+                            let _handled = if let Some(modal) = &mut self.modal {
+                                match modal.component.handle_action(&action) {
+                                    EventResult::Consumed => true,
+                                    EventResult::Message(msg) => {
+                                        if let Err(e) = self.handle_message(msg) {
+                                            self.state.handle_error(e);
+                                        }
+                                        true
+                                    }
+                                    EventResult::Ignored => false,
+                                }
+                            } else {
+                                self.handle_action(&action)
+                            };
+
+                            // Clear count after action execution (unless action didn't consume it?
+                            // Currently handle_action consumes via pending_count reads?
+                            // Dispatcher used to pass it. Now handle_action needs to read it.
+                            // I need to ensure handle_action uses pending_count. I'll fix that next step if needed.)
+                            self.pending_count = 0;
+
+                            self.update_state_and_render(
+                                key_press,
+                                crate::key_handler::KeyAction::Continue,
+                                crate::command::Command::Noop,
+                            )?;
+                            break;
+                        }
+                        MatchResult::Ambiguous(_action) => {
+                            // Valid prefix AND executable action (e.g. 'd'). Wait for more.
+                            // TODO: Implement timeout to auto-execute?
+                            self.update_state_and_render(
+                                key_press,
+                                crate::key_handler::KeyAction::Continue,
+                                crate::command::Command::Noop,
+                            )?;
+                            break;
+                        }
+                        MatchResult::Prefix => {
+                            // Wait for more keys.
+                            self.update_state_and_render(
+                                key_press,
+                                crate::key_handler::KeyAction::Continue,
+                                crate::command::Command::Noop,
+                            )?;
+                            break;
+                        }
+                        MatchResult::None => {
+                            // Invalid sequence. Backtrack?
+                            if self.pending_keys.len() > 1 {
+                                let last = self.pending_keys.pop().unwrap();
+                                // Check if prefix was ambiguous (valid action)
+                                match self.keymap.lookup(context, &self.pending_keys) {
+                                    MatchResult::Ambiguous(action) | MatchResult::Exact(action) => {
+                                        let action = action.clone();
+                                        self.pending_keys.clear();
+                                        // Execute prefix action
+                                        self.handle_action(&action);
+                                        self.pending_count = 0;
+
+                                        // Re-process last key
+                                        self.pending_keys.push(last);
+                                        continue;
+                                    }
+                                    _ => {
+                                        // Prefix wasn't executable. Drop everything?
+                                        self.pending_keys.clear();
+                                    }
+                                }
+                            } else {
+                                // Single key mismatch.
+                                // Fallback for Insert Mode typing
+                                if self.current_mode == Mode::Insert {
+                                    let k = self.pending_keys[0];
+                                    self.pending_keys.clear();
+                                    if let Key::Char(ch) = k {
+                                        self.handle_action(&Action::Editor(
+                                            EditorAction::InsertChar(ch),
+                                        ));
+                                    }
+                                    // Else ignore?
+                                } else if self.current_mode == Mode::Command
+                                    || self.current_mode == Mode::Search
+                                {
+                                    // Command Line typing handling (fallback)
+                                    // Since KeyMap might not have all chars registered
+                                    let k = self.pending_keys[0];
+                                    self.pending_keys.clear();
+                                    // Simpler: Map basic typing to InsertChar (which handles command/search logic)
+                                    if let Key::Char(ch) = k {
+                                        self.handle_action(&Action::Editor(
+                                            EditorAction::InsertChar(ch),
+                                        ));
+                                    }
+                                } else {
+                                    self.pending_keys.clear();
+                                }
+                            }
+
+                            self.update_state_and_render(
+                                key_press,
+                                crate::key_handler::KeyAction::Continue,
+                                crate::command::Command::Noop,
+                            )?;
+                            break;
                         }
                     }
                 }
-
-                // Handle quit command (special case - exits loop)
-                if cmd == Command::Quit {
-                    self.should_quit = true;
-                    continue;
-                }
-
-                self.update_state_and_render(key_press, action, cmd)?;
             } else {
                 // Idle processing
                 self.update_and_render()?;
@@ -821,7 +1252,17 @@ impl<T: TerminalBackend> Editor<T> {
 
         match editor_action {
             EditorAction::Move(motion) => {
-                let command = crate::command::Command::Move(*motion, 1);
+                if self.current_mode == Mode::OperatorPending {
+                    if let Some(op) = self.pending_operator {
+                        return self.execute_operator(op, *motion);
+                    }
+                }
+                let count = if self.pending_count > 0 {
+                    self.pending_count
+                } else {
+                    1
+                };
+                let command = crate::command::Command::Move(*motion, count);
                 // Execute immediately
                 self.handle_mode_management(command);
                 self.execute_buffer_command(command)
@@ -842,10 +1283,192 @@ impl<T: TerminalBackend> Editor<T> {
                 self.handle_mode_management(crate::command::Command::EnterSearchMode);
                 true
             }
+            EditorAction::EnterNormalMode => {
+                if self.current_mode == Mode::Insert {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        doc.commit_transaction();
+                    }
+                }
+                self.close_active_modal();
+                self.set_mode(Mode::Normal);
+                self.state.clear_command_line();
+                self.state.search_matches.clear();
+                self.pending_operator = None;
+                self.pending_keys.clear();
+                self.pending_count = 0;
+                true
+            }
             EditorAction::Undo => self.execute_buffer_command(crate::command::Command::Undo),
             EditorAction::Redo => self.execute_buffer_command(crate::command::Command::Redo),
             EditorAction::Quit => {
                 self.should_quit = true;
+                true
+            }
+            EditorAction::Submit => {
+                if self.current_mode == Mode::Command {
+                    self.handle_mode_management(crate::command::Command::ExecuteCommandLine);
+                    true
+                } else if self.current_mode == Mode::Search {
+                    self.handle_mode_management(crate::command::Command::ExecuteSearch);
+                    true
+                } else {
+                    false
+                }
+            }
+            EditorAction::Delete(motion) => {
+                if self.current_mode == Mode::Command || self.current_mode == Mode::Search {
+                    // Assuming left motion is backspace
+                    if *motion == crate::action::Motion::Left {
+                        self.handle_mode_management(crate::command::Command::DeleteFromCommandLine);
+                        return true;
+                    }
+                }
+                let command = crate::command::Command::Delete(*motion, 1);
+                self.execute_buffer_command(command)
+            }
+            EditorAction::DeleteLine => {
+                let command = crate::command::Command::DeleteLine;
+                self.execute_buffer_command(command)
+            }
+            EditorAction::InsertChar(c) => {
+                if self.current_mode == Mode::Command || self.current_mode == Mode::Search {
+                    self.handle_mode_management(crate::command::Command::AppendToCommandLine(*c));
+                    return true;
+                }
+                let command = crate::command::Command::InsertChar(*c);
+                self.execute_buffer_command(command)
+            }
+            EditorAction::BufferNext => {
+                let command = crate::command::Command::BufferNext;
+                self.execute_buffer_command(command)
+            }
+            EditorAction::BufferPrevious => {
+                let command = crate::command::Command::BufferPrevious;
+                self.execute_buffer_command(command)
+            }
+            EditorAction::ToggleDebug => {
+                self.state.toggle_debug();
+                true
+            }
+            EditorAction::Redraw => {
+                if let Err(e) = self.force_full_redraw() {
+                    self.state.handle_error(e);
+                }
+                true
+            }
+
+            EditorAction::Save => {
+                self.handle_execution_result(crate::command_line::commands::ExecutionResult::Write);
+                true
+            }
+            EditorAction::SaveAndQuit => {
+                self.handle_execution_result(
+                    crate::command_line::commands::ExecutionResult::WriteAndQuit,
+                );
+                true
+            }
+            EditorAction::OpenExplorer => {
+                let path = self
+                    .document_manager
+                    .active_document()
+                    .and_then(|d| d.path())
+                    .map(|p| {
+                        if p.is_dir() {
+                            p.to_path_buf()
+                        } else {
+                            p.parent().unwrap_or(p).to_path_buf()
+                        }
+                    })
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+                let mut explorer = crate::file_explorer::FileExplorer::new(path);
+                explorer = explorer
+                    .with_colors(self.state.settings.editor_fg, self.state.settings.editor_bg);
+                let job = explorer.create_list_job();
+
+                self.handle_execution_result(
+                    crate::command_line::commands::ExecutionResult::OpenComponent {
+                        component: Box::new(explorer),
+                        initial_job: Some(job),
+                        initial_message: None,
+                    },
+                );
+                true
+            }
+            EditorAction::OpenUndoTree => {
+                if let Some(doc) = self.document_manager.active_document() {
+                    let (component, initial_message) =
+                        crate::undotree_view::component::create_undo_tree_component(
+                            &doc.history,
+                            &self.state.settings,
+                        );
+                    self.handle_execution_result(
+                        crate::command_line::commands::ExecutionResult::OpenComponent {
+                            component,
+                            initial_job: None,
+                            initial_message,
+                        },
+                    );
+                }
+                true
+            }
+            EditorAction::ShowBufferList => {
+                self.handle_execution_result(
+                    crate::command_line::commands::ExecutionResult::BufferList,
+                );
+                true
+            }
+            EditorAction::ClearHighlights => {
+                self.state.search_matches.clear();
+                self.force_full_redraw().ok();
+                true
+            }
+            EditorAction::ClearNotifications => {
+                self.handle_execution_result(
+                    crate::command_line::commands::ExecutionResult::NotificationClear { bangs: 1 },
+                );
+                true
+            }
+            EditorAction::ClearLastNotification => {
+                self.handle_execution_result(
+                    crate::command_line::commands::ExecutionResult::NotificationClear { bangs: 0 },
+                );
+                true
+            }
+            EditorAction::Checkpoint => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    doc.checkpoint();
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        "Checkpoint created".to_string(),
+                    );
+                }
+                true
+            }
+            EditorAction::RunCommand(cmd_str) => {
+                let parsed = self.command_parser.parse(cmd_str);
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    let result = crate::command_line::commands::CommandExecutor::execute(
+                        parsed,
+                        &mut self.state,
+                        doc,
+                        &self.settings_registry,
+                        &self.document_settings_registry,
+                    );
+                    self.handle_execution_result(result);
+                }
+                true
+            }
+            EditorAction::Operator(op) => {
+                if self.current_mode == Mode::OperatorPending {
+                    if let Some(pending) = self.pending_operator {
+                        if pending == *op {
+                            return self.execute_operator_linewise(pending);
+                        }
+                    }
+                }
+                self.pending_operator = Some(*op);
+                self.set_mode(Mode::OperatorPending);
                 true
             }
             EditorAction::Command(cmd) => {
@@ -858,7 +1481,6 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Helper to execute buffer commands
     fn execute_buffer_command(&mut self, command: crate::command::Command) -> bool {
-        // Copied logic from run loop - ideally should be shared
         let current_mode = self.current_mode;
         // Simplified check for now
         if current_mode == Mode::Normal || current_mode == Mode::Insert {
@@ -967,28 +1589,12 @@ impl<T: TerminalBackend> Editor<T> {
             Command::Move(crate::action::Motion::PreviousWord, _)
                 if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
             {
-                self.state.error_manager.notifications_mut().info(format!(
-                    "Moving word left. Cursor before: {}",
-                    self.state.command_line_cursor
-                ));
                 self.state.move_command_line_word_left();
-                self.state.error_manager.notifications_mut().info(format!(
-                    "Moved word left. Cursor after: {}",
-                    self.state.command_line_cursor
-                ));
             }
             Command::Move(crate::action::Motion::NextWord, _)
                 if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
             {
-                self.state.error_manager.notifications_mut().info(format!(
-                    "Moving word right. Cursor before: {}",
-                    self.state.command_line_cursor
-                ));
                 self.state.move_command_line_word_right();
-                self.state.error_manager.notifications_mut().info(format!(
-                    "Moved word right. Cursor after: {}",
-                    self.state.command_line_cursor
-                ));
             }
             Command::DeleteForward
                 if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
@@ -1077,8 +1683,10 @@ impl<T: TerminalBackend> Editor<T> {
             render_system,
             state,
             current_mode,
-            dispatcher,
+            dispatcher: _, // Ignore dispatcher
             term,
+            pending_keys,
+            pending_count,
             ..
         } = self;
 
@@ -1115,8 +1723,8 @@ impl<T: TerminalBackend> Editor<T> {
             buf: &doc.buffer,
             state,
             current_mode: *current_mode,
-            pending_key: dispatcher.pending_key(),
-            pending_count: dispatcher.pending_count(),
+            pending_key: pending_keys.last().copied(),
+            pending_count: *pending_count,
             needs_clear,
             tab_width: doc.options.tab_width,
             highlights: highlights.as_deref(),
@@ -1144,7 +1752,13 @@ impl<T: TerminalBackend> Editor<T> {
     /// Set editor mode and update dispatcher
     fn set_mode(&mut self, mode: Mode) {
         self.current_mode = mode;
-        self.dispatcher.set_mode(mode);
+        // self.dispatcher.set_mode(mode);
+        // Using internal state now
+
+        // Clear operator if leaving OperatorPending (and not entering it)
+        if mode != Mode::OperatorPending {
+            self.pending_operator = None;
+        }
 
         match mode {
             Mode::Command => {
@@ -1159,6 +1773,27 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub fn term_mut(&mut self) -> &mut T {
         &mut self.term
+    }
+
+    fn execute_operator(&mut self, op: crate::action::OperatorType, motion: Motion) -> bool {
+        let command = match op {
+            crate::action::OperatorType::Delete => crate::command::Command::Delete(motion, 1),
+            // For now map Change/Yank to Noop or Implement later
+            _ => crate::command::Command::Noop,
+        };
+        self.set_mode(Mode::Normal);
+        self.pending_operator = None;
+        self.execute_buffer_command(command)
+    }
+
+    fn execute_operator_linewise(&mut self, op: crate::action::OperatorType) -> bool {
+        let command = match op {
+            crate::action::OperatorType::Delete => crate::command::Command::DeleteLine,
+            _ => crate::command::Command::Noop,
+        };
+        self.set_mode(Mode::Normal);
+        self.pending_operator = None;
+        self.execute_buffer_command(command)
     }
 
     // Handle execution results from command_line commands

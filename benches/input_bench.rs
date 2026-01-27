@@ -1,4 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use monster_rift::action::{Action, EditorAction, Motion};
 use monster_rift::key::Key;
 use monster_rift::keymap::{KeyContext, KeyMap};
 use std::hint::black_box;
@@ -12,7 +13,7 @@ fn keymap_lookup(c: &mut Criterion) {
         for i in 0..100 {
             // Using char keys for simplicity
             let c = std::char::from_u32(32 + i as u32).unwrap_or('a');
-            map.register(KeyContext::Global, Key::Char(c), &format!("action_{}", i));
+            map.register(KeyContext::Global, Key::Char(c), Action::Noop);
         }
 
         b.iter(|| {
@@ -23,7 +24,11 @@ fn keymap_lookup(c: &mut Criterion) {
     group.bench_function("lookup_fallback", |b| {
         let mut map = KeyMap::new();
         // Register only global
-        map.register(KeyContext::Global, Key::Char('j'), "move_down");
+        map.register(
+            KeyContext::Global,
+            Key::Char('j'),
+            Action::Editor(EditorAction::Move(Motion::Down)),
+        );
 
         // Lookup in 'Normal' context, expecting fallback to 'Global'
         b.iter(|| {
