@@ -923,6 +923,7 @@ impl<T: TerminalBackend> Editor<T> {
             let doc = self.document_manager.active_document_mut().unwrap();
             let expand_tabs = doc.options.expand_tabs;
             let tab_width = doc.options.tab_width;
+            let is_mutating = command.is_mutating();
 
             let _ = execute_command(
                 command,
@@ -932,9 +933,48 @@ impl<T: TerminalBackend> Editor<T> {
                 viewport_height,
                 self.state.last_search_query.as_deref(),
             );
+
+            // Synchronous incremental parse for mutating commands
+            // Tree-sitter incremental parsing is fast (~1ms for small edits)
+            if is_mutating {
+                self.do_incremental_syntax_parse();
+            }
+
             return true;
         }
         false
+    }
+
+    /// Perform synchronous incremental syntax parse for the visible viewport.
+    /// This is fast because tree-sitter reuses unchanged subtrees from the old tree.
+    fn do_incremental_syntax_parse(&mut self) {
+        let viewport = &self.render_system.viewport;
+        let top_line = viewport.top_line();
+        let visible_rows = viewport.visible_rows();
+        let end_line = top_line + visible_rows + 1; // +1 for buffer
+
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            if doc.syntax.is_none() {
+                return;
+            }
+
+            // Calculate visible byte range
+            let start_char = doc.buffer.line_index.get_start(top_line).unwrap_or(0);
+            let end_char = if end_line < doc.buffer.get_total_lines() {
+                doc.buffer.line_index.get_start(end_line).unwrap_or(doc.buffer.len())
+            } else {
+                doc.buffer.len()
+            };
+            let start_byte = doc.buffer.char_to_byte(start_char);
+            let end_byte = doc.buffer.char_to_byte(end_char);
+
+            // Get source bytes for parsing
+            let source = doc.buffer.to_logical_bytes();
+
+            if let Some(syntax) = &mut doc.syntax {
+                syntax.incremental_parse(&source, start_byte..end_byte);
+            }
+        }
     }
 
     /// Switch between modes based on command, and handle commandline input

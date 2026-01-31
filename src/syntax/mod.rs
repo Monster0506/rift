@@ -2,7 +2,8 @@ use crate::error::RiftError;
 use crate::job_manager::jobs::syntax::SyntaxParseResult;
 use crate::syntax::loader::LoadedLanguage;
 use std::sync::Arc;
-use tree_sitter::{InputEdit, Query, Tree};
+use streaming_iterator::StreamingIterator;
+use tree_sitter::{InputEdit, Parser, Query, QueryCursor, Tree};
 
 pub mod interval_tree;
 pub mod loader;
@@ -54,6 +55,48 @@ impl Syntax {
     pub fn update_tree(&mut self, edit: &InputEdit) {
         if let Some(tree) = &mut self.tree {
             tree.edit(edit);
+        }
+    }
+
+    /// Perform synchronous incremental parse and update highlights for visible range.
+    /// This is fast because tree-sitter reuses unchanged subtrees.
+    /// Returns true if parsing succeeded.
+    pub fn incremental_parse(&mut self, source: &[u8], visible_range: std::ops::Range<usize>) -> bool {
+        // Create parser
+        let mut parser = Parser::new();
+        if parser.set_language(&self.language).is_err() {
+            return false;
+        }
+
+        // Incremental parse - pass old tree for efficiency
+        let new_tree = parser.parse(source, self.tree.as_ref());
+
+        if let Some(tree) = new_tree {
+            // Query highlights only for visible range
+            if let Some(query) = &self.highlights_query {
+                let root_node = tree.root_node();
+                let mut cursor = QueryCursor::new();
+
+                // Only query the visible byte range
+                cursor.set_byte_range(visible_range.clone());
+
+                let mut highlights = Vec::new();
+                let mut matches = cursor.matches(query, root_node, source);
+
+                while let Some(m) = matches.next() {
+                    for capture in m.captures {
+                        let range = capture.node.byte_range();
+                        highlights.push((range, capture.index));
+                    }
+                }
+
+                self.cached_highlights = IntervalTree::new(highlights);
+            }
+
+            self.tree = Some(tree);
+            true
+        } else {
+            false
         }
     }
 
