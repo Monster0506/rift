@@ -174,11 +174,7 @@ pub fn execute_command(
                 };
 
                 // Get character positions for the line range
-                let delete_start = doc
-                    .buffer
-                    .line_index
-                    .get_start(first_line)
-                    .unwrap_or(0);
+                let delete_start = doc.buffer.line_index.get_start(first_line).unwrap_or(0);
                 let delete_end = if last_line + 1 < doc.buffer.get_total_lines() {
                     // Include up to start of next line (to delete the newline)
                     doc.buffer

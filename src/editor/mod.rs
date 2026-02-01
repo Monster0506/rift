@@ -975,7 +975,10 @@ impl<T: TerminalBackend> Editor<T> {
             // Calculate visible byte range
             let start_char = doc.buffer.line_index.get_start(top_line).unwrap_or(0);
             let end_char = if end_line < doc.buffer.get_total_lines() {
-                doc.buffer.line_index.get_start(end_line).unwrap_or(doc.buffer.len())
+                doc.buffer
+                    .line_index
+                    .get_start(end_line)
+                    .unwrap_or(doc.buffer.len())
             } else {
                 doc.buffer.len()
             };
