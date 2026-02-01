@@ -61,7 +61,11 @@ impl Syntax {
     /// Perform synchronous incremental parse and update highlights for visible range.
     /// This is fast because tree-sitter reuses unchanged subtrees.
     /// Returns true if parsing succeeded.
-    pub fn incremental_parse(&mut self, source: &[u8], visible_range: std::ops::Range<usize>) -> bool {
+    pub fn incremental_parse(
+        &mut self,
+        source: &[u8],
+        visible_range: std::ops::Range<usize>,
+    ) -> bool {
         // Create parser
         let mut parser = Parser::new();
         if parser.set_language(&self.language).is_err() {
