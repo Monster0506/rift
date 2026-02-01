@@ -1,5 +1,6 @@
 use super::interval_tree::IntervalTree;
 use crate::buffer::TextBuffer;
+use super::interval_tree::IntervalTree;
 
 #[test]
 fn test_text_provider_chunks() {
