@@ -118,6 +118,10 @@ pub enum EditorAction {
     /// Generic wrapper for other commands
     Command(Box<Command>),
     Submit,
+    /// Navigate to previous (older) history entry
+    HistoryUp,
+    /// Navigate to next (newer) history entry
+    HistoryDown,
 }
 
 /// Undotree specific actions

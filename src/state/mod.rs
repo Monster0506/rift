@@ -186,6 +186,10 @@ pub struct State {
     pub search_matches: Vec<SearchMatch>,
     /// Overlay content for Mode::Overlay (left/right panes)
     pub overlay_content: Option<OverlayContent>,
+    /// Command history (for : commands)
+    pub command_history: crate::history::command::CommandHistory,
+    /// Search history (for / searches)
+    pub search_history: crate::history::command::CommandHistory,
 }
 
 /// Content for split-view overlay (used in Mode::Overlay)
@@ -265,6 +269,8 @@ impl State {
             search_direction: SearchDirection::Forward,
             search_matches: Vec::new(),
             overlay_content: None,
+            command_history: crate::history::command::CommandHistory::default(),
+            search_history: crate::history::command::CommandHistory::default(),
         }
     }
 
@@ -292,6 +298,8 @@ impl State {
             search_direction: SearchDirection::Forward,
             search_matches: Vec::new(),
             overlay_content: None,
+            command_history: crate::history::command::CommandHistory::default(),
+            search_history: crate::history::command::CommandHistory::default(),
         }
     }
 

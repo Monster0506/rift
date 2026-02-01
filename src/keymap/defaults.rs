@@ -559,6 +559,47 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::Ctrl(b'w'),
         Action::Editor(EditorAction::Delete(Motion::PreviousWord)),
     );
+    // History navigation
+    keymap.register(
+        KeyContext::Command,
+        Key::ArrowUp,
+        Action::Editor(EditorAction::HistoryUp),
+    );
+    keymap.register(
+        KeyContext::Search,
+        Key::ArrowUp,
+        Action::Editor(EditorAction::HistoryUp),
+    );
+    keymap.register(
+        KeyContext::Command,
+        Key::ArrowDown,
+        Action::Editor(EditorAction::HistoryDown),
+    );
+    keymap.register(
+        KeyContext::Search,
+        Key::ArrowDown,
+        Action::Editor(EditorAction::HistoryDown),
+    );
+    keymap.register(
+        KeyContext::Command,
+        Key::Ctrl(b'p'),
+        Action::Editor(EditorAction::HistoryUp),
+    );
+    keymap.register(
+        KeyContext::Search,
+        Key::Ctrl(b'p'),
+        Action::Editor(EditorAction::HistoryUp),
+    );
+    keymap.register(
+        KeyContext::Command,
+        Key::Ctrl(b'n'),
+        Action::Editor(EditorAction::HistoryDown),
+    );
+    keymap.register(
+        KeyContext::Search,
+        Key::Ctrl(b'n'),
+        Action::Editor(EditorAction::HistoryDown),
+    );
 
     // Operators
     keymap.register(

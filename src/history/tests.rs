@@ -1,6 +1,138 @@
 use super::*;
 
 // =============================================================================
+// CommandHistory Tests
+// =============================================================================
+
+#[test]
+fn test_command_history_add_and_len() {
+    let mut history = command::CommandHistory::new(10);
+    assert!(history.is_empty());
+
+    history.add("first".to_string());
+    assert_eq!(history.len(), 1);
+
+    history.add("second".to_string());
+    assert_eq!(history.len(), 2);
+}
+
+#[test]
+fn test_command_history_skip_empty() {
+    let mut history = command::CommandHistory::new(10);
+    history.add("".to_string());
+    assert!(history.is_empty());
+}
+
+#[test]
+fn test_command_history_skip_consecutive_duplicates() {
+    let mut history = command::CommandHistory::new(10);
+    history.add("cmd".to_string());
+    history.add("cmd".to_string());
+    assert_eq!(history.len(), 1);
+
+    history.add("other".to_string());
+    history.add("cmd".to_string()); // Not consecutive
+    assert_eq!(history.len(), 3);
+}
+
+#[test]
+fn test_command_history_max_size() {
+    let mut history = command::CommandHistory::new(3);
+    history.add("a".to_string());
+    history.add("b".to_string());
+    history.add("c".to_string());
+    history.add("d".to_string());
+
+    assert_eq!(history.len(), 3);
+    // "a" should be removed
+    history.start_navigation("".to_string());
+    assert_eq!(history.prev(), Some("d"));
+    assert_eq!(history.prev(), Some("c"));
+    assert_eq!(history.prev(), Some("b"));
+    assert_eq!(history.prev(), None);
+}
+
+#[test]
+fn test_command_history_basic_navigation() {
+    let mut history = command::CommandHistory::new(10);
+    history.add("first".to_string());
+    history.add("second".to_string());
+    history.add("third".to_string());
+
+    // Navigate with empty prefix (matches all)
+    history.start_navigation("".to_string());
+
+    assert_eq!(history.prev(), Some("third"));
+    assert_eq!(history.prev(), Some("second"));
+    assert_eq!(history.prev(), Some("first"));
+    assert_eq!(history.prev(), None); // At oldest
+
+    assert_eq!(history.next(), Some("second"));
+    assert_eq!(history.next(), Some("third"));
+    assert_eq!(history.next(), Some("")); // Back to original
+    assert_eq!(history.next(), None); // Already at present
+}
+
+#[test]
+fn test_command_history_prefix_matching() {
+    let mut history = command::CommandHistory::new(10);
+    history.add("open file1".to_string());
+    history.add("quit".to_string());
+    history.add("open file2".to_string());
+
+    // Navigate with "o" prefix
+    history.start_navigation("o".to_string());
+
+    assert_eq!(history.prev(), Some("open file2"));
+    assert_eq!(history.prev(), Some("open file1"));
+    assert_eq!(history.prev(), None); // No more matches
+
+    assert_eq!(history.next(), Some("open file2"));
+    assert_eq!(history.next(), Some("o")); // Back to original
+}
+
+#[test]
+fn test_command_history_no_match_prefix() {
+    let mut history = command::CommandHistory::new(10);
+    history.add("open file".to_string());
+    history.add("quit".to_string());
+
+    history.start_navigation("z".to_string());
+    assert_eq!(history.prev(), None); // No matches for "z"
+}
+
+#[test]
+fn test_command_history_reset_navigation() {
+    let mut history = command::CommandHistory::new(10);
+    history.add("cmd1".to_string());
+    history.add("cmd2".to_string());
+
+    history.start_navigation("".to_string());
+    history.prev();
+
+    history.reset_navigation();
+
+    // After reset, navigation starts fresh
+    history.start_navigation("new".to_string());
+    assert_eq!(history.prev(), None); // No "new" prefix matches
+}
+
+#[test]
+fn test_command_history_add_resets_navigation() {
+    let mut history = command::CommandHistory::new(10);
+    history.add("cmd1".to_string());
+
+    history.start_navigation("".to_string());
+    history.prev();
+
+    history.add("cmd2".to_string());
+
+    // Navigation should be reset
+    history.start_navigation("".to_string());
+    assert_eq!(history.prev(), Some("cmd2"));
+}
+
+// =============================================================================
 // Position and Range Tests
 // =============================================================================
 
