@@ -734,6 +734,9 @@ impl<T: TerminalBackend> Editor<T> {
                         doc.commit_transaction();
                     }
                 }
+                // Reset history navigation when exiting command/search mode
+                self.state.command_history.reset_navigation();
+                self.state.search_history.reset_navigation();
                 self.close_active_modal();
                 self.set_mode(Mode::Normal);
                 self.state.clear_command_line();
@@ -925,6 +928,52 @@ impl<T: TerminalBackend> Editor<T> {
                 self.handle_mode_management(command);
                 self.execute_buffer_command(command)
             }
+            EditorAction::HistoryUp => {
+                self.navigate_history_up();
+                true
+            }
+            EditorAction::HistoryDown => {
+                self.navigate_history_down();
+                true
+            }
+        }
+    }
+
+    /// Navigate to previous (older) history entry
+    fn navigate_history_up(&mut self) {
+        let current_line = self.state.command_line.clone();
+        let history = if self.current_mode == Mode::Command {
+            &mut self.state.command_history
+        } else if self.current_mode == Mode::Search {
+            &mut self.state.search_history
+        } else {
+            return;
+        };
+
+        history.start_navigation(current_line);
+        if let Some(entry) = history.prev() {
+            let entry = entry.to_string();
+            self.state.command_line = entry.clone();
+            // Clamp cursor to new line length
+            self.state.command_line_cursor = self.state.command_line_cursor.min(entry.len());
+        }
+    }
+
+    /// Navigate to next (newer) history entry
+    fn navigate_history_down(&mut self) {
+        let history = if self.current_mode == Mode::Command {
+            &mut self.state.command_history
+        } else if self.current_mode == Mode::Search {
+            &mut self.state.search_history
+        } else {
+            return;
+        };
+
+        if let Some(entry) = history.next() {
+            let entry = entry.to_string();
+            self.state.command_line = entry.clone();
+            // Clamp cursor to new line length
+            self.state.command_line_cursor = self.state.command_line_cursor.min(entry.len());
         }
     }
 
@@ -1013,21 +1062,26 @@ impl<T: TerminalBackend> Editor<T> {
             }
             Command::EnterCommandMode => {
                 self.state.clear_command_line();
+                self.state.command_history.reset_navigation();
                 self.set_mode(Mode::Command);
             }
             Command::EnterSearchMode => {
                 self.state.clear_command_line();
+                self.state.search_history.reset_navigation();
                 self.set_mode(Mode::Search);
             }
             Command::ExecuteSearch => {
                 let query = self.state.command_line.clone();
                 if !query.is_empty() {
+                    // Add to search history before executing
+                    self.state.search_history.add(query.clone());
                     self.state.last_search_query = Some(query.clone());
                     if self.perform_search(&query, SearchDirection::Forward, false) {
                         self.state.clear_command_line();
                         self.set_mode(Mode::Normal);
                     }
                 } else {
+                    self.state.search_history.reset_navigation();
                     self.state.clear_command_line();
                     self.set_mode(Mode::Normal);
                 }
@@ -1036,6 +1090,8 @@ impl<T: TerminalBackend> Editor<T> {
             Command::ExecuteCommandLine => {
                 // Parse and execute the command
                 let command_line = self.state.command_line.clone();
+                // Add to command history before executing
+                self.state.command_history.add(command_line.clone());
                 let parsed_command = self.command_parser.parse(&command_line);
                 let execution_result = CommandExecutor::execute(
                     parsed_command.clone(),

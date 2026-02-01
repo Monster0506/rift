@@ -6,6 +6,8 @@
 //! - Branches preserve alternative edit histories
 //! - Checkpoints enable efficient navigation to distant states
 
+pub mod command;
+
 use crate::character::Character;
 use std::collections::HashMap;
 use std::time::SystemTime;
