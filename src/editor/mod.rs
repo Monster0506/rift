@@ -536,11 +536,11 @@ impl<T: TerminalBackend> Editor<T> {
                                 self.handle_action(&action)
                             };
 
-                            // Clear count after action execution (unless action didn't consume it?
-                            // Currently handle_action consumes via pending_count reads?
-                            // Dispatcher used to pass it. Now handle_action needs to read it.
-                            // I need to ensure handle_action uses pending_count. I'll fix that next step if needed.)
-                            self.pending_count = 0;
+                            // Don't clear count if we just entered OperatorPending mode
+                            // (count may be used with the subsequent motion)
+                            if self.current_mode != Mode::OperatorPending {
+                                self.pending_count = 0;
+                            }
 
                             self.update_state_and_render(
                                 key_press,
@@ -549,9 +549,23 @@ impl<T: TerminalBackend> Editor<T> {
                             )?;
                             break;
                         }
-                        MatchResult::Ambiguous(_action) => {
-                            // Valid prefix AND executable action (e.g. 'd'). Wait for more.
-                            // TODO: Implement timeout to auto-execute?
+                        MatchResult::Ambiguous(action) => {
+                            // Valid prefix AND executable action (e.g. 'd').
+                            // For operators, execute immediately to enter OperatorPending mode
+                            // so that subsequent digits are handled as counts.
+                            if let Action::Editor(EditorAction::Operator(_)) = action {
+                                let action = action.clone();
+                                self.pending_keys.clear();
+                                self.handle_action(&action);
+                                // Don't clear pending_count for operators
+                                self.update_state_and_render(
+                                    key_press,
+                                    crate::key_handler::KeyAction::Continue,
+                                    crate::command::Command::Noop,
+                                )?;
+                                break;
+                            }
+                            // For non-operators, wait for more keys
                             self.update_state_and_render(
                                 key_press,
                                 crate::key_handler::KeyAction::Continue,
@@ -1259,13 +1273,19 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn execute_operator(&mut self, op: crate::action::OperatorType, motion: Motion) -> bool {
+        let count = if self.pending_count > 0 {
+            self.pending_count
+        } else {
+            1
+        };
         let command = match op {
-            crate::action::OperatorType::Delete => crate::command::Command::Delete(motion, 1),
+            crate::action::OperatorType::Delete => crate::command::Command::Delete(motion, count),
             // For now map Change/Yank to Noop or Implement later
             _ => crate::command::Command::Noop,
         };
         self.set_mode(Mode::Normal);
         self.pending_operator = None;
+        self.pending_count = 0;
         self.execute_buffer_command(command)
     }
 
