@@ -341,3 +341,138 @@ fn test_undo_then_new_insert_creates_branch() {
     doc.redo();
     assert_eq!(doc.buffer.to_string(), "AC");
 }
+
+#[test]
+fn test_execute_delete_16_lines_down() {
+    let mut doc = create_doc();
+
+    // Create 20 lines
+    for i in 0..20 {
+        doc.buffer.insert_str(&format!("line {}\n", i)).unwrap();
+    }
+    doc.buffer.move_to_start();
+
+    // Verify we have 20 lines (plus potential trailing content)
+    let initial_text = doc.buffer.to_string();
+    let initial_line_count = initial_text.lines().count();
+    assert_eq!(initial_line_count, 20);
+
+    // Execute d16j (delete with motion Down, count 16)
+    // This should delete from line 0 down to line 16 (17 lines total: current + 16 below)
+    execute_command(
+        Command::Delete(Motion::Down, 16),
+        &mut doc,
+        false,
+        8,
+        24,
+        None,
+    )
+    .unwrap();
+
+    let after_delete = doc.buffer.to_string();
+    let remaining_lines: Vec<&str> = after_delete.lines().collect();
+
+    // Should have lines 17, 18, 19 remaining (3 lines)
+    assert_eq!(remaining_lines.len(), 3, "Expected 3 lines remaining, got: {:?}", remaining_lines);
+    assert_eq!(remaining_lines[0], "line 17");
+    assert_eq!(remaining_lines[1], "line 18");
+    assert_eq!(remaining_lines[2], "line 19");
+
+    // Single undo should restore all 17 deleted lines
+    doc.undo();
+    let after_undo = doc.buffer.to_string();
+    let restored_line_count = after_undo.lines().count();
+    assert_eq!(restored_line_count, 20, "Undo should restore all 20 lines");
+}
+
+#[test]
+fn test_execute_delete_5_lines_up() {
+    let mut doc = create_doc();
+
+    // Create 10 lines
+    for i in 0..10 {
+        doc.buffer.insert_str(&format!("line {}\n", i)).unwrap();
+    }
+
+    // Position cursor on line 7
+    doc.buffer.move_to_start();
+    for _ in 0..7 {
+        doc.buffer.move_down();
+    }
+
+    let current_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+    assert_eq!(current_line, 7, "Should be on line 7");
+
+    // Execute d5k (delete with motion Up, count 5)
+    // This should delete from line 2 up to line 7 (6 lines total: current + 5 above)
+    execute_command(
+        Command::Delete(Motion::Up, 5),
+        &mut doc,
+        false,
+        8,
+        24,
+        None,
+    )
+    .unwrap();
+
+    let after_delete = doc.buffer.to_string();
+    let remaining_lines: Vec<&str> = after_delete.lines().collect();
+
+    // Should have lines 0, 1, 8, 9 remaining (4 lines)
+    // Lines 2-7 should be deleted (6 lines)
+    eprintln!("Remaining lines: {:?}", remaining_lines);
+    assert_eq!(remaining_lines.len(), 4, "Expected 4 lines remaining, got: {:?}", remaining_lines);
+    assert_eq!(remaining_lines[0], "line 0");
+    assert_eq!(remaining_lines[1], "line 1");
+    assert_eq!(remaining_lines[2], "line 8");
+    assert_eq!(remaining_lines[3], "line 9");
+}
+
+#[test]
+fn test_execute_delete_5_lines_up_cursor_mid_line() {
+    let mut doc = create_doc();
+
+    // Create 10 lines with longer content
+    for i in 0..10 {
+        doc.buffer.insert_str(&format!("line {} with some extra text\n", i)).unwrap();
+    }
+
+    // Position cursor on line 7, column 10 (middle of line)
+    doc.buffer.move_to_start();
+    for _ in 0..7 {
+        doc.buffer.move_down();
+    }
+    // Move right to column 10
+    for _ in 0..10 {
+        doc.buffer.move_right();
+    }
+
+    let current_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+    let line_start = doc.buffer.line_index.get_start(current_line).unwrap_or(0);
+    let col = doc.buffer.cursor() - line_start;
+    eprintln!("Starting at line {}, column {}", current_line, col);
+    assert_eq!(current_line, 7, "Should be on line 7");
+    assert_eq!(col, 10, "Should be at column 10");
+
+    // Execute d5k (delete with motion Up, count 5)
+    execute_command(
+        Command::Delete(Motion::Up, 5),
+        &mut doc,
+        false,
+        8,
+        24,
+        None,
+    )
+    .unwrap();
+
+    let after_delete = doc.buffer.to_string();
+    let remaining_lines: Vec<&str> = after_delete.lines().collect();
+
+    eprintln!("Remaining lines: {:?}", remaining_lines);
+    // Should have lines 0, 1, 8, 9 remaining (4 lines)
+    assert_eq!(remaining_lines.len(), 4, "Expected 4 lines remaining, got: {:?}", remaining_lines);
+    assert_eq!(remaining_lines[0], "line 0 with some extra text");
+    assert_eq!(remaining_lines[1], "line 1 with some extra text");
+    assert_eq!(remaining_lines[2], "line 8 with some extra text");
+    assert_eq!(remaining_lines[3], "line 9 with some extra text");
+}
