@@ -146,6 +146,19 @@ impl Viewport {
         self.visible_rows = rows;
         self.visible_cols = cols;
     }
+
+    /// Set the scroll position (used when restoring view state)
+    pub fn set_scroll(&mut self, top_line: usize, left_col: usize) {
+        self.top_line = top_line;
+        self.left_col = left_col;
+        // Mark as needing update to ensure proper rendering
+        self.first_update = true;
+    }
+
+    /// Get current scroll position as (top_line, left_col)
+    pub fn get_scroll(&self) -> (usize, usize) {
+        (self.top_line, self.left_col)
+    }
 }
 
 #[cfg(test)]

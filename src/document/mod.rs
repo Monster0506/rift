@@ -37,6 +37,16 @@ impl LineEnding {
     }
 }
 
+/// Per-document view state (scroll position, etc.)
+/// This state is preserved when switching between documents
+#[derive(Debug, Clone, Default)]
+pub struct ViewState {
+    /// Top line of the viewport when this document was last active
+    pub top_line: usize,
+    /// Left column offset for horizontal scrolling
+    pub left_col: usize,
+}
+
 /// Document combining buffer and file metadata
 pub struct Document {
     /// Unique document identifier
@@ -59,6 +69,8 @@ pub struct Document {
     pub history: UndoTree,
     /// Current transaction for grouping edits
     current_transaction: Option<EditTransaction>,
+    /// View state (scroll position) preserved across document switches
+    pub view_state: ViewState,
 }
 
 impl Document {
@@ -76,6 +88,7 @@ impl Document {
             syntax: None,
             history: UndoTree::new(),
             current_transaction: None,
+            view_state: ViewState::default(),
         })
     }
 
@@ -115,13 +128,14 @@ impl Document {
                 line_ending,
                 ..DocumentOptions::default()
             },
-            file_path: Some(path.to_path_buf()),
+            file_path: Some(Self::normalize_path(path)),
             revision: 0,
             last_saved_revision: 0,
             is_read_only: false,
             syntax: None,
             history: UndoTree::new(),
             current_transaction: None,
+            view_state: ViewState::default(),
         })
     }
 
@@ -476,9 +490,28 @@ impl Document {
         self.file_path.is_some()
     }
 
-    /// Set the file path
+    /// Set the file path (normalized to absolute path for consistent comparison)
     pub fn set_path(&mut self, path: impl AsRef<Path>) {
-        self.file_path = Some(path.as_ref().to_path_buf());
+        self.file_path = Some(Self::normalize_path(path.as_ref()));
+    }
+
+    /// Normalize a path to an absolute path for consistent comparison.
+    /// Uses canonicalize for existing files, or constructs absolute path for new files.
+    fn normalize_path(path: &Path) -> PathBuf {
+        // Try canonicalize first (works if file exists)
+        if let Ok(canonical) = std::fs::canonicalize(path) {
+            return canonical;
+        }
+
+        // File doesn't exist yet - construct absolute path manually
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            // Prepend current working directory
+            std::env::current_dir()
+                .map(|cwd| cwd.join(path))
+                .unwrap_or_else(|_| path.to_path_buf())
+        }
     }
 
     /// Get display name for UI (filename or "[No Name]")
@@ -871,7 +904,18 @@ impl Document {
         self.last_saved_revision = 0;
         self.history = UndoTree::new();
         self.current_transaction = None;
-        self.syntax = None; // Needs re-parsing
+        self.syntax = None; 
+    }
+
+    /// Save current view state (call before switching away from this document)
+    pub fn save_view_state(&mut self, top_line: usize, left_col: usize) {
+        self.view_state.top_line = top_line;
+        self.view_state.left_col = left_col;
+    }
+
+    /// Get the saved view state (call when switching to this document)
+    pub fn get_view_state(&self) -> &ViewState {
+        &self.view_state
     }
 }
 

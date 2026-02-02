@@ -190,19 +190,38 @@ impl DocumentManager {
     /// Find if a document with the given path is already open
     /// Returns the tab index if found
     fn find_open_document(&self, path: &Path) -> Option<usize> {
-        let absolute_path = std::fs::canonicalize(path).unwrap_or(path.to_path_buf());
+        let normalized_path = Self::normalize_path(path);
 
         for (idx, &id) in self.tab_order.iter().enumerate() {
             if let Some(doc) = self.documents.get(&id) {
                 if let Some(doc_path) = doc.path() {
-                    let doc_abs = std::fs::canonicalize(doc_path).unwrap_or(doc_path.to_path_buf());
-                    if doc_abs == absolute_path {
+                    let doc_normalized = Self::normalize_path(doc_path);
+                    if doc_normalized == normalized_path {
                         return Some(idx);
                     }
                 }
             }
         }
         None
+    }
+
+    /// Normalize a path to an absolute path for consistent comparison.
+    /// Uses canonicalize for existing files, or constructs absolute path for new files.
+    fn normalize_path(path: &Path) -> PathBuf {
+        // Try canonicalize first (works if file exists)
+        if let Ok(canonical) = std::fs::canonicalize(path) {
+            return canonical;
+        }
+
+        // File doesn't exist yet - construct absolute path manually
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            // Prepend current working directory
+            std::env::current_dir()
+                .map(|cwd| cwd.join(path))
+                .unwrap_or_else(|_| path.to_path_buf())
+        }
     }
 
     /// Open a file from disk, or create a new one if it doesn't exist
@@ -212,9 +231,6 @@ impl DocumentManager {
         let document = match document_result {
             Ok(doc) => doc,
             Err(e) => {
-                // If file doesn't exist, create a new empty buffer (standard
-                // :edit behavior). For other errors (permission denied, is a
-                // directory, etc.), return the error
                 if e.kind == ErrorType::Io
                     && e.message
                         .contains(crate::constants::errors::MSG_FILE_NOT_FOUND_WIN)
@@ -288,6 +304,20 @@ impl DocumentManager {
                     is_current: i == self.current_tab,
                 }
             })
+            .collect()
+    }
+
+    /// Check if any document has unsaved changes
+    pub fn has_unsaved_changes(&self) -> bool {
+        self.documents.values().any(|doc| doc.is_dirty())
+    }
+
+    /// Get list of documents with unsaved changes
+    pub fn get_unsaved_documents(&self) -> Vec<&str> {
+        self.documents
+            .values()
+            .filter(|doc| doc.is_dirty())
+            .map(|doc| doc.display_name())
             .collect()
     }
 }

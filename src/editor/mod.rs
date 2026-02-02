@@ -214,6 +214,24 @@ impl<T: TerminalBackend> Editor<T> {
             .expect("No active document")
     }
 
+    /// Save current document's view state (viewport position) before switching
+    fn save_current_view_state(&mut self) {
+        let (top_line, left_col) = self.render_system.viewport.get_scroll();
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.save_view_state(top_line, left_col);
+        }
+    }
+
+    /// Restore view state from the active document after switching
+    fn restore_view_state(&mut self) {
+        if let Some(doc) = self.document_manager.active_document() {
+            let view_state = doc.get_view_state();
+            self.render_system
+                .viewport
+                .set_scroll(view_state.top_line, view_state.left_col);
+        }
+    }
+
     /// Sync editor state with the active document
     fn sync_state_with_active_document(&mut self) {
         let (display_name, file_path, is_dirty, line_ending) = {
@@ -327,9 +345,15 @@ impl<T: TerminalBackend> Editor<T> {
                 .find_open_document_index(&path)
                 .is_some()
             {
+                // Save current document's view state before switching
+                self.save_current_view_state();
                 // Already open, use manager to switch
                 self.document_manager.open_file(Some(path_str), force)?;
+                // Restore the switched-to document's view state
+                self.restore_view_state();
             } else {
+                // Save current document's view state before switching
+                self.save_current_view_state();
                 // Not open, create placeholder and async load
                 let doc_id = self.document_manager.create_placeholder(&path_str)?;
                 let job = crate::job_manager::jobs::file_operations::FileLoadJob::new(
@@ -1363,12 +1387,24 @@ impl<T: TerminalBackend> Editor<T> {
         let mut should_close_modal = true;
         match execution_result {
             ExecutionResult::Quit { bangs } => {
-                if self.active_document().is_dirty() && bangs == 0 {
+                if bangs == 0 && self.document_manager.has_unsaved_changes() {
+                    let unsaved = self.document_manager.get_unsaved_documents();
+                    let msg = if unsaved.len() == 1 {
+                        format!(
+                            "No write since last change for {} (add ! to override)",
+                            unsaved[0]
+                        )
+                    } else {
+                        format!(
+                            "{} buffers have unsaved changes (add ! to override)",
+                            unsaved.len()
+                        )
+                    };
                     self.state.handle_error(RiftError {
                         severity: ErrorSeverity::Warning,
                         kind: ErrorType::Execution,
                         code: "UNSAVED_CHANGES".to_string(),
-                        message: "No write since last change (add ! to override)".to_string(),
+                        message: msg,
                     });
                 } else {
                     self.should_quit = true;
@@ -1469,8 +1505,12 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             ExecutionResult::BufferNext { bangs: _bangs } => {
+                // Save current document's view state before switching
+                self.save_current_view_state();
                 // Use document manager to switch tabs
                 self.document_manager.switch_next_tab();
+                // Restore the switched-to document's view state
+                self.restore_view_state();
 
                 self.sync_state_with_active_document();
                 self.state.clear_command_line();
@@ -1479,7 +1519,11 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             ExecutionResult::BufferPrevious { bangs: _bangs } => {
+                // Save current document's view state before switching
+                self.save_current_view_state();
                 self.document_manager.switch_prev_tab();
+                // Restore the switched-to document's view state
+                self.restore_view_state();
 
                 self.sync_state_with_active_document();
                 self.state.clear_command_line();

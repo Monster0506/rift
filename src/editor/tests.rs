@@ -84,6 +84,29 @@ fn test_handle_execution_result_quit_unsaved() {
 }
 
 #[test]
+fn test_handle_execution_result_quit_unsaved_other_buffer() {
+    let mut editor = create_editor();
+
+    // Open a second buffer and make the first one dirty
+    editor.active_document().mark_dirty();
+    editor
+        .open_file(Some("test2.txt".to_string()), false)
+        .unwrap();
+
+    // Now the active document is test2.txt (not dirty), but first buffer is dirty
+    assert!(!editor.active_document().is_dirty());
+    assert!(editor.document_manager.has_unsaved_changes());
+
+    // Should not quit because another buffer has unsaved changes
+    editor.handle_execution_result(ExecutionResult::Quit { bangs: 0 });
+    assert!(!editor.should_quit);
+
+    // Should quit with bang
+    editor.handle_execution_result(ExecutionResult::Quit { bangs: 1 });
+    assert!(editor.should_quit);
+}
+
+#[test]
 fn test_handle_execution_result_edit() {
     let mut editor = create_editor();
     editor.handle_execution_result(ExecutionResult::Edit {
