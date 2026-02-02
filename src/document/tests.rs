@@ -113,3 +113,36 @@ fn test_undo_binary_data() {
     assert_eq!(doc.buffer.len(), 1);
     assert_eq!(doc.buffer.char_at(0), Some(binary_char));
 }
+
+#[test]
+fn test_get_changed_line_for_seq() {
+    let mut doc = Document::new(1).unwrap();
+
+    // Initial state has seq=0, no operations
+    assert_eq!(doc.get_changed_line_for_seq(0), None);
+
+    // Insert text at line 0
+    doc.insert_str("hello\n").unwrap();
+    let seq1 = doc.history.current_seq();
+    assert_eq!(doc.get_changed_line_for_seq(seq1), Some(0));
+
+    // Insert more text (still at line 0 because cursor is at end of line 1)
+    doc.insert_str("world\n").unwrap();
+    let seq2 = doc.history.current_seq();
+    // The insertion happened at line 1 (after the first newline)
+    assert_eq!(doc.get_changed_line_for_seq(seq2), Some(1));
+
+    // Insert text at a specific position (move cursor to line 2)
+    doc.insert_str("line3").unwrap();
+    let seq3 = doc.history.current_seq();
+    assert_eq!(doc.get_changed_line_for_seq(seq3), Some(2));
+
+    // Test with delete operation
+    doc.buffer.set_cursor(0).unwrap(); // Go to start
+    doc.delete_forward(); // Delete 'h'
+    let seq4 = doc.history.current_seq();
+    assert_eq!(doc.get_changed_line_for_seq(seq4), Some(0));
+
+    // Test invalid seq
+    assert_eq!(doc.get_changed_line_for_seq(9999), None);
+}

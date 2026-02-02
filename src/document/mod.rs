@@ -875,6 +875,27 @@ impl Document {
         Ok(preview_buffer.to_string())
     }
 
+    /// Get the line number where an edit occurred for a specific sequence
+    ///
+    /// Returns the line number of the first operation in the transaction
+    /// at the given sequence, or None if the sequence doesn't exist or
+    /// has no operations.
+    pub fn get_changed_line_for_seq(&self, seq: u64) -> Option<usize> {
+        use crate::history::EditOperation;
+
+        let node = self.history.nodes.get(&seq)?;
+        let op = node.transaction.ops.first()?;
+
+        let line = match op {
+            EditOperation::Insert { position, .. } => position.line,
+            EditOperation::Delete { range, .. } => range.start.line,
+            EditOperation::Replace { range, .. } => range.start.line,
+            EditOperation::BlockChange { range, .. } => range.start.line,
+        };
+
+        Some(line as usize)
+    }
+
     /// Mark the document as saved at a specific revision
     pub fn mark_as_saved(&mut self, revision: u64) {
         self.last_saved_revision = revision;

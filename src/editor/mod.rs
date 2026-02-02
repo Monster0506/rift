@@ -2044,9 +2044,10 @@ impl<T: TerminalBackend> Editor<T> {
                 self.close_active_modal();
             }
             UndoTreeMessage::Preview(seq) => {
-                let content = {
+                let (content, changed_line) = {
                     let doc = self.active_document();
-                    if let Ok(preview_text) = doc.preview_at_seq(seq as u64) {
+                    let changed_line = doc.get_changed_line_for_seq(seq as u64);
+                    let content = if let Ok(preview_text) = doc.preview_at_seq(seq as u64) {
                         use crate::layer::Cell;
                         let mut content = Vec::new();
                         for line in preview_text.lines() {
@@ -2056,25 +2057,31 @@ impl<T: TerminalBackend> Editor<T> {
                         Some(content)
                     } else {
                         None
-                    }
+                    };
+                    (content, changed_line)
                 };
 
                 if let Some(content) = content {
+                    // Calculate scroll position to show the changed line with context
+                    let scroll_pos = changed_line
+                        .map(|line| line.saturating_sub(5))
+                        .unwrap_or(0);
+
                     if let Some(modal) = self.modal.as_mut() {
-                        // Try downcasting to UndoTreeComponent wrapper first
                         if let Some(component) = modal
                             .component
                             .as_any_mut()
                             .downcast_mut::<crate::undotree_view::component::UndoTreeComponent>(
                         ) {
                             component.view.set_right_content(content);
+                            component.view.set_right_scroll(scroll_pos);
                         } else if let Some(view) = modal
                             .component
                             .as_any_mut()
                             .downcast_mut::<crate::select_view::SelectView>()
                         {
-                            // Fallback for direct SelectView usage (if any legacy paths exist)
                             view.set_right_content(content);
+                            view.set_right_scroll(scroll_pos);
                         }
                     }
                 }
