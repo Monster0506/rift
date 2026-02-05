@@ -23,6 +23,8 @@ pub enum Command {
     // Editing
     EnterInsertMode,
     EnterInsertModeAfter,
+    EnterInsertModeAtLineStart,
+    EnterInsertModeAtLineEnd,
     Delete(Motion, usize),
     DeleteForward,
     DeleteBackward,
@@ -159,7 +161,9 @@ impl Dispatcher {
                 '0' => Command::Move(Motion::StartOfLine, 1),
                 '$' => Command::Move(Motion::EndOfLine, count),
                 'i' => Command::EnterInsertMode,
+                'I' => Command::EnterInsertModeAtLineStart,
                 'a' => Command::EnterInsertModeAfter,
+                'A' => Command::EnterInsertModeAtLineEnd,
                 'w' => Command::Move(Motion::NextWord, count),
                 'b' => Command::Move(Motion::PreviousWord, count),
                 '}' => Command::Move(Motion::NextParagraph, count),

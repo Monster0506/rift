@@ -744,6 +744,14 @@ impl<T: TerminalBackend> Editor<T> {
                 self.handle_mode_management(crate::command::Command::EnterInsertModeAfter);
                 true
             }
+            EditorAction::EnterInsertModeAtLineStart => {
+                self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineStart);
+                true
+            }
+            EditorAction::EnterInsertModeAtLineEnd => {
+                self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineEnd);
+                true
+            }
             EditorAction::EnterCommandMode => {
                 self.handle_mode_management(crate::command::Command::EnterCommandMode);
                 true
@@ -1063,6 +1071,18 @@ impl<T: TerminalBackend> Editor<T> {
             Command::EnterInsertModeAfter => {
                 let doc = self.document_manager.active_document_mut().unwrap();
                 doc.buffer.move_right();
+                doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                self.set_mode(Mode::Insert);
+            }
+            Command::EnterInsertModeAtLineStart => {
+                let doc = self.document_manager.active_document_mut().unwrap();
+                doc.buffer.move_to_line_start();
+                doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                self.set_mode(Mode::Insert);
+            }
+            Command::EnterInsertModeAtLineEnd => {
+                let doc = self.document_manager.active_document_mut().unwrap();
+                doc.buffer.move_to_line_end();
                 doc.begin_transaction(crate::constants::history::INSERT_LABEL);
                 self.set_mode(Mode::Insert);
             }

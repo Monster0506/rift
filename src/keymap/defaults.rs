@@ -296,6 +296,16 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::Char('a'),
         Action::Editor(EditorAction::EnterInsertModeAfter),
     );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('I'),
+        Action::Editor(EditorAction::EnterInsertModeAtLineStart),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('A'),
+        Action::Editor(EditorAction::EnterInsertModeAtLineEnd),
+    );
     // Normal Mode Arrows/Home/End
     keymap.register(
         KeyContext::Normal,

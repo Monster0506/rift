@@ -335,7 +335,10 @@ pub fn execute_command(
                 doc.insert_char(ch)?;
             }
         }
-        Command::EnterInsertMode | Command::EnterInsertModeAfter => {
+        Command::EnterInsertMode
+        | Command::EnterInsertModeAfter
+        | Command::EnterInsertModeAtLineStart
+        | Command::EnterInsertModeAtLineEnd => {
             // Mode change handled by editor
         }
         Command::EnterCommandMode => {
