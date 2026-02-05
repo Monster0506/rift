@@ -97,6 +97,40 @@ impl Syntax {
         }
     }
 
+    /// Parse source from scratch and return highlights for a specific byte range.
+    pub fn parse_range(&self, source: &[u8], range: std::ops::Range<usize>) -> Vec<(std::ops::Range<usize>, u32)> {
+        let query = match &self.highlights_query {
+            Some(q) => q,
+            None => return Vec::new(),
+        };
+
+        let mut parser = Parser::new();
+        if parser.set_language(&self.language).is_err() {
+            return Vec::new();
+        }
+
+        let tree = match parser.parse(source, None) {
+            Some(t) => t,
+            None => return Vec::new(),
+        };
+
+        let root_node = tree.root_node();
+        let mut cursor = QueryCursor::new();
+        cursor.set_byte_range(range);
+
+        let mut highlights = Vec::new();
+        let mut matches = cursor.matches(query, root_node, source);
+
+        while let Some(m) = matches.next() {
+            for capture in m.captures {
+                let r = capture.node.byte_range();
+                highlights.push((r, capture.index));
+            }
+        }
+
+        highlights
+    }
+
     /// Get current highlights
     pub fn highlights(
         &self,

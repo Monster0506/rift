@@ -2026,24 +2026,68 @@ impl<T: TerminalBackend> Editor<T> {
                 self.close_active_modal();
             }
             UndoTreeMessage::Preview(seq) => {
-                let (content, changed_line) = {
-                    let doc = self.active_document();
+                let (preview_text, changed_line, highlights, query) = {
+                    let doc = self.document_manager.active_document_mut().expect("No active document");
                     let changed_line = doc.get_changed_line_for_seq(seq as u64);
-                    let content = if let Ok(preview_text) = doc.preview_at_seq(seq as u64) {
-                        use crate::layer::Cell;
-                        let mut content = Vec::new();
-                        for line in preview_text.lines() {
-                            let cells: Vec<Cell> = line.chars().map(Cell::from_char).collect();
-                            content.push(cells);
+                    match doc.preview_at_seq(seq as u64) {
+                        Ok(text) => {
+                            let source_bytes = text.as_bytes();
+                            let (hl, q) = if let Some(syntax) = &doc.syntax {
+                                let hl = syntax.parse_range(source_bytes, 0..source_bytes.len());
+                                (hl, syntax.highlights_query.clone())
+                            } else {
+                                (Vec::new(), None)
+                            };
+                            (Some(text), changed_line, hl, q)
                         }
-                        Some(content)
-                    } else {
-                        None
-                    };
-                    (content, changed_line)
+                        Err(_) => (None, changed_line, Vec::new(), None),
+                    }
                 };
 
-                if let Some(content) = content {
+                if let Some(preview_text) = preview_text {
+                    use crate::layer::Cell;
+                    let syntax_colors = self.state.settings.syntax_colors.as_ref();
+                    let capture_names = query.as_ref().map(|q| q.capture_names());
+
+                    let mut content = Vec::new();
+                    let mut byte_offset = 0;
+                    let mut hl_idx = 0;
+
+                    for line in preview_text.lines() {
+                        let mut cells = Vec::with_capacity(line.len());
+                        for ch in line.chars() {
+                            let ch_len = ch.len_utf8();
+
+                            while hl_idx < highlights.len() && highlights[hl_idx].0.end <= byte_offset {
+                                hl_idx += 1;
+                            }
+
+                            let mut cell = Cell::from_char(ch);
+                            if let Some(colors) = syntax_colors {
+                                if let Some(names) = capture_names {
+                                    for (range, capture_idx) in highlights.iter().skip(hl_idx) {
+                                        if range.start > byte_offset {
+                                            break;
+                                        }
+                                        if range.end > byte_offset {
+                                            if let Some(name) = names.get(*capture_idx as usize) {
+                                                if let Some(color) = colors.get_color(name) {
+                                                    cell = cell.with_fg(color);
+                                                }
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            cells.push(cell);
+                            byte_offset += ch_len;
+                        }
+                        content.push(cells);
+                        byte_offset += 1; // newline
+                    }
+
                     // Calculate scroll position to show the changed line with context
                     let scroll_pos = changed_line
                         .map(|line| line.saturating_sub(5))
