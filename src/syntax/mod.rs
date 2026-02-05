@@ -58,14 +58,10 @@ impl Syntax {
         }
     }
 
-    /// Perform synchronous incremental parse and update highlights for visible range.
+    /// Perform synchronous incremental parse and update highlights for the entire document.
     /// This is fast because tree-sitter reuses unchanged subtrees.
     /// Returns true if parsing succeeded.
-    pub fn incremental_parse(
-        &mut self,
-        source: &[u8],
-        visible_range: std::ops::Range<usize>,
-    ) -> bool {
+    pub fn incremental_parse(&mut self, source: &[u8]) -> bool {
         // Create parser
         let mut parser = Parser::new();
         if parser.set_language(&self.language).is_err() {
@@ -76,13 +72,10 @@ impl Syntax {
         let new_tree = parser.parse(source, self.tree.as_ref());
 
         if let Some(tree) = new_tree {
-            // Query highlights only for visible range
+            // Query highlights for entire document to ensure scrolling works correctly
             if let Some(query) = &self.highlights_query {
                 let root_node = tree.root_node();
                 let mut cursor = QueryCursor::new();
-
-                // Only query the visible byte range
-                cursor.set_byte_range(visible_range.clone());
 
                 let mut highlights = Vec::new();
                 let mut matches = cursor.matches(query, root_node, source);
