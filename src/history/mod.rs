@@ -412,6 +412,8 @@ pub struct UndoTree {
     pub current: EditSeq,
     next_seq: EditSeq,
     pub root_seq: EditSeq,
+    /// The edit sequence that was current when the document was last saved
+    pub saved_seq: EditSeq,
 
     // Checkpoint configuration
     checkpoint_interval: u64,
@@ -438,6 +440,7 @@ impl UndoTree {
             current: 0,
             next_seq: 1,
             root_seq: 0,
+            saved_seq: 0,
             checkpoint_interval,
             checkpoint_memory_threshold: memory_threshold,
             edits_since_checkpoint: 0,
@@ -752,6 +755,7 @@ impl UndoTree {
         self.nodes.retain(|&seq, _| seq == self.root_seq);
         self.current = self.root_seq;
         self.next_seq = 1;
+        self.saved_seq = self.root_seq;
         self.total_memory = 0;
         self.edits_since_checkpoint = 0;
 
@@ -759,6 +763,16 @@ impl UndoTree {
             root.children.clear();
             root.last_visited_child = None;
         }
+    }
+
+    /// Mark the current node as the saved state
+    pub fn mark_saved(&mut self) {
+        self.saved_seq = self.current;
+    }
+
+    /// Check if the current node is the saved state
+    pub fn is_at_saved(&self) -> bool {
+        self.current == self.saved_seq
     }
 }
 

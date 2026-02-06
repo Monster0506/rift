@@ -4,6 +4,7 @@ use crate::buffer::rope::PieceTable;
 use crate::character::Character;
 use crate::document::DocumentId;
 use crate::document::LineEnding;
+use crate::history::EditSeq;
 use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload};
 use std::fs;
 use std::io::Write;
@@ -13,7 +14,7 @@ use std::sync::mpsc::Sender;
 #[derive(Debug)]
 pub struct FileSaveResult {
     pub document_id: DocumentId,
-    pub revision: u64,
+    pub saved_seq: EditSeq,
     pub path: PathBuf,
 }
 
@@ -36,7 +37,7 @@ pub struct FileSaveJob {
     pub piece_table: PieceTable,
     pub path: PathBuf,
     pub line_ending: LineEnding,
-    pub revision: u64,
+    pub saved_seq: EditSeq,
 }
 
 impl FileSaveJob {
@@ -45,14 +46,14 @@ impl FileSaveJob {
         piece_table: PieceTable,
         path: PathBuf,
         line_ending: LineEnding,
-        revision: u64,
+        saved_seq: EditSeq,
     ) -> Self {
         Self {
             document_id,
             piece_table,
             path,
             line_ending,
-            revision,
+            saved_seq,
         }
     }
 }
@@ -120,7 +121,7 @@ impl Job for FileSaveJob {
                 if !signal.is_cancelled() {
                     let result = FileSaveResult {
                         document_id: self.document_id,
-                        revision: self.revision,
+                        saved_seq: self.saved_seq,
                         path: self.path.clone(),
                     };
                     let _ = sender.send(JobMessage::Custom(id, Box::new(result)));

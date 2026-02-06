@@ -25,6 +25,7 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
     let text_color = Color::Grey;
     let current_text_color = Color::Magenta;
     let snap_text_color = Color::Cyan;
+    let saved_color = Color::DarkGreen;
 
     for &seq in &all_seqs {
         let node = match tree.nodes.get(&seq) {
@@ -33,6 +34,7 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
         };
 
         let is_current = seq == tree.current;
+        let is_saved = seq == tree.saved_seq && seq != tree.root_seq;
 
         let mut col_indices: Vec<usize> = columns
             .iter()
@@ -91,11 +93,14 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
         const CURRENT_CHAR: char = '@';
         const NODE_CHAR: char = '*';
         const SNAPSHOT_CHAR: char = '#';
+        const SAVED_CHAR: char = 'S';
         // 1. Draw Graph part
         for (c, item) in columns.iter().enumerate().take(max_col) {
             let cell = if c == main_col {
                 if is_current {
                     Cell::from_char(CURRENT_CHAR).with_fg(current_text_color)
+                } else if is_saved {
+                    Cell::from_char(SAVED_CHAR).with_fg(saved_color)
                 } else if snap_marker {
                     Cell::from_char(SNAPSHOT_CHAR).with_fg(snap_text_color)
                 } else {
@@ -117,6 +122,8 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
 
         let desc_color = if is_current {
             current_text_color
+        } else if is_saved {
+            saved_color
         } else if snap_marker {
             snap_text_color
         } else {

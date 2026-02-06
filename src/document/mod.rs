@@ -3,7 +3,7 @@
 
 use crate::buffer::TextBuffer;
 use crate::error::{ErrorType, RiftError};
-use crate::history::{EditOperation, EditTransaction, Position, Range, UndoTree};
+use crate::history::{EditOperation, EditSeq, EditTransaction, Position, Range, UndoTree};
 use crate::search::{find_next, SearchDirection};
 use crate::syntax::Syntax;
 use std::io;
@@ -57,10 +57,6 @@ pub struct Document {
     pub options: DocumentOptions,
     /// File path (None if new/unsaved)
     file_path: Option<PathBuf>,
-    /// Current revision number (incremented on edits)
-    revision: u64,
-    /// Revision of last save
-    last_saved_revision: u64,
     /// Read-only flag (for permissions or :view mode)
     pub is_read_only: bool,
     /// Syntax highlighting/parsing
@@ -82,8 +78,6 @@ impl Document {
             buffer,
             options: DocumentOptions::default(),
             file_path: None,
-            revision: 0,
-            last_saved_revision: 0,
             is_read_only: false,
             syntax: None,
             history: UndoTree::new(),
@@ -129,8 +123,6 @@ impl Document {
                 ..DocumentOptions::default()
             },
             file_path: Some(Self::normalize_path(path)),
-            revision: 0,
-            last_saved_revision: 0,
             is_read_only: false,
             syntax: None,
             history: UndoTree::new(),
@@ -434,7 +426,7 @@ impl Document {
         })?;
 
         self.write_to_file(path)?;
-        self.last_saved_revision = self.revision;
+        self.history.mark_saved();
         Ok(())
     }
 
@@ -443,7 +435,7 @@ impl Document {
         let path = path.as_ref();
         self.write_to_file(path)?;
         self.file_path = Some(path.to_path_buf());
-        self.last_saved_revision = self.revision;
+        self.history.mark_saved();
         Ok(())
     }
 
@@ -461,21 +453,13 @@ impl Document {
         Ok(())
     }
 
-    /// Mark document as dirty (increment revision)
-    pub fn mark_dirty(&mut self) {
-        self.revision += 1;
-    }
+    /// No-op, dirty state is tracked via undo tree
+    pub fn mark_dirty(&mut self) {}
 
     /// Check if document has unsaved changes
     #[must_use]
     pub fn is_dirty(&self) -> bool {
-        self.revision != self.last_saved_revision
-    }
-
-    /// Get the current revision number
-    #[must_use]
-    pub fn revision(&self) -> u64 {
-        self.revision
+        !self.history.is_at_saved()
     }
 
     /// Check if document is empty
@@ -896,9 +880,9 @@ impl Document {
         Some(line as usize)
     }
 
-    /// Mark the document as saved at a specific revision
-    pub fn mark_as_saved(&mut self, revision: u64) {
-        self.last_saved_revision = revision;
+    /// Mark the document as saved at a specific edit sequence
+    pub fn mark_as_saved(&mut self, saved_seq: EditSeq) {
+        self.history.saved_seq = saved_seq;
     }
 
     /// Apply content loaded from a background job
@@ -921,8 +905,6 @@ impl Document {
 
         self.buffer = buffer;
         self.options.line_ending = line_ending;
-        self.revision = 0;
-        self.last_saved_revision = 0;
         self.history = UndoTree::new();
         self.current_transaction = None;
         self.syntax = None; 

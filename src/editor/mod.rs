@@ -1421,7 +1421,7 @@ impl<T: TerminalBackend> Editor<T> {
                             doc.buffer.line_index.table.clone(),
                             path.to_path_buf(),
                             doc.options.line_ending,
-                            doc.revision(),
+                            doc.history.current_seq(),
                         );
                         let _id = self.job_manager.spawn(job);
                     } else {
@@ -1445,7 +1445,7 @@ impl<T: TerminalBackend> Editor<T> {
                             doc.path().unwrap().to_path_buf(),
                             doc.buffer.line_index.table.clone(),
                             doc.options.line_ending,
-                            doc.revision(),
+                            doc.history.current_seq(),
                         ))
                     } else if let Some(path) = &self.state.file_path {
                         Ok((
@@ -1453,7 +1453,7 @@ impl<T: TerminalBackend> Editor<T> {
                             std::path::PathBuf::from(path),
                             doc.buffer.line_index.table.clone(),
                             doc.options.line_ending,
-                            doc.revision(),
+                            doc.history.current_seq(),
                         ))
                     } else {
                         Err(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))
@@ -1461,13 +1461,13 @@ impl<T: TerminalBackend> Editor<T> {
                 };
 
                 match res {
-                    Ok((doc_id, path, table, line_ending, revision)) => {
+                    Ok((doc_id, path, table, line_ending, saved_seq)) => {
                         let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
                             doc_id,
                             table,
                             path.clone(),
                             line_ending,
-                            revision,
+                            saved_seq,
                         );
                         let id = self.job_manager.spawn(job);
                         self.pending_quit_job_id = Some(id);
@@ -1796,7 +1796,7 @@ impl<T: TerminalBackend> Editor<T> {
                 ) {
                     Ok(res) => {
                         if let Some(doc) = self.document_manager.get_document_mut(res.document_id) {
-                            doc.mark_as_saved(res.revision);
+                            doc.mark_as_saved(res.saved_seq);
                             doc.set_path(res.path.clone());
 
                             // Update cached filename in state

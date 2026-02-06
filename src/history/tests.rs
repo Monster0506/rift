@@ -1046,3 +1046,94 @@ fn test_compute_replay_path() {
     // Verify state was NOT mutated
     assert_eq!(tree.current_seq(), 3);
 }
+
+// =============================================================================
+// saved_seq Tests
+// =============================================================================
+
+#[test]
+fn test_new_tree_is_at_saved() {
+    let tree = UndoTree::new();
+    assert!(tree.is_at_saved());
+    assert_eq!(tree.saved_seq, 0);
+}
+
+#[test]
+fn test_mark_saved_and_is_at_saved() {
+    let mut tree = UndoTree::new();
+
+    let mut tx = EditTransaction::new("Edit 1");
+    tx.record(EditOperation::Insert {
+        position: Position::new(0, 0),
+        text: vec![Character::from('a')],
+        len: 1,
+    });
+    tree.push(tx, None); // seq=1
+
+    assert!(!tree.is_at_saved()); // edited past saved point
+    tree.mark_saved();
+    assert!(tree.is_at_saved());
+    assert_eq!(tree.saved_seq, 1);
+}
+
+#[test]
+fn test_undo_back_to_saved() {
+    let mut tree = UndoTree::new();
+
+    let mut tx = EditTransaction::new("Edit 1");
+    tx.record(EditOperation::Insert {
+        position: Position::new(0, 0),
+        text: vec![Character::from('a')],
+        len: 1,
+    });
+    tree.push(tx, None); // seq=1
+    tree.mark_saved();
+
+    let mut tx2 = EditTransaction::new("Edit 2");
+    tx2.record(EditOperation::Insert {
+        position: Position::new(0, 1),
+        text: vec![Character::from('b')],
+        len: 1,
+    });
+    tree.push(tx2, None); // seq=2
+
+    assert!(!tree.is_at_saved());
+    tree.undo(); // back to seq=1
+    assert!(tree.is_at_saved());
+}
+
+#[test]
+fn test_undo_past_saved() {
+    let mut tree = UndoTree::new();
+
+    let mut tx = EditTransaction::new("Edit 1");
+    tx.record(EditOperation::Insert {
+        position: Position::new(0, 0),
+        text: vec![Character::from('a')],
+        len: 1,
+    });
+    tree.push(tx, None); // seq=1
+    tree.mark_saved();
+
+    tree.undo(); // back to root (seq=0)
+    assert!(!tree.is_at_saved()); // saved_seq=1, current=0
+}
+
+#[test]
+fn test_clear_resets_saved_seq() {
+    let mut tree = UndoTree::new();
+
+    let mut tx = EditTransaction::new("Edit 1");
+    tx.record(EditOperation::Insert {
+        position: Position::new(0, 0),
+        text: vec![Character::from('a')],
+        len: 1,
+    });
+    tree.push(tx, None);
+    tree.mark_saved();
+    assert_eq!(tree.saved_seq, 1);
+
+    tree.clear();
+    assert_eq!(tree.saved_seq, tree.root_seq);
+    assert!(tree.is_at_saved());
+}

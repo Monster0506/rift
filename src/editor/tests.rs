@@ -32,7 +32,7 @@ fn test_editor_remove_last_tab() {
 #[test]
 fn test_editor_remove_dirty_tab() {
     let mut editor = create_editor();
-    editor.active_document().mark_dirty();
+    editor.active_document().insert_char('x').unwrap();
     let doc_id = editor.document_manager.get_document_id_at(0).unwrap();
 
     // Removing a dirty tab should return a warning
@@ -72,7 +72,7 @@ fn test_handle_execution_result_quit() {
 #[test]
 fn test_handle_execution_result_quit_unsaved() {
     let mut editor = create_editor();
-    editor.active_document().mark_dirty();
+    editor.active_document().insert_char('x').unwrap();
 
     // Should not quit if unsaved and no bang
     editor.handle_execution_result(ExecutionResult::Quit { bangs: 0 });
@@ -88,7 +88,7 @@ fn test_handle_execution_result_quit_unsaved_other_buffer() {
     let mut editor = create_editor();
 
     // Open a second buffer and make the first one dirty
-    editor.active_document().mark_dirty();
+    editor.active_document().insert_char('x').unwrap();
     editor
         .open_file(Some("test2.txt".to_string()), false)
         .unwrap();

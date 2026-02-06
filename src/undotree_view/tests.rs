@@ -94,3 +94,70 @@ fn test_cursor_position_on_merge() {
         "Cursor row should contain node description"
     );
 }
+
+#[test]
+fn test_saved_node_marker() {
+    let mut tree = UndoTree::new();
+    tree.nodes.clear();
+
+    tree.root_seq = 0;
+    tree.nodes.insert(0, create_dummy_node(0, None, "Original"));
+    tree.nodes.insert(1, create_dummy_node(1, Some(0), "Saved edit"));
+    tree.nodes.insert(2, create_dummy_node(2, Some(1), "Latest"));
+
+    tree.saved_seq = 1;
+    tree.current = 2;
+
+    let (lines, seqs, _cursor) = render_tree(&tree);
+
+    // Find the line for seq=1 (the saved node)
+    let saved_row = seqs.iter().position(|&s| s == 1).unwrap();
+    let saved_line: String = lines[saved_row].iter().map(|c| c.to_char()).collect();
+    assert!(saved_line.contains('S'), "Saved node should show 'S' marker");
+
+    // Current node should still show '@'
+    let current_row = seqs.iter().position(|&s| s == 2).unwrap();
+    let current_line: String = lines[current_row].iter().map(|c| c.to_char()).collect();
+    assert!(current_line.contains('@'), "Current node should show '@' marker");
+}
+
+#[test]
+fn test_saved_current_node_shows_current_marker() {
+    let mut tree = UndoTree::new();
+    tree.nodes.clear();
+
+    tree.root_seq = 0;
+    tree.nodes.insert(0, create_dummy_node(0, None, "Original"));
+    tree.nodes.insert(1, create_dummy_node(1, Some(0), "Edit"));
+
+    // Node is both saved and current — current wins
+    tree.saved_seq = 1;
+    tree.current = 1;
+
+    let (lines, seqs, _cursor) = render_tree(&tree);
+
+    let row = seqs.iter().position(|&s| s == 1).unwrap();
+    let line: String = lines[row].iter().map(|c| c.to_char()).collect();
+    assert!(line.contains('@'), "Current+saved node should show '@'");
+    assert!(!line.contains('S'), "Current takes priority over saved marker");
+}
+
+#[test]
+fn test_root_saved_no_marker() {
+    let mut tree = UndoTree::new();
+    tree.nodes.clear();
+
+    tree.root_seq = 0;
+    tree.nodes.insert(0, create_dummy_node(0, None, "Original"));
+    tree.nodes.insert(1, create_dummy_node(1, Some(0), "Edit"));
+
+    // saved_seq == root_seq — should not show 'S' on root
+    tree.saved_seq = 0;
+    tree.current = 1;
+
+    let (lines, seqs, _cursor) = render_tree(&tree);
+
+    let root_row = seqs.iter().position(|&s| s == 0).unwrap();
+    let root_line: String = lines[root_row].iter().map(|c| c.to_char()).collect();
+    assert!(!root_line.contains('S'), "Root node should not show saved marker");
+}
