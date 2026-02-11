@@ -53,6 +53,9 @@ pub enum Command {
     Undo,
     Redo,
 
+    // Repeat
+    DotRepeat,
+
     // Control
     Quit,
     Noop,
@@ -72,6 +75,12 @@ impl Command {
                 | Command::Undo
                 | Command::Redo
         )
+    }
+
+    /// Check if command should be recorded for dot-repeat
+    #[must_use]
+    pub fn is_repeatable(&self) -> bool {
+        self.is_mutating() && !matches!(self, Command::Undo | Command::Redo)
     }
 }
 

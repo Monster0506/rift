@@ -8,6 +8,7 @@ use crate::command::{Command, Dispatcher};
 use crate::command_line::commands::{CommandExecutor, CommandParser, ExecutionResult};
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::document::{Document, DocumentId};
+use crate::dot_repeat::{DotRepeat, DotRegister};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::executor::execute_command;
 use crate::key_handler::KeyAction;
@@ -47,6 +48,7 @@ pub struct Editor<T: TerminalBackend> {
     pending_keys: Vec<crate::key::Key>,
     pending_count: usize,
     pending_operator: Option<crate::action::OperatorType>,
+    dot_repeat: DotRepeat,
 }
 
 /// Helper struct to track active modal and its layer
@@ -137,6 +139,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_keys: Vec::new(),
             pending_count: 0,
             pending_operator: None,
+            dot_repeat: DotRepeat::new(),
         };
 
         // Register default keymaps
@@ -680,6 +683,10 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_key_actions(&mut self, action: crate::key_handler::KeyAction) {
         match action {
             KeyAction::ExitInsertMode => {
+                // Finalize insert recording for dot-repeat
+                if !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.finish_insert_recording();
+                }
                 // Commit insert mode transaction before exiting
                 self.document_manager
                     .active_document_mut()
@@ -762,6 +769,10 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::EnterNormalMode => {
                 if self.current_mode == Mode::Insert {
+                    // Finalize insert recording for dot-repeat
+                    if !self.dot_repeat.is_replaying() {
+                        self.dot_repeat.finish_insert_recording();
+                    }
                     if let Some(doc) = self.document_manager.active_document_mut() {
                         doc.commit_transaction();
                     }
@@ -808,11 +819,19 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
                 let command = crate::command::Command::Delete(*motion, 1);
-                self.execute_buffer_command(command)
+                let result = self.execute_buffer_command(command);
+                if result && self.current_mode == Mode::Normal && !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.record_single(command);
+                }
+                result
             }
             EditorAction::DeleteLine => {
                 let command = crate::command::Command::DeleteLine;
-                self.execute_buffer_command(command)
+                let result = self.execute_buffer_command(command);
+                if result && self.current_mode == Mode::Normal && !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.record_single(command);
+                }
+                result
             }
             EditorAction::InsertChar(c) => {
                 if self.current_mode == Mode::Command || self.current_mode == Mode::Search {
@@ -968,6 +987,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.navigate_history_down();
                 true
             }
+            EditorAction::DotRepeat => self.execute_dot_repeat(),
         }
     }
 
@@ -1029,6 +1049,14 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.last_search_query.as_deref(),
             );
 
+            // Record insert-mode mutations for dot-repeat
+            if is_mutating
+                && self.current_mode == Mode::Insert
+                && !self.dot_repeat.is_replaying()
+            {
+                self.dot_repeat.record_insert_command(command);
+            }
+
             // Synchronous incremental parse for mutating commands
             // Tree-sitter incremental parsing is fast (~1ms for small edits)
             if is_mutating {
@@ -1066,24 +1094,36 @@ impl<T: TerminalBackend> Editor<T> {
                     .active_document_mut()
                     .unwrap()
                     .begin_transaction(crate::constants::history::INSERT_LABEL);
+                if !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.start_insert_recording(command);
+                }
                 self.set_mode(Mode::Insert);
             }
             Command::EnterInsertModeAfter => {
                 let doc = self.document_manager.active_document_mut().unwrap();
                 doc.buffer.move_right();
                 doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                if !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.start_insert_recording(command);
+                }
                 self.set_mode(Mode::Insert);
             }
             Command::EnterInsertModeAtLineStart => {
                 let doc = self.document_manager.active_document_mut().unwrap();
                 doc.buffer.move_to_line_start();
                 doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                if !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.start_insert_recording(command);
+                }
                 self.set_mode(Mode::Insert);
             }
             Command::EnterInsertModeAtLineEnd => {
                 let doc = self.document_manager.active_document_mut().unwrap();
                 doc.buffer.move_to_line_end();
                 doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                if !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.start_insert_recording(command);
+                }
                 self.set_mode(Mode::Insert);
             }
             Command::EnterCommandMode => {
@@ -1371,7 +1411,11 @@ impl<T: TerminalBackend> Editor<T> {
         self.set_mode(Mode::Normal);
         self.pending_operator = None;
         self.pending_count = 0;
-        self.execute_buffer_command(command)
+        let result = self.execute_buffer_command(command);
+        if result && !self.dot_repeat.is_replaying() && command.is_repeatable() {
+            self.dot_repeat.record_single(command);
+        }
+        result
     }
 
     fn execute_operator_linewise(&mut self, op: crate::action::OperatorType) -> bool {
@@ -1381,7 +1425,55 @@ impl<T: TerminalBackend> Editor<T> {
         };
         self.set_mode(Mode::Normal);
         self.pending_operator = None;
-        self.execute_buffer_command(command)
+        let result = self.execute_buffer_command(command);
+        if result && !self.dot_repeat.is_replaying() && command.is_repeatable() {
+            self.dot_repeat.record_single(command);
+        }
+        result
+    }
+
+    /// Replay the last repeatable action (dot-repeat)
+    fn execute_dot_repeat(&mut self) -> bool {
+        let register = match self.dot_repeat.register() {
+            Some(reg) => reg.clone(),
+            None => return false,
+        };
+
+        let count = if self.pending_count > 0 {
+            self.pending_count
+        } else {
+            1
+        };
+
+        self.dot_repeat.set_replaying(true);
+
+        match register {
+            DotRegister::Single(cmd) => {
+                for _ in 0..count {
+                    self.execute_buffer_command(cmd);
+                }
+            }
+            DotRegister::InsertSession { entry, commands } => {
+                for _ in 0..count {
+                    // Enter insert mode (handles cursor positioning for a/A/I)
+                    self.handle_mode_management(entry);
+
+                    // Replay all commands from the session
+                    for &cmd in &commands {
+                        self.execute_buffer_command(cmd);
+                    }
+
+                    // Exit insert mode: commit transaction
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        doc.commit_transaction();
+                    }
+                    self.set_mode(Mode::Normal);
+                }
+            }
+        }
+
+        self.dot_repeat.set_replaying(false);
+        true
     }
 
     // Handle execution results from command_line commands

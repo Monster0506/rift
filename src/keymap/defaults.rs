@@ -374,6 +374,11 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     );
     keymap.register(
         KeyContext::Normal,
+        Key::Char('.'),
+        Action::Editor(EditorAction::DotRepeat),
+    );
+    keymap.register(
+        KeyContext::Normal,
         Key::Char('?'),
         Action::Editor(EditorAction::ToggleDebug),
     );

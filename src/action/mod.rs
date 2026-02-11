@@ -124,6 +124,8 @@ pub enum EditorAction {
     HistoryUp,
     /// Navigate to next (newer) history entry
     HistoryDown,
+    /// Repeat last buffer mutation (dot-repeat)
+    DotRepeat,
 }
 
 /// Undotree specific actions
@@ -231,6 +233,7 @@ impl FromStr for Action {
             }
             "editor:checkpoint" => Ok(Action::Editor(EditorAction::Checkpoint)),
             "editor:submit" => Ok(Action::Editor(EditorAction::Submit)),
+            "editor:dot_repeat" => Ok(Action::Editor(EditorAction::DotRepeat)),
 
             _ => Ok(Action::Noop),
         }

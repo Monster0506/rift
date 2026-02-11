@@ -374,6 +374,9 @@ pub fn execute_command(
         Command::Redo => {
             doc.redo();
         }
+        Command::DotRepeat => {
+            // Handled at editor level
+        }
         Command::Noop => {}
     }
     Ok(())

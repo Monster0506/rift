@@ -9,6 +9,7 @@ pub mod command_line;
 pub mod component;
 pub mod constants;
 pub mod document;
+pub mod dot_repeat;
 pub mod editor;
 pub mod editor_api;
 pub mod error;
