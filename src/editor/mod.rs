@@ -557,7 +557,18 @@ impl<T: TerminalBackend> Editor<T> {
                                         }
                                         true
                                     }
-                                    EventResult::Ignored => false,
+                                    EventResult::Ignored => {
+                                        // Action ignored by modal — fall through to raw input
+                                        match modal.component.handle_input(key_press) {
+                                            EventResult::Message(msg) => {
+                                                if let Err(e) = self.handle_message(msg) {
+                                                    self.state.handle_error(e);
+                                                }
+                                            }
+                                            _ => {}
+                                        }
+                                        true
+                                    }
                                 }
                             } else {
                                 self.handle_action(&action)
@@ -655,6 +666,17 @@ impl<T: TerminalBackend> Editor<T> {
                                         self.handle_action(&Action::Editor(
                                             EditorAction::InsertChar(ch),
                                         ));
+                                    }
+                                } else if let Some(modal) = &mut self.modal {
+                                    let k = self.pending_keys[0];
+                                    self.pending_keys.clear();
+                                    match modal.component.handle_input(k) {
+                                        EventResult::Message(msg) => {
+                                            if let Err(e) = self.handle_message(msg) {
+                                                self.state.handle_error(e);
+                                            }
+                                        }
+                                        _ => {}
                                     }
                                 } else {
                                     self.pending_keys.clear();
