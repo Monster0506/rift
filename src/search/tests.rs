@@ -363,3 +363,175 @@ fn test_large_file_search_performance_with_cache() {
     );
     assert!(result.unwrap().0.is_none());
 }
+
+#[test]
+fn test_smartcase_uppercase_no_hang_find_next() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let (tx, rx) = mpsc::channel();
+
+    let handle = std::thread::spawn(move || {
+        let buffer = MockBuffer::new(&["a"]);
+        let result = find_next(&buffer, 0, "A", SearchDirection::Forward);
+        tx.send(result).unwrap();
+    });
+
+    // Wait at most 2 seconds — if it hangs, this will time out
+    match rx.recv_timeout(Duration::from_secs(2)) {
+        Ok(result) => {
+            let (m, _stats) = result.unwrap();
+            assert!(
+                m.is_none(),
+                "Uppercase 'A' should not match lowercase 'a' with smartcase"
+            );
+        }
+        Err(_) => {
+            panic!("HANG DETECTED: find_next with smartcase uppercase query hung for >2s");
+        }
+    }
+
+    handle.join().unwrap();
+}
+
+#[test]
+fn test_smartcase_uppercase_no_hang_find_all() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let (tx, rx) = mpsc::channel();
+
+    let handle = std::thread::spawn(move || {
+        let buffer = MockBuffer::new(&["a"]);
+        let result = find_all(&buffer, "A");
+        tx.send(result).unwrap();
+    });
+
+    match rx.recv_timeout(Duration::from_secs(2)) {
+        Ok(result) => {
+            let (matches, _stats) = result.unwrap();
+            assert!(
+                matches.is_empty(),
+                "Uppercase 'A' should not match lowercase 'a' with smartcase"
+            );
+        }
+        Err(_) => {
+            panic!("HANG DETECTED: find_all with smartcase uppercase query hung for >2s");
+        }
+    }
+
+    handle.join().unwrap();
+}
+
+#[test]
+fn test_smartcase_uppercase_no_hang_with_document() {
+    use crate::document::Document;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let (tx, rx) = mpsc::channel();
+
+    let handle = std::thread::spawn(move || {
+        let mut doc = Document::new(1).unwrap();
+        doc.insert_str("a").unwrap();
+
+        // Test perform_search (the exact path the editor takes)
+        let result = doc.perform_search("A", SearchDirection::Forward, false);
+        tx.send(result).unwrap();
+    });
+
+    match rx.recv_timeout(Duration::from_secs(2)) {
+        Ok(result) => {
+            let (m, _stats) = result.unwrap();
+            assert!(
+                m.is_none(),
+                "Uppercase 'A' should not match lowercase 'a' with smartcase"
+            );
+        }
+        Err(_) => {
+            panic!("HANG DETECTED: Document.perform_search with smartcase uppercase query hung for >2s");
+        }
+    }
+
+    handle.join().unwrap();
+}
+
+#[test]
+fn test_smartcase_coding_no_hang_with_document() {
+    use crate::document::Document;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let (tx, rx) = mpsc::channel();
+
+    let handle = std::thread::spawn(move || {
+        let mut doc = Document::new(1).unwrap();
+        doc.insert_str("some text content here\n").unwrap();
+
+        let result = doc.perform_search("Coding", SearchDirection::Forward, false);
+        tx.send(result).unwrap();
+    });
+
+    match rx.recv_timeout(Duration::from_secs(2)) {
+        Ok(result) => {
+            let (m, _stats) = result.unwrap();
+            assert!(
+                m.is_none(),
+                "'Coding' should not match lowercase content with smartcase"
+            );
+        }
+        Err(_) => {
+            panic!("HANG DETECTED: Document.perform_search for 'Coding' hung for >2s");
+        }
+    }
+
+    handle.join().unwrap();
+}
+
+#[test]
+fn test_smartcase_various_letters_no_hang() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let test_cases: Vec<(&[&str], &str)> = vec![
+        (&["a"], "A"),
+        (&["b"], "B"),
+        (&["z"], "Z"),
+        (&["abc"], "ABC"),
+        (&["hello world"], "HELLO"),
+        (&["coding"], "Coding"),
+    ];
+
+    for (lines, query) in test_cases {
+        let query_owned = query.to_string();
+        let lines_owned: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
+        let (tx, rx) = mpsc::channel();
+
+        let handle = std::thread::spawn(move || {
+            let line_refs: Vec<&str> = lines_owned.iter().map(|s| s.as_str()).collect();
+            let buffer = MockBuffer::new(&line_refs);
+            let result = find_next(&buffer, 0, &query_owned, SearchDirection::Forward);
+            tx.send(result).unwrap();
+        });
+
+        match rx.recv_timeout(Duration::from_secs(2)) {
+            Ok(result) => {
+                // Should not error
+                assert!(
+                    result.is_ok(),
+                    "Search for '{}' in {:?} should not error",
+                    query,
+                    lines
+                );
+            }
+            Err(_) => {
+                panic!(
+                    "HANG DETECTED: find_next for query '{}' in buffer {:?} hung for >2s",
+                    query, lines
+                );
+            }
+        }
+
+        handle.join().unwrap();
+    }
+}

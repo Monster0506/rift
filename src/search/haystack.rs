@@ -336,23 +336,12 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
             let iter = self.buffer.iter_at(line_start_char_idx);
 
             let mut current_byte = 0;
-            // Limit iteration to this line?
-            // iter_at iterates to end of buffer. We need to stop at next line start or just count bytes.
-            // We can check if we exceeded line byte length.
+            let mut moved_to_next_line = false;
 
             for c in iter {
                 let len = c.len_utf8();
 
-                // Check if we crossed into next line?
-                // Actually easier: iterate chars, check bytes.
-                // But we need to update `line_idx` manually if we cross lines which iter doesn't tell us easily
-                // unless we check newline char.
-
                 if current_byte >= offset_in_line {
-                    // Check bytes of this character
-                    // ... (match c logic) ...
-                    // Since match c logic is just "does this char contain byte?", we can use it.
-
                     match c {
                         Character::Unicode(ch) => {
                             let mut buf = [0u8; 4];
@@ -379,14 +368,10 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
                                 let offset_from_line_start = self.line_byte_starts[line_idx];
                                 return Some(offset_from_line_start + current_byte);
                             }
-                            // Move to next line logic
-                            // If we found it, returned. If not, and it's newline, we are entering next line.
-                            // But line_idx increments?
-                            // Actually, loop structure "iterate line by line" is better preserved
-                            // by breaking at newline and continuing outer loop.
+                            // Newline marks end of this line; advance to next line.
                             line_idx += 1;
                             offset_in_line = 0;
-                            // Need to break inner loop to get next line_start_char_idx from array
+                            moved_to_next_line = true;
                             break;
                         }
                         Character::Control(b) => {
@@ -400,10 +385,11 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
                 current_byte += len;
             }
 
-            // If we broke out due to newline, we continue while loop.
-            // If we ran out of chars (EOF), loop finishes.
+            if !moved_to_next_line {
+                break;
+            }
+
             if line_idx >= self.line_char_starts.len() {
-                // Safety
                 break;
             }
         }
