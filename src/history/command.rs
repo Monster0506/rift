@@ -76,7 +76,7 @@ impl CommandHistory {
     /// Navigate to previous (older) matching history entry
     ///
     /// Returns the matching entry, or None if no match found
-    pub fn prev(&mut self) -> Option<&str> {
+    pub fn prev_match(&mut self) -> Option<&str> {
         if self.items.is_empty() {
             return None;
         }
@@ -104,7 +104,7 @@ impl CommandHistory {
     /// Navigate to next (newer) matching history entry
     ///
     /// Returns the matching entry, or the original line if returning to present
-    pub fn next(&mut self) -> Option<&str> {
+    pub fn next_match(&mut self) -> Option<&str> {
         let idx = self.history_index?;
 
         let prefix = self.original_line.as_deref().unwrap_or("");

@@ -418,9 +418,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.document_manager.add_document(doc);
 
-        if let Err(e) = self.document_manager.switch_to_document(id) {
-            return Err(e);
-        }
+        self.document_manager.switch_to_document(id)?;
 
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
@@ -629,13 +627,12 @@ impl<T: TerminalBackend> Editor<T> {
                                     }
                                     EventResult::Ignored => {
                                         // Action ignored by modal — fall through to raw input
-                                        match modal.component.handle_input(key_press) {
-                                            EventResult::Message(msg) => {
-                                                if let Err(e) = self.handle_message(msg) {
-                                                    self.state.handle_error(e);
-                                                }
+                                        if let EventResult::Message(msg) =
+                                            modal.component.handle_input(key_press)
+                                        {
+                                            if let Err(e) = self.handle_message(msg) {
+                                                self.state.handle_error(e);
                                             }
-                                            _ => {}
                                         }
                                         true
                                     }
@@ -740,13 +737,12 @@ impl<T: TerminalBackend> Editor<T> {
                                 } else if let Some(modal) = &mut self.modal {
                                     let k = self.pending_keys[0];
                                     self.pending_keys.clear();
-                                    match modal.component.handle_input(k) {
-                                        EventResult::Message(msg) => {
-                                            if let Err(e) = self.handle_message(msg) {
-                                                self.state.handle_error(e);
-                                            }
+                                    if let EventResult::Message(msg) =
+                                        modal.component.handle_input(k)
+                                    {
+                                        if let Err(e) = self.handle_message(msg) {
+                                            self.state.handle_error(e);
                                         }
-                                        _ => {}
                                     }
                                 } else {
                                     self.pending_keys.clear();
@@ -1095,7 +1091,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         history.start_navigation(current_line);
-        if let Some(entry) = history.prev() {
+        if let Some(entry) = history.prev_match() {
             let entry = entry.to_string();
             self.state.command_line = entry.clone();
             // Clamp cursor to new line length
@@ -1113,7 +1109,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        if let Some(entry) = history.next() {
+        if let Some(entry) = history.next_match() {
             let entry = entry.to_string();
             self.state.command_line = entry.clone();
             // Clamp cursor to new line length

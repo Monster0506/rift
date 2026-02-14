@@ -14,7 +14,7 @@ pub enum TerminalEvent {
 }
 
 #[derive(Clone)]
-struct TerminalListener(mpsc::Sender<TerminalEvent>);
+pub struct TerminalListener(mpsc::Sender<TerminalEvent>);
 
 impl EventListener for TerminalListener {
     fn send_event(&self, event: Event) {

@@ -46,10 +46,10 @@ fn test_command_history_max_size() {
     assert_eq!(history.len(), 3);
     // "a" should be removed
     history.start_navigation("".to_string());
-    assert_eq!(history.prev(), Some("d"));
-    assert_eq!(history.prev(), Some("c"));
-    assert_eq!(history.prev(), Some("b"));
-    assert_eq!(history.prev(), None);
+    assert_eq!(history.prev_match(), Some("d"));
+    assert_eq!(history.prev_match(), Some("c"));
+    assert_eq!(history.prev_match(), Some("b"));
+    assert_eq!(history.prev_match(), None);
 }
 
 #[test]
@@ -62,15 +62,15 @@ fn test_command_history_basic_navigation() {
     // Navigate with empty prefix (matches all)
     history.start_navigation("".to_string());
 
-    assert_eq!(history.prev(), Some("third"));
-    assert_eq!(history.prev(), Some("second"));
-    assert_eq!(history.prev(), Some("first"));
-    assert_eq!(history.prev(), None); // At oldest
+    assert_eq!(history.prev_match(), Some("third"));
+    assert_eq!(history.prev_match(), Some("second"));
+    assert_eq!(history.prev_match(), Some("first"));
+    assert_eq!(history.prev_match(), None); // At oldest
 
-    assert_eq!(history.next(), Some("second"));
-    assert_eq!(history.next(), Some("third"));
-    assert_eq!(history.next(), Some("")); // Back to original
-    assert_eq!(history.next(), None); // Already at present
+    assert_eq!(history.next_match(), Some("second"));
+    assert_eq!(history.next_match(), Some("third"));
+    assert_eq!(history.next_match(), Some("")); // Back to original
+    assert_eq!(history.next_match(), None); // Already at present
 }
 
 #[test]
@@ -83,12 +83,12 @@ fn test_command_history_prefix_matching() {
     // Navigate with "o" prefix
     history.start_navigation("o".to_string());
 
-    assert_eq!(history.prev(), Some("open file2"));
-    assert_eq!(history.prev(), Some("open file1"));
-    assert_eq!(history.prev(), None); // No more matches
+    assert_eq!(history.prev_match(), Some("open file2"));
+    assert_eq!(history.prev_match(), Some("open file1"));
+    assert_eq!(history.prev_match(), None); // No more matches
 
-    assert_eq!(history.next(), Some("open file2"));
-    assert_eq!(history.next(), Some("o")); // Back to original
+    assert_eq!(history.next_match(), Some("open file2"));
+    assert_eq!(history.next_match(), Some("o")); // Back to original
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn test_command_history_no_match_prefix() {
     history.add("quit".to_string());
 
     history.start_navigation("z".to_string());
-    assert_eq!(history.prev(), None); // No matches for "z"
+    assert_eq!(history.prev_match(), None); // No matches for "z"
 }
 
 #[test]
@@ -108,13 +108,13 @@ fn test_command_history_reset_navigation() {
     history.add("cmd2".to_string());
 
     history.start_navigation("".to_string());
-    history.prev();
+    history.prev_match();
 
     history.reset_navigation();
 
     // After reset, navigation starts fresh
     history.start_navigation("new".to_string());
-    assert_eq!(history.prev(), None); // No "new" prefix matches
+    assert_eq!(history.prev_match(), None); // No "new" prefix matches
 }
 
 #[test]
@@ -123,13 +123,13 @@ fn test_command_history_add_resets_navigation() {
     history.add("cmd1".to_string());
 
     history.start_navigation("".to_string());
-    history.prev();
+    history.prev_match();
 
     history.add("cmd2".to_string());
 
     // Navigation should be reset
     history.start_navigation("".to_string());
-    assert_eq!(history.prev(), Some("cmd2"));
+    assert_eq!(history.prev_match(), Some("cmd2"));
 }
 
 // =============================================================================

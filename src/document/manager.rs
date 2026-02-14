@@ -146,10 +146,8 @@ impl DocumentManager {
         // Update active tab
         if pos < self.current_tab {
             self.current_tab -= 1;
-        } else if pos == self.current_tab {
-            if self.current_tab >= self.tab_order.len() {
-                self.current_tab = self.tab_order.len().saturating_sub(1);
-            }
+        } else if pos == self.current_tab && self.current_tab >= self.tab_order.len() {
+            self.current_tab = self.tab_order.len().saturating_sub(1);
         }
 
         // Ensure bounds validation

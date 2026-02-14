@@ -31,6 +31,12 @@ pub struct DotRepeat {
     replaying: bool,
 }
 
+impl Default for DotRepeat {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DotRepeat {
     pub fn new() -> Self {
         Self {
