@@ -62,6 +62,11 @@ pub enum ExecutionResult {
     },
     /// Spawn a background job
     SpawnJob(Box<dyn crate::job_manager::Job>),
+    /// Open a terminal buffer
+    OpenTerminal {
+        cmd: Option<String>,
+        bangs: usize,
+    },
 }
 
 impl PartialEq for ExecutionResult {
@@ -95,6 +100,10 @@ impl PartialEq for ExecutionResult {
             (Self::Checkpoint, Self::Checkpoint) => true,
             (Self::OpenComponent { .. }, Self::OpenComponent { .. }) => true, // Ignore content for equality check
             (Self::SpawnJob(_), Self::SpawnJob(_)) => true, // Ignore job content for equality
+            (
+                Self::OpenTerminal { cmd: c1, bangs: b1 },
+                Self::OpenTerminal { cmd: c2, bangs: b2 },
+            ) => c1 == c2 && b1 == b2,
             _ => false,
         }
     }
@@ -131,6 +140,11 @@ impl std::fmt::Debug for ExecutionResult {
             Self::Checkpoint => write!(f, "Checkpoint"),
             Self::OpenComponent { .. } => write!(f, "OpenComponent(...)"),
             Self::SpawnJob(_) => write!(f, "SpawnJob(...)"),
+            Self::OpenTerminal { cmd, bangs } => f
+                .debug_struct("OpenTerminal")
+                .field("cmd", cmd)
+                .field("bangs", bangs)
+                .finish(),
         }
     }
 }
@@ -157,6 +171,7 @@ impl CommandExecutor {
     ) -> ExecutionResult {
         match command {
             ParsedCommand::Quit { bangs } => ExecutionResult::Quit { bangs },
+            ParsedCommand::Terminal { cmd, bangs } => ExecutionResult::OpenTerminal { cmd, bangs },
             ParsedCommand::Set {
                 option,
                 value,

@@ -70,6 +70,25 @@ impl DocumentManager {
         self.documents.get_mut(&id)
     }
 
+    /// Get next available document ID
+    pub fn next_id(&self) -> DocumentId {
+        self.next_document_id
+    }
+
+    /// Switch active tab to specific document ID
+    pub fn switch_to_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
+        if let Some(pos) = self.tab_order.iter().position(|&x| x == id) {
+            self.current_tab = pos;
+            Ok(())
+        } else {
+            Err(RiftError::new(
+                ErrorType::Internal,
+                crate::constants::errors::INTERNAL_ERROR,
+                format!("Document {} not found in tabs", id),
+            ))
+        }
+    }
+
     /// Remove a document by ID with strict tab semantics
     pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         // 1. Check if document exists
@@ -86,7 +105,21 @@ impl DocumentManager {
             ));
         }
 
-        // 3. Auto-create new document if specific case of closing last tab
+        self.remove_document_inner(id)
+    }
+
+    /// Remove a document by ID, bypassing the dirty check.
+    /// Used for terminal buffers which are always "dirty".
+    pub fn remove_document_force(&mut self, id: DocumentId) -> Result<(), RiftError> {
+        if !self.documents.contains_key(&id) {
+            return Ok(());
+        }
+        self.remove_document_inner(id)
+    }
+
+    /// Internal removal logic shared by remove_document and remove_document_force
+    fn remove_document_inner(&mut self, id: DocumentId) -> Result<(), RiftError> {
+        // Auto-create new document if closing last tab
         if self.tab_order.len() == 1 {
             let new_id = self.next_document_id;
             let new_doc = Document::new(new_id).map_err(|e| {
@@ -106,19 +139,14 @@ impl DocumentManager {
             .position(|&x| x == id)
             .expect("Document in storage but not in tab_order");
 
-        // 4. Remove
+        // Remove
         self.tab_order.remove(pos);
         self.documents.remove(&id);
 
-        // 5. Update active tab
-        // Shift current_tab if we closed the active one OR if it's now out of bounds
-        // If we closed the tab before current, current index decreases
+        // Update active tab
         if pos < self.current_tab {
             self.current_tab -= 1;
         } else if pos == self.current_tab {
-            // We closed the current tab.
-            // If we are at the end, go to previous (len-1)
-            // If we are not at end, stay at current (which now points to next)
             if self.current_tab >= self.tab_order.len() {
                 self.current_tab = self.tab_order.len().saturating_sub(1);
             }
@@ -313,11 +341,11 @@ impl DocumentManager {
     }
 
     /// Get list of documents with unsaved changes
-    pub fn get_unsaved_documents(&self) -> Vec<&str> {
+    pub fn get_unsaved_documents(&self) -> Vec<String> {
         self.documents
             .values()
             .filter(|doc| doc.is_dirty())
-            .map(|doc| doc.display_name())
+            .map(|doc| doc.display_name().to_string())
             .collect()
     }
 }

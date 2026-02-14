@@ -72,3 +72,6 @@ pub trait ColorTerminal: TerminalBackend {
 }
 
 pub mod crossterm;
+pub mod terminal;
+pub use terminal::Terminal;
+pub use terminal::TerminalEvent;

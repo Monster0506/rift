@@ -6,14 +6,17 @@ use crate::error::{ErrorType, RiftError};
 use crate::history::{EditOperation, EditSeq, EditTransaction, Position, Range, UndoTree};
 use crate::search::{find_next, SearchDirection};
 use crate::syntax::Syntax;
+use std::borrow::Cow;
 use std::io;
 use std::path::{Path, PathBuf};
 use tree_sitter::{InputEdit, Point};
 
 pub mod definitions;
 pub mod manager;
+use crate::term::{Terminal, TerminalEvent};
 use definitions::DocumentOptions;
 pub use manager::DocumentManager;
+use std::sync::mpsc::Receiver;
 
 /// Unique identifier for documents
 pub type DocumentId = u64;
@@ -67,6 +70,8 @@ pub struct Document {
     current_transaction: Option<EditTransaction>,
     /// View state (scroll position) preserved across document switches
     pub view_state: ViewState,
+    /// Terminal emulation state (if this is a terminal buffer)
+    pub terminal: Option<Terminal>,
 }
 
 impl Document {
@@ -83,6 +88,7 @@ impl Document {
             history: UndoTree::new(),
             current_transaction: None,
             view_state: ViewState::default(),
+            terminal: None,
         })
     }
 
@@ -128,11 +134,72 @@ impl Document {
             history: UndoTree::new(),
             current_transaction: None,
             view_state: ViewState::default(),
+            terminal: None,
         })
     }
 
     pub fn set_syntax(&mut self, syntax: Syntax) {
         self.syntax = Some(syntax);
+    }
+
+    /// Create a new terminal document
+    pub fn new_terminal(
+        id: DocumentId,
+        rows: u16,
+        cols: u16,
+        shell: Option<String>,
+    ) -> Result<(Self, Receiver<TerminalEvent>), RiftError> {
+        let buffer = TextBuffer::new(4096).map_err(io::Error::other)?;
+        let (terminal, rx) = Terminal::new(rows, cols, shell)
+            .map_err(|e| RiftError::new(ErrorType::Internal, "TERMINAL_INIT", e.to_string()))?;
+
+        Ok((
+            Document {
+                id,
+                buffer,
+                options: DocumentOptions::default(),
+                file_path: None,
+                is_read_only: false,
+                syntax: None,
+                history: UndoTree::new(),
+                current_transaction: None,
+                view_state: ViewState::default(),
+                terminal: Some(terminal),
+            },
+            rx,
+        ))
+    }
+
+    /// Check if this document is a terminal
+    pub fn is_terminal(&self) -> bool {
+        self.terminal.is_some()
+    }
+
+    pub fn handle_terminal_data(&mut self, _data: &[u8]) {
+        let (content, cursor_line, cursor_col) = if let Some(terminal) = &self.terminal {
+            terminal.read_screen()
+        } else {
+            return;
+        };
+
+        if let Ok(mut new_buffer) = TextBuffer::new(content.len().max(64)) {
+            let _ = new_buffer.insert_str(&content);
+
+            let total_lines = new_buffer.get_total_lines();
+            if cursor_line < total_lines {
+                let start = new_buffer.line_index.get_start(cursor_line).unwrap_or(0);
+                let line_end = new_buffer
+                    .line_index
+                    .get_end(cursor_line, new_buffer.len())
+                    .unwrap_or(start);
+                let target = start + cursor_col;
+                let pos = target.min(line_end);
+                let _ = new_buffer.set_cursor(pos);
+            }
+
+            self.buffer = new_buffer;
+            self.mark_dirty();
+        }
     }
 
     // --- Mutation Wrappers ---
@@ -500,12 +567,17 @@ impl Document {
 
     /// Get display name for UI (filename or "[No Name]")
     #[must_use]
-    pub fn display_name(&self) -> &str {
+    pub fn display_name(&self) -> Cow<'_, str> {
+        if let Some(term) = &self.terminal {
+            return Cow::Owned(format!("[Terminal] {}", term.name));
+        }
+
         self.file_path
             .as_ref()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .unwrap_or(crate::constants::ui::NO_NAME)
+            .map(Cow::Borrowed)
+            .unwrap_or(Cow::Borrowed(crate::constants::ui::NO_NAME))
     }
 
     /// Get the file path if it exists
@@ -907,7 +979,7 @@ impl Document {
         self.options.line_ending = line_ending;
         self.history = UndoTree::new();
         self.current_transaction = None;
-        self.syntax = None; 
+        self.syntax = None;
     }
 
     /// Save current view state (call before switching away from this document)

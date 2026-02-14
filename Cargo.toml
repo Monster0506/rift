@@ -1,6 +1,6 @@
 [package]
 name = "monster-rift"
-version = "0.1.13"
+version = "0.2.0"
 edition = "2021"
 default-run = "rift"
 description = "A vim-like text editor"
@@ -65,6 +65,8 @@ tree-sitter-c-sharp = { version = "0.23.1", optional = true }
 tree-sitter-ruby = { version = "0.23.1", optional = true }
 tree-sitter-php = { version = "0.24.2", optional = true }
 tree-sitter-zig = { version = "1.1.2", optional = true }
+alacritty_terminal = "0.25.1"
+anyhow = "1.0.101"
 
 
 [dev-dependencies]

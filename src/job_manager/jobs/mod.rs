@@ -8,3 +8,4 @@ pub mod explorer;
 pub mod file_operations;
 pub mod fs;
 pub mod syntax;
+pub mod terminal_job;

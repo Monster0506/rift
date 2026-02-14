@@ -99,4 +99,9 @@ pub enum ParsedCommand {
         path: Option<String>,
         bangs: usize,
     },
+    /// Open terminal
+    Terminal {
+        cmd: Option<String>,
+        bangs: usize,
+    },
 }

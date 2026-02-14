@@ -30,6 +30,10 @@ pub enum JobMessage {
     Cancelled(usize),
     /// Custom payload for job-specific results
     Custom(usize, Box<dyn JobPayload>),
+    /// Terminal output data (DocumentId, Data)
+    TerminalOutput(crate::document::DocumentId, Vec<u8>),
+    /// Terminal process exit (DocumentId)
+    TerminalExit(crate::document::DocumentId),
 }
 
 /// Signal used to check if a job has been cancelled.

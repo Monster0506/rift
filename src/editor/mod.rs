@@ -3,12 +3,15 @@
 
 pub mod actions;
 
+#[cfg(test)]
+mod terminal_tests;
+
 use crate::action::{Action, EditorAction, Motion};
 use crate::command::{Command, Dispatcher};
 use crate::command_line::commands::{CommandExecutor, CommandParser, ExecutionResult};
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::document::{Document, DocumentId};
-use crate::dot_repeat::{DotRepeat, DotRegister};
+use crate::dot_repeat::{DotRegister, DotRepeat};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::executor::execute_command;
 use crate::key_handler::KeyAction;
@@ -402,6 +405,35 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
+    /// Open a new terminal buffer
+    pub fn open_terminal(&mut self, shell_cmd: Option<String>) -> Result<(), RiftError> {
+        let size = self
+            .term
+            .get_size()
+            .map_err(|e| RiftError::new(ErrorType::Internal, "TERM_SIZE", e))?;
+
+        let id = self.document_manager.next_id();
+        let (doc, rx) =
+            crate::document::Document::new_terminal(id, size.rows, size.cols, shell_cmd)?;
+
+        self.document_manager.add_document(doc);
+
+        if let Err(e) = self.document_manager.switch_to_document(id) {
+            return Err(e);
+        }
+
+        self.sync_state_with_active_document();
+        let _ = self.force_full_redraw();
+
+        let job = crate::job_manager::jobs::terminal_job::TerminalInputJob {
+            document_id: id,
+            rx,
+        };
+        self.job_manager.spawn(job);
+
+        Ok(())
+    }
+
     /// Perform a search in the document
     fn perform_search(
         &mut self,
@@ -493,6 +525,44 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Key::Resize(cols, rows) = key_press {
                     self.render_system.resize(rows as usize, cols as usize);
                     self.update_and_render()?;
+                    continue;
+                }
+
+                // Handle terminal input
+                let is_terminal_insert = if let Some(doc) = self.document_manager.active_document()
+                {
+                    doc.is_terminal() && self.current_mode == Mode::Insert
+                } else {
+                    false
+                };
+
+                if is_terminal_insert {
+                    // Ctrl+\ exits terminal insert mode
+                    let is_exit = matches!(key_press, Key::Ctrl(92));
+
+                    if is_exit {
+                        self.set_mode(Mode::Normal);
+                        self.update_state_and_render(
+                            key_press,
+                            crate::key_handler::KeyAction::Continue,
+                            crate::command::Command::Noop,
+                        )?;
+                        continue;
+                    }
+
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        if let Some(term) = &mut doc.terminal {
+                            let bytes = key_press.to_vt100_bytes();
+                            if !bytes.is_empty() {
+                                if let Err(e) = term.write(&bytes) {
+                                    self.state.notify(
+                                        crate::notification::NotificationType::Error,
+                                        format!("Write failed: {}", e),
+                                    );
+                                }
+                            }
+                        }
+                    }
                     continue;
                 }
 
@@ -1072,10 +1142,7 @@ impl<T: TerminalBackend> Editor<T> {
             );
 
             // Record insert-mode mutations for dot-repeat
-            if is_mutating
-                && self.current_mode == Mode::Insert
-                && !self.dot_repeat.is_replaying()
-            {
+            if is_mutating && self.current_mode == Mode::Insert && !self.dot_repeat.is_replaying() {
                 self.dot_repeat.record_insert_command(command);
             }
 
@@ -1502,6 +1569,16 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_execution_result(&mut self, execution_result: ExecutionResult) {
         let mut should_close_modal = true;
         match execution_result {
+            ExecutionResult::OpenTerminal { cmd, bangs: _ } => {
+                if let Err(e) = self.open_terminal(cmd) {
+                    self.state.handle_error(e);
+                } else {
+                    self.state.clear_command_line();
+                    self.close_active_modal();
+                    self.set_mode(Mode::Insert);
+                    should_close_modal = false;
+                }
+            }
             ExecutionResult::Quit { bangs } => {
                 if bangs == 0 && self.document_manager.has_unsaved_changes() {
                     let unsaved = self.document_manager.get_unsaved_documents();
@@ -2001,7 +2078,6 @@ impl<T: TerminalBackend> Editor<T> {
                     Err(p) => p,
                 };
 
-                // Try SyntaxParseResult
                 match any_payload.downcast::<SyntaxParseResult>() {
                     Ok(result) => {
                         let doc_id = result.document_id;
@@ -2033,6 +2109,35 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                     }
                 }
+            }
+            JobMessage::TerminalOutput(doc_id, data) => {
+                if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                    doc.handle_terminal_data(&data);
+                    // Trigger redraw if this is the active document
+                    if self.active_document_id() == doc_id {
+                        let _ = self.force_full_redraw();
+                    }
+                }
+            }
+            JobMessage::TerminalExit(doc_id) => {
+                // Switch back to Normal mode if this is the active terminal
+                if self.active_document_id() == doc_id {
+                    self.set_mode(Mode::Normal);
+                }
+                // Force-remove the terminal buffer (skips dirty check)
+                if let Err(e) = self.document_manager.remove_document_force(doc_id) {
+                    self.state.notify(
+                        crate::notification::NotificationType::Error,
+                        format!("Failed to close terminal: {}", e),
+                    );
+                } else {
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        "Terminal closed".to_string(),
+                    );
+                }
+                self.sync_state_with_active_document();
+                let _ = self.force_full_redraw();
             }
         }
 
@@ -2161,7 +2266,10 @@ impl<T: TerminalBackend> Editor<T> {
             }
             UndoTreeMessage::Preview(seq) => {
                 let (preview_text, changed_line, highlights, query) = {
-                    let doc = self.document_manager.active_document_mut().expect("No active document");
+                    let doc = self
+                        .document_manager
+                        .active_document_mut()
+                        .expect("No active document");
                     let changed_line = doc.get_changed_line_for_seq(seq as u64);
                     match doc.preview_at_seq(seq as u64) {
                         Ok(text) => {
@@ -2192,7 +2300,9 @@ impl<T: TerminalBackend> Editor<T> {
                         for ch in line.chars() {
                             let ch_len = ch.len_utf8();
 
-                            while hl_idx < highlights.len() && highlights[hl_idx].0.end <= byte_offset {
+                            while hl_idx < highlights.len()
+                                && highlights[hl_idx].0.end <= byte_offset
+                            {
                                 hl_idx += 1;
                             }
 
@@ -2223,9 +2333,7 @@ impl<T: TerminalBackend> Editor<T> {
                     }
 
                     // Calculate scroll position to show the changed line with context
-                    let scroll_pos = changed_line
-                        .map(|line| line.saturating_sub(5))
-                        .unwrap_or(0);
+                    let scroll_pos = changed_line.map(|line| line.saturating_sub(5)).unwrap_or(0);
 
                     if let Some(modal) = self.modal.as_mut() {
                         if let Some(component) = modal

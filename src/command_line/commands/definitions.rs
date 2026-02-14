@@ -530,6 +530,19 @@ fn parse_explore(
     ParsedCommand::Explore { path, bangs }
 }
 
+fn parse_terminal(
+    _registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    let cmd = if !args.is_empty() {
+        Some(args.join(" "))
+    } else {
+        None
+    };
+    ParsedCommand::Terminal { cmd, bangs }
+}
+
 /// Static registry of all commands
 pub const COMMANDS: &[CommandDescriptor] = &[
     CommandDescriptor {
@@ -700,6 +713,13 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         aliases: &["E", "file"],
         description: "Open file explorer",
         factory: Some(parse_explore),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "terminal",
+        aliases: &["term"],
+        description: "Open terminal buffer",
+        factory: Some(parse_terminal),
         subcommands: &[],
     },
 ];
