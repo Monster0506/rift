@@ -163,9 +163,12 @@ impl Terminal {
         let num_cols = grid.columns();
         let num_lines = grid.screen_lines();
 
+        let cursor_point = grid.cursor.point;
+        let cursor_line = cursor_point.line.0 as usize;
+        let cursor_col = cursor_point.column.0;
+
         let mut content = String::with_capacity(num_lines * (num_cols + 1));
 
-        // Build line-by-line from grid rows
         for line_idx in 0..num_lines {
             let line = alacritty_terminal::index::Line(line_idx as i32);
             for col_idx in 0..num_cols {
@@ -173,21 +176,20 @@ impl Terminal {
                 let cell = &grid[line][col];
                 content.push(cell.c);
             }
-            let trimmed_len = content.rfind(|c: char| c != ' ').map_or(0, |i| i + 1);
             let line_start = content.len() - num_cols;
-            if trimmed_len > line_start {
-                content.truncate(trimmed_len);
+            let trimmed_len = content.rfind(|c: char| c != ' ').map_or(0, |i| i + 1);
+            // On the cursor line, preserve spaces up to the cursor so it can be positioned
+            let min_keep = if line_idx == cursor_line {
+                line_start + cursor_col + 1
             } else {
-                content.truncate(line_start);
-            }
+                line_start
+            };
+            let keep = trimmed_len.max(min_keep);
+            content.truncate(keep);
             if line_idx + 1 < num_lines {
                 content.push('\n');
             }
         }
-
-        let cursor_point = grid.cursor.point;
-        let cursor_line = cursor_point.line.0 as usize;
-        let cursor_col = cursor_point.column.0;
 
         (content, cursor_line, cursor_col)
     }
