@@ -26,9 +26,11 @@ pub enum Command {
     EnterInsertModeAtLineStart,
     EnterInsertModeAtLineEnd,
     Delete(Motion, usize),
+    Change(Motion, usize),
     DeleteForward,
     DeleteBackward,
     DeleteLine,
+    ChangeLine,
     InsertChar(char),
 
     // Mode transitions
@@ -71,6 +73,8 @@ impl Command {
                 | Command::DeleteBackward
                 | Command::DeleteLine
                 | Command::Delete(_, _)
+                | Command::Change(_, _)
+                | Command::ChangeLine
                 | Command::InsertChar(_)
                 | Command::Undo
                 | Command::Redo

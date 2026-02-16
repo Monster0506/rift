@@ -25,24 +25,22 @@ impl Job for TerminalInputJob {
             }
 
             match self.rx.recv_timeout(std::time::Duration::from_millis(50)) {
-                Ok(event) => {
-                    match event {
-                        TerminalEvent::Wakeup => {
-                            while let Ok(TerminalEvent::Wakeup) = self.rx.try_recv() {}
-                            if tx
-                                .send(JobMessage::TerminalOutput(self.document_id, vec![]))
-                                .is_err()
-                            {
-                                break;
-                            }
-                        }
-                        TerminalEvent::ChildExit(_code) => {
-                            let _ = tx.send(JobMessage::TerminalExit(self.document_id));
+                Ok(event) => match event {
+                    TerminalEvent::Wakeup => {
+                        while let Ok(TerminalEvent::Wakeup) = self.rx.try_recv() {}
+                        if tx
+                            .send(JobMessage::TerminalOutput(self.document_id, vec![]))
+                            .is_err()
+                        {
                             break;
                         }
-                        TerminalEvent::Title(_) => {}
                     }
-                }
+                    TerminalEvent::ChildExit(_code) => {
+                        let _ = tx.send(JobMessage::TerminalExit(self.document_id));
+                        break;
+                    }
+                    TerminalEvent::Title(_) => {}
+                },
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                     let _ = tx.send(JobMessage::TerminalExit(self.document_id));

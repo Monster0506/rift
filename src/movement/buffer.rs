@@ -45,6 +45,33 @@ pub fn move_word_right(buffer: &mut TextBuffer) -> bool {
     buffer.cursor() != start_pos
 }
 
+/// Move cursor to the end of the current word, without skipping trailing whitespace.
+///
+/// Returns `true` if the cursor moved, `false` if already at end
+pub fn move_word_end(buffer: &mut TextBuffer) -> bool {
+    let len = buffer.len();
+    if buffer.cursor() >= len {
+        return false;
+    }
+    let start_pos = buffer.cursor();
+
+    if let Some(curr) = buffer.char_at(buffer.cursor()) {
+        let start_class = classify_character(curr);
+
+        // Skip current word category
+        while buffer.cursor() < len {
+            match buffer.char_at(buffer.cursor()) {
+                Some(c) if classify_character(c) == start_class => {
+                    buffer.move_right();
+                }
+                _ => break,
+            }
+        }
+    }
+
+    buffer.cursor() != start_pos
+}
+
 /// Move cursor backward by one word in the buffer
 ///
 /// Returns `true` if the cursor moved, `false` if already at beginning

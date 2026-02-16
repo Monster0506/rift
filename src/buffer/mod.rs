@@ -308,6 +308,10 @@ impl TextBuffer {
         crate::movement::buffer::move_word_right(self)
     }
 
+    pub fn move_word_end(&mut self) -> bool {
+        crate::movement::buffer::move_word_end(self)
+    }
+
     pub fn move_word_left(&mut self) -> bool {
         crate::movement::buffer::move_word_left(self)
     }

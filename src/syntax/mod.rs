@@ -98,7 +98,11 @@ impl Syntax {
     }
 
     /// Parse source from scratch and return highlights for a specific byte range.
-    pub fn parse_range(&self, source: &[u8], range: std::ops::Range<usize>) -> Vec<(std::ops::Range<usize>, u32)> {
+    pub fn parse_range(
+        &self,
+        source: &[u8],
+        range: std::ops::Range<usize>,
+    ) -> Vec<(std::ops::Range<usize>, u32)> {
         let query = match &self.highlights_query {
             Some(q) => q,
             None => return Vec::new(),

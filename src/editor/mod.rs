@@ -1211,6 +1211,22 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 self.set_mode(Mode::Insert);
             }
+            Command::Change(_, _) | Command::ChangeLine => {
+                let doc = self.document_manager.active_document_mut().unwrap();
+                doc.begin_transaction("Change");
+                let expand_tabs = doc.options.expand_tabs;
+                let tab_width = doc.options.tab_width;
+                let viewport_height = self.render_system.viewport.visible_rows();
+                let _ = execute_command(
+                    command,
+                    self.document_manager.active_document_mut().unwrap(),
+                    expand_tabs,
+                    tab_width,
+                    viewport_height,
+                    self.state.last_search_query.as_deref(),
+                );
+                self.set_mode(Mode::Insert);
+            }
             Command::EnterCommandMode => {
                 self.state.clear_command_line();
                 self.state.command_history.reset_navigation();
@@ -1488,33 +1504,72 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             1
         };
-        let command = match op {
-            crate::action::OperatorType::Delete => crate::command::Command::Delete(motion, count),
-            // For now map Change/Yank to Noop or Implement later
-            _ => crate::command::Command::Noop,
-        };
-        self.set_mode(Mode::Normal);
         self.pending_operator = None;
         self.pending_count = 0;
-        let result = self.execute_buffer_command(command);
-        if result && !self.dot_repeat.is_replaying() && command.is_repeatable() {
-            self.dot_repeat.record_single(command);
+
+        match op {
+            crate::action::OperatorType::Delete => {
+                let command = crate::command::Command::Delete(motion, count);
+                self.set_mode(Mode::Normal);
+                let result = self.execute_buffer_command(command);
+                if result && !self.dot_repeat.is_replaying() && command.is_repeatable() {
+                    self.dot_repeat.record_single(command);
+                }
+                result
+            }
+            crate::action::OperatorType::Change => {
+                let command = crate::command::Command::Change(motion, count);
+                self.document_manager
+                    .active_document_mut()
+                    .unwrap()
+                    .begin_transaction("Change");
+                self.set_mode(Mode::Normal);
+                self.execute_buffer_command(command);
+                if !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.start_insert_recording(command);
+                }
+                self.set_mode(Mode::Insert);
+                true
+            }
+            _ => {
+                self.set_mode(Mode::Normal);
+                false
+            }
         }
-        result
     }
 
     fn execute_operator_linewise(&mut self, op: crate::action::OperatorType) -> bool {
-        let command = match op {
-            crate::action::OperatorType::Delete => crate::command::Command::DeleteLine,
-            _ => crate::command::Command::Noop,
-        };
-        self.set_mode(Mode::Normal);
         self.pending_operator = None;
-        let result = self.execute_buffer_command(command);
-        if result && !self.dot_repeat.is_replaying() && command.is_repeatable() {
-            self.dot_repeat.record_single(command);
+
+        match op {
+            crate::action::OperatorType::Delete => {
+                let command = crate::command::Command::DeleteLine;
+                self.set_mode(Mode::Normal);
+                let result = self.execute_buffer_command(command);
+                if result && !self.dot_repeat.is_replaying() && command.is_repeatable() {
+                    self.dot_repeat.record_single(command);
+                }
+                result
+            }
+            crate::action::OperatorType::Change => {
+                let command = crate::command::Command::ChangeLine;
+                self.document_manager
+                    .active_document_mut()
+                    .unwrap()
+                    .begin_transaction("Change");
+                self.set_mode(Mode::Normal);
+                self.execute_buffer_command(command);
+                if !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.start_insert_recording(command);
+                }
+                self.set_mode(Mode::Insert);
+                true
+            }
+            _ => {
+                self.set_mode(Mode::Normal);
+                false
+            }
         }
-        result
     }
 
     /// Replay the last repeatable action (dot-repeat)

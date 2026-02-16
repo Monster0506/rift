@@ -285,6 +285,150 @@ pub fn execute_command(
                 }
             }
         }
+        Command::Change(motion, count) => {
+            let is_linewise = matches!(
+                motion,
+                Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown
+            );
+
+            if is_linewise {
+                let start_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+                for _ in 0..count {
+                    match motion {
+                        Motion::Up => doc.buffer.move_up(),
+                        Motion::Down => doc.buffer.move_down(),
+                        Motion::PageUp => {
+                            for _ in 0..viewport_height {
+                                doc.buffer.move_up();
+                            }
+                            true
+                        }
+                        Motion::PageDown => {
+                            for _ in 0..viewport_height {
+                                doc.buffer.move_down();
+                            }
+                            true
+                        }
+                        _ => false,
+                    };
+                }
+                let end_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+                let (first_line, last_line) = if start_line <= end_line {
+                    (start_line, end_line)
+                } else {
+                    (end_line, start_line)
+                };
+
+                let delete_start = doc.buffer.line_index.get_start(first_line).unwrap_or(0);
+                let delete_end = if last_line + 1 < doc.buffer.get_total_lines() {
+                    doc.buffer
+                        .line_index
+                        .get_start(last_line + 1)
+                        .unwrap_or(doc.buffer.len())
+                } else {
+                    doc.buffer.len()
+                };
+
+                if delete_end > delete_start {
+                    doc.buffer.set_cursor(delete_start)?;
+                    let len = delete_end - delete_start;
+                    for _ in 0..len {
+                        doc.delete_forward();
+                    }
+                }
+            } else {
+                let start = doc.buffer.cursor();
+                for _ in 0..count {
+                    match motion {
+                        Motion::Left => {
+                            doc.buffer.move_left();
+                        }
+                        Motion::Right => {
+                            doc.buffer.move_right();
+                        }
+                        Motion::StartOfLine => {
+                            doc.buffer.move_to_line_start();
+                        }
+                        Motion::EndOfLine => {
+                            doc.buffer.move_to_line_end();
+                        }
+                        Motion::StartOfFile => doc.buffer.move_to_start(),
+                        Motion::EndOfFile => doc.buffer.move_to_end(),
+                        Motion::NextWord => {
+                            doc.buffer.move_word_end();
+                        }
+                        Motion::PreviousWord => {
+                            doc.buffer.move_word_left();
+                        }
+                        Motion::NextParagraph => {
+                            doc.buffer.move_paragraph_forward();
+                        }
+                        Motion::PreviousParagraph => {
+                            doc.buffer.move_paragraph_backward();
+                        }
+                        Motion::NextSentence => {
+                            doc.buffer.move_sentence_forward();
+                        }
+                        Motion::PreviousSentence => {
+                            doc.buffer.move_sentence_backward();
+                        }
+                        Motion::NextBigWord => {
+                            doc.buffer.move_word_end();
+                        }
+                        Motion::PreviousBigWord => {
+                            doc.buffer.move_word_left();
+                        }
+                        Motion::NextMatch => {
+                            let buf = &mut doc.buffer;
+                            if let Some(query) = last_search_query {
+                                let search_start = buf.cursor().saturating_add(1);
+                                if let Ok((Some(m), _stats)) =
+                                    find_next(buf, search_start, query, SearchDirection::Forward)
+                                {
+                                    buf.set_cursor(m.range.start)?;
+                                }
+                            }
+                        }
+                        Motion::PreviousMatch => {
+                            let buf = &mut doc.buffer;
+                            if let Some(query) = last_search_query {
+                                if let Ok((Some(m), _stats)) =
+                                    find_next(buf, buf.cursor(), query, SearchDirection::Backward)
+                                {
+                                    buf.set_cursor(m.range.start)?;
+                                }
+                            }
+                        }
+                        Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown => {}
+                    }
+                }
+                let end = doc.buffer.cursor();
+
+                if end > start {
+                    let len = end - start;
+                    for _ in 0..len {
+                        doc.delete_backward();
+                    }
+                } else if end < start {
+                    let len = start - end;
+                    for _ in 0..len {
+                        doc.delete_forward();
+                    }
+                }
+            }
+        }
+        Command::ChangeLine => {
+            doc.buffer.move_to_line_start();
+            let start = doc.buffer.cursor();
+            doc.buffer.move_to_line_end();
+            let end = doc.buffer.cursor();
+            if end > start {
+                let len = end - start;
+                for _ in 0..len {
+                    doc.delete_backward();
+                }
+            }
+        }
         Command::DeleteForward => {
             doc.delete_forward();
         }
