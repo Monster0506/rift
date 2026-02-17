@@ -1,6 +1,9 @@
 use super::tree::{SplitNode, SplitTree};
 use super::window::WindowId;
 
+pub const MIN_WINDOW_ROWS: usize = 3;
+pub const MIN_WINDOW_COLS: usize = 10;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct WindowLayout {
     pub window_id: WindowId,
@@ -47,7 +50,9 @@ fn compute_node_layout(
                 SplitDirection::Horizontal => {
                     let available = rows.saturating_sub(1);
                     let first_rows = ((available as f64) * ratio).round() as usize;
-                    let first_rows = first_rows.max(1).min(available.saturating_sub(1).max(1));
+                    let first_rows = first_rows
+                        .max(MIN_WINDOW_ROWS)
+                        .min(available.saturating_sub(MIN_WINDOW_ROWS));
                     let second_rows = available.saturating_sub(first_rows);
 
                     compute_node_layout(first, row, col, first_rows, cols, layouts);
@@ -63,7 +68,9 @@ fn compute_node_layout(
                 SplitDirection::Vertical => {
                     let available = cols.saturating_sub(1);
                     let first_cols = ((available as f64) * ratio).round() as usize;
-                    let first_cols = first_cols.max(1).min(available.saturating_sub(1).max(1));
+                    let first_cols = first_cols
+                        .max(MIN_WINDOW_COLS)
+                        .min(available.saturating_sub(MIN_WINDOW_COLS));
                     let second_cols = available.saturating_sub(first_cols);
 
                     compute_node_layout(first, row, col, rows, first_cols, layouts);

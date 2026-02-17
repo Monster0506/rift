@@ -283,6 +283,80 @@ fn three_windows_nested_layout() {
     assert!(l2.row < l3.row);
 }
 
+#[test]
+fn hsplit_30_70_ratio() {
+    let mut tree = SplitTree::new(1, 24, 80);
+    let w1 = tree.focused_window_id();
+    let w2 = tree.split(SplitDirection::Horizontal, w1, 1, 12, 80);
+    tree.resize_focused(SplitDirection::Horizontal, -0.2, &[]);
+
+    let layouts = tree.compute_layout(21, 80);
+    let l1 = layouts.iter().find(|l| l.window_id == w1).unwrap();
+    let l2 = layouts.iter().find(|l| l.window_id == w2).unwrap();
+
+    assert!(l1.rows < l2.rows);
+    assert_eq!(l1.rows + 1 + l2.rows, 21);
+}
+
+#[test]
+fn vsplit_60_40_ratio() {
+    let mut tree = SplitTree::new(1, 24, 80);
+    let w1 = tree.focused_window_id();
+    let w2 = tree.split(SplitDirection::Vertical, w1, 2, 24, 40);
+    tree.resize_focused(SplitDirection::Vertical, 0.1, &[]);
+
+    let layouts = tree.compute_layout(24, 81);
+    let l1 = layouts.iter().find(|l| l.window_id == w1).unwrap();
+    let l2 = layouts.iter().find(|l| l.window_id == w2).unwrap();
+
+    assert!(l1.cols > l2.cols);
+    assert_eq!(l1.cols + 1 + l2.cols, 81);
+}
+
+#[test]
+fn layout_enforces_minimum_rows() {
+    let mut tree = SplitTree::new(1, 24, 80);
+    let w1 = tree.focused_window_id();
+    let w2 = tree.split(SplitDirection::Horizontal, w1, 1, 12, 80);
+    tree.resize_focused(SplitDirection::Horizontal, 0.4, &[]);
+
+    let layouts = tree.compute_layout(9, 80);
+    let l1 = layouts.iter().find(|l| l.window_id == w1).unwrap();
+    let l2 = layouts.iter().find(|l| l.window_id == w2).unwrap();
+
+    assert!(l1.rows >= 3);
+    assert!(l2.rows >= 3);
+}
+
+#[test]
+fn layout_enforces_minimum_cols() {
+    let mut tree = SplitTree::new(1, 24, 80);
+    let w1 = tree.focused_window_id();
+    let w2 = tree.split(SplitDirection::Vertical, w1, 2, 24, 40);
+    tree.resize_focused(SplitDirection::Vertical, 0.4, &[]);
+
+    let layouts = tree.compute_layout(24, 25);
+    let l1 = layouts.iter().find(|l| l.window_id == w1).unwrap();
+    let l2 = layouts.iter().find(|l| l.window_id == w2).unwrap();
+
+    assert!(l1.cols >= 10);
+    assert!(l2.cols >= 10);
+}
+
+#[test]
+fn layout_rows_cols_sum_to_total() {
+    let mut tree = SplitTree::new(1, 24, 80);
+    let w1 = tree.focused_window_id();
+    let w2 = tree.split(SplitDirection::Horizontal, w1, 1, 12, 80);
+
+    for total_rows in [7, 11, 25, 50] {
+        let layouts = tree.compute_layout(total_rows, 80);
+        let l1 = layouts.iter().find(|l| l.window_id == w1).unwrap();
+        let l2 = layouts.iter().find(|l| l.window_id == w2).unwrap();
+        assert_eq!(l1.rows + 1 + l2.rows, total_rows);
+    }
+}
+
 // ============================================================
 // Navigation
 // ============================================================
