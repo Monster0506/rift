@@ -104,4 +104,22 @@ pub enum ParsedCommand {
         cmd: Option<String>,
         bangs: usize,
     },
+    Split {
+        subcommand: SplitSubcommand,
+        bangs: usize,
+    },
+    VSplit {
+        subcommand: SplitSubcommand,
+        bangs: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SplitSubcommand {
+    Current,
+    File(String),
+    Navigate(crate::split::navigation::Direction),
+    Resize(i32),
+    Freeze,
+    NoFreeze,
 }

@@ -543,6 +543,67 @@ fn parse_terminal(
     ParsedCommand::Terminal { cmd, bangs }
 }
 
+fn parse_split_subcommand(args: &[&str]) -> crate::command_line::commands::SplitSubcommand {
+    use crate::command_line::commands::SplitSubcommand;
+    use crate::split::navigation::Direction;
+
+    if args.is_empty() {
+        return SplitSubcommand::Current;
+    }
+
+    let arg = args[0];
+    if arg == "." {
+        return SplitSubcommand::Current;
+    }
+
+    if let Some(sub) = arg.strip_prefix(':') {
+        return match sub {
+            "l" | "left" => SplitSubcommand::Navigate(Direction::Left),
+            "r" | "right" => SplitSubcommand::Navigate(Direction::Right),
+            "u" | "up" => SplitSubcommand::Navigate(Direction::Up),
+            "d" | "down" => SplitSubcommand::Navigate(Direction::Down),
+            "freeze" => SplitSubcommand::Freeze,
+            "nofreeze" => SplitSubcommand::NoFreeze,
+            _ => {
+                if let Some(rest) = sub.strip_prefix('+') {
+                    if let Ok(n) = rest.parse::<i32>() {
+                        return SplitSubcommand::Resize(n);
+                    }
+                } else if let Some(rest) = sub.strip_prefix('-') {
+                    if let Ok(n) = rest.parse::<i32>() {
+                        return SplitSubcommand::Resize(-n);
+                    }
+                }
+                SplitSubcommand::Current
+            }
+        };
+    }
+
+    SplitSubcommand::File(arg.to_string())
+}
+
+fn parse_split(
+    _registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    ParsedCommand::Split {
+        subcommand: parse_split_subcommand(args),
+        bangs,
+    }
+}
+
+fn parse_vsplit(
+    _registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    ParsedCommand::VSplit {
+        subcommand: parse_split_subcommand(args),
+        bangs,
+    }
+}
+
 /// Static registry of all commands
 pub const COMMANDS: &[CommandDescriptor] = &[
     CommandDescriptor {
@@ -720,6 +781,20 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         aliases: &["term"],
         description: "Open terminal buffer",
         factory: Some(parse_terminal),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "split",
+        aliases: &["sp"],
+        description: "Horizontal split",
+        factory: Some(parse_split),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "vsplit",
+        aliases: &["vs"],
+        description: "Vertical split",
+        factory: Some(parse_vsplit),
         subcommands: &[],
     },
 ];

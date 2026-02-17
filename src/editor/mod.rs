@@ -1918,6 +1918,9 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
             }
+            ExecutionResult::SplitWindow { .. } => {
+                // TODO: handled in Phase 6 (editor integration)
+            }
         }
         if should_close_modal {
             self.close_active_modal();

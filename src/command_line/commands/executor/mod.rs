@@ -67,6 +67,10 @@ pub enum ExecutionResult {
         cmd: Option<String>,
         bangs: usize,
     },
+    SplitWindow {
+        direction: crate::split::tree::SplitDirection,
+        subcommand: crate::command_line::commands::SplitSubcommand,
+    },
 }
 
 impl PartialEq for ExecutionResult {
@@ -104,6 +108,10 @@ impl PartialEq for ExecutionResult {
                 Self::OpenTerminal { cmd: c1, bangs: b1 },
                 Self::OpenTerminal { cmd: c2, bangs: b2 },
             ) => c1 == c2 && b1 == b2,
+            (
+                Self::SplitWindow { direction: d1, subcommand: s1 },
+                Self::SplitWindow { direction: d2, subcommand: s2 },
+            ) => d1 == d2 && s1 == s2,
             _ => false,
         }
     }
@@ -144,6 +152,11 @@ impl std::fmt::Debug for ExecutionResult {
                 .debug_struct("OpenTerminal")
                 .field("cmd", cmd)
                 .field("bangs", bangs)
+                .finish(),
+            Self::SplitWindow { direction, subcommand } => f
+                .debug_struct("SplitWindow")
+                .field("direction", direction)
+                .field("subcommand", subcommand)
                 .finish(),
         }
     }
@@ -405,6 +418,14 @@ impl CommandExecutor {
                     initial_message,
                 }
             }
+            ParsedCommand::Split { subcommand, bangs: _ } => ExecutionResult::SplitWindow {
+                direction: crate::split::tree::SplitDirection::Horizontal,
+                subcommand,
+            },
+            ParsedCommand::VSplit { subcommand, bangs: _ } => ExecutionResult::SplitWindow {
+                direction: crate::split::tree::SplitDirection::Vertical,
+                subcommand,
+            },
             ParsedCommand::Explore { path, bangs: _ } => {
                 let initial_path = if let Some(p) = path {
                     std::path::PathBuf::from(p)

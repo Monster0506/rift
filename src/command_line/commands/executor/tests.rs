@@ -1327,3 +1327,58 @@ fn test_execute_explore() {
         );
     }
 }
+
+#[test]
+fn test_execute_split() {
+    use crate::command_line::commands::SplitSubcommand;
+    use crate::split::tree::SplitDirection;
+
+    let mut state = State::new();
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+
+    let result = CommandExecutor::execute(
+        ParsedCommand::Split { subcommand: SplitSubcommand::Current, bangs: 0 },
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+    assert_eq!(
+        result,
+        ExecutionResult::SplitWindow {
+            direction: SplitDirection::Horizontal,
+            subcommand: SplitSubcommand::Current,
+        }
+    );
+}
+
+#[test]
+fn test_execute_vsplit_file() {
+    use crate::command_line::commands::SplitSubcommand;
+    use crate::split::tree::SplitDirection;
+
+    let mut state = State::new();
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+
+    let result = CommandExecutor::execute(
+        ParsedCommand::VSplit {
+            subcommand: SplitSubcommand::File("test.rs".to_string()),
+            bangs: 0,
+        },
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+    assert_eq!(
+        result,
+        ExecutionResult::SplitWindow {
+            direction: SplitDirection::Vertical,
+            subcommand: SplitSubcommand::File("test.rs".to_string()),
+        }
+    );
+}

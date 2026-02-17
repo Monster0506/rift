@@ -8,4 +8,4 @@ pub use definitions::{CommandDescriptor, COMMANDS};
 pub use executor::{CommandExecutor, ExecutionResult};
 pub use parser::CommandParser;
 pub use registry::{CommandDef, CommandRegistry, MatchResult};
-pub use types::ParsedCommand;
+pub use types::{ParsedCommand, SplitSubcommand};

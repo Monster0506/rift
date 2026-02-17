@@ -447,3 +447,66 @@ fn resize_wrong_direction_returns_false() {
     let result = tree.resize_focused(SplitDirection::Vertical, 0.1, &layouts);
     assert!(!result);
 }
+
+#[test]
+fn navigate_l_shaped_layout() {
+    // w1 spans full width on top, w2 and w3 split the bottom
+    let mut tree = SplitTree::new(1, 24, 80);
+    let w1 = tree.focused_window_id();
+    let w_bottom = tree.split(SplitDirection::Horizontal, w1, 1, 12, 80);
+    let w3 = tree.split(SplitDirection::Vertical, w_bottom, 1, 12, 40);
+
+    let layouts = tree.compute_layout(25, 81);
+
+    tree.set_focus(w1);
+    assert_eq!(tree.navigate(Direction::Down, &layouts), Some(w_bottom));
+    assert_eq!(tree.navigate(Direction::Left, &layouts), None);
+    assert_eq!(tree.navigate(Direction::Right, &layouts), None);
+
+    tree.set_focus(w_bottom);
+    assert_eq!(tree.navigate(Direction::Up, &layouts), Some(w1));
+    assert_eq!(tree.navigate(Direction::Right, &layouts), Some(w3));
+
+    tree.set_focus(w3);
+    assert_eq!(tree.navigate(Direction::Up, &layouts), Some(w1));
+    assert_eq!(tree.navigate(Direction::Left, &layouts), Some(w_bottom));
+}
+
+#[test]
+fn resize_changes_ratio() {
+    let mut tree = SplitTree::new(1, 24, 80);
+    let w1 = tree.focused_window_id();
+    let w2 = tree.split(SplitDirection::Horizontal, w1, 1, 12, 80);
+
+    let before = tree.compute_layout(25, 80);
+    let l1_before = before.iter().find(|l| l.window_id == w1).unwrap().rows;
+
+    tree.set_focus(w1);
+    tree.resize_focused(SplitDirection::Horizontal, 0.1, &before);
+
+    let after = tree.compute_layout(25, 80);
+    let l1_after = after.iter().find(|l| l.window_id == w1).unwrap().rows;
+    let l2_after = after.iter().find(|l| l.window_id == w2).unwrap().rows;
+
+    assert!(l1_after > l1_before);
+    assert_eq!(l1_after + 1 + l2_after, 25);
+}
+
+#[test]
+fn resize_clamps_at_bounds() {
+    let mut tree = SplitTree::new(1, 24, 80);
+    let w1 = tree.focused_window_id();
+    let _w2 = tree.split(SplitDirection::Horizontal, w1, 1, 12, 80);
+
+    tree.set_focus(w1);
+    for _ in 0..20 {
+        tree.resize_focused(SplitDirection::Horizontal, 0.1, &[]);
+    }
+
+    let layouts = tree.compute_layout(25, 80);
+    let l1 = layouts.iter().find(|l| l.window_id == w1).unwrap();
+    let _l2 = layouts.iter().find(|l| l.window_id != w1).unwrap();
+
+    assert!(l1.rows >= 3);
+    assert!(_l2.rows >= 3);
+}

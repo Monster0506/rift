@@ -450,3 +450,122 @@ fn test_parse_real_nohighlight() {
     let result = parser.parse(":noh");
     assert_eq!(result, ParsedCommand::NoHighlight { bangs: 0 });
 }
+
+fn create_real_parser() -> CommandParser {
+    let settings_registry = create_settings_registry();
+    CommandParser::with_commands(settings_registry, COMMANDS)
+}
+
+#[test]
+fn test_parse_split_no_args() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+    assert_eq!(
+        parser.parse(":split"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Current, bangs: 0 }
+    );
+}
+
+#[test]
+fn test_parse_split_dot() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+    assert_eq!(
+        parser.parse(":split ."),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Current, bangs: 0 }
+    );
+}
+
+#[test]
+fn test_parse_split_file() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+    assert_eq!(
+        parser.parse(":split foo.txt"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::File("foo.txt".to_string()), bangs: 0 }
+    );
+}
+
+#[test]
+fn test_parse_split_navigate() {
+    use crate::command_line::commands::SplitSubcommand;
+    use crate::split::navigation::Direction;
+    let parser = create_real_parser();
+
+    assert_eq!(
+        parser.parse(":split :l"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Navigate(Direction::Left), bangs: 0 }
+    );
+    assert_eq!(
+        parser.parse(":split :r"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Navigate(Direction::Right), bangs: 0 }
+    );
+    assert_eq!(
+        parser.parse(":split :u"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Navigate(Direction::Up), bangs: 0 }
+    );
+    assert_eq!(
+        parser.parse(":split :d"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Navigate(Direction::Down), bangs: 0 }
+    );
+}
+
+#[test]
+fn test_parse_split_resize() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+
+    assert_eq!(
+        parser.parse(":split :+5"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Resize(5), bangs: 0 }
+    );
+    assert_eq!(
+        parser.parse(":split :-3"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Resize(-3), bangs: 0 }
+    );
+}
+
+#[test]
+fn test_parse_split_freeze() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+
+    assert_eq!(
+        parser.parse(":split :freeze"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Freeze, bangs: 0 }
+    );
+    assert_eq!(
+        parser.parse(":split :nofreeze"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::NoFreeze, bangs: 0 }
+    );
+}
+
+#[test]
+fn test_parse_vsplit() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+
+    assert_eq!(
+        parser.parse(":vsplit"),
+        ParsedCommand::VSplit { subcommand: SplitSubcommand::Current, bangs: 0 }
+    );
+    assert_eq!(
+        parser.parse(":vsplit foo.txt"),
+        ParsedCommand::VSplit { subcommand: SplitSubcommand::File("foo.txt".to_string()), bangs: 0 }
+    );
+}
+
+#[test]
+fn test_parse_split_aliases() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+
+    assert_eq!(
+        parser.parse(":sp"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Current, bangs: 0 }
+    );
+    assert_eq!(
+        parser.parse(":vs"),
+        ParsedCommand::VSplit { subcommand: SplitSubcommand::Current, bangs: 0 }
+    );
+}
