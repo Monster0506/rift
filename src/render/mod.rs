@@ -116,6 +116,10 @@ pub struct RenderState<'a> {
     pub highlights: Option<&'a [(std::ops::Range<usize>, u32)]>,
     pub capture_map: Option<&'a [&'a str]>,
     pub modal: Option<&'a mut crate::editor::ActiveModal>,
+    pub skip_content: bool,
+    pub cursor_row_offset: usize,
+    pub cursor_col_offset: usize,
+    pub cursor_viewport: Option<&'a Viewport>,
 }
 
 /// Context for rendering passed to helpers

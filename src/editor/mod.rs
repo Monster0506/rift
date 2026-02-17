@@ -339,6 +339,10 @@ impl<T: TerminalBackend> Editor<T> {
             highlights: highlights.as_deref(),
             capture_map: capture_names,
             modal: self.modal.as_mut(),
+            skip_content: false,
+            cursor_row_offset: 0,
+            cursor_col_offset: 0,
+            cursor_viewport: None,
         };
 
         self.render_system
@@ -1376,10 +1380,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_and_render()
     }
 
-    /// Update state and render the editor (for initial render)
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
-        // Update buffer and cursor state only (no input tracking on initial
-        // render)
         let tab_width = self.active_document().options.tab_width;
         let cursor_line = self.active_document().buffer.get_line();
         let cursor_col =
@@ -1389,7 +1390,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.sync_state_with_active_document();
         self.state.error_manager.notifications_mut().prune_expired();
 
-        // Update viewport based on cursor position (state mutation happens here)
         let total_lines = self
             .document_manager
             .active_document()
@@ -1406,7 +1406,12 @@ impl<T: TerminalBackend> Editor<T> {
                 .viewport
                 .update(cursor_line, cursor_col, total_lines, gutter_width);
 
-        self.render(needs_clear)
+        if self.split_tree.window_count() > 1 {
+            self.update_window_viewports();
+            self.render_multi_window(needs_clear)
+        } else {
+            self.render(needs_clear)
+        }
     }
 
     /// Render the editor interface (pure read - no mutations)
@@ -1483,9 +1488,216 @@ impl<T: TerminalBackend> Editor<T> {
             highlights: highlights.as_deref(),
             capture_map: capture_names,
             modal: self.modal.as_mut(),
+            skip_content: false,
+            cursor_row_offset: 0,
+            cursor_col_offset: 0,
+            cursor_viewport: None,
         };
 
         let _ = render_system.render(term, state)?;
+
+        Ok(())
+    }
+
+    fn update_window_viewports(&mut self) {
+        let gutter_width = if self.state.settings.show_line_numbers {
+            self.state.gutter_width
+        } else {
+            0
+        };
+
+        let size = match self.term.get_size() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let content_rows = (size.rows as usize).saturating_sub(1);
+        let layouts = self
+            .split_tree
+            .compute_layout(content_rows, size.cols as usize);
+
+        for layout in &layouts {
+            let window = match self.split_tree.get_window(layout.window_id) {
+                Some(w) => w,
+                None => continue,
+            };
+            if window.frozen {
+                continue;
+            }
+            let cursor_pos = window.cursor_position;
+            let doc_id = window.document_id;
+            let doc = match self.document_manager.get_document(doc_id) {
+                Some(d) => d,
+                None => continue,
+            };
+
+            let tab_width = doc.options.tab_width;
+            let cursor_line = doc.buffer.line_index.get_line_at(cursor_pos);
+            let cursor_col =
+                render::calculate_cursor_column_at(&doc.buffer, cursor_line, tab_width, cursor_pos);
+            let total_lines = doc.buffer.get_total_lines();
+            let window_content_rows = layout.rows.saturating_sub(1);
+
+            let window = self.split_tree.get_window_mut(layout.window_id).unwrap();
+            window.viewport.set_size(window_content_rows, layout.cols);
+            window.viewport.update(cursor_line, cursor_col, total_lines, gutter_width);
+        }
+    }
+
+    fn render_multi_window(&mut self, needs_clear: bool) -> Result<(), RiftError> {
+        use crate::layer::LayerPriority;
+
+        let Editor {
+            document_manager,
+            render_system,
+            state,
+            current_mode,
+            term,
+            pending_keys,
+            pending_count,
+            split_tree,
+            ..
+        } = self;
+
+        let size = term
+            .get_size()
+            .map_err(|e| RiftError::new(ErrorType::Internal, "TERM_SIZE", e))?;
+        let total_rows = size.rows as usize;
+        let total_cols = size.cols as usize;
+        let content_rows = total_rows.saturating_sub(1);
+        let layouts = split_tree.compute_layout(content_rows, total_cols);
+
+        if render_system.compositor.rows() != total_rows
+            || render_system.compositor.cols() != total_cols
+        {
+            render_system.compositor.resize(total_rows, total_cols);
+        }
+
+        let content_layer = render_system.compositor.get_layer_mut(LayerPriority::CONTENT);
+        content_layer.clear();
+
+        let focused_id = split_tree.focused_window_id();
+
+        for layout in &layouts {
+            let window = split_tree.get_window(layout.window_id).unwrap();
+            let is_focused = layout.window_id == focused_id;
+            let doc = document_manager.get_document_mut(window.document_id).unwrap();
+
+            let cursor_pos = window.cursor_position;
+            let tab_width = doc.options.tab_width;
+            let cursor_line = doc.buffer.line_index.get_line_at(cursor_pos);
+
+            let start_line = window.viewport.top_line();
+            let end_line = start_line + window.viewport.visible_rows();
+            let start_char = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
+            let end_char = if end_line < doc.buffer.get_total_lines() {
+                doc.buffer
+                    .line_index
+                    .get_start(end_line)
+                    .unwrap_or(doc.buffer.len())
+            } else {
+                doc.buffer.len()
+            };
+            let start_byte = doc.buffer.char_to_byte(start_char);
+            let end_byte = doc.buffer.char_to_byte(end_char);
+
+            let highlights = doc
+                .syntax
+                .as_mut()
+                .map(|syntax| syntax.highlights(Some(start_byte..end_byte)));
+            let capture_names = doc.syntax.as_ref().map(|s| s.capture_names());
+
+            let ctx = render::DrawContext {
+                buf: &doc.buffer,
+                viewport: &window.viewport,
+                current_mode: *current_mode,
+                pending_key: pending_keys.last().copied(),
+                pending_count: *pending_count,
+                state,
+                needs_clear,
+                tab_width,
+                highlights: highlights.as_deref(),
+                capture_map: capture_names,
+                modal: None,
+            };
+
+            let content_layer =
+                render_system.compositor.get_layer_mut(LayerPriority::CONTENT);
+            render::render_content_to_layer_offset(
+                content_layer,
+                &ctx,
+                layout.row,
+                layout.col,
+            )
+            .map_err(|e| RiftError::new(ErrorType::Renderer, "RENDER_FAILED", e))?;
+
+            let display_name = doc.display_name().to_string();
+            let is_dirty = doc.is_dirty();
+            let cursor_col = render::calculate_cursor_column_at(
+                &doc.buffer,
+                cursor_line,
+                tab_width,
+                cursor_pos,
+            );
+
+            let status_row = layout.row + layout.rows - 1;
+            let content_layer =
+                render_system.compositor.get_layer_mut(LayerPriority::CONTENT);
+            render::render_window_status_bar(
+                content_layer,
+                status_row,
+                layout.col,
+                layout.cols,
+                &display_name,
+                is_dirty,
+                is_focused,
+                cursor_line,
+                cursor_col,
+            );
+        }
+
+        let content_layer = render_system.compositor.get_layer_mut(LayerPriority::CONTENT);
+        render::render_dividers(content_layer, split_tree, content_rows, total_cols);
+
+        let focused_layout = layouts
+            .iter()
+            .find(|l| l.window_id == focused_id)
+            .cloned();
+
+        let focused_window = split_tree.focused_window();
+        let focused_doc = document_manager
+            .get_document_mut(focused_window.document_id)
+            .unwrap();
+
+        let highlights = focused_doc
+            .syntax
+            .as_mut()
+            .map(|syntax| syntax.highlights(None));
+        let capture_names = focused_doc.syntax.as_ref().map(|s| s.capture_names());
+
+        let (row_off, col_off) = focused_layout
+            .as_ref()
+            .map(|l| (l.row, l.col))
+            .unwrap_or((0, 0));
+
+        let focused_vp = &split_tree.focused_window().viewport;
+        let render_state = render::RenderState {
+            buf: &focused_doc.buffer,
+            state,
+            current_mode: *current_mode,
+            pending_key: pending_keys.last().copied(),
+            pending_count: *pending_count,
+            needs_clear,
+            tab_width: focused_doc.options.tab_width,
+            highlights: highlights.as_deref(),
+            capture_map: capture_names,
+            modal: self.modal.as_mut(),
+            skip_content: true,
+            cursor_row_offset: row_off,
+            cursor_col_offset: col_off,
+            cursor_viewport: Some(focused_vp),
+        };
+
+        let _ = render_system.render(term, render_state)?;
 
         Ok(())
     }

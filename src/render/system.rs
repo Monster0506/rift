@@ -262,6 +262,10 @@ impl RenderSystem {
 
         // Clone viewport to avoid simultaneous borrow of self in update_world
         let viewport = self.viewport.clone();
+        let skip_content = state.skip_content;
+        let cursor_row_offset = state.cursor_row_offset;
+        let cursor_col_offset = state.cursor_col_offset;
+        let cursor_viewport = state.cursor_viewport;
         let mut ctx = DrawContext {
             buf: state.buf,
             viewport: &viewport,
@@ -310,9 +314,7 @@ impl RenderSystem {
 
             match renderable {
                 Renderable::TextBuffer(_) => {
-                    if layer_needs_redraw {
-                        // Note: We intentionally skip clear_layer here because
-                        // render_content_to_layer writes all cells (including spaces)
+                    if layer_needs_redraw && !skip_content {
                         crate::render::render_content_to_layer(
                             self.compositor.get_layer_mut(*priority),
                             &ctx,
@@ -397,11 +399,12 @@ impl RenderSystem {
         let cursor_info = if let Some(pos) = command_cursor_info {
             pos
         } else {
+            let vp = cursor_viewport.unwrap_or(&viewport);
             let cursor_line = ctx.buf.get_line();
-            let cursor_line_in_viewport = if cursor_line >= ctx.viewport.top_line()
-                && cursor_line < ctx.viewport.top_line() + ctx.viewport.visible_rows()
+            let cursor_line_in_viewport = if cursor_line >= vp.top_line()
+                && cursor_line < vp.top_line() + vp.visible_rows()
             {
-                cursor_line - ctx.viewport.top_line()
+                cursor_line - vp.top_line()
             } else {
                 0
             };
@@ -413,11 +416,14 @@ impl RenderSystem {
             };
 
             let cursor_col = calculate_cursor_column(ctx.buf, cursor_line, ctx.tab_width);
-            let visual_cursor_col = cursor_col.saturating_sub(ctx.viewport.left_col());
+            let visual_cursor_col = cursor_col.saturating_sub(vp.left_col());
             let display_col = (visual_cursor_col + gutter_width)
-                .min(ctx.viewport.visible_cols().saturating_sub(1));
+                .min(vp.visible_cols().saturating_sub(1));
 
-            CursorPosition::Absolute(cursor_line_in_viewport as u16, display_col as u16)
+            CursorPosition::Absolute(
+                (cursor_line_in_viewport + cursor_row_offset) as u16,
+                (display_col + cursor_col_offset) as u16,
+            )
         };
 
         let stats = self

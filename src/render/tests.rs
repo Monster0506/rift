@@ -231,6 +231,10 @@ fn test_render_does_not_clear_screen() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -261,6 +265,10 @@ fn test_render_cursor_positioning() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -290,6 +298,10 @@ fn test_render_empty_buffer() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -322,6 +334,10 @@ fn test_render_multiline_buffer() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -359,6 +375,10 @@ fn test_render_file_loaded_at_start() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -406,6 +426,10 @@ fn test_render_viewport_scrolling() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -437,6 +461,10 @@ fn test_render_viewport_edge_cases() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -467,6 +495,10 @@ fn test_render_large_buffer() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -505,6 +537,10 @@ fn test_render_cursor_at_viewport_boundaries() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -543,6 +579,10 @@ fn test_render_cursor_at_viewport_boundaries() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -616,6 +656,10 @@ fn test_render_line_numbers_enabled() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -662,6 +706,10 @@ fn test_render_line_numbers_disabled() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -698,6 +746,10 @@ fn test_render_line_numbers_gutter_width() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -749,6 +801,10 @@ fn test_render_cursor_position_with_line_numbers() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -778,6 +834,10 @@ fn test_no_redraw_on_noop() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
@@ -812,6 +872,10 @@ fn test_no_redraw_on_noop() {
                 highlights: None,
                 capture_map: None,
                 modal: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
             },
         )
         .unwrap();
