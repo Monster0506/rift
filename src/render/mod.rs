@@ -142,6 +142,16 @@ pub enum CursorPosition {
 
 /// Render buffer content to the content layer
 pub(crate) fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> Result<(), String> {
+    render_content_to_layer_offset(layer, ctx, 0, 0)
+}
+
+/// Render buffer content with row/col offsets applied to all cell positions
+pub(crate) fn render_content_to_layer_offset(
+    layer: &mut Layer,
+    ctx: &DrawContext,
+    row_offset: usize,
+    col_offset: usize,
+) -> Result<(), String> {
     let buf = ctx.buf;
     let viewport = ctx.viewport;
     let editor_bg = ctx.state.settings.editor_bg;
@@ -160,7 +170,6 @@ pub(crate) fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> R
     let search_matches = &ctx.state.search_matches;
     let first_visible_char = buf.line_index.get_start(top_line).unwrap_or(0);
 
-    // State tracked across lines for performance
     let mut search_match_idx =
         search_matches.partition_point(|m| m.range.end <= first_visible_char);
     let mut highlight_idx = 0;
@@ -172,8 +181,8 @@ pub(crate) fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> R
             render_gutter(
                 layer,
                 line_num,
-                i,
-                gutter_width,
+                i + row_offset,
+                gutter_width + col_offset,
                 ctx.state.total_lines,
                 editor_fg,
                 editor_bg,
@@ -185,9 +194,9 @@ pub(crate) fn render_content_to_layer(layer: &mut Layer, ctx: &DrawContext) -> R
             ctx,
             RenderLineConfig {
                 line_num,
-                row_idx: i,
-                gutter_width,
-                visible_cols,
+                row_idx: i + row_offset,
+                gutter_width: gutter_width + col_offset,
+                visible_cols: visible_cols + col_offset,
                 default_fg: editor_fg,
                 default_bg: editor_bg,
             },
@@ -349,13 +358,21 @@ fn render_line(
 
 /// Calculate the cursor column position accounting for tab width and wide characters
 pub fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) -> usize {
+    calculate_cursor_column_at(buf, line, tab_width, buf.cursor())
+}
+
+/// Like `calculate_cursor_column` but with an explicit cursor position
+pub fn calculate_cursor_column_at(
+    buf: &TextBuffer,
+    line: usize,
+    tab_width: usize,
+    cursor_pos: usize,
+) -> usize {
     if line >= buf.get_total_lines() {
         return 0;
     }
 
     let line_start = buf.line_index.get_start(line).unwrap_or(0);
-    // Cursor is absolute char index
-    let cursor_pos = buf.cursor();
     let target_char_idx = cursor_pos.saturating_sub(line_start);
 
     // We iterate chars from line start up to cursor
@@ -495,6 +512,138 @@ pub(crate) fn render_notifications(
 
         // Add spacing between notifications
         current_row = current_row.saturating_sub(1);
+    }
+}
+
+/// Render split dividers between windows
+pub(crate) fn render_dividers(
+    layer: &mut Layer,
+    tree: &crate::split::tree::SplitTree,
+    total_rows: usize,
+    total_cols: usize,
+) {
+    let fg = Some(Color::DarkGrey);
+    let bg = None;
+    render_node_dividers(layer, &tree.root, 0, 0, total_rows, total_cols, fg, bg);
+}
+
+fn render_node_dividers(
+    layer: &mut Layer,
+    node: &crate::split::tree::SplitNode,
+    row: usize,
+    col: usize,
+    rows: usize,
+    cols: usize,
+    fg: Option<Color>,
+    bg: Option<Color>,
+) {
+    use crate::split::layout::{MIN_WINDOW_COLS, MIN_WINDOW_ROWS};
+    use crate::split::tree::{SplitDirection, SplitNode};
+
+    if let SplitNode::Split {
+        direction,
+        ratio,
+        first,
+        second,
+    } = node
+    {
+        match direction {
+            SplitDirection::Horizontal => {
+                let available = rows.saturating_sub(1);
+                let first_rows = ((available as f64) * ratio).round() as usize;
+                let first_rows = first_rows
+                    .max(MIN_WINDOW_ROWS)
+                    .min(available.saturating_sub(MIN_WINDOW_ROWS));
+                let second_rows = available.saturating_sub(first_rows);
+                let divider_row = row + first_rows;
+
+                for c in col..col + cols {
+                    layer.set_cell(
+                        divider_row,
+                        c,
+                        Cell::new(Character::from('─')).with_colors(fg, bg),
+                    );
+                }
+
+                render_node_dividers(layer, first, row, col, first_rows, cols, fg, bg);
+                render_node_dividers(
+                    layer,
+                    second,
+                    divider_row + 1,
+                    col,
+                    second_rows,
+                    cols,
+                    fg,
+                    bg,
+                );
+            }
+            SplitDirection::Vertical => {
+                let available = cols.saturating_sub(1);
+                let first_cols = ((available as f64) * ratio).round() as usize;
+                let first_cols = first_cols
+                    .max(MIN_WINDOW_COLS)
+                    .min(available.saturating_sub(MIN_WINDOW_COLS));
+                let second_cols = available.saturating_sub(first_cols);
+                let divider_col = col + first_cols;
+
+                for r in row..row + rows {
+                    layer.set_cell(
+                        r,
+                        divider_col,
+                        Cell::new(Character::from('│')).with_colors(fg, bg),
+                    );
+                }
+
+                render_node_dividers(layer, first, row, col, rows, first_cols, fg, bg);
+                render_node_dividers(
+                    layer,
+                    second,
+                    row,
+                    divider_col + 1,
+                    rows,
+                    second_cols,
+                    fg,
+                    bg,
+                );
+            }
+        }
+    }
+}
+
+/// Render a per-window status bar
+pub(crate) fn render_window_status_bar(
+    layer: &mut Layer,
+    row: usize,
+    col: usize,
+    cols: usize,
+    file_name: &str,
+    is_dirty: bool,
+    is_focused: bool,
+    cursor_line: usize,
+    cursor_col: usize,
+) {
+    let (fg, bg) = if is_focused {
+        (Some(Color::Black), Some(Color::White))
+    } else {
+        (Some(Color::White), Some(Color::DarkGrey))
+    };
+
+    let dirty_marker = if is_dirty { " [+]" } else { "" };
+    let pos_info = format!(" {}:{} ", cursor_line + 1, cursor_col + 1);
+    let name_part = format!(" {}{}", file_name, dirty_marker);
+
+    let name_width = name_part.len().min(cols.saturating_sub(pos_info.len()));
+    let pos_start = cols.saturating_sub(pos_info.len());
+
+    for c in 0..cols {
+        let ch = if c < name_width {
+            name_part.chars().nth(c).unwrap_or(' ')
+        } else if c >= pos_start && c < pos_start + pos_info.len() {
+            pos_info.chars().nth(c - pos_start).unwrap_or(' ')
+        } else {
+            ' '
+        };
+        layer.set_cell(row, col + c, Cell::from_char(ch).with_colors(fg, bg));
     }
 }
 
