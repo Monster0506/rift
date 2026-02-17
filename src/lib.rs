@@ -31,6 +31,7 @@ pub mod render;
 pub mod screen_buffer;
 pub mod search;
 pub mod select_view;
+pub mod split;
 pub mod state;
 pub mod status;
 pub mod syntax;
