@@ -21,6 +21,7 @@ use crate::mode::Mode;
 use crate::render;
 use crate::screen_buffer::FrameStats;
 use crate::search::SearchDirection;
+use crate::split::tree::SplitTree;
 use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
 use std::sync::Arc;
@@ -47,6 +48,7 @@ pub struct Editor<T: TerminalBackend> {
     /// Job ID required to finish before quitting
     pending_quit_job_id: Option<usize>,
     pub keymap: KeyMap,
+    pub split_tree: SplitTree,
     // Input state
     pending_keys: Vec<crate::key::Key>,
     pending_count: usize,
@@ -122,6 +124,15 @@ impl<T: TerminalBackend> Editor<T> {
             state.update_filename(doc.display_name().to_string());
         }
 
+        let initial_doc_id = document_manager
+            .active_document_id()
+            .expect("No active document after initialization");
+        let split_tree = SplitTree::new(
+            initial_doc_id,
+            size.rows as usize,
+            size.cols as usize,
+        );
+
         let mut editor = Self {
             term: terminal,
             render_system,
@@ -139,6 +150,7 @@ impl<T: TerminalBackend> Editor<T> {
             job_manager: crate::job_manager::JobManager::new(),
             pending_quit_job_id: None,
             keymap: KeyMap::new(),
+            split_tree,
             pending_keys: Vec::new(),
             pending_count: 0,
             pending_operator: None,
@@ -206,21 +218,36 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(editor)
     }
 
-    /// Get the ID of the active document
     pub fn active_document_id(&self) -> DocumentId {
-        self.document_manager
-            .active_document_id()
-            .expect("No active document")
+        self.split_tree.focused_window().document_id
     }
 
-    /// Get mutable reference to the active document
     pub fn active_document(&mut self) -> &mut Document {
+        let doc_id = self.split_tree.focused_window().document_id;
         self.document_manager
-            .active_document_mut()
+            .get_document_mut(doc_id)
             .expect("No active document")
     }
 
-    /// Save current document's view state (viewport position) before switching
+    fn switch_focus(&mut self, target_id: crate::split::window::WindowId) {
+        let old_doc_id = self.split_tree.focused_window().document_id;
+        if let Some(doc) = self.document_manager.get_document(old_doc_id) {
+            let cursor = doc.buffer.cursor();
+            self.split_tree.focused_window_mut().cursor_position = cursor;
+        }
+
+        self.split_tree.set_focus(target_id);
+
+        let new_doc_id = self.split_tree.focused_window().document_id;
+        let new_cursor = self.split_tree.focused_window().cursor_position;
+        let _ = self.document_manager.switch_to_document(new_doc_id);
+        if let Some(doc) = self.document_manager.get_document_mut(new_doc_id) {
+            let _ = doc.buffer.set_cursor(new_cursor);
+        }
+
+        self.sync_state_with_active_document();
+    }
+
     fn save_current_view_state(&mut self) {
         let (top_line, left_col) = self.render_system.viewport.get_scroll();
         if let Some(doc) = self.document_manager.active_document_mut() {
@@ -330,6 +357,9 @@ impl<T: TerminalBackend> Editor<T> {
     /// Remove a document by ID with strict tab semantics
     pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         self.document_manager.remove_document(id)?;
+        if let Some(doc_id) = self.document_manager.active_document_id() {
+            self.split_tree.focused_window_mut().document_id = doc_id;
+        }
         self.sync_state_with_active_document();
         Ok(())
     }
@@ -401,6 +431,9 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
+        if let Some(doc_id) = self.document_manager.active_document_id() {
+            self.split_tree.focused_window_mut().document_id = doc_id;
+        }
         self.sync_state_with_active_document();
         Ok(())
     }
@@ -419,6 +452,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.document_manager.add_document(doc);
 
         self.document_manager.switch_to_document(id)?;
+        self.split_tree.focused_window_mut().document_id = id;
 
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
@@ -1631,7 +1665,20 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             ExecutionResult::Quit { bangs } => {
-                if bangs == 0 && self.document_manager.has_unsaved_changes() {
+                if self.split_tree.window_count() > 1 {
+                    let focused_id = self.split_tree.focused_window_id();
+                    self.split_tree.close_window(focused_id);
+                    let new_doc_id = self.split_tree.focused_window().document_id;
+                    let new_cursor = self.split_tree.focused_window().cursor_position;
+                    let _ = self.document_manager.switch_to_document(new_doc_id);
+                    if let Some(doc) = self.document_manager.get_document_mut(new_doc_id) {
+                        let _ = doc.buffer.set_cursor(new_cursor);
+                    }
+                    self.sync_state_with_active_document();
+                    if let Err(e) = self.force_full_redraw() {
+                        self.state.handle_error(e);
+                    }
+                } else if bangs == 0 && self.document_manager.has_unsaved_changes() {
                     let unsaved = self.document_manager.get_unsaved_documents();
                     let msg = if unsaved.len() == 1 {
                         format!(
@@ -1749,11 +1796,11 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             ExecutionResult::BufferNext { bangs: _bangs } => {
-                // Save current document's view state before switching
                 self.save_current_view_state();
-                // Use document manager to switch tabs
                 self.document_manager.switch_next_tab();
-                // Restore the switched-to document's view state
+                if let Some(doc_id) = self.document_manager.active_document_id() {
+                    self.split_tree.focused_window_mut().document_id = doc_id;
+                }
                 self.restore_view_state();
 
                 self.sync_state_with_active_document();
@@ -1763,10 +1810,11 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             ExecutionResult::BufferPrevious { bangs: _bangs } => {
-                // Save current document's view state before switching
                 self.save_current_view_state();
                 self.document_manager.switch_prev_tab();
-                // Restore the switched-to document's view state
+                if let Some(doc_id) = self.document_manager.active_document_id() {
+                    self.split_tree.focused_window_mut().document_id = doc_id;
+                }
                 self.restore_view_state();
 
                 self.sync_state_with_active_document();
@@ -1918,8 +1966,93 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
             }
-            ExecutionResult::SplitWindow { .. } => {
-                // TODO: handled in Phase 6 (editor integration)
+            ExecutionResult::SplitWindow {
+                direction,
+                subcommand,
+            } => {
+                use crate::command_line::commands::SplitSubcommand;
+                match subcommand {
+                    SplitSubcommand::Current => {
+                        let doc_id = self.active_document_id();
+                        let focused_id = self.split_tree.focused_window_id();
+                        let size = self.term.get_size().unwrap();
+                        self.split_tree.split(
+                            direction,
+                            focused_id,
+                            doc_id,
+                            size.rows as usize,
+                            size.cols as usize,
+                        );
+                    }
+                    SplitSubcommand::File(path) => {
+                        let path_buf = std::path::PathBuf::from(&path);
+                        let doc_id = if let Some(id) =
+                            self.document_manager.find_open_document_id(&path_buf)
+                        {
+                            id
+                        } else {
+                            match self.document_manager.create_placeholder(&path) {
+                                Ok(id) => {
+                                    let job =
+                                        crate::job_manager::jobs::file_operations::FileLoadJob::new(
+                                            id,
+                                            path_buf,
+                                        );
+                                    self.job_manager.spawn(job);
+                                    id
+                                }
+                                Err(e) => {
+                                    self.state.handle_error(e);
+                                    return;
+                                }
+                            }
+                        };
+                        let focused_id = self.split_tree.focused_window_id();
+                        let size = self.term.get_size().unwrap();
+                        self.split_tree.split(
+                            direction,
+                            focused_id,
+                            doc_id,
+                            size.rows as usize,
+                            size.cols as usize,
+                        );
+                    }
+                    SplitSubcommand::Navigate(dir) => {
+                        let size = self.term.get_size().unwrap();
+                        let layouts = self
+                            .split_tree
+                            .compute_layout(size.rows as usize, size.cols as usize);
+                        if let Some(target_id) = self.split_tree.navigate(dir, &layouts) {
+                            self.switch_focus(target_id);
+                        }
+                    }
+                    SplitSubcommand::Resize(delta) => {
+                        let size = self.term.get_size().unwrap();
+                        let layouts = self
+                            .split_tree
+                            .compute_layout(size.rows as usize, size.cols as usize);
+                        let split_dir = if delta > 0 {
+                            direction
+                        } else {
+                            direction
+                        };
+                        let delta_ratio = (delta as f64) / (size.cols as f64);
+                        self.split_tree
+                            .resize_focused(split_dir, delta_ratio, &layouts);
+                    }
+                    SplitSubcommand::Freeze => {
+                        self.split_tree.focused_window_mut().frozen = true;
+                    }
+                    SplitSubcommand::NoFreeze => {
+                        self.split_tree.focused_window_mut().frozen = false;
+                    }
+                }
+                self.state.clear_command_line();
+                self.close_active_modal();
+                if let Err(e) = self.force_full_redraw() {
+                    self.state.handle_error(e);
+                }
+                should_close_modal = false;
             }
         }
         if should_close_modal {

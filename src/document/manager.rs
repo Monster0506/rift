@@ -379,6 +379,11 @@ impl DocumentManager {
     pub fn find_open_document_index(&self, path: &Path) -> Option<usize> {
         self.find_open_document(path)
     }
+
+    pub fn find_open_document_id(&self, path: &Path) -> Option<DocumentId> {
+        self.find_open_document(path)
+            .map(|idx| self.tab_order[idx])
+    }
 }
 
 impl Default for DocumentManager {
