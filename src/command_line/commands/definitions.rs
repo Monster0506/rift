@@ -543,43 +543,77 @@ fn parse_terminal(
     ParsedCommand::Terminal { cmd, bangs }
 }
 
-fn parse_split_subcommand(args: &[&str]) -> crate::command_line::commands::SplitSubcommand {
+fn parse_split_subcommand(
+    args: &[&str],
+) -> Result<crate::command_line::commands::SplitSubcommand, String> {
     use crate::command_line::commands::SplitSubcommand;
     use crate::split::navigation::Direction;
 
     if args.is_empty() {
-        return SplitSubcommand::Current;
+        return Ok(SplitSubcommand::Current);
     }
 
     let arg = args[0];
     if arg == "." {
-        return SplitSubcommand::Current;
+        return Ok(SplitSubcommand::Current);
     }
 
     if let Some(sub) = arg.strip_prefix(':') {
-        return match sub {
-            "l" | "left" => SplitSubcommand::Navigate(Direction::Left),
-            "r" | "right" => SplitSubcommand::Navigate(Direction::Right),
-            "u" | "up" => SplitSubcommand::Navigate(Direction::Up),
-            "d" | "down" => SplitSubcommand::Navigate(Direction::Down),
-            "freeze" => SplitSubcommand::Freeze,
-            "nofreeze" => SplitSubcommand::NoFreeze,
-            _ => {
-                if let Some(rest) = sub.strip_prefix('+') {
-                    if let Ok(n) = rest.parse::<i32>() {
-                        return SplitSubcommand::Resize(n);
-                    }
-                } else if let Some(rest) = sub.strip_prefix('-') {
-                    if let Ok(n) = rest.parse::<i32>() {
-                        return SplitSubcommand::Resize(-n);
-                    }
-                }
-                SplitSubcommand::Current
+        // Numeric resize: :+N or :-N
+        if let Some(rest) = sub.strip_prefix('+') {
+            if let Ok(n) = rest.parse::<i32>() {
+                return Ok(SplitSubcommand::Resize(n));
             }
+        } else if let Some(rest) = sub.strip_prefix('-') {
+            if let Ok(n) = rest.parse::<i32>() {
+                return Ok(SplitSubcommand::Resize(-n));
+            }
+        }
+
+        // Named subcommands with prefix matching (same rules as CommandRegistry)
+        const SUBS: &[(&str, &[&str])] = &[
+            ("left",     &["l"]),
+            ("right",    &["r"]),
+            ("up",       &["u"]),
+            ("down",     &["d"]),
+            ("freeze",   &[]),
+            ("nofreeze", &[]),
+        ];
+
+        let to_variant = |name: &str| match name {
+            "left"     => Ok(SplitSubcommand::Navigate(Direction::Left)),
+            "right"    => Ok(SplitSubcommand::Navigate(Direction::Right)),
+            "up"       => Ok(SplitSubcommand::Navigate(Direction::Up)),
+            "down"     => Ok(SplitSubcommand::Navigate(Direction::Down)),
+            "freeze"   => Ok(SplitSubcommand::Freeze),
+            "nofreeze" => Ok(SplitSubcommand::NoFreeze),
+            _          => unreachable!(),
+        };
+
+        let input = sub.to_lowercase();
+
+        // Exact match: name or alias
+        for &(name, aliases) in SUBS {
+            if name == input || aliases.contains(&input.as_str()) {
+                return to_variant(name);
+            }
+        }
+
+        // Prefix match
+        let matches: Vec<&str> = SUBS
+            .iter()
+            .filter(|&&(name, _)| name.starts_with(input.as_str()))
+            .map(|&(name, _)| name)
+            .collect();
+
+        return match matches.as_slice() {
+            [name] => to_variant(name),
+            []     => Err(format!("unknown split subcommand ':{sub}'")),
+            _      => Err(format!("ambiguous split subcommand ':{sub}'")),
         };
     }
 
-    SplitSubcommand::File(arg.to_string())
+    Ok(SplitSubcommand::File(arg.to_string()))
 }
 
 fn parse_split(
@@ -587,9 +621,9 @@ fn parse_split(
     args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
-    ParsedCommand::Split {
-        subcommand: parse_split_subcommand(args),
-        bangs,
+    match parse_split_subcommand(args) {
+        Ok(subcommand) => ParsedCommand::Split { subcommand, bangs },
+        Err(msg) => ParsedCommand::Unknown { name: msg },
     }
 }
 
@@ -598,9 +632,9 @@ fn parse_vsplit(
     args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
-    ParsedCommand::VSplit {
-        subcommand: parse_split_subcommand(args),
-        bangs,
+    match parse_split_subcommand(args) {
+        Ok(subcommand) => ParsedCommand::VSplit { subcommand, bangs },
+        Err(msg) => ParsedCommand::Unknown { name: msg },
     }
 }
 

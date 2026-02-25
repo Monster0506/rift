@@ -1,6 +1,6 @@
 use crate::document::{Document, DocumentId};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Manages multiple open documents (tabs)
@@ -13,6 +13,7 @@ pub struct DocumentManager {
     current_tab: usize,
     /// Next available document ID
     next_document_id: DocumentId,
+    private_document_ids: HashSet<DocumentId>,
 }
 
 impl DocumentManager {
@@ -23,6 +24,7 @@ impl DocumentManager {
             tab_order: Vec::new(),
             current_tab: 0,
             next_document_id: 1,
+            private_document_ids: HashSet::new(),
         }
     }
 
@@ -160,25 +162,50 @@ impl DocumentManager {
 
     /// Switch to next tab
     pub fn switch_next_tab(&mut self) {
-        if self.tab_order.len() > 1 {
-            self.current_tab = (self.current_tab + 1) % self.tab_order.len();
+        let public_tabs: Vec<usize> = self
+            .tab_order
+            .iter()
+            .enumerate()
+            .filter(|(_, id)| !self.private_document_ids.contains(*id))
+            .map(|(i, _)| i)
+            .collect();
+        if public_tabs.len() > 1 {
+            let current_pos = public_tabs.iter().position(|&i| i == self.current_tab);
+            if let Some(pos) = current_pos {
+                let next_pos = (pos + 1) % public_tabs.len();
+                self.current_tab = public_tabs[next_pos];
+            }
         }
     }
 
     /// Switch to previous tab
     pub fn switch_prev_tab(&mut self) {
-        if self.tab_order.len() > 1 {
-            if self.current_tab == 0 {
-                self.current_tab = self.tab_order.len() - 1;
-            } else {
-                self.current_tab -= 1;
+        let public_tabs: Vec<usize> = self
+            .tab_order
+            .iter()
+            .enumerate()
+            .filter(|(_, id)| !self.private_document_ids.contains(*id))
+            .map(|(i, _)| i)
+            .collect();
+        if public_tabs.len() > 1 {
+            let current_pos = public_tabs.iter().position(|&i| i == self.current_tab);
+            if let Some(pos) = current_pos {
+                let prev_pos = if pos == 0 {
+                    public_tabs.len() - 1
+                } else {
+                    pos - 1
+                };
+                self.current_tab = public_tabs[prev_pos];
             }
         }
     }
 
     /// Get number of open tabs
     pub fn tab_count(&self) -> usize {
-        self.tab_order.len()
+        self.tab_order
+            .iter()
+            .filter(|id| !self.private_document_ids.contains(*id))
+            .count()
     }
 
     /// Get current active tab index
@@ -319,6 +346,7 @@ impl DocumentManager {
         self.tab_order
             .iter()
             .enumerate()
+            .filter(|(_, id)| !self.private_document_ids.contains(*id))
             .map(|(i, &id)| {
                 let doc = self.documents.get(&id).unwrap();
                 BufferInfo {
@@ -359,6 +387,33 @@ pub struct BufferInfo {
 }
 
 impl DocumentManager {
+    /// Create a private document with a cloned buffer for frozen window isolation.
+    /// Not shown in the tab list or buffer navigation.
+    pub fn create_private_document(
+        &mut self,
+        source_buffer: &crate::buffer::TextBuffer,
+    ) -> Result<DocumentId, RiftError> {
+        let mut doc = Document::new(self.next_document_id).map_err(|e| {
+            RiftError::new(
+                ErrorType::Internal,
+                crate::constants::errors::INTERNAL_ERROR,
+                e.to_string(),
+            )
+        })?;
+        doc.buffer = source_buffer.clone();
+        let id = doc.id;
+        self.add_document(doc);
+        self.private_document_ids.insert(id);
+        Ok(id)
+    }
+
+    /// Remove a private document.
+    pub fn remove_private_document(&mut self, id: DocumentId) {
+        if self.private_document_ids.remove(&id) {
+            let _ = self.remove_document_force(id);
+        }
+    }
+
     /// Create a placeholder document for async loading
     pub fn create_placeholder(&mut self, path: impl AsRef<Path>) -> Result<DocumentId, RiftError> {
         let mut doc = Document::new(self.next_document_id).map_err(|e| {

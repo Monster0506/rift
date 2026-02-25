@@ -248,6 +248,46 @@ impl<T: TerminalBackend> Editor<T> {
         self.sync_state_with_active_document();
     }
 
+    fn do_nofreeze(&mut self) {
+        let focused_id = self.split_tree.focused_window_id();
+        let focused_doc_id = self.split_tree.focused_window().document_id;
+        let orig_doc_id = self.split_tree.focused_window().canonical_document_id();
+
+        // Copy buffer + history from the focused doc to the shared doc.
+        let (new_buf, new_history) = match self.document_manager.get_document(focused_doc_id) {
+            Some(d) => (d.buffer.clone(), d.history.clone()),
+            None => return,
+        };
+        if let Some(orig) = self.document_manager.get_document_mut(orig_doc_id) {
+            orig.buffer = new_buf;
+            orig.history = new_history;
+        }
+
+        // Re-attach all frozen siblings to the shared doc and clean up their private copies.
+        let frozen_ids = self
+            .split_tree
+            .windows_frozen_for_original_document(orig_doc_id);
+        for id in frozen_ids {
+            if let Some(w) = self.split_tree.get_window_mut(id) {
+                let private_id = w.document_id;
+                w.document_id = orig_doc_id;
+                w.original_document_id = None;
+                self.document_manager.remove_private_document(private_id);
+            }
+        }
+
+        // Unfreeze the focused window itself if it was frozen.
+        if let Some(w) = self.split_tree.get_window_mut(focused_id) {
+            if w.original_document_id.is_some() {
+                w.document_id = orig_doc_id;
+                w.original_document_id = None;
+                self.document_manager.remove_private_document(focused_doc_id);
+            }
+        }
+
+        let _ = self.document_manager.switch_to_document(orig_doc_id);
+    }
+
     fn save_current_view_state(&mut self) {
         let (top_line, left_col) = self.render_system.viewport.get_scroll();
         if let Some(doc) = self.document_manager.active_document_mut() {
@@ -1114,6 +1154,20 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::DotRepeat => self.execute_dot_repeat(),
+            EditorAction::SplitToggleFreeze => {
+                use crate::command_line::commands::SplitSubcommand;
+                use crate::split::tree::SplitDirection;
+                let subcommand = if self.split_tree.focused_window().is_frozen() {
+                    SplitSubcommand::NoFreeze
+                } else {
+                    SplitSubcommand::Freeze
+                };
+                self.handle_execution_result(ExecutionResult::SplitWindow {
+                    direction: SplitDirection::Vertical,
+                    subcommand,
+                });
+                true
+            }
         }
     }
 
@@ -1381,6 +1435,12 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
+        // Sync buffer cursor to focused window
+        let doc_id = self.split_tree.focused_window().document_id;
+        if let Some(doc) = self.document_manager.get_document(doc_id) {
+            self.split_tree.focused_window_mut().cursor_position = doc.buffer.cursor();
+        }
+
         let tab_width = self.active_document().options.tab_width;
         let cursor_line = self.active_document().buffer.get_line();
         let cursor_col =
@@ -1520,9 +1580,6 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(w) => w,
                 None => continue,
             };
-            if window.frozen {
-                continue;
-            }
             let cursor_pos = window.cursor_position;
             let doc_id = window.document_id;
             let doc = match self.document_manager.get_document(doc_id) {
@@ -1535,10 +1592,11 @@ impl<T: TerminalBackend> Editor<T> {
             let cursor_col =
                 render::calculate_cursor_column_at(&doc.buffer, cursor_line, tab_width, cursor_pos);
             let total_lines = doc.buffer.get_total_lines();
-            let window_content_rows = layout.rows.saturating_sub(1);
 
             let window = self.split_tree.get_window_mut(layout.window_id).unwrap();
-            window.viewport.set_size(window_content_rows, layout.cols);
+            // +1 because render_content_to_layer_offset does saturating_sub(1)
+            // for the global status bar; multi-window layouts don't need that.
+            window.viewport.set_size(layout.rows + 1, layout.cols);
             window.viewport.update(cursor_line, cursor_col, total_lines, gutter_width);
         }
     }
@@ -1579,12 +1637,9 @@ impl<T: TerminalBackend> Editor<T> {
 
         for layout in &layouts {
             let window = split_tree.get_window(layout.window_id).unwrap();
-            let is_focused = layout.window_id == focused_id;
             let doc = document_manager.get_document_mut(window.document_id).unwrap();
 
-            let cursor_pos = window.cursor_position;
             let tab_width = doc.options.tab_width;
-            let cursor_line = doc.buffer.line_index.get_line_at(cursor_pos);
 
             let start_line = window.viewport.top_line();
             let end_line = start_line + window.viewport.visible_rows();
@@ -1629,34 +1684,23 @@ impl<T: TerminalBackend> Editor<T> {
                 layout.col,
             )
             .map_err(|e| RiftError::new(ErrorType::Renderer, "RENDER_FAILED", e))?;
-
-            let display_name = doc.display_name().to_string();
-            let is_dirty = doc.is_dirty();
-            let cursor_col = render::calculate_cursor_column_at(
-                &doc.buffer,
-                cursor_line,
-                tab_width,
-                cursor_pos,
-            );
-
-            let status_row = layout.row + layout.rows - 1;
-            let content_layer =
-                render_system.compositor.get_layer_mut(LayerPriority::CONTENT);
-            render::render_window_status_bar(
-                content_layer,
-                status_row,
-                layout.col,
-                layout.cols,
-                &display_name,
-                is_dirty,
-                is_focused,
-                cursor_line,
-                cursor_col,
-            );
         }
 
+        let divider_fg = state
+            .settings
+            .syntax_colors
+            .as_ref()
+            .and_then(|sc| sc.get_color("comment"))
+            .or(state.settings.editor_fg);
         let content_layer = render_system.compositor.get_layer_mut(LayerPriority::CONTENT);
-        render::render_dividers(content_layer, split_tree, content_rows, total_cols);
+        render::render_dividers(
+            content_layer,
+            split_tree,
+            content_rows,
+            total_cols,
+            divider_fg,
+            state.settings.editor_bg,
+        );
 
         let focused_layout = layouts
             .iter()
@@ -2188,16 +2232,25 @@ impl<T: TerminalBackend> Editor<T> {
                         let doc_id = self.active_document_id();
                         let focused_id = self.split_tree.focused_window_id();
                         let size = self.term.get_size().unwrap();
-                        self.split_tree.split(
+                        let new_id = self.split_tree.split(
                             direction,
                             focused_id,
                             doc_id,
                             size.rows as usize,
                             size.cols as usize,
                         );
+                        self.switch_focus(new_id);
                     }
                     SplitSubcommand::File(path) => {
                         let path_buf = std::path::PathBuf::from(&path);
+                        if !path_buf.exists() {
+                            self.state.handle_error(crate::error::RiftError::new(
+                                crate::error::ErrorType::Io,
+                                "FILE_NOT_FOUND",
+                                format!("No such file: {path}"),
+                            ));
+                            return;
+                        }
                         let doc_id = if let Some(id) =
                             self.document_manager.find_open_document_id(&path_buf)
                         {
@@ -2221,13 +2274,14 @@ impl<T: TerminalBackend> Editor<T> {
                         };
                         let focused_id = self.split_tree.focused_window_id();
                         let size = self.term.get_size().unwrap();
-                        self.split_tree.split(
+                        let new_id = self.split_tree.split(
                             direction,
                             focused_id,
                             doc_id,
                             size.rows as usize,
                             size.cols as usize,
                         );
+                        self.switch_focus(new_id);
                     }
                     SplitSubcommand::Navigate(dir) => {
                         let size = self.term.get_size().unwrap();
@@ -2243,27 +2297,55 @@ impl<T: TerminalBackend> Editor<T> {
                         let layouts = self
                             .split_tree
                             .compute_layout(size.rows as usize, size.cols as usize);
-                        let split_dir = if delta > 0 {
-                            direction
-                        } else {
-                            direction
-                        };
                         let delta_ratio = (delta as f64) / (size.cols as f64);
                         self.split_tree
-                            .resize_focused(split_dir, delta_ratio, &layouts);
+                            .resize_focused(direction, delta_ratio, &layouts);
                     }
                     SplitSubcommand::Freeze => {
-                        self.split_tree.focused_window_mut().frozen = true;
+                        let focused_id = self.split_tree.focused_window_id();
+                        let doc_id = self.split_tree.focused_window().canonical_document_id();
+
+                        let frozen_siblings = self
+                            .split_tree
+                            .windows_frozen_for_original_document(doc_id);
+
+                        if !frozen_siblings.is_empty() {
+                            self.do_nofreeze();
+                        } else {
+                            let buf = match self.document_manager.get_document(doc_id) {
+                                Some(d) => d.buffer.clone(),
+                                None => return,
+                            };
+                            let sibling_ids: Vec<_> = self
+                                .split_tree
+                                .windows_for_document(doc_id)
+                                .into_iter()
+                                .filter(|&id| id != focused_id)
+                                .collect();
+                            for id in sibling_ids {
+                                let private_id = match self
+                                    .document_manager
+                                    .create_private_document(&buf)
+                                {
+                                    Ok(id) => id,
+                                    Err(e) => {
+                                        self.state.handle_error(e);
+                                        continue;
+                                    }
+                                };
+                                if let Some(w) = self.split_tree.get_window_mut(id) {
+                                    w.original_document_id = Some(doc_id);
+                                    w.document_id = private_id;
+                                }
+                            }
+                        }
                     }
                     SplitSubcommand::NoFreeze => {
-                        self.split_tree.focused_window_mut().frozen = false;
+                        self.do_nofreeze();
                     }
                 }
                 self.state.clear_command_line();
                 self.close_active_modal();
-                if let Err(e) = self.force_full_redraw() {
-                    self.state.handle_error(e);
-                }
                 should_close_modal = false;
             }
         }

@@ -12,7 +12,7 @@ fn single_window_tree() {
     assert_eq!(tree.window_count(), 1);
     assert_eq!(tree.focused_window().document_id, 1);
     assert_eq!(tree.focused_window().cursor_position, 0);
-    assert!(!tree.focused_window().frozen);
+    assert!(!tree.focused_window().is_frozen());
 }
 
 #[test]
@@ -189,16 +189,54 @@ fn independent_cursor_positions() {
 // ============================================================
 
 #[test]
-fn freeze_flag() {
+fn freeze_and_unfreeze() {
     let mut tree = SplitTree::new(1, 24, 80);
     let w1 = tree.focused_window_id();
-    assert!(!tree.focused_window().frozen);
+    assert!(!tree.focused_window().is_frozen());
 
-    tree.get_window_mut(w1).unwrap().frozen = true;
-    assert!(tree.focused_window().frozen);
+    tree.get_window_mut(w1).unwrap().original_document_id = Some(1);
+    assert!(tree.focused_window().is_frozen());
+    assert_eq!(tree.focused_window().canonical_document_id(), 1);
 
-    tree.get_window_mut(w1).unwrap().frozen = false;
-    assert!(!tree.focused_window().frozen);
+    tree.get_window_mut(w1).unwrap().original_document_id = None;
+    assert!(!tree.focused_window().is_frozen());
+}
+
+#[test]
+fn frozen_window_canonical_doc_id() {
+    let mut tree = SplitTree::new(1, 24, 80);
+    let w1 = tree.focused_window_id();
+
+    // Before freeze: canonical ID == document_id
+    assert_eq!(
+        tree.get_window(w1).unwrap().canonical_document_id(),
+        1
+    );
+
+    // After freeze: canonical ID is the original shared doc, document_id is the private copy
+    tree.get_window_mut(w1).unwrap().document_id = 99;
+    tree.get_window_mut(w1).unwrap().original_document_id = Some(1);
+    assert_eq!(
+        tree.get_window(w1).unwrap().canonical_document_id(),
+        1
+    );
+}
+
+#[test]
+fn windows_frozen_for_original_document() {
+    let mut tree = SplitTree::new(1, 24, 80);
+    let w1 = tree.focused_window_id();
+    let w2 = tree.split(super::tree::SplitDirection::Vertical, w1, 1, 24, 40);
+
+    // Mark w2 as frozen against original doc 1
+    tree.get_window_mut(w2).unwrap().document_id = 99;
+    tree.get_window_mut(w2).unwrap().original_document_id = Some(1);
+
+    let frozen = tree.windows_frozen_for_original_document(1);
+    assert_eq!(frozen, vec![w2]);
+
+    let not_frozen = tree.windows_frozen_for_original_document(2);
+    assert!(not_frozen.is_empty());
 }
 
 // ============================================================

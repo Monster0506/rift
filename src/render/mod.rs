@@ -104,7 +104,6 @@ pub struct NotificationDrawState {
 }
 
 /// External state passed to RenderSystem::render
-/// External state passed to RenderSystem::render
 pub struct RenderState<'a> {
     pub buf: &'a TextBuffer,
     pub current_mode: Mode,
@@ -186,7 +185,8 @@ pub(crate) fn render_content_to_layer_offset(
                 layer,
                 line_num,
                 i + row_offset,
-                gutter_width + col_offset,
+                col_offset,
+                gutter_width,
                 ctx.state.total_lines,
                 editor_fg,
                 editor_bg,
@@ -199,8 +199,8 @@ pub(crate) fn render_content_to_layer_offset(
             RenderLineConfig {
                 line_num,
                 row_idx: i + row_offset,
-                gutter_width: gutter_width + col_offset,
-                visible_cols: visible_cols + col_offset,
+                gutter_width: col_offset + gutter_width,
+                visible_cols: col_offset + visible_cols,
                 default_fg: editor_fg,
                 default_bg: editor_bg,
             },
@@ -216,6 +216,7 @@ fn render_gutter(
     layer: &mut Layer,
     line_num: usize,
     row_idx: usize,
+    col_start: usize,
     gutter_width: usize,
     total_lines: usize,
     fg: Option<Color>,
@@ -223,23 +224,23 @@ fn render_gutter(
 ) {
     if line_num < total_lines {
         let line_str = format!("{:width$}", line_num + 1, width = gutter_width - 1);
-        for (col, ch) in line_str.chars().enumerate() {
+        for (i, ch) in line_str.chars().enumerate() {
             layer.set_cell(
                 row_idx,
-                col,
+                col_start + i,
                 Cell::new(Character::from(ch)).with_colors(fg, bg),
             );
         }
         layer.set_cell(
             row_idx,
-            gutter_width - 1,
+            col_start + gutter_width - 1,
             Cell::new(Character::from(' ')).with_colors(fg, bg),
         );
     } else {
-        for col in 0..gutter_width {
+        for i in 0..gutter_width {
             layer.set_cell(
                 row_idx,
-                col,
+                col_start + i,
                 Cell::new(Character::from(' ')).with_colors(fg, bg),
             );
         }
@@ -525,9 +526,9 @@ pub(crate) fn render_dividers(
     tree: &crate::split::tree::SplitTree,
     total_rows: usize,
     total_cols: usize,
+    fg: Option<Color>,
+    bg: Option<Color>,
 ) {
-    let fg = Some(Color::DarkGrey);
-    let bg = None;
     render_node_dividers(layer, &tree.root, 0, 0, total_rows, total_cols, fg, bg);
 }
 
@@ -614,42 +615,6 @@ fn render_node_dividers(
     }
 }
 
-/// Render a per-window status bar
-pub(crate) fn render_window_status_bar(
-    layer: &mut Layer,
-    row: usize,
-    col: usize,
-    cols: usize,
-    file_name: &str,
-    is_dirty: bool,
-    is_focused: bool,
-    cursor_line: usize,
-    cursor_col: usize,
-) {
-    let (fg, bg) = if is_focused {
-        (Some(Color::Black), Some(Color::White))
-    } else {
-        (Some(Color::White), Some(Color::DarkGrey))
-    };
-
-    let dirty_marker = if is_dirty { " [+]" } else { "" };
-    let pos_info = format!(" {}:{} ", cursor_line + 1, cursor_col + 1);
-    let name_part = format!(" {}{}", file_name, dirty_marker);
-
-    let name_width = name_part.len().min(cols.saturating_sub(pos_info.len()));
-    let pos_start = cols.saturating_sub(pos_info.len());
-
-    for c in 0..cols {
-        let ch = if c < name_width {
-            name_part.chars().nth(c).unwrap_or(' ')
-        } else if c >= pos_start && c < pos_start + pos_info.len() {
-            pos_info.chars().nth(c - pos_start).unwrap_or(' ')
-        } else {
-            ' '
-        };
-        layer.set_cell(row, col + c, Cell::from_char(ch).with_colors(fg, bg));
-    }
-}
 
 #[cfg(test)]
 #[path = "tests.rs"]

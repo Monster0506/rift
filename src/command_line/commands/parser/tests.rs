@@ -569,3 +569,59 @@ fn test_parse_split_aliases() {
         ParsedCommand::VSplit { subcommand: SplitSubcommand::Current, bangs: 0 }
     );
 }
+
+#[test]
+fn test_parse_split_unknown_subcommand_errors() {
+    let parser = create_real_parser();
+
+    // Any :word that isn't a valid subcommand produces Unknown, not Current
+    let result = parser.parse(":split :bogus");
+    assert!(matches!(result, ParsedCommand::Unknown { .. }));
+
+    let result = parser.parse(":vsplit :whatever");
+    assert!(matches!(result, ParsedCommand::Unknown { .. }));
+
+    // :+x and :-x where x is not a number also error
+    let result = parser.parse(":split :+abc");
+    assert!(matches!(result, ParsedCommand::Unknown { .. }));
+
+    // Ambiguous prefix errors
+    let result = parser.parse(":split :do"); // matches "down" only — not ambiguous
+    use crate::command_line::commands::SplitSubcommand;
+    assert!(matches!(result, ParsedCommand::Split { subcommand: SplitSubcommand::Navigate(_), .. }));
+}
+
+#[test]
+fn test_parse_split_subcommand_prefix_matching() {
+    use crate::command_line::commands::SplitSubcommand;
+    use crate::split::navigation::Direction;
+    let parser = create_real_parser();
+
+    // Prefix matches for navigate
+    assert_eq!(
+        parser.parse(":split :le"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Navigate(Direction::Left), bangs: 0 }
+    );
+    assert_eq!(
+        parser.parse(":split :ri"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Navigate(Direction::Right), bangs: 0 }
+    );
+    assert_eq!(
+        parser.parse(":split :do"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Navigate(Direction::Down), bangs: 0 }
+    );
+
+    // Prefix matches for freeze/nofreeze
+    assert_eq!(
+        parser.parse(":split :fr"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::Freeze, bangs: 0 }
+    );
+    assert_eq!(
+        parser.parse(":split :nof"),
+        ParsedCommand::Split { subcommand: SplitSubcommand::NoFreeze, bangs: 0 }
+    );
+    assert_eq!(
+        parser.parse(":vsplit :fre"),
+        ParsedCommand::VSplit { subcommand: SplitSubcommand::Freeze, bangs: 0 }
+    );
+}

@@ -126,6 +126,8 @@ pub enum EditorAction {
     HistoryDown,
     /// Repeat last buffer mutation (dot-repeat)
     DotRepeat,
+    /// Toggle freeze on the focused split window
+    SplitToggleFreeze,
 }
 
 /// Undotree specific actions
@@ -234,6 +236,7 @@ impl FromStr for Action {
             "editor:checkpoint" => Ok(Action::Editor(EditorAction::Checkpoint)),
             "editor:submit" => Ok(Action::Editor(EditorAction::Submit)),
             "editor:dot_repeat" => Ok(Action::Editor(EditorAction::DotRepeat)),
+            "editor:split_toggle_freeze" => Ok(Action::Editor(EditorAction::SplitToggleFreeze)),
 
             _ => Ok(Action::Noop),
         }

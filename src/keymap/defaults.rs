@@ -639,6 +639,28 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         vec![Key::Char('d'), Key::Char('d')],
         Action::Editor(EditorAction::DeleteLine),
     );
+
+    // ^W split-window chords (Normal mode)
+    let ww = Key::Ctrl(b'w');
+    for (ch, cmd) in [
+        ('h', ":split :l"),
+        ('j', ":split :d"),
+        ('k', ":split :u"),
+        ('l', ":split :r"),
+        ('<', ":vsplit :-5"),
+        ('>', ":vsplit :+5"),
+    ] {
+        keymap.register_sequence(
+            KeyContext::Normal,
+            vec![ww, Key::Char(ch)],
+            Action::Editor(EditorAction::RunCommand(cmd.to_string())),
+        );
+    }
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![ww, Key::Char('f')],
+        Action::Editor(EditorAction::SplitToggleFreeze),
+    );
     keymap.register_sequence(
         KeyContext::Normal,
         vec![Key::Char('g'), Key::Char('g')],

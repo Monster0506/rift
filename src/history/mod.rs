@@ -407,6 +407,7 @@ impl std::fmt::Display for UndoError {
 impl std::error::Error for UndoError {}
 
 /// Undo tree with branching history and checkpoint strategy
+#[derive(Clone)]
 pub struct UndoTree {
     pub nodes: HashMap<EditSeq, EditNode>,
     pub current: EditSeq,

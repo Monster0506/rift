@@ -173,6 +173,19 @@ impl SplitTree {
             .collect()
     }
 
+    /// Returns all windows that are frozen and whose original (shared) document
+    /// is `orig_doc_id`. These windows are currently editing their own private copy.
+    pub fn windows_frozen_for_original_document(
+        &self,
+        orig_doc_id: DocumentId,
+    ) -> Vec<WindowId> {
+        self.windows
+            .iter()
+            .filter(|(_, w)| w.original_document_id == Some(orig_doc_id))
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
     pub fn window_count(&self) -> usize {
         self.windows.len()
     }
