@@ -22,8 +22,6 @@ use crate::mode::Mode;
 use crate::state::State;
 use crate::viewport::Viewport;
 
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
-
 pub mod components;
 pub mod ecs;
 pub mod pipeline;
@@ -94,6 +92,30 @@ pub struct CommandDrawState {
     /// Theme/Color context
     pub editor_bg: Option<crate::color::Color>,
     pub editor_fg: Option<crate::color::Color>,
+}
+
+/// State for rendering the completion dropdown menu
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompletionMenuDrawState {
+    /// (display_text, description) pairs
+    pub candidates: Vec<(String, String)>,
+    /// Currently highlighted index
+    pub selected: Option<usize>,
+    /// Terminal columns (for matching the command line width/position)
+    pub terminal_cols: usize,
+    /// Command line width ratio
+    pub cmd_width_ratio: f64,
+    /// Command line minimum width
+    pub cmd_min_width: usize,
+    /// Whether the command line has a border
+    pub cmd_has_border: bool,
+    /// Command line total height in rows (including borders)
+    pub cmd_height: usize,
+    /// Theme/Color context
+    pub editor_bg: Option<crate::color::Color>,
+    pub editor_fg: Option<crate::color::Color>,
+    /// First visible candidate (scroll offset)
+    pub scroll_offset: usize,
 }
 
 /// Minimal state required to trigger a re-render of notifications
@@ -214,6 +236,7 @@ pub(crate) fn render_content_to_layer_offset(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_gutter(
     layer: &mut Layer,
     line_num: usize,
@@ -449,14 +472,15 @@ pub(crate) fn render_notifications(
     viewport_rows: usize,
     viewport_cols: usize,
 ) {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
     let notifications = state.error_manager.notifications();
     if notifications.is_empty() {
         return;
     }
 
-    // Render notifications from bottom up, above status bar
-    let mut current_row = viewport_rows.saturating_sub(2); // Start above status bar
-    let max_width = (viewport_cols as f32 * 0.8) as usize; // Max 80% width
+    let mut current_row = viewport_rows.saturating_sub(2);
+    let max_width = (viewport_cols as f32 * 0.8) as usize;
 
     for notification in notifications.iter_active().rev() {
         let message = &notification.message;
@@ -467,21 +491,16 @@ pub(crate) fn render_notifications(
             crate::notification::NotificationType::Success => Color::Green,
         };
 
-        // Wrap text if needed
         let lines = wrap_text(message, max_width);
-
-        // Calculate box width based on longest line
         let content_width = lines.iter().map(|l| l.width()).max().unwrap_or(0);
         let box_width = content_width + 3;
         let start_col = viewport_cols.saturating_sub(box_width);
 
-        // Render lines
         for line in lines.iter().rev() {
             if current_row == 0 {
                 break;
             }
 
-            // Draw background box
             for i in 0..box_width {
                 layer.set_cell(
                     current_row,
@@ -490,7 +509,6 @@ pub(crate) fn render_notifications(
                 );
             }
 
-            // Draw text
             let mut current_col = start_col + 2;
             for ch in line.chars() {
                 let ch_width = ch.width().unwrap_or(1);
@@ -500,7 +518,6 @@ pub(crate) fn render_notifications(
                     Cell::from_char(ch).with_colors(Some(Color::White), Some(color)),
                 );
 
-                // Handle wide characters
                 if ch_width > 1 {
                     let empty_cell = Cell {
                         content: Character::from(' '),
@@ -517,7 +534,6 @@ pub(crate) fn render_notifications(
             current_row = current_row.saturating_sub(1);
         }
 
-        // Add spacing between notifications
         current_row = current_row.saturating_sub(1);
     }
 }
@@ -534,6 +550,7 @@ pub(crate) fn render_dividers(
     render_node_dividers(layer, &tree.root, 0, 0, total_rows, total_cols, fg, bg);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_node_dividers(
     layer: &mut Layer,
     node: &crate::split::tree::SplitNode,

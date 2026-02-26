@@ -808,11 +808,19 @@ impl<T: TerminalBackend> Editor<T> {
                                     // Since KeyMap might not have all chars registered
                                     let k = self.pending_keys[0];
                                     self.pending_keys.clear();
-                                    // Simpler: Map basic typing to InsertChar (which handles command/search logic)
-                                    if let Key::Char(ch) = k {
-                                        self.handle_action(&Action::Editor(
-                                            EditorAction::InsertChar(ch),
-                                        ));
+                                    match k {
+                                        Key::Tab => {
+                                            self.handle_mode_management(Command::TabComplete);
+                                        }
+                                        Key::ShiftTab => {
+                                            self.handle_mode_management(Command::TabCompletePrev);
+                                        }
+                                        Key::Char(ch) => {
+                                            self.handle_action(&Action::Editor(
+                                                EditorAction::InsertChar(ch),
+                                            ));
+                                        }
+                                        _ => {}
                                     }
                                 } else if let Some(modal) = &mut self.modal {
                                     let k = self.pending_keys[0];
@@ -1148,11 +1156,31 @@ impl<T: TerminalBackend> Editor<T> {
                 self.execute_buffer_command(command)
             }
             EditorAction::HistoryUp => {
-                self.navigate_history_up();
+                let dropdown_open = self
+                    .state
+                    .completion_session
+                    .as_ref()
+                    .map(|s| s.dropdown_open)
+                    .unwrap_or(false);
+                if dropdown_open {
+                    self.handle_mode_management(Command::TabCompletePrev);
+                } else {
+                    self.navigate_history_up();
+                }
                 true
             }
             EditorAction::HistoryDown => {
-                self.navigate_history_down();
+                let dropdown_open = self
+                    .state
+                    .completion_session
+                    .as_ref()
+                    .map(|s| s.dropdown_open)
+                    .unwrap_or(false);
+                if dropdown_open {
+                    self.handle_mode_management(Command::TabComplete);
+                } else {
+                    self.navigate_history_down();
+                }
                 true
             }
             EditorAction::DotRepeat => self.execute_dot_repeat(),
@@ -1322,6 +1350,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Insert);
             }
             Command::EnterCommandMode => {
+                self.state.completion_session = None;
                 self.state.clear_command_line();
                 self.state.command_history.reset_navigation();
                 self.set_mode(Mode::Command);
@@ -1348,7 +1377,64 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
 
+            Command::TabComplete => {
+                if let Some(session) = &mut self.state.completion_session {
+                    if session.dropdown_open {
+                        session.select_next();
+                        if let Some(text) = session.selected_text().map(|s| s.to_string()) {
+                            self.apply_completion_text(&text);
+                        }
+                    } else {
+                        // Have candidates, open dropdown
+                        session.dropdown_open = true;
+                        session.selected = Some(0);
+                        if let Some(text) = session.selected_text().map(|s| s.to_string()) {
+                            self.apply_completion_text(&text);
+                        }
+                    }
+                } else {
+                    // No session — request completion from job
+                    let input = self.state.command_line.clone();
+                    use crate::message::CommandLineMessage;
+                    let _ = self
+                        .handle_command_line_message(CommandLineMessage::RequestCompletion(input));
+                }
+            }
+
+            Command::TabCompletePrev => {
+                if let Some(session) = &mut self.state.completion_session {
+                    if session.dropdown_open {
+                        session.select_prev();
+                        if let Some(text) = session.selected_text().map(|s| s.to_string()) {
+                            self.apply_completion_text(&text);
+                        }
+                    } else {
+                        session.dropdown_open = true;
+                        session.select_prev();
+                        if let Some(text) = session.selected_text().map(|s| s.to_string()) {
+                            self.apply_completion_text(&text);
+                        }
+                    }
+                } else {
+                    let input = self.state.command_line.clone();
+                    use crate::message::CommandLineMessage;
+                    let _ = self
+                        .handle_command_line_message(CommandLineMessage::RequestCompletion(input));
+                }
+            }
+
             Command::ExecuteCommandLine => {
+                // If a dropdown is open and has a selection, accept it instead of executing
+                if let Some(session) = &self.state.completion_session {
+                    if session.dropdown_open && session.selected.is_some() {
+                        if let Some(text) = session.selected_text().map(|s| s.to_string()) {
+                            self.apply_completion_text(&text);
+                        }
+                        self.state.completion_session = None;
+                        return;
+                    }
+                }
+                self.state.completion_session = None;
                 // Parse and execute the command
                 let command_line = self.state.command_line.clone();
                 // Add to command history before executing
@@ -1372,12 +1458,36 @@ impl<T: TerminalBackend> Editor<T> {
         // Handle command line editing (mutations happen here)
         match command {
             Command::AppendToCommandLine(ch) => {
-                // ch is guaranteed to be valid ASCII (32-126) from
-                // translate_command_mode
+                let was_open = self
+                    .state
+                    .completion_session
+                    .as_ref()
+                    .map(|s| s.dropdown_open)
+                    .unwrap_or(false);
+                self.state.completion_session = None;
                 self.state.append_to_command_line(ch);
+                if was_open {
+                    let input = self.state.command_line.clone();
+                    use crate::message::CommandLineMessage;
+                    let _ = self
+                        .handle_command_line_message(CommandLineMessage::RequestCompletion(input));
+                }
             }
             Command::DeleteFromCommandLine => {
+                let was_open = self
+                    .state
+                    .completion_session
+                    .as_ref()
+                    .map(|s| s.dropdown_open)
+                    .unwrap_or(false);
+                self.state.completion_session = None;
                 self.state.remove_from_command_line();
+                if was_open {
+                    let input = self.state.command_line.clone();
+                    use crate::message::CommandLineMessage;
+                    let _ = self
+                        .handle_command_line_message(CommandLineMessage::RequestCompletion(input));
+                }
             }
             Command::Move(crate::action::Motion::Left, _)
                 if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
@@ -1766,6 +1876,91 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Helper to close any active modal, clear optional layer, and reset to Normal mode
+    /// Process a CompletionPayload received from a CompletionJob.
+    fn handle_completion_result(
+        &mut self,
+        payload: crate::job_manager::jobs::completion::CompletionPayload,
+    ) {
+        // Discard stale results (user typed since this job was spawned)
+        if payload.input != self.state.command_line {
+            return;
+        }
+
+        // Check if we're updating an already-visible dropdown (live-filtering)
+        let was_dropdown_open = self
+            .state
+            .completion_session
+            .as_ref()
+            .map(|s| s.dropdown_open)
+            .unwrap_or(false);
+
+        let result = payload.result;
+        let candidates = result.candidates;
+
+        if candidates.is_empty() {
+            self.state.completion_session = None;
+            let _ = self.update_and_render();
+            return;
+        }
+
+        if was_dropdown_open {
+            // Dropdown was already visible — update candidates in-place, keep it open
+            let mut session =
+                crate::state::CompletionSession::new(self.state.command_line.clone(), candidates);
+            session.dropdown_open = true;
+            session.selected = Some(0);
+            self.state.completion_session = Some(session);
+            let _ = self.update_and_render();
+            return;
+        }
+
+        // First-time Tab press path
+        if candidates.len() == 1 {
+            self.apply_completion_text(&candidates[0].text.clone());
+            self.state.completion_session = None;
+            let _ = self.update_and_render();
+            return;
+        }
+
+        let current_token = self
+            .state
+            .command_line
+            .rsplit(' ')
+            .next()
+            .unwrap_or("")
+            .to_string();
+
+        if result.common_prefix.len() > current_token.len() {
+            let prefix = result.common_prefix.clone();
+            self.apply_completion_text(&prefix);
+            self.state.completion_session = Some(crate::state::CompletionSession::new(
+                self.state.command_line.clone(),
+                candidates,
+            ));
+        } else {
+            let mut session =
+                crate::state::CompletionSession::new(self.state.command_line.clone(), candidates);
+            session.dropdown_open = true;
+            session.selected = Some(0);
+            self.state.completion_session = Some(session);
+        }
+
+        let _ = self.update_and_render();
+    }
+
+    /// Replace the completing token in the command line with the accepted text.
+    fn apply_completion_text(&mut self, text: &str) {
+        let content = self.state.command_line.clone();
+        let new_content = if let Some(space_pos) = content.rfind(' ') {
+            format!("{} {}", &content[..space_pos], text)
+        } else {
+            text.to_string()
+        };
+        let new_cursor = new_content.len();
+        self.state.command_line = new_content;
+        self.state.command_line_cursor = new_cursor;
+    }
+
     fn close_active_modal(&mut self) {
         if let Some(modal) = &self.modal {
             self.render_system.compositor.clear_layer(modal.layer);
@@ -1782,6 +1977,7 @@ impl<T: TerminalBackend> Editor<T> {
         let old_mode = self.current_mode;
         self.current_mode = mode;
         if (old_mode == Mode::Command || old_mode == Mode::Search) && mode != old_mode {
+            self.state.completion_session = None;
             self.render_system
                 .compositor
                 .clear_layer(crate::layer::LayerPriority::FLOATING_WINDOW);
@@ -2452,6 +2648,7 @@ impl<T: TerminalBackend> Editor<T> {
                         || any.is::<crate::job_manager::jobs::file_operations::FileLoadResult>()
                         || any.is::<SyntaxParseResult>()
                         || any.is::<crate::buffer::byte_map::ByteLineMap>()
+                        || any.is::<crate::job_manager::jobs::completion::CompletionPayload>()
                 };
 
                 // Intercept generic component messages if not core
@@ -2587,6 +2784,17 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                     }
                     Err(any_payload) => {
+                        // Try CompletionPayload
+                        let any_payload = match any_payload
+                            .downcast::<crate::job_manager::jobs::completion::CompletionPayload>()
+                        {
+                            Ok(payload) => {
+                                self.handle_completion_result(*payload);
+                                return Ok(());
+                            }
+                            Err(p) => p,
+                        };
+
                         // Try ByteLineMap (CacheWarmingJob)
                         if let Ok(map) =
                             any_payload.downcast::<crate::buffer::byte_map::ByteLineMap>()
@@ -2751,8 +2959,13 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             CommandLineMessage::CancelMode => {
+                self.state.completion_session = None;
                 self.state.clear_command_line();
                 self.close_active_modal();
+            }
+            CommandLineMessage::RequestCompletion(input) => {
+                use crate::job_manager::jobs::completion::CompletionJob;
+                self.job_manager.spawn(CompletionJob { input });
             }
         }
         Ok(())

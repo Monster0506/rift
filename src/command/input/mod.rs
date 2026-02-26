@@ -140,6 +140,7 @@ pub fn resolve_input(key: Key) -> Option<InputIntent> {
         Key::CtrlEnd => Some(InputIntent::Move(Direction::Right, Granularity::Document)),
 
         Key::Resize(_, _) => None,
+        Key::ShiftTab => None, // handled before resolve_input in command mode
     }
 }
 

@@ -25,6 +25,11 @@ impl<T> SettingsRegistry<T> {
         }
     }
 
+    /// Iterate all setting descriptors (used by tab completion)
+    pub fn descriptors(&self) -> &[SettingDescriptor<T>] {
+        self.settings
+    }
+
     /// Build `CommandRegistry` for option name matching
     ///
     /// Generates a `CommandRegistry` from all setting descriptors,

@@ -29,6 +29,7 @@ pub enum Key {
     Enter,
     Escape,
     Tab,
+    ShiftTab,
     /// System events
     Resize(u16, u16),
 }
@@ -57,6 +58,7 @@ impl Key {
             Key::Enter => vec![b'\r'],
             Key::Escape => vec![0x1b],
             Key::Tab => vec![b'\t'],
+            Key::ShiftTab => vec![0x1b, b'[', b'Z'],
 
             // CSI cursor keys: ESC [ {suffix}
             Key::ArrowUp => csi(b'A', None),

@@ -521,6 +521,9 @@ pub fn execute_command(
         Command::DotRepeat => {
             // Handled at editor level
         }
+        Command::TabComplete | Command::TabCompletePrev => {
+            // Handled at editor level
+        }
         Command::Noop => {}
     }
     Ok(())

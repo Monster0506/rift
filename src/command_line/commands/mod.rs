@@ -1,3 +1,4 @@
+pub mod completion;
 pub mod definitions;
 pub mod executor;
 pub mod parser;

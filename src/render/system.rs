@@ -25,6 +25,7 @@ pub struct RenderSystem {
     command_entity: Option<crate::render::ecs::EntityId>,
     notification_entity: Option<crate::render::ecs::EntityId>,
     modal_entity: Option<crate::render::ecs::EntityId>,
+    completion_entity: Option<crate::render::ecs::EntityId>,
 
     // Rendering State
     last_render_version: u64,
@@ -44,6 +45,7 @@ impl RenderSystem {
             command_entity: None,
             notification_entity: None,
             modal_entity: None,
+            completion_entity: None,
             last_render_version: 0,
             last_cursor_pos: None,
             last_command_cursor: None,
@@ -62,6 +64,7 @@ impl RenderSystem {
         self.command_entity = None;
         self.notification_entity = None;
         self.modal_entity = None;
+        self.completion_entity = None;
         self.last_render_version = 0;
         self.last_cursor_pos = None;
         self.last_command_cursor = None;
@@ -207,6 +210,47 @@ impl RenderSystem {
             self.last_command_cursor = None;
             // Also need to clear the layer
             self.compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
+        }
+
+        // 3b. Completion dropdown
+        let show_dropdown = ctx.current_mode == Mode::Command
+            && ctx
+                .state
+                .completion_session
+                .as_ref()
+                .map(|s| s.dropdown_open && !s.candidates.is_empty())
+                .unwrap_or(false);
+
+        if show_dropdown {
+            if self.completion_entity.is_none() {
+                self.completion_entity = Some(self.world.create_entity());
+            }
+            let entity = self.completion_entity.unwrap();
+            let session = ctx.state.completion_session.as_ref().unwrap();
+
+            let draw_state = crate::render::CompletionMenuDrawState {
+                candidates: session
+                    .candidates
+                    .iter()
+                    .map(|c| (c.text.clone(), c.description.clone()))
+                    .collect(),
+                selected: session.selected,
+                terminal_cols: ctx.viewport.visible_cols(),
+                cmd_width_ratio: ctx.state.settings.command_line_window.width_ratio,
+                cmd_min_width: ctx.state.settings.command_line_window.min_width,
+                cmd_has_border: ctx.state.settings.command_line_window.border,
+                cmd_height: ctx.state.settings.command_line_window.height,
+                editor_bg: ctx.state.settings.editor_bg,
+                editor_fg: ctx.state.settings.editor_fg,
+                scroll_offset: session.scroll_offset,
+            };
+
+            self.world
+                .add_renderable(entity, Renderable::CompletionMenu(draw_state));
+            self.world.add_layer(entity, LayerPriority::HOVER);
+        } else if let Some(entity) = self.completion_entity.take() {
+            self.world.destroy_entity(entity);
+            self.compositor.clear_layer(LayerPriority::HOVER);
         }
 
         // 4. Notifications
@@ -378,6 +422,13 @@ impl RenderSystem {
                         );
                     }
                 }
+                Renderable::CompletionMenu(state) => {
+                    if layer_needs_redraw {
+                        self.compositor.clear_layer(*priority);
+                        let layer = self.compositor.get_layer_mut(*priority);
+                        render_completion_menu(layer, state);
+                    }
+                }
                 Renderable::RefToModal => {
                     if let Some(ref mut modal) = ctx.modal {
                         let layer = self.compositor.get_layer_mut(*priority);
@@ -468,4 +519,110 @@ impl RenderSystem {
         state.needs_clear = true;
         self.render(term, state)
     }
+}
+
+/// Render the completion dropdown menu onto a layer using FloatingWindow.
+///
+/// The menu is positioned directly below the command line window, matching its
+/// horizontal position and width.
+fn render_completion_menu(
+    layer: &mut crate::layer::Layer,
+    state: &crate::render::CompletionMenuDrawState,
+) {
+    use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
+    use crate::layer::Cell;
+
+    let rows = layer.rows();
+    let cols = layer.cols();
+
+    let fg = state.editor_fg;
+    let bg = state.editor_bg;
+    let sel_fg = bg.or(Some(crate::color::Color::Black));
+    let sel_bg = fg.or(Some(crate::color::Color::White));
+    let desc_fg = Some(crate::color::Color::Grey);
+
+    let cmd_width = ((state.terminal_cols as f64 * state.cmd_width_ratio) as usize)
+        .max(state.cmd_min_width)
+        .min(state.terminal_cols);
+
+    let cmd_col = (cols.saturating_sub(cmd_width) / 2) as u16;
+    let cmd_total_height = state.cmd_height;
+    let cmd_row = rows.saturating_sub(cmd_total_height) / 2;
+    let menu_start_row = (cmd_row + cmd_total_height) as u16;
+
+    let max_visible = 8usize.min(state.candidates.len());
+    if max_visible == 0 {
+        return;
+    }
+
+    let scroll = state.scroll_offset;
+    let visible: Vec<_> = state
+        .candidates
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(max_visible)
+        .collect();
+
+    let content_width = cmd_width;
+    let right_col_width = content_width / 2;
+    let left_col_width = content_width
+        .saturating_sub(right_col_width)
+        .saturating_sub(2);
+
+    let mut cell_rows: Vec<Vec<Cell>> = Vec::with_capacity(visible.len());
+
+    for &(abs_i, (ref text, ref desc)) in &visible {
+        let selected = state.selected == Some(abs_i);
+        let (row_fg, row_bg) = if selected { (sel_fg, sel_bg) } else { (fg, bg) };
+
+        let mut line: Vec<Cell> = Vec::with_capacity(content_width);
+
+        let indicator = if selected { '▶' } else { ' ' };
+        line.push(Cell::from_char(indicator).with_colors(row_fg, row_bg));
+        line.push(Cell::from_char(' ').with_colors(row_fg, row_bg));
+
+        for ch in text.chars().take(left_col_width) {
+            line.push(Cell::from_char(ch).with_colors(row_fg, row_bg));
+        }
+
+        while line.len() < 2 + left_col_width {
+            line.push(Cell::from_char(' ').with_colors(row_fg, row_bg));
+        }
+
+        for ch in desc.chars().take(right_col_width.saturating_sub(1)) {
+            let d_fg = if selected { row_fg } else { desc_fg };
+            line.push(Cell::from_char(ch).with_colors(d_fg, row_bg));
+        }
+
+        while line.len() < content_width {
+            line.push(Cell::from_char(' ').with_colors(row_fg, row_bg));
+        }
+
+        cell_rows.push(line);
+    }
+
+    let menu_height = cell_rows.len();
+
+    let mut style = WindowStyle::new()
+        .with_border(false)
+        .with_reverse_video(false);
+    if let Some(c) = fg {
+        style = style.with_fg(c);
+    }
+    if let Some(c) = bg {
+        style = style.with_bg(c);
+    }
+
+    let window = FloatingWindow::with_style(
+        WindowPosition::Absolute {
+            row: menu_start_row,
+            col: cmd_col,
+        },
+        cmd_width,
+        menu_height,
+        style,
+    );
+
+    window.render_cells(layer, &cell_rows);
 }

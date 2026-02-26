@@ -1,8 +1,9 @@
 //! Command definitions
 //! Declarative registry of all editor commands
 
-use crate::command_line::commands::{MatchResult, ParsedCommand};
+use crate::command_line::commands::{MatchResult, ParsedCommand, SplitSubcommand};
 use crate::command_line::settings::SettingsRegistry;
+use crate::split::navigation::Direction;
 use crate::state::UserSettings;
 
 /// Function pointer type for command factories
@@ -543,76 +544,12 @@ fn parse_terminal(
     ParsedCommand::Terminal { cmd, bangs }
 }
 
-fn parse_split_subcommand(
-    args: &[&str],
-) -> Result<crate::command_line::commands::SplitSubcommand, String> {
-    use crate::command_line::commands::SplitSubcommand;
-    use crate::split::navigation::Direction;
-
-    if args.is_empty() {
-        return Ok(SplitSubcommand::Current);
-    }
-
-    let arg = args[0];
-    if arg == "." {
-        return Ok(SplitSubcommand::Current);
-    }
-
-    if let Some(sub) = arg.strip_prefix(':') {
-        // Numeric resize: :+N or :-N
-        if let Some(rest) = sub.strip_prefix('+') {
-            if let Ok(n) = rest.parse::<i32>() {
-                return Ok(SplitSubcommand::Resize(n));
-            }
-        } else if let Some(rest) = sub.strip_prefix('-') {
-            if let Ok(n) = rest.parse::<i32>() {
-                return Ok(SplitSubcommand::Resize(-n));
-            }
-        }
-
-        const SUBS: &[(&str, &[&str])] = &[
-            ("left", &["l"]),
-            ("right", &["r"]),
-            ("up", &["u"]),
-            ("down", &["d"]),
-            ("freeze", &[]),
-            ("nofreeze", &[]),
-        ];
-
-        let to_variant = |name: &str| match name {
-            "left" => Ok(SplitSubcommand::Navigate(Direction::Left)),
-            "right" => Ok(SplitSubcommand::Navigate(Direction::Right)),
-            "up" => Ok(SplitSubcommand::Navigate(Direction::Up)),
-            "down" => Ok(SplitSubcommand::Navigate(Direction::Down)),
-            "freeze" => Ok(SplitSubcommand::Freeze),
-            "nofreeze" => Ok(SplitSubcommand::NoFreeze),
-            _ => unreachable!(),
-        };
-
-        let input = sub.to_lowercase();
-
-        // Exact match: name or alias
-        for &(name, aliases) in SUBS {
-            if name == input || aliases.contains(&input.as_str()) {
-                return to_variant(name);
-            }
-        }
-
-        // Prefix match
-        let matches: Vec<&str> = SUBS
-            .iter()
-            .filter(|&&(name, _)| name.starts_with(input.as_str()))
-            .map(|&(name, _)| name)
-            .collect();
-
-        return match matches.as_slice() {
-            [name] => to_variant(name),
-            [] => Err(format!("unknown split subcommand ':{sub}'")),
-            _ => Err(format!("ambiguous split subcommand ':{sub}'")),
-        };
-    }
-
-    Ok(SplitSubcommand::File(arg.to_string()))
+fn parse_split_base(args: &[&str], bangs: usize) -> (SplitSubcommand, usize) {
+    let sub = match args.first() {
+        None | Some(&".") => SplitSubcommand::Current,
+        Some(path) => SplitSubcommand::File(path.to_string()),
+    };
+    (sub, bangs)
 }
 
 fn parse_split(
@@ -620,10 +557,15 @@ fn parse_split(
     args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
-    match parse_split_subcommand(args) {
-        Ok(subcommand) => ParsedCommand::Split { subcommand, bangs },
-        Err(msg) => ParsedCommand::Unknown { name: msg },
+    if let Some(s) = args.first() {
+        if s.starts_with(':') {
+            return ParsedCommand::Unknown {
+                name: format!("unknown split subcommand '{s}'"),
+            };
+        }
     }
+    let (subcommand, bangs) = parse_split_base(args, bangs);
+    ParsedCommand::Split { subcommand, bangs }
 }
 
 fn parse_vsplit(
@@ -631,11 +573,196 @@ fn parse_vsplit(
     args: &[&str],
     bangs: usize,
 ) -> ParsedCommand {
-    match parse_split_subcommand(args) {
-        Ok(subcommand) => ParsedCommand::VSplit { subcommand, bangs },
-        Err(msg) => ParsedCommand::Unknown { name: msg },
+    if let Some(s) = args.first() {
+        if s.starts_with(':') {
+            return ParsedCommand::Unknown {
+                name: format!("unknown vsplit subcommand '{s}'"),
+            };
+        }
+    }
+    let (subcommand, bangs) = parse_split_base(args, bangs);
+    ParsedCommand::VSplit { subcommand, bangs }
+}
+
+fn split_cmd(sub: SplitSubcommand, bangs: usize) -> ParsedCommand {
+    ParsedCommand::Split {
+        subcommand: sub,
+        bangs,
     }
 }
+
+fn vsplit_cmd(sub: SplitSubcommand, bangs: usize) -> ParsedCommand {
+    ParsedCommand::VSplit {
+        subcommand: sub,
+        bangs,
+    }
+}
+
+fn parse_split_left(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    split_cmd(SplitSubcommand::Navigate(Direction::Left), b)
+}
+fn parse_split_right(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    split_cmd(SplitSubcommand::Navigate(Direction::Right), b)
+}
+fn parse_split_up(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    split_cmd(SplitSubcommand::Navigate(Direction::Up), b)
+}
+fn parse_split_down(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    split_cmd(SplitSubcommand::Navigate(Direction::Down), b)
+}
+fn parse_split_freeze(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    split_cmd(SplitSubcommand::Freeze, b)
+}
+fn parse_split_nofreeze(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    split_cmd(SplitSubcommand::NoFreeze, b)
+}
+fn parse_split_resize(
+    _: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    split_cmd(
+        SplitSubcommand::Resize(args.first().and_then(|s| s.parse().ok()).unwrap_or(1)),
+        bangs,
+    )
+}
+
+fn parse_vsplit_left(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    vsplit_cmd(SplitSubcommand::Navigate(Direction::Left), b)
+}
+fn parse_vsplit_right(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    vsplit_cmd(SplitSubcommand::Navigate(Direction::Right), b)
+}
+fn parse_vsplit_up(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    vsplit_cmd(SplitSubcommand::Navigate(Direction::Up), b)
+}
+fn parse_vsplit_down(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    vsplit_cmd(SplitSubcommand::Navigate(Direction::Down), b)
+}
+fn parse_vsplit_freeze(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    vsplit_cmd(SplitSubcommand::Freeze, b)
+}
+fn parse_vsplit_nofreeze(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
+    vsplit_cmd(SplitSubcommand::NoFreeze, b)
+}
+fn parse_vsplit_resize(
+    _: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    vsplit_cmd(
+        SplitSubcommand::Resize(args.first().and_then(|s| s.parse().ok()).unwrap_or(1)),
+        bangs,
+    )
+}
+
+const SPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
+    CommandDescriptor {
+        name: "left",
+        aliases: &["l"],
+        description: "Navigate to left pane",
+        factory: Some(parse_split_left),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "right",
+        aliases: &["r"],
+        description: "Navigate to right pane",
+        factory: Some(parse_split_right),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "up",
+        aliases: &["u"],
+        description: "Navigate to pane above",
+        factory: Some(parse_split_up),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "down",
+        aliases: &["d"],
+        description: "Navigate to pane below",
+        factory: Some(parse_split_down),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "freeze",
+        aliases: &[],
+        description: "Freeze pane",
+        factory: Some(parse_split_freeze),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "nofreeze",
+        aliases: &[],
+        description: "Unfreeze pane",
+        factory: Some(parse_split_nofreeze),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "resize",
+        aliases: &[],
+        description: "Resize pane",
+        factory: Some(parse_split_resize),
+        subcommands: &[],
+    },
+];
+
+const VSPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
+    CommandDescriptor {
+        name: "left",
+        aliases: &["l"],
+        description: "Navigate to left pane",
+        factory: Some(parse_vsplit_left),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "right",
+        aliases: &["r"],
+        description: "Navigate to right pane",
+        factory: Some(parse_vsplit_right),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "up",
+        aliases: &["u"],
+        description: "Navigate to pane above",
+        factory: Some(parse_vsplit_up),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "down",
+        aliases: &["d"],
+        description: "Navigate to pane below",
+        factory: Some(parse_vsplit_down),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "freeze",
+        aliases: &[],
+        description: "Freeze pane",
+        factory: Some(parse_vsplit_freeze),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "nofreeze",
+        aliases: &[],
+        description: "Unfreeze pane",
+        factory: Some(parse_vsplit_nofreeze),
+        subcommands: &[],
+    },
+    CommandDescriptor {
+        name: "resize",
+        aliases: &[],
+        description: "Resize pane",
+        factory: Some(parse_vsplit_resize),
+        subcommands: &[],
+    },
+];
 
 /// Static registry of all commands
 pub const COMMANDS: &[CommandDescriptor] = &[
@@ -821,13 +948,13 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         aliases: &["sp"],
         description: "Horizontal split",
         factory: Some(parse_split),
-        subcommands: &[],
+        subcommands: SPLIT_SUBCOMMANDS,
     },
     CommandDescriptor {
         name: "vsplit",
         aliases: &["vs"],
         description: "Vertical split",
         factory: Some(parse_vsplit),
-        subcommands: &[],
+        subcommands: VSPLIT_SUBCOMMANDS,
     },
 ];

@@ -529,6 +529,14 @@ fn test_parse_split_navigate() {
             bangs: 0
         }
     );
+    // Full names also work
+    assert_eq!(
+        parser.parse(":split :left"),
+        ParsedCommand::Split {
+            subcommand: SplitSubcommand::Navigate(Direction::Left),
+            bangs: 0
+        }
+    );
 }
 
 #[test]
@@ -537,14 +545,14 @@ fn test_parse_split_resize() {
     let parser = create_real_parser();
 
     assert_eq!(
-        parser.parse(":split :+5"),
+        parser.parse(":split :resize 5"),
         ParsedCommand::Split {
             subcommand: SplitSubcommand::Resize(5),
             bangs: 0
         }
     );
     assert_eq!(
-        parser.parse(":split :-3"),
+        parser.parse(":split :resize -3"),
         ParsedCommand::Split {
             subcommand: SplitSubcommand::Resize(-3),
             bangs: 0
@@ -619,20 +627,26 @@ fn test_parse_split_aliases() {
 fn test_parse_split_unknown_subcommand_errors() {
     let parser = create_real_parser();
 
-    // Any :word that isn't a valid subcommand produces Unknown, not Current
+    // Unknown ':' prefixed subcommand produces Unknown
     let result = parser.parse(":split :bogus");
     assert!(matches!(result, ParsedCommand::Unknown { .. }));
 
     let result = parser.parse(":vsplit :whatever");
     assert!(matches!(result, ParsedCommand::Unknown { .. }));
 
-    // :+x and :-x where x is not a number also error
-    let result = parser.parse(":split :+abc");
-    assert!(matches!(result, ParsedCommand::Unknown { .. }));
-
-    // Ambiguous prefix errors
-    let result = parser.parse(":split :do"); // matches "down" only — not ambiguous
+    // Non-':' prefixed unknown token is treated as a file path
     use crate::command_line::commands::SplitSubcommand;
+    let result = parser.parse(":split somefile.txt");
+    assert_eq!(
+        result,
+        ParsedCommand::Split {
+            subcommand: SplitSubcommand::File("somefile.txt".to_string()),
+            bangs: 0
+        }
+    );
+
+    // ":do" is a prefix match for "down"
+    let result = parser.parse(":split :do");
     assert!(matches!(
         result,
         ParsedCommand::Split {
@@ -648,7 +662,6 @@ fn test_parse_split_subcommand_prefix_matching() {
     use crate::split::navigation::Direction;
     let parser = create_real_parser();
 
-    // Prefix matches for navigate
     assert_eq!(
         parser.parse(":split :le"),
         ParsedCommand::Split {
@@ -671,7 +684,6 @@ fn test_parse_split_subcommand_prefix_matching() {
         }
     );
 
-    // Prefix matches for freeze/nofreeze
     assert_eq!(
         parser.parse(":split :fr"),
         ParsedCommand::Split {
@@ -693,4 +705,184 @@ fn test_parse_split_subcommand_prefix_matching() {
             bangs: 0
         }
     );
+}
+
+#[test]
+fn test_parse_split_with_bang() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+    assert_eq!(
+        parser.parse(":split! foo.txt"),
+        ParsedCommand::Split {
+            subcommand: SplitSubcommand::File("foo.txt".to_string()),
+            bangs: 1
+        }
+    );
+}
+
+#[test]
+fn test_parse_vsplit_navigate_all_directions() {
+    use crate::command_line::commands::SplitSubcommand;
+    use crate::split::navigation::Direction;
+    let parser = create_real_parser();
+
+    for (input, dir) in [
+        (":vsplit :left", Direction::Left),
+        (":vsplit :right", Direction::Right),
+        (":vsplit :up", Direction::Up),
+        (":vsplit :down", Direction::Down),
+    ] {
+        assert_eq!(
+            parser.parse(input),
+            ParsedCommand::VSplit {
+                subcommand: SplitSubcommand::Navigate(dir),
+                bangs: 0
+            }
+        );
+    }
+}
+
+#[test]
+fn test_parse_vsplit_navigate_aliases() {
+    use crate::command_line::commands::SplitSubcommand;
+    use crate::split::navigation::Direction;
+    let parser = create_real_parser();
+
+    assert_eq!(
+        parser.parse(":vsplit :l"),
+        ParsedCommand::VSplit {
+            subcommand: SplitSubcommand::Navigate(Direction::Left),
+            bangs: 0
+        }
+    );
+    assert_eq!(
+        parser.parse(":vs :r"),
+        ParsedCommand::VSplit {
+            subcommand: SplitSubcommand::Navigate(Direction::Right),
+            bangs: 0
+        }
+    );
+}
+
+#[test]
+fn test_parse_vsplit_resize() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+
+    assert_eq!(
+        parser.parse(":vsplit :resize 10"),
+        ParsedCommand::VSplit {
+            subcommand: SplitSubcommand::Resize(10),
+            bangs: 0
+        }
+    );
+    assert_eq!(
+        parser.parse(":vsplit :resize -2"),
+        ParsedCommand::VSplit {
+            subcommand: SplitSubcommand::Resize(-2),
+            bangs: 0
+        }
+    );
+}
+
+#[test]
+fn test_parse_split_resize_default() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+
+    assert_eq!(
+        parser.parse(":split :resize"),
+        ParsedCommand::Split {
+            subcommand: SplitSubcommand::Resize(1),
+            bangs: 0
+        }
+    );
+}
+
+#[test]
+fn test_parse_split_resize_non_numeric_defaults() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+
+    assert_eq!(
+        parser.parse(":split :resize abc"),
+        ParsedCommand::Split {
+            subcommand: SplitSubcommand::Resize(1),
+            bangs: 0
+        }
+    );
+}
+
+#[test]
+fn test_parse_vsplit_freeze_nofreeze() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+
+    assert_eq!(
+        parser.parse(":vsplit :freeze"),
+        ParsedCommand::VSplit {
+            subcommand: SplitSubcommand::Freeze,
+            bangs: 0
+        }
+    );
+    assert_eq!(
+        parser.parse(":vsplit :nofreeze"),
+        ParsedCommand::VSplit {
+            subcommand: SplitSubcommand::NoFreeze,
+            bangs: 0
+        }
+    );
+}
+
+#[test]
+fn test_parse_split_dot_via_alias() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+    assert_eq!(
+        parser.parse(":sp ."),
+        ParsedCommand::Split {
+            subcommand: SplitSubcommand::Current,
+            bangs: 0
+        }
+    );
+}
+
+#[test]
+fn test_parse_vsplit_dot() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+    assert_eq!(
+        parser.parse(":vsplit ."),
+        ParsedCommand::VSplit {
+            subcommand: SplitSubcommand::Current,
+            bangs: 0
+        }
+    );
+}
+
+#[test]
+fn test_parse_split_file_with_path() {
+    use crate::command_line::commands::SplitSubcommand;
+    let parser = create_real_parser();
+    assert_eq!(
+        parser.parse(":split src/main.rs"),
+        ParsedCommand::Split {
+            subcommand: SplitSubcommand::File("src/main.rs".to_string()),
+            bangs: 0
+        }
+    );
+}
+
+#[test]
+fn test_parse_vsplit_unknown_colon_subcommand() {
+    let parser = create_real_parser();
+    let result = parser.parse(":vsplit :bogus");
+    assert!(matches!(result, ParsedCommand::Unknown { .. }));
+}
+
+#[test]
+fn test_parse_split_colon_only_is_unknown() {
+    let parser = create_real_parser();
+    let result = parser.parse(":split :");
+    assert!(matches!(result, ParsedCommand::Unknown { .. }));
 }

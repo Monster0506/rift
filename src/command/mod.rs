@@ -58,6 +58,10 @@ pub enum Command {
     // Repeat
     DotRepeat,
 
+    // Completion
+    TabComplete,
+    TabCompletePrev,
+
     // Control
     Quit,
     Noop,
@@ -309,6 +313,13 @@ impl Dispatcher {
     }
 
     fn translate_command_mode(&self, key: Key) -> Command {
+        // Tab completion keys are handled before the generic input resolver
+        match key {
+            Key::Tab => return Command::TabComplete,
+            Key::ShiftTab => return Command::TabCompletePrev,
+            _ => {}
+        }
+
         use self::input::{Direction, Granularity, InputIntent};
 
         if let Some(intent) = input::resolve_input(key) {

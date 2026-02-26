@@ -3,6 +3,7 @@
 
 use crate::color::{Color, Theme};
 use crate::command::Command;
+use crate::command_line::commands::completion::CompletionCandidate;
 /// ## state/ Invariants
 ///
 /// - Editor mode is explicit and globally consistent.
@@ -144,7 +145,80 @@ impl Default for UserSettings {
     }
 }
 
+/// Maximum number of visible rows in the completion dropdown
+pub const COMPLETION_MAX_VISIBLE: usize = 8;
+
 /// Editor runtime state (session-specific, not persisted)
+/// Active tab-completion session
+#[derive(Debug, Clone)]
+pub struct CompletionSession {
+    /// Command line content when Tab was first pressed
+    pub input_at_tab: String,
+    /// Candidates from the last CompletionJob
+    pub candidates: Vec<CompletionCandidate>,
+    /// Highlighted candidate index (None = no selection yet)
+    pub selected: Option<usize>,
+    /// Whether the dropdown is currently visible
+    pub dropdown_open: bool,
+    /// First visible row in the dropdown (for scrolling)
+    pub scroll_offset: usize,
+}
+
+impl CompletionSession {
+    pub fn new(input_at_tab: String, candidates: Vec<CompletionCandidate>) -> Self {
+        Self {
+            input_at_tab,
+            candidates,
+            selected: None,
+            dropdown_open: false,
+            scroll_offset: 0,
+        }
+    }
+
+    pub fn select_next(&mut self) {
+        if self.candidates.is_empty() {
+            return;
+        }
+        self.selected = Some(match self.selected {
+            None => 0,
+            Some(i) => (i + 1) % self.candidates.len(),
+        });
+        self.ensure_selected_visible();
+    }
+
+    pub fn select_prev(&mut self) {
+        if self.candidates.is_empty() {
+            return;
+        }
+        let len = self.candidates.len();
+        self.selected = Some(match self.selected {
+            None => len.saturating_sub(1),
+            Some(0) => len - 1,
+            Some(i) => i - 1,
+        });
+        self.ensure_selected_visible();
+    }
+
+    pub fn selected_text(&self) -> Option<&str> {
+        self.selected
+            .and_then(|i| self.candidates.get(i))
+            .map(|c| c.text.as_str())
+    }
+
+    fn ensure_selected_visible(&mut self) {
+        let Some(sel) = self.selected else { return };
+        let max_visible = COMPLETION_MAX_VISIBLE.min(self.candidates.len());
+        if max_visible == 0 {
+            return;
+        }
+        if sel < self.scroll_offset {
+            self.scroll_offset = sel;
+        } else if sel >= self.scroll_offset + max_visible {
+            self.scroll_offset = sel + 1 - max_visible;
+        }
+    }
+}
+
 pub struct State {
     /// User settings (persistent preferences)
     pub settings: UserSettings,
@@ -190,6 +264,8 @@ pub struct State {
     pub command_history: crate::history::command::CommandHistory,
     /// Search history (for / searches)
     pub search_history: crate::history::command::CommandHistory,
+    /// Active tab-completion session (None when not completing)
+    pub completion_session: Option<CompletionSession>,
 }
 
 /// Content for split-view overlay (used in Mode::Overlay)
@@ -271,6 +347,7 @@ impl State {
             overlay_content: None,
             command_history: crate::history::command::CommandHistory::default(),
             search_history: crate::history::command::CommandHistory::default(),
+            completion_session: None,
         }
     }
 
@@ -300,6 +377,7 @@ impl State {
             overlay_content: None,
             command_history: crate::history::command::CommandHistory::default(),
             search_history: crate::history::command::CommandHistory::default(),
+            completion_session: None,
         }
     }
 

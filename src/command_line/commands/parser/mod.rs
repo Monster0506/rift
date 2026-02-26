@@ -94,6 +94,13 @@ impl CommandParser {
         for (i, part) in parts.iter().enumerate() {
             let (name, part_bangs) = Self::strip_bangs(part);
 
+            // Subcommand tokens may be prefixed with ':'
+            let name = if !command_chain.is_empty() {
+                name.strip_prefix(':').unwrap_or(name)
+            } else {
+                name
+            };
+
             if name.is_empty() {
                 if command_chain.is_empty() {
                     return ParsedCommand::Unknown {

@@ -69,7 +69,7 @@ fn navigate_from(
             continue;
         }
 
-        if best.map_or(true, |(_, best_overlap)| overlap > best_overlap) {
+        if best.is_none_or(|(_, best_overlap)| overlap > best_overlap) {
             best = Some((candidate.window_id, overlap));
         }
     }

@@ -188,7 +188,14 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
         KeyCode::Backspace => Key::Backspace,
         KeyCode::Enter => Key::Enter,
         KeyCode::Esc => Key::Escape,
-        KeyCode::Tab => Key::Tab,
+        KeyCode::BackTab => Key::ShiftTab,
+        KeyCode::Tab => {
+            if _shift {
+                Key::ShiftTab
+            } else {
+                Key::Tab
+            }
+        }
         KeyCode::Up => {
             if ctrl {
                 Key::CtrlArrowUp

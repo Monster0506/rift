@@ -97,41 +97,39 @@ impl StatusBar {
             for _ in 0..remaining_cols {
                 term.write(b" ")?;
             }
-        } else {
-            if state.settings.status_line.show_filename {
-                let display_name =
-                    if state.is_dirty && state.settings.status_line.show_dirty_indicator {
-                        format!("{}*", state.file_name)
-                    } else {
-                        state.file_name.clone()
-                    };
-                let display_len = display_name.len();
-
-                if display_len <= available_cols {
-                    let spacing = available_cols.saturating_sub(display_len);
-                    for _ in 0..spacing {
-                        term.write(b" ")?;
-                    }
-                    term.write(display_name.as_bytes())?;
+        } else if state.settings.status_line.show_filename {
+            let display_name =
+                if state.is_dirty && state.settings.status_line.show_dirty_indicator {
+                    format!("{}*", state.file_name)
                 } else {
-                    let truncated = if available_cols > 3 {
-                        format!(
-                            "...{}",
-                            &display_name[display_name.len().saturating_sub(available_cols - 3)..]
-                        )
-                    } else {
-                        String::new()
-                    };
-                    let spacing = available_cols.saturating_sub(truncated.len());
-                    for _ in 0..spacing {
-                        term.write(b" ")?;
-                    }
-                    term.write(truncated.as_bytes())?;
-                }
-            } else {
-                for _ in 0..available_cols {
+                    state.file_name.clone()
+                };
+            let display_len = display_name.len();
+
+            if display_len <= available_cols {
+                let spacing = available_cols.saturating_sub(display_len);
+                for _ in 0..spacing {
                     term.write(b" ")?;
                 }
+                term.write(display_name.as_bytes())?;
+            } else {
+                let truncated = if available_cols > 3 {
+                    format!(
+                        "...{}",
+                        &display_name[display_name.len().saturating_sub(available_cols - 3)..]
+                    )
+                } else {
+                    String::new()
+                };
+                let spacing = available_cols.saturating_sub(truncated.len());
+                for _ in 0..spacing {
+                    term.write(b" ")?;
+                }
+                term.write(truncated.as_bytes())?;
+            }
+        } else {
+            for _ in 0..available_cols {
+                term.write(b" ")?;
             }
         }
 
@@ -182,6 +180,7 @@ impl StatusBar {
             Key::Enter => "Enter".to_string(),
             Key::Escape => "Esc".to_string(),
             Key::Tab => "Tab".to_string(),
+            Key::ShiftTab => "S-Tab".to_string(),
             Key::Home => "Home".to_string(),
             Key::End => "End".to_string(),
             Key::CtrlHome => "Ctrl+Home".to_string(),
