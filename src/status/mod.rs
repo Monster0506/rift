@@ -35,9 +35,7 @@ impl StatusBar {
         let status_row = viewport.visible_rows().saturating_sub(1);
         term.move_cursor(status_row as u16, 0)?;
 
-        // If status line is disabled, just clear the line and return
         if !state.settings.status_line.show_status_line {
-            // Clear the entire status line
             for _ in 0..viewport.visible_cols() {
                 term.write(b" ")?;
             }
@@ -49,11 +47,9 @@ impl StatusBar {
             term.write(b"\x1b[7m")?;
         }
 
-        // Mode indicator
         let mode_str = Self::format_mode(current_mode);
         term.write(mode_str.as_bytes())?;
 
-        // Pending key indicator
         let mut pending_str = String::new();
         if pending_count > 0 {
             pending_str.push_str(&format!(" {}", pending_count));
@@ -66,22 +62,18 @@ impl StatusBar {
             term.write(pending_str.as_bytes())?;
         }
 
-        // Debug information (if debug mode is enabled)
         let debug_str = if state.debug_mode {
             Self::format_debug_info(state, current_mode)
         } else {
             String::new()
         };
 
-        // Calculate layout
         let mode_len = mode_str.len();
         let pending_len = pending_str.len();
         let used_cols = mode_len + pending_len;
         let available_cols = viewport.visible_cols().saturating_sub(used_cols);
 
-        // In debug mode, show debug info. In normal mode, show filename on right
         if state.debug_mode {
-            // Format debug info with proper spacing
             let (debug_display, debug_len) = if debug_str.is_empty() {
                 (String::new(), 0)
             } else {
@@ -95,12 +87,10 @@ impl StatusBar {
                 (spaced, truncated.len() + spacing)
             };
 
-            // Write debug info
             if !debug_display.is_empty() {
                 term.write(debug_display.as_bytes())?;
             }
 
-            // Fill rest of line with spaces
             let total_used = mode_len + pending_len + debug_len;
             let remaining_cols = viewport.visible_cols().saturating_sub(total_used);
 
@@ -108,7 +98,6 @@ impl StatusBar {
                 term.write(b" ")?;
             }
         } else {
-            // Normal mode: show filename on the right (if enabled in settings)
             if state.settings.status_line.show_filename {
                 let display_name =
                     if state.is_dirty && state.settings.status_line.show_dirty_indicator {
@@ -119,14 +108,12 @@ impl StatusBar {
                 let display_len = display_name.len();
 
                 if display_len <= available_cols {
-                    // Right-align filename
                     let spacing = available_cols.saturating_sub(display_len);
                     for _ in 0..spacing {
                         term.write(b" ")?;
                     }
                     term.write(display_name.as_bytes())?;
                 } else {
-                    // Filename too long, truncate it
                     let truncated = if available_cols > 3 {
                         format!(
                             "...{}",
@@ -142,14 +129,12 @@ impl StatusBar {
                     term.write(truncated.as_bytes())?;
                 }
             } else {
-                // Filename display disabled, fill with spaces
                 for _ in 0..available_cols {
                     term.write(b" ")?;
                 }
             }
         }
 
-        // Reset colors (if reverse video was enabled)
         if state.settings.status_line.reverse_video {
             term.write(b"\x1b[0m")?;
         }
@@ -216,12 +201,12 @@ impl StatusBar {
         _debug_mode: bool,
     ) -> String {
         let mut parts = Vec::new();
-        parts.push(format!("File: {}", file_name));
         if let Some(key) = last_keypress {
             parts.push(format!("Last: {}", Self::format_key(key)));
         }
         parts.push(format!("Pos: {}:{}", cursor.row + 1, cursor.col + 1));
         parts.push(format!("Lines: {}", total_lines));
+        parts.push(format!("File: {}", file_name));
         parts.join(" | ")
     }
 
@@ -229,24 +214,20 @@ impl StatusBar {
     fn format_debug_info(state: &State, _current_mode: Mode) -> String {
         let mut parts = Vec::new();
 
-        // Filepath (in debug mode, show full path)
         if let Some(path) = &state.file_path {
             parts.push(format!("File: {}", path));
         }
 
-        // Last keypress
         if let Some(key) = state.last_keypress {
             parts.push(format!("Last: {}", Self::format_key(key)));
         }
 
-        // Cursor position (1-indexed for display)
         parts.push(format!(
             "Pos: {}:{}",
             state.cursor_pos.0 + 1,
             state.cursor_pos.1 + 1
         ));
 
-        // Buffer stats
         parts.push(format!("Lines: {}", state.total_lines));
         parts.push(format!("Size: {}B", state.buffer_size));
 
@@ -259,7 +240,6 @@ impl StatusBar {
         let status_row = layer.rows().saturating_sub(1);
         let visible_cols = state.cols;
 
-        // Determine colors based on reverse video setting
         let (fg, bg) = if state.reverse_video {
             (
                 state.editor_bg.or(Some(Color::Black)),
@@ -269,17 +249,13 @@ impl StatusBar {
             (state.editor_fg, state.editor_bg)
         };
 
-        // Build the status line content
         let mode_str = Self::format_mode(state.mode);
 
-        // Normal display: mode + pending key + search info + (debug info or filename)
         let mut col = 0;
 
-        // Write mode
         layer.write_str_colored(status_row, col, mode_str, fg, bg);
         col += mode_str.len();
 
-        // Pending key indicator
         if state.pending_count > 0 {
             let count_str = format!(" {}", state.pending_count);
             layer.write_str_colored(status_row, col, &count_str, fg, bg);
@@ -292,10 +268,8 @@ impl StatusBar {
             col += pending_str.len();
         }
 
-        // Search stats: [#query# k/n]
         if let Some(query) = &state.search_query {
             if !query.is_empty() {
-                // Space before search info
                 layer.set_cell(
                     status_row,
                     col,
@@ -303,7 +277,6 @@ impl StatusBar {
                 );
                 col += 1;
 
-                // Render query highlighted (Yellow bg, Black fg)
                 layer.write_str_colored(
                     status_row,
                     col,
@@ -313,7 +286,6 @@ impl StatusBar {
                 );
                 col += query.len();
 
-                // Render stats " k/n"
                 if state.search_total_matches > 0 {
                     let stats = if let Some(idx) = state.search_match_index {
                         format!(" {}/{}", idx, state.search_total_matches)
@@ -326,12 +298,10 @@ impl StatusBar {
             }
         }
 
-        // Calculate remaining space
         let used_cols = col;
         let available_cols = visible_cols.saturating_sub(used_cols);
 
         if state.debug_mode {
-            // Debug mode: show debug info
             let debug_str = Self::format_debug_info_from_state(
                 &state.file_name,
                 &state.cursor,
@@ -340,16 +310,16 @@ impl StatusBar {
                 state.debug_mode,
             );
             if !debug_str.is_empty() {
-                let truncated = if debug_str.len() <= available_cols {
+                let padded_cols = available_cols.saturating_sub(1);
+                let truncated = if debug_str.len() <= padded_cols {
                     debug_str
-                } else if available_cols > 3 {
-                    format!("{}...", &debug_str[..available_cols.saturating_sub(3)])
+                } else if padded_cols > 3 {
+                    format!("{}...", &debug_str[..padded_cols.saturating_sub(3)])
                 } else {
                     String::new()
                 };
 
-                // Right-align debug info
-                let spacing = available_cols.saturating_sub(truncated.len());
+                let spacing = padded_cols.saturating_sub(truncated.len());
                 for _ in 0..spacing {
                     layer.set_cell(
                         status_row,
@@ -362,7 +332,6 @@ impl StatusBar {
                 col += truncated.len();
             }
         } else {
-            // Normal mode: show filename on the right
             let display_name = if state.is_dirty {
                 format!("{}*", state.file_name)
             } else {
@@ -370,7 +339,6 @@ impl StatusBar {
             };
 
             if display_name.len() <= available_cols {
-                // Right-align filename
                 let spacing = available_cols.saturating_sub(display_name.len() + 1);
                 for _ in 0..spacing {
                     layer.set_cell(
@@ -383,7 +351,6 @@ impl StatusBar {
                 layer.write_str_colored(status_row, col, &display_name, fg, bg);
                 col += display_name.len();
             } else if available_cols > 3 {
-                // Truncate filename
                 let truncated = format!(
                     "...{}",
                     &display_name[display_name.len().saturating_sub(available_cols - 3)..]
@@ -402,7 +369,6 @@ impl StatusBar {
             }
         }
 
-        // Fill remaining space with spaces
         while col < visible_cols {
             layer.set_cell(
                 status_row,
