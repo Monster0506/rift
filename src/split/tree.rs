@@ -56,7 +56,13 @@ impl SplitTree {
         let cursor_pos = self
             .windows
             .get(&target_id)
-            .map(|w| if w.document_id == new_doc_id { w.cursor_position } else { 0 })
+            .map(|w| {
+                if w.document_id == new_doc_id {
+                    w.cursor_position
+                } else {
+                    0
+                }
+            })
             .unwrap_or(0);
 
         let mut new_window = Window::new(new_id, new_doc_id, viewport_rows, viewport_cols);
@@ -107,10 +113,7 @@ impl SplitTree {
         }
 
         self.windows.remove(&id);
-        self.root = Self::remove_leaf(
-            std::mem::replace(&mut self.root, SplitNode::Leaf(0)),
-            id,
-        );
+        self.root = Self::remove_leaf(std::mem::replace(&mut self.root, SplitNode::Leaf(0)), id);
 
         if self.focused_window == id {
             self.focused_window = *self.windows.keys().next().unwrap();
@@ -175,10 +178,7 @@ impl SplitTree {
 
     /// Returns all windows that are frozen and whose original (shared) document
     /// is `orig_doc_id`. These windows are currently editing their own private copy.
-    pub fn windows_frozen_for_original_document(
-        &self,
-        orig_doc_id: DocumentId,
-    ) -> Vec<WindowId> {
+    pub fn windows_frozen_for_original_document(&self, orig_doc_id: DocumentId) -> Vec<WindowId> {
         self.windows
             .iter()
             .filter(|(_, w)| w.original_document_id == Some(orig_doc_id))
@@ -255,8 +255,7 @@ impl SplitTree {
         match node {
             SplitNode::Leaf(id) => *id == target_id,
             SplitNode::Split { first, second, .. } => {
-                Self::contains_window(first, target_id)
-                    || Self::contains_window(second, target_id)
+                Self::contains_window(first, target_id) || Self::contains_window(second, target_id)
             }
         }
     }

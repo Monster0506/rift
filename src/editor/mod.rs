@@ -127,11 +127,7 @@ impl<T: TerminalBackend> Editor<T> {
         let initial_doc_id = document_manager
             .active_document_id()
             .expect("No active document after initialization");
-        let split_tree = SplitTree::new(
-            initial_doc_id,
-            size.rows as usize,
-            size.cols as usize,
-        );
+        let split_tree = SplitTree::new(initial_doc_id, size.rows as usize, size.cols as usize);
 
         let mut editor = Self {
             term: terminal,
@@ -281,7 +277,8 @@ impl<T: TerminalBackend> Editor<T> {
             if w.original_document_id.is_some() {
                 w.document_id = orig_doc_id;
                 w.original_document_id = None;
-                self.document_manager.remove_private_document(focused_doc_id);
+                self.document_manager
+                    .remove_private_document(focused_doc_id);
             }
         }
 
@@ -1466,10 +1463,12 @@ impl<T: TerminalBackend> Editor<T> {
             0
         };
         let viewport_col = if is_terminal { 0 } else { cursor_col };
-        let needs_clear =
-            self.render_system
-                .viewport
-                .update(cursor_line, viewport_col, total_lines, gutter_width);
+        let needs_clear = self.render_system.viewport.update(
+            cursor_line,
+            viewport_col,
+            total_lines,
+            gutter_width,
+        );
 
         if self.split_tree.window_count() > 1 {
             self.update_window_viewports();
@@ -1610,7 +1609,9 @@ impl<T: TerminalBackend> Editor<T> {
             // +1 because render_content_to_layer_offset does saturating_sub(1)
             // for the global status bar; multi-window layouts don't need that.
             window.viewport.set_size(layout.rows + 1, layout.cols);
-            window.viewport.update(cursor_line, viewport_col, total_lines, gutter_width);
+            window
+                .viewport
+                .update(cursor_line, viewport_col, total_lines, gutter_width);
         }
     }
 
@@ -1643,7 +1644,9 @@ impl<T: TerminalBackend> Editor<T> {
             render_system.compositor.resize(total_rows, total_cols);
         }
 
-        let content_layer = render_system.compositor.get_layer_mut(LayerPriority::CONTENT);
+        let content_layer = render_system
+            .compositor
+            .get_layer_mut(LayerPriority::CONTENT);
         content_layer.clear();
 
         let focused_id = split_tree.focused_window_id();
@@ -1694,15 +1697,11 @@ impl<T: TerminalBackend> Editor<T> {
                 modal: None,
             };
 
-            let content_layer =
-                render_system.compositor.get_layer_mut(LayerPriority::CONTENT);
-            render::render_content_to_layer_offset(
-                content_layer,
-                &ctx,
-                layout.row,
-                layout.col,
-            )
-            .map_err(|e| RiftError::new(ErrorType::Renderer, "RENDER_FAILED", e))?;
+            let content_layer = render_system
+                .compositor
+                .get_layer_mut(LayerPriority::CONTENT);
+            render::render_content_to_layer_offset(content_layer, &ctx, layout.row, layout.col)
+                .map_err(|e| RiftError::new(ErrorType::Renderer, "RENDER_FAILED", e))?;
         }
 
         let divider_fg = state
@@ -1711,7 +1710,9 @@ impl<T: TerminalBackend> Editor<T> {
             .as_ref()
             .and_then(|sc| sc.get_color("comment"))
             .or(state.settings.editor_fg);
-        let content_layer = render_system.compositor.get_layer_mut(LayerPriority::CONTENT);
+        let content_layer = render_system
+            .compositor
+            .get_layer_mut(LayerPriority::CONTENT);
         render::render_dividers(
             content_layer,
             split_tree,
@@ -1721,10 +1722,7 @@ impl<T: TerminalBackend> Editor<T> {
             state.settings.editor_bg,
         );
 
-        let focused_layout = layouts
-            .iter()
-            .find(|l| l.window_id == focused_id)
-            .cloned();
+        let focused_layout = layouts.iter().find(|l| l.window_id == focused_id).cloned();
 
         let focused_window = split_tree.focused_window();
         let focused_doc = match document_manager.get_document_mut(focused_window.document_id) {
@@ -2281,8 +2279,7 @@ impl<T: TerminalBackend> Editor<T> {
                                 Ok(id) => {
                                     let job =
                                         crate::job_manager::jobs::file_operations::FileLoadJob::new(
-                                            id,
-                                            path_buf,
+                                            id, path_buf,
                                         );
                                     self.job_manager.spawn(job);
                                     id
@@ -2326,9 +2323,8 @@ impl<T: TerminalBackend> Editor<T> {
                         let focused_id = self.split_tree.focused_window_id();
                         let doc_id = self.split_tree.focused_window().canonical_document_id();
 
-                        let frozen_siblings = self
-                            .split_tree
-                            .windows_frozen_for_original_document(doc_id);
+                        let frozen_siblings =
+                            self.split_tree.windows_frozen_for_original_document(doc_id);
 
                         if !frozen_siblings.is_empty() {
                             self.do_nofreeze();
@@ -2344,16 +2340,14 @@ impl<T: TerminalBackend> Editor<T> {
                                 .filter(|&id| id != focused_id)
                                 .collect();
                             for id in sibling_ids {
-                                let private_id = match self
-                                    .document_manager
-                                    .create_private_document(&buf)
-                                {
-                                    Ok(id) => id,
-                                    Err(e) => {
-                                        self.state.handle_error(e);
-                                        continue;
-                                    }
-                                };
+                                let private_id =
+                                    match self.document_manager.create_private_document(&buf) {
+                                        Ok(id) => id,
+                                        Err(e) => {
+                                            self.state.handle_error(e);
+                                            continue;
+                                        }
+                                    };
                                 if let Some(w) = self.split_tree.get_window_mut(id) {
                                     w.original_document_id = Some(doc_id);
                                     w.document_id = private_id;
@@ -2643,13 +2637,10 @@ impl<T: TerminalBackend> Editor<T> {
                             "Terminal closed".to_string(),
                         );
                         // Close each split showing this terminal; reassign if it's the last window.
-                        let new_doc_id =
-                            self.document_manager.active_document_id().unwrap_or(1);
+                        let new_doc_id = self.document_manager.active_document_id().unwrap_or(1);
                         for window_id in affected_windows {
                             if !self.split_tree.close_window(window_id) {
-                                if let Some(w) =
-                                    self.split_tree.get_window_mut(window_id)
-                                {
+                                if let Some(w) = self.split_tree.get_window_mut(window_id) {
                                     w.document_id = new_doc_id;
                                 }
                             }

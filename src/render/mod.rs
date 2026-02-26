@@ -472,7 +472,7 @@ pub(crate) fn render_notifications(
 
         // Calculate box width based on longest line
         let content_width = lines.iter().map(|l| l.width()).max().unwrap_or(0);
-        let box_width = content_width + 4; // +4 for padding
+        let box_width = content_width + 3;
         let start_col = viewport_cols.saturating_sub(box_width);
 
         // Render lines
@@ -616,7 +616,6 @@ fn render_node_dividers(
         }
     }
 }
-
 
 #[cfg(test)]
 #[path = "tests.rs"]

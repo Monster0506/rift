@@ -571,22 +571,22 @@ fn parse_split_subcommand(
         }
 
         const SUBS: &[(&str, &[&str])] = &[
-            ("left",     &["l"]),
-            ("right",    &["r"]),
-            ("up",       &["u"]),
-            ("down",     &["d"]),
-            ("freeze",   &[]),
+            ("left", &["l"]),
+            ("right", &["r"]),
+            ("up", &["u"]),
+            ("down", &["d"]),
+            ("freeze", &[]),
             ("nofreeze", &[]),
         ];
 
         let to_variant = |name: &str| match name {
-            "left"     => Ok(SplitSubcommand::Navigate(Direction::Left)),
-            "right"    => Ok(SplitSubcommand::Navigate(Direction::Right)),
-            "up"       => Ok(SplitSubcommand::Navigate(Direction::Up)),
-            "down"     => Ok(SplitSubcommand::Navigate(Direction::Down)),
-            "freeze"   => Ok(SplitSubcommand::Freeze),
+            "left" => Ok(SplitSubcommand::Navigate(Direction::Left)),
+            "right" => Ok(SplitSubcommand::Navigate(Direction::Right)),
+            "up" => Ok(SplitSubcommand::Navigate(Direction::Up)),
+            "down" => Ok(SplitSubcommand::Navigate(Direction::Down)),
+            "freeze" => Ok(SplitSubcommand::Freeze),
             "nofreeze" => Ok(SplitSubcommand::NoFreeze),
-            _          => unreachable!(),
+            _ => unreachable!(),
         };
 
         let input = sub.to_lowercase();
@@ -607,8 +607,8 @@ fn parse_split_subcommand(
 
         return match matches.as_slice() {
             [name] => to_variant(name),
-            []     => Err(format!("unknown split subcommand ':{sub}'")),
-            _      => Err(format!("ambiguous split subcommand ':{sub}'")),
+            [] => Err(format!("unknown split subcommand ':{sub}'")),
+            _ => Err(format!("ambiguous split subcommand ':{sub}'")),
         };
     }
 

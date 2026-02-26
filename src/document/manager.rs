@@ -436,8 +436,7 @@ impl DocumentManager {
     }
 
     pub fn find_open_document_id(&self, path: &Path) -> Option<DocumentId> {
-        self.find_open_document(path)
-            .map(|idx| self.tab_order[idx])
+        self.find_open_document(path).map(|idx| self.tab_order[idx])
     }
 }
 

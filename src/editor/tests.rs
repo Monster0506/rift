@@ -314,8 +314,19 @@ fn test_freeze_isolates_sibling_windows() {
         .unwrap();
 
     let doc_id = editor.split_tree.focused_window().document_id;
-    assert_eq!(editor.split_tree.get_window(sibling_id).unwrap().document_id, doc_id);
-    assert!(!editor.split_tree.get_window(sibling_id).unwrap().is_frozen());
+    assert_eq!(
+        editor
+            .split_tree
+            .get_window(sibling_id)
+            .unwrap()
+            .document_id,
+        doc_id
+    );
+    assert!(!editor
+        .split_tree
+        .get_window(sibling_id)
+        .unwrap()
+        .is_frozen());
 
     editor.handle_execution_result(ExecutionResult::SplitWindow {
         direction: SplitDirection::Vertical,
@@ -326,7 +337,10 @@ fn test_freeze_isolates_sibling_windows() {
     assert!(sibling.is_frozen());
     assert_ne!(sibling.document_id, doc_id);
     assert_eq!(sibling.original_document_id, Some(doc_id));
-    assert!(editor.document_manager.get_document(sibling.document_id).is_some());
+    assert!(editor
+        .document_manager
+        .get_document(sibling.document_id)
+        .is_some());
     assert_eq!(editor.document_manager.tab_count(), 1);
 }
 
@@ -371,7 +385,11 @@ fn test_nofreeze_reattaches_siblings_and_writes_back() {
         subcommand: crate::command_line::commands::SplitSubcommand::Freeze,
     });
 
-    let private_id = editor.split_tree.get_window(sibling_id).unwrap().document_id;
+    let private_id = editor
+        .split_tree
+        .get_window(sibling_id)
+        .unwrap()
+        .document_id;
     assert!(editor.document_manager.get_document(private_id).is_some());
 
     editor.handle_execution_result(ExecutionResult::SplitWindow {
@@ -391,7 +409,11 @@ fn test_frozen_window_is_independently_editable() {
     use crate::split::tree::SplitDirection;
     let mut editor = create_editor();
 
-    editor.active_document().buffer.insert_str("shared").unwrap();
+    editor
+        .active_document()
+        .buffer
+        .insert_str("shared")
+        .unwrap();
 
     split_current(&mut editor, SplitDirection::Vertical);
 
@@ -408,7 +430,11 @@ fn test_frozen_window_is_independently_editable() {
         subcommand: crate::command_line::commands::SplitSubcommand::Freeze,
     });
 
-    let private_id = editor.split_tree.get_window(sibling_id).unwrap().document_id;
+    let private_id = editor
+        .split_tree
+        .get_window(sibling_id)
+        .unwrap()
+        .document_id;
     editor
         .document_manager
         .get_document_mut(private_id)
@@ -418,8 +444,18 @@ fn test_frozen_window_is_independently_editable() {
         .unwrap();
 
     let orig_doc_id = editor.split_tree.focused_window().canonical_document_id();
-    let shared_len = editor.document_manager.get_document(orig_doc_id).unwrap().buffer.len();
-    let private_len = editor.document_manager.get_document(private_id).unwrap().buffer.len();
+    let shared_len = editor
+        .document_manager
+        .get_document(orig_doc_id)
+        .unwrap()
+        .buffer
+        .len();
+    let private_len = editor
+        .document_manager
+        .get_document(private_id)
+        .unwrap()
+        .buffer
+        .len();
     assert!(private_len > shared_len);
 }
 
@@ -428,7 +464,11 @@ fn test_nofreeze_from_frozen_window_uses_its_buffer_as_truth() {
     use crate::split::tree::SplitDirection;
     let mut editor = create_editor();
 
-    editor.active_document().buffer.insert_str("original").unwrap();
+    editor
+        .active_document()
+        .buffer
+        .insert_str("original")
+        .unwrap();
 
     split_current(&mut editor, SplitDirection::Vertical);
 
@@ -446,7 +486,11 @@ fn test_nofreeze_from_frozen_window_uses_its_buffer_as_truth() {
         subcommand: crate::command_line::commands::SplitSubcommand::Freeze,
     });
 
-    let private_id = editor.split_tree.get_window(sibling_id).unwrap().document_id;
+    let private_id = editor
+        .split_tree
+        .get_window(sibling_id)
+        .unwrap()
+        .document_id;
     editor
         .document_manager
         .get_document_mut(private_id)
@@ -454,7 +498,12 @@ fn test_nofreeze_from_frozen_window_uses_its_buffer_as_truth() {
         .buffer
         .insert_str(" modified")
         .unwrap();
-    let private_len = editor.document_manager.get_document(private_id).unwrap().buffer.len();
+    let private_len = editor
+        .document_manager
+        .get_document(private_id)
+        .unwrap()
+        .buffer
+        .len();
 
     editor.split_tree.set_focus(sibling_id);
     let _ = editor.document_manager.switch_to_document(private_id);
@@ -464,8 +513,27 @@ fn test_nofreeze_from_frozen_window_uses_its_buffer_as_truth() {
         subcommand: crate::command_line::commands::SplitSubcommand::NoFreeze,
     });
 
-    let shared_len = editor.document_manager.get_document(orig_doc_id).unwrap().buffer.len();
+    let shared_len = editor
+        .document_manager
+        .get_document(orig_doc_id)
+        .unwrap()
+        .buffer
+        .len();
     assert_eq!(shared_len, private_len);
-    assert_eq!(editor.split_tree.get_window(focused_id).unwrap().document_id, orig_doc_id);
-    assert_eq!(editor.split_tree.get_window(sibling_id).unwrap().document_id, orig_doc_id);
+    assert_eq!(
+        editor
+            .split_tree
+            .get_window(focused_id)
+            .unwrap()
+            .document_id,
+        orig_doc_id
+    );
+    assert_eq!(
+        editor
+            .split_tree
+            .get_window(sibling_id)
+            .unwrap()
+            .document_id,
+        orig_doc_id
+    );
 }

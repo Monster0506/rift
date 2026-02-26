@@ -12,7 +12,9 @@ pub enum Direction {
 
 impl SplitTree {
     pub fn navigate(&self, direction: Direction, layouts: &[WindowLayout]) -> Option<WindowId> {
-        let focused = layouts.iter().find(|l| l.window_id == self.focused_window)?;
+        let focused = layouts
+            .iter()
+            .find(|l| l.window_id == self.focused_window)?;
         navigate_from(focused, direction, layouts)
     }
 }
@@ -35,16 +37,14 @@ fn navigate_from(
                     || candidate.col + candidate.cols + 1 == from.col
             }
             Direction::Right => {
-                from.col + from.cols == candidate.col
-                    || from.col + from.cols + 1 == candidate.col
+                from.col + from.cols == candidate.col || from.col + from.cols + 1 == candidate.col
             }
             Direction::Up => {
                 candidate.row + candidate.rows == from.row
                     || candidate.row + candidate.rows + 1 == from.row
             }
             Direction::Down => {
-                from.row + from.rows == candidate.row
-                    || from.row + from.rows + 1 == candidate.row
+                from.row + from.rows == candidate.row || from.row + from.rows + 1 == candidate.row
             }
         };
 

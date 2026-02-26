@@ -208,18 +208,12 @@ fn frozen_window_canonical_doc_id() {
     let w1 = tree.focused_window_id();
 
     // Before freeze: canonical ID == document_id
-    assert_eq!(
-        tree.get_window(w1).unwrap().canonical_document_id(),
-        1
-    );
+    assert_eq!(tree.get_window(w1).unwrap().canonical_document_id(), 1);
 
     // After freeze: canonical ID is the original shared doc, document_id is the private copy
     tree.get_window_mut(w1).unwrap().document_id = 99;
     tree.get_window_mut(w1).unwrap().original_document_id = Some(1);
-    assert_eq!(
-        tree.get_window(w1).unwrap().canonical_document_id(),
-        1
-    );
+    assert_eq!(tree.get_window(w1).unwrap().canonical_document_id(), 1);
 }
 
 #[test]

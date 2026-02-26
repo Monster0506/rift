@@ -1339,7 +1339,10 @@ fn test_execute_split() {
     let mut document = Document::new(1).unwrap();
 
     let result = CommandExecutor::execute(
-        ParsedCommand::Split { subcommand: SplitSubcommand::Current, bangs: 0 },
+        ParsedCommand::Split {
+            subcommand: SplitSubcommand::Current,
+            bangs: 0,
+        },
         &mut state,
         &mut document,
         &settings_registry,

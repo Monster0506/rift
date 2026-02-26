@@ -429,8 +429,8 @@ impl RenderSystem {
 
             let cursor_col = calculate_cursor_column(ctx.buf, cursor_line, ctx.tab_width);
             let visual_cursor_col = cursor_col.saturating_sub(vp.left_col());
-            let display_col = (visual_cursor_col + gutter_width)
-                .min(vp.visible_cols().saturating_sub(1));
+            let display_col =
+                (visual_cursor_col + gutter_width).min(vp.visible_cols().saturating_sub(1));
 
             CursorPosition::Absolute(
                 (cursor_line_in_viewport + cursor_row_offset) as u16,
