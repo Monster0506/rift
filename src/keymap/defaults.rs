@@ -1,4 +1,5 @@
 use crate::action::{Action, EditorAction, FileExplorerAction, Motion, UndoTreeAction};
+use crate::command::Command;
 use crate::key::Key;
 use crate::keymap::{KeyContext, KeyMap};
 
@@ -632,6 +633,14 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::Char('y'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
     );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('C'),
+        Action::Editor(EditorAction::Command(Box::new(Command::Change(
+            Motion::EndOfLine,
+            1,
+        )))),
+    );
 
     // Sequences
     keymap.register_sequence(
@@ -640,7 +649,6 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::DeleteLine),
     );
 
-    // ^W split-window chords (Normal mode)
     let ww = Key::Ctrl(b'w');
     for (ch, cmd) in [
         ('h', ":split :l"),

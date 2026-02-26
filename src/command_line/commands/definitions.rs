@@ -570,7 +570,6 @@ fn parse_split_subcommand(
             }
         }
 
-        // Named subcommands with prefix matching (same rules as CommandRegistry)
         const SUBS: &[(&str, &[&str])] = &[
             ("left",     &["l"]),
             ("right",    &["r"]),
