@@ -19,6 +19,14 @@ use monster_rift::editor::Editor;
 use monster_rift::term::crossterm::CrosstermBackend;
 
 fn main() {
+    // Raw mode swallows stderr, so log panics to a file.
+    std::panic::set_hook(Box::new(|info| {
+        let msg = format!("RIFT PANIC: {}\n  at {:?}\n", info, info.location());
+        let _ = std::fs::write(std::env::temp_dir().join("rift-panic.log"), &msg);
+        let _ = std::fs::write("rift-panic.log", &msg);
+        eprintln!("{}", msg);
+    }));
+
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
     let file_path = if args.len() > 1 {

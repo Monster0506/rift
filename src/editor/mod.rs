@@ -342,7 +342,10 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Force a full redraw of the editor
     fn force_full_redraw(&mut self) -> Result<(), RiftError> {
-        let doc = self.document_manager.active_document_mut().unwrap();
+        let doc = match self.document_manager.active_document_mut() {
+            Some(d) => d,
+            None => return Ok(()),
+        };
 
         // Calculate visible range for syntax highlighting
         let start_line = self.render_system.viewport.top_line();
@@ -383,6 +386,7 @@ impl<T: TerminalBackend> Editor<T> {
             cursor_row_offset: 0,
             cursor_col_offset: 0,
             cursor_viewport: None,
+            terminal_cursor: doc.terminal_cursor,
         };
 
         self.render_system
@@ -490,8 +494,9 @@ impl<T: TerminalBackend> Editor<T> {
             .map_err(|e| RiftError::new(ErrorType::Internal, "TERM_SIZE", e))?;
 
         let id = self.document_manager.next_id();
+        let terminal_rows = size.rows.saturating_sub(1).max(1); // exclude status bar row
         let (doc, rx) =
-            crate::document::Document::new_terminal(id, size.rows, size.cols, shell_cmd)?;
+            crate::document::Document::new_terminal(id, terminal_rows, size.cols, shell_cmd)?;
 
         self.document_manager.add_document(doc);
 
@@ -1441,30 +1446,30 @@ impl<T: TerminalBackend> Editor<T> {
             self.split_tree.focused_window_mut().cursor_position = doc.buffer.cursor();
         }
 
-        let tab_width = self.active_document().options.tab_width;
-        let cursor_line = self.active_document().buffer.get_line();
-        let cursor_col =
-            render::calculate_cursor_column(&self.active_document().buffer, cursor_line, tab_width);
+        let (cursor_line, cursor_col, total_lines, is_terminal) =
+            if let Some(doc) = self.document_manager.get_document(doc_id) {
+                let tw = doc.options.tab_width;
+                let line = doc.buffer.get_line();
+                let col = render::calculate_cursor_column(&doc.buffer, line, tw);
+                let total = doc.buffer.get_total_lines();
+                (line, col, total, doc.is_terminal())
+            } else {
+                return Ok(());
+            };
         self.state.update_cursor(cursor_line, cursor_col);
 
         self.sync_state_with_active_document();
         self.state.error_manager.notifications_mut().prune_expired();
-
-        let total_lines = self
-            .document_manager
-            .active_document()
-            .unwrap()
-            .buffer
-            .get_total_lines();
         let gutter_width = if self.state.settings.show_line_numbers {
             self.state.gutter_width
         } else {
             0
         };
+        let viewport_col = if is_terminal { 0 } else { cursor_col };
         let needs_clear =
             self.render_system
                 .viewport
-                .update(cursor_line, cursor_col, total_lines, gutter_width);
+                .update(cursor_line, viewport_col, total_lines, gutter_width);
 
         if self.split_tree.window_count() > 1 {
             self.update_window_viewports();
@@ -1510,7 +1515,10 @@ impl<T: TerminalBackend> Editor<T> {
 
         // We need mutable access to call syntax.highlights() which potentially
         // updates parse tree
-        let doc = document_manager.active_document_mut().unwrap();
+        let doc = match document_manager.active_document_mut() {
+            Some(d) => d,
+            None => return Ok(()),
+        };
 
         // Calculate visible range for syntax highlighting
         let start_line = render_system.viewport.top_line();
@@ -1552,6 +1560,7 @@ impl<T: TerminalBackend> Editor<T> {
             cursor_row_offset: 0,
             cursor_col_offset: 0,
             cursor_viewport: None,
+            terminal_cursor: doc.terminal_cursor,
         };
 
         let _ = render_system.render(term, state)?;
@@ -1592,12 +1601,16 @@ impl<T: TerminalBackend> Editor<T> {
             let cursor_col =
                 render::calculate_cursor_column_at(&doc.buffer, cursor_line, tab_width, cursor_pos);
             let total_lines = doc.buffer.get_total_lines();
+            let viewport_col = if doc.is_terminal() { 0 } else { cursor_col };
 
-            let window = self.split_tree.get_window_mut(layout.window_id).unwrap();
+            let window = match self.split_tree.get_window_mut(layout.window_id) {
+                Some(w) => w,
+                None => continue,
+            };
             // +1 because render_content_to_layer_offset does saturating_sub(1)
             // for the global status bar; multi-window layouts don't need that.
             window.viewport.set_size(layout.rows + 1, layout.cols);
-            window.viewport.update(cursor_line, cursor_col, total_lines, gutter_width);
+            window.viewport.update(cursor_line, viewport_col, total_lines, gutter_width);
         }
     }
 
@@ -1636,8 +1649,14 @@ impl<T: TerminalBackend> Editor<T> {
         let focused_id = split_tree.focused_window_id();
 
         for layout in &layouts {
-            let window = split_tree.get_window(layout.window_id).unwrap();
-            let doc = document_manager.get_document_mut(window.document_id).unwrap();
+            let window = match split_tree.get_window(layout.window_id) {
+                Some(w) => w,
+                None => continue,
+            };
+            let doc = match document_manager.get_document_mut(window.document_id) {
+                Some(d) => d,
+                None => continue,
+            };
 
             let tab_width = doc.options.tab_width;
 
@@ -1708,9 +1727,10 @@ impl<T: TerminalBackend> Editor<T> {
             .cloned();
 
         let focused_window = split_tree.focused_window();
-        let focused_doc = document_manager
-            .get_document_mut(focused_window.document_id)
-            .unwrap();
+        let focused_doc = match document_manager.get_document_mut(focused_window.document_id) {
+            Some(d) => d,
+            None => return Ok(()),
+        };
 
         let highlights = focused_doc
             .syntax
@@ -1739,6 +1759,7 @@ impl<T: TerminalBackend> Editor<T> {
             cursor_row_offset: row_off,
             cursor_col_offset: col_off,
             cursor_viewport: Some(focused_vp),
+            terminal_cursor: focused_doc.terminal_cursor,
         };
 
         let _ = render_system.render(term, render_state)?;
@@ -2594,10 +2615,7 @@ impl<T: TerminalBackend> Editor<T> {
             JobMessage::TerminalOutput(doc_id, data) => {
                 if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
                     doc.handle_terminal_data(&data);
-                    // Trigger redraw if this is the active document.
-                    // Use update_and_render so multi-window mode renders correctly via
-                    // render_multi_window() rather than the single-window force_full_redraw()
-                    // path, which overwrites the split layout causing flicker.
+                    // Trigger redraw if this is the active document
                     if self.active_document_id() == doc_id {
                         let _ = self.update_and_render();
                     }
@@ -2624,10 +2642,7 @@ impl<T: TerminalBackend> Editor<T> {
                             crate::notification::NotificationType::Info,
                             "Terminal closed".to_string(),
                         );
-                        // Clean up split tree: close each window that was showing
-                        // this terminal. If it's the last window (close_window
-                        // returns false), reassign it to the new active document
-                        // so render_multi_window doesn't panic on a missing doc.
+                        // Close each split showing this terminal; reassign if it's the last window.
                         let new_doc_id =
                             self.document_manager.active_document_id().unwrap_or(1);
                         for window_id in affected_windows {

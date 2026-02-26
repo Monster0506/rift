@@ -119,6 +119,8 @@ pub struct RenderState<'a> {
     pub cursor_row_offset: usize,
     pub cursor_col_offset: usize,
     pub cursor_viewport: Option<&'a Viewport>,
+    /// Terminal cursor (row, col); bypasses text-editor cursor math when set.
+    pub terminal_cursor: Option<(usize, usize)>,
 }
 
 /// Context for rendering passed to helpers

@@ -398,6 +398,18 @@ impl RenderSystem {
 
         let cursor_info = if let Some(pos) = command_cursor_info {
             pos
+        } else if let Some((term_row, term_col)) = state.terminal_cursor {
+            let gutter_width = if ctx.state.settings.show_line_numbers {
+                ctx.state.gutter_width
+            } else {
+                0
+            };
+            let max_content_row = viewport.visible_rows().saturating_sub(2);
+            let clamped_row = term_row.min(max_content_row);
+            CursorPosition::Absolute(
+                (clamped_row + cursor_row_offset) as u16,
+                (term_col + cursor_col_offset + gutter_width) as u16,
+            )
         } else {
             let vp = cursor_viewport.unwrap_or(&viewport);
             let cursor_line = ctx.buf.get_line();

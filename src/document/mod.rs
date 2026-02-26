@@ -72,6 +72,8 @@ pub struct Document {
     pub view_state: ViewState,
     /// Terminal emulation state (if this is a terminal buffer)
     pub terminal: Option<Terminal>,
+    /// Last cursor position reported by the terminal emulator (row, col).
+    pub terminal_cursor: Option<(usize, usize)>,
 }
 
 impl Document {
@@ -89,6 +91,7 @@ impl Document {
             current_transaction: None,
             view_state: ViewState::default(),
             terminal: None,
+            terminal_cursor: None,
         })
     }
 
@@ -135,6 +138,7 @@ impl Document {
             current_transaction: None,
             view_state: ViewState::default(),
             terminal: None,
+            terminal_cursor: None,
         })
     }
 
@@ -165,6 +169,7 @@ impl Document {
                 current_transaction: None,
                 view_state: ViewState::default(),
                 terminal: Some(terminal),
+                terminal_cursor: None,
             },
             rx,
         ))
@@ -198,11 +203,10 @@ impl Document {
                 let _ = new_buffer.set_cursor(pos);
             }
 
-            // Carry forward the revision counter so the ECS change-detection
-            // sees a new revision each time terminal output arrives, rather
-            // than always reading revision=1 (insert_str starts from 0).
+            // Carry forward revision so ECS change-detection fires each update.
             new_buffer.revision = old_revision + 1;
             self.buffer = new_buffer;
+            self.terminal_cursor = Some((cursor_line, cursor_col));
             self.mark_dirty();
         }
     }
