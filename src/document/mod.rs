@@ -182,6 +182,7 @@ impl Document {
             return;
         };
 
+        let old_revision = self.buffer.revision;
         if let Ok(mut new_buffer) = TextBuffer::new(content.len().max(64)) {
             let _ = new_buffer.insert_str(&content);
 
@@ -197,6 +198,10 @@ impl Document {
                 let _ = new_buffer.set_cursor(pos);
             }
 
+            // Carry forward the revision counter so the ECS change-detection
+            // sees a new revision each time terminal output arrives, rather
+            // than always reading revision=1 (insert_str starts from 0).
+            new_buffer.revision = old_revision + 1;
             self.buffer = new_buffer;
             self.mark_dirty();
         }

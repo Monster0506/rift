@@ -164,33 +164,47 @@ impl Terminal {
         let num_lines = grid.screen_lines();
 
         let cursor_point = grid.cursor.point;
-        let cursor_line = cursor_point.line.0 as usize;
-        let cursor_col = cursor_point.column.0;
+        // Line indices can be negative in alacritty (scrollback). Clamp to screen.
+        let cursor_line = (cursor_point.line.0.max(0) as usize).min(num_lines.saturating_sub(1));
+        let cursor_col = cursor_point.column.0.min(num_cols.saturating_sub(1));
 
-        let mut content = String::with_capacity(num_lines * (num_cols + 1));
+        let mut lines: Vec<String> = Vec::with_capacity(num_lines);
 
         for line_idx in 0..num_lines {
             let line = alacritty_terminal::index::Line(line_idx as i32);
+
+            // Collect this line as chars so all trimming is char-indexed, not
+            // byte-indexed. Using byte indices on a string containing multi-byte
+            // Unicode (box-drawing chars, cargo's ✓/█, vim status-line glyphs)
+            // causes truncate() to panic at a non-char-boundary.
+            let mut line_chars: Vec<char> = Vec::with_capacity(num_cols);
             for col_idx in 0..num_cols {
                 let col = alacritty_terminal::index::Column(col_idx);
-                let cell = &grid[line][col];
-                content.push(cell.c);
+                line_chars.push(grid[line][col].c);
             }
-            let line_start = content.len() - num_cols;
-            let trimmed_len = content.rfind(|c: char| c != ' ').map_or(0, |i| i + 1);
-            // On the cursor line, preserve spaces up to the cursor so it can be positioned
-            let min_keep = if line_idx == cursor_line {
-                line_start + cursor_col + 1
+
+            // Find last non-space char index (char position, not byte).
+            let last_non_space = line_chars.iter().rposition(|&c| c != ' ');
+
+            // On the cursor line preserve trailing spaces up to the cursor so
+            // cursor positioning in handle_terminal_data() lands correctly.
+            let trim_to = if line_idx == cursor_line {
+                let cursor_end = (cursor_col + 1).min(num_cols);
+                match last_non_space {
+                    Some(idx) => (idx + 1).max(cursor_end),
+                    None => cursor_end,
+                }
             } else {
-                line_start
+                match last_non_space {
+                    Some(idx) => idx + 1,
+                    None => 0,
+                }
             };
-            let keep = trimmed_len.max(min_keep);
-            content.truncate(keep);
-            if line_idx + 1 < num_lines {
-                content.push('\n');
-            }
+
+            lines.push(line_chars[..trim_to].iter().collect());
         }
 
+        let content = lines.join("\n");
         (content, cursor_line, cursor_col)
     }
 }

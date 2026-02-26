@@ -2594,9 +2594,12 @@ impl<T: TerminalBackend> Editor<T> {
             JobMessage::TerminalOutput(doc_id, data) => {
                 if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
                     doc.handle_terminal_data(&data);
-                    // Trigger redraw if this is the active document
+                    // Trigger redraw if this is the active document.
+                    // Use update_and_render so multi-window mode renders correctly via
+                    // render_multi_window() rather than the single-window force_full_redraw()
+                    // path, which overwrites the split layout causing flicker.
                     if self.active_document_id() == doc_id {
-                        let _ = self.force_full_redraw();
+                        let _ = self.update_and_render();
                     }
                 }
             }
@@ -2605,20 +2608,41 @@ impl<T: TerminalBackend> Editor<T> {
                 if self.active_document_id() == doc_id {
                     self.set_mode(Mode::Normal);
                 }
+                // Collect split windows showing this terminal before removing the doc
+                let affected_windows = self.split_tree.windows_for_document(doc_id);
+
                 // Force-remove the terminal buffer (skips dirty check)
-                if let Err(e) = self.document_manager.remove_document_force(doc_id) {
-                    self.state.notify(
-                        crate::notification::NotificationType::Error,
-                        format!("Failed to close terminal: {}", e),
-                    );
-                } else {
-                    self.state.notify(
-                        crate::notification::NotificationType::Info,
-                        "Terminal closed".to_string(),
-                    );
+                match self.document_manager.remove_document_force(doc_id) {
+                    Err(e) => {
+                        self.state.notify(
+                            crate::notification::NotificationType::Error,
+                            format!("Failed to close terminal: {}", e),
+                        );
+                    }
+                    Ok(()) => {
+                        self.state.notify(
+                            crate::notification::NotificationType::Info,
+                            "Terminal closed".to_string(),
+                        );
+                        // Clean up split tree: close each window that was showing
+                        // this terminal. If it's the last window (close_window
+                        // returns false), reassign it to the new active document
+                        // so render_multi_window doesn't panic on a missing doc.
+                        let new_doc_id =
+                            self.document_manager.active_document_id().unwrap_or(1);
+                        for window_id in affected_windows {
+                            if !self.split_tree.close_window(window_id) {
+                                if let Some(w) =
+                                    self.split_tree.get_window_mut(window_id)
+                                {
+                                    w.document_id = new_doc_id;
+                                }
+                            }
+                        }
+                    }
                 }
                 self.sync_state_with_active_document();
-                let _ = self.force_full_redraw();
+                let _ = self.update_and_render();
             }
         }
 
