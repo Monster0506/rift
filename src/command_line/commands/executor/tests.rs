@@ -75,11 +75,11 @@ fn test_execute_set_number_false() {
 }
 
 #[test]
-fn test_execute_set_clminwidth_alias() {
+fn test_execute_set_min_width_alias() {
     let mut state = State::new();
 
     let command = ParsedCommand::Set {
-        option: "clminwidth".to_string(),
+        option: "command_line.min_width".to_string(),
         value: Some("50".to_string()),
         bangs: 0,
     };
@@ -242,7 +242,7 @@ fn test_execute_set_number_case_insensitive() {
 }
 
 #[test]
-fn test_execute_set_clminwidth() {
+fn test_execute_set_min_width() {
     let mut state = State::new();
 
     let command = ParsedCommand::Set {
@@ -266,13 +266,13 @@ fn test_execute_set_clminwidth() {
 }
 
 #[test]
-fn test_execute_set_clminwidth_various_values() {
+fn test_execute_set_min_width_various_values() {
     let mut state = State::new();
 
     // Test various widths
     for width in &[10, 20, 40, 80, 100] {
         let command = ParsedCommand::Set {
-            option: "clminwidth".to_string(),
+            option: "command_line.min_width".to_string(),
             value: Some(width.to_string()),
             bangs: 0,
         };
@@ -293,12 +293,12 @@ fn test_execute_set_clminwidth_various_values() {
 }
 
 #[test]
-fn test_execute_set_clminwidth_zero_error() {
+fn test_execute_set_min_width_zero_error() {
     let mut state = State::new();
     let original_width = state.settings.command_line_window.min_width;
 
     let command = ParsedCommand::Set {
-        option: "clminwidth".to_string(),
+        option: "command_line.min_width".to_string(),
         value: Some("0".to_string()),
         bangs: 0,
     };
@@ -325,12 +325,12 @@ fn test_execute_set_clminwidth_zero_error() {
 }
 
 #[test]
-fn test_execute_set_clminwidth_invalid_number() {
+fn test_execute_set_min_width_invalid_number() {
     let mut state = State::new();
     let original_width = state.settings.command_line_window.min_width;
 
     let command = ParsedCommand::Set {
-        option: "clminwidth".to_string(),
+        option: "command_line.min_width".to_string(),
         value: Some("invalid".to_string()),
         bangs: 0,
     };
@@ -567,9 +567,9 @@ fn test_execute_set_multiple_options() {
     assert_eq!(result, ExecutionResult::Redraw);
     assert_eq!(state.settings.show_line_numbers, false);
 
-    // Set clminwidth to 50
+    // Set command_line.min_width to 50
     let command = ParsedCommand::Set {
-        option: "clminwidth".to_string(),
+        option: "command_line.min_width".to_string(),
         value: Some("50".to_string()),
         bangs: 0,
     };
@@ -611,11 +611,11 @@ fn test_execute_set_multiple_options() {
 }
 
 #[test]
-fn test_execute_set_clminwidth_large_value() {
+fn test_execute_set_min_width_large_value() {
     let mut state = State::new();
 
     let command = ParsedCommand::Set {
-        option: "clminwidth".to_string(),
+        option: "command_line.min_width".to_string(),
         value: Some("1000".to_string()),
         bangs: 0,
     };
@@ -635,13 +635,13 @@ fn test_execute_set_clminwidth_large_value() {
 }
 
 #[test]
-fn test_execute_set_clminwidth_negative_error() {
+fn test_execute_set_min_width_negative_error() {
     let mut state = State::new();
     let original_width = state.settings.command_line_window.min_width;
 
     // Try to set negative value (will fail to parse as usize)
     let command = ParsedCommand::Set {
-        option: "clminwidth".to_string(),
+        option: "command_line.min_width".to_string(),
         value: Some("-1".to_string()),
         bangs: 0,
     };
@@ -723,14 +723,14 @@ fn test_execute_set_number_empty_string() {
 fn test_execute_set_case_insensitive_option_names() {
     let mut state = State::new();
 
-    // Test various case combinations
+    // Test various case combinations (canonical names)
     let cases = vec![
         ("NUMBER", "false"),
         ("NumBer", "true"),
         ("numBER", "false"),
-        ("CLMINWIDTH", "16"),
-        ("cLmInWiDtH", "4"),
-        ("clminWIDTH", "8"),
+        ("COMMAND_LINE.MIN_WIDTH", "16"),
+        ("Command_Line.Min_Width", "4"),
+        ("command_line.MIN_WIDTH", "8"),
     ];
 
     for (option, value) in cases {
@@ -750,7 +750,7 @@ fn test_execute_set_case_insensitive_option_names() {
             &settings_registry,
             &document_settings_registry,
         );
-        // number returns Redraw, clminwidth returns Success
+        // number returns Redraw, command_line.min_width returns Success
         if option.to_lowercase() == "number" {
             assert_eq!(result, ExecutionResult::Redraw);
         } else {
@@ -764,12 +764,12 @@ fn test_execute_set_case_insensitive_option_names() {
 }
 
 #[test]
-fn test_execute_set_clminwidth_float_error() {
+fn test_execute_set_min_width_float_error() {
     let mut state = State::new();
     let original_width = state.settings.command_line_window.min_width;
 
     let command = ParsedCommand::Set {
-        option: "clminwidth".to_string(),
+        option: "command_line.min_width".to_string(),
         value: Some("4.5".to_string()),
         bangs: 0,
     };
@@ -1292,9 +1292,40 @@ fn test_execute_undotree() {
 }
 
 #[test]
-fn test_execute_explore() {
+fn test_execute_edit_directory_fails() {
     let mut state = State::new();
-    let command = ParsedCommand::Explore {
+    let dir_path = std::env::current_dir()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let command = ParsedCommand::Edit {
+        path: Some(dir_path),
+        bangs: 0,
+    };
+
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    assert_eq!(result, ExecutionResult::Failure);
+    assert!(state
+        .error_manager
+        .notifications()
+        .iter_active()
+        .any(|n| n.message.contains("Cannot edit a directory")));
+}
+
+#[test]
+fn test_execute_file() {
+    let mut state = State::new();
+    let command = ParsedCommand::File {
         path: None,
         bangs: 0,
     };
@@ -1318,14 +1349,42 @@ fn test_execute_explore() {
     {
         assert!(
             initial_job.is_some(),
-            "Explore should have an initial job (listing)"
+            ":file should have an initial job (listing)"
         );
     } else {
-        panic!(
-            "Expected OpenComponent result for Explore, got {:?}",
-            result
-        );
+        panic!("Expected OpenComponent result for :file, got {:?}", result);
     }
+}
+
+#[test]
+fn test_execute_file_path_fails() {
+    let mut state = State::new();
+    let file_path = std::env::current_exe()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let command = ParsedCommand::File {
+        path: Some(file_path),
+        bangs: 0,
+    };
+
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    assert_eq!(result, ExecutionResult::Failure);
+    assert!(state
+        .error_manager
+        .notifications()
+        .iter_active()
+        .any(|n| n.message.contains("Not a directory")));
 }
 
 #[test]

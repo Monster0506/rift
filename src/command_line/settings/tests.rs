@@ -745,7 +745,7 @@ fn test_execute_setting_theme_light() {
     let mut errors = Vec::new();
     let mut error_handler = |e: RiftError| errors.push(e);
     let result = registry.execute_setting(
-        "aptheme",
+        "appearance.theme",
         Some("light".to_string()),
         &mut state.settings,
         &mut error_handler,
@@ -775,7 +775,7 @@ fn test_execute_setting_theme_dark() {
     let mut errors = Vec::new();
     let mut error_handler = |e: RiftError| errors.push(e);
     let result = registry.execute_setting(
-        "aptheme",
+        "appearance.theme",
         Some("dark".to_string()),
         &mut state.settings,
         &mut error_handler,
@@ -805,7 +805,7 @@ fn test_execute_setting_theme_gruvbox() {
     let mut errors = Vec::new();
     let mut error_handler = |e: RiftError| errors.push(e);
     let result = registry.execute_setting(
-        "aptheme",
+        "appearance.theme",
         Some("gruvbox".to_string()),
         &mut state.settings,
         &mut error_handler,
@@ -835,7 +835,7 @@ fn test_execute_setting_theme_nordic() {
     let mut errors = Vec::new();
     let mut error_handler = |e: RiftError| errors.push(e);
     let result = registry.execute_setting(
-        "aptheme",
+        "appearance.theme",
         Some("nordic".to_string()),
         &mut state.settings,
         &mut error_handler,
@@ -865,7 +865,7 @@ fn test_execute_setting_theme_case_insensitive() {
     let mut errors = Vec::new();
     let mut error_handler = |e: RiftError| errors.push(e);
     let result = registry.execute_setting(
-        "aptheme",
+        "appearance.theme",
         Some("LIGHT".to_string()),
         &mut state.settings,
         &mut error_handler,
@@ -878,7 +878,7 @@ fn test_execute_setting_theme_case_insensitive() {
     assert_eq!(settings.theme, Some("light".to_string()));
 
     let result = registry.execute_setting(
-        "aptheme",
+        "appearance.theme",
         Some("Dark".to_string()),
         &mut state.settings,
         &mut error_handler,
@@ -900,7 +900,7 @@ fn test_execute_setting_theme_unknown() {
     let mut errors = Vec::new();
     let mut error_handler = |e: RiftError| errors.push(e);
     let result = registry.execute_setting(
-        "aptheme",
+        "appearance.theme",
         Some("unknown_theme".to_string()),
         &mut state.settings,
         &mut error_handler,
@@ -921,7 +921,7 @@ fn test_execute_setting_theme_overwrites_previous() {
     let mut error_handler = |e: RiftError| errors.push(e);
     // Apply light theme
     let result = registry.execute_setting(
-        "aptheme",
+        "appearance.theme",
         Some("light".to_string()),
         &mut state.settings,
         &mut error_handler,
@@ -936,7 +936,7 @@ fn test_execute_setting_theme_overwrites_previous() {
 
     // Apply dark theme - should overwrite
     let result = registry.execute_setting(
-        "aptheme",
+        "appearance.theme",
         Some("dark".to_string()),
         &mut state.settings,
         &mut error_handler,
@@ -978,16 +978,16 @@ fn test_execute_setting_theme_alias_colorscheme() {
 }
 
 #[test]
-fn test_execute_setting_theme_alias_colors() {
+fn test_execute_setting_theme_canonical_name() {
     let registry = create_settings_registry();
     let mut settings = UserSettings::new();
     let mut state = State::with_settings(settings.clone());
 
     let mut errors = Vec::new();
     let mut error_handler = |e: RiftError| errors.push(e);
-    // Test alias "colors"
+    // Test canonical name "appearance.theme"
     let result = registry.execute_setting(
-        "colors",
+        "appearance.theme",
         Some("dark".to_string()),
         &mut state.settings,
         &mut error_handler,

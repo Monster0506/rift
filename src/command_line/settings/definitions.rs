@@ -276,7 +276,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
     SettingDescriptor {
         name: "command_line.width_ratio",
-        aliases: &["clwidthratio"],
+        aliases: &[],
         description: "Width of command line window as ratio of screen width",
         ty: SettingType::Float {
             min: Some(0.0),
@@ -287,7 +287,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
     SettingDescriptor {
         name: "command_line.min_width",
-        aliases: &["clminwidth"],
+        aliases: &[],
         description: "Minimum width of command line window in columns",
         ty: SettingType::Integer {
             min: Some(1),
@@ -298,7 +298,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
     SettingDescriptor {
         name: "command_line.height",
-        aliases: &["clheight"],
+        aliases: &[],
         description: "Height of command line window in rows",
         ty: SettingType::Integer {
             min: Some(1),
@@ -309,7 +309,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
     SettingDescriptor {
         name: "command_line.border",
-        aliases: &["clborder"],
+        aliases: &[],
         description: "Show border around command line window",
         ty: SettingType::Boolean,
         set: set_cmd_window_border,
@@ -325,7 +325,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
     SettingDescriptor {
         name: "appearance.background",
-        aliases: &["apbg", "bg"],
+        aliases: &["bg"],
         description: "Editor background color",
         ty: SettingType::Color,
         set: set_editor_bg,
@@ -333,7 +333,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
     SettingDescriptor {
         name: "appearance.foreground",
-        aliases: &["apfg", "fg"],
+        aliases: &["fg"],
         description: "Editor foreground color",
         ty: SettingType::Color,
         set: set_editor_fg,
@@ -341,7 +341,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
     SettingDescriptor {
         name: "appearance.theme",
-        aliases: &["aptheme", "colorscheme", "colors"],
+        aliases: &["colorscheme"],
         description: "Color theme",
         ty: SettingType::Enum {
             variants: &[
@@ -356,7 +356,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
     SettingDescriptor {
         name: "status_line.show_filename",
-        aliases: &["slfilename"],
+        aliases: &[],
         description: "Show filename in status line",
         ty: SettingType::Boolean,
         set: set_show_filename,
@@ -364,7 +364,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
     SettingDescriptor {
         name: "status_line.reverse_video",
-        aliases: &["slreverse"],
+        aliases: &[],
         description: "Use reverse video for status line",
         ty: SettingType::Boolean,
         set: set_status_line_reverse_video,
@@ -372,7 +372,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
     SettingDescriptor {
         name: "status_line.show_status_line",
-        aliases: &["slshow"],
+        aliases: &[],
         description: "Show status line",
         ty: SettingType::Boolean,
         set: set_show_status_line,
@@ -380,7 +380,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
     SettingDescriptor {
         name: "status_line.show_dirty",
-        aliases: &["sldirty"],
+        aliases: &[],
         description: "Show dirty indicator in status line",
         ty: SettingType::Boolean,
         set: set_show_dirty_indicator,
@@ -396,7 +396,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
     SettingDescriptor {
         name: "editor.poll_rate",
-        aliases: &["epollrate"],
+        aliases: &[],
         description: "Set the polling rate (ms)",
         ty: SettingType::Integer {
             min: Some(1),

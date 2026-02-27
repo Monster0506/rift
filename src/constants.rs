@@ -50,6 +50,8 @@ pub mod errors {
     pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
     pub const UNSAVED_CHANGES: &str = "UNSAVED_CHANGES";
     pub const NO_PATH: &str = "NO_PATH";
+    pub const NOT_A_FILE: &str = "NOT_A_FILE";
+    pub const NOT_A_DIRECTORY: &str = "NOT_A_DIRECTORY";
     pub const READ_ONLY: &str = "READ_ONLY";
     pub const SEARCH_ERROR: &str = "SEARCH_ERROR";
     pub const UNDO_ERROR: &str = "UNDO_ERROR";
@@ -63,6 +65,8 @@ pub mod errors {
     // Error Messages
     pub const MSG_UNSAVED_CHANGES: &str = "No write since last change (add ! to override)";
     pub const MSG_NO_FILE_NAME: &str = "No file name";
+    pub const MSG_NOT_A_FILE: &str = "Cannot edit a directory";
+    pub const MSG_NOT_A_DIRECTORY: &str = "Not a directory; :file expects a directory path";
     pub const MSG_FILE_NOT_FOUND_WIN: &str = "The system cannot find the file specified";
 }
 

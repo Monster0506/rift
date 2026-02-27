@@ -6,6 +6,7 @@ I use this daily and primarily.
 
 Implemented:
 - Quite a lot more than the below items, I just haven't updated this in a while due to actually working on it.
+- Command-line completion engine (commands, subcommands, settings, setting values, file paths)
 - vertical and horizontal splits (:split, :vsplit)
 - split navigation (Ctrl+W h/j/k/l), resize (<, >), freeze
 - terminal emulator (:terminal, via alacritty_terminal)
@@ -78,7 +79,6 @@ Todo:
 - macros
 - help manual
 - marks and jumps
-- command line completion
 - animations
 - operator pending improvements (indent, format, case, etc.)
 - plugin system

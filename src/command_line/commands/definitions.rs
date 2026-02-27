@@ -7,22 +7,30 @@ use crate::split::navigation::Direction;
 use crate::state::UserSettings;
 
 /// Function pointer type for command factories
-/// Takes the settings registry, arguments, and bang count, returns a ParsedCommand
 pub type CommandFactory = fn(&SettingsRegistry<UserSettings>, &[&str], usize) -> ParsedCommand;
+
+/// What kind of argument completion a command supports
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompletionHint {
+    None,
+    /// Both files and directories (e.g. :edit, :write)
+    FilePath,
+    /// Directories only (e.g. :file)
+    Directory,
+    Setting,
+}
 
 /// Descriptor for a command
 #[derive(Clone, Copy)]
 pub struct CommandDescriptor {
-    /// Canonical name of the command
     pub name: &'static str,
-    /// List of aliases
     pub aliases: &'static [&'static str],
-    /// Description for help text
     pub description: &'static str,
-    /// Factory function to create the ParsedCommand
     pub factory: Option<CommandFactory>,
-    /// Subcommands
     pub subcommands: &'static [CommandDescriptor],
+    pub completion: CompletionHint,
+    /// Prefix required before subcommand tokens (e.g. ":" for `:split :left`)
+    pub subcommand_prefix: &'static str,
 }
 
 // Factory functions
@@ -510,15 +518,7 @@ fn parse_setlocal(
     parse_set_impl(registry, args, bangs, true)
 }
 
-fn parse_undotree(
-    _registry: &SettingsRegistry<UserSettings>,
-    _args: &[&str],
-    bangs: usize,
-) -> ParsedCommand {
-    ParsedCommand::UndoTree { bangs }
-}
-
-fn parse_explore(
+fn parse_file(
     _registry: &SettingsRegistry<UserSettings>,
     args: &[&str],
     bangs: usize,
@@ -528,7 +528,15 @@ fn parse_explore(
     } else {
         None
     };
-    ParsedCommand::Explore { path, bangs }
+    ParsedCommand::File { path, bangs }
+}
+
+fn parse_undotree(
+    _registry: &SettingsRegistry<UserSettings>,
+    _args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    ParsedCommand::UndoTree { bangs }
 }
 
 fn parse_terminal(
@@ -660,13 +668,15 @@ fn parse_vsplit_resize(
     )
 }
 
-const SPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
+const SPLIT_SUB_DESC: &[CommandDescriptor] = &[
     CommandDescriptor {
         name: "left",
         aliases: &["l"],
         description: "Navigate to left pane",
         factory: Some(parse_split_left),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "right",
@@ -674,6 +684,8 @@ const SPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
         description: "Navigate to right pane",
         factory: Some(parse_split_right),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "up",
@@ -681,6 +693,8 @@ const SPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
         description: "Navigate to pane above",
         factory: Some(parse_split_up),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "down",
@@ -688,6 +702,8 @@ const SPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
         description: "Navigate to pane below",
         factory: Some(parse_split_down),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "freeze",
@@ -695,6 +711,8 @@ const SPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
         description: "Freeze pane",
         factory: Some(parse_split_freeze),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "nofreeze",
@@ -702,6 +720,8 @@ const SPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
         description: "Unfreeze pane",
         factory: Some(parse_split_nofreeze),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "resize",
@@ -709,16 +729,20 @@ const SPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
         description: "Resize pane",
         factory: Some(parse_split_resize),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
 ];
 
-const VSPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
+const VSPLIT_SUB_DESC: &[CommandDescriptor] = &[
     CommandDescriptor {
         name: "left",
         aliases: &["l"],
         description: "Navigate to left pane",
         factory: Some(parse_vsplit_left),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "right",
@@ -726,6 +750,8 @@ const VSPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
         description: "Navigate to right pane",
         factory: Some(parse_vsplit_right),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "up",
@@ -733,6 +759,8 @@ const VSPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
         description: "Navigate to pane above",
         factory: Some(parse_vsplit_up),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "down",
@@ -740,6 +768,8 @@ const VSPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
         description: "Navigate to pane below",
         factory: Some(parse_vsplit_down),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "freeze",
@@ -747,6 +777,8 @@ const VSPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
         description: "Freeze pane",
         factory: Some(parse_vsplit_freeze),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "nofreeze",
@@ -754,6 +786,8 @@ const VSPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
         description: "Unfreeze pane",
         factory: Some(parse_vsplit_nofreeze),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "resize",
@@ -761,17 +795,66 @@ const VSPLIT_SUBCOMMANDS: &[CommandDescriptor] = &[
         description: "Resize pane",
         factory: Some(parse_vsplit_resize),
         subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
     },
 ];
 
-/// Static registry of all commands
+const N: CompletionHint = CompletionHint::None;
+const F: CompletionHint = CompletionHint::FilePath;
+const D: CompletionHint = CompletionHint::Directory;
+const S: CompletionHint = CompletionHint::Setting;
+
+const UNDO_SUBS: &[CommandDescriptor] = &[CommandDescriptor {
+    name: "checkpoint",
+    aliases: &[],
+    description: "Create undo checkpoint",
+    factory: Some(parse_checkpoint),
+    subcommands: &[],
+    completion: N,
+    subcommand_prefix: "",
+}];
+
+const BUFFER_SUBS: &[CommandDescriptor] = &[
+    CommandDescriptor {
+        name: "next",
+        aliases: &["n"],
+        description: "Next buffer",
+        factory: Some(parse_bnext),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "previous",
+        aliases: &["prev", "p"],
+        description: "Previous buffer",
+        factory: Some(parse_bprev),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "list",
+        aliases: &["ls", "l"],
+        description: "List buffers",
+        factory: Some(parse_blist),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+];
+
 pub const COMMANDS: &[CommandDescriptor] = &[
+    // Core
     CommandDescriptor {
         name: "quit",
         aliases: &["q"],
         description: "Quit the editor",
         factory: Some(parse_quit),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "write",
@@ -779,6 +862,8 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Save the current file",
         factory: Some(parse_write),
         subcommands: &[],
+        completion: F,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "wq",
@@ -786,6 +871,8 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Save the current file and quit",
         factory: Some(parse_write_quit),
         subcommands: &[],
+        completion: F,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "edit",
@@ -793,6 +880,8 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Edit a file",
         factory: Some(parse_edit),
         subcommands: &[],
+        completion: F,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "set",
@@ -800,6 +889,8 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Set an option",
         factory: Some(parse_set),
         subcommands: &[],
+        completion: S,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "setlocal",
@@ -807,6 +898,8 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Set a local option",
         factory: Some(parse_setlocal),
         subcommands: &[],
+        completion: S,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "notify",
@@ -814,6 +907,8 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Show a notification",
         factory: Some(parse_notify),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "redraw",
@@ -821,45 +916,27 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Redraw the screen",
         factory: Some(parse_redraw),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
+    // Buffer management
     CommandDescriptor {
         name: "buffer",
         aliases: &["b"],
         description: "Buffer management",
         factory: None,
-        subcommands: &[
-            CommandDescriptor {
-                name: "next",
-                aliases: &["n"],
-                description: "Next buffer",
-                factory: Some(parse_bnext),
-                subcommands: &[],
-            },
-            CommandDescriptor {
-                name: "previous",
-                aliases: &["prev", "p"],
-                description: "Previous buffer",
-                factory: Some(parse_bprev),
-                subcommands: &[],
-            },
-            CommandDescriptor {
-                name: "list",
-                aliases: &["ls", "l"],
-                description: "List buffers",
-                factory: Some(parse_blist),
-                subcommands: &[],
-            },
-        ],
+        subcommands: BUFFER_SUBS,
+        completion: N,
+        subcommand_prefix: "",
     },
-    // =================
-    // TOP LEVEL ALIASES
-    // =================
     CommandDescriptor {
         name: "bnext",
         aliases: &["bn"],
         description: "Next buffer",
         factory: Some(parse_bnext),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "bprev",
@@ -867,6 +944,8 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Previous buffer",
         factory: Some(parse_bprev),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "ls",
@@ -874,13 +953,18 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "List buffers",
         factory: Some(parse_blist),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
+    // Search/replace
     CommandDescriptor {
         name: "nohighlight",
         aliases: &["noh"],
         description: "Clear search highlights",
         factory: Some(parse_nohighlight),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "substitute",
@@ -888,6 +972,8 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Search and replace text",
         factory: Some(parse_substitute),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "substitute_range",
@@ -895,32 +981,27 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Search and replace text in whole file",
         factory: Some(parse_substitute_range),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
+    // Undo/redo
     CommandDescriptor {
         name: "undo",
         aliases: &["u"],
         description: "Undo changes",
         factory: Some(parse_undo),
-        subcommands: &[CommandDescriptor {
-            name: "checkpoint",
-            aliases: &[],
-            description: "Create undo checkpoint",
-            factory: Some(parse_checkpoint),
-            subcommands: &[],
-        }],
+        subcommands: UNDO_SUBS,
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "redo",
         aliases: &["red"],
         description: "Redo changes",
         factory: Some(parse_redo),
-        subcommands: &[CommandDescriptor {
-            name: "checkpoint",
-            aliases: &[],
-            description: "Create undo checkpoint",
-            factory: Some(parse_checkpoint),
-            subcommands: &[],
-        }],
+        subcommands: UNDO_SUBS,
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "undotree",
@@ -928,13 +1009,18 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Open undo tree visualization",
         factory: Some(parse_undotree),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
+    // File/window management
     CommandDescriptor {
-        name: "explore",
-        aliases: &["E", "file"],
+        name: "file",
+        aliases: &["f"],
         description: "Open file explorer",
-        factory: Some(parse_explore),
+        factory: Some(parse_file),
         subcommands: &[],
+        completion: D,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "terminal",
@@ -942,19 +1028,25 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Open terminal buffer",
         factory: Some(parse_terminal),
         subcommands: &[],
+        completion: F,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "split",
         aliases: &["sp"],
         description: "Horizontal split",
         factory: Some(parse_split),
-        subcommands: SPLIT_SUBCOMMANDS,
+        subcommands: SPLIT_SUB_DESC,
+        completion: F,
+        subcommand_prefix: ":",
     },
     CommandDescriptor {
         name: "vsplit",
         aliases: &["vs"],
         description: "Vertical split",
         factory: Some(parse_vsplit),
-        subcommands: VSPLIT_SUBCOMMANDS,
+        subcommands: VSPLIT_SUB_DESC,
+        completion: F,
+        subcommand_prefix: ":",
     },
 ];

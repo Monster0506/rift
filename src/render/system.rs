@@ -564,7 +564,7 @@ fn render_completion_menu(
         .take(max_visible)
         .collect();
 
-    let content_width = cmd_width;
+    let content_width = cmd_width.saturating_sub(2);
     let right_col_width = content_width / 2;
     let left_col_width = content_width
         .saturating_sub(right_col_width)
@@ -605,7 +605,7 @@ fn render_completion_menu(
     let menu_height = cell_rows.len();
 
     let mut style = WindowStyle::new()
-        .with_border(false)
+        .with_border(true)
         .with_reverse_video(false);
     if let Some(c) = fg {
         style = style.with_fg(c);
@@ -619,8 +619,8 @@ fn render_completion_menu(
             row: menu_start_row,
             col: cmd_col,
         },
-        cmd_width,
-        menu_height,
+        content_width + 2,
+        menu_height + 2,
         style,
     );
 

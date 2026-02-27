@@ -1,5 +1,5 @@
 use crate::command_line::commands::{
-    CommandDescriptor, CommandParser, MatchResult, ParsedCommand, COMMANDS,
+    CommandDescriptor, CommandParser, CompletionHint, MatchResult, ParsedCommand, COMMANDS,
 };
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::state::UserSettings;
@@ -104,6 +104,8 @@ fn parse_set(
     }
 }
 
+const N: CompletionHint = CompletionHint::None;
+
 const TEST_COMMANDS: &[CommandDescriptor] = &[
     CommandDescriptor {
         name: "quit",
@@ -111,6 +113,8 @@ const TEST_COMMANDS: &[CommandDescriptor] = &[
         description: "Quit",
         factory: Some(parse_quit),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "write",
@@ -118,6 +122,8 @@ const TEST_COMMANDS: &[CommandDescriptor] = &[
         description: "Write",
         factory: Some(parse_write),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "wq",
@@ -125,6 +131,8 @@ const TEST_COMMANDS: &[CommandDescriptor] = &[
         description: "Write Quit",
         factory: Some(parse_write_quit),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "set",
@@ -132,6 +140,8 @@ const TEST_COMMANDS: &[CommandDescriptor] = &[
         description: "Set",
         factory: Some(parse_set),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "setlocal",
@@ -139,6 +149,8 @@ const TEST_COMMANDS: &[CommandDescriptor] = &[
         description: "Set Local",
         factory: Some(parse_set),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "buffer",
@@ -152,6 +164,8 @@ const TEST_COMMANDS: &[CommandDescriptor] = &[
                 description: "Next",
                 factory: Some(parse_bnext),
                 subcommands: &[],
+                completion: N,
+                subcommand_prefix: "",
             },
             CommandDescriptor {
                 name: "previous",
@@ -159,8 +173,12 @@ const TEST_COMMANDS: &[CommandDescriptor] = &[
                 description: "Prev",
                 factory: Some(parse_bprev),
                 subcommands: &[],
+                completion: N,
+                subcommand_prefix: "",
             },
         ],
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "bnext",
@@ -168,6 +186,8 @@ const TEST_COMMANDS: &[CommandDescriptor] = &[
         description: "Next Buffer",
         factory: Some(parse_bnext),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
     CommandDescriptor {
         name: "bprev",
@@ -175,6 +195,8 @@ const TEST_COMMANDS: &[CommandDescriptor] = &[
         description: "Prev Buffer",
         factory: Some(parse_bprev),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
 ];
 

@@ -152,26 +152,27 @@ pub const COMPLETION_MAX_VISIBLE: usize = 8;
 /// Active tab-completion session
 #[derive(Debug, Clone)]
 pub struct CompletionSession {
-    /// Command line content when Tab was first pressed
     pub input_at_tab: String,
-    /// Candidates from the last CompletionJob
     pub candidates: Vec<CompletionCandidate>,
-    /// Highlighted candidate index (None = no selection yet)
     pub selected: Option<usize>,
-    /// Whether the dropdown is currently visible
     pub dropdown_open: bool,
-    /// First visible row in the dropdown (for scrolling)
     pub scroll_offset: usize,
+    pub token_start: usize,
 }
 
 impl CompletionSession {
-    pub fn new(input_at_tab: String, candidates: Vec<CompletionCandidate>) -> Self {
+    pub fn new(
+        input_at_tab: String,
+        candidates: Vec<CompletionCandidate>,
+        token_start: usize,
+    ) -> Self {
         Self {
             input_at_tab,
             candidates,
             selected: None,
             dropdown_open: false,
             scroll_offset: 0,
+            token_start,
         }
     }
 

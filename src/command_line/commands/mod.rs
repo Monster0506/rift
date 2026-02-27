@@ -5,7 +5,7 @@ pub mod parser;
 pub mod registry;
 pub mod types;
 
-pub use definitions::{CommandDescriptor, COMMANDS};
+pub use definitions::{CommandDescriptor, CompletionHint, COMMANDS};
 pub use executor::{CommandExecutor, ExecutionResult};
 pub use parser::CommandParser;
 pub use registry::{CommandDef, CommandRegistry, MatchResult};

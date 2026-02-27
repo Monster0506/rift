@@ -1379,21 +1379,18 @@ impl<T: TerminalBackend> Editor<T> {
 
             Command::TabComplete => {
                 if let Some(session) = &mut self.state.completion_session {
-                    if session.dropdown_open {
-                        session.select_next();
-                        if let Some(text) = session.selected_text().map(|s| s.to_string()) {
-                            self.apply_completion_text(&text);
-                        }
-                    } else {
-                        // Have candidates, open dropdown
+                    if !session.dropdown_open {
                         session.dropdown_open = true;
                         session.selected = Some(0);
-                        if let Some(text) = session.selected_text().map(|s| s.to_string()) {
-                            self.apply_completion_text(&text);
-                        }
+                    } else {
+                        session.select_next();
+                    }
+                    let picked = session.selected_text().map(|s| s.to_string());
+                    let ts = session.token_start;
+                    if let Some(text) = picked {
+                        self.apply_completion_text(&text, ts);
                     }
                 } else {
-                    // No session — request completion from job
                     let input = self.state.command_line.clone();
                     use crate::message::CommandLineMessage;
                     let _ = self
@@ -1403,17 +1400,14 @@ impl<T: TerminalBackend> Editor<T> {
 
             Command::TabCompletePrev => {
                 if let Some(session) = &mut self.state.completion_session {
-                    if session.dropdown_open {
-                        session.select_prev();
-                        if let Some(text) = session.selected_text().map(|s| s.to_string()) {
-                            self.apply_completion_text(&text);
-                        }
-                    } else {
+                    if !session.dropdown_open {
                         session.dropdown_open = true;
-                        session.select_prev();
-                        if let Some(text) = session.selected_text().map(|s| s.to_string()) {
-                            self.apply_completion_text(&text);
-                        }
+                    }
+                    session.select_prev();
+                    let picked = session.selected_text().map(|s| s.to_string());
+                    let ts = session.token_start;
+                    if let Some(text) = picked {
+                        self.apply_completion_text(&text, ts);
                     }
                 } else {
                     let input = self.state.command_line.clone();
@@ -1424,11 +1418,12 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             Command::ExecuteCommandLine => {
-                // If a dropdown is open and has a selection, accept it instead of executing
                 if let Some(session) = &self.state.completion_session {
                     if session.dropdown_open && session.selected.is_some() {
-                        if let Some(text) = session.selected_text().map(|s| s.to_string()) {
-                            self.apply_completion_text(&text);
+                        let text = session.selected_text().map(|s| s.to_string());
+                        let ts = session.token_start;
+                        if let Some(text) = text {
+                            self.apply_completion_text(&text, ts);
                         }
                         self.state.completion_session = None;
                         return;
@@ -1875,90 +1870,78 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    /// Helper to close any active modal, clear optional layer, and reset to Normal mode
-    /// Process a CompletionPayload received from a CompletionJob.
     fn handle_completion_result(
         &mut self,
         payload: crate::job_manager::jobs::completion::CompletionPayload,
     ) {
-        // Discard stale results (user typed since this job was spawned)
-        if payload.input != self.state.command_line {
-            return;
-        }
+        use crate::command_line::commands::completion::{resolve_completion, CompletionAction};
 
-        // Check if we're updating an already-visible dropdown (live-filtering)
         let was_dropdown_open = self
             .state
             .completion_session
             .as_ref()
-            .map(|s| s.dropdown_open)
-            .unwrap_or(false);
+            .is_some_and(|s| s.dropdown_open);
 
-        let result = payload.result;
-        let candidates = result.candidates;
+        let token_start = payload.token_start;
+        let action = resolve_completion(
+            payload.result,
+            &payload.input,
+            token_start,
+            &self.state.command_line,
+            was_dropdown_open,
+        );
 
-        if candidates.is_empty() {
-            self.state.completion_session = None;
-            let _ = self.update_and_render();
-            return;
-        }
-
-        if was_dropdown_open {
-            // Dropdown was already visible — update candidates in-place, keep it open
-            let mut session =
-                crate::state::CompletionSession::new(self.state.command_line.clone(), candidates);
-            session.dropdown_open = true;
-            session.selected = Some(0);
-            self.state.completion_session = Some(session);
-            let _ = self.update_and_render();
-            return;
-        }
-
-        // First-time Tab press path
-        if candidates.len() == 1 {
-            self.apply_completion_text(&candidates[0].text.clone());
-            self.state.completion_session = None;
-            let _ = self.update_and_render();
-            return;
-        }
-
-        let current_token = self
-            .state
-            .command_line
-            .rsplit(' ')
-            .next()
-            .unwrap_or("")
-            .to_string();
-
-        if result.common_prefix.len() > current_token.len() {
-            let prefix = result.common_prefix.clone();
-            self.apply_completion_text(&prefix);
-            self.state.completion_session = Some(crate::state::CompletionSession::new(
-                self.state.command_line.clone(),
+        match action {
+            CompletionAction::Discard => return,
+            CompletionAction::Clear => {
+                self.state.completion_session = None;
+            }
+            CompletionAction::ApplyAndClear { text, token_start } => {
+                self.apply_completion_text(&text, token_start);
+                self.state.completion_session = None;
+            }
+            CompletionAction::UpdateDropdown { candidates } => {
+                let mut session = crate::state::CompletionSession::new(
+                    self.state.command_line.clone(),
+                    candidates,
+                    token_start,
+                );
+                session.dropdown_open = true;
+                session.selected = Some(0);
+                self.state.completion_session = Some(session);
+            }
+            CompletionAction::ExpandPrefix {
+                text,
+                token_start,
                 candidates,
-            ));
-        } else {
-            let mut session =
-                crate::state::CompletionSession::new(self.state.command_line.clone(), candidates);
-            session.dropdown_open = true;
-            session.selected = Some(0);
-            self.state.completion_session = Some(session);
+            } => {
+                self.apply_completion_text(&text, token_start);
+                self.state.completion_session = Some(crate::state::CompletionSession::new(
+                    self.state.command_line.clone(),
+                    candidates,
+                    token_start,
+                ));
+            }
+            CompletionAction::ShowDropdown { candidates } => {
+                let mut session = crate::state::CompletionSession::new(
+                    self.state.command_line.clone(),
+                    candidates,
+                    token_start,
+                );
+                session.dropdown_open = true;
+                session.selected = Some(0);
+                self.state.completion_session = Some(session);
+            }
         }
 
         let _ = self.update_and_render();
     }
 
-    /// Replace the completing token in the command line with the accepted text.
-    fn apply_completion_text(&mut self, text: &str) {
-        let content = self.state.command_line.clone();
-        let new_content = if let Some(space_pos) = content.rfind(' ') {
-            format!("{} {}", &content[..space_pos], text)
-        } else {
-            text.to_string()
-        };
-        let new_cursor = new_content.len();
+    fn apply_completion_text(&mut self, text: &str, token_start: usize) {
+        let mut new_content = self.state.command_line[..token_start].to_string();
+        new_content.push_str(text);
+        self.state.command_line_cursor = new_content.len();
         self.state.command_line = new_content;
-        self.state.command_line_cursor = new_cursor;
     }
 
     fn close_active_modal(&mut self) {

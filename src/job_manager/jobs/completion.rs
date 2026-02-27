@@ -3,20 +3,22 @@
 
 use crate::command_line::commands::completion::{
     complete_command_name, complete_setting_name, complete_setting_value, complete_subcommand,
-    longest_common_prefix_of, parse_context, CompletionCandidate, CompletionContext,
-    CompletionResult,
+    parse_context, CompletionCandidate, CompletionContext, CompletionResult, PathFilter,
 };
-use crate::command_line::settings::create_settings_registry;
+use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload};
+use crate::state::UserSettings;
 use std::any::Any;
-use std::sync::mpsc::Sender;
+use std::sync::{mpsc::Sender, LazyLock};
 
-/// Sent back to the editor via `JobMessage::Custom`
+static SETTINGS_REGISTRY: LazyLock<SettingsRegistry<UserSettings>> =
+    LazyLock::new(create_settings_registry);
+
 #[derive(Debug, Clone)]
 pub struct CompletionPayload {
     pub result: CompletionResult,
-    /// The command line content that was being completed (for staleness checks)
     pub input: String,
+    pub token_start: usize,
 }
 
 impl JobPayload for CompletionPayload {
@@ -31,10 +33,8 @@ impl JobPayload for CompletionPayload {
     }
 }
 
-/// Job that computes completion candidates for the current command line input.
 #[derive(Debug)]
 pub struct CompletionJob {
-    /// Full command line content (without the `:` prompt)
     pub input: String,
 }
 
@@ -44,35 +44,41 @@ impl Job for CompletionJob {
             return;
         }
 
-        let settings_registry = create_settings_registry();
-        let (context, prefix) = parse_context(&self.input, &settings_registry);
+        let parsed = parse_context(&self.input, &SETTINGS_REGISTRY);
 
-        let result = match &context {
-            CompletionContext::CommandName => complete_command_name(&prefix),
-            CompletionContext::Subcommand { parent } => {
-                let mut result = complete_subcommand(parent, &prefix);
-                if parent == "split" || parent == "vsplit" {
+        let result = match &parsed.context {
+            CompletionContext::CommandName => complete_command_name(&parsed.prefix),
+            CompletionContext::Subcommand {
+                parent,
+                subcommand_prefix,
+            } => {
+                let mut result = complete_subcommand(parent, &parsed.prefix);
+                if !subcommand_prefix.is_empty() {
                     for c in &mut result.candidates {
-                        c.text = format!(":{}", c.text);
+                        c.text = format!("{}{}", subcommand_prefix, c.text);
                     }
                     if !result.common_prefix.is_empty() {
-                        result.common_prefix = format!(":{}", result.common_prefix);
+                        result.common_prefix =
+                            format!("{}{}", subcommand_prefix, result.common_prefix);
                     }
                 }
                 result
             }
-            CompletionContext::SettingName => complete_setting_name(&prefix, &settings_registry),
+            CompletionContext::SettingName => {
+                complete_setting_name(&parsed.prefix, &SETTINGS_REGISTRY)
+            }
             CompletionContext::SettingValue { name } => {
-                complete_setting_value(name, &settings_registry)
+                complete_setting_value(name, &SETTINGS_REGISTRY)
             }
             CompletionContext::FilePath {
                 dir,
                 prefix: file_prefix,
+                filter,
             } => {
                 if signal.is_cancelled() {
                     return;
                 }
-                complete_filepath(dir, file_prefix, &signal)
+                complete_filepath(dir, file_prefix, *filter, &signal)
             }
             CompletionContext::None => CompletionResult::empty(),
         };
@@ -80,15 +86,16 @@ impl Job for CompletionJob {
         let payload = CompletionPayload {
             result,
             input: self.input.clone(),
+            token_start: parsed.token_start,
         };
         let _ = sender.send(JobMessage::Custom(id, Box::new(payload)));
     }
 }
 
-/// Enumerate files/dirs in `dir` matching `file_prefix`. Dirs first, then alphabetical.
 fn complete_filepath(
     dir: &str,
     file_prefix: &str,
+    filter: PathFilter,
     signal: &CancellationSignal,
 ) -> CompletionResult {
     let read_dir = match std::fs::read_dir(dir) {
@@ -112,7 +119,12 @@ fn complete_filepath(
 
         let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
 
-        // Build path relative to original prefix, with trailing `/` for directories
+        match filter {
+            PathFilter::FilesOnly if is_dir => continue,
+            PathFilter::DirectoriesOnly if !is_dir => continue,
+            _ => {}
+        }
+
         let text = if dir == "." {
             if is_dir {
                 format!("{}/", name_str)
@@ -135,21 +147,9 @@ fn complete_filepath(
             } else {
                 String::new()
             },
+            is_directory: is_dir,
         });
     }
 
-    // Dirs first, then alphabetical within each group
-    candidates.sort_by(|a, b| {
-        let a_dir = a.description == "directory";
-        let b_dir = b.description == "directory";
-        b_dir.cmp(&a_dir).then(a.text.cmp(&b.text))
-    });
-
-    let strs: Vec<&str> = candidates.iter().map(|c| c.text.as_str()).collect();
-    let common = longest_common_prefix_of(&strs);
-
-    CompletionResult {
-        common_prefix: common,
-        candidates,
-    }
+    CompletionResult::from_candidates(candidates)
 }

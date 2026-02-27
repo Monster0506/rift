@@ -98,12 +98,12 @@ impl StatusBar {
                 term.write(b" ")?;
             }
         } else if state.settings.status_line.show_filename {
-            let display_name =
-                if state.is_dirty && state.settings.status_line.show_dirty_indicator {
-                    format!("{}*", state.file_name)
-                } else {
-                    state.file_name.clone()
-                };
+            let display_name = if state.is_dirty && state.settings.status_line.show_dirty_indicator
+            {
+                format!("{}*", state.file_name)
+            } else {
+                state.file_name.clone()
+            };
             let display_len = display_name.len();
 
             if display_len <= available_cols {

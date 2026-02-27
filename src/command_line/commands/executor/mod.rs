@@ -279,7 +279,20 @@ impl CommandExecutor {
                 state.notify(notification_kind, message);
                 ExecutionResult::Success
             }
-            ParsedCommand::Edit { path, bangs } => ExecutionResult::Edit { path, bangs },
+            ParsedCommand::Edit { path, bangs } => {
+                if let Some(ref p) = path {
+                    let path_buf = std::path::Path::new(p);
+                    if path_buf.exists() && path_buf.is_dir() {
+                        state.handle_error(RiftError::new(
+                            ErrorType::Execution,
+                            crate::constants::errors::NOT_A_FILE,
+                            crate::constants::errors::MSG_NOT_A_FILE.to_string(),
+                        ));
+                        return ExecutionResult::Failure;
+                    }
+                }
+                ExecutionResult::Edit { path, bangs }
+            }
             ParsedCommand::BufferNext { bangs } => ExecutionResult::BufferNext { bangs },
             ParsedCommand::BufferPrevious { bangs } => ExecutionResult::BufferPrevious { bangs },
             ParsedCommand::NoHighlight { bangs: _ } => {
@@ -441,20 +454,26 @@ impl CommandExecutor {
                 direction: crate::split::tree::SplitDirection::Vertical,
                 subcommand,
             },
-            ParsedCommand::Explore { path, bangs: _ } => {
+            ParsedCommand::File { path, bangs: _ } => {
                 let initial_path = if let Some(p) = path {
-                    std::path::PathBuf::from(p)
-                } else {
-                    // Check if document has path
-                    if let Some(p) = document.path() {
-                        if p.is_dir() {
-                            p.to_path_buf()
-                        } else {
-                            p.parent().unwrap_or(p).to_path_buf()
-                        }
-                    } else {
-                        std::env::current_dir().unwrap_or_default()
+                    let path_buf = std::path::PathBuf::from(p);
+                    if path_buf.exists() && path_buf.is_file() {
+                        state.handle_error(RiftError::new(
+                            ErrorType::Execution,
+                            crate::constants::errors::NOT_A_DIRECTORY,
+                            crate::constants::errors::MSG_NOT_A_DIRECTORY.to_string(),
+                        ));
+                        return ExecutionResult::Failure;
                     }
+                    path_buf
+                } else if let Some(p) = document.path() {
+                    if p.is_dir() {
+                        p.to_path_buf()
+                    } else {
+                        p.parent().unwrap_or(p).to_path_buf()
+                    }
+                } else {
+                    std::env::current_dir().unwrap_or_default()
                 };
 
                 let mut explorer = crate::file_explorer::FileExplorer::new(initial_path);

@@ -95,7 +95,7 @@ pub enum ParsedCommand {
         bangs: usize,
     },
     /// Open file explorer
-    Explore {
+    File {
         path: Option<String>,
         bangs: usize,
     },
