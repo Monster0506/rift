@@ -602,6 +602,22 @@ fn render_completion_menu(
         cell_rows.push(line);
     }
 
+    let total = state.candidates.len();
+    if total > max_visible {
+        let from = scroll + 1;
+        let to = (scroll + max_visible).min(total);
+        let footer_text = format!(" {}-{} of {} ", from, to, total);
+        let mut footer_line: Vec<Cell> = footer_text
+            .chars()
+            .take(content_width)
+            .map(|ch| Cell::from_char(ch).with_colors(desc_fg, bg))
+            .collect();
+        while footer_line.len() < content_width {
+            footer_line.push(Cell::from_char(' ').with_colors(fg, bg));
+        }
+        cell_rows.push(footer_line);
+    }
+
     let menu_height = cell_rows.len();
 
     let mut style = WindowStyle::new()

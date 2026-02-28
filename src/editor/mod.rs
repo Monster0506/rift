@@ -871,6 +871,21 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Normal);
             }
             KeyAction::ExitCommandMode => {
+                // Close completion dropdown without exiting command mode
+                if self.current_mode == Mode::Command
+                    && self
+                        .state
+                        .completion_session
+                        .as_ref()
+                        .is_some_and(|s| s.dropdown_open)
+                {
+                    if let Some(session) = &mut self.state.completion_session {
+                        session.dropdown_open = false;
+                        session.selected = None;
+                    }
+                    return;
+                }
+
                 self.state.clear_command_line();
                 self.close_active_modal();
                 self.set_mode(Mode::Normal);

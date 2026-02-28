@@ -7,6 +7,41 @@ fn create_editor() -> Editor<MockTerminal> {
 }
 
 #[test]
+fn test_escape_closes_completion_dropdown_only() {
+    use crate::command_line::commands::completion::CompletionCandidate;
+    use crate::state::CompletionSession;
+
+    let mut editor = create_editor();
+
+    editor.set_mode(Mode::Command);
+    editor.state.command_line = ":e foo".to_string();
+    editor.state.command_line_cursor = editor.state.command_line.len();
+
+    let mut session = CompletionSession::new(
+        editor.state.command_line.clone(),
+        vec![CompletionCandidate {
+            text: "edit".into(),
+            description: "Edit file".into(),
+            is_directory: false,
+        }],
+        0,
+    );
+    session.dropdown_open = true;
+    session.selected = Some(0);
+    editor.state.completion_session = Some(session);
+
+    editor.handle_key_actions(crate::key_handler::KeyAction::ExitCommandMode);
+
+    assert_eq!(editor.current_mode, Mode::Command);
+    assert_eq!(editor.state.command_line, ":e foo");
+    assert!(editor
+        .state
+        .completion_session
+        .as_ref()
+        .is_some_and(|s| !s.dropdown_open));
+}
+
+#[test]
 fn test_editor_initial_state() {
     let editor = create_editor();
     assert_eq!(editor.document_manager.tab_count(), 1);
