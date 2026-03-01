@@ -98,11 +98,18 @@ impl From<SettingError> for crate::error::RiftError {
 /// Receives parsed and validated `SettingValue`, never raw strings.
 pub type SettingSetter<T> = fn(&mut T, SettingValue) -> Result<(), SettingError>;
 
+/// Getter function signature
+///
+/// Returns the current value of the setting as a string suitable for display
+/// in tab completion. Only required for non-discrete types (Integer, Float, Color);
+/// use `None` for Boolean and Enum settings, which complete their full variant list.
+pub type SettingGetter<T> = fn(&T) -> String;
+
 /// Setting descriptor
 ///
-/// Minimal configuration: name, aliases, type, and setter function.
+/// Minimal configuration: name, aliases, type, setter, and optional getter.
 /// Name encodes path (e.g., "`command_line_window.width_ratio`" for nested settings).
-/// Setter handles mutation - no separate path information needed.
+/// Setter handles mutation; getter provides current value for tab completion.
 #[derive(Debug, Clone)]
 pub struct SettingDescriptor<T> {
     /// Canonical setting name (e.g., "expandtabs" or "`command_line_window.width_ratio`")
@@ -115,6 +122,9 @@ pub struct SettingDescriptor<T> {
     pub ty: SettingType,
     /// Setter function pointer
     pub set: SettingSetter<T>,
+    /// Optional getter: returns current value as a display string for tab completion.
+    /// Provide for Integer, Float, and Color settings; use `None` for Boolean/Enum.
+    pub get: Option<SettingGetter<T>>,
     /// Whether setting this option requires a full screen redraw
     pub needs_full_redraw: bool,
 }

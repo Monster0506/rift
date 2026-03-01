@@ -8,6 +8,7 @@
 use crate::command_line::commands::definitions::{CompletionHint, COMMANDS};
 use crate::command_line::commands::{CommandDescriptor, MatchResult};
 use crate::command_line::settings::{SettingType, SettingsRegistry};
+use crate::document::definitions::DocumentOptions;
 use crate::state::UserSettings;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +32,10 @@ pub enum CompletionContext {
     },
     SettingName,
     SettingValue {
+        name: String,
+    },
+    LocalSettingName,
+    LocalSettingValue {
         name: String,
     },
     None,
@@ -86,6 +91,7 @@ pub struct ParsedContext {
 pub fn parse_context(
     input: &str,
     settings_registry: &SettingsRegistry<UserSettings>,
+    document_settings_registry: &SettingsRegistry<DocumentOptions>,
 ) -> ParsedContext {
     let has_trailing_space = input.ends_with(' ');
     let tokens: Vec<&str> = input.split_whitespace().collect();
@@ -212,6 +218,25 @@ pub fn parse_context(
                         }
                     }
                 }
+                CompletionHint::LocalSetting => {
+                    if has_trailing_space && !rest.is_empty() {
+                        let setting_token = rest[0];
+                        let canonical =
+                            resolve_setting_name(setting_token, document_settings_registry)
+                                .unwrap_or_else(|| setting_token.to_string());
+                        ParsedContext {
+                            context: CompletionContext::LocalSettingValue { name: canonical },
+                            prefix: String::new(),
+                            token_start,
+                        }
+                    } else {
+                        ParsedContext {
+                            context: CompletionContext::LocalSettingName,
+                            prefix: current_token,
+                            token_start,
+                        }
+                    }
+                }
                 CompletionHint::None => ParsedContext {
                     context: CompletionContext::None,
                     prefix: String::new(),
@@ -299,9 +324,9 @@ pub fn complete_subcommand(parent: &str, prefix: &str) -> CompletionResult {
     }
 }
 
-pub fn complete_setting_name(
+pub fn complete_setting_name<T: 'static>(
     prefix: &str,
-    settings_registry: &SettingsRegistry<UserSettings>,
+    settings_registry: &SettingsRegistry<T>,
 ) -> CompletionResult {
     let prefix_lower = prefix.to_lowercase();
     let no_inner = if prefix_lower.starts_with("no") && prefix_lower.len() > 2 {
@@ -358,9 +383,10 @@ pub fn complete_setting_name(
     CompletionResult::from_candidates(candidates)
 }
 
-pub fn complete_setting_value(
+pub fn complete_setting_value<T: 'static>(
     name: &str,
-    settings_registry: &SettingsRegistry<UserSettings>,
+    settings_registry: &SettingsRegistry<T>,
+    current: Option<&T>,
 ) -> CompletionResult {
     let desc = settings_registry
         .descriptors()
@@ -392,37 +418,16 @@ pub fn complete_setting_value(
                 is_directory: false,
             })
             .collect(),
-        SettingType::Integer { min, max } => {
-            let range = match (min, max) {
-                (Some(lo), Some(hi)) => format!("<integer {lo}\u{2013}{hi}>"),
-                (Some(lo), None) => format!("<integer \u{2265}{lo}>"),
-                (None, Some(hi)) => format!("<integer \u{2264}{hi}>"),
-                (None, None) => "<integer>".into(),
-            };
-            vec![CompletionCandidate {
-                text: range,
-                description: "type a number".into(),
-                is_directory: false,
-            }]
+        SettingType::Integer { .. } | SettingType::Float { .. } | SettingType::Color => {
+            match (desc.get, current) {
+                (Some(getter), Some(val)) => vec![CompletionCandidate {
+                    text: getter(val),
+                    description: "current value".into(),
+                    is_directory: false,
+                }],
+                _ => vec![],
+            }
         }
-        SettingType::Float { min, max } => {
-            let range = match (min, max) {
-                (Some(lo), Some(hi)) => format!("<float {lo}\u{2013}{hi}>"),
-                (Some(lo), None) => format!("<float \u{2265}{lo}>"),
-                (None, Some(hi)) => format!("<float \u{2264}{hi}>"),
-                (None, None) => "<float>".into(),
-            };
-            vec![CompletionCandidate {
-                text: range,
-                description: "type a decimal".into(),
-                is_directory: false,
-            }]
-        }
-        SettingType::Color => vec![CompletionCandidate {
-            text: "<color>".into(),
-            description: "e.g. red, #ff0000, rgb(255,0,0)".into(),
-            is_directory: false,
-        }],
     };
 
     CompletionResult::from_candidates(candidates)
@@ -568,9 +573,9 @@ fn resolve_command_descriptor(token: &str) -> Option<&'static CommandDescriptor>
 
 /// Resolve a setting token to its canonical name using the same registry and
 /// matching order as command parsing (exact name/alias, then single prefix match).
-fn resolve_setting_name(
+fn resolve_setting_name<T: 'static>(
     token: &str,
-    settings_registry: &SettingsRegistry<UserSettings>,
+    settings_registry: &SettingsRegistry<T>,
 ) -> Option<String> {
     let registry = settings_registry.build_option_registry();
     match registry.match_command(token) {
@@ -611,6 +616,8 @@ fn type_hint_for(ty: &SettingType) -> String {
 mod tests {
     use super::*;
     use crate::command_line::settings::create_settings_registry;
+    use crate::document::definitions::{create_document_settings_registry, DocumentOptions};
+    use crate::state::UserSettings;
 
     #[test]
     fn test_complete_command_name_prefix() {
@@ -642,7 +649,8 @@ mod tests {
     #[test]
     fn test_parse_context_colon_prefix_stripped() {
         let reg = create_settings_registry();
-        let pc = parse_context(":f", &reg);
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context(":f", &reg, &doc_reg);
         assert_eq!(pc.context, CompletionContext::CommandName);
         assert_eq!(pc.prefix, "f");
     }
@@ -650,7 +658,8 @@ mod tests {
     #[test]
     fn test_parse_context_f_space_directories_only() {
         let reg = create_settings_registry();
-        let pc = parse_context(":f ", &reg);
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context(":f ", &reg, &doc_reg);
         assert!(matches!(
             pc.context,
             CompletionContext::FilePath {
@@ -663,7 +672,8 @@ mod tests {
     #[test]
     fn test_parse_context_e_space_shows_both() {
         let reg = create_settings_registry();
-        let pc = parse_context(":e ", &reg);
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context(":e ", &reg, &doc_reg);
         assert!(matches!(
             pc.context,
             CompletionContext::FilePath {
@@ -730,7 +740,8 @@ mod tests {
     #[test]
     fn test_parse_context_command_name() {
         let reg = create_settings_registry();
-        let pc = parse_context("q", &reg);
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("q", &reg, &doc_reg);
         assert_eq!(pc.context, CompletionContext::CommandName);
         assert_eq!(pc.prefix, "q");
         assert_eq!(pc.token_start, 0);
@@ -739,7 +750,8 @@ mod tests {
     #[test]
     fn test_parse_context_setting_name() {
         let reg = create_settings_registry();
-        let pc = parse_context("set nu", &reg);
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("set nu", &reg, &doc_reg);
         assert_eq!(pc.context, CompletionContext::SettingName);
         assert_eq!(pc.prefix, "nu");
     }
@@ -747,7 +759,8 @@ mod tests {
     #[test]
     fn test_parse_context_subcommand() {
         let reg = create_settings_registry();
-        let pc = parse_context("buffer n", &reg);
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("buffer n", &reg, &doc_reg);
         assert_eq!(
             pc.context,
             CompletionContext::Subcommand {
@@ -761,7 +774,8 @@ mod tests {
     #[test]
     fn test_parse_context_filepath() {
         let reg = create_settings_registry();
-        let pc = parse_context("edit src/f", &reg);
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("edit src/f", &reg, &doc_reg);
         assert!(matches!(pc.context, CompletionContext::FilePath { .. }));
     }
 
@@ -773,7 +787,7 @@ mod tests {
             .iter()
             .find(|d| matches!(d.ty, SettingType::Boolean))
             .expect("at least one boolean setting");
-        let result = complete_setting_value(bool_setting.name, &reg);
+        let result = complete_setting_value::<UserSettings>(bool_setting.name, &reg, None);
         assert_eq!(result.candidates.len(), 2);
         assert!(result.candidates.iter().any(|c| c.text == "true"));
         assert!(result.candidates.iter().any(|c| c.text == "false"));
@@ -798,7 +812,8 @@ mod tests {
     #[test]
     fn test_parse_context_split_colon_subcommand() {
         let reg = create_settings_registry();
-        let pc = parse_context("split :l", &reg);
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("split :l", &reg, &doc_reg);
         assert_eq!(
             pc.context,
             CompletionContext::Subcommand {
@@ -812,7 +827,8 @@ mod tests {
     #[test]
     fn test_parse_context_vsplit_colon_subcommand() {
         let reg = create_settings_registry();
-        let pc = parse_context("vsplit :fr", &reg);
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("vsplit :fr", &reg, &doc_reg);
         assert_eq!(
             pc.context,
             CompletionContext::Subcommand {
@@ -826,14 +842,16 @@ mod tests {
     #[test]
     fn test_parse_context_split_filepath() {
         let reg = create_settings_registry();
-        let pc = parse_context("split src/f", &reg);
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("split src/f", &reg, &doc_reg);
         assert!(matches!(pc.context, CompletionContext::FilePath { .. }));
     }
 
     #[test]
     fn test_parse_context_split_empty_is_filepath() {
         let reg = create_settings_registry();
-        let pc = parse_context("split ", &reg);
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("split ", &reg, &doc_reg);
         assert!(matches!(pc.context, CompletionContext::FilePath { .. }));
     }
 
@@ -889,13 +907,14 @@ mod tests {
     #[test]
     fn test_parse_context_token_start() {
         let reg = create_settings_registry();
-        let pc = parse_context("edit foo.txt", &reg);
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("edit foo.txt", &reg, &doc_reg);
         assert_eq!(pc.token_start, 5);
 
-        let pc = parse_context("set ", &reg);
+        let pc = parse_context("set ", &reg, &doc_reg);
         assert_eq!(pc.token_start, 4);
 
-        let pc = parse_context("quit", &reg);
+        let pc = parse_context("quit", &reg, &doc_reg);
         assert_eq!(pc.token_start, 0);
     }
 
@@ -965,5 +984,183 @@ mod tests {
         let result = CompletionResult::from_candidates(candidates);
         assert_eq!(result.candidates[0].text, "src/");
         assert_eq!(result.candidates[1].text, "file.rs");
+    }
+
+    // ── setlocal parse_context tests (parallel to set) ───────────────────────
+
+    #[test]
+    fn test_parse_context_local_setting_name_prefix() {
+        let reg = create_settings_registry();
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("setlocal et", &reg, &doc_reg);
+        assert_eq!(pc.context, CompletionContext::LocalSettingName);
+        assert_eq!(pc.prefix, "et");
+    }
+
+    #[test]
+    fn test_parse_context_local_setting_name_empty() {
+        let reg = create_settings_registry();
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("setlocal ", &reg, &doc_reg);
+        assert_eq!(pc.context, CompletionContext::LocalSettingName);
+        assert_eq!(pc.prefix, "");
+    }
+
+    #[test]
+    fn test_parse_context_local_setting_value_exact_name() {
+        let reg = create_settings_registry();
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("setlocal expandtabs ", &reg, &doc_reg);
+        assert_eq!(
+            pc.context,
+            CompletionContext::LocalSettingValue {
+                name: "expandtabs".into()
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_context_local_setting_value_alias_resolved() {
+        // "et" is an alias for "expandtabs" — must resolve to canonical name
+        let reg = create_settings_registry();
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("setlocal et ", &reg, &doc_reg);
+        assert_eq!(
+            pc.context,
+            CompletionContext::LocalSettingValue {
+                name: "expandtabs".into()
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_context_setl_alias_resolves_to_local_setting_name() {
+        // "setl" is an alias for "setlocal"
+        let reg = create_settings_registry();
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("setl ", &reg, &doc_reg);
+        assert_eq!(pc.context, CompletionContext::LocalSettingName);
+        assert_eq!(pc.prefix, "");
+    }
+
+    #[test]
+    fn test_parse_context_set_setting_value_alias_resolved() {
+        // "clborderstyle" is an alias for "command_line.borderstyle"
+        let reg = create_settings_registry();
+        let doc_reg = create_document_settings_registry();
+        let pc = parse_context("set clborderstyle ", &reg, &doc_reg);
+        assert_eq!(
+            pc.context,
+            CompletionContext::SettingValue {
+                name: "command_line.borderstyle".into()
+            }
+        );
+    }
+
+    // ── Separation: global vs local setting name completions ─────────────────
+
+    #[test]
+    fn test_complete_local_setting_name_returns_doc_settings() {
+        let doc_reg = create_document_settings_registry();
+        let result = complete_setting_name("", &doc_reg);
+        let texts: Vec<&str> = result.candidates.iter().map(|c| c.text.as_str()).collect();
+        assert!(texts.contains(&"expandtabs"), "expandtabs must appear");
+        assert!(texts.contains(&"tabwidth"), "tabwidth must appear");
+        assert!(texts.contains(&"line_ending"), "line_ending must appear");
+    }
+
+    #[test]
+    fn test_complete_local_setting_name_does_not_show_global_settings() {
+        let doc_reg = create_document_settings_registry();
+        let result = complete_setting_name("", &doc_reg);
+        let texts: Vec<&str> = result.candidates.iter().map(|c| c.text.as_str()).collect();
+        assert!(!texts.contains(&"number"), "global 'number' must not appear");
+        assert!(
+            !texts.contains(&"appearance.background"),
+            "global color setting must not appear"
+        );
+    }
+
+    #[test]
+    fn test_complete_global_setting_name_does_not_show_local_settings() {
+        let reg = create_settings_registry();
+        let result = complete_setting_name("", &reg);
+        let texts: Vec<&str> = result.candidates.iter().map(|c| c.text.as_str()).collect();
+        assert!(!texts.contains(&"expandtabs"), "local 'expandtabs' must not appear");
+        assert!(!texts.contains(&"tabwidth"), "local 'tabwidth' must not appear");
+    }
+
+    // ── complete_setting_value with current value ─────────────────────────────
+
+    #[test]
+    fn test_complete_setting_value_integer_shows_current_value() {
+        let doc_reg = create_document_settings_registry();
+        let opts = DocumentOptions::default(); // tab_width = 4
+        let result = complete_setting_value("tabwidth", &doc_reg, Some(&opts));
+        assert_eq!(result.candidates.len(), 1);
+        assert_eq!(result.candidates[0].text, "4");
+    }
+
+    #[test]
+    fn test_complete_setting_value_float_shows_current_value() {
+        let reg = create_settings_registry();
+        let settings = UserSettings::new();
+        // command_line.width_ratio defaults to 0.6
+        let result = complete_setting_value("command_line.width_ratio", &reg, Some(&settings));
+        assert_eq!(result.candidates.len(), 1);
+        assert_eq!(result.candidates[0].text, "0.6");
+    }
+
+    #[test]
+    fn test_complete_setting_value_integer_shows_current_value_global() {
+        let reg = create_settings_registry();
+        let settings = UserSettings::new();
+        // command_line.height defaults to 3
+        let result = complete_setting_value("command_line.height", &reg, Some(&settings));
+        assert_eq!(result.candidates.len(), 1);
+        assert_eq!(result.candidates[0].text, "3");
+    }
+
+    #[test]
+    fn test_complete_setting_value_boolean_still_shows_both_options() {
+        let doc_reg = create_document_settings_registry();
+        let opts = DocumentOptions::default();
+        let result = complete_setting_value("expandtabs", &doc_reg, Some(&opts));
+        assert_eq!(result.candidates.len(), 2);
+        assert!(result.candidates.iter().any(|c| c.text == "true"));
+        assert!(result.candidates.iter().any(|c| c.text == "false"));
+    }
+
+    #[test]
+    fn test_complete_setting_value_enum_still_shows_all_variants() {
+        let doc_reg = create_document_settings_registry();
+        let opts = DocumentOptions::default();
+        let result = complete_setting_value("line_ending", &doc_reg, Some(&opts));
+        assert!(result.candidates.iter().any(|c| c.text == "lf"));
+        assert!(result.candidates.iter().any(|c| c.text == "crlf"));
+    }
+
+    #[test]
+    fn test_complete_setting_value_integer_no_current_is_empty() {
+        let doc_reg = create_document_settings_registry();
+        let result = complete_setting_value::<DocumentOptions>("tabwidth", &doc_reg, None);
+        assert!(result.candidates.is_empty());
+    }
+
+    #[test]
+    fn test_complete_setting_value_color_no_current_is_empty() {
+        let reg = create_settings_registry();
+        let result = complete_setting_value::<UserSettings>("appearance.background", &reg, None);
+        assert!(result.candidates.is_empty());
+    }
+
+    #[test]
+    fn test_complete_setting_value_color_shows_current_value() {
+        let reg = create_settings_registry();
+        let mut settings = UserSettings::new();
+        settings.editor_bg = None;
+        let result = complete_setting_value("appearance.background", &reg, Some(&settings));
+        assert_eq!(result.candidates.len(), 1);
+        assert_eq!(result.candidates[0].text, "none");
     }
 }

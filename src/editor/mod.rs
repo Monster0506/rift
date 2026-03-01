@@ -2963,7 +2963,13 @@ impl<T: TerminalBackend> Editor<T> {
             }
             CommandLineMessage::RequestCompletion(input) => {
                 use crate::job_manager::jobs::completion::CompletionJob;
-                self.job_manager.spawn(CompletionJob { input });
+                let current_settings = Some(self.state.settings.clone());
+                let current_doc_options = Some(self.active_document().options.clone());
+                self.job_manager.spawn(CompletionJob {
+                    input,
+                    current_settings,
+                    current_doc_options,
+                });
             }
         }
         Ok(())

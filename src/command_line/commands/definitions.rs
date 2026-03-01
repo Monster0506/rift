@@ -17,7 +17,10 @@ pub enum CompletionHint {
     FilePath,
     /// Directories only (e.g. :file)
     Directory,
+    /// Global settings (e.g. :set)
     Setting,
+    /// Document-local settings (e.g. :setlocal)
+    LocalSetting,
 }
 
 /// Descriptor for a command
@@ -804,6 +807,7 @@ const N: CompletionHint = CompletionHint::None;
 const F: CompletionHint = CompletionHint::FilePath;
 const D: CompletionHint = CompletionHint::Directory;
 const S: CompletionHint = CompletionHint::Setting;
+const L: CompletionHint = CompletionHint::LocalSetting;
 
 const UNDO_SUBS: &[CommandDescriptor] = &[CommandDescriptor {
     name: "checkpoint",
@@ -898,7 +902,7 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Set a local option",
         factory: Some(parse_setlocal),
         subcommands: &[],
-        completion: S,
+        completion: L,
         subcommand_prefix: "",
     },
     CommandDescriptor {

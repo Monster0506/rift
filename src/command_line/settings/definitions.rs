@@ -1,12 +1,40 @@
 //! Settings definitions
 //! Declarative registry of all :set command options
 
+use crate::color::Color;
 use crate::command_line::settings::descriptor::{
     SettingDescriptor, SettingError, SettingType, SettingValue,
 };
 use crate::command_line::settings::registry::SettingsRegistry;
 use crate::floating_window::BorderChars;
 use crate::state::UserSettings;
+
+// ── Color formatting ──────────────────────────────────────────────────────────
+
+/// Format a `Color` value as the string a user would type (inverse of `parse_color`).
+fn format_color(color: Option<Color>) -> String {
+    match color {
+        None | Some(Color::Reset) => "none".to_string(),
+        Some(Color::Black) => "black".to_string(),
+        Some(Color::DarkGrey) => "darkgrey".to_string(),
+        Some(Color::Red) => "red".to_string(),
+        Some(Color::DarkRed) => "darkred".to_string(),
+        Some(Color::Green) => "green".to_string(),
+        Some(Color::DarkGreen) => "darkgreen".to_string(),
+        Some(Color::Yellow) => "yellow".to_string(),
+        Some(Color::DarkYellow) => "darkyellow".to_string(),
+        Some(Color::Blue) => "blue".to_string(),
+        Some(Color::DarkBlue) => "darkblue".to_string(),
+        Some(Color::Magenta) => "magenta".to_string(),
+        Some(Color::DarkMagenta) => "darkmagenta".to_string(),
+        Some(Color::Cyan) => "cyan".to_string(),
+        Some(Color::DarkCyan) => "darkcyan".to_string(),
+        Some(Color::White) => "white".to_string(),
+        Some(Color::Grey) => "grey".to_string(),
+        Some(Color::Ansi256(n)) => format!("ansi256({n})"),
+        Some(Color::Rgb { r, g, b }) => format!("#{r:02x}{g:02x}{b:02x}"),
+    }
+}
 
 // Helper functions to create border presets
 fn create_unicode_border() -> BorderChars {
@@ -262,6 +290,32 @@ fn set_show_status_line(
     }
 }
 
+// Getter functions for non-discrete settings
+
+fn get_cmd_window_width_ratio(s: &UserSettings) -> String {
+    s.command_line_window.width_ratio.to_string()
+}
+
+fn get_cmd_window_min_width(s: &UserSettings) -> String {
+    s.command_line_window.min_width.to_string()
+}
+
+fn get_cmd_window_height(s: &UserSettings) -> String {
+    s.command_line_window.height.to_string()
+}
+
+fn get_poll_rate(s: &UserSettings) -> String {
+    s.poll_timeout_ms.to_string()
+}
+
+fn get_editor_bg(s: &UserSettings) -> String {
+    format_color(s.editor_bg)
+}
+
+fn get_editor_fg(s: &UserSettings) -> String {
+    format_color(s.editor_fg)
+}
+
 /// Static registry of all settings
 pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
@@ -272,6 +326,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             variants: &["unicode", "ascii"],
         },
         set: set_border_style,
+        get: None,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -283,6 +338,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: Some(1.0),
         },
         set: set_cmd_window_width_ratio,
+        get: Some(get_cmd_window_width_ratio),
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -294,6 +350,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: None,
         },
         set: set_cmd_window_min_width,
+        get: Some(get_cmd_window_min_width),
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -305,6 +362,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: None,
         },
         set: set_cmd_window_height,
+        get: Some(get_cmd_window_height),
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -313,6 +371,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Show border around command line window",
         ty: SettingType::Boolean,
         set: set_cmd_window_border,
+        get: None,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -321,6 +380,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Use reverse video for command line window",
         ty: SettingType::Boolean,
         set: set_cmd_window_reverse_video,
+        get: None,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -329,6 +389,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Editor background color",
         ty: SettingType::Color,
         set: set_editor_bg,
+        get: Some(get_editor_bg),
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -337,6 +398,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Editor foreground color",
         ty: SettingType::Color,
         set: set_editor_fg,
+        get: Some(get_editor_fg),
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -352,6 +414,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             ],
         },
         set: set_theme,
+        get: None,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -360,6 +423,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Show filename in status line",
         ty: SettingType::Boolean,
         set: set_show_filename,
+        get: None,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -368,6 +432,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Use reverse video for status line",
         ty: SettingType::Boolean,
         set: set_status_line_reverse_video,
+        get: None,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -376,6 +441,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Show status line",
         ty: SettingType::Boolean,
         set: set_show_status_line,
+        get: None,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -384,6 +450,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Show dirty indicator in status line",
         ty: SettingType::Boolean,
         set: set_show_dirty_indicator,
+        get: None,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -392,6 +459,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Show line numbers",
         ty: SettingType::Boolean,
         set: set_show_line_numbers,
+        get: None,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -403,6 +471,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: Some(10000),
         },
         set: set_poll_rate,
+        get: Some(get_poll_rate),
         needs_full_redraw: false,
     },
 ];

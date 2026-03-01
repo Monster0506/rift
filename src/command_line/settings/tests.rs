@@ -78,6 +78,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Expand tabs to spaces",
         ty: SettingType::Boolean,
         set: set_expand_tabs,
+        get: None,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -89,6 +90,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: None,
         },
         set: set_tab_width,
+        get: None,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -100,6 +102,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             max: Some(1.0),
         },
         set: set_width_ratio,
+        get: None,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -110,6 +113,7 @@ const TEST_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
             variants: &["unicode", "ascii", "none"],
         },
         set: set_border_style,
+        get: None,
         needs_full_redraw: false,
     },
 ];
@@ -692,6 +696,7 @@ fn test_execute_setting_ambiguous() {
             description: "Expand tabs",
             ty: SettingType::Boolean,
             set: set_expand_tabs,
+            get: None,
             needs_full_redraw: false,
         },
         SettingDescriptor {
@@ -700,6 +705,7 @@ fn test_execute_setting_ambiguous() {
             description: "Expand spaces",
             ty: SettingType::Boolean,
             set: set_expand_tabs,
+            get: None,
             needs_full_redraw: false,
         },
     ];

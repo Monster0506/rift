@@ -25,6 +25,10 @@ impl Default for DocumentOptions {
     }
 }
 
+fn get_tab_width(options: &DocumentOptions) -> String {
+    options.tab_width.to_string()
+}
+
 fn set_tab_width(options: &mut DocumentOptions, value: SettingValue) -> Result<(), SettingError> {
     match value {
         SettingValue::Integer(n) => {
@@ -86,6 +90,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
             variants: &["lf", "crlf", "unix", "dos", "windows"],
         },
         set: set_line_ending,
+        get: None,
         needs_full_redraw: false,
     },
     SettingDescriptor {
@@ -94,6 +99,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
         description: "Use spaces instead of tabs",
         ty: SettingType::Boolean,
         set: set_expand_tabs,
+        get: None,
         needs_full_redraw: true,
     },
     SettingDescriptor {
@@ -105,6 +111,7 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
             max: None,
         },
         set: set_tab_width,
+        get: Some(get_tab_width),
         needs_full_redraw: true,
     },
 ];

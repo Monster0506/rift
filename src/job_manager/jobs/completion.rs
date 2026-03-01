@@ -6,6 +6,7 @@ use crate::command_line::commands::completion::{
     parse_context, CompletionCandidate, CompletionContext, CompletionResult, PathFilter,
 };
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
+use crate::document::definitions::{create_document_settings_registry, DocumentOptions};
 use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload};
 use crate::state::UserSettings;
 use std::any::Any;
@@ -13,6 +14,9 @@ use std::sync::{mpsc::Sender, LazyLock};
 
 static SETTINGS_REGISTRY: LazyLock<SettingsRegistry<UserSettings>> =
     LazyLock::new(create_settings_registry);
+
+static DOCUMENT_SETTINGS_REGISTRY: LazyLock<SettingsRegistry<DocumentOptions>> =
+    LazyLock::new(create_document_settings_registry);
 
 #[derive(Debug, Clone)]
 pub struct CompletionPayload {
@@ -36,6 +40,8 @@ impl JobPayload for CompletionPayload {
 #[derive(Debug)]
 pub struct CompletionJob {
     pub input: String,
+    pub current_settings: Option<UserSettings>,
+    pub current_doc_options: Option<DocumentOptions>,
 }
 
 impl Job for CompletionJob {
@@ -44,7 +50,7 @@ impl Job for CompletionJob {
             return;
         }
 
-        let parsed = parse_context(&self.input, &SETTINGS_REGISTRY);
+        let parsed = parse_context(&self.input, &SETTINGS_REGISTRY, &DOCUMENT_SETTINGS_REGISTRY);
 
         let result = match &parsed.context {
             CompletionContext::CommandName => complete_command_name(&parsed.prefix),
@@ -68,8 +74,16 @@ impl Job for CompletionJob {
                 complete_setting_name(&parsed.prefix, &SETTINGS_REGISTRY)
             }
             CompletionContext::SettingValue { name } => {
-                complete_setting_value(name, &SETTINGS_REGISTRY)
+                complete_setting_value(name, &SETTINGS_REGISTRY, self.current_settings.as_ref())
             }
+            CompletionContext::LocalSettingName => {
+                complete_setting_name(&parsed.prefix, &DOCUMENT_SETTINGS_REGISTRY)
+            }
+            CompletionContext::LocalSettingValue { name } => complete_setting_value(
+                name,
+                &DOCUMENT_SETTINGS_REGISTRY,
+                self.current_doc_options.as_ref(),
+            ),
             CompletionContext::FilePath {
                 dir,
                 prefix: file_prefix,
