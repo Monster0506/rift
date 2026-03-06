@@ -451,6 +451,10 @@ impl Document {
         let start_position = self.get_point(start);
         let old_end_position = self.get_point(end);
 
+        // Calculate byte offsets for Tree-sitter
+        let start_byte = self.buffer.char_to_byte(start);
+        let old_end_byte = self.buffer.char_to_byte(end);
+
         // Position cursor at start and delete characters one by one
         self.buffer.set_cursor(start)?;
         let count = end - start;
@@ -470,10 +474,6 @@ impl Document {
             },
             &format!("Delete {} chars", count),
         );
-
-        // Calculate byte offsets for Tree-sitter
-        let start_byte = self.buffer.char_to_byte(start);
-        let old_end_byte = self.buffer.char_to_byte(start + count);
 
         let edit = InputEdit {
             start_byte,
