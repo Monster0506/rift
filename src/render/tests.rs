@@ -230,12 +230,13 @@ fn test_render_does_not_clear_screen() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -265,12 +266,13 @@ fn test_render_cursor_positioning() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -299,12 +301,13 @@ fn test_render_empty_buffer() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -336,12 +339,13 @@ fn test_render_multiline_buffer() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -378,12 +382,13 @@ fn test_render_file_loaded_at_start() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -430,12 +435,13 @@ fn test_render_viewport_scrolling() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -466,12 +472,13 @@ fn test_render_viewport_edge_cases() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -501,12 +508,13 @@ fn test_render_large_buffer() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -544,12 +552,13 @@ fn test_render_cursor_at_viewport_boundaries() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -587,12 +596,13 @@ fn test_render_cursor_at_viewport_boundaries() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -665,12 +675,13 @@ fn test_render_line_numbers_enabled() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -716,12 +727,13 @@ fn test_render_line_numbers_disabled() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -757,12 +769,13 @@ fn test_render_line_numbers_gutter_width() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -813,12 +826,13 @@ fn test_render_cursor_position_with_line_numbers() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -847,12 +861,13 @@ fn test_no_redraw_on_noop() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();
@@ -886,12 +901,13 @@ fn test_no_redraw_on_noop() {
                 tab_width: 4,
                 highlights: None,
                 capture_map: None,
-                modal: None,
                 skip_content: false,
                 cursor_row_offset: 0,
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
+            custom_highlights: None,
+            show_line_numbers: true,
             },
         )
         .unwrap();

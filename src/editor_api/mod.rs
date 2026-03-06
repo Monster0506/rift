@@ -22,9 +22,6 @@ pub trait EditorContext {
     /// Switch mode
     fn set_mode(&mut self, mode: Mode);
 
-    /// Close the active modal/overlay
-    fn close_active_modal(&mut self);
-
     /// Send a notification
     fn notify(&mut self, kind: crate::notification::NotificationType, message: String);
 
@@ -36,9 +33,6 @@ pub trait EditorContext {
 
     /// Execute a command line string (e.g. ":w")
     fn execute_command_line(&mut self, cmd: String);
-
-    /// Access the active modal component
-    fn active_modal_component(&mut self) -> Option<&mut dyn crate::component::Component>;
 
     /// Perform a search
     fn perform_search(&mut self, query: &str, direction: crate::search::SearchDirection);

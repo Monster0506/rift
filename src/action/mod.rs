@@ -52,29 +52,6 @@ pub enum Motion {
 use crate::error::RiftError;
 use std::str::FromStr;
 
-/// File Explorer specific actions
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FileExplorerAction {
-    Close,
-    Down,
-    Up,
-    Select,
-    Parent,
-    ToggleSelection,
-    SelectAll,
-    ClearSelection,
-    Refresh,
-    ToggleHidden,
-    ToggleMetadata,
-    NewFile,
-    NewDir,
-    Delete,
-    Rename,
-    Copy,
-    Top,
-    Bottom,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperatorType {
     Delete,
@@ -126,19 +103,15 @@ pub enum EditorAction {
     HistoryDown,
     /// Repeat last buffer mutation (dot-repeat)
     DotRepeat,
-    /// Toggle freeze on the focused split window
-    SplitToggleFreeze,
-}
-
-/// Undotree specific actions
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UndoTreeAction {
-    Close,
-    Down,
-    Up,
-    Select,
-    Top,
-    Bottom,
+    QuitForce,
+    OpenFile { path: Option<String>, force: bool },
+    OpenDirectory(std::path::PathBuf),
+    OpenTerminal(Option<String>),
+    SplitWindow { direction: crate::split::tree::SplitDirection, subcommand: crate::command_line::commands::SplitSubcommand },
+    UndoCount(Option<u64>),
+    RedoCount(Option<u64>),
+    UndoGoto(u64),
+    NotificationClearAll,
 }
 
 /// Represents an action in the editor
@@ -146,10 +119,8 @@ pub enum UndoTreeAction {
 pub enum Action {
     /// Editor actions
     Editor(EditorAction),
-    /// File Explorer actions
-    Explorer(FileExplorerAction),
-    /// Undotree actions
-    UndoTree(UndoTreeAction),
+    /// Generic buffer-kind action, namespaced by kind
+    Buffer(String),
     /// No action
     Noop,
 }
@@ -159,36 +130,6 @@ impl FromStr for Action {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            // Explorer Actions
-            "explorer:close" => Ok(Action::Explorer(FileExplorerAction::Close)),
-            "explorer:down" => Ok(Action::Explorer(FileExplorerAction::Down)),
-            "explorer:up" => Ok(Action::Explorer(FileExplorerAction::Up)),
-            "explorer:select" => Ok(Action::Explorer(FileExplorerAction::Select)),
-            "explorer:parent" => Ok(Action::Explorer(FileExplorerAction::Parent)),
-            "explorer:toggle_selection" => {
-                Ok(Action::Explorer(FileExplorerAction::ToggleSelection))
-            }
-            "explorer:select_all" => Ok(Action::Explorer(FileExplorerAction::SelectAll)),
-            "explorer:clear_selection" => Ok(Action::Explorer(FileExplorerAction::ClearSelection)),
-            "explorer:refresh" => Ok(Action::Explorer(FileExplorerAction::Refresh)),
-            "explorer:toggle_hidden" => Ok(Action::Explorer(FileExplorerAction::ToggleHidden)),
-            "explorer:toggle_metadata" => Ok(Action::Explorer(FileExplorerAction::ToggleMetadata)),
-            "explorer:new_file" => Ok(Action::Explorer(FileExplorerAction::NewFile)),
-            "explorer:new_dir" => Ok(Action::Explorer(FileExplorerAction::NewDir)),
-            "explorer:delete" => Ok(Action::Explorer(FileExplorerAction::Delete)),
-            "explorer:rename" => Ok(Action::Explorer(FileExplorerAction::Rename)),
-            "explorer:copy" => Ok(Action::Explorer(FileExplorerAction::Copy)),
-            "explorer:top" => Ok(Action::Explorer(FileExplorerAction::Top)),
-            "explorer:bottom" => Ok(Action::Explorer(FileExplorerAction::Bottom)),
-
-            // Undotree Actions
-            "undotree:close" => Ok(Action::UndoTree(UndoTreeAction::Close)),
-            "undotree:down" => Ok(Action::UndoTree(UndoTreeAction::Down)),
-            "undotree:up" => Ok(Action::UndoTree(UndoTreeAction::Up)),
-            "undotree:select" => Ok(Action::UndoTree(UndoTreeAction::Select)),
-            "undotree:top" => Ok(Action::UndoTree(UndoTreeAction::Top)),
-            "undotree:bottom" => Ok(Action::UndoTree(UndoTreeAction::Bottom)),
-
             // Editor Actions - Movement
             "editor:move_left" => Ok(Action::Editor(EditorAction::Move(Motion::Left))),
             "editor:move_right" => Ok(Action::Editor(EditorAction::Move(Motion::Right))),
@@ -198,6 +139,38 @@ impl FromStr for Action {
                 Ok(Action::Editor(EditorAction::Move(Motion::StartOfLine)))
             }
             "editor:move_end_of_line" => Ok(Action::Editor(EditorAction::Move(Motion::EndOfLine))),
+            "editor:move_start_of_file" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::StartOfFile)))
+            }
+            "editor:move_end_of_file" => Ok(Action::Editor(EditorAction::Move(Motion::EndOfFile))),
+            "editor:move_page_up" => Ok(Action::Editor(EditorAction::Move(Motion::PageUp))),
+            "editor:move_page_down" => Ok(Action::Editor(EditorAction::Move(Motion::PageDown))),
+            "editor:move_next_word" => Ok(Action::Editor(EditorAction::Move(Motion::NextWord))),
+            "editor:move_prev_word" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::PreviousWord)))
+            }
+            "editor:move_next_big_word" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::NextBigWord)))
+            }
+            "editor:move_prev_big_word" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::PreviousBigWord)))
+            }
+            "editor:move_next_paragraph" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::NextParagraph)))
+            }
+            "editor:move_prev_paragraph" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::PreviousParagraph)))
+            }
+            "editor:move_next_sentence" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::NextSentence)))
+            }
+            "editor:move_prev_sentence" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::PreviousSentence)))
+            }
+            "editor:move_next_match" => Ok(Action::Editor(EditorAction::Move(Motion::NextMatch))),
+            "editor:move_prev_match" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::PreviousMatch)))
+            }
 
             // Editor Actions - General
             "editor:enter_insert_mode" => Ok(Action::Editor(EditorAction::EnterInsertMode)),
@@ -227,6 +200,7 @@ impl FromStr for Action {
             "editor:save_and_quit" => Ok(Action::Editor(EditorAction::SaveAndQuit)),
             "editor:open_explorer" => Ok(Action::Editor(EditorAction::OpenExplorer)),
             "editor:open_undotree" => Ok(Action::Editor(EditorAction::OpenUndoTree)),
+            "editor:open_terminal" => Ok(Action::Editor(EditorAction::OpenTerminal(None))),
             "editor:show_buffer_list" => Ok(Action::Editor(EditorAction::ShowBufferList)),
             "editor:clear_highlights" => Ok(Action::Editor(EditorAction::ClearHighlights)),
             "editor:clear_notifications" => Ok(Action::Editor(EditorAction::ClearNotifications)),
@@ -235,9 +209,12 @@ impl FromStr for Action {
             }
             "editor:checkpoint" => Ok(Action::Editor(EditorAction::Checkpoint)),
             "editor:submit" => Ok(Action::Editor(EditorAction::Submit)),
+            "editor:history_up" => Ok(Action::Editor(EditorAction::HistoryUp)),
+            "editor:history_down" => Ok(Action::Editor(EditorAction::HistoryDown)),
             "editor:dot_repeat" => Ok(Action::Editor(EditorAction::DotRepeat)),
-            "editor:split_toggle_freeze" => Ok(Action::Editor(EditorAction::SplitToggleFreeze)),
-
+            s if s.contains(':') && !s.starts_with("editor:") => {
+                Ok(Action::Buffer(s.to_string()))
+            }
             _ => Ok(Action::Noop),
         }
     }

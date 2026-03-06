@@ -8,5 +8,7 @@ pub mod completion;
 pub mod explorer;
 pub mod file_operations;
 pub mod fs;
+pub mod explorer_preview;
 pub mod syntax;
 pub mod terminal_job;
+pub mod undotree;

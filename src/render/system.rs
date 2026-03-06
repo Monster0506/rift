@@ -24,7 +24,6 @@ pub struct RenderSystem {
     status_entity: Option<crate::render::ecs::EntityId>,
     command_entity: Option<crate::render::ecs::EntityId>,
     notification_entity: Option<crate::render::ecs::EntityId>,
-    modal_entity: Option<crate::render::ecs::EntityId>,
     completion_entity: Option<crate::render::ecs::EntityId>,
 
     // Rendering State
@@ -44,7 +43,6 @@ impl RenderSystem {
             status_entity: None,
             command_entity: None,
             notification_entity: None,
-            modal_entity: None,
             completion_entity: None,
             last_render_version: 0,
             last_cursor_pos: None,
@@ -63,7 +61,6 @@ impl RenderSystem {
         self.status_entity = None;
         self.command_entity = None;
         self.notification_entity = None;
-        self.modal_entity = None;
         self.completion_entity = None;
         self.last_render_version = 0;
         self.last_cursor_pos = None;
@@ -83,14 +80,15 @@ impl RenderSystem {
         }
         let content_entity = self.content_entity.unwrap();
 
+        let effective_line_numbers = ctx.show_line_numbers && ctx.state.settings.show_line_numbers;
         let content_state = ContentDrawState {
             revision: ctx.buf.revision,
             top_line: ctx.viewport.top_line(),
             left_col: ctx.viewport.left_col(),
             rows: ctx.viewport.visible_rows(),
             tab_width: ctx.tab_width,
-            show_line_numbers: ctx.state.settings.show_line_numbers,
-            gutter_width: if ctx.state.settings.show_line_numbers {
+            show_line_numbers: effective_line_numbers,
+            gutter_width: if effective_line_numbers {
                 ctx.state.gutter_width
             } else {
                 0
@@ -276,19 +274,6 @@ impl RenderSystem {
         self.world
             .add_layer(notification_entity, LayerPriority::NOTIFICATION);
 
-        // 5. Modal
-        if let Some(ref modal) = ctx.modal {
-            if self.modal_entity.is_none() {
-                self.modal_entity = Some(self.world.create_entity());
-            }
-            let modal_entity = self.modal_entity.unwrap();
-            self.world
-                .add_renderable(modal_entity, Renderable::RefToModal);
-            self.world.add_layer(modal_entity, modal.layer);
-        } else if let Some(entity) = self.modal_entity {
-            self.world.destroy_entity(entity);
-            self.modal_entity = None;
-        }
     }
 
     /// Render to terminal using ECS
@@ -310,7 +295,7 @@ impl RenderSystem {
         let cursor_row_offset = state.cursor_row_offset;
         let cursor_col_offset = state.cursor_col_offset;
         let cursor_viewport = state.cursor_viewport;
-        let mut ctx = DrawContext {
+        let ctx = DrawContext {
             buf: state.buf,
             viewport: &viewport,
             current_mode: state.current_mode,
@@ -321,7 +306,8 @@ impl RenderSystem {
             tab_width: state.tab_width,
             highlights: state.highlights,
             capture_map: state.capture_map,
-            modal: state.modal,
+            custom_highlights: state.custom_highlights,
+            show_line_numbers: state.show_line_numbers,
         };
 
         // Update the ECS world
@@ -429,13 +415,6 @@ impl RenderSystem {
                         render_completion_menu(layer, state);
                     }
                 }
-                Renderable::RefToModal => {
-                    if let Some(ref mut modal) = ctx.modal {
-                        let layer = self.compositor.get_layer_mut(*priority);
-                        layer.clear();
-                        modal.component.render(layer);
-                    }
-                }
             }
         }
 
@@ -450,7 +429,7 @@ impl RenderSystem {
         let cursor_info = if let Some(pos) = command_cursor_info {
             pos
         } else if let Some((term_row, term_col)) = state.terminal_cursor {
-            let gutter_width = if ctx.state.settings.show_line_numbers {
+            let gutter_width = if ctx.show_line_numbers && ctx.state.settings.show_line_numbers {
                 ctx.state.gutter_width
             } else {
                 0
@@ -472,7 +451,7 @@ impl RenderSystem {
                 0
             };
 
-            let gutter_width = if ctx.state.settings.show_line_numbers {
+            let gutter_width = if ctx.show_line_numbers && ctx.state.settings.show_line_numbers {
                 ctx.state.gutter_width
             } else {
                 0

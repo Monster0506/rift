@@ -98,8 +98,15 @@ impl DocumentManager {
             return Ok(());
         }
 
-        // 2. Check dirty state
-        if self.documents.get(&id).unwrap().is_dirty() {
+        let doc = self.documents.get(&id).unwrap();
+
+        // 2. Special buffers (directory, undo-tree, messages, terminal) can always be closed
+        if doc.is_special() {
+            return self.remove_document_force(id);
+        }
+
+        // 3. Check dirty state for regular file buffers
+        if doc.is_dirty() {
             return Err(RiftError::warning(
                 ErrorType::Execution,
                 crate::constants::errors::UNSAVED_CHANGES,
@@ -211,6 +218,16 @@ impl DocumentManager {
     /// Get current active tab index
     pub fn active_tab_index(&self) -> usize {
         self.current_tab
+    }
+
+    /// Iterate over all documents (including private ones)
+    pub fn iter_documents(&self) -> impl Iterator<Item = &Document> {
+        self.documents.values()
+    }
+
+    /// Iterate mutably over all documents (including private ones)
+    pub fn iter_documents_mut(&mut self) -> impl Iterator<Item = &mut Document> {
+        self.documents.values_mut()
     }
 
     /// Get document ID at specific tab index
@@ -346,7 +363,6 @@ impl DocumentManager {
         self.tab_order
             .iter()
             .enumerate()
-            .filter(|(_, id)| !self.private_document_ids.contains(*id))
             .map(|(i, &id)| {
                 let doc = self.documents.get(&id).unwrap();
                 BufferInfo {
@@ -356,6 +372,7 @@ impl DocumentManager {
                     is_dirty: doc.is_dirty(),
                     is_read_only: doc.is_read_only,
                     is_current: i == self.current_tab,
+                    is_special: doc.is_special(),
                 }
             })
             .collect()
@@ -384,6 +401,7 @@ pub struct BufferInfo {
     pub is_dirty: bool,
     pub is_read_only: bool,
     pub is_current: bool,
+    pub is_special: bool,
 }
 
 impl DocumentManager {
@@ -412,6 +430,19 @@ impl DocumentManager {
         if self.private_document_ids.remove(&id) {
             let _ = self.remove_document_force(id);
         }
+    }
+
+    /// Add a fully-constructed document and mark it as private (hidden from tabs).
+    pub fn add_private_document(&mut self, doc: Document) -> DocumentId {
+        let id = doc.id;
+        if id >= self.next_document_id {
+            self.next_document_id = id + 1;
+        }
+        self.documents.insert(id, doc);
+        self.tab_order.push(id);
+        self.current_tab = self.tab_order.len() - 1;
+        self.private_document_ids.insert(id);
+        id
     }
 
     /// Create a placeholder document for async loading

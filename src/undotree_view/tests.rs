@@ -175,3 +175,159 @@ fn test_root_saved_no_marker() {
         "Root node should not show saved marker"
     );
 }
+
+// ──────────────────────────────────────────────
+// render_tree_to_text tests
+// ──────────────────────────────────────────────
+
+fn simple_linear_tree() -> UndoTree {
+    let mut tree = UndoTree::new();
+    tree.nodes.clear();
+    tree.root_seq = 0;
+    tree.nodes.insert(0, create_dummy_node(0, None, "root"));
+    tree.nodes.insert(1, create_dummy_node(1, Some(0), "edit1"));
+    tree.current = 1;
+    tree
+}
+
+#[test]
+fn test_render_tree_to_text_returns_string() {
+    let tree = simple_linear_tree();
+    let (text, _seqs, _hl) = render_tree_to_text(&tree);
+    assert!(!text.is_empty(), "rendered text must not be empty");
+}
+
+#[test]
+fn test_render_tree_to_text_contains_node_description() {
+    let tree = simple_linear_tree();
+    let (text, _seqs, _hl) = render_tree_to_text(&tree);
+    assert!(text.contains("edit1"), "text should contain node description");
+    assert!(text.contains("root"), "text should contain root description");
+}
+
+#[test]
+fn test_render_tree_to_text_current_node_has_at_marker() {
+    let tree = simple_linear_tree();
+    let (text, seqs, _hl) = render_tree_to_text(&tree);
+    let current_line_idx = seqs.iter().position(|&s| s == 1).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert!(lines[current_line_idx].contains('@'),
+            "current node line must have '@': {:?}", lines[current_line_idx]);
+}
+
+#[test]
+fn test_render_tree_to_text_sequences_match_lines() {
+    let tree = simple_linear_tree();
+    let (text, seqs, _hl) = render_tree_to_text(&tree);
+    let line_count = text.lines().count();
+    assert_eq!(seqs.len(), line_count, "sequences must have one entry per line");
+}
+
+#[test]
+fn test_render_tree_to_text_highlights_non_empty() {
+    let tree = simple_linear_tree();
+    let (_text, _seqs, highlights) = render_tree_to_text(&tree);
+    assert!(!highlights.is_empty(), "must have at least some colored characters");
+}
+
+#[test]
+fn test_render_tree_to_text_highlights_have_valid_ranges() {
+    let tree = simple_linear_tree();
+    let (text, _seqs, highlights) = render_tree_to_text(&tree);
+    for (range, _color) in &highlights {
+        assert!(range.start <= range.end, "range start must be <= end");
+        assert!(range.end <= text.len(), "range must not exceed text length");
+    }
+}
+
+#[test]
+fn test_render_tree_to_text_highlights_sorted_and_non_overlapping() {
+    let mut tree = UndoTree::new();
+    tree.nodes.clear();
+    tree.root_seq = 0;
+    tree.nodes.insert(0, create_dummy_node(0, None, "root"));
+    tree.nodes.insert(1, create_dummy_node(1, Some(0), "a"));
+    tree.nodes.insert(2, create_dummy_node(2, Some(1), "b"));
+    tree.nodes.insert(3, create_dummy_node(3, Some(1), "c"));
+    tree.current = 2;
+
+    let (_text, _seqs, highlights) = render_tree_to_text(&tree);
+    for i in 0..highlights.len().saturating_sub(1) {
+        assert!(highlights[i].0.end <= highlights[i+1].0.start,
+                "highlight ranges must be sorted and non-overlapping");
+    }
+}
+
+#[test]
+fn test_render_tree_to_text_connector_lines_have_max_seq() {
+    // A branching tree produces connector lines with EditSeq::MAX
+    let mut tree = UndoTree::new();
+    tree.nodes.clear();
+    tree.root_seq = 0;
+    tree.nodes.insert(0, create_dummy_node(0, None, "root"));
+    tree.nodes.insert(1, create_dummy_node(1, Some(0), "branch_a"));
+    tree.nodes.insert(2, create_dummy_node(2, Some(0), "branch_b"));
+    tree.current = 1;
+
+    let (_text, seqs, _hl) = render_tree_to_text(&tree);
+    // With 2 branches from root, there should be at least one connector line (MAX sentinel)
+    let has_connector = seqs.iter().any(|&s| s == EditSeq::MAX);
+    assert!(has_connector, "branching tree must produce connector lines with MAX sentinel");
+}
+
+#[test]
+fn test_render_tree_to_text_contiguous_same_color_merged() {
+    // Any node whose entire description is the same color should produce
+    // a single merged highlight range rather than one-per-char ranges.
+    let tree = simple_linear_tree();
+    let (text, _seqs, highlights) = render_tree_to_text(&tree);
+
+    // Check that there are no adjacent highlight entries with the same color and contiguous ranges
+    for i in 0..highlights.len().saturating_sub(1) {
+        let (r1, c1) = &highlights[i];
+        let (r2, c2) = &highlights[i + 1];
+        if c1 == c2 && r1.end == r2.start {
+            panic!(
+                "adjacent highlights with same color {:?} should have been merged: {:?} and {:?} in text {:?}",
+                c1, r1, r2, text
+            );
+        }
+    }
+}
+
+#[test]
+fn test_render_tree_to_text_current_node_color() {
+    let tree = simple_linear_tree();
+    let (text, seqs, highlights) = render_tree_to_text(&tree);
+    // Find offset of the '@' character (current node marker)
+    let current_line_idx = seqs.iter().position(|&s| s == 1).unwrap();
+    let line_start: usize = text.lines().take(current_line_idx).map(|l| l.len() + 1).sum();
+    let at_offset = text[line_start..].find('@').map(|o| line_start + o).unwrap();
+
+    // The '@' character should be colored (Magenta for current node)
+    let colored = highlights.iter().any(|(r, _c)| r.start <= at_offset && r.end > at_offset);
+    assert!(colored, "'@' marker at offset {} should be colored", at_offset);
+}
+
+#[test]
+fn test_render_tree_to_text_seq_ids_in_text() {
+    let tree = simple_linear_tree();
+    let (text, _seqs, _hl) = render_tree_to_text(&tree);
+    // "[1]" and "[0]" should appear in the text
+    assert!(text.contains("[1]"), "seq 1 label should appear in text");
+    assert!(text.contains("[0]"), "seq 0 label should appear in text");
+}
+
+#[test]
+fn test_render_tree_to_text_single_root_node() {
+    let mut tree = UndoTree::new();
+    tree.nodes.clear();
+    tree.root_seq = 0;
+    tree.nodes.insert(0, create_dummy_node(0, None, "root"));
+    tree.current = 0;
+
+    let (text, seqs, highlights) = render_tree_to_text(&tree);
+    assert!(!text.is_empty());
+    assert_eq!(seqs.len(), text.lines().count());
+    assert!(!highlights.is_empty());
+}

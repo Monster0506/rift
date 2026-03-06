@@ -582,26 +582,6 @@ fn test_parse_split_resize() {
     );
 }
 
-#[test]
-fn test_parse_split_freeze() {
-    use crate::command_line::commands::SplitSubcommand;
-    let parser = create_real_parser();
-
-    assert_eq!(
-        parser.parse(":split :freeze"),
-        ParsedCommand::Split {
-            subcommand: SplitSubcommand::Freeze,
-            bangs: 0
-        }
-    );
-    assert_eq!(
-        parser.parse(":split :nofreeze"),
-        ParsedCommand::Split {
-            subcommand: SplitSubcommand::NoFreeze,
-            bangs: 0
-        }
-    );
-}
 
 #[test]
 fn test_parse_vsplit() {
@@ -706,27 +686,6 @@ fn test_parse_split_subcommand_prefix_matching() {
         }
     );
 
-    assert_eq!(
-        parser.parse(":split :fr"),
-        ParsedCommand::Split {
-            subcommand: SplitSubcommand::Freeze,
-            bangs: 0
-        }
-    );
-    assert_eq!(
-        parser.parse(":split :nof"),
-        ParsedCommand::Split {
-            subcommand: SplitSubcommand::NoFreeze,
-            bangs: 0
-        }
-    );
-    assert_eq!(
-        parser.parse(":vsplit :fre"),
-        ParsedCommand::VSplit {
-            subcommand: SplitSubcommand::Freeze,
-            bangs: 0
-        }
-    );
 }
 
 #[test]
@@ -835,26 +794,6 @@ fn test_parse_split_resize_non_numeric_defaults() {
     );
 }
 
-#[test]
-fn test_parse_vsplit_freeze_nofreeze() {
-    use crate::command_line::commands::SplitSubcommand;
-    let parser = create_real_parser();
-
-    assert_eq!(
-        parser.parse(":vsplit :freeze"),
-        ParsedCommand::VSplit {
-            subcommand: SplitSubcommand::Freeze,
-            bangs: 0
-        }
-    );
-    assert_eq!(
-        parser.parse(":vsplit :nofreeze"),
-        ParsedCommand::VSplit {
-            subcommand: SplitSubcommand::NoFreeze,
-            bangs: 0
-        }
-    );
-}
 
 #[test]
 fn test_parse_split_dot_via_alias() {

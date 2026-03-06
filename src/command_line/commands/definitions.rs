@@ -621,12 +621,6 @@ fn parse_split_up(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> P
 fn parse_split_down(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
     split_cmd(SplitSubcommand::Navigate(Direction::Down), b)
 }
-fn parse_split_freeze(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
-    split_cmd(SplitSubcommand::Freeze, b)
-}
-fn parse_split_nofreeze(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
-    split_cmd(SplitSubcommand::NoFreeze, b)
-}
 fn parse_split_resize(
     _: &SettingsRegistry<UserSettings>,
     args: &[&str],
@@ -649,16 +643,6 @@ fn parse_vsplit_up(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> 
 }
 fn parse_vsplit_down(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Navigate(Direction::Down), b)
-}
-fn parse_vsplit_freeze(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
-    vsplit_cmd(SplitSubcommand::Freeze, b)
-}
-fn parse_vsplit_nofreeze(
-    _: &SettingsRegistry<UserSettings>,
-    _: &[&str],
-    b: usize,
-) -> ParsedCommand {
-    vsplit_cmd(SplitSubcommand::NoFreeze, b)
 }
 fn parse_vsplit_resize(
     _: &SettingsRegistry<UserSettings>,
@@ -709,24 +693,6 @@ const SPLIT_SUB_DESC: &[CommandDescriptor] = &[
         subcommand_prefix: "",
     },
     CommandDescriptor {
-        name: "freeze",
-        aliases: &[],
-        description: "Freeze pane",
-        factory: Some(parse_split_freeze),
-        subcommands: &[],
-        completion: CompletionHint::None,
-        subcommand_prefix: "",
-    },
-    CommandDescriptor {
-        name: "nofreeze",
-        aliases: &[],
-        description: "Unfreeze pane",
-        factory: Some(parse_split_nofreeze),
-        subcommands: &[],
-        completion: CompletionHint::None,
-        subcommand_prefix: "",
-    },
-    CommandDescriptor {
         name: "resize",
         aliases: &[],
         description: "Resize pane",
@@ -770,24 +736,6 @@ const VSPLIT_SUB_DESC: &[CommandDescriptor] = &[
         aliases: &["d"],
         description: "Navigate to pane below",
         factory: Some(parse_vsplit_down),
-        subcommands: &[],
-        completion: CompletionHint::None,
-        subcommand_prefix: "",
-    },
-    CommandDescriptor {
-        name: "freeze",
-        aliases: &[],
-        description: "Freeze pane",
-        factory: Some(parse_vsplit_freeze),
-        subcommands: &[],
-        completion: CompletionHint::None,
-        subcommand_prefix: "",
-    },
-    CommandDescriptor {
-        name: "nofreeze",
-        aliases: &[],
-        description: "Unfreeze pane",
-        factory: Some(parse_vsplit_nofreeze),
         subcommands: &[],
         completion: CompletionHint::None,
         subcommand_prefix: "",
@@ -854,7 +802,7 @@ pub const COMMANDS: &[CommandDescriptor] = &[
     CommandDescriptor {
         name: "quit",
         aliases: &["q"],
-        description: "Quit the editor",
+        description: "Close the current buffer",
         factory: Some(parse_quit),
         subcommands: &[],
         completion: N,

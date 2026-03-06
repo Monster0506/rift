@@ -114,12 +114,10 @@ pub enum ParsedCommand {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SplitSubcommand {
     Current,
     File(String),
     Navigate(crate::split::navigation::Direction),
     Resize(i32),
-    Freeze,
-    NoFreeze,
 }

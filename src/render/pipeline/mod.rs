@@ -135,6 +135,44 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for SyntaxDecorator<'a, I> {
     }
 }
 
+/// Decorator that applies custom per-byte-range foreground colors.
+/// Used by directory and undo-tree buffers to reproduce the original cell-level colours.
+pub struct ColorDecorator<'a, I: Iterator<Item = RenderItem>> {
+    input: I,
+    highlights: &'a [(std::ops::Range<usize>, Color)],
+    idx: usize,
+}
+
+impl<'a, I: Iterator<Item = RenderItem>> ColorDecorator<'a, I> {
+    pub fn new(input: I, highlights: &'a [(std::ops::Range<usize>, Color)]) -> Self {
+        Self { input, highlights, idx: 0 }
+    }
+}
+
+impl<'a, I: Iterator<Item = RenderItem>> Iterator for ColorDecorator<'a, I> {
+    type Item = RenderItem;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut item = self.input.next()?;
+
+        // Advance past expired ranges
+        while self.idx < self.highlights.len()
+            && self.highlights[self.idx].0.end <= item.byte_offset
+        {
+            self.idx += 1;
+        }
+
+        if self.idx < self.highlights.len() {
+            let (range, color) = &self.highlights[self.idx];
+            if range.start <= item.byte_offset {
+                item.fg = Some(*color);
+            }
+        }
+
+        Some(item)
+    }
+}
+
 /// Decorator that applies search match highlighting
 pub struct SearchDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,

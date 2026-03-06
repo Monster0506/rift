@@ -259,8 +259,6 @@ pub struct State {
     pub search_direction: SearchDirection,
     /// Search matches
     pub search_matches: Vec<SearchMatch>,
-    /// Overlay content for Mode::Overlay (left/right panes)
-    pub overlay_content: Option<OverlayContent>,
     /// Command history (for : commands)
     pub command_history: crate::history::command::CommandHistory,
     /// Search history (for / searches)
@@ -269,57 +267,6 @@ pub struct State {
     pub completion_session: Option<CompletionSession>,
 }
 
-/// Content for split-view overlay (used in Mode::Overlay)
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OverlayContent {
-    /// Left pane content (lines)
-    pub left: Vec<Vec<crate::layer::Cell>>,
-    /// Right pane content (lines)
-    pub right: Vec<Vec<crate::layer::Cell>>,
-    /// Left pane width percentage (0-100)
-    pub left_width_percent: u8,
-    /// Cursor position (line index in left pane)
-    pub cursor: usize,
-    /// Which lines are selectable (for skipping connector lines)
-    pub selectable: Vec<bool>,
-    /// Map of line index to EditSeq (MAX if connector)
-    pub sequences: Vec<crate::history::EditSeq>,
-    /// Scroll offset for right pane
-    pub right_scroll: usize,
-}
-
-impl OverlayContent {
-    /// Move cursor down, skipping non-selectable lines
-    pub fn move_cursor_down(&mut self) {
-        if self.left.is_empty() {
-            return;
-        }
-        let len = self.left.len();
-        let mut next = self.cursor + 1;
-        while next < len {
-            if self.selectable.get(next).copied().unwrap_or(true) {
-                self.cursor = next;
-                break;
-            }
-            next += 1;
-        }
-    }
-
-    /// Move cursor up, skipping non-selectable lines
-    pub fn move_cursor_up(&mut self) {
-        if self.left.is_empty() {
-            return;
-        }
-        let mut next = self.cursor;
-        while next > 0 {
-            next -= 1;
-            if self.selectable.get(next).copied().unwrap_or(true) {
-                self.cursor = next;
-                break;
-            }
-        }
-    }
-}
 
 impl State {
     /// Create a new state instance with default values
@@ -345,7 +292,6 @@ impl State {
             last_search_query: None,
             search_direction: SearchDirection::Forward,
             search_matches: Vec::new(),
-            overlay_content: None,
             command_history: crate::history::command::CommandHistory::default(),
             search_history: crate::history::command::CommandHistory::default(),
             completion_session: None,
@@ -375,7 +321,6 @@ impl State {
             last_search_query: None,
             search_direction: SearchDirection::Forward,
             search_matches: Vec::new(),
-            overlay_content: None,
             command_history: crate::history::command::CommandHistory::default(),
             search_history: crate::history::command::CommandHistory::default(),
             completion_session: None,

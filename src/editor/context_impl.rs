@@ -24,10 +24,6 @@ impl<T: TerminalBackend> crate::editor_api::EditorContext for Editor<T> {
         self.set_mode(mode);
     }
 
-    fn close_active_modal(&mut self) {
-        self.close_active_modal();
-    }
-
     fn notify(&mut self, kind: crate::notification::NotificationType, message: String) {
         self.state.notify(kind, message);
     }
@@ -41,29 +37,7 @@ impl<T: TerminalBackend> crate::editor_api::EditorContext for Editor<T> {
     }
 
     fn execute_command_line(&mut self, cmd: String) {
-        // Sync legacy state for consistency
-        self.state.command_line = cmd.clone();
-
-        // Parse and execute the command
-        let parsed_command = self.command_parser.parse(&cmd);
-        let execution_result = crate::command_line::commands::CommandExecutor::execute(
-            parsed_command.clone(),
-            &mut self.state,
-            self.document_manager
-                .active_document_mut()
-                .expect("active document missing"),
-            &self.settings_registry,
-            &self.document_settings_registry,
-        );
-
-        self.handle_execution_result(execution_result);
-    }
-
-    fn active_modal_component(&mut self) -> Option<&mut dyn crate::component::Component> {
-        match self.modal.as_mut() {
-            Some(m) => Some(m.component.as_mut()),
-            None => None,
-        }
+        self.execute_command_line(cmd);
     }
 
     fn perform_search(&mut self, query: &str, direction: crate::search::SearchDirection) {

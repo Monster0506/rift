@@ -136,13 +136,16 @@ pub struct RenderState<'a> {
     pub tab_width: usize,
     pub highlights: Option<&'a [(std::ops::Range<usize>, u32)]>,
     pub capture_map: Option<&'a [&'a str]>,
-    pub modal: Option<&'a mut crate::editor::ActiveModal>,
     pub skip_content: bool,
     pub cursor_row_offset: usize,
     pub cursor_col_offset: usize,
     pub cursor_viewport: Option<&'a Viewport>,
     /// Terminal cursor (row, col); bypasses text-editor cursor math when set.
     pub terminal_cursor: Option<(usize, usize)>,
+    /// Optional per-byte-range foreground color overrides (used by directory/undotree buffers).
+    pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
+    /// Per-document line number override (AND-ed with global setting).
+    pub show_line_numbers: bool,
 }
 
 /// Context for rendering passed to helpers
@@ -151,13 +154,15 @@ pub struct DrawContext<'a> {
     pub viewport: &'a Viewport,
     pub current_mode: Mode,
     pub pending_key: Option<Key>,
+    pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     pub pending_count: usize,
     pub state: &'a State,
     pub needs_clear: bool,
     pub tab_width: usize,
     pub highlights: Option<&'a [(std::ops::Range<usize>, u32)]>,
     pub capture_map: Option<&'a [&'a str]>,
-    pub modal: Option<&'a mut crate::editor::ActiveModal>,
+    /// Per-document line number override (AND-ed with global setting).
+    pub show_line_numbers: bool,
 }
 
 /// Cursor position information returned from layer-based rendering
@@ -184,7 +189,7 @@ pub(crate) fn render_content_to_layer_offset(
     let editor_bg = ctx.state.settings.editor_bg;
     let editor_fg = ctx.state.settings.editor_fg;
 
-    let gutter_width = if ctx.state.settings.show_line_numbers {
+    let gutter_width = if ctx.show_line_numbers && ctx.state.settings.show_line_numbers {
         ctx.state.gutter_width
     } else {
         0
@@ -303,14 +308,16 @@ fn render_line(
 
     let source = LineSource::new(buf, config.line_num);
     let highlights = ctx.highlights.unwrap_or(&[]);
+    let custom_highlights = ctx.custom_highlights.unwrap_or(&[]);
     let search_matches = &ctx.state.search_matches;
 
     // Decorate
+    let colored = pipeline::ColorDecorator::new(source, custom_highlights);
     let syntax = SyntaxDecorator::new(
-        source,
+        colored,
         highlights,
         highlight_idx,
-        ctx.state.settings.syntax_colors.as_ref(), // UserSettings has crate::color::theme::SyntaxColors
+        ctx.state.settings.syntax_colors.as_ref(),
         ctx.capture_map,
     );
 

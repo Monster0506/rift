@@ -98,56 +98,64 @@ fn test_editor_open_file() {
 }
 
 #[test]
-fn test_handle_execution_result_quit() {
+fn test_quit_last_buffer_quits_editor() {
     let mut editor = create_editor();
-    editor.handle_execution_result(ExecutionResult::Quit { bangs: 0 });
-    assert!(editor.should_quit);
+    assert_eq!(editor.document_manager.tab_count(), 1);
+
+    editor.do_quit(false);
+
+    assert!(editor.should_quit, ":q on last clean buffer should quit the editor");
 }
 
 #[test]
-fn test_handle_execution_result_quit_unsaved() {
+fn test_quit_dirty_last_buffer_refuses() {
     let mut editor = create_editor();
+    let original_id = editor.document_manager.active_document_id().unwrap();
     editor.active_document().insert_char('x').unwrap();
+    assert!(editor.active_document().is_dirty());
 
-    // Should not quit if unsaved and no bang
-    editor.handle_execution_result(ExecutionResult::Quit { bangs: 0 });
-    assert!(!editor.should_quit);
+    editor.do_quit(false);
+    assert!(!editor.should_quit, ":q should refuse when last buffer is dirty");
+    assert_eq!(
+        editor.document_manager.active_document_id().unwrap(),
+        original_id,
+        "dirty buffer should remain active"
+    );
 
-    // Should quit with bang
-    editor.handle_execution_result(ExecutionResult::Quit { bangs: 1 });
-    assert!(editor.should_quit);
+    editor.do_quit(true);
+    assert!(editor.should_quit, ":q! should quit even with dirty last buffer");
 }
 
 #[test]
-fn test_handle_execution_result_quit_unsaved_other_buffer() {
+fn test_handle_execution_result_quit_only_checks_current_buffer() {
     let mut editor = create_editor();
 
-    // Open a second buffer and make the first one dirty
+    // Make the first buffer dirty, then switch to a clean second buffer
     editor.active_document().insert_char('x').unwrap();
     editor
         .open_file(Some("test2.txt".to_string()), false)
         .unwrap();
 
-    // Now the active document is test2.txt (not dirty), but first buffer is dirty
+    // Active buffer (test2.txt) is clean; a different buffer is dirty
     assert!(!editor.active_document().is_dirty());
     assert!(editor.document_manager.has_unsaved_changes());
 
-    // Should not quit because another buffer has unsaved changes
-    editor.handle_execution_result(ExecutionResult::Quit { bangs: 0 });
-    assert!(!editor.should_quit);
+    let clean_id = editor.document_manager.active_document_id().unwrap();
 
-    // Should quit with bang
-    editor.handle_execution_result(ExecutionResult::Quit { bangs: 1 });
-    assert!(editor.should_quit);
+    // :q should close the clean active buffer without error
+    editor.do_quit(false);
+    assert!(!editor.should_quit, ":q should not quit the editor");
+    assert_ne!(
+        editor.document_manager.active_document_id().unwrap(),
+        clean_id,
+        "clean buffer should have been closed"
+    );
 }
 
 #[test]
 fn test_handle_execution_result_edit() {
     let mut editor = create_editor();
-    editor.handle_execution_result(ExecutionResult::Edit {
-        path: Some("test.txt".to_string()),
-        bangs: 0,
-    });
+    editor.open_file(Some("test.txt".to_string()), false).unwrap();
 
     assert_eq!(editor.document_manager.tab_count(), 2);
     assert_eq!(editor.active_document().display_name(), "test.txt");
@@ -167,21 +175,21 @@ fn test_handle_execution_result_buffer_navigation() {
     assert_eq!(editor.document_manager.active_tab_index(), 2);
 
     // Previous
-    editor.handle_execution_result(ExecutionResult::BufferPrevious { bangs: 0 });
+    editor.do_buffer_prev();
     assert_eq!(editor.document_manager.active_tab_index(), 1);
     assert_eq!(editor.active_document().display_name(), "doc1.txt");
 
     // Next
-    editor.handle_execution_result(ExecutionResult::BufferNext { bangs: 0 });
+    editor.do_buffer_next();
     assert_eq!(editor.document_manager.active_tab_index(), 2);
     assert_eq!(editor.active_document().display_name(), "doc2.txt");
 
     // Wrap around next
-    editor.handle_execution_result(ExecutionResult::BufferNext { bangs: 0 });
+    editor.do_buffer_next();
     assert_eq!(editor.document_manager.active_tab_index(), 0);
 
     // Wrap around previous
-    editor.handle_execution_result(ExecutionResult::BufferPrevious { bangs: 0 });
+    editor.do_buffer_prev();
     assert_eq!(editor.document_manager.active_tab_index(), 2);
 }
 
@@ -300,10 +308,7 @@ fn test_search_stays_open_on_failure() {
 // ============================================================
 
 fn split_current(editor: &mut Editor<MockTerminal>, direction: crate::split::tree::SplitDirection) {
-    editor.handle_execution_result(ExecutionResult::SplitWindow {
-        direction,
-        subcommand: crate::command_line::commands::SplitSubcommand::Current,
-    });
+    editor.do_split_window(direction, crate::command_line::commands::SplitSubcommand::Current);
 }
 
 #[test]
@@ -321,254 +326,11 @@ fn test_split_file_not_found_emits_error() {
     use crate::split::tree::SplitDirection;
     let mut editor = create_editor();
 
-    editor.handle_execution_result(ExecutionResult::SplitWindow {
-        direction: SplitDirection::Horizontal,
-        subcommand: crate::command_line::commands::SplitSubcommand::File(
-            "nonexistent_file_xyz.txt".to_string(),
-        ),
-    });
+    editor.do_split_window(
+        SplitDirection::Horizontal,
+        crate::command_line::commands::SplitSubcommand::File("nonexistent_file_xyz.txt".to_string()),
+    );
 
     assert_eq!(editor.split_tree.window_count(), 1);
     assert!(!editor.state.error_manager.notifications().is_empty());
-}
-
-#[test]
-fn test_freeze_isolates_sibling_windows() {
-    use crate::split::tree::SplitDirection;
-    let mut editor = create_editor();
-
-    split_current(&mut editor, SplitDirection::Vertical);
-    assert_eq!(editor.split_tree.window_count(), 2);
-
-    let focused_id = editor.split_tree.focused_window_id();
-    let sibling_id = editor
-        .split_tree
-        .all_window_ids()
-        .into_iter()
-        .find(|&id| id != focused_id)
-        .unwrap();
-
-    let doc_id = editor.split_tree.focused_window().document_id;
-    assert_eq!(
-        editor
-            .split_tree
-            .get_window(sibling_id)
-            .unwrap()
-            .document_id,
-        doc_id
-    );
-    assert!(!editor
-        .split_tree
-        .get_window(sibling_id)
-        .unwrap()
-        .is_frozen());
-
-    editor.handle_execution_result(ExecutionResult::SplitWindow {
-        direction: SplitDirection::Vertical,
-        subcommand: crate::command_line::commands::SplitSubcommand::Freeze,
-    });
-
-    let sibling = editor.split_tree.get_window(sibling_id).unwrap();
-    assert!(sibling.is_frozen());
-    assert_ne!(sibling.document_id, doc_id);
-    assert_eq!(sibling.original_document_id, Some(doc_id));
-    assert!(editor
-        .document_manager
-        .get_document(sibling.document_id)
-        .is_some());
-    assert_eq!(editor.document_manager.tab_count(), 1);
-}
-
-#[test]
-fn test_freeze_does_not_affect_focused_window() {
-    use crate::split::tree::SplitDirection;
-    let mut editor = create_editor();
-    split_current(&mut editor, SplitDirection::Vertical);
-
-    let focused_id = editor.split_tree.focused_window_id();
-    let doc_id = editor.split_tree.focused_window().document_id;
-
-    editor.handle_execution_result(ExecutionResult::SplitWindow {
-        direction: SplitDirection::Vertical,
-        subcommand: crate::command_line::commands::SplitSubcommand::Freeze,
-    });
-
-    let focused = editor.split_tree.get_window(focused_id).unwrap();
-    assert!(!focused.is_frozen());
-    assert_eq!(focused.document_id, doc_id);
-}
-
-#[test]
-fn test_nofreeze_reattaches_siblings_and_writes_back() {
-    use crate::split::tree::SplitDirection;
-    let mut editor = create_editor();
-
-    editor.active_document().buffer.insert_str("hello").unwrap();
-    split_current(&mut editor, SplitDirection::Vertical);
-
-    let focused_id = editor.split_tree.focused_window_id();
-    let sibling_id = editor
-        .split_tree
-        .all_window_ids()
-        .into_iter()
-        .find(|&id| id != focused_id)
-        .unwrap();
-    let orig_doc_id = editor.split_tree.focused_window().canonical_document_id();
-
-    editor.handle_execution_result(ExecutionResult::SplitWindow {
-        direction: SplitDirection::Vertical,
-        subcommand: crate::command_line::commands::SplitSubcommand::Freeze,
-    });
-
-    let private_id = editor
-        .split_tree
-        .get_window(sibling_id)
-        .unwrap()
-        .document_id;
-    assert!(editor.document_manager.get_document(private_id).is_some());
-
-    editor.handle_execution_result(ExecutionResult::SplitWindow {
-        direction: SplitDirection::Vertical,
-        subcommand: crate::command_line::commands::SplitSubcommand::NoFreeze,
-    });
-
-    let sibling = editor.split_tree.get_window(sibling_id).unwrap();
-    assert!(!sibling.is_frozen());
-    assert_eq!(sibling.document_id, orig_doc_id);
-    assert!(editor.document_manager.get_document(private_id).is_none());
-    assert_eq!(editor.document_manager.tab_count(), 1);
-}
-
-#[test]
-fn test_frozen_window_is_independently_editable() {
-    use crate::split::tree::SplitDirection;
-    let mut editor = create_editor();
-
-    editor
-        .active_document()
-        .buffer
-        .insert_str("shared")
-        .unwrap();
-
-    split_current(&mut editor, SplitDirection::Vertical);
-
-    let focused_id = editor.split_tree.focused_window_id();
-    let sibling_id = editor
-        .split_tree
-        .all_window_ids()
-        .into_iter()
-        .find(|&id| id != focused_id)
-        .unwrap();
-
-    editor.handle_execution_result(ExecutionResult::SplitWindow {
-        direction: SplitDirection::Vertical,
-        subcommand: crate::command_line::commands::SplitSubcommand::Freeze,
-    });
-
-    let private_id = editor
-        .split_tree
-        .get_window(sibling_id)
-        .unwrap()
-        .document_id;
-    editor
-        .document_manager
-        .get_document_mut(private_id)
-        .unwrap()
-        .buffer
-        .insert_str(" extra")
-        .unwrap();
-
-    let orig_doc_id = editor.split_tree.focused_window().canonical_document_id();
-    let shared_len = editor
-        .document_manager
-        .get_document(orig_doc_id)
-        .unwrap()
-        .buffer
-        .len();
-    let private_len = editor
-        .document_manager
-        .get_document(private_id)
-        .unwrap()
-        .buffer
-        .len();
-    assert!(private_len > shared_len);
-}
-
-#[test]
-fn test_nofreeze_from_frozen_window_uses_its_buffer_as_truth() {
-    use crate::split::tree::SplitDirection;
-    let mut editor = create_editor();
-
-    editor
-        .active_document()
-        .buffer
-        .insert_str("original")
-        .unwrap();
-
-    split_current(&mut editor, SplitDirection::Vertical);
-
-    let focused_id = editor.split_tree.focused_window_id();
-    let sibling_id = editor
-        .split_tree
-        .all_window_ids()
-        .into_iter()
-        .find(|&id| id != focused_id)
-        .unwrap();
-    let orig_doc_id = editor.split_tree.focused_window().canonical_document_id();
-
-    editor.handle_execution_result(ExecutionResult::SplitWindow {
-        direction: SplitDirection::Vertical,
-        subcommand: crate::command_line::commands::SplitSubcommand::Freeze,
-    });
-
-    let private_id = editor
-        .split_tree
-        .get_window(sibling_id)
-        .unwrap()
-        .document_id;
-    editor
-        .document_manager
-        .get_document_mut(private_id)
-        .unwrap()
-        .buffer
-        .insert_str(" modified")
-        .unwrap();
-    let private_len = editor
-        .document_manager
-        .get_document(private_id)
-        .unwrap()
-        .buffer
-        .len();
-
-    editor.split_tree.set_focus(sibling_id);
-    let _ = editor.document_manager.switch_to_document(private_id);
-
-    editor.handle_execution_result(ExecutionResult::SplitWindow {
-        direction: SplitDirection::Vertical,
-        subcommand: crate::command_line::commands::SplitSubcommand::NoFreeze,
-    });
-
-    let shared_len = editor
-        .document_manager
-        .get_document(orig_doc_id)
-        .unwrap()
-        .buffer
-        .len();
-    assert_eq!(shared_len, private_len);
-    assert_eq!(
-        editor
-            .split_tree
-            .get_window(focused_id)
-            .unwrap()
-            .document_id,
-        orig_doc_id
-    );
-    assert_eq!(
-        editor
-            .split_tree
-            .get_window(sibling_id)
-            .unwrap()
-            .document_id,
-        orig_doc_id
-    );
 }

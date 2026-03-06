@@ -1276,19 +1276,12 @@ fn test_execute_undotree() {
         &document_settings_registry,
     );
 
-    if let ExecutionResult::OpenComponent {
-        component: _,
-        initial_job,
-        initial_message: _,
-    } = result
-    {
-        assert!(initial_job.is_none());
-    } else {
-        panic!(
-            "Expected OpenComponent result for UndoTree, got {:?}",
-            result
-        );
-    }
+    assert_eq!(
+        result,
+        ExecutionResult::OpenUndoTree,
+        "Expected OpenUndoTree result for UndoTree, got {:?}",
+        result
+    );
 }
 
 #[test]
@@ -1341,19 +1334,11 @@ fn test_execute_file() {
         &document_settings_registry,
     );
 
-    if let ExecutionResult::OpenComponent {
-        component: _,
-        initial_job,
-        initial_message: _,
-    } = result
-    {
-        assert!(
-            initial_job.is_some(),
-            ":file should have an initial job (listing)"
-        );
-    } else {
-        panic!("Expected OpenComponent result for :file, got {:?}", result);
-    }
+    assert!(
+        matches!(result, ExecutionResult::OpenDirectory { .. }),
+        "Expected OpenDirectory result for :file, got {:?}",
+        result
+    );
 }
 
 #[test]

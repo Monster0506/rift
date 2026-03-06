@@ -32,7 +32,6 @@ pub enum Renderable {
     Window(CommandDrawState),
     Notification(NotificationDrawState),
     CompletionMenu(CompletionMenuDrawState),
-    RefToModal,
 }
 
 /// A component that defines the Z-ordering

@@ -148,7 +148,6 @@ impl StatusBar {
             Mode::Insert => crate::constants::modes::INSERT,
             Mode::Command => crate::constants::modes::COMMAND,
             Mode::Search => crate::constants::modes::SEARCH,
-            Mode::Overlay => crate::constants::modes::OVERLAY,
             Mode::OperatorPending => crate::constants::modes::OPERATOR_PENDING,
         }
     }

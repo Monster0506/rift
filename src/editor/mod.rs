@@ -8,7 +8,7 @@ mod terminal_tests;
 
 use crate::action::{Action, EditorAction, Motion};
 use crate::command::{Command, Dispatcher};
-use crate::command_line::commands::{CommandExecutor, CommandParser, ExecutionResult};
+use crate::command_line::commands::{CommandExecutor, CommandParser};
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::document::{Document, DocumentId};
 use crate::dot_repeat::{DotRegister, DotRepeat};
@@ -39,10 +39,7 @@ pub struct Editor<T: TerminalBackend> {
     command_parser: CommandParser,
     settings_registry: SettingsRegistry<UserSettings>,
     document_settings_registry: SettingsRegistry<crate::document::definitions::DocumentOptions>,
-    //#[allow(dead_code)]
     language_loader: Arc<crate::syntax::loader::LanguageLoader>,
-    /// Active modal component (overlay)
-    pub modal: Option<ActiveModal>,
     /// Background job manager
     pub job_manager: crate::job_manager::JobManager,
     /// Job ID required to finish before quitting
@@ -54,12 +51,25 @@ pub struct Editor<T: TerminalBackend> {
     pending_count: usize,
     pending_operator: Option<crate::action::OperatorType>,
     dot_repeat: DotRepeat,
+    pub panel_layout: Option<PanelLayout>,
 }
 
-/// Helper struct to track active modal and its layer
-pub struct ActiveModal {
-    pub component: Box<dyn crate::component::Component>,
-    pub layer: crate::layer::LayerPriority,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanelKind {
+    FileExplorer,
+    UndoTree,
+}
+
+/// Tracks the two windows and documents that make up a live explorer session.
+#[derive(Debug, Clone)]
+pub struct PanelLayout {
+    pub kind: PanelKind,
+    pub dir_win_id: crate::split::window::WindowId,
+    pub preview_win_id: crate::split::window::WindowId,
+    pub dir_doc_id: DocumentId,
+    pub preview_doc_id: DocumentId,
+    /// For FileExplorer: the document that was showing in `dir_win_id` before the explorer opened.
+    pub original_doc_id: DocumentId,
 }
 
 impl<T: TerminalBackend> Editor<T> {
@@ -142,7 +152,6 @@ impl<T: TerminalBackend> Editor<T> {
             document_settings_registry:
                 crate::document::definitions::create_document_settings_registry(),
             language_loader,
-            modal: None,
             job_manager: crate::job_manager::JobManager::new(),
             pending_quit_job_id: None,
             keymap: KeyMap::new(),
@@ -151,6 +160,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_count: 0,
             pending_operator: None,
             dot_repeat: DotRepeat::new(),
+            panel_layout: None,
         };
 
         // Register default keymaps
@@ -242,47 +252,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         self.sync_state_with_active_document();
-    }
-
-    fn do_nofreeze(&mut self) {
-        let focused_id = self.split_tree.focused_window_id();
-        let focused_doc_id = self.split_tree.focused_window().document_id;
-        let orig_doc_id = self.split_tree.focused_window().canonical_document_id();
-
-        // Copy buffer + history from the focused doc to the shared doc.
-        let (new_buf, new_history) = match self.document_manager.get_document(focused_doc_id) {
-            Some(d) => (d.buffer.clone(), d.history.clone()),
-            None => return,
-        };
-        if let Some(orig) = self.document_manager.get_document_mut(orig_doc_id) {
-            orig.buffer = new_buf;
-            orig.history = new_history;
-        }
-
-        // Re-attach all frozen siblings to the shared doc and clean up their private copies.
-        let frozen_ids = self
-            .split_tree
-            .windows_frozen_for_original_document(orig_doc_id);
-        for id in frozen_ids {
-            if let Some(w) = self.split_tree.get_window_mut(id) {
-                let private_id = w.document_id;
-                w.document_id = orig_doc_id;
-                w.original_document_id = None;
-                self.document_manager.remove_private_document(private_id);
-            }
-        }
-
-        // Unfreeze the focused window itself if it was frozen.
-        if let Some(w) = self.split_tree.get_window_mut(focused_id) {
-            if w.original_document_id.is_some() {
-                w.document_id = orig_doc_id;
-                w.original_document_id = None;
-                self.document_manager
-                    .remove_private_document(focused_doc_id);
-            }
-        }
-
-        let _ = self.document_manager.switch_to_document(orig_doc_id);
     }
 
     fn save_current_view_state(&mut self) {
@@ -378,12 +347,13 @@ impl<T: TerminalBackend> Editor<T> {
             tab_width: doc.options.tab_width,
             highlights: highlights.as_deref(),
             capture_map: capture_names,
-            modal: self.modal.as_mut(),
             skip_content: false,
             cursor_row_offset: 0,
             cursor_col_offset: 0,
             cursor_viewport: None,
             terminal_cursor: doc.terminal_cursor,
+            custom_highlights: if doc.custom_highlights.is_empty() { None } else { Some(&doc.custom_highlights) },
+            show_line_numbers: doc.options.show_line_numbers,
         };
 
         self.render_system
@@ -595,7 +565,6 @@ impl<T: TerminalBackend> Editor<T> {
                 // Update debug info
                 self.state.update_keypress(key_press);
 
-                use crate::component::EventResult;
                 use crate::key::Key;
                 use crate::keymap::{KeyContext, MatchResult};
 
@@ -674,16 +643,26 @@ impl<T: TerminalBackend> Editor<T> {
                 // Input Processing Loop (allows backtracking)
                 loop {
                     // 1. Resolve Context
-                    let context = if let Some(modal) = &self.modal {
-                        modal.component.get_context()
-                    } else {
+                    let context = {
+                        let is_directory = self.document_manager.active_document()
+                            .map(|d| d.is_directory())
+                            .unwrap_or(false);
+                        let is_undotree = self.document_manager.active_document()
+                            .map(|d| d.is_undotree())
+                            .unwrap_or(false);
                         match self.current_mode {
-                            Mode::Normal => KeyContext::Normal,
-                            Mode::OperatorPending => KeyContext::Normal,
+                            Mode::Normal | Mode::OperatorPending => {
+                                if is_directory {
+                                    KeyContext::FileExplorer
+                                } else if is_undotree {
+                                    KeyContext::UndoTree
+                                } else {
+                                    KeyContext::Normal
+                                }
+                            }
                             Mode::Insert => KeyContext::Insert,
                             Mode::Command => KeyContext::Command,
                             Mode::Search => KeyContext::Search,
-                            _ => KeyContext::Global,
                         }
                     };
 
@@ -696,30 +675,7 @@ impl<T: TerminalBackend> Editor<T> {
                             self.pending_keys.clear();
 
                             // 3. Dispatch Action
-                            let _handled = if let Some(modal) = &mut self.modal {
-                                match modal.component.handle_action(&action) {
-                                    EventResult::Consumed => true,
-                                    EventResult::Message(msg) => {
-                                        if let Err(e) = self.handle_message(msg) {
-                                            self.state.handle_error(e);
-                                        }
-                                        true
-                                    }
-                                    EventResult::Ignored => {
-                                        // Action ignored by modal — fall through to raw input
-                                        if let EventResult::Message(msg) =
-                                            modal.component.handle_input(key_press)
-                                        {
-                                            if let Err(e) = self.handle_message(msg) {
-                                                self.state.handle_error(e);
-                                            }
-                                        }
-                                        true
-                                    }
-                                }
-                            } else {
-                                self.handle_action(&action)
-                            };
+                            let _handled = self.handle_action(&action);
 
                             // Don't clear count if we just entered OperatorPending mode
                             // (count may be used with the subsequent motion)
@@ -822,16 +778,6 @@ impl<T: TerminalBackend> Editor<T> {
                                         }
                                         _ => {}
                                     }
-                                } else if let Some(modal) = &mut self.modal {
-                                    let k = self.pending_keys[0];
-                                    self.pending_keys.clear();
-                                    if let EventResult::Message(msg) =
-                                        modal.component.handle_input(k)
-                                    {
-                                        if let Err(e) = self.handle_message(msg) {
-                                            self.state.handle_error(e);
-                                        }
-                                    }
                                 } else {
                                     self.pending_keys.clear();
                                 }
@@ -887,12 +833,10 @@ impl<T: TerminalBackend> Editor<T> {
                 }
 
                 self.state.clear_command_line();
-                self.close_active_modal();
                 self.set_mode(Mode::Normal);
             }
             KeyAction::ExitSearchMode => {
                 self.state.clear_command_line();
-                self.close_active_modal();
                 self.set_mode(Mode::Normal);
             }
             KeyAction::ToggleDebug => {
@@ -913,7 +857,16 @@ impl<T: TerminalBackend> Editor<T> {
 
         let editor_action = match action {
             Action::Editor(act) => act,
-            Action::Explorer(_) | Action::UndoTree(_) => return false, // Editor doesn't handle these directly
+            Action::Buffer(id) => {
+                use crate::document::BufferKind;
+                let kind = self.active_document().kind.clone();
+                match kind {
+                    BufferKind::Directory { .. } => self.handle_directory_buffer_action(id),
+                    BufferKind::UndoTree { .. } => self.handle_undotree_buffer_action(id),
+                    _ => {}
+                }
+                return true;
+            }
             Action::Noop => return false,
         };
 
@@ -932,7 +885,10 @@ impl<T: TerminalBackend> Editor<T> {
                 let command = crate::command::Command::Move(*motion, count);
                 // Execute immediately
                 self.handle_mode_management(command);
-                self.execute_buffer_command(command)
+                let consumed = self.execute_buffer_command(command);
+                self.update_explorer_preview();
+                self.update_undotree_preview();
+                consumed
             }
             EditorAction::EnterInsertMode => {
                 self.handle_mode_management(crate::command::Command::EnterInsertMode);
@@ -971,7 +927,6 @@ impl<T: TerminalBackend> Editor<T> {
                 // Reset history navigation when exiting command/search mode
                 self.state.command_history.reset_navigation();
                 self.state.search_history.reset_navigation();
-                self.close_active_modal();
                 self.set_mode(Mode::Normal);
                 self.state.clear_command_line();
                 self.state.search_matches.clear();
@@ -983,7 +938,7 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::Undo => self.execute_buffer_command(crate::command::Command::Undo),
             EditorAction::Redo => self.execute_buffer_command(crate::command::Command::Redo),
             EditorAction::Quit => {
-                self.should_quit = true;
+                self.do_quit(false);
                 true
             }
             EditorAction::Submit => {
@@ -1033,12 +988,12 @@ impl<T: TerminalBackend> Editor<T> {
                 self.execute_buffer_command(command)
             }
             EditorAction::BufferNext => {
-                let command = crate::command::Command::BufferNext;
-                self.execute_buffer_command(command)
+                self.do_buffer_next();
+                true
             }
             EditorAction::BufferPrevious => {
-                let command = crate::command::Command::BufferPrevious;
-                self.execute_buffer_command(command)
+                self.do_buffer_prev();
+                true
             }
             EditorAction::ToggleDebug => {
                 self.state.toggle_debug();
@@ -1052,64 +1007,39 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             EditorAction::Save => {
-                self.handle_execution_result(crate::command_line::commands::ExecutionResult::Write);
+                self.do_save();
                 true
             }
             EditorAction::SaveAndQuit => {
-                self.handle_execution_result(
-                    crate::command_line::commands::ExecutionResult::WriteAndQuit,
-                );
+                self.do_save_and_quit();
                 true
             }
             EditorAction::OpenExplorer => {
                 let path = self
                     .document_manager
                     .active_document()
-                    .and_then(|d| d.path())
-                    .map(|p| {
-                        if p.is_dir() {
-                            p.to_path_buf()
-                        } else {
-                            p.parent().unwrap_or(p).to_path_buf()
+                    .and_then(|d| {
+                        if let crate::document::BufferKind::Directory { path, .. } = &d.kind {
+                            return Some(path.clone());
                         }
+                        d.path().map(|p| {
+                            if p.is_dir() {
+                                p.to_path_buf()
+                            } else {
+                                p.parent().unwrap_or(p).to_path_buf()
+                            }
+                        })
                     })
                     .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-
-                let mut explorer = crate::file_explorer::FileExplorer::new(path);
-                explorer = explorer
-                    .with_colors(self.state.settings.editor_fg, self.state.settings.editor_bg);
-                let job = explorer.create_list_job();
-
-                self.handle_execution_result(
-                    crate::command_line::commands::ExecutionResult::OpenComponent {
-                        component: Box::new(explorer),
-                        initial_job: Some(job),
-                        initial_message: None,
-                    },
-                );
+                self.open_explorer(path);
                 true
             }
             EditorAction::OpenUndoTree => {
-                if let Some(doc) = self.document_manager.active_document() {
-                    let (component, initial_message) =
-                        crate::undotree_view::component::create_undo_tree_component(
-                            &doc.history,
-                            &self.state.settings,
-                        );
-                    self.handle_execution_result(
-                        crate::command_line::commands::ExecutionResult::OpenComponent {
-                            component,
-                            initial_job: None,
-                            initial_message,
-                        },
-                    );
-                }
+                self.open_undotree_split();
                 true
             }
             EditorAction::ShowBufferList => {
-                self.handle_execution_result(
-                    crate::command_line::commands::ExecutionResult::BufferList,
-                );
+                self.do_show_buffer_list();
                 true
             }
             EditorAction::ClearHighlights => {
@@ -1118,15 +1048,15 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::ClearNotifications => {
-                self.handle_execution_result(
-                    crate::command_line::commands::ExecutionResult::NotificationClear { bangs: 1 },
-                );
+                self.state.error_manager.notifications_mut().clear_all();
+                self.state.clear_command_line();
+                self.force_full_redraw().ok();
                 true
             }
             EditorAction::ClearLastNotification => {
-                self.handle_execution_result(
-                    crate::command_line::commands::ExecutionResult::NotificationClear { bangs: 0 },
-                );
+                self.state.error_manager.notifications_mut().clear_last();
+                self.state.clear_command_line();
+                self.force_full_redraw().ok();
                 true
             }
             EditorAction::Checkpoint => {
@@ -1140,17 +1070,8 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::RunCommand(cmd_str) => {
-                let parsed = self.command_parser.parse(cmd_str);
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    let result = crate::command_line::commands::CommandExecutor::execute(
-                        parsed,
-                        &mut self.state,
-                        doc,
-                        &self.settings_registry,
-                        &self.document_settings_registry,
-                    );
-                    self.handle_execution_result(result);
-                }
+                let cmd_str = cmd_str.clone();
+                self.execute_command_line(cmd_str);
                 true
             }
             EditorAction::Operator(op) => {
@@ -1199,21 +1120,445 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::DotRepeat => self.execute_dot_repeat(),
-            EditorAction::SplitToggleFreeze => {
-                use crate::command_line::commands::SplitSubcommand;
-                use crate::split::tree::SplitDirection;
-                let subcommand = if self.split_tree.focused_window().is_frozen() {
-                    SplitSubcommand::NoFreeze
+            EditorAction::QuitForce => {
+                self.should_quit = true;
+                true
+            }
+            EditorAction::OpenFile { path, force } => {
+                let path = path.clone();
+                let force = *force;
+                if let Err(e) = self.open_file(path, force) {
+                    self.state.handle_error(e);
                 } else {
-                    SplitSubcommand::Freeze
-                };
-                self.handle_execution_result(ExecutionResult::SplitWindow {
-                    direction: SplitDirection::Vertical,
-                    subcommand,
-                });
+                    self.state.clear_command_line();
+                    if let Err(e) = self.force_full_redraw() {
+                        self.state.handle_error(e);
+                    }
+                }
+                true
+            }
+            EditorAction::OpenDirectory(path) => {
+                let path = path.clone();
+                self.open_explorer(path);
+                true
+            }
+            EditorAction::OpenTerminal(cmd) => {
+                let cmd = cmd.clone();
+                if let Err(e) = self.open_terminal(cmd) {
+                    self.state.handle_error(e);
+                } else {
+                    self.state.clear_command_line();
+                    self.set_mode(Mode::Insert);
+                }
+                true
+            }
+            EditorAction::SplitWindow { direction, subcommand } => {
+                let direction = *direction;
+                let subcommand = subcommand.clone();
+                self.do_split_window(direction, subcommand);
+                true
+            }
+            EditorAction::UndoCount(count) => {
+                self.do_undo(*count);
+                true
+            }
+            EditorAction::RedoCount(count) => {
+                self.do_redo(*count);
+                true
+            }
+            EditorAction::UndoGoto(seq) => {
+                self.do_undo_goto(*seq);
+                true
+            }
+            EditorAction::NotificationClearAll => {
+                self.state.error_manager.notifications_mut().clear_all();
+                self.state.clear_command_line();
                 true
             }
         }
+    }
+
+    fn handle_directory_buffer_action(&mut self, id: &str) {
+        match id {
+            "explorer:select"  => self.handle_explorer_select(),
+            "explorer:parent"  => self.handle_explorer_parent(),
+            "explorer:close"   => self.close_split_panel(),
+            "explorer:refresh" => self.handle_explorer_refresh(),
+            _ => {}
+        }
+    }
+
+    fn handle_undotree_buffer_action(&mut self, id: &str) {
+        match id {
+            "undotree:select"  => self.handle_undotree_select(),
+            "undotree:close"   => self.close_split_panel(),
+            "undotree:refresh" => self.handle_undotree_refresh(),
+            _ => {}
+        }
+    }
+
+    fn do_save(&mut self) {
+        use crate::document::BufferKind;
+        if let Some(doc) = self.document_manager.active_document() {
+            match &doc.kind {
+                BufferKind::File => {
+                    let doc = self.document_manager.active_document_mut().unwrap();
+                    if let Some(path) = doc.path() {
+                        let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
+                            doc.id,
+                            doc.buffer.line_index.table.clone(),
+                            path.to_path_buf(),
+                            doc.options.line_ending,
+                            doc.history.current_seq(),
+                        );
+                        self.job_manager.spawn(job);
+                    } else {
+                        self.state.handle_error(RiftError::new(
+                            ErrorType::Io,
+                            "NO_FILENAME",
+                            "No file name",
+                        ));
+                    }
+                }
+                BufferKind::Directory { .. } => {
+                    self.apply_directory_diff();
+                }
+                BufferKind::UndoTree { .. } | BufferKind::Terminal => {
+                    self.state.handle_error(RiftError::new(
+                        ErrorType::Io,
+                        "CANT_SAVE",
+                        format!(
+                            "{} buffer cannot be saved",
+                            self.document_manager
+                                .active_document()
+                                .map(|d| d.display_name().into_owned())
+                                .unwrap_or_default()
+                        ),
+                    ));
+                }
+            }
+        }
+        self.state.clear_command_line();
+    }
+
+    fn do_save_and_quit(&mut self) {
+        let res = {
+            let doc = self.document_manager.active_document().unwrap();
+            if doc.has_path() {
+                Ok((
+                    doc.id,
+                    doc.path().unwrap().to_path_buf(),
+                    doc.buffer.line_index.table.clone(),
+                    doc.options.line_ending,
+                    doc.history.current_seq(),
+                ))
+            } else if let Some(path) = &self.state.file_path {
+                Ok((
+                    doc.id,
+                    std::path::PathBuf::from(path),
+                    doc.buffer.line_index.table.clone(),
+                    doc.options.line_ending,
+                    doc.history.current_seq(),
+                ))
+            } else {
+                Err(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))
+            }
+        };
+        match res {
+            Ok((doc_id, path, table, line_ending, saved_seq)) => {
+                let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
+                    doc_id,
+                    table,
+                    path.clone(),
+                    line_ending,
+                    saved_seq,
+                );
+                let id = self.job_manager.spawn(job);
+                self.pending_quit_job_id = Some(id);
+                self.state.notify(
+                    crate::notification::NotificationType::Info,
+                    format!("Saving {} and quitting...", path.display()),
+                );
+            }
+            Err(e) => self.state.handle_error(e),
+        }
+        self.state.clear_command_line();
+    }
+
+    fn do_quit(&mut self, force: bool) {
+        let in_explorer = self.panel_layout.as_ref().map(|l| {
+            let fid = self.split_tree.focused_window_id();
+            fid == l.dir_win_id || fid == l.preview_win_id
+        }).unwrap_or(false);
+        if in_explorer {
+            self.close_split_panel();
+            return;
+        }
+        if self.split_tree.window_count() > 1 {
+            let focused_id = self.split_tree.focused_window_id();
+            self.split_tree.close_window(focused_id);
+            let new_doc_id = self.split_tree.focused_window().document_id;
+            let new_cursor = self.split_tree.focused_window().cursor_position;
+            let _ = self.document_manager.switch_to_document(new_doc_id);
+            if let Some(doc) = self.document_manager.get_document_mut(new_doc_id) {
+                let _ = doc.buffer.set_cursor(new_cursor);
+            }
+            self.sync_state_with_active_document();
+            if let Err(e) = self.force_full_redraw() {
+                self.state.handle_error(e);
+            }
+        } else if self.document_manager.tab_count() <= 1 {
+            // Last buffer: quit the editor
+            if !force {
+                let doc_id = self.active_document_id();
+                if let Some(doc) = self.document_manager.get_document(doc_id) {
+                    if doc.is_dirty() && !doc.is_special() {
+                        self.state.handle_error(RiftError::warning(
+                            ErrorType::Execution,
+                            crate::constants::errors::UNSAVED_CHANGES,
+                            crate::constants::errors::MSG_UNSAVED_CHANGES,
+                        ));
+                        return;
+                    }
+                }
+            }
+            self.should_quit = true;
+        } else {
+            let doc_id = self.active_document_id();
+            let result = if force {
+                self.document_manager.remove_document_force(doc_id)
+            } else {
+                self.document_manager.remove_document(doc_id)
+            };
+            match result {
+                Err(e) => self.state.handle_error(e),
+                Ok(()) => {
+                    if let Some(new_doc_id) = self.document_manager.active_document_id() {
+                        self.split_tree.focused_window_mut().document_id = new_doc_id;
+                    }
+                    self.sync_state_with_active_document();
+                    if let Err(e) = self.force_full_redraw() {
+                        self.state.handle_error(e);
+                    }
+                }
+            }
+        }
+    }
+
+    fn do_buffer_next(&mut self) {
+        self.save_current_view_state();
+        self.document_manager.switch_next_tab();
+        if let Some(doc_id) = self.document_manager.active_document_id() {
+            self.split_tree.focused_window_mut().document_id = doc_id;
+        }
+        self.restore_view_state();
+        self.sync_state_with_active_document();
+        self.state.clear_command_line();
+        if let Err(e) = self.force_full_redraw() {
+            self.state.handle_error(e);
+        }
+    }
+
+    fn do_buffer_prev(&mut self) {
+        self.save_current_view_state();
+        self.document_manager.switch_prev_tab();
+        if let Some(doc_id) = self.document_manager.active_document_id() {
+            self.split_tree.focused_window_mut().document_id = doc_id;
+        }
+        self.restore_view_state();
+        self.sync_state_with_active_document();
+        self.state.clear_command_line();
+        if let Err(e) = self.force_full_redraw() {
+            self.state.handle_error(e);
+        }
+    }
+
+    fn do_show_buffer_list(&mut self) {
+        let buffers = self.document_manager.get_buffer_list();
+        let mut message = String::new();
+        for info in buffers {
+            let dirty = if info.is_dirty { "+" } else { " " };
+            let read_only = if info.is_read_only { "R" } else { " " };
+            let current = if info.is_current { "%" } else { " " };
+            let special = if info.is_special { "~" } else { " " };
+            if !message.is_empty() {
+                message.push('\n');
+            }
+            message.push_str(&format!(
+                "[{}] {}: {}{}{}{}",
+                info.index + 1,
+                info.name,
+                current,
+                dirty,
+                read_only,
+                special,
+            ));
+        }
+        self.state.notify(crate::notification::NotificationType::Info, message);
+        self.state.clear_command_line();
+    }
+
+    fn do_notification_clear(&mut self, all: bool) {
+        if all {
+            self.state.error_manager.notifications_mut().clear_all();
+        } else {
+            self.state.error_manager.notifications_mut().clear_last();
+        }
+        self.state.clear_command_line();
+    }
+
+    fn do_split_window(
+        &mut self,
+        direction: crate::split::tree::SplitDirection,
+        subcommand: crate::command_line::commands::SplitSubcommand,
+    ) {
+        use crate::command_line::commands::SplitSubcommand;
+        match subcommand {
+            SplitSubcommand::Current => {
+                let doc_id = self.active_document_id();
+                let focused_id = self.split_tree.focused_window_id();
+                let size = self.term.get_size().unwrap();
+                let new_id = self.split_tree.split(
+                    direction,
+                    focused_id,
+                    doc_id,
+                    size.rows as usize,
+                    size.cols as usize,
+                );
+                self.switch_focus(new_id);
+            }
+            SplitSubcommand::File(path) => {
+                let path_buf = std::path::PathBuf::from(&path);
+                if !path_buf.exists() {
+                    self.state.handle_error(crate::error::RiftError::new(
+                        crate::error::ErrorType::Io,
+                        "FILE_NOT_FOUND",
+                        format!("No such file: {path}"),
+                    ));
+                    return;
+                }
+                let doc_id = if let Some(id) =
+                    self.document_manager.find_open_document_id(&path_buf)
+                {
+                    id
+                } else {
+                    match self.document_manager.create_placeholder(&path) {
+                        Ok(id) => {
+                            let job =
+                                crate::job_manager::jobs::file_operations::FileLoadJob::new(
+                                    id, path_buf,
+                                );
+                            self.job_manager.spawn(job);
+                            id
+                        }
+                        Err(e) => {
+                            self.state.handle_error(e);
+                            return;
+                        }
+                    }
+                };
+                let focused_id = self.split_tree.focused_window_id();
+                let size = self.term.get_size().unwrap();
+                let new_id = self.split_tree.split(
+                    direction,
+                    focused_id,
+                    doc_id,
+                    size.rows as usize,
+                    size.cols as usize,
+                );
+                self.switch_focus(new_id);
+            }
+            SplitSubcommand::Navigate(dir) => {
+                let size = self.term.get_size().unwrap();
+                let layouts = self
+                    .split_tree
+                    .compute_layout(size.rows as usize, size.cols as usize);
+                if let Some(target_id) = self.split_tree.navigate(dir, &layouts) {
+                    self.switch_focus(target_id);
+                }
+            }
+            SplitSubcommand::Resize(delta) => {
+                let size = self.term.get_size().unwrap();
+                let layouts = self
+                    .split_tree
+                    .compute_layout(size.rows as usize, size.cols as usize);
+                let delta_ratio = (delta as f64) / (size.cols as f64);
+                self.split_tree.resize_focused(direction, delta_ratio, &layouts);
+            }
+        }
+        self.state.clear_command_line();
+    }
+
+    fn do_undo(&mut self, count: Option<u64>) {
+        let doc = self.document_manager.active_document_mut().unwrap();
+        let count = count.unwrap_or(1) as usize;
+        let mut undone = 0;
+        for _ in 0..count {
+            if doc.undo() {
+                undone += 1;
+            } else {
+                break;
+            }
+        }
+        if undone == 0 {
+            self.state.notify(
+                crate::notification::NotificationType::Info,
+                "Already at oldest change".to_string(),
+            );
+        }
+        self.state.clear_command_line();
+        self.update_search_highlights();
+        if let Some(doc_id) = self.document_manager.active_document_id() {
+            self.spawn_syntax_parse_job(doc_id);
+        }
+    }
+
+    fn do_redo(&mut self, count: Option<u64>) {
+        let doc = self.document_manager.active_document_mut().unwrap();
+        let count = count.unwrap_or(1) as usize;
+        let mut redone = 0;
+        for _ in 0..count {
+            if doc.redo() {
+                redone += 1;
+            } else {
+                break;
+            }
+        }
+        if redone == 0 {
+            self.state.notify(
+                crate::notification::NotificationType::Info,
+                "Already at newest change".to_string(),
+            );
+        }
+        self.state.clear_command_line();
+        self.update_search_highlights();
+        if let Some(doc_id) = self.document_manager.active_document_id() {
+            self.spawn_syntax_parse_job(doc_id);
+        }
+    }
+
+    fn do_undo_goto(&mut self, seq: u64) {
+        let doc = self.document_manager.active_document_mut().unwrap();
+        match doc.goto_seq(seq) {
+            Ok(()) => {
+                self.state.notify(
+                    crate::notification::NotificationType::Info,
+                    format!("Jumped to edit #{}", seq),
+                );
+                if let Some(doc_id) = self.document_manager.active_document_id() {
+                    self.spawn_syntax_parse_job(doc_id);
+                }
+            }
+            Err(e) => {
+                self.state.handle_error(RiftError::new(
+                    ErrorType::Execution,
+                    "UNDO_ERROR",
+                    e.to_string(),
+                ));
+            }
+        }
+        self.state.clear_command_line();
+        self.update_search_highlights();
     }
 
     /// Navigate to previous (older) history entry
@@ -1445,22 +1790,9 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
                 self.state.completion_session = None;
-                // Parse and execute the command
                 let command_line = self.state.command_line.clone();
-                // Add to command history before executing
                 self.state.command_history.add(command_line.clone());
-                let parsed_command = self.command_parser.parse(&command_line);
-                let execution_result = CommandExecutor::execute(
-                    parsed_command.clone(),
-                    &mut self.state,
-                    self.document_manager
-                        .active_document_mut()
-                        .expect("active document missing"),
-                    &self.settings_registry,
-                    &self.document_settings_registry,
-                );
-
-                self.handle_execution_result(execution_result);
+                self.execute_command_line(command_line);
             }
             _ => {}
         }
@@ -1674,12 +2006,13 @@ impl<T: TerminalBackend> Editor<T> {
             tab_width: doc.options.tab_width,
             highlights: highlights.as_deref(),
             capture_map: capture_names,
-            modal: self.modal.as_mut(),
             skip_content: false,
             cursor_row_offset: 0,
             cursor_col_offset: 0,
             cursor_viewport: None,
             terminal_cursor: doc.terminal_cursor,
+            custom_highlights: if doc.custom_highlights.is_empty() { None } else { Some(&doc.custom_highlights) },
+            show_line_numbers: doc.options.show_line_numbers,
         };
 
         let _ = render_system.render(term, state)?;
@@ -1688,11 +2021,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn update_window_viewports(&mut self) {
-        let gutter_width = if self.state.settings.show_line_numbers {
-            self.state.gutter_width
-        } else {
-            0
-        };
+        let global_show_line_numbers = self.state.settings.show_line_numbers;
 
         let size = match self.term.get_size() {
             Ok(s) => s,
@@ -1721,6 +2050,17 @@ impl<T: TerminalBackend> Editor<T> {
                 render::calculate_cursor_column_at(&doc.buffer, cursor_line, tab_width, cursor_pos);
             let total_lines = doc.buffer.get_total_lines();
             let viewport_col = if doc.is_terminal() { 0 } else { cursor_col };
+            let doc_show_line_numbers = doc.options.show_line_numbers && global_show_line_numbers;
+            let gutter_width = if doc_show_line_numbers {
+                let digits = if total_lines > 0 {
+                    (total_lines as f64).log10().floor() as usize + 1
+                } else {
+                    1
+                };
+                digits + 2
+            } else {
+                0
+            };
 
             let window = match self.split_tree.get_window_mut(layout.window_id) {
                 Some(w) => w,
@@ -1814,7 +2154,8 @@ impl<T: TerminalBackend> Editor<T> {
                 tab_width,
                 highlights: highlights.as_deref(),
                 capture_map: capture_names,
-                modal: None,
+                custom_highlights: if doc.custom_highlights.is_empty() { None } else { Some(&doc.custom_highlights) },
+                show_line_numbers: doc.options.show_line_numbers,
             };
 
             let content_layer = render_system
@@ -1872,12 +2213,13 @@ impl<T: TerminalBackend> Editor<T> {
             tab_width: focused_doc.options.tab_width,
             highlights: highlights.as_deref(),
             capture_map: capture_names,
-            modal: self.modal.as_mut(),
             skip_content: true,
             cursor_row_offset: row_off,
             cursor_col_offset: col_off,
             cursor_viewport: Some(focused_vp),
             terminal_cursor: focused_doc.terminal_cursor,
+            custom_highlights: if focused_doc.custom_highlights.is_empty() { None } else { Some(&focused_doc.custom_highlights) },
+            show_line_numbers: focused_doc.options.show_line_numbers,
         };
 
         let _ = render_system.render(term, render_state)?;
@@ -1959,15 +2301,535 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.command_line = new_content;
     }
 
-    fn close_active_modal(&mut self) {
-        if let Some(modal) = &self.modal {
-            self.render_system.compositor.clear_layer(modal.layer);
+    /// Reload a directory buffer with a new path.
+    fn reload_directory_buffer(&mut self, doc_id: crate::document::DocumentId, new_path: std::path::PathBuf) {
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+            doc.kind = crate::document::BufferKind::Directory {
+                path: new_path.clone(),
+                entries: vec![],
+            };
+            let _ = doc.buffer.set_cursor(0);
+            let len = doc.buffer.len();
+            for _ in 0..len { doc.buffer.delete_forward(); }
+            let _ = doc.buffer.insert_str("Loading...");
         }
-        self.modal = None;
-        self.set_mode(Mode::Normal);
-        if let Err(e) = self.update_and_render() {
-            self.state.handle_error(e);
+        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(new_path, false);
+        self.job_manager.spawn(job);
+    }
+
+    /// Handle <CR> in a directory (file explorer) buffer.
+    fn handle_explorer_select(&mut self) {
+        use crate::document::BufferKind;
+
+        // If we're in the explorer center pane, delegate to split-aware select.
+        let is_explorer_dir = self.panel_layout.as_ref().map(|l| {
+            l.kind == PanelKind::FileExplorer && self.split_tree.focused_window_id() == l.dir_win_id
+        }).unwrap_or(false);
+        if is_explorer_dir {
+            self.handle_explorer_split_select();
+            return;
         }
+
+        let (doc_id, line_text, dir_path) = {
+            let doc = match self.document_manager.active_document() {
+                Some(d) if d.is_directory() => d,
+                _ => return,
+            };
+            let cursor = doc.buffer.cursor();
+            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let line_bytes = doc.buffer.get_line_bytes(line_num);
+            let line_text = String::from_utf8_lossy(&line_bytes).trim_end().to_string();
+            let dir_path = match &doc.kind {
+                BufferKind::Directory { path, .. } => path.clone(),
+                _ => return,
+            };
+            (doc.id, line_text, dir_path)
+        };
+
+        if line_text == "../" {
+            if let Some(parent) = dir_path.parent().map(|p| p.to_path_buf()) {
+                self.reload_directory_buffer(doc_id, parent);
+            }
+            return;
+        }
+
+        let entry_name = line_text.trim_end_matches('/').to_string();
+        if entry_name.is_empty() { return; }
+
+        let target_path = dir_path.join(&entry_name);
+
+        if target_path.is_dir() {
+            self.reload_directory_buffer(doc_id, target_path);
+        } else {
+            if let Err(e) = self.open_file(Some(target_path.display().to_string()), false) {
+                self.state.handle_error(e);
+            } else {
+                self.state.clear_command_line();
+                if let Err(e) = self.force_full_redraw() { self.state.handle_error(e); }
+            }
+        }
+    }
+
+    /// Handle `-` in a directory buffer — navigate to parent.
+    fn handle_explorer_parent(&mut self) {
+        use crate::document::BufferKind;
+
+        // If we're in the explorer center pane, delegate to split-aware parent.
+        let is_explorer_dir = self.panel_layout.as_ref().map(|l| {
+            l.kind == PanelKind::FileExplorer && self.split_tree.focused_window_id() == l.dir_win_id
+        }).unwrap_or(false);
+        if is_explorer_dir {
+            self.handle_explorer_split_parent();
+            return;
+        }
+
+        let (doc_id, parent) = {
+            let doc = match self.document_manager.active_document() {
+                Some(d) if d.is_directory() => d,
+                _ => return,
+            };
+            let parent = match &doc.kind {
+                BufferKind::Directory { path, .. } => path.parent().map(|p| p.to_path_buf()),
+                _ => return,
+            };
+            (doc.id, parent)
+        };
+        if let Some(parent_path) = parent {
+            self.reload_directory_buffer(doc_id, parent_path);
+        }
+    }
+
+    /// Open a 3-panel file explorer centred on `center_dir`.
+    ///
+    /// Layout after call:  [left: parent dir | center: center_dir | right: preview]
+    pub fn open_explorer(&mut self, dir: std::path::PathBuf) {
+        // If already active, just focus the dir pane.
+        if let Some(ref layout) = self.panel_layout.clone() {
+            self.split_tree.set_focus(layout.dir_win_id);
+            let _ = self.document_manager.switch_to_document(layout.dir_doc_id);
+            return;
+        }
+
+        let dir_doc_id = self.document_manager.next_id();
+        let dir_doc = match crate::document::Document::new_directory(dir_doc_id, dir.clone()) {
+            Ok(d) => d,
+            Err(e) => { self.state.handle_error(e); return; }
+        };
+        self.document_manager.add_private_document(dir_doc);
+
+        let preview_doc_id = self.document_manager.next_id();
+        let preview_doc = match crate::document::Document::new_directory(
+            preview_doc_id,
+            std::path::PathBuf::from("[preview]"),
+        ) {
+            Ok(d) => d,
+            Err(e) => { self.state.handle_error(e); return; }
+        };
+        self.document_manager.add_private_document(preview_doc);
+
+        let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+        let rows = size.rows as usize;
+        let cols = size.cols as usize;
+
+        let dir_win_id = self.split_tree.focused_window_id();
+        let original_doc_id = self.split_tree.focused_window().document_id;
+        if let Some(w) = self.split_tree.windows.get_mut(&dir_win_id) {
+            w.document_id = dir_doc_id;
+        }
+
+        let preview_win_id = self.split_tree.split(
+            crate::split::tree::SplitDirection::Vertical,
+            dir_win_id,
+            preview_doc_id,
+            rows,
+            cols,
+        );
+
+        self.split_tree.set_focus(dir_win_id);
+        let _ = self.document_manager.switch_to_document(dir_doc_id);
+
+        self.panel_layout = Some(PanelLayout { kind: PanelKind::FileExplorer, dir_win_id, preview_win_id, dir_doc_id, preview_doc_id, original_doc_id });
+
+        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(dir, false);
+        self.job_manager.spawn(job);
+
+        self.sync_state_with_active_document();
+        let _ = self.force_full_redraw();
+    }
+
+    /// Close the active explorer or undotree split session.
+    pub fn close_split_panel(&mut self) {
+        let layout = match self.panel_layout.take() {
+            Some(l) => l,
+            None => return,
+        };
+
+        match layout.kind {
+            PanelKind::FileExplorer => {
+                // Close preview window, restore original doc to dir window, remove both private docs.
+                self.split_tree.close_window(layout.preview_win_id);
+                self.document_manager.remove_private_document(layout.preview_doc_id);
+                if let Some(w) = self.split_tree.windows.get_mut(&layout.dir_win_id) {
+                    w.document_id = layout.original_doc_id;
+                }
+                self.document_manager.remove_private_document(layout.dir_doc_id);
+                self.split_tree.set_focus(layout.dir_win_id);
+                let _ = self.document_manager.switch_to_document(layout.original_doc_id);
+            }
+            PanelKind::UndoTree => {
+                // Reassign the preview window to show the original file before removing preview clone.
+                if let Some(w) = self.split_tree.windows.get_mut(&layout.preview_win_id) {
+                    w.document_id = layout.original_doc_id;
+                }
+                self.split_tree.close_window(layout.dir_win_id);
+                self.document_manager.remove_private_document(layout.dir_doc_id);
+                self.document_manager.remove_private_document(layout.preview_doc_id);
+                self.split_tree.set_focus(layout.preview_win_id);
+                let _ = self.document_manager.switch_to_document(layout.original_doc_id);
+            }
+        }
+        self.sync_state_with_active_document();
+        let _ = self.force_full_redraw();
+    }
+
+    /// Open the undo tree for the active document as a split pane.
+    pub fn open_undotree_split(&mut self) {
+        if let Some(ref layout) = self.panel_layout.clone() {
+            if layout.kind == PanelKind::UndoTree {
+                self.split_tree.set_focus(layout.dir_win_id);
+                let _ = self.document_manager.switch_to_document(layout.dir_doc_id);
+                return;
+            }
+        }
+
+        let linked_id = self.active_document_id();
+
+        let ut_id = self.document_manager.next_id();
+        let ut_doc = match crate::document::Document::new_undotree(ut_id, linked_id) {
+            Ok(d) => d,
+            Err(e) => { self.state.handle_error(e); return; }
+        };
+        self.document_manager.add_private_document(ut_doc);
+
+        // Create a private read-only preview doc (clone of linked) so goto_seq never
+        // touches the original file and show_line_numbers is naturally false.
+        let preview_id = self.document_manager.next_id();
+        let preview_doc = {
+            let linked = match self.document_manager.get_document(linked_id) {
+                Some(d) => d,
+                None => { return; }
+            };
+            match crate::document::Document::new_undotree_preview(preview_id, linked) {
+                Ok(d) => d,
+                Err(e) => { self.state.handle_error(e); return; }
+            }
+        };
+        self.document_manager.add_private_document(preview_doc);
+
+        let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+        let rows = size.rows as usize;
+        let cols = size.cols as usize;
+
+        let dir_win_id = self.split_tree.focused_window_id();
+        if let Some(w) = self.split_tree.windows.get_mut(&dir_win_id) {
+            w.document_id = ut_id;
+        }
+
+        let preview_win_id = self.split_tree.split(
+            crate::split::tree::SplitDirection::Vertical,
+            dir_win_id,
+            preview_id,
+            rows,
+            cols,
+        );
+
+        if let Some(linked_doc) = self.document_manager.get_document(linked_id) {
+            let (text, seqs, lc) = crate::undotree_view::render_tree_to_text(&linked_doc.history);
+            if let Some(ut_doc) = self.document_manager.get_document_mut(ut_id) {
+                ut_doc.populate_undotree_buffer(text, seqs, lc);
+            }
+        }
+
+        self.split_tree.set_focus(dir_win_id);
+        let _ = self.document_manager.switch_to_document(ut_id);
+
+        self.panel_layout = Some(PanelLayout {
+            kind: PanelKind::UndoTree,
+            dir_win_id,
+            preview_win_id,
+            dir_doc_id: ut_id,
+            preview_doc_id: preview_id,
+            original_doc_id: linked_id,
+        });
+
+        self.sync_state_with_active_document();
+        let _ = self.update_and_render();
+    }
+
+    /// Called after every cursor movement: if in the explorer dir pane, spawn a preview job.
+    fn update_explorer_preview(&mut self) {
+        let layout = match &self.panel_layout {
+            Some(l) if l.kind == PanelKind::FileExplorer && self.split_tree.focused_window_id() == l.dir_win_id => l.clone(),
+            _ => return,
+        };
+
+        let (target_path, preview_doc_id) = {
+            let doc = match self.document_manager.get_document(layout.dir_doc_id) {
+                Some(d) => d,
+                None => return,
+            };
+            let cursor = doc.buffer.cursor();
+            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let line_bytes = doc.buffer.get_line_bytes(line_num);
+            let line_text = String::from_utf8_lossy(&line_bytes).trim_end().to_string();
+            let dir_path = match &doc.kind {
+                crate::document::BufferKind::Directory { path, .. } => path.clone(),
+                _ => return,
+            };
+            let entry_name = line_text.trim_end_matches('/');
+            if entry_name.is_empty() || entry_name == ".." {
+                return;
+            }
+            (dir_path.join(entry_name), layout.preview_doc_id)
+        };
+
+        let job = crate::job_manager::jobs::explorer_preview::ExplorerPreviewJob::new(
+            preview_doc_id,
+            target_path,
+            false,
+        );
+        self.job_manager.spawn(job);
+    }
+
+    /// Called after every cursor movement in the undotree pane: applies goto_seq on the linked doc.
+    fn update_undotree_preview(&mut self) {
+        let layout = match &self.panel_layout {
+            Some(l) if l.kind == PanelKind::UndoTree
+                && self.split_tree.focused_window_id() == l.dir_win_id => l.clone(),
+            _ => return,
+        };
+
+        let seq = {
+            let doc = match self.document_manager.get_document(layout.dir_doc_id) {
+                Some(d) => d,
+                None => return,
+            };
+            let cursor = doc.buffer.cursor();
+            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            match &doc.kind {
+                crate::document::BufferKind::UndoTree { sequences, .. } => {
+                    sequences.get(line_num).copied().unwrap_or(u64::MAX)
+                }
+                _ => return,
+            }
+        };
+
+        if seq == u64::MAX { return; }
+
+        if let Some(linked_doc) = self.document_manager.get_document_mut(layout.preview_doc_id) {
+            let _ = linked_doc.goto_seq(seq);
+            // Reset cursor to top so the preview viewport starts from the beginning
+            let _ = linked_doc.buffer.set_cursor(0);
+        }
+        // Sync the preview window's cursor_position so update_window_viewports uses position 0
+        if let Some(w) = self.split_tree.get_window_mut(layout.preview_win_id) {
+            w.cursor_position = 0;
+        }
+        self.spawn_syntax_parse_job(layout.preview_doc_id);
+        let _ = self.update_and_render();
+    }
+
+    /// Enter a directory or open a file from the explorer dir pane.
+    fn handle_explorer_split_select(&mut self) {
+        let layout = match self.panel_layout.clone() {
+            Some(l) => l,
+            None => return,
+        };
+
+        let (line_text, dir_path) = {
+            let doc = match self.document_manager.get_document(layout.dir_doc_id) {
+                Some(d) => d,
+                None => return,
+            };
+            let cursor = doc.buffer.cursor();
+            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let line_bytes = doc.buffer.get_line_bytes(line_num);
+            let line_text = String::from_utf8_lossy(&line_bytes).trim_end().to_string();
+            let dir_path = match &doc.kind {
+                crate::document::BufferKind::Directory { path, .. } => path.clone(),
+                _ => return,
+            };
+            (line_text, dir_path)
+        };
+
+        let entry_name = line_text.trim_end_matches('/');
+        if entry_name.is_empty() || entry_name == ".." {
+            self.handle_explorer_split_parent();
+            return;
+        }
+
+        let target_path = dir_path.join(entry_name);
+
+        if target_path.is_dir() {
+            self.reload_directory_buffer(layout.dir_doc_id, target_path);
+            self.update_explorer_preview();
+        } else {
+            self.close_split_panel();
+            if let Err(e) = self.open_file(Some(target_path.display().to_string()), false) {
+                self.state.handle_error(e);
+            } else {
+                self.state.clear_command_line();
+                if let Err(e) = self.force_full_redraw() { self.state.handle_error(e); }
+            }
+        }
+    }
+
+    /// Navigate the explorer dir pane to its parent directory.
+    fn handle_explorer_split_parent(&mut self) {
+        let layout = match self.panel_layout.clone() {
+            Some(l) => l,
+            None => return,
+        };
+
+        let parent_path = {
+            let doc = match self.document_manager.get_document(layout.dir_doc_id) {
+                Some(d) => d,
+                None => return,
+            };
+            match &doc.kind {
+                crate::document::BufferKind::Directory { path, .. } => {
+                    match path.parent().map(|p| p.to_path_buf()) {
+                        Some(p) => p,
+                        None => return,
+                    }
+                }
+                _ => return,
+            }
+        };
+
+        self.reload_directory_buffer(layout.dir_doc_id, parent_path);
+        self.update_explorer_preview();
+    }
+
+    /// Handle <CR> in an undo-tree buffer — jump to the node on the cursor line.
+    fn handle_undotree_select(&mut self) {
+        use crate::document::BufferKind;
+
+        let (linked_doc_id, seq) = {
+            let doc_id = self.active_document_id();
+            let doc = match self.document_manager.get_document(doc_id) {
+                Some(d) if d.is_undotree() => d,
+                _ => return,
+            };
+            let cursor = doc.buffer.cursor();
+            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let (linked_id, seq) = match &doc.kind {
+                BufferKind::UndoTree { linked_doc_id, sequences } => {
+                    let seq = sequences.get(line_num).copied().unwrap_or(u64::MAX);
+                    (*linked_doc_id, seq)
+                }
+                _ => return,
+            };
+            (linked_id, seq)
+        };
+
+        if seq == u64::MAX { return; } // connector line
+
+        if let Some(linked_doc) = self.document_manager.get_document_mut(linked_doc_id) {
+            if linked_doc.goto_seq(seq).is_err() { return; }
+        }
+        self.spawn_syntax_parse_job(linked_doc_id);
+
+        // Close the undo tree pane and focus the linked document
+        self.close_split_panel();
+    }
+
+    /// Re-read the directory listing for the active file explorer pane.
+    fn handle_explorer_refresh(&mut self) {
+        let layout = match self.panel_layout.as_ref() {
+            Some(l) if l.kind == PanelKind::FileExplorer => l.clone(),
+            _ => return,
+        };
+        let path = match self.document_manager.get_document(layout.dir_doc_id) {
+            Some(d) => match &d.kind {
+                crate::document::BufferKind::Directory { path, .. } => path.clone(),
+                _ => return,
+            },
+            None => return,
+        };
+        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(path, false);
+        self.job_manager.spawn(job);
+    }
+
+    /// Re-render the undotree buffer from the linked document's current history.
+    fn handle_undotree_refresh(&mut self) {
+        let layout = match self.panel_layout.as_ref() {
+            Some(l) if l.kind == PanelKind::UndoTree => l.clone(),
+            _ => return,
+        };
+        if let Some(linked_doc) = self.document_manager.get_document(layout.original_doc_id) {
+            let (text, seqs, lc) = crate::undotree_view::render_tree_to_text(&linked_doc.history);
+            if let Some(ut_doc) = self.document_manager.get_document_mut(layout.dir_doc_id) {
+                ut_doc.populate_undotree_buffer(text, seqs, lc);
+            }
+        }
+        let _ = self.update_and_render();
+    }
+
+    /// Apply the diff from a directory buffer to the filesystem.
+    fn apply_directory_diff(&mut self) {
+        use crate::document::BufferKind;
+
+        let (dir_path, diff) = {
+            let doc = match self.document_manager.active_document() {
+                Some(d) if d.is_directory() => d,
+                _ => return,
+            };
+            let path = match &doc.kind {
+                BufferKind::Directory { path, .. } => path.clone(),
+                _ => return,
+            };
+            (path, doc.parse_directory_diff())
+        };
+
+        let mut spawned = 0usize;
+
+        // Renames
+        for (old_path, new_name) in &diff.renames {
+            let new_path = old_path.parent().unwrap_or(&dir_path).join(new_name);
+            let job = crate::job_manager::jobs::fs::FsMoveJob::new(old_path.clone(), new_path);
+            self.job_manager.spawn(job);
+            spawned += 1;
+        }
+
+        // Deletes
+        if !diff.deletes.is_empty() {
+            let job = crate::job_manager::jobs::fs::FsBatchDeleteJob::new(diff.deletes.clone());
+            self.job_manager.spawn(job);
+            spawned += 1;
+        }
+
+        // Creates
+        for name in &diff.creates {
+            let is_dir = name.ends_with('/');
+            let clean_name = name.trim_end_matches('/');
+            let new_path = dir_path.join(clean_name);
+            let job = crate::job_manager::jobs::fs::FsCreateJob::new(new_path, is_dir);
+            self.job_manager.spawn(job);
+            spawned += 1;
+        }
+
+        if spawned > 0 {
+            self.state.notify(
+                crate::notification::NotificationType::Info,
+                format!("Applying {} change(s)…", spawned),
+            );
+        }
+
+        // Always reload the listing so the buffer content and highlights reflect the
+        // new filesystem state (including any newly created files/directories).
+        let reload = crate::job_manager::jobs::explorer::DirectoryListJob::new(dir_path, false);
+        self.job_manager.spawn(reload);
     }
 
     /// Set editor mode and update dispatcher
@@ -2119,451 +2981,6 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    // Handle execution results from command_line commands
-    fn handle_execution_result(&mut self, execution_result: ExecutionResult) {
-        let mut should_close_modal = true;
-        match execution_result {
-            ExecutionResult::OpenTerminal { cmd, bangs: _ } => {
-                if let Err(e) = self.open_terminal(cmd) {
-                    self.state.handle_error(e);
-                } else {
-                    self.state.clear_command_line();
-                    self.close_active_modal();
-                    self.set_mode(Mode::Insert);
-                    should_close_modal = false;
-                }
-            }
-            ExecutionResult::Quit { bangs } => {
-                if self.split_tree.window_count() > 1 {
-                    let focused_id = self.split_tree.focused_window_id();
-                    self.split_tree.close_window(focused_id);
-                    let new_doc_id = self.split_tree.focused_window().document_id;
-                    let new_cursor = self.split_tree.focused_window().cursor_position;
-                    let _ = self.document_manager.switch_to_document(new_doc_id);
-                    if let Some(doc) = self.document_manager.get_document_mut(new_doc_id) {
-                        let _ = doc.buffer.set_cursor(new_cursor);
-                    }
-                    self.sync_state_with_active_document();
-                    if let Err(e) = self.force_full_redraw() {
-                        self.state.handle_error(e);
-                    }
-                } else if bangs == 0 && self.document_manager.has_unsaved_changes() {
-                    let unsaved = self.document_manager.get_unsaved_documents();
-                    let msg = if unsaved.len() == 1 {
-                        format!(
-                            "No write since last change for {} (add ! to override)",
-                            unsaved[0]
-                        )
-                    } else {
-                        format!(
-                            "{} buffers have unsaved changes (add ! to override)",
-                            unsaved.len()
-                        )
-                    };
-                    self.state.handle_error(RiftError {
-                        severity: ErrorSeverity::Warning,
-                        kind: ErrorType::Execution,
-                        code: "UNSAVED_CHANGES".to_string(),
-                        message: msg,
-                    });
-                } else {
-                    self.should_quit = true;
-                }
-            }
-            ExecutionResult::Write => {
-                // Save document ASYNC
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    if let Some(path) = doc.path() {
-                        let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
-                            doc.id,
-                            doc.buffer.line_index.table.clone(),
-                            path.to_path_buf(),
-                            doc.options.line_ending,
-                            doc.history.current_seq(),
-                        );
-                        let _id = self.job_manager.spawn(job);
-                    } else {
-                        self.state.handle_error(RiftError::new(
-                            ErrorType::Io,
-                            "NO_FILENAME",
-                            "No file name",
-                        ));
-                    }
-                }
-                self.state.clear_command_line();
-                self.close_active_modal();
-            }
-            ExecutionResult::WriteAndQuit => {
-                // Save ASYNC then Quit
-                let res = {
-                    let doc = self.document_manager.active_document().unwrap();
-                    if doc.has_path() {
-                        Ok((
-                            doc.id,
-                            doc.path().unwrap().to_path_buf(),
-                            doc.buffer.line_index.table.clone(),
-                            doc.options.line_ending,
-                            doc.history.current_seq(),
-                        ))
-                    } else if let Some(path) = &self.state.file_path {
-                        Ok((
-                            doc.id,
-                            std::path::PathBuf::from(path),
-                            doc.buffer.line_index.table.clone(),
-                            doc.options.line_ending,
-                            doc.history.current_seq(),
-                        ))
-                    } else {
-                        Err(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))
-                    }
-                };
-
-                match res {
-                    Ok((doc_id, path, table, line_ending, saved_seq)) => {
-                        let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
-                            doc_id,
-                            table,
-                            path.clone(),
-                            line_ending,
-                            saved_seq,
-                        );
-                        let id = self.job_manager.spawn(job);
-                        self.pending_quit_job_id = Some(id);
-                        self.state.notify(
-                            crate::notification::NotificationType::Info,
-                            format!("Saving {} and quitting...", path.display()),
-                        );
-                    }
-                    Err(e) => self.state.handle_error(e),
-                }
-                self.state.clear_command_line();
-                self.close_active_modal();
-            }
-            ExecutionResult::Failure => {
-                // Error already reported by executor to state/notification
-                // manager Keep command line visible so user can see it
-                should_close_modal = false;
-            }
-            ExecutionResult::Redraw => {
-                // Close command line first before redraw
-                self.state.clear_command_line();
-
-                if let Err(e) = self.force_full_redraw() {
-                    self.state.handle_error(e);
-                }
-            }
-            ExecutionResult::Edit { path, bangs } => {
-                let force = bangs > 0;
-                if let Err(e) = self.open_file(path, force) {
-                    self.state.handle_error(e);
-                } else {
-                    self.state.clear_command_line();
-                    // Force redraw after opening a file
-                    if let Err(e) = self.force_full_redraw() {
-                        self.state.handle_error(e);
-                    }
-                }
-            }
-            ExecutionResult::BufferNext { bangs: _bangs } => {
-                self.save_current_view_state();
-                self.document_manager.switch_next_tab();
-                if let Some(doc_id) = self.document_manager.active_document_id() {
-                    self.split_tree.focused_window_mut().document_id = doc_id;
-                }
-                self.restore_view_state();
-
-                self.sync_state_with_active_document();
-                self.state.clear_command_line();
-                if let Err(e) = self.force_full_redraw() {
-                    self.state.handle_error(e);
-                }
-            }
-            ExecutionResult::BufferPrevious { bangs: _bangs } => {
-                self.save_current_view_state();
-                self.document_manager.switch_prev_tab();
-                if let Some(doc_id) = self.document_manager.active_document_id() {
-                    self.split_tree.focused_window_mut().document_id = doc_id;
-                }
-                self.restore_view_state();
-
-                self.sync_state_with_active_document();
-                self.state.clear_command_line();
-                if let Err(e) = self.force_full_redraw() {
-                    self.state.handle_error(e);
-                }
-            }
-            ExecutionResult::NotificationClear { bangs } => {
-                if bangs > 0 {
-                    self.state.error_manager.notifications_mut().clear_all();
-                } else {
-                    self.state.error_manager.notifications_mut().clear_last();
-                }
-                self.state.clear_command_line();
-                self.close_active_modal();
-            }
-            ExecutionResult::BufferList => {
-                let buffers = self.document_manager.get_buffer_list();
-                let mut message = String::new();
-                for info in buffers {
-                    let dirty = if info.is_dirty { "+" } else { " " };
-                    let read_only = if info.is_read_only { "R" } else { " " };
-                    let current = if info.is_current { "%" } else { " " };
-                    if !message.is_empty() {
-                        message.push('\n');
-                    }
-                    message.push_str(&format!(
-                        "[{}] {}: {}{}{}",
-                        info.index + 1,
-                        info.name,
-                        current,
-                        dirty,
-                        read_only
-                    ));
-                }
-
-                self.state
-                    .notify(crate::notification::NotificationType::Info, message);
-                self.state.clear_command_line();
-                self.close_active_modal();
-            }
-            ExecutionResult::Success => {
-                self.state.clear_command_line();
-                self.close_active_modal();
-            }
-            ExecutionResult::Undo { count } => {
-                let doc = self.document_manager.active_document_mut().unwrap();
-                let count = count.unwrap_or(1) as usize;
-                let mut undone = 0;
-                for _ in 0..count {
-                    if doc.undo() {
-                        undone += 1;
-                    } else {
-                        break;
-                    }
-                }
-                if undone == 0 {
-                    self.state.notify(
-                        crate::notification::NotificationType::Info,
-                        "Already at oldest change".to_string(),
-                    );
-                }
-                self.state.clear_command_line();
-                self.update_search_highlights();
-                if let Some(doc_id) = self.document_manager.active_document_id() {
-                    self.spawn_syntax_parse_job(doc_id);
-                }
-            }
-            ExecutionResult::Redo { count } => {
-                let doc = self.document_manager.active_document_mut().unwrap();
-                let count = count.unwrap_or(1) as usize;
-                let mut redone = 0;
-                for _ in 0..count {
-                    if doc.redo() {
-                        redone += 1;
-                    } else {
-                        break;
-                    }
-                }
-                if redone == 0 {
-                    self.state.notify(
-                        crate::notification::NotificationType::Info,
-                        "Already at newest change".to_string(),
-                    );
-                }
-                self.state.clear_command_line();
-                self.update_search_highlights();
-                if let Some(doc_id) = self.document_manager.active_document_id() {
-                    self.spawn_syntax_parse_job(doc_id);
-                }
-            }
-            ExecutionResult::UndoGoto { seq } => {
-                let doc = self.document_manager.active_document_mut().unwrap();
-                match doc.goto_seq(seq) {
-                    Ok(()) => {
-                        self.state.notify(
-                            crate::notification::NotificationType::Info,
-                            format!("Jumped to edit #{}", seq),
-                        );
-                        if let Some(doc_id) = self.document_manager.active_document_id() {
-                            self.spawn_syntax_parse_job(doc_id);
-                        }
-                    }
-                    Err(e) => {
-                        self.state.handle_error(RiftError::new(
-                            ErrorType::Execution,
-                            "UNDO_ERROR",
-                            e.to_string(),
-                        ));
-                    }
-                }
-                self.state.clear_command_line();
-                self.update_search_highlights();
-            }
-            ExecutionResult::Checkpoint => {
-                // Already handled in executor
-            }
-            ExecutionResult::SpawnJob(job) => {
-                let id = self.job_manager.spawn(job);
-                self.state.notify(
-                    crate::notification::NotificationType::Info,
-                    format!("Job {} spawned", id),
-                );
-            }
-            ExecutionResult::OpenComponent {
-                component,
-                initial_job,
-                initial_message,
-            } => {
-                // Close command line first (if not already handled by logic ensuring modals are exclusive)
-                // Actually close_active_modal() clears mode.
-                self.close_active_modal();
-
-                self.modal = Some(ActiveModal {
-                    component,
-                    layer: crate::layer::LayerPriority::POPUP,
-                });
-                self.set_mode(Mode::Overlay);
-                should_close_modal = false;
-
-                if let Some(job) = initial_job {
-                    self.job_manager.spawn(job);
-                }
-
-                if let Some(msg) = initial_message {
-                    if let Err(e) = self.handle_message(msg) {
-                        self.state.handle_error(e);
-                    }
-                }
-            }
-            ExecutionResult::SplitWindow {
-                direction,
-                subcommand,
-            } => {
-                use crate::command_line::commands::SplitSubcommand;
-                match subcommand {
-                    SplitSubcommand::Current => {
-                        let doc_id = self.active_document_id();
-                        let focused_id = self.split_tree.focused_window_id();
-                        let size = self.term.get_size().unwrap();
-                        let new_id = self.split_tree.split(
-                            direction,
-                            focused_id,
-                            doc_id,
-                            size.rows as usize,
-                            size.cols as usize,
-                        );
-                        self.switch_focus(new_id);
-                    }
-                    SplitSubcommand::File(path) => {
-                        let path_buf = std::path::PathBuf::from(&path);
-                        if !path_buf.exists() {
-                            self.state.handle_error(crate::error::RiftError::new(
-                                crate::error::ErrorType::Io,
-                                "FILE_NOT_FOUND",
-                                format!("No such file: {path}"),
-                            ));
-                            return;
-                        }
-                        let doc_id = if let Some(id) =
-                            self.document_manager.find_open_document_id(&path_buf)
-                        {
-                            id
-                        } else {
-                            match self.document_manager.create_placeholder(&path) {
-                                Ok(id) => {
-                                    let job =
-                                        crate::job_manager::jobs::file_operations::FileLoadJob::new(
-                                            id, path_buf,
-                                        );
-                                    self.job_manager.spawn(job);
-                                    id
-                                }
-                                Err(e) => {
-                                    self.state.handle_error(e);
-                                    return;
-                                }
-                            }
-                        };
-                        let focused_id = self.split_tree.focused_window_id();
-                        let size = self.term.get_size().unwrap();
-                        let new_id = self.split_tree.split(
-                            direction,
-                            focused_id,
-                            doc_id,
-                            size.rows as usize,
-                            size.cols as usize,
-                        );
-                        self.switch_focus(new_id);
-                    }
-                    SplitSubcommand::Navigate(dir) => {
-                        let size = self.term.get_size().unwrap();
-                        let layouts = self
-                            .split_tree
-                            .compute_layout(size.rows as usize, size.cols as usize);
-                        if let Some(target_id) = self.split_tree.navigate(dir, &layouts) {
-                            self.switch_focus(target_id);
-                        }
-                    }
-                    SplitSubcommand::Resize(delta) => {
-                        let size = self.term.get_size().unwrap();
-                        let layouts = self
-                            .split_tree
-                            .compute_layout(size.rows as usize, size.cols as usize);
-                        let delta_ratio = (delta as f64) / (size.cols as f64);
-                        self.split_tree
-                            .resize_focused(direction, delta_ratio, &layouts);
-                    }
-                    SplitSubcommand::Freeze => {
-                        let focused_id = self.split_tree.focused_window_id();
-                        let doc_id = self.split_tree.focused_window().canonical_document_id();
-
-                        let frozen_siblings =
-                            self.split_tree.windows_frozen_for_original_document(doc_id);
-
-                        if !frozen_siblings.is_empty() {
-                            self.do_nofreeze();
-                        } else {
-                            let buf = match self.document_manager.get_document(doc_id) {
-                                Some(d) => d.buffer.clone(),
-                                None => return,
-                            };
-                            let sibling_ids: Vec<_> = self
-                                .split_tree
-                                .windows_for_document(doc_id)
-                                .into_iter()
-                                .filter(|&id| id != focused_id)
-                                .collect();
-                            for id in sibling_ids {
-                                let private_id =
-                                    match self.document_manager.create_private_document(&buf) {
-                                        Ok(id) => id,
-                                        Err(e) => {
-                                            self.state.handle_error(e);
-                                            continue;
-                                        }
-                                    };
-                                if let Some(w) = self.split_tree.get_window_mut(id) {
-                                    w.original_document_id = Some(doc_id);
-                                    w.document_id = private_id;
-                                }
-                            }
-                        }
-                    }
-                    SplitSubcommand::NoFreeze => {
-                        self.do_nofreeze();
-                    }
-                }
-                self.state.clear_command_line();
-                self.close_active_modal();
-                should_close_modal = false;
-            }
-        }
-        if should_close_modal {
-            self.close_active_modal();
-            self.state.clear_command_line();
-        }
-    }
-
     fn spawn_syntax_parse_job(&mut self, doc_id: crate::document::DocumentId) {
         use crate::job_manager::jobs::syntax::SyntaxParseJob;
         use tree_sitter::Parser;
@@ -2609,19 +3026,7 @@ impl<T: TerminalBackend> Editor<T> {
             JobMessage::Progress(_id, _percentage, _msg) => {
                 // Silent progress
             }
-            JobMessage::Finished(id, silent) => {
-                // Propagate to generic component if active
-                if let Some(modal) = self.modal.as_mut() {
-                    let res = modal
-                        .component
-                        .handle_job_message(JobMessage::Finished(id, silent));
-                    if let crate::component::EventResult::Message(msg) = res {
-                        if let Err(e) = self.handle_message(msg) {
-                            self.state.handle_error(e);
-                        }
-                    }
-                }
-
+            JobMessage::Finished(_id, _silent) => {
                 // Cleanup? The manager handles cleanup of joined threads later,
                 // but we might want to trigger it eventually.
                 // For now, manual cleanup or lazily is fine.
@@ -2639,38 +3044,130 @@ impl<T: TerminalBackend> Editor<T> {
                 );
             }
             JobMessage::Custom(id, payload) => {
-                // Check for core types first to avoid moving payload if it's for Editor
-                let is_core = {
-                    let any = payload.as_any();
-                    any.is::<crate::job_manager::jobs::file_operations::FileSaveResult>()
-                        || any.is::<crate::job_manager::jobs::file_operations::FileLoadResult>()
-                        || any.is::<SyntaxParseResult>()
-                        || any.is::<crate::buffer::byte_map::ByteLineMap>()
-                        || any.is::<crate::job_manager::jobs::completion::CompletionPayload>()
+                let any_payload = payload.into_any();
+
+                // Try DirectoryListing — route to matching directory buffer document
+                let any_payload = match any_payload
+                    .downcast::<crate::job_manager::jobs::explorer::DirectoryListing>()
+                {
+                    Ok(listing) => {
+                        let dir_path = listing.path.clone();
+                        let entries: Vec<crate::document::DirEntry> = listing
+                            .entries
+                            .iter()
+                            .map(|e| crate::document::DirEntry {
+                                path: e.path.clone(),
+                                is_dir: e.is_dir,
+                            })
+                            .collect();
+                        let found = self
+                            .document_manager
+                            .iter_documents_mut()
+                            .find(|d| {
+                                matches!(&d.kind,
+                                    crate::document::BufferKind::Directory { path, .. }
+                                    if *path == dir_path)
+                            })
+                            .map(|doc| {
+                                doc.populate_directory_buffer(entries);
+                            });
+                        if found.is_some() {
+                            self.sync_state_with_active_document();
+                            let _ = self.force_full_redraw();
+                            self.update_explorer_preview();
+                        }
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    }
+                    Err(p) => p,
                 };
 
-                // Intercept generic component messages if not core
-                if !is_core {
-                    if let Some(modal) = self.modal.as_mut() {
-                        let res = modal
-                            .component
-                            .handle_job_message(JobMessage::Custom(id, payload));
-                        match res {
-                            crate::component::EventResult::Message(msg) => {
-                                if let Err(e) = self.handle_message(msg) {
-                                    self.state.handle_error(e);
-                                }
-                                return Ok(());
-                            }
-                            crate::component::EventResult::Consumed => return Ok(()),
-                            crate::component::EventResult::Ignored => return Ok(()),
+                // Try UndoTreeRenderResult — populate the matching undotree buffer
+                let any_payload = match any_payload
+                    .downcast::<crate::job_manager::jobs::undotree::UndoTreeRenderResult>()
+                {
+                    Ok(res) => {
+                        if let Some(ut_doc) =
+                            self.document_manager.get_document_mut(res.ut_doc_id)
+                        {
+                            ut_doc.populate_undotree_buffer(
+                                res.text,
+                                res.sequences,
+                                res.highlights,
+                            );
                         }
+                        self.sync_state_with_active_document();
+                        let _ = self.force_full_redraw();
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
                     }
-                }
+                    Err(p) => p,
+                };
 
-                // If we are here, it MUST be a core type (or we have no modal).
-                // If we have no modal and it's !is_core, we proceed to try downcast, which will fail nicely.
-                let any_payload = payload.into_any();
+                // Try ExplorerPreviewResult — populate the preview pane
+                let any_payload = match any_payload
+                    .downcast::<crate::job_manager::jobs::explorer_preview::ExplorerPreviewResult>()
+                {
+                    Ok(res) => {
+                        let preview_doc_id = res.right_doc_id;
+                        let preview_path = res.path.clone();
+                        let is_file_preview = res.dir_entries.is_none();
+                        if let Some(doc) = self.document_manager.get_document_mut(preview_doc_id) {
+                            let _ = doc.buffer.set_cursor(0);
+                            let len = doc.buffer.len();
+                            for _ in 0..len {
+                                doc.buffer.delete_forward();
+                            }
+                            doc.syntax = None;
+                            doc.custom_highlights.clear();
+
+                            if let Some(entries) = res.dir_entries {
+                                doc.kind = crate::document::BufferKind::Directory {
+                                    path: res.path.clone(),
+                                    entries: entries.clone(),
+                                };
+                                doc.populate_directory_buffer(entries);
+                            } else if let Some(text) = res.file_text {
+                                doc.kind = crate::document::BufferKind::File;
+                                doc.set_path(&preview_path);
+                                let _ = doc.buffer.insert_str(&text);
+                                let _ = doc.buffer.set_cursor(0);
+                            }
+                        }
+
+                        if is_file_preview {
+                            if let Ok(loaded) = self.language_loader.load_language_for_file(&preview_path) {
+                                let highlights = self
+                                    .language_loader
+                                    .load_query(&loaded.name, "highlights")
+                                    .ok()
+                                    .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+                                    .map(Arc::new);
+                                if let Ok(syntax) = crate::syntax::Syntax::new(loaded, highlights) {
+                                    if let Some(doc) = self.document_manager.get_document_mut(preview_doc_id) {
+                                        doc.set_syntax(syntax);
+                                        // Synchronously parse so highlights are ready for the
+                                        // immediately following render (no async timing gap).
+                                        let source = doc.buffer.to_logical_bytes();
+                                        if let Some(s) = &mut doc.syntax {
+                                            s.incremental_parse(&source);
+                                        }
+                                    }
+                                    self.spawn_syntax_parse_job(preview_doc_id);
+                                }
+                            }
+                        }
+
+                        self.sync_state_with_active_document();
+                        let _ = self.update_and_render();
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    }
+                    Err(p) => p,
+                };
 
                 // Try FileSaveResult
                 let any_payload = match any_payload
@@ -2775,10 +3272,14 @@ impl<T: TerminalBackend> Editor<T> {
                         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
                             if let Some(syntax) = &mut doc.syntax {
                                 syntax.update_from_result(*result);
-                                // Use render(false) instead of force_full_redraw to reduce flickering.
-                                // The RenderSystem will use highlights_hash to detect changes.
-                                self.render(false)?;
                             }
+                        }
+                        // In multi-window mode we must re-render all windows so that
+                        // secondary panes (e.g. explorer preview) get their highlights updated.
+                        if self.split_tree.window_count() > 1 {
+                            self.update_and_render()?;
+                        } else {
+                            self.render(false)?;
                         }
                     }
                     Err(any_payload) => {
@@ -2882,56 +3383,62 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Execute a command line string
     fn execute_command_line(&mut self, cmd: String) {
+        use crate::command_line::commands::executor::ExecutionResult;
         let parsed_command = self.command_parser.parse(&cmd);
-        let execution_result = CommandExecutor::execute(
+        let active_id = self.active_document_id();
+        let result = CommandExecutor::execute(
             parsed_command,
             &mut self.state,
             self.document_manager
-                .active_document_mut()
+                .get_document_mut(active_id)
                 .expect("active document missing"),
             &self.settings_registry,
             &self.document_settings_registry,
         );
-
-        self.handle_execution_result(execution_result);
-    }
-
-    /// Handle application messages from components
-    fn handle_message(&mut self, msg: crate::message::AppMessage) -> Result<(), RiftError> {
-        use crate::message::AppMessage;
-        match msg {
-            AppMessage::FileExplorer(m) => self.handle_file_explorer_message(m),
-            AppMessage::CommandLine(m) => self.handle_command_line_message(m),
-            AppMessage::UndoTree(m) => self.handle_undo_tree_message(m),
-            AppMessage::Generic(m) => self.handle_generic_message(m),
-        }
-    }
-
-    fn handle_file_explorer_message(
-        &mut self,
-        msg: crate::message::FileExplorerMessage,
-    ) -> Result<(), RiftError> {
-        use crate::message::FileExplorerMessage;
-        match msg {
-            FileExplorerMessage::SpawnJob(job) => {
-                self.job_manager.spawn(job);
-            }
-            FileExplorerMessage::OpenFile(path) => {
-                if let Err(e) = self.open_file(Some(path.to_string_lossy().to_string()), false) {
-                    return Err(e);
+        match result {
+            ExecutionResult::Failure => return, // keep command line visible for editing
+            ExecutionResult::OpenTerminal { cmd, .. } => {
+                if let Err(e) = self.open_terminal(cmd) {
+                    self.state.handle_error(e);
                 } else {
-                    self.close_active_modal();
-                    let _ = self.force_full_redraw();
+                    self.state.clear_command_line();
+                    self.set_mode(Mode::Insert);
+                }
+                return;
+            }
+            ExecutionResult::Success => {}
+            ExecutionResult::Quit { bangs } => { self.do_quit(bangs > 0); }
+            ExecutionResult::Write => { self.do_save(); }
+            ExecutionResult::WriteAndQuit => { self.do_save_and_quit(); }
+            ExecutionResult::Redraw => {
+                self.state.clear_command_line();
+                if let Err(e) = self.force_full_redraw() { self.state.handle_error(e); }
+            }
+            ExecutionResult::Edit { path, bangs } => {
+                if let Err(e) = self.open_file(path, bangs > 0) {
+                    self.state.handle_error(e);
+                } else {
+                    self.state.clear_command_line();
+                    if let Err(e) = self.force_full_redraw() { self.state.handle_error(e); }
                 }
             }
-            FileExplorerMessage::Notify(kind, msg) => {
-                self.state.notify(kind, msg);
+            ExecutionResult::BufferNext { .. } => { self.do_buffer_next(); }
+            ExecutionResult::BufferPrevious { .. } => { self.do_buffer_prev(); }
+            ExecutionResult::BufferList => { self.do_show_buffer_list(); }
+            ExecutionResult::NotificationClear { bangs } => { self.do_notification_clear(bangs > 0); }
+            ExecutionResult::Undo { count } => { self.do_undo(count); }
+            ExecutionResult::Redo { count } => { self.do_redo(count); }
+            ExecutionResult::UndoGoto { seq } => { self.do_undo_goto(seq); }
+            ExecutionResult::Checkpoint => {}
+            ExecutionResult::SplitWindow { direction, subcommand } => {
+                self.do_split_window(direction, subcommand);
             }
-            FileExplorerMessage::Close => {
-                self.close_active_modal();
-            }
+            ExecutionResult::OpenDirectory { path } => { self.open_explorer(path); }
+            ExecutionResult::OpenUndoTree => { self.open_undotree_split(); }
         }
-        Ok(())
+        if self.current_mode == Mode::Command {
+            self.set_mode(Mode::Normal);
+        }
     }
 
     fn handle_command_line_message(
@@ -2943,23 +3450,19 @@ impl<T: TerminalBackend> Editor<T> {
             CommandLineMessage::ExecuteCommand(cmd) => {
                 self.execute_command_line(cmd);
                 self.state.clear_command_line();
-                self.close_active_modal();
             }
             CommandLineMessage::ExecuteSearch(query) => {
                 if !query.is_empty() {
                     if self.perform_search(&query, SearchDirection::Forward, false) {
                         self.state.clear_command_line();
-                        self.close_active_modal();
                     }
                 } else {
                     self.state.clear_command_line();
-                    self.close_active_modal();
                 }
             }
             CommandLineMessage::CancelMode => {
                 self.state.completion_session = None;
                 self.state.clear_command_line();
-                self.close_active_modal();
             }
             CommandLineMessage::RequestCompletion(input) => {
                 use crate::job_manager::jobs::completion::CompletionJob;
@@ -2975,136 +3478,6 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    fn handle_undo_tree_message(
-        &mut self,
-        msg: crate::message::UndoTreeMessage,
-    ) -> Result<(), RiftError> {
-        use crate::message::UndoTreeMessage;
-        match msg {
-            UndoTreeMessage::Goto(seq) => {
-                let doc_id = self.active_document_id();
-                {
-                    let doc = self.active_document();
-                    doc.goto_seq(seq as u64).map_err(|e| {
-                        RiftError::new(ErrorType::Execution, "UNDO_ERROR", e.to_string())
-                    })?;
-                }
-                self.spawn_syntax_parse_job(doc_id); // Replaces trigger_syntax_highlighting logic
-                self.close_active_modal();
-            }
-            UndoTreeMessage::Preview(seq) => {
-                let (preview_text, changed_line, highlights, query) = {
-                    let doc = self
-                        .document_manager
-                        .active_document_mut()
-                        .expect("No active document");
-                    let changed_line = doc.get_changed_line_for_seq(seq as u64);
-                    match doc.preview_at_seq(seq as u64) {
-                        Ok(text) => {
-                            let source_bytes = text.as_bytes();
-                            let (hl, q) = if let Some(syntax) = &doc.syntax {
-                                let hl = syntax.parse_range(source_bytes, 0..source_bytes.len());
-                                (hl, syntax.highlights_query.clone())
-                            } else {
-                                (Vec::new(), None)
-                            };
-                            (Some(text), changed_line, hl, q)
-                        }
-                        Err(_) => (None, changed_line, Vec::new(), None),
-                    }
-                };
-
-                if let Some(preview_text) = preview_text {
-                    use crate::layer::Cell;
-                    let syntax_colors = self.state.settings.syntax_colors.as_ref();
-                    let capture_names = query.as_ref().map(|q| q.capture_names());
-
-                    let mut content = Vec::new();
-                    let mut byte_offset = 0;
-                    let mut hl_idx = 0;
-
-                    for line in preview_text.lines() {
-                        let mut cells = Vec::with_capacity(line.len());
-                        for ch in line.chars() {
-                            let ch_len = ch.len_utf8();
-
-                            while hl_idx < highlights.len()
-                                && highlights[hl_idx].0.end <= byte_offset
-                            {
-                                hl_idx += 1;
-                            }
-
-                            let mut cell = Cell::from_char(ch);
-                            if let Some(colors) = syntax_colors {
-                                if let Some(names) = capture_names {
-                                    for (range, capture_idx) in highlights.iter().skip(hl_idx) {
-                                        if range.start > byte_offset {
-                                            break;
-                                        }
-                                        if range.end > byte_offset {
-                                            if let Some(name) = names.get(*capture_idx as usize) {
-                                                if let Some(color) = colors.get_color(name) {
-                                                    cell = cell.with_fg(color);
-                                                }
-                                            }
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-
-                            cells.push(cell);
-                            byte_offset += ch_len;
-                        }
-                        content.push(cells);
-                        byte_offset += 1; // newline
-                    }
-
-                    // Calculate scroll position to show the changed line with context
-                    let scroll_pos = changed_line.map(|line| line.saturating_sub(5)).unwrap_or(0);
-
-                    if let Some(modal) = self.modal.as_mut() {
-                        if let Some(component) = modal
-                            .component
-                            .as_any_mut()
-                            .downcast_mut::<crate::undotree_view::component::UndoTreeComponent>(
-                        ) {
-                            component.view.set_right_content(content);
-                            component.view.set_right_scroll(scroll_pos);
-                        } else if let Some(view) = modal
-                            .component
-                            .as_any_mut()
-                            .downcast_mut::<crate::select_view::SelectView>()
-                        {
-                            view.set_right_content(content);
-                            view.set_right_scroll(scroll_pos);
-                        }
-                    }
-                }
-                self.force_full_redraw()?;
-            }
-            UndoTreeMessage::Cancel => {
-                self.close_active_modal();
-            }
-        }
-        Ok(())
-    }
-
-    fn handle_generic_message(
-        &mut self,
-        msg: crate::message::GenericMessage,
-    ) -> Result<(), RiftError> {
-        use crate::message::GenericMessage;
-        match msg {
-            GenericMessage::SpawnJob(job) => {
-                self.job_manager.spawn(job);
-            }
-            GenericMessage::Notify(kind, msg) => {
-                self.state.notify(kind, msg);
-            }
-        }
-        Ok(())
-    }
 }
 
 impl<T: TerminalBackend> Drop for Editor<T> {

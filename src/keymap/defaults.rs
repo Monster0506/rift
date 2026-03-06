@@ -1,180 +1,55 @@
-use crate::action::{Action, EditorAction, FileExplorerAction, Motion, UndoTreeAction};
+use crate::action::{Action, EditorAction, Motion};
 use crate::command::Command;
 use crate::key::Key;
 use crate::keymap::{KeyContext, KeyMap};
 
 /// Register default keybindings
 pub fn register_defaults(keymap: &mut KeyMap) {
-    // File Explorer Defaults
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Char('q'),
-        Action::Explorer(FileExplorerAction::Close),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Escape,
-        Action::Explorer(FileExplorerAction::Close),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Char('j'),
-        Action::Explorer(FileExplorerAction::Down),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::ArrowDown,
-        Action::Explorer(FileExplorerAction::Down),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Char('k'),
-        Action::Explorer(FileExplorerAction::Up),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::ArrowUp,
-        Action::Explorer(FileExplorerAction::Up),
-    );
+    // FileExplorer (Directory buffer) Defaults
+    // Normal motions fall through to KeyContext::Normal via the fallback chain.
+    // Only directory-specific bindings are registered here.
     keymap.register(
         KeyContext::FileExplorer,
         Key::Enter,
-        Action::Explorer(FileExplorerAction::Select),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Backspace,
-        Action::Explorer(FileExplorerAction::Parent),
+        Action::Buffer("explorer:select".to_string()),
     );
     keymap.register(
         KeyContext::FileExplorer,
         Key::Char('-'),
-        Action::Explorer(FileExplorerAction::Parent),
+        Action::Buffer("explorer:parent".to_string()),
     );
     keymap.register(
         KeyContext::FileExplorer,
-        Key::Char(' '),
-        Action::Explorer(FileExplorerAction::ToggleSelection),
+        Key::Backspace,
+        Action::Buffer("explorer:parent".to_string()),
     );
     keymap.register(
         KeyContext::FileExplorer,
-        Key::Char('a'),
-        Action::Explorer(FileExplorerAction::SelectAll),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Char('u'),
-        Action::Explorer(FileExplorerAction::ClearSelection),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Char('R'),
-        Action::Explorer(FileExplorerAction::Refresh),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Char('.'),
-        Action::Explorer(FileExplorerAction::ToggleHidden),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Char('l'),
-        Action::Explorer(FileExplorerAction::ToggleMetadata),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Char('n'),
-        Action::Explorer(FileExplorerAction::NewFile),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Char('N'),
-        Action::Explorer(FileExplorerAction::NewDir),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Char('d'),
-        Action::Explorer(FileExplorerAction::Delete),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Char('r'),
-        Action::Explorer(FileExplorerAction::Rename),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Char('c'),
-        Action::Explorer(FileExplorerAction::Copy),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::Home,
-        Action::Explorer(FileExplorerAction::Top),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::End,
-        Action::Explorer(FileExplorerAction::Bottom),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::ArrowLeft,
-        Action::Explorer(FileExplorerAction::Parent),
-    );
-    keymap.register(
-        KeyContext::FileExplorer,
-        Key::ArrowRight,
-        Action::Explorer(FileExplorerAction::Select),
+        Key::Escape,
+        Action::Buffer("explorer:close".to_string()),
     );
 
-    // Undotree Defaults
-    keymap.register(
-        KeyContext::UndoTree,
-        Key::Char('j'),
-        Action::UndoTree(UndoTreeAction::Down),
-    );
-    keymap.register(
-        KeyContext::UndoTree,
-        Key::ArrowDown,
-        Action::UndoTree(UndoTreeAction::Down),
-    );
-    keymap.register(
-        KeyContext::UndoTree,
-        Key::Char('k'),
-        Action::UndoTree(UndoTreeAction::Up),
-    );
-    keymap.register(
-        KeyContext::UndoTree,
-        Key::ArrowUp,
-        Action::UndoTree(UndoTreeAction::Up),
-    );
+    // UndoTree buffer Defaults
+    // Normal motions fall through to KeyContext::Normal via the fallback chain.
+    // Only <CR> is overridden to jump to the node under the cursor.
     keymap.register(
         KeyContext::UndoTree,
         Key::Enter,
-        Action::UndoTree(UndoTreeAction::Select),
+        Action::Buffer("undotree:select".to_string()),
     );
     keymap.register(
         KeyContext::UndoTree,
         Key::Escape,
-        Action::UndoTree(UndoTreeAction::Close),
-    );
-    keymap.register(
-        KeyContext::UndoTree,
-        Key::Char('q'),
-        Action::UndoTree(UndoTreeAction::Close),
-    );
-    keymap.register(
-        KeyContext::UndoTree,
-        Key::Home,
-        Action::UndoTree(UndoTreeAction::Top),
-    );
-    keymap.register(
-        KeyContext::UndoTree,
-        Key::End,
-        Action::UndoTree(UndoTreeAction::Bottom),
+        Action::Buffer("undotree:close".to_string()),
     );
 
     // Normal Mode Defaults
+    // '-' opens the file-explorer buffer for the current file's parent directory
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('-'),
+        Action::Editor(EditorAction::OpenExplorer),
+    );
     keymap.register(
         KeyContext::Normal,
         Key::Char('h'),
@@ -198,7 +73,7 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     keymap.register(
         KeyContext::Normal,
         Key::Char('q'),
-        Action::Editor(EditorAction::Quit),
+        Action::Editor(EditorAction::QuitForce),
     );
     keymap.register(
         KeyContext::Normal,
@@ -664,11 +539,6 @@ pub fn register_defaults(keymap: &mut KeyMap) {
             Action::Editor(EditorAction::RunCommand(cmd.to_string())),
         );
     }
-    keymap.register_sequence(
-        KeyContext::Normal,
-        vec![ww, Key::Char('f')],
-        Action::Editor(EditorAction::SplitToggleFreeze),
-    );
     keymap.register_sequence(
         KeyContext::Normal,
         vec![Key::Char('g'), Key::Char('g')],

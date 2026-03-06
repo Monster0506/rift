@@ -13,14 +13,17 @@ pub struct DocumentOptions {
     pub tab_width: usize,
     /// Whether to expand tabs to spaces when inserting
     pub expand_tabs: bool,
+    /// Whether to show line numbers for this document
+    pub show_line_numbers: bool,
 }
 
 impl Default for DocumentOptions {
     fn default() -> Self {
         DocumentOptions {
             line_ending: LineEnding::LF,
-            tab_width: 4,      // Default tab width
-            expand_tabs: true, // Default to expanding tabs to spaces
+            tab_width: 4,
+            expand_tabs: true,
+            show_line_numbers: true,
         }
     }
 }
@@ -57,6 +60,18 @@ fn set_expand_tabs(options: &mut DocumentOptions, value: SettingValue) -> Result
     }
 }
 
+fn set_number(options: &mut DocumentOptions, value: SettingValue) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Bool(b) => {
+            options.show_line_numbers = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
+    }
+}
+
 fn set_line_ending(options: &mut DocumentOptions, value: SettingValue) -> Result<(), SettingError> {
     match value {
         SettingValue::Enum(s) => match s.to_lowercase().as_str() {
@@ -82,6 +97,15 @@ fn set_line_ending(options: &mut DocumentOptions, value: SettingValue) -> Result
 /// Document-specific settings
 /// LOCAL_SETTINGS
 const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
+    SettingDescriptor {
+        name: "number",
+        aliases: &["nu"],
+        description: "Show line numbers",
+        ty: SettingType::Boolean,
+        set: set_number,
+        get: None,
+        needs_full_redraw: true,
+    },
     SettingDescriptor {
         name: "line_ending",
         aliases: &["ff", "fileformat"], // mimicking vim's fileformat

@@ -1,7 +1,7 @@
 //! Tests for state management
 
 use crate::key::Key;
-use crate::state::{OverlayContent, State, UserSettings};
+use crate::state::{State, UserSettings};
 
 #[test]
 fn test_state_new() {
@@ -339,55 +339,3 @@ fn test_gutter_thresholds() {
     assert_eq!(state.next_gutter_threshold, 10);
 }
 
-#[test]
-fn test_overlay_navigation_skip_connectors() {
-    use crate::layer::Cell;
-    let mut content = OverlayContent {
-        left: vec![
-            vec![Cell::from_char('a')],
-            vec![Cell::from_char('b')],
-            vec![Cell::from_char('c')],
-            vec![Cell::from_char('d')],
-        ],
-        right: Vec::new(),
-        left_width_percent: 50,
-        cursor: 0,
-        // 0: selectable, 1: skip, 2: skip, 3: selectable
-        selectable: vec![true, false, false, true],
-        sequences: vec![1, u64::MAX, u64::MAX, 2],
-        right_scroll: 0,
-    };
-
-    // Test Down
-    content.move_cursor_down();
-    assert_eq!(content.cursor, 3, "Should skip indices 1 and 2");
-
-    content.move_cursor_down();
-    assert_eq!(content.cursor, 3, "Should stay at bottom");
-
-    // Test Up
-    content.move_cursor_up();
-    assert_eq!(content.cursor, 0, "Should skip indices 2 and 1");
-
-    content.move_cursor_up();
-    assert_eq!(content.cursor, 0, "Should stay at top");
-}
-
-#[test]
-fn test_overlay_navigation_empty() {
-    let mut content = OverlayContent {
-        left: Vec::new(),
-        right: Vec::new(),
-        left_width_percent: 50,
-        cursor: 0,
-        selectable: Vec::new(),
-        sequences: Vec::new(),
-        right_scroll: 0,
-    };
-
-    content.move_cursor_down();
-    assert_eq!(content.cursor, 0);
-
-    content.move_cursor_up();
-    assert_eq!(content.cursor, 0);
-}

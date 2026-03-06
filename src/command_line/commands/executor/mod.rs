@@ -54,14 +54,6 @@ pub enum ExecutionResult {
     },
     /// Checkpoint created successfully
     Checkpoint,
-    /// Open a generic component (overlay)
-    OpenComponent {
-        component: Box<dyn crate::component::Component>,
-        initial_job: Option<Box<dyn crate::job_manager::Job>>,
-        initial_message: Option<crate::message::AppMessage>,
-    },
-    /// Spawn a background job
-    SpawnJob(Box<dyn crate::job_manager::Job>),
     /// Open a terminal buffer
     OpenTerminal {
         cmd: Option<String>,
@@ -71,6 +63,12 @@ pub enum ExecutionResult {
         direction: crate::split::tree::SplitDirection,
         subcommand: crate::command_line::commands::SplitSubcommand,
     },
+    /// Open a directory as a file-explorer buffer
+    OpenDirectory {
+        path: std::path::PathBuf,
+    },
+    /// Open an undo-tree buffer for the active document
+    OpenUndoTree,
 }
 
 impl PartialEq for ExecutionResult {
@@ -102,8 +100,8 @@ impl PartialEq for ExecutionResult {
             (Self::Redo { count: c1 }, Self::Redo { count: c2 }) => c1 == c2,
             (Self::UndoGoto { seq: s1 }, Self::UndoGoto { seq: s2 }) => s1 == s2,
             (Self::Checkpoint, Self::Checkpoint) => true,
-            (Self::OpenComponent { .. }, Self::OpenComponent { .. }) => true, // Ignore content for equality check
-            (Self::SpawnJob(_), Self::SpawnJob(_)) => true, // Ignore job content for equality
+            (Self::OpenUndoTree, Self::OpenUndoTree) => true,
+            (Self::OpenDirectory { path: p1 }, Self::OpenDirectory { path: p2 }) => p1 == p2,
             (
                 Self::OpenTerminal { cmd: c1, bangs: b1 },
                 Self::OpenTerminal { cmd: c2, bangs: b2 },
@@ -152,8 +150,6 @@ impl std::fmt::Debug for ExecutionResult {
             Self::Redo { count } => write!(f, "Redo({:?})", count),
             Self::UndoGoto { seq } => write!(f, "UndoGoto({})", seq),
             Self::Checkpoint => write!(f, "Checkpoint"),
-            Self::OpenComponent { .. } => write!(f, "OpenComponent(...)"),
-            Self::SpawnJob(_) => write!(f, "SpawnJob(...)"),
             Self::OpenTerminal { cmd, bangs } => f
                 .debug_struct("OpenTerminal")
                 .field("cmd", cmd)
@@ -167,6 +163,11 @@ impl std::fmt::Debug for ExecutionResult {
                 .field("direction", direction)
                 .field("subcommand", subcommand)
                 .finish(),
+            Self::OpenDirectory { path } => f
+                .debug_struct("OpenDirectory")
+                .field("path", path)
+                .finish(),
+            Self::OpenUndoTree => write!(f, "OpenUndoTree"),
         }
     }
 }
@@ -428,18 +429,7 @@ impl CommandExecutor {
                 );
                 ExecutionResult::Checkpoint
             }
-            ParsedCommand::UndoTree { bangs: _ } => {
-                let (component, initial_message) =
-                    crate::undotree_view::component::create_undo_tree_component(
-                        &document.history,
-                        &state.settings,
-                    );
-                ExecutionResult::OpenComponent {
-                    component,
-                    initial_job: None,
-                    initial_message,
-                }
-            }
+            ParsedCommand::UndoTree { bangs: _ } => ExecutionResult::OpenUndoTree,
             ParsedCommand::Split {
                 subcommand,
                 bangs: _,
@@ -476,16 +466,7 @@ impl CommandExecutor {
                     std::env::current_dir().unwrap_or_default()
                 };
 
-                let mut explorer = crate::file_explorer::FileExplorer::new(initial_path);
-                explorer = explorer.with_colors(state.settings.editor_fg, state.settings.editor_bg);
-
-                let job = explorer.create_list_job();
-
-                ExecutionResult::OpenComponent {
-                    component: Box::new(explorer),
-                    initial_job: Some(job),
-                    initial_message: None,
-                }
+                ExecutionResult::OpenDirectory { path: initial_path }
             }
         }
     }

@@ -858,11 +858,9 @@ mod tests {
     #[test]
     fn test_complete_split_subcommands() {
         let result = complete_subcommand("split", "");
-        assert!(result.candidates.len() >= 7);
         let names: Vec<&str> = result.candidates.iter().map(|c| c.text.as_str()).collect();
         assert!(names.contains(&"left"));
         assert!(names.contains(&"right"));
-        assert!(names.contains(&"freeze"));
         assert!(names.contains(&"resize"));
     }
 
@@ -889,19 +887,10 @@ mod tests {
     }
 
     #[test]
-    fn test_complete_split_subcommand_prefix() {
-        let result = complete_subcommand("split", "f");
-        assert!(result.candidates.iter().any(|c| c.text == "freeze"));
-        assert!(!result.candidates.iter().any(|c| c.text == "left"));
-    }
-
-    #[test]
     fn test_complete_vsplit_subcommands() {
         let result = complete_subcommand("vsplit", "");
-        assert!(result.candidates.len() >= 7);
         let names: Vec<&str> = result.candidates.iter().map(|c| c.text.as_str()).collect();
         assert!(names.contains(&"down"));
-        assert!(names.contains(&"nofreeze"));
     }
 
     #[test]
@@ -1074,7 +1063,8 @@ mod tests {
         let doc_reg = create_document_settings_registry();
         let result = complete_setting_name("", &doc_reg);
         let texts: Vec<&str> = result.candidates.iter().map(|c| c.text.as_str()).collect();
-        assert!(!texts.contains(&"number"), "global 'number' must not appear");
+        // "number" is a valid document-local setting (setlocal number/nonumber)
+        assert!(texts.contains(&"number"), "local 'number' must appear");
         assert!(
             !texts.contains(&"appearance.background"),
             "global color setting must not appear"
