@@ -542,6 +542,14 @@ fn parse_undotree(
     ParsedCommand::UndoTree { bangs }
 }
 
+fn parse_messages(
+    _registry: &SettingsRegistry<UserSettings>,
+    _args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    ParsedCommand::Messages { bangs }
+}
+
 fn parse_terminal(
     _registry: &SettingsRegistry<UserSettings>,
     args: &[&str],
@@ -1052,5 +1060,14 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         subcommands: VSPLIT_SUB_DESC,
         completion: F,
         subcommand_prefix: ":",
+    },
+    CommandDescriptor {
+        name: "messages",
+        aliases: &["mes"],
+        description: "Open notification/message log as a buffer",
+        factory: Some(parse_messages),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
     },
 ];

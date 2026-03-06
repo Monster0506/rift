@@ -677,9 +677,25 @@ impl<T: TerminalBackend> Editor<T> {
                     let context = if let Some(modal) = &self.modal {
                         modal.component.get_context()
                     } else {
+                        let active_kind = self.document_manager.active_document()
+                            .map(|d| std::mem::discriminant(&d.kind));
+                        let is_directory = self.document_manager.active_document()
+                            .map(|d| d.is_directory())
+                            .unwrap_or(false);
+                        let is_undotree = self.document_manager.active_document()
+                            .map(|d| d.is_undotree())
+                            .unwrap_or(false);
+                        let _ = active_kind; // used for readability above
                         match self.current_mode {
-                            Mode::Normal => KeyContext::Normal,
-                            Mode::OperatorPending => KeyContext::Normal,
+                            Mode::Normal | Mode::OperatorPending => {
+                                if is_directory {
+                                    KeyContext::FileExplorerBuffer
+                                } else if is_undotree {
+                                    KeyContext::UndoTree
+                                } else {
+                                    KeyContext::Normal
+                                }
+                            }
                             Mode::Insert => KeyContext::Insert,
                             Mode::Command => KeyContext::Command,
                             Mode::Search => KeyContext::Search,
@@ -913,7 +929,22 @@ impl<T: TerminalBackend> Editor<T> {
 
         let editor_action = match action {
             Action::Editor(act) => act,
-            Action::Explorer(_) | Action::UndoTree(_) => return false, // Editor doesn't handle these directly
+            Action::UndoTree(ua) => {
+                // UndoTree actions in the buffer context route back through EditorAction
+                use crate::action::UndoTreeAction;
+                return match ua {
+                    UndoTreeAction::Select => self.handle_action(&Action::Editor(EditorAction::UndoTreeSelect)),
+                    UndoTreeAction::Down => self.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Down))),
+                    UndoTreeAction::Up => self.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Up))),
+                    UndoTreeAction::Top => self.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::StartOfFile))),
+                    UndoTreeAction::Bottom => self.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::EndOfFile))),
+                    UndoTreeAction::Close => {
+                        self.handle_execution_result(crate::command_line::commands::ExecutionResult::Quit { bangs: 0 });
+                        true
+                    }
+                };
+            }
+            Action::Explorer(_) => return false, // Explorer modal actions not handled here
             Action::Noop => return false,
         };
 
@@ -1065,51 +1096,54 @@ impl<T: TerminalBackend> Editor<T> {
                 let path = self
                     .document_manager
                     .active_document()
-                    .and_then(|d| d.path())
-                    .map(|p| {
-                        if p.is_dir() {
-                            p.to_path_buf()
-                        } else {
-                            p.parent().unwrap_or(p).to_path_buf()
+                    .and_then(|d| {
+                        // If we're already in a directory buffer, use its path
+                        if let crate::document::BufferKind::Directory { path, .. } = &d.kind {
+                            return Some(path.clone());
                         }
+                        d.path().map(|p| {
+                            if p.is_dir() {
+                                p.to_path_buf()
+                            } else {
+                                p.parent().unwrap_or(p).to_path_buf()
+                            }
+                        })
                     })
                     .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
-                let mut explorer = crate::file_explorer::FileExplorer::new(path);
-                explorer = explorer
-                    .with_colors(self.state.settings.editor_fg, self.state.settings.editor_bg);
-                let job = explorer.create_list_job();
-
                 self.handle_execution_result(
-                    crate::command_line::commands::ExecutionResult::OpenComponent {
-                        component: Box::new(explorer),
-                        initial_job: Some(job),
-                        initial_message: None,
-                    },
+                    crate::command_line::commands::ExecutionResult::OpenDirectory { path },
                 );
                 true
             }
             EditorAction::OpenUndoTree => {
-                if let Some(doc) = self.document_manager.active_document() {
-                    let (component, initial_message) =
-                        crate::undotree_view::component::create_undo_tree_component(
-                            &doc.history,
-                            &self.state.settings,
-                        );
-                    self.handle_execution_result(
-                        crate::command_line::commands::ExecutionResult::OpenComponent {
-                            component,
-                            initial_job: None,
-                            initial_message,
-                        },
-                    );
-                }
+                self.handle_execution_result(
+                    crate::command_line::commands::ExecutionResult::OpenUndoTree,
+                );
                 true
             }
             EditorAction::ShowBufferList => {
                 self.handle_execution_result(
                     crate::command_line::commands::ExecutionResult::BufferList,
                 );
+                true
+            }
+            EditorAction::OpenMessages => {
+                self.handle_execution_result(
+                    crate::command_line::commands::ExecutionResult::OpenMessages,
+                );
+                true
+            }
+            EditorAction::ExplorerSelect => {
+                self.handle_explorer_select();
+                true
+            }
+            EditorAction::ExplorerParent => {
+                self.handle_explorer_parent();
+                true
+            }
+            EditorAction::UndoTreeSelect => {
+                self.handle_undotree_select();
                 true
             }
             EditorAction::ClearHighlights => {
@@ -1959,6 +1993,197 @@ impl<T: TerminalBackend> Editor<T> {
         self.state.command_line = new_content;
     }
 
+    // =========================================================================
+    // File Explorer Buffer helpers
+    // =========================================================================
+
+    /// Reload a directory buffer with a new path (used by ExplorerSelect / ExplorerParent).
+    fn reload_directory_buffer(&mut self, doc_id: crate::document::DocumentId, new_path: std::path::PathBuf) {
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+            doc.kind = crate::document::BufferKind::Directory {
+                path: new_path.clone(),
+                entries: vec![],
+            };
+            // Clear buffer so the user sees it's loading
+            let _ = doc.buffer.set_cursor(0);
+            let len = doc.buffer.len();
+            for _ in 0..len { doc.buffer.delete_forward(); }
+            let _ = doc.buffer.insert_str("Loading...");
+        }
+        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(new_path, false);
+        self.job_manager.spawn(job);
+    }
+
+    /// Handle <CR> in a directory (file explorer) buffer.
+    fn handle_explorer_select(&mut self) {
+        use crate::document::BufferKind;
+        use crate::buffer::api::BufferView;
+
+        let (doc_id, line_text, dir_path) = {
+            let doc = match self.document_manager.active_document() {
+                Some(d) if d.is_directory() => d,
+                _ => return,
+            };
+            let cursor = doc.buffer.cursor();
+            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let line_bytes = doc.buffer.get_line_bytes(line_num);
+            let line_text = String::from_utf8_lossy(&line_bytes).trim_end().to_string();
+            let dir_path = match &doc.kind {
+                BufferKind::Directory { path, .. } => path.clone(),
+                _ => return,
+            };
+            (doc.id, line_text, dir_path)
+        };
+
+        if line_text == "../" {
+            // Navigate to parent
+            if let Some(parent) = dir_path.parent().map(|p| p.to_path_buf()) {
+                self.reload_directory_buffer(doc_id, parent);
+            }
+            return;
+        }
+
+        // Parse the line: `/ID name` or plain `name`
+        let entry_name = if let Some(rest) = line_text.strip_prefix('/') {
+            if let Some(sp) = rest.find(' ') {
+                rest[sp + 1..].trim_end_matches('/').to_string()
+            } else {
+                line_text.trim_end_matches('/').to_string()
+            }
+        } else {
+            line_text.trim_end_matches('/').to_string()
+        };
+
+        if entry_name.is_empty() { return; }
+
+        let target_path = dir_path.join(&entry_name);
+
+        if target_path.is_dir() {
+            self.reload_directory_buffer(doc_id, target_path);
+        } else {
+            // Open the file — replace directory buffer in current window
+            let path_str = target_path.display().to_string();
+            self.handle_execution_result(
+                crate::command_line::commands::ExecutionResult::Edit {
+                    path: Some(path_str),
+                    bangs: 0,
+                },
+            );
+        }
+    }
+
+    /// Handle `-` in a directory buffer — navigate to parent.
+    fn handle_explorer_parent(&mut self) {
+        use crate::document::BufferKind;
+        let (doc_id, parent) = {
+            let doc = match self.document_manager.active_document() {
+                Some(d) if d.is_directory() => d,
+                _ => return,
+            };
+            let parent = match &doc.kind {
+                BufferKind::Directory { path, .. } => path.parent().map(|p| p.to_path_buf()),
+                _ => return,
+            };
+            (doc.id, parent)
+        };
+        if let Some(parent_path) = parent {
+            self.reload_directory_buffer(doc_id, parent_path);
+        }
+    }
+
+    /// Handle <CR> in an undo-tree buffer — jump to the node on the cursor line.
+    fn handle_undotree_select(&mut self) {
+        use crate::document::BufferKind;
+
+        let (linked_doc_id, seq) = {
+            let doc = match self.document_manager.active_document() {
+                Some(d) if d.is_undotree() => d,
+                _ => return,
+            };
+            let cursor = doc.buffer.cursor();
+            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            let (linked_id, seq) = match &doc.kind {
+                BufferKind::UndoTree { linked_doc_id, sequences } => {
+                    let seq = sequences.get(line_num).copied().unwrap_or(u64::MAX);
+                    (*linked_doc_id, seq)
+                }
+                _ => return,
+            };
+            (linked_id, seq)
+        };
+
+        if seq == u64::MAX { return; } // connector line
+
+        let ut_doc_id = self.document_manager.active_document().map(|d| d.id).unwrap_or(0);
+
+        // Jump in the linked document
+        if let Some(linked_doc) = self.document_manager.get_document_mut(linked_doc_id) {
+            if linked_doc.goto_seq(seq).is_err() { return; }
+        }
+        self.spawn_syntax_parse_job(linked_doc_id);
+
+        // Refresh the undotree buffer to reflect the new current node
+        if let Some(linked_doc) = self.document_manager.get_document(linked_doc_id) {
+            let (text, seqs) = crate::undotree_view::render_tree_to_text(&linked_doc.history);
+            if let Some(ut_doc) = self.document_manager.get_document_mut(ut_doc_id) {
+                ut_doc.populate_undotree_buffer(text, seqs);
+            }
+        }
+
+        // Switch focus back to linked document
+        let _ = self.document_manager.switch_to_document(linked_doc_id);
+    }
+
+    /// Apply the diff from a directory buffer to the filesystem.
+    fn apply_directory_diff(&mut self) {
+        use crate::document::BufferKind;
+
+        let (dir_path, diff) = {
+            let doc = match self.document_manager.active_document() {
+                Some(d) if d.is_directory() => d,
+                _ => return,
+            };
+            let path = match &doc.kind {
+                BufferKind::Directory { path, .. } => path.clone(),
+                _ => return,
+            };
+            (path, doc.parse_directory_diff())
+        };
+
+        let mut spawned = 0usize;
+
+        // Renames
+        for (old_path, new_name) in &diff.renames {
+            let new_path = old_path.parent().unwrap_or(&dir_path).join(new_name);
+            let job = crate::job_manager::jobs::fs::FsMoveJob::new(old_path.clone(), new_path);
+            self.job_manager.spawn(job);
+            spawned += 1;
+        }
+
+        // Deletes
+        if !diff.deletes.is_empty() {
+            let job = crate::job_manager::jobs::fs::FsBatchDeleteJob::new(diff.deletes.clone());
+            self.job_manager.spawn(job);
+            spawned += 1;
+        }
+
+        // Creates
+        for name in &diff.creates {
+            let new_path = dir_path.join(name);
+            let is_dir = name.ends_with('/');
+            let job = crate::job_manager::jobs::fs::FsCreateJob::new(new_path, is_dir);
+            self.job_manager.spawn(job);
+            spawned += 1;
+        }
+
+        if spawned > 0 {
+            self.state.notify(
+                crate::notification::NotificationType::Info,
+                format!("Applying {} change(s)…", spawned),
+            );
+        }
+    }
+
     fn close_active_modal(&mut self) {
         if let Some(modal) = &self.modal {
             self.render_system.compositor.clear_layer(modal.layer);
@@ -2171,27 +2396,126 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             ExecutionResult::Write => {
-                // Save document ASYNC
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    if let Some(path) = doc.path() {
-                        let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
-                            doc.id,
-                            doc.buffer.line_index.table.clone(),
-                            path.to_path_buf(),
-                            doc.options.line_ending,
-                            doc.history.current_seq(),
-                        );
-                        let _id = self.job_manager.spawn(job);
-                    } else {
-                        self.state.handle_error(RiftError::new(
-                            ErrorType::Io,
-                            "NO_FILENAME",
-                            "No file name",
-                        ));
+                use crate::document::BufferKind;
+                if let Some(doc) = self.document_manager.active_document() {
+                    match &doc.kind {
+                        BufferKind::File => {
+                            let doc = self.document_manager.active_document_mut().unwrap();
+                            if let Some(path) = doc.path() {
+                                let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
+                                    doc.id,
+                                    doc.buffer.line_index.table.clone(),
+                                    path.to_path_buf(),
+                                    doc.options.line_ending,
+                                    doc.history.current_seq(),
+                                );
+                                let _id = self.job_manager.spawn(job);
+                            } else {
+                                self.state.handle_error(RiftError::new(
+                                    ErrorType::Io,
+                                    "NO_FILENAME",
+                                    "No file name",
+                                ));
+                            }
+                        }
+                        BufferKind::Directory { .. } => {
+                            self.apply_directory_diff();
+                        }
+                        BufferKind::UndoTree { .. }
+                        | BufferKind::Messages
+                        | BufferKind::Terminal => {
+                            self.state.handle_error(RiftError::new(
+                                ErrorType::Io,
+                                "CANT_SAVE",
+                                format!(
+                                    "{} buffer cannot be saved",
+                                    self.document_manager
+                                        .active_document()
+                                        .map(|d| d.display_name().into_owned())
+                                        .unwrap_or_default()
+                                ),
+                            ));
+                        }
                     }
                 }
                 self.state.clear_command_line();
                 self.close_active_modal();
+            }
+            ExecutionResult::OpenDirectory { path } => {
+                let id = self.document_manager.next_id();
+                match crate::document::Document::new_directory(id, path.clone()) {
+                    Ok(doc) => {
+                        self.document_manager.add_document(doc);
+                        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
+                            path,
+                            false,
+                        );
+                        self.job_manager.spawn(job);
+                    }
+                    Err(e) => self.state.handle_error(e),
+                }
+            }
+            ExecutionResult::OpenUndoTree => {
+                if let Some(linked_id) = self.document_manager.active_document_id() {
+                    // Check if there's already an undotree buffer for this doc
+                    let existing = self.document_manager.iter_documents().find(|d| {
+                        matches!(&d.kind, crate::document::BufferKind::UndoTree { linked_doc_id, .. } if *linked_doc_id == linked_id)
+                    }).map(|d| d.id);
+
+                    let buf_id = if let Some(eid) = existing {
+                        let _ = self.document_manager.switch_to_document(eid);
+                        eid
+                    } else {
+                        let new_id = self.document_manager.next_id();
+                        match crate::document::Document::new_undotree(new_id, linked_id) {
+                            Ok(doc) => {
+                                self.document_manager.add_document(doc);
+                                new_id
+                            }
+                            Err(e) => {
+                                self.state.handle_error(e);
+                                return;
+                            }
+                        }
+                    };
+
+                    // Populate with the linked doc's history
+                    if let Some(linked_doc) = self.document_manager.get_document(linked_id) {
+                        let (text, seqs) = crate::undotree_view::render_tree_to_text(&linked_doc.history);
+                        if let Some(ut_doc) = self.document_manager.get_document_mut(buf_id) {
+                            ut_doc.populate_undotree_buffer(text, seqs);
+                        }
+                    }
+                }
+            }
+            ExecutionResult::OpenMessages => {
+                // Check for an existing messages buffer
+                let existing = self.document_manager.iter_documents()
+                    .find(|d| d.is_messages())
+                    .map(|d| d.id);
+
+                let buf_id = if let Some(eid) = existing {
+                    let _ = self.document_manager.switch_to_document(eid);
+                    eid
+                } else {
+                    let new_id = self.document_manager.next_id();
+                    match crate::document::Document::new_messages(new_id) {
+                        Ok(doc) => {
+                            self.document_manager.add_document(doc);
+                            new_id
+                        }
+                        Err(e) => {
+                            self.state.handle_error(e);
+                            return;
+                        }
+                    }
+                };
+
+                // Populate from the notification log
+                let log = self.state.error_manager.notifications().log.clone();
+                if let Some(doc) = self.document_manager.get_document_mut(buf_id) {
+                    doc.populate_messages_buffer(&log);
+                }
             }
             ExecutionResult::WriteAndQuit => {
                 // Save ASYNC then Quit
@@ -2647,6 +2971,7 @@ impl<T: TerminalBackend> Editor<T> {
                         || any.is::<SyntaxParseResult>()
                         || any.is::<crate::buffer::byte_map::ByteLineMap>()
                         || any.is::<crate::job_manager::jobs::completion::CompletionPayload>()
+                        || any.is::<crate::job_manager::jobs::explorer::DirectoryListing>()
                 };
 
                 // Intercept generic component messages if not core
@@ -2671,6 +2996,45 @@ impl<T: TerminalBackend> Editor<T> {
                 // If we are here, it MUST be a core type (or we have no modal).
                 // If we have no modal and it's !is_core, we proceed to try downcast, which will fail nicely.
                 let any_payload = payload.into_any();
+
+                // Try DirectoryListing — route to matching directory buffer document
+                let any_payload = match any_payload
+                    .downcast::<crate::job_manager::jobs::explorer::DirectoryListing>()
+                {
+                    Ok(listing) => {
+                        let dir_path = listing.path.clone();
+                        let entries: Vec<crate::document::DirEntry> = listing
+                            .entries
+                            .iter()
+                            .enumerate()
+                            .map(|(i, e)| crate::document::DirEntry {
+                                id: (i + 1) as u32,
+                                path: e.path.clone(),
+                                is_dir: e.is_dir,
+                            })
+                            .collect();
+                        // Find the directory document with a matching path and populate it
+                        let found = self
+                            .document_manager
+                            .iter_documents_mut()
+                            .find(|d| {
+                                matches!(&d.kind,
+                                    crate::document::BufferKind::Directory { path, .. }
+                                    if *path == dir_path)
+                            })
+                            .map(|doc| {
+                                doc.populate_directory_buffer(entries);
+                            });
+                        if found.is_some() {
+                            self.sync_state_with_active_document();
+                            let _ = self.force_full_redraw();
+                        }
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    }
+                    Err(p) => p,
+                };
 
                 // Try FileSaveResult
                 let any_payload = match any_payload

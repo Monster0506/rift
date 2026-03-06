@@ -112,6 +112,10 @@ pub enum ParsedCommand {
         subcommand: SplitSubcommand,
         bangs: usize,
     },
+    /// Open the accumulated messages/notification log as a buffer
+    Messages {
+        bangs: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

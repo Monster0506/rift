@@ -74,6 +74,8 @@ impl Notification {
 pub struct NotificationManager {
     /// Active notifications
     notifications: Vec<Notification>,
+    /// Permanent log of all messages ever shown (kind, message)
+    pub log: Vec<(NotificationType, String)>,
     /// Counter for generating unique IDs
     next_id: u64,
     /// Monotonic generation counter for change detection
@@ -85,6 +87,7 @@ impl NotificationManager {
     pub fn new() -> Self {
         Self {
             notifications: Vec::new(),
+            log: Vec::new(),
             next_id: 0,
             generation: 0,
         }
@@ -97,6 +100,8 @@ impl NotificationManager {
         message: impl Into<String>,
         ttl: Option<Duration>,
     ) -> u64 {
+        let message = message.into();
+        self.log.push((kind, message.clone()));
         let id = self.next_id;
         self.next_id += 1;
         self.notifications

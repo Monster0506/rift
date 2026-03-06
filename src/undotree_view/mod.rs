@@ -151,6 +151,22 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
     (lines, sequences, cursor_row)
 }
 
+/// Render the undo tree to plain text for use in a buffer.
+/// Returns (text, sequences) where sequences[line] is the EditSeq for that line
+/// (u64::MAX for non-navigable connector lines).
+pub fn render_tree_to_text(tree: &UndoTree) -> (String, Vec<EditSeq>) {
+    let (lines, sequences, _cursor) = render_tree(tree);
+    let mut text = String::new();
+    for (i, line) in lines.iter().enumerate() {
+        let line_text: String = line.iter().map(|cell| cell.to_char()).collect();
+        text.push_str(&line_text);
+        if i + 1 < lines.len() {
+            text.push('\n');
+        }
+    }
+    (text, sequences)
+}
+
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;

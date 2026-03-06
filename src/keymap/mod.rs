@@ -17,7 +17,8 @@ pub enum KeyContext {
     Insert,
     Command,
     Search,
-    // Add other contexts as needed
+    /// Active when the focused window contains a Directory (file explorer) buffer
+    FileExplorerBuffer,
 }
 
 /// KeyMap stores mappings from (Context, Key Sequence) -> Action
@@ -55,24 +56,36 @@ impl KeyMap {
         }
     }
 
-    /// Look up a key sequence
+    /// Returns the parent context for fallback lookup.
+    /// `FileExplorerBuffer` and `UndoTree` buffer contexts fall through to `Normal`
+    /// so standard vim motions work without re-registering every binding.
+    fn parent_context(context: KeyContext) -> Option<KeyContext> {
+        match context {
+            KeyContext::FileExplorerBuffer | KeyContext::UndoTree => Some(KeyContext::Normal),
+            KeyContext::Normal
+            | KeyContext::Insert
+            | KeyContext::Command
+            | KeyContext::Search
+            | KeyContext::FileExplorer => Some(KeyContext::Global),
+            KeyContext::Global => None,
+        }
+    }
+
+    /// Look up a key sequence, walking the fallback chain.
     pub fn lookup<'a>(&'a self, context: KeyContext, keys: &[Key]) -> MatchResult<'a> {
-        // First try specific context
-        if let Some(trie) = self.mappings.get(&context) {
-            match trie.lookup(keys) {
-                MatchResult::None => {} // Continue to fallback
-                match_result => return match_result,
+        let mut ctx = context;
+        loop {
+            if let Some(trie) = self.mappings.get(&ctx) {
+                match trie.lookup(keys) {
+                    MatchResult::None => {}
+                    match_result => return match_result,
+                }
+            }
+            match Self::parent_context(ctx) {
+                Some(parent) => ctx = parent,
+                None => return MatchResult::None,
             }
         }
-
-        // Fallback to Global context if not found in specific context
-        if context != KeyContext::Global {
-            if let Some(trie) = self.mappings.get(&KeyContext::Global) {
-                return trie.lookup(keys);
-            }
-        }
-
-        MatchResult::None
     }
 
     /// Legacy single-key compatibility (returns Action only if Exact match on single key)

@@ -127,7 +127,30 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Explorer(FileExplorerAction::Select),
     );
 
-    // Undotree Defaults
+    // FileExplorerBuffer (Directory buffer) Defaults
+    // Normal motions fall through to KeyContext::Normal via the fallback chain.
+    // Only directory-specific bindings are registered here.
+    keymap.register(
+        KeyContext::FileExplorerBuffer,
+        Key::Enter,
+        Action::Editor(EditorAction::ExplorerSelect),
+    );
+    keymap.register(
+        KeyContext::FileExplorerBuffer,
+        Key::Char('-'),
+        Action::Editor(EditorAction::ExplorerParent),
+    );
+
+    // UndoTree buffer Defaults
+    // The UndoTree buffer context reuses KeyContext::UndoTree.
+    // <CR> jumps to the node; normal j/k/gg/G work via Normal fallback.
+    keymap.register(
+        KeyContext::UndoTree,
+        Key::Enter,
+        Action::Editor(EditorAction::UndoTreeSelect),
+    );
+
+    // Undotree Modal Defaults (kept for the existing modal component if still used)
     keymap.register(
         KeyContext::UndoTree,
         Key::Char('j'),
@@ -175,6 +198,12 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     );
 
     // Normal Mode Defaults
+    // '-' opens the file-explorer buffer for the current file's parent directory
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('-'),
+        Action::Editor(EditorAction::OpenExplorer),
+    );
     keymap.register(
         KeyContext::Normal,
         Key::Char('h'),

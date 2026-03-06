@@ -98,8 +98,15 @@ impl DocumentManager {
             return Ok(());
         }
 
-        // 2. Check dirty state
-        if self.documents.get(&id).unwrap().is_dirty() {
+        let doc = self.documents.get(&id).unwrap();
+
+        // 2. Special buffers (directory, undo-tree, messages, terminal) can always be closed
+        if doc.is_special() {
+            return self.remove_document_force(id);
+        }
+
+        // 3. Check dirty state for regular file buffers
+        if doc.is_dirty() {
             return Err(RiftError::warning(
                 ErrorType::Execution,
                 crate::constants::errors::UNSAVED_CHANGES,
@@ -211,6 +218,16 @@ impl DocumentManager {
     /// Get current active tab index
     pub fn active_tab_index(&self) -> usize {
         self.current_tab
+    }
+
+    /// Iterate over all documents (including private ones)
+    pub fn iter_documents(&self) -> impl Iterator<Item = &Document> {
+        self.documents.values()
+    }
+
+    /// Iterate mutably over all documents (including private ones)
+    pub fn iter_documents_mut(&mut self) -> impl Iterator<Item = &mut Document> {
+        self.documents.values_mut()
     }
 
     /// Get document ID at specific tab index

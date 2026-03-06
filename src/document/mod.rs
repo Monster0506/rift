@@ -7,6 +7,7 @@ use crate::history::{EditOperation, EditSeq, EditTransaction, Position, Range, U
 use crate::search::{find_next, SearchDirection};
 use crate::syntax::Syntax;
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::io;
 use std::path::{Path, PathBuf};
 use tree_sitter::{InputEdit, Point};
@@ -20,6 +21,52 @@ use std::sync::mpsc::Receiver;
 
 /// Unique identifier for documents
 pub type DocumentId = u64;
+
+/// A single entry in a directory buffer (oil.nvim style)
+#[derive(Debug, Clone)]
+pub struct DirEntry {
+    /// Stable ID embedded in the buffer line as `/N `
+    pub id: u32,
+    /// Full path to the file or directory
+    pub path: PathBuf,
+    /// Whether this entry is a directory
+    pub is_dir: bool,
+}
+
+/// Diff produced by parsing a directory buffer before save
+pub struct OilDiff {
+    /// (original_path, new_name) pairs where the name changed
+    pub renames: Vec<(PathBuf, String)>,
+    /// Paths whose lines were deleted from the buffer
+    pub deletes: Vec<PathBuf>,
+    /// New filenames typed by the user (no ID prefix)
+    pub creates: Vec<String>,
+}
+
+/// Identifies the role and behaviour of a document
+#[derive(Debug, Clone)]
+pub enum BufferKind {
+    /// Regular file buffer (default)
+    File,
+    /// Terminal emulator buffer
+    Terminal,
+    /// Oil-style directory browser
+    Directory {
+        /// The directory being shown
+        path: PathBuf,
+        /// Snapshot of entries at populate time (id → path mapping)
+        entries: Vec<DirEntry>,
+    },
+    /// Undo tree visualisation for a linked document
+    UndoTree {
+        /// The document whose history is shown
+        linked_doc_id: DocumentId,
+        /// Maps buffer line index → EditSeq (u64::MAX = non-navigable connector line)
+        sequences: Vec<EditSeq>,
+    },
+    /// Accumulated notification / message log (read-only)
+    Messages,
+}
 
 /// Line ending types supported by Rift
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +121,8 @@ pub struct Document {
     pub terminal: Option<Terminal>,
     /// Last cursor position reported by the terminal emulator (row, col).
     pub terminal_cursor: Option<(usize, usize)>,
+    /// What kind of buffer this is (drives save behaviour, key context, display name)
+    pub kind: BufferKind,
 }
 
 impl Document {
@@ -92,6 +141,7 @@ impl Document {
             view_state: ViewState::default(),
             terminal: None,
             terminal_cursor: None,
+            kind: BufferKind::File,
         })
     }
 
@@ -139,6 +189,7 @@ impl Document {
             view_state: ViewState::default(),
             terminal: None,
             terminal_cursor: None,
+            kind: BufferKind::File,
         })
     }
 
@@ -170,14 +221,253 @@ impl Document {
                 view_state: ViewState::default(),
                 terminal: Some(terminal),
                 terminal_cursor: None,
+                kind: BufferKind::Terminal,
             },
             rx,
         ))
     }
 
+    /// Create a new directory buffer (oil.nvim style). Content is populated later
+    /// when a DirectoryListJob completes.
+    pub fn new_directory(id: DocumentId, path: PathBuf) -> Result<Self, RiftError> {
+        let buffer = TextBuffer::new(4096)?;
+        Ok(Document {
+            id,
+            buffer,
+            options: DocumentOptions::default(),
+            file_path: None,
+            is_read_only: false,
+            syntax: None,
+            history: UndoTree::new(),
+            current_transaction: None,
+            view_state: ViewState::default(),
+            terminal: None,
+            terminal_cursor: None,
+            kind: BufferKind::Directory { path, entries: vec![] },
+        })
+    }
+
+    /// Create a new undo-tree buffer linked to another document.
+    pub fn new_undotree(id: DocumentId, linked_doc_id: DocumentId) -> Result<Self, RiftError> {
+        let buffer = TextBuffer::new(4096)?;
+        Ok(Document {
+            id,
+            buffer,
+            options: DocumentOptions::default(),
+            file_path: None,
+            is_read_only: true,
+            syntax: None,
+            history: UndoTree::new(),
+            current_transaction: None,
+            view_state: ViewState::default(),
+            terminal: None,
+            terminal_cursor: None,
+            kind: BufferKind::UndoTree { linked_doc_id, sequences: vec![] },
+        })
+    }
+
+    /// Create a new messages buffer showing the accumulated notification log.
+    pub fn new_messages(id: DocumentId) -> Result<Self, RiftError> {
+        let buffer = TextBuffer::new(4096)?;
+        Ok(Document {
+            id,
+            buffer,
+            options: DocumentOptions::default(),
+            file_path: None,
+            is_read_only: true,
+            syntax: None,
+            history: UndoTree::new(),
+            current_transaction: None,
+            view_state: ViewState::default(),
+            terminal: None,
+            terminal_cursor: None,
+            kind: BufferKind::Messages,
+        })
+    }
+
     /// Check if this document is a terminal
     pub fn is_terminal(&self) -> bool {
-        self.terminal.is_some()
+        matches!(self.kind, BufferKind::Terminal)
+    }
+
+    /// Check if this document is an oil-style directory buffer
+    pub fn is_directory(&self) -> bool {
+        matches!(self.kind, BufferKind::Directory { .. })
+    }
+
+    /// Check if this document is an undo-tree buffer
+    pub fn is_undotree(&self) -> bool {
+        matches!(self.kind, BufferKind::UndoTree { .. })
+    }
+
+    /// Check if this document is the messages buffer
+    pub fn is_messages(&self) -> bool {
+        matches!(self.kind, BufferKind::Messages)
+    }
+
+    /// Returns true for any non-file buffer (directory, undo-tree, messages, terminal).
+    /// Special buffers bypass the dirty-on-close prompt.
+    pub fn is_special(&self) -> bool {
+        !matches!(self.kind, BufferKind::File)
+    }
+
+    /// Populate (or repopulate) this directory buffer from a fresh directory listing.
+    /// Writes oil-style lines (`/ID name`) into the buffer and marks it saved.
+    pub fn populate_directory_buffer(&mut self, entries: Vec<DirEntry>) {
+        let dir_path = match &self.kind {
+            BufferKind::Directory { path, .. } => path.clone(),
+            _ => return,
+        };
+
+        // Build text content
+        let mut content = String::new();
+        content.push_str("../\n");
+        for entry in &entries {
+            let name = entry.path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            if entry.is_dir {
+                content.push_str(&format!("/{} {}/\n", entry.id, name));
+            } else {
+                content.push_str(&format!("/{} {}\n", entry.id, name));
+            }
+        }
+        // Drop trailing newline
+        if content.ends_with('\n') {
+            content.pop();
+        }
+
+        // Replace buffer content wholesale (same pattern as handle_terminal_data)
+        let old_revision = self.buffer.revision;
+        if let Ok(mut new_buffer) = TextBuffer::new(content.len().max(64)) {
+            let _ = new_buffer.insert_str(&content);
+            let _ = new_buffer.set_cursor(0);
+            new_buffer.revision = old_revision + 1;
+            self.buffer = new_buffer;
+        }
+
+        self.kind = BufferKind::Directory { path: dir_path, entries };
+        self.history.mark_saved();
+    }
+
+    /// Populate this undo-tree buffer from the given history.
+    pub fn populate_undotree_buffer(
+        &mut self,
+        text: String,
+        sequences: Vec<crate::history::EditSeq>,
+    ) {
+        let linked_doc_id = match self.kind {
+            BufferKind::UndoTree { linked_doc_id, .. } => linked_doc_id,
+            _ => return,
+        };
+
+        let old_revision = self.buffer.revision;
+        if let Ok(mut new_buffer) = TextBuffer::new(text.len().max(64)) {
+            let _ = new_buffer.insert_str(&text);
+            let _ = new_buffer.set_cursor(0);
+            new_buffer.revision = old_revision + 1;
+            self.buffer = new_buffer;
+        }
+
+        self.kind = BufferKind::UndoTree { linked_doc_id, sequences };
+        self.history.mark_saved();
+    }
+
+    /// Populate this messages buffer from a notification log.
+    pub fn populate_messages_buffer(&mut self, log: &[(crate::notification::NotificationType, String)]) {
+        use crate::notification::NotificationType;
+        let mut content = String::new();
+        for (kind, msg) in log {
+            let prefix = match kind {
+                NotificationType::Error   => "[ERROR]   ",
+                NotificationType::Warning => "[WARN]    ",
+                NotificationType::Success => "[SUCCESS] ",
+                NotificationType::Info    => "[INFO]    ",
+            };
+            content.push_str(prefix);
+            content.push_str(msg);
+            content.push('\n');
+        }
+        if content.ends_with('\n') {
+            content.pop();
+        }
+        if content.is_empty() {
+            content.push_str("No messages.");
+        }
+
+        let old_revision = self.buffer.revision;
+        if let Ok(mut new_buffer) = TextBuffer::new(content.len().max(64)) {
+            let _ = new_buffer.insert_str(&content);
+            // Place cursor at the bottom (most recent message)
+            let len = new_buffer.len();
+            let _ = new_buffer.set_cursor(len.saturating_sub(1));
+            new_buffer.revision = old_revision + 1;
+            self.buffer = new_buffer;
+        }
+        self.history.mark_saved();
+    }
+
+    /// Parse the current buffer content of a directory buffer and produce a diff
+    /// against the stored entry snapshot. Used by the save handler.
+    pub fn parse_directory_diff(&self) -> OilDiff {
+        let entries = match &self.kind {
+            BufferKind::Directory { entries, .. } => entries,
+            _ => return OilDiff { renames: vec![], deletes: vec![], creates: vec![] },
+        };
+
+        let content = self.buffer.to_string();
+        let mut seen_ids: HashSet<u32> = HashSet::new();
+        let mut renames = vec![];
+        let mut creates = vec![];
+
+        for line in content.lines() {
+            // Skip parent nav line and blanks
+            if line == "../" || line.is_empty() {
+                continue;
+            }
+
+            // Try to parse `/ID name` prefix
+            if let Some(rest) = line.strip_prefix('/') {
+                if let Some(space_pos) = rest.find(' ') {
+                    if let Ok(id) = rest[..space_pos].parse::<u32>() {
+                        seen_ids.insert(id);
+                        // Strip trailing slash (directories end with /)
+                        let new_name = rest[space_pos + 1..].trim_end_matches('/');
+                        if let Some(entry) = entries.iter().find(|e| e.id == id) {
+                            let original_name = entry.path.file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("");
+                            if new_name != original_name {
+                                renames.push((entry.path.clone(), new_name.to_string()));
+                            }
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            // No valid ID prefix → new file/dir to create
+            let name = line.trim_end_matches('/');
+            if !name.is_empty() {
+                creates.push(name.to_string());
+            }
+        }
+
+        // IDs absent from the buffer → their files were deleted
+        let deletes: Vec<PathBuf> = entries.iter()
+            .filter(|e| !seen_ids.contains(&e.id))
+            .map(|e| e.path.clone())
+            .collect();
+
+        OilDiff { renames, deletes, creates }
+    }
+
+    /// Return the current directory path if this is a Directory buffer.
+    pub fn directory_path(&self) -> Option<&PathBuf> {
+        match &self.kind {
+            BufferKind::Directory { path, .. } => Some(path),
+            _ => None,
+        }
     }
 
     pub fn handle_terminal_data(&mut self, _data: &[u8]) {
@@ -577,16 +867,31 @@ impl Document {
     /// Get display name for UI (filename or "[No Name]")
     #[must_use]
     pub fn display_name(&self) -> Cow<'_, str> {
-        if let Some(term) = &self.terminal {
-            return Cow::Owned(format!("[Terminal] {}", term.name));
+        match &self.kind {
+            BufferKind::Terminal => {
+                if let Some(term) = &self.terminal {
+                    Cow::Owned(format!("[Terminal] {}", term.name))
+                } else {
+                    Cow::Borrowed("[Terminal]")
+                }
+            }
+            BufferKind::Directory { path, .. } => {
+                Cow::Owned(
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| "/".to_string()),
+                )
+            }
+            BufferKind::UndoTree { .. } => Cow::Borrowed("[UndoTree]"),
+            BufferKind::Messages => Cow::Borrowed("[Messages]"),
+            BufferKind::File => self.file_path
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .map(Cow::Borrowed)
+                .unwrap_or(Cow::Borrowed(crate::constants::ui::NO_NAME)),
         }
-
-        self.file_path
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .and_then(|n| n.to_str())
-            .map(Cow::Borrowed)
-            .unwrap_or(Cow::Borrowed(crate::constants::ui::NO_NAME))
     }
 
     /// Get the file path if it exists

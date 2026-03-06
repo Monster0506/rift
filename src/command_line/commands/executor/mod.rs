@@ -71,6 +71,14 @@ pub enum ExecutionResult {
         direction: crate::split::tree::SplitDirection,
         subcommand: crate::command_line::commands::SplitSubcommand,
     },
+    /// Open a directory as a file-explorer buffer
+    OpenDirectory {
+        path: std::path::PathBuf,
+    },
+    /// Open an undo-tree buffer for the active document
+    OpenUndoTree,
+    /// Open the accumulated messages log as a buffer
+    OpenMessages,
 }
 
 impl PartialEq for ExecutionResult {
@@ -167,6 +175,12 @@ impl std::fmt::Debug for ExecutionResult {
                 .field("direction", direction)
                 .field("subcommand", subcommand)
                 .finish(),
+            Self::OpenDirectory { path } => f
+                .debug_struct("OpenDirectory")
+                .field("path", path)
+                .finish(),
+            Self::OpenUndoTree => write!(f, "OpenUndoTree"),
+            Self::OpenMessages => write!(f, "OpenMessages"),
         }
     }
 }
@@ -428,18 +442,7 @@ impl CommandExecutor {
                 );
                 ExecutionResult::Checkpoint
             }
-            ParsedCommand::UndoTree { bangs: _ } => {
-                let (component, initial_message) =
-                    crate::undotree_view::component::create_undo_tree_component(
-                        &document.history,
-                        &state.settings,
-                    );
-                ExecutionResult::OpenComponent {
-                    component,
-                    initial_job: None,
-                    initial_message,
-                }
-            }
+            ParsedCommand::UndoTree { bangs: _ } => ExecutionResult::OpenUndoTree,
             ParsedCommand::Split {
                 subcommand,
                 bangs: _,
@@ -476,17 +479,9 @@ impl CommandExecutor {
                     std::env::current_dir().unwrap_or_default()
                 };
 
-                let mut explorer = crate::file_explorer::FileExplorer::new(initial_path);
-                explorer = explorer.with_colors(state.settings.editor_fg, state.settings.editor_bg);
-
-                let job = explorer.create_list_job();
-
-                ExecutionResult::OpenComponent {
-                    component: Box::new(explorer),
-                    initial_job: Some(job),
-                    initial_message: None,
-                }
+                ExecutionResult::OpenDirectory { path: initial_path }
             }
+            ParsedCommand::Messages { bangs: _ } => ExecutionResult::OpenMessages,
         }
     }
 }

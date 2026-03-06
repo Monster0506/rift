@@ -128,6 +128,14 @@ pub enum EditorAction {
     DotRepeat,
     /// Toggle freeze on the focused split window
     SplitToggleFreeze,
+    /// Navigate into dir or open file under cursor in a Directory buffer
+    ExplorerSelect,
+    /// Navigate to the parent directory in a Directory buffer
+    ExplorerParent,
+    /// Jump to the undo-tree node under cursor in an UndoTree buffer
+    UndoTreeSelect,
+    /// Open the messages log buffer
+    OpenMessages,
 }
 
 /// Undotree specific actions
@@ -237,6 +245,10 @@ impl FromStr for Action {
             "editor:submit" => Ok(Action::Editor(EditorAction::Submit)),
             "editor:dot_repeat" => Ok(Action::Editor(EditorAction::DotRepeat)),
             "editor:split_toggle_freeze" => Ok(Action::Editor(EditorAction::SplitToggleFreeze)),
+            "editor:explorer_select" => Ok(Action::Editor(EditorAction::ExplorerSelect)),
+            "editor:explorer_parent" => Ok(Action::Editor(EditorAction::ExplorerParent)),
+            "editor:undotree_select" => Ok(Action::Editor(EditorAction::UndoTreeSelect)),
+            "editor:open_messages" => Ok(Action::Editor(EditorAction::OpenMessages)),
 
             _ => Ok(Action::Noop),
         }
