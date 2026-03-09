@@ -2313,7 +2313,7 @@ impl<T: TerminalBackend> Editor<T> {
             for _ in 0..len { doc.buffer.delete_forward(); }
             let _ = doc.buffer.insert_str("Loading...");
         }
-        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(new_path, false);
+        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(doc_id as usize, new_path, false);
         self.job_manager.spawn(job);
     }
 
@@ -2335,6 +2335,13 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(d) if d.is_directory() => d,
                 _ => return,
             };
+            if doc.is_dirty() {
+                self.state.notify(
+                    crate::notification::NotificationType::Warning,
+                    "Unsaved changes — write with :w first".to_string(),
+                );
+                return;
+            }
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
             let line_bytes = doc.buffer.get_line_bytes(line_num);
@@ -2450,7 +2457,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.panel_layout = Some(PanelLayout { kind: PanelKind::FileExplorer, dir_win_id, preview_win_id, dir_doc_id, preview_doc_id, original_doc_id });
 
-        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(dir, false);
+        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(dir_doc_id as usize, dir, false);
         self.job_manager.spawn(job);
 
         self.sync_state_with_active_document();
@@ -2651,6 +2658,13 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(d) => d,
                 None => return,
             };
+            if doc.is_dirty() {
+                self.state.notify(
+                    crate::notification::NotificationType::Warning,
+                    "Unsaved changes — write with :w first".to_string(),
+                );
+                return;
+            }
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
             let line_bytes = doc.buffer.get_line_bytes(line_num);
@@ -2757,7 +2771,7 @@ impl<T: TerminalBackend> Editor<T> {
             },
             None => return,
         };
-        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(path, false);
+        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(layout.dir_doc_id as usize, path, false);
         self.job_manager.spawn(job);
     }
 
@@ -2779,8 +2793,9 @@ impl<T: TerminalBackend> Editor<T> {
     /// Apply the diff from a directory buffer to the filesystem.
     fn apply_directory_diff(&mut self) {
         use crate::document::BufferKind;
+        use std::fs;
 
-        let (dir_path, diff) = {
+        let (dir_doc_id, dir_path, diff) = {
             let doc = match self.document_manager.active_document() {
                 Some(d) if d.is_directory() => d,
                 _ => return,
@@ -2789,24 +2804,43 @@ impl<T: TerminalBackend> Editor<T> {
                 BufferKind::Directory { path, .. } => path.clone(),
                 _ => return,
             };
-            (path, doc.parse_directory_diff())
+            (doc.id, path, doc.parse_directory_diff())
         };
 
-        let mut spawned = 0usize;
+        if diff.renames.is_empty() && diff.deletes.is_empty() && diff.creates.is_empty() {
+            return;
+        }
 
-        // Renames
+        let mut errors: Vec<String> = Vec::new();
+        let mut applied = 0usize;
+
+        // Renames — run synchronously so the reload sees the final state
         for (old_path, new_name) in &diff.renames {
             let new_path = old_path.parent().unwrap_or(&dir_path).join(new_name);
-            let job = crate::job_manager::jobs::fs::FsMoveJob::new(old_path.clone(), new_path);
-            self.job_manager.spawn(job);
-            spawned += 1;
+            if let Some(parent) = new_path.parent() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    errors.push(format!("mkdir {:?}: {}", parent, e));
+                    continue;
+                }
+            }
+            let result = fs::rename(&old_path, &new_path).or_else(|_| {
+                // Cross-device fallback: copy then delete
+                crate::job_manager::jobs::fs::FsCopyJob::copy_recursive_pub(old_path, &new_path)
+                    .and_then(|_| if old_path.is_dir() { fs::remove_dir_all(old_path) } else { fs::remove_file(old_path) })
+            });
+            match result {
+                Ok(_) => applied += 1,
+                Err(e) => errors.push(format!("rename {:?}: {}", old_path.file_name().unwrap_or_default(), e)),
+            }
         }
 
         // Deletes
-        if !diff.deletes.is_empty() {
-            let job = crate::job_manager::jobs::fs::FsBatchDeleteJob::new(diff.deletes.clone());
-            self.job_manager.spawn(job);
-            spawned += 1;
+        for path in &diff.deletes {
+            let result = if path.is_dir() { fs::remove_dir_all(path) } else { fs::remove_file(path) };
+            match result {
+                Ok(_) => applied += 1,
+                Err(e) => errors.push(format!("delete {:?}: {}", path.file_name().unwrap_or_default(), e)),
+            }
         }
 
         // Creates
@@ -2814,21 +2848,32 @@ impl<T: TerminalBackend> Editor<T> {
             let is_dir = name.ends_with('/');
             let clean_name = name.trim_end_matches('/');
             let new_path = dir_path.join(clean_name);
-            let job = crate::job_manager::jobs::fs::FsCreateJob::new(new_path, is_dir);
-            self.job_manager.spawn(job);
-            spawned += 1;
+            let result = if is_dir {
+                fs::create_dir_all(&new_path)
+            } else {
+                if let Some(parent) = new_path.parent() {
+                    fs::create_dir_all(parent).ok();
+                }
+                fs::File::create(&new_path).map(|_| ())
+            };
+            match result {
+                Ok(_) => applied += 1,
+                Err(e) => errors.push(format!("create {:?}: {}", new_path.file_name().unwrap_or_default(), e)),
+            }
         }
 
-        if spawned > 0 {
+        if applied > 0 {
             self.state.notify(
                 crate::notification::NotificationType::Info,
-                format!("Applying {} change(s)…", spawned),
+                format!("Applied {} change(s)", applied),
             );
         }
+        for err in errors {
+            self.state.notify(crate::notification::NotificationType::Error, err);
+        }
 
-        // Always reload the listing so the buffer content and highlights reflect the
-        // new filesystem state (including any newly created files/directories).
-        let reload = crate::job_manager::jobs::explorer::DirectoryListJob::new(dir_path, false);
+        // Re-read the current directory now that all operations are complete.
+        let reload = crate::job_manager::jobs::explorer::DirectoryListJob::new(dir_doc_id as usize, dir_path, false);
         self.job_manager.spawn(reload);
     }
 
@@ -3046,12 +3091,12 @@ impl<T: TerminalBackend> Editor<T> {
             JobMessage::Custom(id, payload) => {
                 let any_payload = payload.into_any();
 
-                // Try DirectoryListing — route to matching directory buffer document
+                // Try DirectoryListing — route to the document by id
                 let any_payload = match any_payload
                     .downcast::<crate::job_manager::jobs::explorer::DirectoryListing>()
                 {
                     Ok(listing) => {
-                        let dir_path = listing.path.clone();
+                        let doc_id = listing.doc_id as crate::document::DocumentId;
                         let entries: Vec<crate::document::DirEntry> = listing
                             .entries
                             .iter()
@@ -3060,21 +3105,17 @@ impl<T: TerminalBackend> Editor<T> {
                                 is_dir: e.is_dir,
                             })
                             .collect();
-                        let found = self
-                            .document_manager
-                            .iter_documents_mut()
-                            .find(|d| {
-                                matches!(&d.kind,
-                                    crate::document::BufferKind::Directory { path, .. }
-                                    if *path == dir_path)
-                            })
-                            .map(|doc| {
+                        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                            // Discard stale results if the doc has navigated to a different path
+                            let path_matches = matches!(&doc.kind,
+                                crate::document::BufferKind::Directory { path, .. }
+                                if *path == listing.path);
+                            if path_matches {
                                 doc.populate_directory_buffer(entries);
-                            });
-                        if found.is_some() {
-                            self.sync_state_with_active_document();
-                            let _ = self.force_full_redraw();
-                            self.update_explorer_preview();
+                                self.sync_state_with_active_document();
+                                let _ = self.force_full_redraw();
+                                self.update_explorer_preview();
+                            }
                         }
                         self.job_manager
                             .update_job_state(&JobMessage::Finished(id, true));

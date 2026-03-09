@@ -14,6 +14,7 @@ pub struct FileEntry {
 
 #[derive(Debug)]
 pub struct DirectoryListing {
+    pub doc_id: usize,
     pub path: PathBuf,
     pub entries: Vec<FileEntry>,
 }
@@ -32,13 +33,14 @@ impl JobPayload for DirectoryListing {
 
 #[derive(Debug)]
 pub struct DirectoryListJob {
+    doc_id: usize,
     path: PathBuf,
     show_hidden: bool,
 }
 
 impl DirectoryListJob {
-    pub fn new(path: PathBuf, show_hidden: bool) -> Self {
-        Self { path, show_hidden }
+    pub fn new(doc_id: usize, path: PathBuf, show_hidden: bool) -> Self {
+        Self { doc_id, path, show_hidden }
     }
 }
 
@@ -88,6 +90,7 @@ impl Job for DirectoryListJob {
                 });
 
                 let result = Box::new(DirectoryListing {
+                    doc_id: self.doc_id,
                     path: self.path,
                     entries: file_entries,
                 });
@@ -96,6 +99,13 @@ impl Job for DirectoryListJob {
                 let _ = sender.send(JobMessage::Finished(id, true)); // Silent finish
             }
             Err(e) => {
+                // Empty listing clears "Loading..." before the error notification
+                let result = Box::new(DirectoryListing {
+                    doc_id: self.doc_id,
+                    path: self.path.clone(),
+                    entries: vec![],
+                });
+                let _ = sender.send(JobMessage::Custom(id, result));
                 let _ = sender.send(JobMessage::Error(id, e.to_string()));
             }
         }

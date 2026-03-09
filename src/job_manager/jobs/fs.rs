@@ -18,6 +18,27 @@ impl FsCopyJob {
         }
     }
 
+    pub fn copy_recursive_pub(source: &Path, destination: &Path) -> std::io::Result<()> {
+        if source.is_dir() {
+            fs::create_dir_all(destination)?;
+            for entry in fs::read_dir(source)? {
+                let entry = entry?;
+                let dest_child = destination.join(entry.file_name());
+                if entry.file_type()?.is_dir() {
+                    Self::copy_recursive_pub(&entry.path(), &dest_child)?;
+                } else {
+                    fs::copy(entry.path(), dest_child)?;
+                }
+            }
+        } else {
+            if let Some(parent) = destination.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(source, destination)?;
+        }
+        Ok(())
+    }
+
     fn copy_recursive(
         source: &Path,
         destination: &Path,
@@ -46,7 +67,6 @@ impl FsCopyJob {
                 }
             }
         } else {
-            // Ensure parent exists
             if let Some(parent) = destination.parent() {
                 fs::create_dir_all(parent)?;
             }
@@ -102,21 +122,32 @@ impl Job for FsMoveJob {
             format!("Moving {:?} to {:?}", self.source, self.destination),
         ));
 
-        // Try rename first
+        if let Some(parent) = self.destination.parent() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                let _ = sender.send(JobMessage::Error(id, e.to_string()));
+                return;
+            }
+        }
+
         match fs::rename(&self.source, &self.destination) {
             Ok(_) => {
                 let _ = sender.send(JobMessage::Finished(id, false));
             }
             Err(_) => {
-                // If rename fails (e.g. cross-device), try copy + delete
-                // Reuse FsCopy logic roughly, then delete
-                // For now, let's just error if rename fails to keep it simple unless strictly needed
-                // Actually, standard practice is copy-delete.
-                // Let's rely on standard rename for now.
-                let _ = sender.send(JobMessage::Error(
-                    id,
-                    "Move failed (Cross-device move not yet optimized)".to_string(),
-                ));
+                match FsCopyJob::copy_recursive_pub(&self.source, &self.destination) {
+                    Ok(_) => {
+                        let del = if self.source.is_dir() {
+                            fs::remove_dir_all(&self.source)
+                        } else {
+                            fs::remove_file(&self.source)
+                        };
+                        match del {
+                            Ok(_) => { let _ = sender.send(JobMessage::Finished(id, false)); }
+                            Err(e) => { let _ = sender.send(JobMessage::Error(id, e.to_string())); }
+                        }
+                    }
+                    Err(e) => { let _ = sender.send(JobMessage::Error(id, e.to_string())); }
+                }
             }
         }
     }
@@ -184,6 +215,12 @@ impl Job for FsCreateJob {
         let result = if self.is_dir {
             fs::create_dir_all(&self.path)
         } else {
+            if let Some(parent) = self.path.parent() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    let _ = sender.send(JobMessage::Error(id, e.to_string()));
+                    return;
+                }
+            }
             fs::File::create(&self.path).map(|_| ())
         };
 

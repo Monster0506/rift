@@ -25,20 +25,15 @@ pub type DocumentId = u64;
 /// A single entry in a directory buffer
 #[derive(Debug, Clone)]
 pub struct DirEntry {
-    /// Full path to the file or directory
     pub path: PathBuf,
-    /// Whether this entry is a directory
     pub is_dir: bool,
 }
 
 /// Diff produced by parsing a directory buffer before save
 #[derive(Debug)]
 pub struct DirectoryDiff {
-    /// (original_path, new_name) pairs where the name changed
     pub renames: Vec<(PathBuf, String)>,
-    /// Paths whose lines were deleted from the buffer
     pub deletes: Vec<PathBuf>,
-    /// New filenames typed by the user (no ID prefix)
     pub creates: Vec<String>,
 }
 
@@ -51,16 +46,14 @@ pub enum BufferKind {
     Terminal,
     /// Directory browser
     Directory {
-        /// The directory being shown
         path: PathBuf,
-        /// Snapshot of entries at populate time
+        /// Snapshot of entries at populate time; used to diff user edits on :w
         entries: Vec<DirEntry>,
     },
     /// Undo tree visualisation for a linked document
     UndoTree {
-        /// The document whose history is shown
         linked_doc_id: DocumentId,
-        /// Maps buffer line index → EditSeq (u64::MAX = non-navigable connector line)
+        /// Maps buffer line index → EditSeq; u64::MAX = non-navigable connector line
         sequences: Vec<EditSeq>,
     },
 }
@@ -406,32 +399,27 @@ impl Document {
 
         let content = self.buffer.to_string();
 
-        // Ordered list of meaningful buffer lines (skip "../" header and blanks).
         let buffer_lines: Vec<&str> = content
             .lines()
             .filter(|l| *l != "../" && !l.trim().is_empty())
             .collect();
 
-        // Set of existing entry names for fast lookup (no trailing slash).
         let entry_name_set: HashSet<&str> = entries
             .iter()
             .filter_map(|e| e.path.file_name().and_then(|n| n.to_str()))
             .collect();
 
-        // Set of buffer line names for fast lookup (strip trailing slash for dirs).
         let buffer_name_set: HashSet<&str> = buffer_lines
             .iter()
             .map(|l| l.trim_end_matches('/'))
             .collect();
 
-        // Unmatched new names: in buffer but not in entries (ordered by buffer position).
         let unmatched_new: Vec<&str> = buffer_lines
             .iter()
             .filter(|l| !entry_name_set.contains(l.trim_end_matches('/')))
             .copied()
             .collect();
 
-        // Unmatched old entries: in entries but not in buffer (ordered by entry position).
         let unmatched_old: Vec<&DirEntry> = entries
             .iter()
             .filter(|e| {
@@ -440,26 +428,18 @@ impl Document {
             })
             .collect();
 
-        // Pair by position: min(old, new) → renames.
         let pair_count = unmatched_old.len().min(unmatched_new.len());
 
         let renames: Vec<(PathBuf, String)> = (0..pair_count)
-            .map(|i| {
-                let old_path = unmatched_old[i].path.clone();
-                // Strip trailing slash — rename target is the bare name.
-                let new_name = unmatched_new[i].trim_end_matches('/').to_string();
-                (old_path, new_name)
-            })
+            .map(|i| (unmatched_old[i].path.clone(), unmatched_new[i].trim_end_matches('/').to_string()))
             .collect();
 
-        // Excess old entries with no matching new name → deleted.
         let deletes: Vec<PathBuf> = unmatched_old[pair_count..]
             .iter()
             .map(|e| e.path.clone())
             .collect();
 
-        // Excess new names with no matching old entry → created.
-        // Preserve trailing '/' so the create handler knows it's a directory.
+        // Preserve trailing '/' on creates so the handler knows it's a directory.
         let creates: Vec<String> = unmatched_new[pair_count..]
             .iter()
             .map(|n| n.to_string())
