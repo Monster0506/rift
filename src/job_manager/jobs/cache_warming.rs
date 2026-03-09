@@ -64,4 +64,8 @@ impl Job for CacheWarmingJob {
     fn is_silent(&self) -> bool {
         true
     }
+
+    fn name(&self) -> &'static str {
+        "cache-warming"
+    }
 }

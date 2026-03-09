@@ -45,6 +45,10 @@ impl DirectoryListJob {
 }
 
 impl Job for DirectoryListJob {
+    fn name(&self) -> &'static str {
+        "directory-list"
+    }
+
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
@@ -146,6 +150,10 @@ impl FilePreviewJob {
 }
 
 impl Job for FilePreviewJob {
+    fn name(&self) -> &'static str {
+        "file-preview"
+    }
+
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;

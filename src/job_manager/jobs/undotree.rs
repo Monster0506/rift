@@ -55,6 +55,10 @@ impl UndoTreeRenderJob {
 }
 
 impl Job for UndoTreeRenderJob {
+    fn name(&self) -> &'static str {
+        "undotree-render"
+    }
+
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;

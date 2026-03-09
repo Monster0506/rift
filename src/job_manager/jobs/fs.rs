@@ -77,6 +77,10 @@ impl FsCopyJob {
 }
 
 impl Job for FsCopyJob {
+    fn name(&self) -> &'static str {
+        "fs-copy"
+    }
+
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         let _ = sender.send(JobMessage::Progress(
             id,
@@ -112,6 +116,10 @@ impl FsMoveJob {
 }
 
 impl Job for FsMoveJob {
+    fn name(&self) -> &'static str {
+        "fs-move"
+    }
+
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
@@ -166,6 +174,10 @@ impl FsDeleteJob {
 }
 
 impl Job for FsDeleteJob {
+    fn name(&self) -> &'static str {
+        "fs-delete"
+    }
+
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
@@ -207,6 +219,10 @@ impl FsCreateJob {
 }
 
 impl Job for FsCreateJob {
+    fn name(&self) -> &'static str {
+        "fs-create"
+    }
+
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
@@ -248,6 +264,10 @@ impl FsBatchDeleteJob {
 }
 
 impl Job for FsBatchDeleteJob {
+    fn name(&self) -> &'static str {
+        "fs-batch-delete"
+    }
+
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;

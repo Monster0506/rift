@@ -82,6 +82,7 @@ pub enum EditorAction {
     SaveAndQuit,
     OpenExplorer,
     OpenUndoTree,
+    OpenMessages,
     ShowBufferList,
     ClearHighlights,
     ClearNotifications,
@@ -130,67 +131,63 @@ impl FromStr for Action {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            // Editor Actions - Movement
-            "editor:move_left" => Ok(Action::Editor(EditorAction::Move(Motion::Left))),
-            "editor:move_right" => Ok(Action::Editor(EditorAction::Move(Motion::Right))),
-            "editor:move_up" => Ok(Action::Editor(EditorAction::Move(Motion::Up))),
-            "editor:move_down" => Ok(Action::Editor(EditorAction::Move(Motion::Down))),
-            "editor:move_start_of_line" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::StartOfLine)))
-            }
-            "editor:move_end_of_line" => Ok(Action::Editor(EditorAction::Move(Motion::EndOfLine))),
-            "editor:move_start_of_file" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::StartOfFile)))
-            }
-            "editor:move_end_of_file" => Ok(Action::Editor(EditorAction::Move(Motion::EndOfFile))),
-            "editor:move_page_up" => Ok(Action::Editor(EditorAction::Move(Motion::PageUp))),
-            "editor:move_page_down" => Ok(Action::Editor(EditorAction::Move(Motion::PageDown))),
-            "editor:move_next_word" => Ok(Action::Editor(EditorAction::Move(Motion::NextWord))),
-            "editor:move_prev_word" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::PreviousWord)))
-            }
-            "editor:move_next_big_word" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::NextBigWord)))
-            }
-            "editor:move_prev_big_word" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::PreviousBigWord)))
-            }
-            "editor:move_next_paragraph" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::NextParagraph)))
-            }
-            "editor:move_prev_paragraph" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::PreviousParagraph)))
-            }
-            "editor:move_next_sentence" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::NextSentence)))
-            }
-            "editor:move_prev_sentence" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::PreviousSentence)))
-            }
-            "editor:move_next_match" => Ok(Action::Editor(EditorAction::Move(Motion::NextMatch))),
-            "editor:move_prev_match" => {
-                Ok(Action::Editor(EditorAction::Move(Motion::PreviousMatch)))
-            }
+            // Movement
+            "editor:move:left" => Ok(Action::Editor(EditorAction::Move(Motion::Left))),
+            "editor:move:right" => Ok(Action::Editor(EditorAction::Move(Motion::Right))),
+            "editor:move:up" => Ok(Action::Editor(EditorAction::Move(Motion::Up))),
+            "editor:move:down" => Ok(Action::Editor(EditorAction::Move(Motion::Down))),
+            "editor:move:line:start" => Ok(Action::Editor(EditorAction::Move(Motion::StartOfLine))),
+            "editor:move:line:end" => Ok(Action::Editor(EditorAction::Move(Motion::EndOfLine))),
+            "editor:move:file:start" => Ok(Action::Editor(EditorAction::Move(Motion::StartOfFile))),
+            "editor:move:file:end" => Ok(Action::Editor(EditorAction::Move(Motion::EndOfFile))),
+            "editor:move:page:up" => Ok(Action::Editor(EditorAction::Move(Motion::PageUp))),
+            "editor:move:page:down" => Ok(Action::Editor(EditorAction::Move(Motion::PageDown))),
+            "editor:move:word:next" => Ok(Action::Editor(EditorAction::Move(Motion::NextWord))),
+            "editor:move:word:prev" => Ok(Action::Editor(EditorAction::Move(Motion::PreviousWord))),
+            "editor:move:bigword:next" => Ok(Action::Editor(EditorAction::Move(Motion::NextBigWord))),
+            "editor:move:bigword:prev" => Ok(Action::Editor(EditorAction::Move(Motion::PreviousBigWord))),
+            "editor:move:paragraph:next" => Ok(Action::Editor(EditorAction::Move(Motion::NextParagraph))),
+            "editor:move:paragraph:prev" => Ok(Action::Editor(EditorAction::Move(Motion::PreviousParagraph))),
+            "editor:move:sentence:next" => Ok(Action::Editor(EditorAction::Move(Motion::NextSentence))),
+            "editor:move:sentence:prev" => Ok(Action::Editor(EditorAction::Move(Motion::PreviousSentence))),
+            "editor:move:match:next" => Ok(Action::Editor(EditorAction::Move(Motion::NextMatch))),
+            "editor:move:match:prev" => Ok(Action::Editor(EditorAction::Move(Motion::PreviousMatch))),
 
-            // Editor Actions - General
-            "editor:enter_insert_mode" => Ok(Action::Editor(EditorAction::EnterInsertMode)),
-            "editor:enter_insert_mode_after" => {
-                Ok(Action::Editor(EditorAction::EnterInsertModeAfter))
-            }
-            "editor:enter_insert_mode_at_line_start" => {
+            // Mode transitions
+            "mode:normal" => Ok(Action::Editor(EditorAction::EnterNormalMode)),
+            "mode:insert" => Ok(Action::Editor(EditorAction::EnterInsertMode)),
+            "mode:insert_after" => Ok(Action::Editor(EditorAction::EnterInsertModeAfter)),
+            "mode:insert_line_start" => {
                 Ok(Action::Editor(EditorAction::EnterInsertModeAtLineStart))
             }
-            "editor:enter_insert_mode_at_line_end" => {
-                Ok(Action::Editor(EditorAction::EnterInsertModeAtLineEnd))
-            }
-            "editor:enter_normal_mode" => Ok(Action::Editor(EditorAction::EnterNormalMode)),
-            "editor:enter_command_mode" => Ok(Action::Editor(EditorAction::EnterCommandMode)),
-            "editor:enter_search_mode" => Ok(Action::Editor(EditorAction::EnterSearchMode)),
-            "editor:undo" => Ok(Action::Editor(EditorAction::Undo)),
-            "editor:redo" => Ok(Action::Editor(EditorAction::Redo)),
-            "editor:quit" => Ok(Action::Editor(EditorAction::Quit)),
-            "editor:buffer_next" => Ok(Action::Editor(EditorAction::BufferNext)),
-            "editor:buffer_previous" => Ok(Action::Editor(EditorAction::BufferPrevious)),
+            "mode:insert_line_end" => Ok(Action::Editor(EditorAction::EnterInsertModeAtLineEnd)),
+            "mode:command" => Ok(Action::Editor(EditorAction::EnterCommandMode)),
+            "mode:search" => Ok(Action::Editor(EditorAction::EnterSearchMode)),
+
+            // Buffer management
+            "buffer:next" => Ok(Action::Editor(EditorAction::BufferNext)),
+            "buffer:prev" => Ok(Action::Editor(EditorAction::BufferPrevious)),
+            "buffer:list" => Ok(Action::Editor(EditorAction::ShowBufferList)),
+
+            // Search
+            "search:clear" => Ok(Action::Editor(EditorAction::ClearHighlights)),
+
+            // Notifications
+            "notifications:clear" => Ok(Action::Editor(EditorAction::ClearNotifications)),
+            "notifications:clear_last" => Ok(Action::Editor(EditorAction::ClearLastNotification)),
+
+            // History
+            "history:undo" => Ok(Action::Editor(EditorAction::Undo)),
+            "history:redo" => Ok(Action::Editor(EditorAction::Redo)),
+            "history:checkpoint" => Ok(Action::Editor(EditorAction::Checkpoint)),
+
+            // Feature openers
+            "explorer:open" => Ok(Action::Editor(EditorAction::OpenExplorer)),
+            "undotree:open" => Ok(Action::Editor(EditorAction::OpenUndoTree)),
+            "terminal:open" => Ok(Action::Editor(EditorAction::OpenTerminal(None))),
+            "messages:open" => Ok(Action::Editor(EditorAction::OpenMessages)),
+
+            // Editor-only actions
             "editor:delete_line" => Ok(Action::Editor(EditorAction::DeleteLine)),
             "editor:delete_char" => Ok(Action::Editor(EditorAction::Delete(Motion::Right))),
             "editor:delete_back" => Ok(Action::Editor(EditorAction::Delete(Motion::Left))),
@@ -198,20 +195,17 @@ impl FromStr for Action {
             "editor:redraw" => Ok(Action::Editor(EditorAction::Redraw)),
             "editor:save" => Ok(Action::Editor(EditorAction::Save)),
             "editor:save_and_quit" => Ok(Action::Editor(EditorAction::SaveAndQuit)),
-            "editor:open_explorer" => Ok(Action::Editor(EditorAction::OpenExplorer)),
-            "editor:open_undotree" => Ok(Action::Editor(EditorAction::OpenUndoTree)),
-            "editor:open_terminal" => Ok(Action::Editor(EditorAction::OpenTerminal(None))),
-            "editor:show_buffer_list" => Ok(Action::Editor(EditorAction::ShowBufferList)),
-            "editor:clear_highlights" => Ok(Action::Editor(EditorAction::ClearHighlights)),
-            "editor:clear_notifications" => Ok(Action::Editor(EditorAction::ClearNotifications)),
-            "editor:clear_last_notification" => {
-                Ok(Action::Editor(EditorAction::ClearLastNotification))
-            }
-            "editor:checkpoint" => Ok(Action::Editor(EditorAction::Checkpoint)),
+            "editor:quit" => Ok(Action::Editor(EditorAction::Quit)),
             "editor:submit" => Ok(Action::Editor(EditorAction::Submit)),
             "editor:history_up" => Ok(Action::Editor(EditorAction::HistoryUp)),
             "editor:history_down" => Ok(Action::Editor(EditorAction::HistoryDown)),
             "editor:dot_repeat" => Ok(Action::Editor(EditorAction::DotRepeat)),
+
+            // Multi-level editor sub-namespace: editor:X:Y forwards to Buffer action X:Y
+            s if s.starts_with("editor:") && s.matches(':').count() >= 2 => {
+                Ok(Action::Buffer(s["editor:".len()..].to_string()))
+            }
+
             s if s.contains(':') && !s.starts_with("editor:") => {
                 Ok(Action::Buffer(s.to_string()))
             }

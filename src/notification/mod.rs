@@ -2,7 +2,7 @@
 //! Manages popup notifications for the user
 
 use crate::error::ErrorSeverity;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 /// Types of notifications
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +24,45 @@ impl From<ErrorSeverity> for NotificationType {
             ErrorSeverity::Warning => NotificationType::Warning,
             ErrorSeverity::Error => NotificationType::Error,
             ErrorSeverity::Critical => NotificationType::Error,
+        }
+    }
+}
+
+/// The kind of a job lifecycle event recorded in the message log
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobEventKind {
+    Started,
+    Progress(u32),
+    Finished,
+    Error,
+    Cancelled,
+}
+
+/// A single entry in the persistent message log
+#[derive(Debug, Clone)]
+pub enum MessageEntry {
+    /// A user-facing notification
+    Notification {
+        time: SystemTime,
+        kind: NotificationType,
+        message: String,
+    },
+    /// A job lifecycle event
+    JobEvent {
+        time: SystemTime,
+        job_id: usize,
+        kind: JobEventKind,
+        /// Whether the job that emitted this is silent
+        silent: bool,
+        message: String,
+    },
+}
+
+impl MessageEntry {
+    pub fn time(&self) -> SystemTime {
+        match self {
+            MessageEntry::Notification { time, .. } => *time,
+            MessageEntry::JobEvent { time, .. } => *time,
         }
     }
 }
@@ -78,6 +117,8 @@ pub struct NotificationManager {
     next_id: u64,
     /// Monotonic generation counter for change detection
     pub generation: u64,
+    /// Persistent log of all messages and job events (never pruned)
+    message_log: Vec<MessageEntry>,
 }
 
 impl NotificationManager {
@@ -87,6 +128,7 @@ impl NotificationManager {
             notifications: Vec::new(),
             next_id: 0,
             generation: 0,
+            message_log: Vec::new(),
         }
     }
 
@@ -99,10 +141,37 @@ impl NotificationManager {
     ) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
+        let message: String = message.into();
+        self.message_log.push(MessageEntry::Notification {
+            time: SystemTime::now(),
+            kind,
+            message: message.clone(),
+        });
         self.notifications
             .push(Notification::new(id, kind, message, ttl));
         self.generation += 1;
         id
+    }
+
+    pub fn log_job_event(
+        &mut self,
+        job_id: usize,
+        kind: JobEventKind,
+        silent: bool,
+        message: impl Into<String>,
+    ) {
+        self.message_log.push(MessageEntry::JobEvent {
+            time: SystemTime::now(),
+            job_id,
+            kind,
+            silent,
+            message: message.into(),
+        });
+        self.generation += 1;
+    }
+
+    pub fn message_log(&self) -> &[MessageEntry] {
+        &self.message_log
     }
 
     /// Add an info notification (convenience)

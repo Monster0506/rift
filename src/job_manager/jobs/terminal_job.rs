@@ -18,6 +18,10 @@ impl fmt::Debug for TerminalInputJob {
 }
 
 impl Job for TerminalInputJob {
+    fn name(&self) -> &'static str {
+        "terminal"
+    }
+
     fn run(self: Box<Self>, _id: usize, tx: Sender<JobMessage>, signal: CancellationSignal) {
         loop {
             if signal.is_cancelled() {

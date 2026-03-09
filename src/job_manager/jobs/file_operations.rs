@@ -59,6 +59,10 @@ impl FileSaveJob {
 }
 
 impl Job for FileSaveJob {
+    fn name(&self) -> &'static str {
+        "file-save"
+    }
+
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         let parent = self.path.parent().unwrap_or_else(|| Path::new("."));
         let temp_path = parent.join(format!(
@@ -180,6 +184,10 @@ impl FileLoadJob {
 }
 
 impl Job for FileLoadJob {
+    fn name(&self) -> &'static str {
+        "file-load"
+    }
+
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         let do_load = || -> Result<FileLoadResult, std::io::Error> {
             let bytes = fs::read(&self.path)?;

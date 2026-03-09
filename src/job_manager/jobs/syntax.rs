@@ -67,6 +67,10 @@ impl SyntaxParseJob {
 }
 
 impl Job for SyntaxParseJob {
+    fn name(&self) -> &'static str {
+        "syntax-parse"
+    }
+
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;

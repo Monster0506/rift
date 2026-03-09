@@ -56,6 +56,11 @@ pub enum BufferKind {
         /// Maps buffer line index → EditSeq; u64::MAX = non-navigable connector line
         sequences: Vec<EditSeq>,
     },
+    /// Messages log buffer showing all editor notifications
+    Messages {
+        /// When true, shows all job events including silent ones
+        show_all: bool,
+    },
 }
 
 /// Line ending types supported by Rift
@@ -288,6 +293,25 @@ impl Document {
     }
 
     /// Create a new messages buffer showing the accumulated notification log.
+    pub fn new_messages(id: DocumentId, show_all: bool) -> Result<Self, RiftError> {
+        let buffer = TextBuffer::new(4096)?;
+        Ok(Document {
+            id,
+            buffer,
+            options: DocumentOptions { show_line_numbers: false, ..DocumentOptions::default() },
+            file_path: None,
+            is_read_only: false,
+            syntax: None,
+            history: UndoTree::new(),
+            current_transaction: None,
+            view_state: ViewState::default(),
+            terminal: None,
+            terminal_cursor: None,
+            kind: BufferKind::Messages { show_all },
+            custom_highlights: vec![],
+        })
+    }
+
     /// Check if this document is a terminal
     pub fn is_terminal(&self) -> bool {
         matches!(self.kind, BufferKind::Terminal)
@@ -303,7 +327,12 @@ impl Document {
         matches!(self.kind, BufferKind::UndoTree { .. })
     }
 
-    /// Returns true for any non-file buffer (directory, undo-tree, terminal).
+    /// Check if this document is a messages buffer
+    pub fn is_messages(&self) -> bool {
+        matches!(self.kind, BufferKind::Messages { .. })
+    }
+
+    /// Returns true for any non-file buffer (directory, undo-tree, terminal, messages).
     /// Special buffers bypass the dirty-on-close prompt.
     pub fn is_special(&self) -> bool {
         !matches!(self.kind, BufferKind::File)
@@ -381,6 +410,100 @@ impl Document {
 
         self.custom_highlights = highlights;
         self.kind = BufferKind::UndoTree { linked_doc_id, sequences };
+        self.history.mark_saved();
+    }
+
+    /// Populate this messages buffer from the notification log.
+    pub fn populate_messages_buffer(
+        &mut self,
+        log: &[crate::notification::MessageEntry],
+    ) {
+        use crate::color::Color;
+        use crate::notification::{JobEventKind, MessageEntry, NotificationType};
+
+        let show_all = match self.kind {
+            BufferKind::Messages { show_all } => show_all,
+            _ => return,
+        };
+
+        let mut content = String::new();
+        let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
+
+        let push_colored =
+            |content: &mut String, highlights: &mut Vec<_>, s: &str, color: Color| {
+                let start = content.len();
+                content.push_str(s);
+                highlights.push((start..content.len(), color));
+            };
+
+        for entry in log {
+            let include = match entry {
+                MessageEntry::Notification { .. } => true,
+                MessageEntry::JobEvent { silent, .. } => show_all || !silent,
+            };
+            if !include {
+                continue;
+            }
+
+            let time = entry.time();
+            let secs = time
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let h = secs / 3600 % 24;
+            let m = secs / 60 % 60;
+            let s = secs % 60;
+            let time_str = format!("[{h:02}:{m:02}:{s:02}]");
+
+            match entry {
+                MessageEntry::Notification { kind, message, .. } => {
+                    let (kind_str, color) = match kind {
+                        NotificationType::Info => ("[info]   ", Color::Cyan),
+                        NotificationType::Warning => ("[warn]   ", Color::Yellow),
+                        NotificationType::Error => ("[error]  ", Color::Red),
+                        NotificationType::Success => ("[ok]     ", Color::Green),
+                    };
+                    push_colored(&mut content, &mut highlights, &time_str, Color::Grey);
+                    content.push(' ');
+                    push_colored(&mut content, &mut highlights, kind_str, color);
+                    content.push(' ');
+                    content.push_str(message);
+                    content.push('\n');
+                }
+                MessageEntry::JobEvent { job_id, kind, message, .. } => {
+                    let (kind_str, color) = match kind {
+                        JobEventKind::Started => ("[job:start]  ", Color::DarkCyan),
+                        JobEventKind::Progress(_) => ("[job:progress]", Color::DarkCyan),
+                        JobEventKind::Finished => ("[job:done]   ", Color::DarkGreen),
+                        JobEventKind::Error => ("[job:error]  ", Color::Red),
+                        JobEventKind::Cancelled => ("[job:cancel] ", Color::DarkYellow),
+                    };
+                    push_colored(&mut content, &mut highlights, &time_str, Color::Grey);
+                    content.push(' ');
+                    push_colored(&mut content, &mut highlights, kind_str, color);
+                    content.push_str(&format!(" #{job_id} "));
+                    content.push_str(message);
+                    content.push('\n');
+                }
+            }
+        }
+
+        if content.ends_with('\n') {
+            content.pop();
+        }
+
+        if content.is_empty() {
+            content = "(no messages)".to_string();
+        }
+
+        let old_revision = self.buffer.revision;
+        if let Ok(mut new_buffer) = TextBuffer::new(content.len().max(64)) {
+            let _ = new_buffer.insert_str(&content);
+            new_buffer.revision = old_revision + 1;
+            self.buffer = new_buffer;
+        }
+
+        self.custom_highlights = highlights;
         self.history.mark_saved();
     }
 
@@ -870,6 +993,13 @@ impl Document {
                 )
             }
             BufferKind::UndoTree { .. } => Cow::Borrowed("[UndoTree]"),
+            BufferKind::Messages { show_all } => {
+                if *show_all {
+                    Cow::Borrowed("[Messages:all]")
+                } else {
+                    Cow::Borrowed("[Messages]")
+                }
+            }
             BufferKind::File => self.file_path
                 .as_ref()
                 .and_then(|p| p.file_name())

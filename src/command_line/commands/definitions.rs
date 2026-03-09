@@ -542,6 +542,15 @@ fn parse_undotree(
     ParsedCommand::UndoTree { bangs }
 }
 
+fn parse_messages(
+    _registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    let show_all = args.first().map(|a| *a == "all").unwrap_or(false);
+    ParsedCommand::Messages { show_all, bangs }
+}
+
 fn parse_terminal(
     _registry: &SettingsRegistry<UserSettings>,
     args: &[&str],
@@ -960,6 +969,15 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         aliases: &["ut"],
         description: "Open undo tree visualization",
         factory: Some(parse_undotree),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "messages",
+        aliases: &["mes"],
+        description: "Open messages log buffer",
+        factory: Some(parse_messages),
         subcommands: &[],
         completion: N,
         subcommand_prefix: "",

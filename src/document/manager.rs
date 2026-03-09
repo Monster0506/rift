@@ -72,6 +72,14 @@ impl DocumentManager {
         self.documents.get_mut(&id)
     }
 
+    /// Find the ID of an open messages buffer, if any.
+    pub fn find_messages_doc_id(&self) -> Option<DocumentId> {
+        self.documents
+            .iter()
+            .find(|(_, d)| d.is_messages())
+            .map(|(id, _)| *id)
+    }
+
     /// Get next available document ID
     pub fn next_id(&self) -> DocumentId {
         self.next_document_id

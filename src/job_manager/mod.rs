@@ -63,6 +63,10 @@ pub struct JobHandle {
     pub handle: JoinHandle<()>,
     pub state: JobState,
     pub cancellation_token: Arc<AtomicBool>,
+    /// Whether the job opted out of notifications
+    pub silent: bool,
+    /// Descriptive name for the job type
+    pub name: &'static str,
 }
 
 /// Trait defining a background job.
@@ -84,6 +88,11 @@ pub trait Job: Send + std::fmt::Debug + 'static {
     fn is_silent(&self) -> bool {
         false
     }
+
+    /// Descriptive name for this job type.
+    fn name(&self) -> &'static str {
+        "job"
+    }
 }
 
 impl Job for Box<dyn Job> {
@@ -94,6 +103,10 @@ impl Job for Box<dyn Job> {
     fn is_silent(&self) -> bool {
         (**self).is_silent()
     }
+
+    fn name(&self) -> &'static str {
+        (**self).name()
+    }
 }
 
 impl Job for Box<dyn Job + Send> {
@@ -103,6 +116,10 @@ impl Job for Box<dyn Job + Send> {
 
     fn is_silent(&self) -> bool {
         (**self).is_silent()
+    }
+
+    fn name(&self) -> &'static str {
+        (**self).name()
     }
 }
 
@@ -142,6 +159,7 @@ impl JobManager {
             cancelled: cancellation_token.clone(),
         };
         let silent = job.is_silent();
+        let name = job.name();
         let job_box = Box::new(job);
 
         let handle = thread::spawn(move || {
@@ -157,6 +175,8 @@ impl JobManager {
                 handle,
                 state: JobState::Running,
                 cancellation_token,
+                silent,
+                name,
             },
         );
 
@@ -229,6 +249,16 @@ impl JobManager {
             job.cancellation_token.store(true, Ordering::Relaxed);
             job.state = JobState::Cancelled;
         }
+    }
+
+    /// Returns true if the given job was spawned with `is_silent() == true`.
+    pub fn is_job_silent(&self, id: usize) -> bool {
+        self.jobs.get(&id).map(|h| h.silent).unwrap_or(false)
+    }
+
+    /// Returns the descriptive name of the given job, or `"job"` if not found.
+    pub fn job_name(&self, id: usize) -> &'static str {
+        self.jobs.get(&id).map(|h| h.name).unwrap_or("job")
     }
 }
 

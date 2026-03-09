@@ -52,6 +52,8 @@ pub struct Editor<T: TerminalBackend> {
     pending_operator: Option<crate::action::OperatorType>,
     dot_repeat: DotRepeat,
     pub panel_layout: Option<PanelLayout>,
+    /// Last seen notification generation; used to detect when to refresh open messages buffers.
+    last_notification_generation: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,6 +163,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_operator: None,
             dot_repeat: DotRepeat::new(),
             panel_layout: None,
+            last_notification_generation: 0,
         };
 
         // Register default keymaps
@@ -537,10 +540,11 @@ impl<T: TerminalBackend> Editor<T> {
                     break;
                 }
             }
-            // If we processed jobs, we might need a re-render if they affected state
-            if processed_jobs > 0 {
-                // For now, we'll just let the next loop iteration handle any render updates
-                // triggered by notifications or state changes.
+            // If the notification log grew, refresh any open messages buffer
+            let current_gen = self.state.error_manager.notifications().generation;
+            if current_gen != self.last_notification_generation {
+                self.last_notification_generation = current_gen;
+                self.refresh_messages_buffer_if_open();
             }
 
             // Poll for input
@@ -858,11 +862,17 @@ impl<T: TerminalBackend> Editor<T> {
         let editor_action = match action {
             Action::Editor(act) => act,
             Action::Buffer(id) => {
+                // messages:open works globally regardless of active buffer kind
+                if id == "messages:open" {
+                    self.open_messages(false);
+                    return true;
+                }
                 use crate::document::BufferKind;
                 let kind = self.active_document().kind.clone();
                 match kind {
                     BufferKind::Directory { .. } => self.handle_directory_buffer_action(id),
                     BufferKind::UndoTree { .. } => self.handle_undotree_buffer_action(id),
+                    BufferKind::Messages { .. } => self.handle_messages_buffer_action(id),
                     _ => {}
                 }
                 return true;
@@ -1038,6 +1048,10 @@ impl<T: TerminalBackend> Editor<T> {
                 self.open_undotree_split();
                 true
             }
+            EditorAction::OpenMessages => {
+                self.open_messages(false);
+                true
+            }
             EditorAction::ShowBufferList => {
                 self.do_show_buffer_list();
                 true
@@ -1197,6 +1211,42 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    fn handle_messages_buffer_action(&mut self, id: &str) {
+        match id {
+            "messages:refresh" => self.refresh_messages_buffer_if_open(),
+            _ => {}
+        }
+    }
+
+    /// Repopulate any open messages buffer with the current notification log.
+    /// Preserves cursor position for background refreshes.
+    fn refresh_messages_buffer_if_open(&mut self) {
+        let doc_id = match self.document_manager.find_messages_doc_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let log = self
+            .state
+            .error_manager
+            .notifications()
+            .message_log()
+            .to_vec();
+
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+            let cursor = doc.buffer.cursor();
+            doc.populate_messages_buffer(&log);
+            // Preserve cursor position on background refresh
+            let len = doc.buffer.len();
+            let _ = doc.buffer.set_cursor(cursor.min(len.saturating_sub(1)));
+        }
+
+        // Only re-render if the messages buffer is currently visible
+        if self.active_document_id() == doc_id {
+            let _ = self.update_and_render();
+        }
+    }
+
     fn do_save(&mut self) {
         use crate::document::BufferKind;
         if let Some(doc) = self.document_manager.active_document() {
@@ -1223,7 +1273,7 @@ impl<T: TerminalBackend> Editor<T> {
                 BufferKind::Directory { .. } => {
                     self.apply_directory_diff();
                 }
-                BufferKind::UndoTree { .. } | BufferKind::Terminal => {
+                BufferKind::UndoTree { .. } | BufferKind::Terminal | BufferKind::Messages { .. } => {
                     self.state.handle_error(RiftError::new(
                         ErrorType::Io,
                         "CANT_SAVE",
@@ -2499,6 +2549,45 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
+    /// Open the messages log as a standalone buffer in the current window.
+    pub fn open_messages(&mut self, show_all: bool) {
+        let id = self.document_manager.next_id();
+        let mut doc = match crate::document::Document::new_messages(id, show_all) {
+            Ok(d) => d,
+            Err(e) => {
+                self.state.handle_error(e);
+                return;
+            }
+        };
+
+        let log = self
+            .state
+            .error_manager
+            .notifications()
+            .message_log()
+            .to_vec();
+        doc.populate_messages_buffer(&log);
+        // On initial open, position at the end so the newest messages are visible
+        let len = doc.buffer.len();
+        let _ = doc.buffer.set_cursor(len.saturating_sub(1));
+
+        self.document_manager.add_document(doc);
+        if let Err(e) = self.document_manager.switch_to_document(id) {
+            self.state.handle_error(e);
+            return;
+        }
+        self.split_tree.focused_window_mut().document_id = id;
+
+        self.last_notification_generation = self
+            .state
+            .error_manager
+            .notifications()
+            .generation;
+
+        self.sync_state_with_active_document();
+        let _ = self.force_full_redraw();
+    }
+
     /// Open the undo tree for the active document as a split pane.
     pub fn open_undotree_split(&mut self) {
         if let Some(ref layout) = self.panel_layout.clone() {
@@ -3065,27 +3154,50 @@ impl<T: TerminalBackend> Editor<T> {
         self.job_manager.update_job_state(&msg);
 
         match msg {
-            JobMessage::Started(_, _) => {
-                // Silent start
+            JobMessage::Started(id, silent) => {
+                let name = self.job_manager.job_name(id);
+                self.state
+                    .error_manager
+                    .notifications_mut()
+                    .log_job_event(id, crate::notification::JobEventKind::Started, silent, format!("{}: started", name));
             }
-            JobMessage::Progress(_id, _percentage, _msg) => {
-                // Silent progress
+            JobMessage::Progress(id, percentage, msg) => {
+                let silent = self.job_manager.is_job_silent(id);
+                let name = self.job_manager.job_name(id);
+                self.state
+                    .error_manager
+                    .notifications_mut()
+                    .log_job_event(id, crate::notification::JobEventKind::Progress(percentage), silent, format!("{}: {}", name, msg));
             }
-            JobMessage::Finished(_id, _silent) => {
-                // Cleanup? The manager handles cleanup of joined threads later,
-                // but we might want to trigger it eventually.
-                // For now, manual cleanup or lazily is fine.
+            JobMessage::Finished(id, silent) => {
+                let name = self.job_manager.job_name(id);
+                self.state
+                    .error_manager
+                    .notifications_mut()
+                    .log_job_event(id, crate::notification::JobEventKind::Finished, silent, format!("{}: finished", name));
             }
             JobMessage::Error(id, err) => {
+                let silent = self.job_manager.is_job_silent(id);
+                let name = self.job_manager.job_name(id);
+                self.state
+                    .error_manager
+                    .notifications_mut()
+                    .log_job_event(id, crate::notification::JobEventKind::Error, silent, format!("{}: {}", name, err));
                 self.state.notify(
                     crate::notification::NotificationType::Error,
-                    format!("Job {} failed: {}", id, err),
+                    format!("{} failed: {}", name, err),
                 );
             }
             JobMessage::Cancelled(id) => {
+                let silent = self.job_manager.is_job_silent(id);
+                let name = self.job_manager.job_name(id);
+                self.state
+                    .error_manager
+                    .notifications_mut()
+                    .log_job_event(id, crate::notification::JobEventKind::Cancelled, silent, format!("{}: cancelled", name));
                 self.state.notify(
                     crate::notification::NotificationType::Warning,
-                    format!("Job {} cancelled", id),
+                    format!("{} cancelled", name),
                 );
             }
             JobMessage::Custom(id, payload) => {
@@ -3476,6 +3588,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             ExecutionResult::OpenDirectory { path } => { self.open_explorer(path); }
             ExecutionResult::OpenUndoTree => { self.open_undotree_split(); }
+            ExecutionResult::OpenMessages { show_all } => { self.open_messages(show_all); }
         }
         if self.current_mode == Mode::Command {
             self.set_mode(Mode::Normal);

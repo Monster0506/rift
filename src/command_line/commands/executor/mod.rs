@@ -69,6 +69,10 @@ pub enum ExecutionResult {
     },
     /// Open an undo-tree buffer for the active document
     OpenUndoTree,
+    /// Open the messages log buffer
+    OpenMessages {
+        show_all: bool,
+    },
 }
 
 impl PartialEq for ExecutionResult {
@@ -101,6 +105,7 @@ impl PartialEq for ExecutionResult {
             (Self::UndoGoto { seq: s1 }, Self::UndoGoto { seq: s2 }) => s1 == s2,
             (Self::Checkpoint, Self::Checkpoint) => true,
             (Self::OpenUndoTree, Self::OpenUndoTree) => true,
+            (Self::OpenMessages { show_all: a }, Self::OpenMessages { show_all: b }) => a == b,
             (Self::OpenDirectory { path: p1 }, Self::OpenDirectory { path: p2 }) => p1 == p2,
             (
                 Self::OpenTerminal { cmd: c1, bangs: b1 },
@@ -168,6 +173,7 @@ impl std::fmt::Debug for ExecutionResult {
                 .field("path", path)
                 .finish(),
             Self::OpenUndoTree => write!(f, "OpenUndoTree"),
+            Self::OpenMessages { show_all } => write!(f, "OpenMessages({show_all})"),
         }
     }
 }
@@ -430,6 +436,7 @@ impl CommandExecutor {
                 ExecutionResult::Checkpoint
             }
             ParsedCommand::UndoTree { bangs: _ } => ExecutionResult::OpenUndoTree,
+            ParsedCommand::Messages { show_all, bangs: _ } => ExecutionResult::OpenMessages { show_all },
             ParsedCommand::Split {
                 subcommand,
                 bangs: _,

@@ -112,6 +112,12 @@ pub enum ParsedCommand {
         subcommand: SplitSubcommand,
         bangs: usize,
     },
+    /// Open messages log buffer
+    Messages {
+        /// Show all job events including silent ones
+        show_all: bool,
+        bangs: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

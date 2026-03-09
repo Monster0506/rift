@@ -103,6 +103,15 @@ impl Job for CompletionJob {
             token_start: parsed.token_start,
         };
         let _ = sender.send(JobMessage::Custom(id, Box::new(payload)));
+        let _ = sender.send(JobMessage::Finished(id, true));
+    }
+
+    fn is_silent(&self) -> bool {
+        true
+    }
+
+    fn name(&self) -> &'static str {
+        "completion"
     }
 }
 
