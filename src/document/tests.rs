@@ -933,3 +933,14 @@ fn test_get_changed_line_for_seq() {
     // Test invalid seq
     assert_eq!(doc.get_changed_line_for_seq(9999), None);
 }
+
+#[test]
+fn test_from_file_strips_utf8_bom() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bom.txt");
+    std::fs::write(&path, b"\xEF\xBB\xBFhello").unwrap();
+
+    let doc = Document::from_file(1, &path).unwrap();
+    assert_eq!(doc.buffer.to_string(), "hello");
+    assert_eq!(doc.buffer.len(), 5);
+}

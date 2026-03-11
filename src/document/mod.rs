@@ -152,7 +152,7 @@ impl Document {
         // Detect line endings and normalize
         let mut line_ending = LineEnding::LF;
         let mut normalized_bytes = Vec::with_capacity(bytes.len());
-        let mut i = 0;
+        let mut i = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) { 3 } else { 0 };
         while i < bytes.len() {
             if bytes[i] == b'\r' && i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
                 line_ending = LineEnding::CRLF;

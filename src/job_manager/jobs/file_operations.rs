@@ -203,7 +203,7 @@ impl Job for FileLoadJob {
             let mut line_ending = LineEnding::LF;
             let mut normalized_chars = Vec::with_capacity(bytes.len());
 
-            let mut remaining = bytes.as_slice();
+            let mut remaining = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) { &bytes[3..] } else { &bytes[..] };
             while !remaining.is_empty() {
                 if remaining[0] == b'\r'
                     && remaining.len() > 1
@@ -304,6 +304,19 @@ mod tests {
             }
         }
         result.expect("FileLoadJob did not produce a FileLoadResult")
+    }
+
+    #[test]
+    fn file_load_job_strips_utf8_bom() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bom.txt");
+        std::fs::write(&path, b"\xEF\xBB\xBFhello").unwrap();
+
+        let result = run_load_job(path);
+        let chars: Vec<Character> = result.line_index.table.iter().collect();
+
+        assert_eq!(chars.len(), 5);
+        assert_eq!(chars[0], Character::Unicode('h'));
     }
 
     #[test]

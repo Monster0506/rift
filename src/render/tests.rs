@@ -922,3 +922,39 @@ fn test_no_redraw_on_noop() {
         Character::from('X')
     );
 }
+
+// ============================================================================
+// Unicode cursor column tests
+// ============================================================================
+
+#[test]
+fn test_cursor_column_wide_chars() {
+    let mut buf = TextBuffer::new(100).unwrap();
+    buf.insert_str("a中b").unwrap();
+
+    assert_eq!(calculate_cursor_column(&buf, 0, 4), 4);
+    buf.move_left();
+    assert_eq!(calculate_cursor_column(&buf, 0, 4), 3);
+    buf.move_left();
+    assert_eq!(calculate_cursor_column(&buf, 0, 4), 1);
+    buf.move_left();
+    assert_eq!(calculate_cursor_column(&buf, 0, 4), 0);
+}
+
+#[test]
+fn test_cursor_column_combining_chars() {
+    let mut buf = TextBuffer::new(100).unwrap();
+    buf.insert_str("e\u{0301}").unwrap();
+
+    buf.move_left();
+    assert_eq!(calculate_cursor_column(&buf, 0, 4), 1);
+    buf.move_left();
+    assert_eq!(calculate_cursor_column(&buf, 0, 4), 0);
+}
+
+#[test]
+fn test_cursor_column_truncated_utf8() {
+    let mut buf = TextBuffer::new(100).unwrap();
+    buf.insert_bytes(&[0xE2, 0x80]).unwrap();
+    assert_eq!(calculate_cursor_column(&buf, 0, 4), 8);
+}

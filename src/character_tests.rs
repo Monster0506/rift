@@ -38,3 +38,21 @@ fn test_encode_utf8_special() {
     ctrl.encode_utf8(&mut buf);
     assert_eq!(buf, vec![0x01]);
 }
+
+#[test]
+fn wide_char_render_width() {
+    assert_eq!(Character::Unicode('中').render_width(0, 4), 2);
+    assert_eq!(Character::Unicode('🦀').render_width(0, 4), 2);
+    assert_eq!(Character::Unicode('a').render_width(0, 4), 1);
+}
+
+#[test]
+fn combining_char_render_width() {
+    assert_eq!(Character::Unicode('\u{0301}').render_width(0, 4), 0);
+    assert_eq!(Character::Unicode('\u{0308}').render_width(0, 4), 0);
+}
+
+#[test]
+fn bom_char_render_width() {
+    assert_eq!(Character::Unicode('\u{FEFF}').render_width(0, 4), 0);
+}
