@@ -203,22 +203,40 @@ impl Job for FileLoadJob {
             let mut line_ending = LineEnding::LF;
             let mut normalized_chars = Vec::with_capacity(bytes.len());
 
-            // Replicate logic from Document::from_file but constructing Vec<Character>
-            let mut i = 0;
-            while i < bytes.len() {
-                if bytes[i] == b'\r' && i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+            let mut remaining = bytes.as_slice();
+            while !remaining.is_empty() {
+                if remaining[0] == b'\r'
+                    && remaining.len() > 1
+                    && remaining[1] == b'\n'
+                {
                     line_ending = LineEnding::CRLF;
                     normalized_chars.push(Character::Newline);
-                    i += 2;
-                } else {
-                    if bytes[i] == b'\n' {
-                        // Mixed line endings? assume LF if we see bare LF?
-                        // Document::from_file only checks CRLF.
-                        normalized_chars.push(Character::Newline);
-                    } else {
-                        normalized_chars.push(Character::from(bytes[i]));
+                    remaining = &remaining[2..];
+                    continue;
+                }
+
+                match std::str::from_utf8(remaining) {
+                    Ok(s) => {
+                        for c in s.chars() {
+                            normalized_chars.push(Character::from(c));
+                        }
+                        break;
                     }
-                    i += 1;
+                    Err(e) => {
+                        let valid_up_to = e.valid_up_to();
+                        // SAFETY: from_utf8 guarantees remaining[..valid_up_to] is valid UTF-8
+                        let valid = unsafe {
+                            std::str::from_utf8_unchecked(&remaining[..valid_up_to])
+                        };
+                        for c in valid.chars() {
+                            normalized_chars.push(Character::from(c));
+                        }
+                        let error_len = e.error_len().unwrap_or(1);
+                        for &b in &remaining[valid_up_to..valid_up_to + error_len] {
+                            normalized_chars.push(Character::Byte(b));
+                        }
+                        remaining = &remaining[valid_up_to + error_len..];
+                    }
                 }
             }
 
@@ -255,5 +273,51 @@ impl Job for FileLoadJob {
 
     fn is_silent(&self) -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::character::Character;
+    use crate::job_manager::{CancellationSignal, Job, JobMessage};
+    use std::sync::{atomic::AtomicBool, mpsc, Arc};
+
+    fn make_signal() -> CancellationSignal {
+        CancellationSignal { cancelled: Arc::new(AtomicBool::new(false)) }
+    }
+
+    fn run_load_job(path: PathBuf) -> FileLoadResult {
+        let (tx, rx) = mpsc::channel();
+        let doc_id: crate::document::DocumentId = 42;
+        let job = Box::new(FileLoadJob::new(doc_id, path));
+        job.run(1, tx, make_signal());
+
+        let mut result = None;
+        for msg in rx {
+            if let JobMessage::Custom(_, payload) = msg {
+                result = payload
+                    .into_any()
+                    .downcast::<FileLoadResult>()
+                    .ok()
+                    .map(|b| *b);
+            }
+        }
+        result.expect("FileLoadJob did not produce a FileLoadResult")
+    }
+
+    #[test]
+    fn file_load_job_decodes_multibyte_utf8() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("em_dash.txt");
+        std::fs::write(&path, "a—b").unwrap();
+
+        let result = run_load_job(path);
+        let chars: Vec<Character> = result.line_index.table.iter().collect();
+
+        assert_eq!(chars.len(), 3);
+        assert_eq!(chars[0], Character::Unicode('a'));
+        assert_eq!(chars[1], Character::Unicode('—'));
+        assert_eq!(chars[2], Character::Unicode('b'));
     }
 }

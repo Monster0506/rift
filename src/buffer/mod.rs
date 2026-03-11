@@ -118,7 +118,31 @@ impl TextBuffer {
 
     /// Insert bytes at the cursor position
     pub fn insert_bytes(&mut self, bytes: &[u8]) -> Result<(), RiftError> {
-        let chars: Vec<Character> = bytes.iter().map(|&b| Character::from(b)).collect();
+        let mut chars = Vec::with_capacity(bytes.len());
+        let mut remaining = bytes;
+        loop {
+            match std::str::from_utf8(remaining) {
+                Ok(s) => {
+                    for c in s.chars() {
+                        chars.push(Character::from(c));
+                    }
+                    break;
+                }
+                Err(e) => {
+                    let valid_up_to = e.valid_up_to();
+                    // SAFETY: from_utf8 guarantees remaining[..valid_up_to] is valid UTF-8
+                    let valid = unsafe { std::str::from_utf8_unchecked(&remaining[..valid_up_to]) };
+                    for c in valid.chars() {
+                        chars.push(Character::from(c));
+                    }
+                    let error_len = e.error_len().unwrap_or(1);
+                    for &b in &remaining[valid_up_to..valid_up_to + error_len] {
+                        chars.push(Character::Byte(b));
+                    }
+                    remaining = &remaining[valid_up_to + error_len..];
+                }
+            }
+        }
         self.insert_chars(&chars)
     }
 

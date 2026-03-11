@@ -352,3 +352,26 @@ fn test_move_paragraph_empty() {
     assert!(!buffer.move_paragraph_forward());
     assert!(!buffer.move_paragraph_backward());
 }
+
+#[test]
+fn test_insert_bytes_multibyte_utf8() {
+    let mut buffer = TextBuffer::new(16).unwrap();
+    buffer.insert_bytes("—".as_bytes()).unwrap();
+
+    assert_eq!(buffer.len(), 1);
+    assert_eq!(buffer.char_at(0), Some(Character::Unicode('—')));
+    assert_eq!(buffer.to_string(), "—");
+}
+
+#[test]
+fn test_insert_bytes_mixed_valid_and_invalid_utf8() {
+    let mut buffer = TextBuffer::new(16).unwrap();
+    let bytes: &[u8] = b"hi\xFF!";
+    buffer.insert_bytes(bytes).unwrap();
+
+    assert_eq!(buffer.len(), 4);
+    assert_eq!(buffer.char_at(0), Some(Character::Unicode('h')));
+    assert_eq!(buffer.char_at(1), Some(Character::Unicode('i')));
+    assert_eq!(buffer.char_at(2), Some(Character::Byte(0xFF)));
+    assert_eq!(buffer.char_at(3), Some(Character::Unicode('!')));
+}
