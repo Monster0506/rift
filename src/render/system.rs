@@ -308,6 +308,7 @@ impl RenderSystem {
             capture_map: state.capture_map,
             custom_highlights: state.custom_highlights,
             show_line_numbers: state.show_line_numbers,
+            display_map: state.display_map,
         };
 
         // Update the ECS world
@@ -442,30 +443,51 @@ impl RenderSystem {
             )
         } else {
             let vp = cursor_viewport.unwrap_or(&viewport);
-            let cursor_line = ctx.buf.get_line();
-            let cursor_line_in_viewport = if cursor_line >= vp.top_line()
-                && cursor_line < vp.top_line() + vp.visible_rows()
-            {
-                cursor_line - vp.top_line()
-            } else {
-                0
-            };
-
             let gutter_width = if ctx.show_line_numbers && ctx.state.settings.show_line_numbers {
                 ctx.state.gutter_width
             } else {
                 0
             };
 
-            let cursor_col = calculate_cursor_column(ctx.buf, cursor_line, ctx.tab_width);
-            let visual_cursor_col = cursor_col.saturating_sub(vp.left_col());
-            let display_col =
-                (visual_cursor_col + gutter_width).min(vp.visible_cols().saturating_sub(1));
+            if let Some(dm) = ctx.display_map {
+                let cursor_visual_row = dm.char_to_visual_row(ctx.buf.cursor());
+                let cursor_visual_col = dm.char_to_visual_col(ctx.buf.cursor(), ctx.buf);
+                let top_visual = vp.top_visual_row();
 
-            CursorPosition::Absolute(
-                (cursor_line_in_viewport + cursor_row_offset) as u16,
-                (display_col + cursor_col_offset) as u16,
-            )
+                let row_in_viewport = if cursor_visual_row >= top_visual {
+                    (cursor_visual_row - top_visual).min(vp.visible_rows().saturating_sub(2))
+                } else {
+                    0
+                };
+
+                let display_col =
+                    (cursor_visual_col + gutter_width).min(vp.visible_cols().saturating_sub(1));
+
+                CursorPosition::Absolute(
+                    (row_in_viewport + cursor_row_offset) as u16,
+                    (display_col + cursor_col_offset) as u16,
+                )
+            } else {
+                // Original non-wrap path.
+                let cursor_line = ctx.buf.get_line();
+                let cursor_line_in_viewport = if cursor_line >= vp.top_line()
+                    && cursor_line < vp.top_line() + vp.visible_rows()
+                {
+                    cursor_line - vp.top_line()
+                } else {
+                    0
+                };
+
+                let cursor_col = calculate_cursor_column(ctx.buf, cursor_line, ctx.tab_width);
+                let visual_cursor_col = cursor_col.saturating_sub(vp.left_col());
+                let display_col =
+                    (visual_cursor_col + gutter_width).min(vp.visible_cols().saturating_sub(1));
+
+                CursorPosition::Absolute(
+                    (cursor_line_in_viewport + cursor_row_offset) as u16,
+                    (display_col + cursor_col_offset) as u16,
+                )
+            }
         };
 
         let stats = self

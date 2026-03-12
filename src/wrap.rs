@@ -1,0 +1,226 @@
+//! Soft-wrap display mapping
+//!
+//! DisplayMap converts between logical buffer lines and visual rows on screen.
+//! A logical line longer than the content width is split into multiple visual rows.
+//! j/k use visual rows; dj/cj use logical lines.
+
+use crate::buffer::TextBuffer;
+use crate::character::Character;
+
+/// One visual row on screen.
+#[derive(Debug, Clone)]
+pub struct VisualRowInfo {
+    pub logical_line: usize,
+    pub char_start: usize,
+    pub char_end: usize,
+    pub segment_col_start: usize,
+    pub is_first: bool,
+}
+
+/// Precomputed mapping from visual rows → buffer positions.
+pub struct DisplayMap {
+    rows: Vec<VisualRowInfo>,
+    line_first_visual: Vec<usize>,
+    pub wrap_width: usize,
+    pub tab_width: usize,
+}
+
+impl DisplayMap {
+    pub fn build(buf: &TextBuffer, wrap_width: usize, tab_width: usize) -> Self {
+        let total_lines = buf.get_total_lines();
+        let mut rows: Vec<VisualRowInfo> = Vec::with_capacity(total_lines + 4);
+        let mut line_first_visual: Vec<usize> = Vec::with_capacity(total_lines);
+
+        for line_idx in 0..total_lines {
+            line_first_visual.push(rows.len());
+
+            let line_start = buf.line_index.get_start(line_idx).unwrap_or(0);
+            let line_end = if line_idx + 1 < total_lines {
+                buf.line_index.get_start(line_idx + 1).unwrap_or(buf.len())
+            } else {
+                buf.len()
+            };
+
+            let mut visual_col: usize = 0;
+            let mut seg_char_start = line_start;
+            let mut seg_col_start: usize = 0;
+            let mut is_first = true;
+
+            let mut char_pos = line_start;
+            while char_pos < line_end {
+                let ch = match buf.char_at(char_pos) {
+                    Some(c) => c,
+                    None => break,
+                };
+                if ch == Character::Newline {
+                    break;
+                }
+
+                let w = char_visual_width(ch, visual_col, tab_width);
+
+                if visual_col > seg_col_start && visual_col + w > seg_col_start + wrap_width {
+                    rows.push(VisualRowInfo {
+                        logical_line: line_idx,
+                        char_start: seg_char_start,
+                        char_end: char_pos,
+                        segment_col_start: seg_col_start,
+                        is_first,
+                    });
+                    is_first = false;
+                    seg_col_start = visual_col;
+                    seg_char_start = char_pos;
+                }
+
+                visual_col += w;
+                char_pos += 1;
+            }
+
+            rows.push(VisualRowInfo {
+                logical_line: line_idx,
+                char_start: seg_char_start,
+                char_end: char_pos,
+                segment_col_start: seg_col_start,
+                is_first,
+            });
+        }
+
+        if rows.is_empty() {
+            line_first_visual.push(0);
+            rows.push(VisualRowInfo {
+                logical_line: 0,
+                char_start: 0,
+                char_end: 0,
+                segment_col_start: 0,
+                is_first: true,
+            });
+        }
+
+        DisplayMap { rows, line_first_visual, wrap_width, tab_width }
+    }
+
+    pub fn total_visual_rows(&self) -> usize {
+        self.rows.len()
+    }
+
+    pub fn get_visual_row(&self, visual_row: usize) -> Option<&VisualRowInfo> {
+        self.rows.get(visual_row)
+    }
+
+    pub fn logical_to_first_visual(&self, logical_line: usize) -> usize {
+        self.line_first_visual.get(logical_line).copied().unwrap_or(0)
+    }
+
+    pub fn logical_to_last_visual(&self, logical_line: usize) -> usize {
+        if logical_line + 1 < self.line_first_visual.len() {
+            self.line_first_visual[logical_line + 1].saturating_sub(1)
+        } else {
+            self.rows.len().saturating_sub(1)
+        }
+    }
+
+    pub fn char_to_visual_row(&self, char_offset: usize) -> usize {
+        let idx = self.rows.partition_point(|r| r.char_start <= char_offset);
+        if idx == 0 { 0 } else { idx - 1 }
+    }
+
+    pub fn char_to_visual_col(&self, char_offset: usize, buf: &TextBuffer) -> usize {
+        let row_idx = self.char_to_visual_row(char_offset);
+        let row = &self.rows[row_idx];
+        let mut col: usize = 0;
+        let mut pos = row.char_start;
+        while pos < char_offset {
+            if let Some(ch) = buf.char_at(pos) {
+                col += char_visual_width(ch, row.segment_col_start + col, self.tab_width);
+            }
+            pos += 1;
+        }
+        col
+    }
+
+    pub fn visual_down(&self, char_offset: usize, buf: &TextBuffer) -> usize {
+        let cur_row = self.char_to_visual_row(char_offset);
+        let cur_col = self.char_to_visual_col(char_offset, buf);
+        let next_row = cur_row + 1;
+        if next_row >= self.rows.len() {
+            return char_offset;
+        }
+        self.find_char_at_col(next_row, cur_col, buf)
+    }
+
+    pub fn visual_up(&self, char_offset: usize, buf: &TextBuffer) -> usize {
+        let cur_row = self.char_to_visual_row(char_offset);
+        if cur_row == 0 {
+            return char_offset;
+        }
+        let cur_col = self.char_to_visual_col(char_offset, buf);
+        self.find_char_at_col(cur_row - 1, cur_col, buf)
+    }
+
+    fn find_char_at_col(&self, visual_row: usize, target_col: usize, buf: &TextBuffer) -> usize {
+        let row = &self.rows[visual_row];
+        let mut col: usize = 0;
+        let mut pos = row.char_start;
+        while pos < row.char_end {
+            let ch = match buf.char_at(pos) {
+                Some(c) => c,
+                None => break,
+            };
+            if ch == Character::Newline {
+                break;
+            }
+            let w = char_visual_width(ch, row.segment_col_start + col, self.tab_width);
+            if col + w > target_col {
+                break;
+            }
+            col += w;
+            pos += 1;
+        }
+        pos
+    }
+}
+
+#[inline]
+pub fn char_visual_width(ch: Character, abs_col: usize, tab_width: usize) -> usize {
+    if ch == Character::Tab {
+        let next_stop = ((abs_col / tab_width) + 1) * tab_width;
+        next_stop - abs_col
+    } else {
+        ch.render_width(abs_col, tab_width)
+    }
+}
+
+pub struct MotionContext<'a> {
+    pub buf: &'a TextBuffer,
+    pub tab_width: usize,
+    pub wrap_width: usize,
+    pub display_map: &'a DisplayMap,
+    pub last_search_query: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperatorContext {
+    Move,
+    Operator,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RangeKind {
+    Charwise,
+    Linewise,
+}
+
+#[derive(Debug, Clone)]
+pub struct MotionRange {
+    pub anchor: usize,
+    pub new_cursor: usize,
+    pub kind: RangeKind,
+}
+
+impl MotionRange {
+    pub fn charwise(anchor: usize, new_cursor: usize) -> Self {
+        Self { anchor, new_cursor, kind: RangeKind::Charwise }
+    }
+    pub fn linewise(anchor: usize, new_cursor: usize) -> Self {
+        Self { anchor, new_cursor, kind: RangeKind::Linewise }
+    }
+}

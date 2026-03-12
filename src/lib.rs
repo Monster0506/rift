@@ -34,6 +34,7 @@ pub mod syntax;
 pub mod term;
 pub mod undotree_view;
 pub mod viewport;
+pub mod wrap;
 
 #[cfg(test)]
 pub mod test_utils;

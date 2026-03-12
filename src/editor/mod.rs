@@ -311,65 +311,13 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Force a full redraw of the editor
     fn force_full_redraw(&mut self) -> Result<(), RiftError> {
-        let doc = match self.document_manager.active_document_mut() {
-            Some(d) => d,
-            None => return Ok(()),
-        };
-
-        // Calculate visible range for syntax highlighting
-        let start_line = self.render_system.viewport.top_line();
-        let end_line = start_line + self.render_system.viewport.visible_rows();
-        let start_char = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
-        let end_char = if end_line < doc.buffer.get_total_lines() {
-            doc.buffer
-                .line_index
-                .get_start(end_line)
-                .unwrap_or(doc.buffer.len())
-        } else {
-            doc.buffer.len()
-        };
-
-        // Convert to byte offsets for tree-sitter
-        let start_byte = doc.buffer.char_to_byte(start_char);
-        let end_byte = doc.buffer.char_to_byte(end_char);
-
-        let highlights = doc
-            .syntax
-            .as_mut()
-            .map(|syntax| syntax.highlights(Some(start_byte..end_byte)));
-
-        let capture_names = doc.syntax.as_ref().map(|s| s.capture_names());
-
-        let state = render::RenderState {
-            buf: &doc.buffer,
-            state: &self.state,
-            current_mode: self.current_mode,
-            pending_key: self.dispatcher.pending_key(),
-            pending_count: self.dispatcher.pending_count(),
-            needs_clear: true,
-            tab_width: doc.options.tab_width,
-            highlights: highlights.as_deref(),
-            capture_map: capture_names,
-            skip_content: false,
-            cursor_row_offset: 0,
-            cursor_col_offset: 0,
-            cursor_viewport: None,
-            terminal_cursor: doc.terminal_cursor,
-            custom_highlights: if doc.custom_highlights.is_empty() { None } else { Some(&doc.custom_highlights) },
-            show_line_numbers: doc.options.show_line_numbers,
-        };
-
-        self.render_system
-            .force_full_redraw(&mut self.term, state)
-            .map_err(|e| {
-                RiftError::new(
-                    ErrorType::Io,
-                    crate::constants::errors::RENDER_FAILED,
-                    e.to_string(),
-                )
-            })?;
-
-        Ok(())
+        // Mark the viewport so the next update() call returns true (needs_clear).
+        // Then go through update_and_render so the DisplayMap is rebuilt, the viewport
+        // is updated with correct visual-row coordinates, and wrapping is applied.
+        self.render_system.viewport.mark_needs_full_redraw();
+        self.update_and_render().map_err(|e| {
+            RiftError::new(ErrorType::Io, crate::constants::errors::RENDER_FAILED, e.to_string())
+        })
     }
 
     /// Remove a document by ID with strict tab semantics
@@ -1655,6 +1603,18 @@ impl<T: TerminalBackend> Editor<T> {
         // Simplified check for now
         if current_mode == Mode::Normal || current_mode == Mode::Insert {
             let viewport_height = self.render_system.viewport.visible_rows();
+
+            let display_map = {
+                let doc = self.document_manager.active_document().unwrap();
+                let gutter_width = if self.state.settings.show_line_numbers { self.state.gutter_width } else { 0 };
+                let wrap_width = self.render_system.viewport.visible_cols().saturating_sub(gutter_width).max(1);
+                crate::wrap::DisplayMap::build(
+                    &doc.buffer,
+                    wrap_width,
+                    doc.options.tab_width,
+                )
+            };
+
             let doc = self.document_manager.active_document_mut().unwrap();
             let expand_tabs = doc.options.expand_tabs;
             let tab_width = doc.options.tab_width;
@@ -1667,6 +1627,7 @@ impl<T: TerminalBackend> Editor<T> {
                 tab_width,
                 viewport_height,
                 self.state.last_search_query.as_deref(),
+                Some(&display_map),
             );
 
             // Record insert-mode mutations for dot-repeat
@@ -1744,11 +1705,25 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Insert);
             }
             Command::Change(_, _) | Command::ChangeLine => {
-                let doc = self.document_manager.active_document_mut().unwrap();
-                doc.begin_transaction("Change");
-                let expand_tabs = doc.options.expand_tabs;
-                let tab_width = doc.options.tab_width;
+                let (expand_tabs, tab_width) = {
+                    let doc = self.document_manager.active_document().unwrap();
+                    (doc.options.expand_tabs, doc.options.tab_width)
+                };
                 let viewport_height = self.render_system.viewport.visible_rows();
+                let display_map = {
+                    let doc = self.document_manager.active_document().unwrap();
+                    let gutter_width = if self.state.settings.show_line_numbers { self.state.gutter_width } else { 0 };
+                    let wrap_width = self.render_system.viewport.visible_cols().saturating_sub(gutter_width).max(1);
+                    crate::wrap::DisplayMap::build(
+                        &doc.buffer,
+                        wrap_width,
+                        tab_width,
+                    )
+                };
+                self.document_manager
+                    .active_document_mut()
+                    .unwrap()
+                    .begin_transaction("Change");
                 let _ = execute_command(
                     command,
                     self.document_manager.active_document_mut().unwrap(),
@@ -1756,6 +1731,7 @@ impl<T: TerminalBackend> Editor<T> {
                     tab_width,
                     viewport_height,
                     self.state.last_search_query.as_deref(),
+                    Some(&display_map),
                 );
                 self.set_mode(Mode::Insert);
             }
@@ -1964,19 +1940,34 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             0
         };
-        let viewport_col = if is_terminal { 0 } else { cursor_col };
-        let needs_clear = self.render_system.viewport.update(
-            cursor_line,
-            viewport_col,
-            total_lines,
-            gutter_width,
-        );
+
+        let display_map = if !is_terminal {
+            let doc = self.document_manager.get_document(doc_id).unwrap();
+            let wrap_width = self.render_system.viewport.visible_cols().saturating_sub(gutter_width).max(1);
+            Some(crate::wrap::DisplayMap::build(
+                &doc.buffer,
+                wrap_width,
+                doc.options.tab_width,
+            ))
+        } else {
+            None
+        };
+
+        let needs_clear = if let Some(ref dm) = display_map {
+            let doc = self.document_manager.get_document(doc_id).unwrap();
+            let visual_row = dm.char_to_visual_row(doc.buffer.cursor());
+            let total_visual = dm.total_visual_rows();
+            self.render_system.viewport.update_visual(visual_row, 0, total_visual, gutter_width)
+        } else {
+            let viewport_col = if is_terminal { 0 } else { cursor_col };
+            self.render_system.viewport.update(cursor_line, viewport_col, total_lines, gutter_width)
+        };
 
         if self.split_tree.window_count() > 1 {
             self.update_window_viewports();
             self.render_multi_window(needs_clear)
         } else {
-            self.render(needs_clear)
+            self.render(needs_clear, display_map.as_ref())
         }
     }
 
@@ -2001,7 +1992,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Render the editor interface (pure read - no mutations)
     /// Uses the layer compositor for composited rendering
-    fn render(&mut self, needs_clear: bool) -> Result<(), RiftError> {
+    fn render(&mut self, needs_clear: bool, display_map: Option<&crate::wrap::DisplayMap>) -> Result<(), RiftError> {
         let Editor {
             document_manager,
             render_system,
@@ -2021,15 +2012,31 @@ impl<T: TerminalBackend> Editor<T> {
             None => return Ok(()),
         };
 
-        // Calculate visible range for syntax highlighting
-        let start_line = render_system.viewport.top_line();
-        let end_line = start_line + render_system.viewport.visible_rows();
+        // Calculate visible range for syntax highlighting.
+        // When wrapping, top_line() is a visual row; convert to logical line.
+        let (start_logical, end_logical) = if let Some(dm) = display_map {
+            let top_vr = render_system.viewport.top_line();
+            let bottom_vr = top_vr + render_system.viewport.visible_rows();
+            let start_l = dm
+                .get_visual_row(top_vr)
+                .map(|r| r.logical_line)
+                .unwrap_or(0);
+            let end_l = dm
+                .get_visual_row(bottom_vr.saturating_sub(1).min(dm.total_visual_rows().saturating_sub(1)))
+                .map(|r| r.logical_line + 1)
+                .unwrap_or(doc.buffer.get_total_lines());
+            (start_l, end_l)
+        } else {
+            let start = render_system.viewport.top_line();
+            let end = start + render_system.viewport.visible_rows();
+            (start, end)
+        };
 
-        let start_char = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
-        let end_char = if end_line < doc.buffer.get_total_lines() {
+        let start_char = doc.buffer.line_index.get_start(start_logical).unwrap_or(0);
+        let end_char = if end_logical < doc.buffer.get_total_lines() {
             doc.buffer
                 .line_index
-                .get_start(end_line)
+                .get_start(end_logical)
                 .unwrap_or(doc.buffer.len())
         } else {
             doc.buffer.len()
@@ -2063,6 +2070,7 @@ impl<T: TerminalBackend> Editor<T> {
             terminal_cursor: doc.terminal_cursor,
             custom_highlights: if doc.custom_highlights.is_empty() { None } else { Some(&doc.custom_highlights) },
             show_line_numbers: doc.options.show_line_numbers,
+            display_map,
         };
 
         let _ = render_system.render(term, state)?;
@@ -2173,6 +2181,21 @@ impl<T: TerminalBackend> Editor<T> {
 
             let tab_width = doc.options.tab_width;
 
+            // Build a DisplayMap for this window using its actual content width.
+            let doc_show_line_numbers = doc.options.show_line_numbers && state.settings.show_line_numbers;
+            let gutter_width = if doc_show_line_numbers {
+                state.gutter_width
+            } else {
+                0
+            };
+            let window_cols = layout.cols;
+            let display_map = if !doc.is_terminal() {
+                let content_width = window_cols.saturating_sub(gutter_width).max(1);
+                Some(crate::wrap::DisplayMap::build(&doc.buffer, content_width, tab_width))
+            } else {
+                None
+            };
+
             let start_line = window.viewport.top_line();
             let end_line = start_line + window.viewport.visible_rows();
             let start_char = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
@@ -2206,6 +2229,8 @@ impl<T: TerminalBackend> Editor<T> {
                 capture_map: capture_names,
                 custom_highlights: if doc.custom_highlights.is_empty() { None } else { Some(&doc.custom_highlights) },
                 show_line_numbers: doc.options.show_line_numbers,
+                // TODO: use top_visual_row() once multi-window viewports track visual rows
+                display_map: display_map.as_ref(),
             };
 
             let content_layer = render_system
@@ -2247,10 +2272,25 @@ impl<T: TerminalBackend> Editor<T> {
             .map(|syntax| syntax.highlights(None));
         let capture_names = focused_doc.syntax.as_ref().map(|s| s.capture_names());
 
-        let (row_off, col_off) = focused_layout
+        let (row_off, col_off, focused_cols) = focused_layout
             .as_ref()
-            .map(|l| (l.row, l.col))
-            .unwrap_or((0, 0));
+            .map(|l| (l.row, l.col, l.cols))
+            .unwrap_or((0, 0, total_cols));
+
+        // Build a DisplayMap for the focused window's cursor/status rendering.
+        let focused_tab_width = focused_doc.options.tab_width;
+        let focused_doc_show_line_numbers = focused_doc.options.show_line_numbers && state.settings.show_line_numbers;
+        let focused_gutter_width = if focused_doc_show_line_numbers {
+            state.gutter_width
+        } else {
+            0
+        };
+        let focused_display_map = if !focused_doc.is_terminal() {
+            let content_width = focused_cols.saturating_sub(focused_gutter_width).max(1);
+            Some(crate::wrap::DisplayMap::build(&focused_doc.buffer, content_width, focused_tab_width))
+        } else {
+            None
+        };
 
         let focused_vp = &split_tree.focused_window().viewport;
         let render_state = render::RenderState {
@@ -2260,7 +2300,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_key: pending_keys.last().copied(),
             pending_count: *pending_count,
             needs_clear,
-            tab_width: focused_doc.options.tab_width,
+            tab_width: focused_tab_width,
             highlights: highlights.as_deref(),
             capture_map: capture_names,
             skip_content: true,
@@ -2270,6 +2310,8 @@ impl<T: TerminalBackend> Editor<T> {
             terminal_cursor: focused_doc.terminal_cursor,
             custom_highlights: if focused_doc.custom_highlights.is_empty() { None } else { Some(&focused_doc.custom_highlights) },
             show_line_numbers: focused_doc.options.show_line_numbers,
+            // TODO: use top_visual_row() once multi-window viewports track visual rows
+            display_map: focused_display_map.as_ref(),
         };
 
         let _ = render_system.render(term, render_state)?;
@@ -3432,7 +3474,7 @@ impl<T: TerminalBackend> Editor<T> {
                         if self.split_tree.window_count() > 1 {
                             self.update_and_render()?;
                         } else {
-                            self.render(false)?;
+                            self.render(false, None)?;
                         }
                     }
                     Err(any_payload) => {

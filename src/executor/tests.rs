@@ -15,7 +15,7 @@ fn test_execute_move_left() {
     doc.buffer.insert_str("hello").unwrap();
     assert_eq!(doc.buffer.cursor(), 5);
 
-    execute_command(Command::Move(Motion::Left, 1), &mut doc, false, 8, 24, None).unwrap();
+    execute_command(Command::Move(Motion::Left, 1), &mut doc, false, 8, 24, None, None).unwrap();
     assert_eq!(doc.buffer.cursor(), 4);
 }
 
@@ -35,6 +35,7 @@ fn test_execute_move_right() {
         8,
         24,
         None,
+        None,
     )
     .unwrap();
     assert_eq!(doc.buffer.cursor(), 1);
@@ -43,7 +44,7 @@ fn test_execute_move_right() {
 #[test]
 fn test_execute_insert_char() {
     let mut doc = create_doc();
-    execute_command(Command::InsertChar('a'), &mut doc, false, 8, 24, None).unwrap();
+    execute_command(Command::InsertChar('a'), &mut doc, false, 8, 24, None, None).unwrap();
     assert_eq!(doc.buffer.to_string(), "a");
 }
 
@@ -51,7 +52,7 @@ fn test_execute_insert_char() {
 fn test_execute_insert_newline() {
     let mut doc = create_doc();
     doc.buffer.insert_str("hello").unwrap();
-    execute_command(Command::InsertChar('\n'), &mut doc, false, 8, 24, None).unwrap();
+    execute_command(Command::InsertChar('\n'), &mut doc, false, 8, 24, None, None).unwrap();
     assert_eq!(doc.buffer.to_string(), "hello\n");
 }
 
@@ -59,7 +60,7 @@ fn test_execute_insert_newline() {
 fn test_execute_delete_backward() {
     let mut doc = create_doc();
     doc.buffer.insert_str("hello").unwrap();
-    execute_command(Command::DeleteBackward, &mut doc, false, 8, 24, None).unwrap();
+    execute_command(Command::DeleteBackward, &mut doc, false, 8, 24, None, None).unwrap();
     assert_eq!(doc.buffer.to_string(), "hell");
 }
 
@@ -70,7 +71,7 @@ fn test_execute_delete_forward() {
     for _ in 0..5 {
         doc.buffer.move_left();
     }
-    execute_command(Command::DeleteForward, &mut doc, false, 8, 24, None).unwrap();
+    execute_command(Command::DeleteForward, &mut doc, false, 8, 24, None, None).unwrap();
     assert_eq!(doc.buffer.to_string(), "ello");
 }
 
@@ -86,6 +87,7 @@ fn test_execute_move_to_buffer_start() {
         false,
         8,
         24,
+        None,
         None,
     )
     .unwrap();
@@ -108,6 +110,7 @@ fn test_execute_move_to_buffer_end() {
         8,
         24,
         None,
+        None,
     )
     .unwrap();
     assert_eq!(doc.buffer.cursor(), 5);
@@ -117,7 +120,7 @@ fn test_execute_move_to_buffer_end() {
 fn test_execute_insert_ctrl_char() {
     let mut doc = create_doc();
     // Ctrl+A should insert \u{1}
-    execute_command(Command::InsertChar('\u{1}'), &mut doc, false, 8, 24, None).unwrap();
+    execute_command(Command::InsertChar('\u{1}'), &mut doc, false, 8, 24, None, None).unwrap();
     // Verify using char_at because to_string() uses Display which renders ^A for control chars
     use crate::character::Character;
     assert_eq!(doc.buffer.char_at(0), Some(Character::Control(1)));
@@ -126,7 +129,7 @@ fn test_execute_insert_ctrl_char() {
 #[test]
 fn test_execute_insert_tab_expanded_at_column_0() {
     let mut doc = create_doc();
-    execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None).unwrap();
+    execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
     let text = doc.buffer.to_string();
     assert_eq!(text, "        "); // 8 spaces
     assert_eq!(text.len(), 8);
@@ -136,7 +139,7 @@ fn test_execute_insert_tab_expanded_at_column_0() {
 fn test_execute_insert_tab_expanded_at_column_1() {
     let mut doc = create_doc();
     doc.buffer.insert_str("a").unwrap();
-    execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None).unwrap();
+    execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
     let text = doc.buffer.to_string();
     assert_eq!(text, "a       "); // 1 char + 7 spaces
     assert_eq!(text.len(), 8);
@@ -146,7 +149,7 @@ fn test_execute_insert_tab_expanded_at_column_1() {
 fn test_execute_insert_tab_expanded_at_column_7() {
     let mut doc = create_doc();
     doc.buffer.insert_str("abcdefg").unwrap();
-    execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None).unwrap();
+    execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
     let text = doc.buffer.to_string();
     assert_eq!(text, "abcdefg "); // 7 chars + 1 space
     assert_eq!(text.len(), 8);
@@ -156,7 +159,7 @@ fn test_execute_insert_tab_expanded_at_column_7() {
 fn test_execute_insert_tab_expanded_at_column_8() {
     let mut doc = create_doc();
     doc.buffer.insert_str("abcdefgh").unwrap();
-    execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None).unwrap();
+    execute_command(Command::InsertChar('\t'), &mut doc, true, 8, 24, None, None).unwrap();
     let text = doc.buffer.to_string();
     assert_eq!(text, "abcdefgh        "); // 8 chars + 8 spaces
     assert_eq!(text.len(), 16);
@@ -165,7 +168,7 @@ fn test_execute_insert_tab_expanded_at_column_8() {
 #[test]
 fn test_execute_insert_tab_not_expanded() {
     let mut doc = create_doc();
-    execute_command(Command::InsertChar('\t'), &mut doc, false, 8, 24, None).unwrap();
+    execute_command(Command::InsertChar('\t'), &mut doc, false, 8, 24, None, None).unwrap();
     let text = doc.buffer.to_string();
     assert_eq!(text, "\t");
     assert_eq!(text.len(), 1);
@@ -185,7 +188,7 @@ fn test_execute_undo_command() {
     assert_eq!(doc.buffer.to_string(), "x");
 
     // Execute undo command
-    execute_command(Command::Undo, &mut doc, false, 8, 24, None).unwrap();
+    execute_command(Command::Undo, &mut doc, false, 8, 24, None, None).unwrap();
     assert_eq!(doc.buffer.to_string(), "");
 }
 
@@ -199,7 +202,7 @@ fn test_execute_redo_command() {
     assert_eq!(doc.buffer.to_string(), "");
 
     // Execute redo command
-    execute_command(Command::Redo, &mut doc, false, 8, 24, None).unwrap();
+    execute_command(Command::Redo, &mut doc, false, 8, 24, None, None).unwrap();
     assert_eq!(doc.buffer.to_string(), "y");
 }
 
@@ -214,7 +217,7 @@ fn test_execute_delete_line_single_undo() {
 
     // Wrap delete line in transaction (simulating normal mode behavior)
     doc.begin_transaction("DeleteLine");
-    execute_command(Command::DeleteLine, &mut doc, false, 8, 24, None).unwrap();
+    execute_command(Command::DeleteLine, &mut doc, false, 8, 24, None, None).unwrap();
     doc.commit_transaction();
 
     assert_eq!(doc.buffer.to_string(), "");
@@ -241,6 +244,7 @@ fn test_execute_delete_motion_single_undo() {
         false,
         8,
         24,
+        None,
         None,
     )
     .unwrap();
@@ -366,6 +370,7 @@ fn test_execute_delete_16_lines_down() {
         8,
         24,
         None,
+        None,
     )
     .unwrap();
 
@@ -410,7 +415,7 @@ fn test_execute_delete_5_lines_up() {
 
     // Execute d5k (delete with motion Up, count 5)
     // This should delete from line 2 up to line 7 (6 lines total: current + 5 above)
-    execute_command(Command::Delete(Motion::Up, 5), &mut doc, false, 8, 24, None).unwrap();
+    execute_command(Command::Delete(Motion::Up, 5), &mut doc, false, 8, 24, None, None).unwrap();
 
     let after_delete = doc.buffer.to_string();
     let remaining_lines: Vec<&str> = after_delete.lines().collect();
@@ -459,7 +464,7 @@ fn test_execute_delete_5_lines_up_cursor_mid_line() {
     assert_eq!(col, 10, "Should be at column 10");
 
     // Execute d5k (delete with motion Up, count 5)
-    execute_command(Command::Delete(Motion::Up, 5), &mut doc, false, 8, 24, None).unwrap();
+    execute_command(Command::Delete(Motion::Up, 5), &mut doc, false, 8, 24, None, None).unwrap();
 
     let after_delete = doc.buffer.to_string();
     let remaining_lines: Vec<&str> = after_delete.lines().collect();

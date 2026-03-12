@@ -16,6 +16,7 @@ use crate::command::Command;
 use crate::document::Document;
 use crate::error::RiftError;
 use crate::search::{find_next, SearchDirection};
+use crate::wrap::DisplayMap;
 
 /// Calculate the current visual column position on the current line
 /// Accounts for tab width when calculating visual position
@@ -45,88 +46,13 @@ pub fn execute_command(
     tab_width: usize,
     viewport_height: usize,
     last_search_query: Option<&str>,
+    display_map: Option<&DisplayMap>,
 ) -> Result<(), RiftError> {
     match cmd {
         Command::Move(motion, count) => {
             let buf = &mut doc.buffer;
             for _ in 0..count {
-                match motion {
-                    Motion::Left => {
-                        buf.move_left();
-                    }
-                    Motion::Right => {
-                        buf.move_right();
-                    }
-                    Motion::Up => {
-                        buf.move_up();
-                    }
-                    Motion::Down => {
-                        buf.move_down();
-                    }
-                    Motion::StartOfLine => {
-                        buf.move_to_line_start();
-                    }
-                    Motion::EndOfLine => {
-                        buf.move_to_line_end();
-                    }
-                    Motion::StartOfFile => buf.move_to_start(),
-                    Motion::EndOfFile => buf.move_to_end(),
-                    Motion::PageUp => {
-                        for _ in 0..viewport_height {
-                            buf.move_up();
-                        }
-                    }
-                    Motion::PageDown => {
-                        for _ in 0..viewport_height {
-                            buf.move_down();
-                        }
-                    }
-                    Motion::NextWord => {
-                        buf.move_word_right();
-                    }
-                    Motion::PreviousWord => {
-                        buf.move_word_left();
-                    }
-                    Motion::NextParagraph => {
-                        buf.move_paragraph_forward();
-                    }
-                    Motion::PreviousParagraph => {
-                        buf.move_paragraph_backward();
-                    }
-                    Motion::NextSentence => {
-                        buf.move_sentence_forward();
-                    }
-                    Motion::PreviousSentence => {
-                        buf.move_sentence_backward();
-                    }
-                    Motion::NextBigWord => {
-                        // Big word support removed - use regular word movement
-                        buf.move_word_right();
-                    }
-                    Motion::PreviousBigWord => {
-                        // Big word support removed - use regular word movement
-                        buf.move_word_left();
-                    }
-                    Motion::NextMatch => {
-                        if let Some(query) = last_search_query {
-                            let start = buf.cursor().saturating_add(1);
-                            if let Ok((Some(m), _stats)) =
-                                find_next(buf, start, query, SearchDirection::Forward)
-                            {
-                                buf.set_cursor(m.range.start)?;
-                            }
-                        }
-                    }
-                    Motion::PreviousMatch => {
-                        if let Some(query) = last_search_query {
-                            if let Ok((Some(m), _stats)) =
-                                find_next(buf, buf.cursor(), query, SearchDirection::Backward)
-                            {
-                                buf.set_cursor(m.range.start)?;
-                            }
-                        }
-                    }
-                }
+                motion.apply(buf, display_map, crate::wrap::OperatorContext::Move, tab_width, viewport_height, last_search_query);
             }
         }
         Command::Delete(motion, count) => {

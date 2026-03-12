@@ -17,6 +17,10 @@ pub struct Viewport {
     top_line: usize,
     /// Previous top line (for detecting scroll changes)
     prev_top_line: usize,
+    /// Top visual row when soft-wrap is active (0-indexed)
+    top_visual_row: usize,
+    /// Previous top visual row (for detecting scroll changes in wrap mode)
+    prev_top_visual_row: usize,
     /// Whether this is the first update (for initial render)
     first_update: bool,
     /// Leftmost visible column (0-indexed)
@@ -35,6 +39,8 @@ impl Viewport {
         Viewport {
             top_line: 0,
             prev_top_line: 0,
+            top_visual_row: 0,
+            prev_top_visual_row: 0,
             first_update: true,
             visible_cols: cols,
             left_col: 0,
@@ -115,6 +121,46 @@ impl Viewport {
         self.top_line != self.prev_top_line || self.left_col != self.prev_left_col || was_first
     }
 
+    /// Update viewport based on visual row position (used when soft-wrap is active).
+    /// Ensures the cursor visual row is always visible by scrolling when necessary.
+    /// Returns true if the viewport scrolled or if this is the first update.
+    pub fn update_visual(
+        &mut self,
+        cursor_visual_row: usize,
+        cursor_visual_col: usize,
+        total_visual_rows: usize,
+        gutter_width: usize,
+    ) -> bool {
+        self.prev_top_visual_row = self.top_visual_row;
+        let prev_left = self.prev_left_col;
+        let was_first = self.first_update;
+        self.first_update = false;
+
+        let content_rows = self.visible_rows.saturating_sub(1);
+        let bottom = self.top_visual_row + content_rows.saturating_sub(1);
+
+        if cursor_visual_row < self.top_visual_row {
+            self.top_visual_row = cursor_visual_row;
+        }
+        if cursor_visual_row > bottom {
+            self.top_visual_row = cursor_visual_row.saturating_sub(content_rows.saturating_sub(1));
+        }
+        if total_visual_rows > 0 && total_visual_rows <= content_rows {
+            self.top_visual_row = 0;
+        } else if self.top_visual_row + content_rows > total_visual_rows
+            && total_visual_rows > content_rows
+        {
+            self.top_visual_row = total_visual_rows.saturating_sub(content_rows);
+        }
+
+        // Keep left_col at 0 — horizontal scroll is disabled when wrapping
+        let _ = (cursor_visual_col, gutter_width);
+        self.left_col = 0;
+        self.prev_left_col = 0;
+
+        self.top_visual_row != self.prev_top_visual_row || self.left_col != prev_left || was_first
+    }
+
     /// Get the previous top line (before last update)
     #[must_use]
     pub fn prev_top_line(&self) -> usize {
@@ -124,6 +170,12 @@ impl Viewport {
     #[must_use]
     pub fn top_line(&self) -> usize {
         self.top_line
+    }
+
+    /// Get the top visual row (used when soft-wrap is active)
+    #[must_use]
+    pub fn top_visual_row(&self) -> usize {
+        self.top_visual_row
     }
 
     /// Get the leftmost visible column
@@ -158,6 +210,11 @@ impl Viewport {
     /// Get current scroll position as (top_line, left_col)
     pub fn get_scroll(&self) -> (usize, usize) {
         (self.top_line, self.left_col)
+    }
+
+    pub fn mark_needs_full_redraw(&mut self) {
+        self.first_update = true;
+        self.prev_top_visual_row = self.top_visual_row;
     }
 }
 

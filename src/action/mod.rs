@@ -1,5 +1,6 @@
 //! Editor actions, including movements and operations
 use crate::command::Command;
+use crate::search::{find_next, SearchDirection};
 
 /// Represents a count for a command or motion
 pub type Count = usize;
@@ -47,6 +48,112 @@ pub enum Motion {
     NextMatch,
     /// Move to the previous search match
     PreviousMatch,
+}
+
+impl Motion {
+    /// Apply this motion to the buffer, using the display map when available for
+    /// visual line movement (Up/Down under `OperatorContext::Move`).
+    pub fn apply(
+        self,
+        buf: &mut crate::buffer::TextBuffer,
+        display_map: Option<&crate::wrap::DisplayMap>,
+        op_ctx: crate::wrap::OperatorContext,
+        _tab_width: usize,
+        viewport_height: usize,
+        last_search_query: Option<&str>,
+    ) {
+        match self {
+            Motion::Left => {
+                buf.move_left();
+            }
+            Motion::Right => {
+                buf.move_right();
+            }
+            Motion::Up => {
+                if op_ctx == crate::wrap::OperatorContext::Move {
+                    if let Some(dm) = display_map {
+                        let new_pos = dm.visual_up(buf.cursor(), buf);
+                        let _ = buf.set_cursor(new_pos);
+                        return;
+                    }
+                }
+                buf.move_up();
+            }
+            Motion::Down => {
+                if op_ctx == crate::wrap::OperatorContext::Move {
+                    if let Some(dm) = display_map {
+                        let new_pos = dm.visual_down(buf.cursor(), buf);
+                        let _ = buf.set_cursor(new_pos);
+                        return;
+                    }
+                }
+                buf.move_down();
+            }
+            Motion::StartOfLine => {
+                buf.move_to_line_start();
+            }
+            Motion::EndOfLine => {
+                buf.move_to_line_end();
+            }
+            Motion::StartOfFile => buf.move_to_start(),
+            Motion::EndOfFile => buf.move_to_end(),
+            Motion::PageUp => {
+                for _ in 0..viewport_height {
+                    buf.move_up();
+                }
+            }
+            Motion::PageDown => {
+                for _ in 0..viewport_height {
+                    buf.move_down();
+                }
+            }
+            Motion::NextWord => {
+                buf.move_word_right();
+            }
+            Motion::PreviousWord => {
+                buf.move_word_left();
+            }
+            Motion::NextBigWord => {
+                // Big word support removed - use regular word movement
+                buf.move_word_right();
+            }
+            Motion::PreviousBigWord => {
+                // Big word support removed - use regular word movement
+                buf.move_word_left();
+            }
+            Motion::NextParagraph => {
+                buf.move_paragraph_forward();
+            }
+            Motion::PreviousParagraph => {
+                buf.move_paragraph_backward();
+            }
+            Motion::NextSentence => {
+                buf.move_sentence_forward();
+            }
+            Motion::PreviousSentence => {
+                buf.move_sentence_backward();
+            }
+            Motion::NextMatch => {
+                if let Some(query) = last_search_query {
+                    let start = buf.cursor().saturating_add(1);
+                    if let Ok((Some(m), _stats)) =
+                        find_next(buf, start, query, SearchDirection::Forward)
+                    {
+                        let _ = buf.set_cursor(m.range.start);
+                    }
+                }
+            }
+            Motion::PreviousMatch => {
+                if let Some(query) = last_search_query {
+                    if let Ok((Some(m), _stats)) =
+                        find_next(buf, buf.cursor(), query, SearchDirection::Backward)
+                    {
+                        let _ = buf.set_cursor(m.range.start);
+                    }
+                }
+            }
+        }
+    }
 }
 
 use crate::error::RiftError;

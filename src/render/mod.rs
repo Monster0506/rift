@@ -2,6 +2,7 @@
 //! Handles drawing the editor UI to the terminal using layers
 
 use crate::buffer::api::BufferView;
+use crate::wrap::DisplayMap;
 /// ## render/ Invariants
 ///
 /// - Rendering reads editor state and buffer contents only.
@@ -146,6 +147,7 @@ pub struct RenderState<'a> {
     pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     /// Per-document line number override (AND-ed with global setting).
     pub show_line_numbers: bool,
+    pub display_map: Option<&'a DisplayMap>,
 }
 
 /// Context for rendering passed to helpers
@@ -163,6 +165,7 @@ pub struct DrawContext<'a> {
     pub capture_map: Option<&'a [&'a str]>,
     /// Per-document line number override (AND-ed with global setting).
     pub show_line_numbers: bool,
+    pub display_map: Option<&'a DisplayMap>,
 }
 
 /// Cursor position information returned from layer-based rendering
@@ -195,50 +198,149 @@ pub(crate) fn render_content_to_layer_offset(
         0
     };
 
-    let top_line = viewport.top_line();
     let visible_rows = viewport.visible_rows().saturating_sub(1);
     let visible_cols = viewport.visible_cols();
 
-    let search_matches = &ctx.state.search_matches;
-    let first_visible_char = buf.line_index.get_start(top_line).unwrap_or(0);
+    if let Some(dm) = ctx.display_map {
+        let top_visual_row = viewport.top_visual_row();
+        let search_matches = &ctx.state.search_matches;
 
-    let mut search_match_idx =
-        search_matches.partition_point(|m| m.range.end <= first_visible_char);
-    let mut highlight_idx = 0;
+        let mut highlight_idx: usize = 0;
+        let mut search_match_idx: usize = 0;
+        let mut last_logical_line: Option<usize> = None;
+        let mut highlight_idx_at_line_start: usize = 0;
+        let mut search_match_idx_at_line_start: usize = 0;
 
-    for i in 0..visible_rows {
-        let line_num = top_line + i;
-
-        if gutter_width > 0 {
-            render_gutter(
-                layer,
-                line_num,
-                i + row_offset,
-                col_offset,
-                gutter_width,
-                ctx.state.total_lines,
-                editor_fg,
-                editor_bg,
-            );
+        if let Some(row_info) = dm.get_visual_row(top_visual_row) {
+            let first_char = row_info.char_start;
+            search_match_idx = search_matches.partition_point(|m| m.range.end <= first_char);
+            search_match_idx_at_line_start = search_match_idx;
         }
 
-        render_line(
-            layer,
-            ctx,
-            RenderLineConfig {
-                line_num,
-                row_idx: i + row_offset,
-                gutter_width: col_offset + gutter_width,
-                visible_cols: col_offset + visible_cols,
-                default_fg: editor_fg,
-                default_bg: editor_bg,
-            },
-            &mut highlight_idx,
-            &mut search_match_idx,
-        );
+        for i in 0..visible_rows {
+            let visual_row = top_visual_row + i;
+            let row_info = match dm.get_visual_row(visual_row) {
+                Some(r) => r,
+                None => {
+                    if gutter_width > 0 {
+                        render_gutter_blank(layer, i + row_offset, col_offset, gutter_width, editor_fg, editor_bg);
+                    }
+                    for col in (col_offset + gutter_width)..(col_offset + visible_cols) {
+                        layer.set_cell(
+                            i + row_offset,
+                            col,
+                            Cell::from_char(' ').with_colors(editor_fg, editor_bg),
+                        );
+                    }
+                    continue;
+                }
+            };
+
+            if Some(row_info.logical_line) != last_logical_line {
+                last_logical_line = Some(row_info.logical_line);
+                highlight_idx_at_line_start = highlight_idx;
+                search_match_idx_at_line_start = search_match_idx;
+            } else {
+                highlight_idx = highlight_idx_at_line_start;
+                search_match_idx = search_match_idx_at_line_start;
+            }
+
+            if gutter_width > 0 {
+                if row_info.is_first {
+                    render_gutter(
+                        layer,
+                        row_info.logical_line,
+                        i + row_offset,
+                        col_offset,
+                        gutter_width,
+                        ctx.state.total_lines,
+                        editor_fg,
+                        editor_bg,
+                    );
+                } else {
+                    render_gutter_blank(layer, i + row_offset, col_offset, gutter_width, editor_fg, editor_bg);
+                }
+            }
+
+            render_line(
+                layer,
+                ctx,
+                RenderLineConfig {
+                    line_num: row_info.logical_line,
+                    row_idx: i + row_offset,
+                    gutter_width: col_offset + gutter_width,
+                    visible_cols: col_offset + visible_cols,
+                    default_fg: editor_fg,
+                    default_bg: editor_bg,
+                    segment_left_col: Some(row_info.segment_col_start),
+                    segment_content_cols: Some(dm.wrap_width),
+                },
+                &mut highlight_idx,
+                &mut search_match_idx,
+            );
+        }
+    } else {
+        let top_line = viewport.top_line();
+        let search_matches = &ctx.state.search_matches;
+        let first_visible_char = buf.line_index.get_start(top_line).unwrap_or(0);
+
+        let mut search_match_idx =
+            search_matches.partition_point(|m| m.range.end <= first_visible_char);
+        let mut highlight_idx = 0;
+
+        for i in 0..visible_rows {
+            let line_num = top_line + i;
+
+            if gutter_width > 0 {
+                render_gutter(
+                    layer,
+                    line_num,
+                    i + row_offset,
+                    col_offset,
+                    gutter_width,
+                    ctx.state.total_lines,
+                    editor_fg,
+                    editor_bg,
+                );
+            }
+
+            render_line(
+                layer,
+                ctx,
+                RenderLineConfig {
+                    line_num,
+                    row_idx: i + row_offset,
+                    gutter_width: col_offset + gutter_width,
+                    visible_cols: col_offset + visible_cols,
+                    default_fg: editor_fg,
+                    default_bg: editor_bg,
+                    segment_left_col: None,
+                    segment_content_cols: None,
+                },
+                &mut highlight_idx,
+                &mut search_match_idx,
+            );
+        }
     }
 
     Ok(())
+}
+
+fn render_gutter_blank(
+    layer: &mut Layer,
+    row_idx: usize,
+    col_start: usize,
+    gutter_width: usize,
+    fg: Option<Color>,
+    bg: Option<Color>,
+) {
+    for i in 0..gutter_width {
+        layer.set_cell(
+            row_idx,
+            col_start + i,
+            Cell::new(Character::from(' ')).with_colors(fg, bg),
+        );
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -284,6 +386,8 @@ struct RenderLineConfig {
     visible_cols: usize,
     default_fg: Option<Color>,
     default_bg: Option<Color>,
+    segment_left_col: Option<usize>,
+    segment_content_cols: Option<usize>,
 }
 
 fn render_line(
@@ -326,11 +430,12 @@ fn render_line(
     // Layout
     let layout = TabLayout::new(search, ctx.tab_width);
 
-    let content_cols = config.visible_cols.saturating_sub(config.gutter_width);
+    let content_cols = config
+        .segment_content_cols
+        .unwrap_or_else(|| config.visible_cols.saturating_sub(config.gutter_width));
     let mut rendered_col = 0;
 
-    // Calculate the absolute column at the left edge of the screen (horizontal scroll)
-    let left_col = ctx.viewport.left_col();
+    let left_col = config.segment_left_col.unwrap_or_else(|| ctx.viewport.left_col());
 
     // Internal tracker for absolute visual column (including horizontal scroll)
     let mut current_visual_col = 0;
