@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [features]
 default = []
+perf_instrumentation = []
 treesitter = [
     "dep:tree-sitter-bash",
     "dep:tree-sitter-c",
