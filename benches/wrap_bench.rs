@@ -15,8 +15,6 @@ fn make_buf(lines: usize, line_len: usize) -> TextBuffer {
     buf
 }
 
-/// Simulate a freshly loaded file: entire content as one piece in the original buffer.
-/// This is the worst case for the old O(N²) build — and the common case in practice.
 fn make_buf_single_piece(lines: usize, line_len: usize) -> TextBuffer {
     let line = "a".repeat(line_len) + "\n";
     let content: Vec<Character> = line
@@ -32,7 +30,6 @@ fn make_buf_single_piece(lines: usize, line_len: usize) -> TextBuffer {
 
 fn make_buf_long_lines(lines: usize, line_len: usize) -> TextBuffer {
     let mut buf = TextBuffer::new(lines * (line_len + 1)).unwrap();
-    // Lines significantly longer than wrap_width so wrapping actually fires
     let line = "word ".repeat(line_len / 5) + "\n";
     for _ in 0..lines {
         buf.insert_str(&line).unwrap();
@@ -40,7 +37,6 @@ fn make_buf_long_lines(lines: usize, line_len: usize) -> TextBuffer {
     buf
 }
 
-/// Benchmark DisplayMap::build at small / medium / large sizes.
 fn bench_build(c: &mut Criterion) {
     let mut group = c.benchmark_group("displaymap_build");
 
@@ -55,7 +51,6 @@ fn bench_build(c: &mut Criterion) {
         );
     }
 
-    // Long lines force frequent wrapping — heavier inner loop
     for (lines, line_len) in [(100usize, 400usize), (1_000, 400), (5_000, 400)] {
         let buf = make_buf_long_lines(lines, line_len);
         group.bench_with_input(
@@ -70,7 +65,6 @@ fn bench_build(c: &mut Criterion) {
     group.finish();
 }
 
-/// Single-piece (file-load) vs many-piece (after edits) — the scenario that was O(N²).
 fn bench_build_single_piece(c: &mut Criterion) {
     let mut group = c.benchmark_group("displaymap_build_single_piece");
 
@@ -88,12 +82,9 @@ fn bench_build_single_piece(c: &mut Criterion) {
     group.finish();
 }
 
-/// Simulate the current case: 2 DisplayMap::build calls per keypress
-/// (execute_buffer_command + update_and_render).
 fn bench_redundant_builds(c: &mut Criterion) {
     let mut group = c.benchmark_group("displaymap_redundant");
 
-    // many-piece (insert-per-line) — typical after editing
     let buf_mp = make_buf(5_000, 80);
     group.bench_function("2x_build_many_piece", |b| {
         b.iter(|| {
@@ -103,7 +94,6 @@ fn bench_redundant_builds(c: &mut Criterion) {
         });
     });
 
-    // single-piece (file load) — the case that was 1.45s per build
     let buf_sp = make_buf_single_piece(1_205, 61);
     group.bench_function("2x_build_single_piece_1205lines", |b| {
         b.iter(|| {
@@ -116,14 +106,11 @@ fn bench_redundant_builds(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark the visual navigation helpers that run on an already-built map.
 fn bench_nav(c: &mut Criterion) {
     let mut group = c.benchmark_group("displaymap_nav");
 
     let buf = make_buf_long_lines(1_000, 400);
     let dm = DisplayMap::build(&buf, 80, 4);
-
-    // Cursor at middle of buffer
     let mid = buf.len() / 2;
 
     group.bench_function("visual_up_1000", |b| {

@@ -944,3 +944,61 @@ fn test_from_file_strips_utf8_bom() {
     assert_eq!(doc.buffer.to_string(), "hello");
     assert_eq!(doc.buffer.len(), 5);
 }
+
+// ──────────────────────────────────────────────
+// WrapMode
+// ──────────────────────────────────────────────
+
+#[test]
+fn wrap_default_is_auto() {
+    let doc = Document::new(1).unwrap();
+    assert_eq!(doc.options.wrap, Some(definitions::WrapMode::Expr("auto".to_string())));
+}
+
+#[test]
+fn wrap_resolve_auto() {
+    let mode = definitions::WrapMode::Expr("auto".to_string());
+    assert_eq!(mode.resolve(100), 100);
+}
+
+#[test]
+fn wrap_resolve_literal() {
+    let mode = definitions::WrapMode::Expr("80".to_string());
+    assert_eq!(mode.resolve(200), 80);
+}
+
+#[test]
+fn wrap_resolve_auto_minus() {
+    let mode = definitions::WrapMode::Expr("auto-5".to_string());
+    assert_eq!(mode.resolve(100), 95);
+}
+
+#[test]
+fn wrap_resolve_auto_plus() {
+    let mode = definitions::WrapMode::Expr("auto+10".to_string());
+    assert_eq!(mode.resolve(100), 110);
+}
+
+#[test]
+fn wrap_resolve_auto_div() {
+    let mode = definitions::WrapMode::Expr("auto/2".to_string());
+    assert_eq!(mode.resolve(100), 50);
+}
+
+#[test]
+fn wrap_resolve_auto_div_plus() {
+    let mode = definitions::WrapMode::Expr("auto/2+5".to_string());
+    assert_eq!(mode.resolve(100), 55);
+}
+
+#[test]
+fn wrap_resolve_parens() {
+    let mode = definitions::WrapMode::Expr("(auto-10)/2".to_string());
+    assert_eq!(mode.resolve(100), 45);
+}
+
+#[test]
+fn wrap_resolve_floors_to_one() {
+    let mode = definitions::WrapMode::Expr("auto-200".to_string());
+    assert_eq!(mode.resolve(10), 1);
+}

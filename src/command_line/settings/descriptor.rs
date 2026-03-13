@@ -41,6 +41,12 @@ pub enum SettingType {
         /// Valid enum variants (static string slices)
         variants: &'static [&'static str],
     },
+    /// Integer setting that also accepts a fixed set of keyword alternatives
+    IntegerOrKeyword {
+        min: Option<usize>,
+        max: Option<usize>,
+        keywords: &'static [&'static str],
+    },
     /// Color setting (supports color names, RGB, and 256-color indices)
     Color,
 }

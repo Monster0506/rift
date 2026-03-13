@@ -5,6 +5,7 @@ pub mod perf;
 
 pub mod action;
 pub mod buffer;
+pub mod eval;
 pub mod character;
 pub mod color;
 pub mod command;

@@ -232,11 +232,9 @@ impl NotificationManager {
             if let Some(ttl) = n.ttl {
                 let elapsed_now = now.saturating_duration_since(n.timestamp);
                 let remaining = ttl.saturating_sub(elapsed_now);
-                // About to expire within the next poll window
                 if remaining <= poll_timeout {
                     return true;
                 }
-                // Crossed a whole-second boundary since last render
                 let elapsed_last = last.saturating_duration_since(n.timestamp);
                 if elapsed_now.as_secs() != elapsed_last.as_secs() {
                     return true;

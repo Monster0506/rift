@@ -418,6 +418,24 @@ pub fn complete_setting_value<T: 'static>(
                 is_directory: false,
             })
             .collect(),
+        SettingType::IntegerOrKeyword { keywords, .. } => {
+            let mut candidates: Vec<CompletionCandidate> = keywords
+                .iter()
+                .map(|k| CompletionCandidate {
+                    text: k.to_string(),
+                    description: String::new(),
+                    is_directory: false,
+                })
+                .collect();
+            if let (Some(getter), Some(val)) = (desc.get, current) {
+                candidates.push(CompletionCandidate {
+                    text: getter(val),
+                    description: "current value".into(),
+                    is_directory: false,
+                });
+            }
+            candidates
+        }
         SettingType::Integer { .. } | SettingType::Float { .. } | SettingType::Color => {
             match (desc.get, current) {
                 (Some(getter), Some(val)) => vec![CompletionCandidate {
@@ -607,6 +625,11 @@ fn type_hint_for(ty: &SettingType) -> String {
         SettingType::Float { .. } => "float".into(),
         SettingType::Enum { variants } => variants.join("|"),
         SettingType::Color => "color".into(),
+        SettingType::IntegerOrKeyword { keywords, .. } => {
+            let mut s = "integer|".to_string();
+            s.push_str(&keywords.join("|"));
+            s
+        }
     }
 }
 

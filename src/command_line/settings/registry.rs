@@ -117,6 +117,34 @@ impl<T> SettingsRegistry<T> {
                 }
             }
             SettingType::Color => Self::parse_color(value),
+            SettingType::IntegerOrKeyword { min, max, keywords } => {
+                let result = crate::eval::eval(value, &|kw| {
+                    if keywords.iter().any(|k| k.to_lowercase() == kw) {
+                        Some(1)
+                    } else {
+                        None
+                    }
+                });
+                let dummy = result.map_err(|e| SettingError::ParseError(e))?;
+                if let Some(min_val) = min {
+                    if dummy < *min_val {
+                        return Err(SettingError::ValidationError(format!(
+                            "Value is below minimum {min_val}"
+                        )));
+                    }
+                }
+                if let Some(max_val) = max {
+                    if dummy > *max_val {
+                        return Err(SettingError::ValidationError(format!(
+                            "Value is above maximum {max_val}"
+                        )));
+                    }
+                }
+                if let Ok(n) = value.trim().parse::<usize>() {
+                    return Ok(SettingValue::Integer(n));
+                }
+                Ok(SettingValue::Enum(value.to_string()))
+            }
         }
     }
 

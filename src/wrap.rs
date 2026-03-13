@@ -27,10 +27,6 @@ pub struct DisplayMap {
 
 impl DisplayMap {
     pub fn build(buf: &TextBuffer, wrap_width: usize, tab_width: usize) -> Self {
-        crate::perf_span!(
-            "displaymap_build",
-            crate::perf::PerfFields { lines: Some(buf.get_total_lines() as u32), ..Default::default() }
-        );
         let total_lines = buf.get_total_lines();
         let mut rows: Vec<VisualRowInfo> = Vec::with_capacity(total_lines + 4);
         let mut line_first_visual: Vec<usize> = Vec::with_capacity(total_lines);
@@ -54,7 +50,7 @@ impl DisplayMap {
         let mut is_first = true;
         let mut char_pos: usize = 0;
 
-        line_first_visual.push(0); // line 0 always starts at visual row 0
+        line_first_visual.push(0);
 
         for ch in buf.iter_at(0) {
             if ch == Character::Newline {
@@ -96,7 +92,6 @@ impl DisplayMap {
             char_pos += 1;
         }
 
-        // Flush the final segment (last line, which may have no trailing newline)
         rows.push(VisualRowInfo {
             logical_line: line_idx,
             char_start: seg_char_start,

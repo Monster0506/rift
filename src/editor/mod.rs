@@ -26,6 +26,29 @@ use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
 use std::sync::Arc;
 
+fn resolve_display_map(
+    doc: &Document,
+    content_width: usize,
+    global_soft_wrap: bool,
+    global_wrap_width: Option<usize>,
+) -> Option<crate::wrap::DisplayMap> {
+    use crate::document::definitions::WrapMode;
+    if doc.is_terminal() {
+        return None;
+    }
+    let w = match &doc.options.wrap {
+        Some(WrapMode::Off) => return None,
+        Some(mode) => mode.resolve(content_width),
+        None => {
+            if !global_soft_wrap {
+                return None;
+            }
+            global_wrap_width.unwrap_or(content_width)
+        }
+    };
+    Some(crate::wrap::DisplayMap::build(&doc.buffer, w, doc.options.tab_width))
+}
+
 /// Main editor struct
 pub struct Editor<T: TerminalBackend> {
     /// Terminal backend
@@ -1606,20 +1629,16 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Helper to execute buffer commands
     fn execute_buffer_command(&mut self, command: crate::command::Command) -> bool {
-        crate::perf_span!("execute_buffer_command", crate::perf::PerfFields::default());
         let current_mode = self.current_mode;
         // Simplified check for now
         if current_mode == Mode::Normal || current_mode == Mode::Insert {
             let viewport_height = self.render_system.viewport.visible_rows();
 
-            let display_map = if self.state.settings.soft_wrap {
+            let display_map = {
                 let doc = self.document_manager.active_document().unwrap();
                 let gutter_width = if self.state.settings.show_line_numbers { self.state.gutter_width } else { 0 };
                 let content_width = self.render_system.viewport.visible_cols().saturating_sub(gutter_width).max(1);
-                let wrap_width = self.state.settings.wrap_width.unwrap_or(content_width);
-                Some(crate::wrap::DisplayMap::build(&doc.buffer, wrap_width, doc.options.tab_width))
-            } else {
-                None
+                resolve_display_map(doc, content_width, self.state.settings.soft_wrap, self.state.settings.wrap_width)
             };
 
             let doc = self.document_manager.active_document_mut().unwrap();
@@ -1717,14 +1736,11 @@ impl<T: TerminalBackend> Editor<T> {
                     (doc.options.expand_tabs, doc.options.tab_width)
                 };
                 let viewport_height = self.render_system.viewport.visible_rows();
-                let display_map = if self.state.settings.soft_wrap {
+                let display_map = {
                     let doc = self.document_manager.active_document().unwrap();
                     let gutter_width = if self.state.settings.show_line_numbers { self.state.gutter_width } else { 0 };
                     let content_width = self.render_system.viewport.visible_cols().saturating_sub(gutter_width).max(1);
-                    let wrap_width = self.state.settings.wrap_width.unwrap_or(content_width);
-                    Some(crate::wrap::DisplayMap::build(&doc.buffer, wrap_width, tab_width))
-                } else {
-                    None
+                    resolve_display_map(doc, content_width, self.state.settings.soft_wrap, self.state.settings.wrap_width)
                 };
                 self.document_manager
                     .active_document_mut()
@@ -1921,7 +1937,6 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
-        crate::perf_span!("update_and_render", crate::perf::PerfFields::default());
         // Sync buffer cursor to focused window
         let doc_id = self.split_tree.focused_window().document_id;
         if let Some(doc) = self.document_manager.get_document(doc_id) {
@@ -1948,13 +1963,10 @@ impl<T: TerminalBackend> Editor<T> {
             0
         };
 
-        let display_map = if !is_terminal && self.state.settings.soft_wrap {
+        let display_map = {
             let doc = self.document_manager.get_document(doc_id).unwrap();
             let content_width = self.render_system.viewport.visible_cols().saturating_sub(gutter_width).max(1);
-            let wrap_width = self.state.settings.wrap_width.unwrap_or(content_width);
-            Some(crate::wrap::DisplayMap::build(&doc.buffer, wrap_width, doc.options.tab_width))
-        } else {
-            None
+            resolve_display_map(doc, content_width, self.state.settings.soft_wrap, self.state.settings.wrap_width)
         };
 
         let needs_clear = if let Some(ref dm) = display_map {
@@ -1997,7 +2009,6 @@ impl<T: TerminalBackend> Editor<T> {
     /// Render the editor interface (pure read - no mutations)
     /// Uses the layer compositor for composited rendering
     fn render(&mut self, needs_clear: bool, display_map: Option<&crate::wrap::DisplayMap>) -> Result<(), RiftError> {
-        crate::perf_span!("render", crate::perf::PerfFields::default());
         let Editor {
             document_manager,
             render_system,
@@ -2191,12 +2202,8 @@ impl<T: TerminalBackend> Editor<T> {
                 0
             };
             let window_cols = layout.cols;
-            let display_map = if !doc.is_terminal() {
-                let content_width = window_cols.saturating_sub(gutter_width).max(1);
-                Some(crate::wrap::DisplayMap::build(&doc.buffer, content_width, tab_width))
-            } else {
-                None
-            };
+            let content_width = window_cols.saturating_sub(gutter_width).max(1);
+            let display_map = resolve_display_map(doc, content_width, state.settings.soft_wrap, state.settings.wrap_width);
 
             let start_line = window.viewport.top_line();
             let end_line = start_line + window.viewport.visible_rows();
@@ -2285,12 +2292,8 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             0
         };
-        let focused_display_map = if !focused_doc.is_terminal() {
-            let content_width = focused_cols.saturating_sub(focused_gutter_width).max(1);
-            Some(crate::wrap::DisplayMap::build(&focused_doc.buffer, content_width, focused_tab_width))
-        } else {
-            None
-        };
+        let focused_content_width = focused_cols.saturating_sub(focused_gutter_width).max(1);
+        let focused_display_map = resolve_display_map(focused_doc, focused_content_width, state.settings.soft_wrap, state.settings.wrap_width);
 
         let focused_vp = &split_tree.focused_window().viewport;
         let render_state = render::RenderState {
@@ -2458,13 +2461,11 @@ impl<T: TerminalBackend> Editor<T> {
 
         if target_path.is_dir() {
             self.reload_directory_buffer(doc_id, target_path);
+        } else if let Err(e) = self.open_file(Some(target_path.display().to_string()), false) {
+            self.state.handle_error(e);
         } else {
-            if let Err(e) = self.open_file(Some(target_path.display().to_string()), false) {
-                self.state.handle_error(e);
-            } else {
-                self.state.clear_command_line();
-                if let Err(e) = self.force_full_redraw() { self.state.handle_error(e); }
-            }
+            self.state.clear_command_line();
+            if let Err(e) = self.force_full_redraw() { self.state.handle_error(e); }
         }
     }
 
@@ -2953,7 +2954,7 @@ impl<T: TerminalBackend> Editor<T> {
                     continue;
                 }
             }
-            let result = fs::rename(&old_path, &new_path).or_else(|_| {
+            let result = fs::rename(old_path, &new_path).or_else(|_| {
                 // Cross-device fallback: copy then delete
                 crate::job_manager::jobs::fs::FsCopyJob::copy_recursive_pub(old_path, &new_path)
                     .and_then(|_| if old_path.is_dir() { fs::remove_dir_all(old_path) } else { fs::remove_file(old_path) })

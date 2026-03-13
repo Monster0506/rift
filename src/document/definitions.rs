@@ -3,6 +3,27 @@ use crate::command_line::settings::{
 };
 use crate::document::LineEnding;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WrapMode {
+    Off,
+    Expr(String),
+}
+
+impl WrapMode {
+    pub fn resolve(&self, terminal_width: usize) -> usize {
+        match self {
+            WrapMode::Off => 0,
+            WrapMode::Expr(s) => {
+                crate::eval::eval(s, &|kw| {
+                    if kw == "auto" { Some(terminal_width) } else { None }
+                })
+                .unwrap_or(terminal_width)
+                .max(1)
+            }
+        }
+    }
+}
+
 /// Document-specific options
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentOptions {
@@ -15,6 +36,8 @@ pub struct DocumentOptions {
     pub expand_tabs: bool,
     /// Whether to show line numbers for this document
     pub show_line_numbers: bool,
+    /// Per-document wrap setting: None = inherit global, Some(mode) = override
+    pub wrap: Option<WrapMode>,
 }
 
 impl Default for DocumentOptions {
@@ -24,6 +47,7 @@ impl Default for DocumentOptions {
             tab_width: 4,
             expand_tabs: true,
             show_line_numbers: true,
+            wrap: Some(WrapMode::Expr("auto".to_string())),
         }
     }
 }
@@ -94,6 +118,27 @@ fn set_line_ending(options: &mut DocumentOptions, value: SettingValue) -> Result
     }
 }
 
+fn get_wrap(options: &DocumentOptions) -> String {
+    match &options.wrap {
+        None | Some(WrapMode::Off) => "0".to_string(),
+        Some(WrapMode::Expr(s)) => s.clone(),
+    }
+}
+
+fn set_wrap(options: &mut DocumentOptions, value: SettingValue) -> Result<(), SettingError> {
+    let expr = match value {
+        SettingValue::Integer(0) => {
+            options.wrap = Some(WrapMode::Off);
+            return Ok(());
+        }
+        SettingValue::Integer(n) => n.to_string(),
+        SettingValue::Enum(s) => s,
+        _ => return Err(SettingError::ValidationError("Expected integer or expression".to_string())),
+    };
+    options.wrap = Some(WrapMode::Expr(expr));
+    Ok(())
+}
+
 /// Document-specific settings
 /// LOCAL_SETTINGS
 const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
@@ -136,6 +181,15 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
         },
         set: set_tab_width,
         get: Some(get_tab_width),
+        needs_full_redraw: true,
+    },
+    SettingDescriptor {
+        name: "wrap",
+        aliases: &[],
+        description: "Soft-wrap column (0 = off, n = wrap at column n)",
+        ty: SettingType::IntegerOrKeyword { min: None, max: None, keywords: &["auto"] },
+        set: set_wrap,
+        get: Some(get_wrap),
         needs_full_redraw: true,
     },
 ];
