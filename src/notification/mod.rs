@@ -119,6 +119,7 @@ pub struct NotificationManager {
     pub generation: u64,
     /// Persistent log of all messages and job events (never pruned)
     message_log: Vec<MessageEntry>,
+    last_render_time: Option<Instant>,
 }
 
 impl NotificationManager {
@@ -129,6 +130,7 @@ impl NotificationManager {
             next_id: 0,
             generation: 0,
             message_log: Vec::new(),
+            last_render_time: None,
         }
     }
 
@@ -217,6 +219,36 @@ impl NotificationManager {
 
     pub fn iter_active(&self) -> std::slice::Iter<'_, Notification> {
         self.notifications.iter()
+    }
+
+    /// Returns true if the display needs a re-render due to time passing.
+    pub fn tick(&self, poll_timeout: Duration) -> bool {
+        if self.notifications.is_empty() {
+            return false;
+        }
+        let now = Instant::now();
+        let last = self.last_render_time.unwrap_or(now);
+        for n in &self.notifications {
+            if let Some(ttl) = n.ttl {
+                let elapsed_now = now.saturating_duration_since(n.timestamp);
+                let remaining = ttl.saturating_sub(elapsed_now);
+                // About to expire within the next poll window
+                if remaining <= poll_timeout {
+                    return true;
+                }
+                // Crossed a whole-second boundary since last render
+                let elapsed_last = last.saturating_duration_since(n.timestamp);
+                if elapsed_now.as_secs() != elapsed_last.as_secs() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Record that a render has completed.
+    pub fn mark_rendered(&mut self) {
+        self.last_render_time = Some(Instant::now());
     }
 
     /// Prune expired notifications

@@ -468,7 +468,6 @@ impl RenderSystem {
                     (display_col + cursor_col_offset) as u16,
                 )
             } else {
-                // Original non-wrap path.
                 let cursor_line = ctx.buf.get_line();
                 let cursor_line_in_viewport = if cursor_line >= vp.top_line()
                     && cursor_line < vp.top_line() + vp.visible_rows()

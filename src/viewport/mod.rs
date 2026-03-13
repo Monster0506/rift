@@ -121,15 +121,12 @@ impl Viewport {
         self.top_line != self.prev_top_line || self.left_col != self.prev_left_col || was_first
     }
 
-    /// Update viewport based on visual row position (used when soft-wrap is active).
-    /// Ensures the cursor visual row is always visible by scrolling when necessary.
-    /// Returns true if the viewport scrolled or if this is the first update.
     pub fn update_visual(
         &mut self,
         cursor_visual_row: usize,
-        cursor_visual_col: usize,
+        _cursor_visual_col: usize,
         total_visual_rows: usize,
-        gutter_width: usize,
+        _gutter_width: usize,
     ) -> bool {
         self.prev_top_visual_row = self.top_visual_row;
         let prev_left = self.prev_left_col;
@@ -153,8 +150,6 @@ impl Viewport {
             self.top_visual_row = total_visual_rows.saturating_sub(content_rows);
         }
 
-        // Keep left_col at 0 — horizontal scroll is disabled when wrapping
-        let _ = (cursor_visual_col, gutter_width);
         self.left_col = 0;
         self.prev_left_col = 0;
 
@@ -172,7 +167,6 @@ impl Viewport {
         self.top_line
     }
 
-    /// Get the top visual row (used when soft-wrap is active)
     #[must_use]
     pub fn top_visual_row(&self) -> usize {
         self.top_visual_row

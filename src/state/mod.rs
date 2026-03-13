@@ -99,6 +99,10 @@ pub struct UserSettings {
     pub expand_tabs: bool,
     /// Optional syntax highlighting colors from current theme
     pub syntax_colors: Option<crate::color::theme::SyntaxColors>,
+    /// Enable soft line wrapping
+    pub soft_wrap: bool,
+    /// Fixed wrap column; None means use the terminal content width
+    pub wrap_width: Option<usize>,
 }
 
 impl UserSettings {
@@ -117,6 +121,8 @@ impl UserSettings {
             tab_width: 4,
             expand_tabs: true,
             syntax_colors: None,
+            soft_wrap: true,
+            wrap_width: None,
         };
 
         // Apply default Dark theme

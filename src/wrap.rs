@@ -27,64 +27,15 @@ pub struct DisplayMap {
 
 impl DisplayMap {
     pub fn build(buf: &TextBuffer, wrap_width: usize, tab_width: usize) -> Self {
+        crate::perf_span!(
+            "displaymap_build",
+            crate::perf::PerfFields { lines: Some(buf.get_total_lines() as u32), ..Default::default() }
+        );
         let total_lines = buf.get_total_lines();
         let mut rows: Vec<VisualRowInfo> = Vec::with_capacity(total_lines + 4);
         let mut line_first_visual: Vec<usize> = Vec::with_capacity(total_lines);
 
-        for line_idx in 0..total_lines {
-            line_first_visual.push(rows.len());
-
-            let line_start = buf.line_index.get_start(line_idx).unwrap_or(0);
-            let line_end = if line_idx + 1 < total_lines {
-                buf.line_index.get_start(line_idx + 1).unwrap_or(buf.len())
-            } else {
-                buf.len()
-            };
-
-            let mut visual_col: usize = 0;
-            let mut seg_char_start = line_start;
-            let mut seg_col_start: usize = 0;
-            let mut is_first = true;
-
-            let mut char_pos = line_start;
-            while char_pos < line_end {
-                let ch = match buf.char_at(char_pos) {
-                    Some(c) => c,
-                    None => break,
-                };
-                if ch == Character::Newline {
-                    break;
-                }
-
-                let w = char_visual_width(ch, visual_col, tab_width);
-
-                if visual_col > seg_col_start && visual_col + w > seg_col_start + wrap_width {
-                    rows.push(VisualRowInfo {
-                        logical_line: line_idx,
-                        char_start: seg_char_start,
-                        char_end: char_pos,
-                        segment_col_start: seg_col_start,
-                        is_first,
-                    });
-                    is_first = false;
-                    seg_col_start = visual_col;
-                    seg_char_start = char_pos;
-                }
-
-                visual_col += w;
-                char_pos += 1;
-            }
-
-            rows.push(VisualRowInfo {
-                logical_line: line_idx,
-                char_start: seg_char_start,
-                char_end: char_pos,
-                segment_col_start: seg_col_start,
-                is_first,
-            });
-        }
-
-        if rows.is_empty() {
+        if buf.len() == 0 {
             line_first_visual.push(0);
             rows.push(VisualRowInfo {
                 logical_line: 0,
@@ -93,7 +44,66 @@ impl DisplayMap {
                 segment_col_start: 0,
                 is_first: true,
             });
+            return DisplayMap { rows, line_first_visual, wrap_width, tab_width };
         }
+
+        let mut line_idx: usize = 0;
+        let mut visual_col: usize = 0;
+        let mut seg_char_start: usize = 0;
+        let mut seg_col_start: usize = 0;
+        let mut is_first = true;
+        let mut char_pos: usize = 0;
+
+        line_first_visual.push(0); // line 0 always starts at visual row 0
+
+        for ch in buf.iter_at(0) {
+            if ch == Character::Newline {
+                rows.push(VisualRowInfo {
+                    logical_line: line_idx,
+                    char_start: seg_char_start,
+                    char_end: char_pos,
+                    segment_col_start: seg_col_start,
+                    is_first,
+                });
+                line_idx += 1;
+                char_pos += 1;
+                if line_idx < total_lines {
+                    line_first_visual.push(rows.len());
+                }
+                visual_col = 0;
+                seg_char_start = char_pos;
+                seg_col_start = 0;
+                is_first = true;
+                continue;
+            }
+
+            let w = char_visual_width(ch, visual_col, tab_width);
+
+            if visual_col > seg_col_start && visual_col + w > seg_col_start + wrap_width {
+                rows.push(VisualRowInfo {
+                    logical_line: line_idx,
+                    char_start: seg_char_start,
+                    char_end: char_pos,
+                    segment_col_start: seg_col_start,
+                    is_first,
+                });
+                is_first = false;
+                seg_col_start = visual_col;
+                seg_char_start = char_pos;
+            }
+
+            visual_col += w;
+            char_pos += 1;
+        }
+
+        // Flush the final segment (last line, which may have no trailing newline)
+        rows.push(VisualRowInfo {
+            logical_line: line_idx,
+            char_start: seg_char_start,
+            char_end: char_pos,
+            segment_col_start: seg_col_start,
+            is_first,
+        });
 
         DisplayMap { rows, line_first_visual, wrap_width, tab_width }
     }

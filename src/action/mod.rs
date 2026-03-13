@@ -51,8 +51,6 @@ pub enum Motion {
 }
 
 impl Motion {
-    /// Apply this motion to the buffer, using the display map when available for
-    /// visual line movement (Up/Down under `OperatorContext::Move`).
     pub fn apply(
         self,
         buf: &mut crate::buffer::TextBuffer,
@@ -114,11 +112,9 @@ impl Motion {
                 buf.move_word_left();
             }
             Motion::NextBigWord => {
-                // Big word support removed - use regular word movement
                 buf.move_word_right();
             }
             Motion::PreviousBigWord => {
-                // Big word support removed - use regular word movement
                 buf.move_word_left();
             }
             Motion::NextParagraph => {

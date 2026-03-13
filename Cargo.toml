@@ -110,3 +110,7 @@ harness = false
 name = "input_bench"
 harness = false
 
+[[bench]]
+name = "wrap_bench"
+harness = false
+
