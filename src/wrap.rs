@@ -14,6 +14,7 @@ pub struct VisualRowInfo {
     pub char_start: usize,
     pub char_end: usize,
     pub segment_col_start: usize,
+    pub segment_col_end: usize,
     pub is_first: bool,
 }
 
@@ -38,6 +39,7 @@ impl DisplayMap {
                 char_start: 0,
                 char_end: 0,
                 segment_col_start: 0,
+                segment_col_end: 0,
                 is_first: true,
             });
             return DisplayMap { rows, line_first_visual, wrap_width, tab_width };
@@ -49,6 +51,9 @@ impl DisplayMap {
         let mut seg_col_start: usize = 0;
         let mut is_first = true;
         let mut char_pos: usize = 0;
+        let mut last_word_start_char: usize = 0;
+        let mut last_word_start_col: usize = 0;
+        let mut in_word = false;
 
         line_first_visual.push(0);
 
@@ -59,6 +64,7 @@ impl DisplayMap {
                     char_start: seg_char_start,
                     char_end: char_pos,
                     segment_col_start: seg_col_start,
+                    segment_col_end: visual_col,
                     is_first,
                 });
                 line_idx += 1;
@@ -70,22 +76,53 @@ impl DisplayMap {
                 seg_char_start = char_pos;
                 seg_col_start = 0;
                 is_first = true;
+                in_word = false;
                 continue;
+            }
+
+            let is_word_char = match ch {
+                Character::Unicode(c) => !c.is_whitespace(),
+                Character::Tab => false,
+                _ => true,
+            };
+            if is_word_char && !in_word {
+                in_word = true;
+                last_word_start_char = char_pos;
+                last_word_start_col = visual_col;
+            } else if !is_word_char {
+                in_word = false;
             }
 
             let w = char_visual_width(ch, visual_col, tab_width);
 
             if visual_col > seg_col_start && visual_col + w > seg_col_start + wrap_width {
-                rows.push(VisualRowInfo {
-                    logical_line: line_idx,
-                    char_start: seg_char_start,
-                    char_end: char_pos,
-                    segment_col_start: seg_col_start,
-                    is_first,
-                });
-                is_first = false;
-                seg_col_start = visual_col;
-                seg_char_start = char_pos;
+                if last_word_start_char > seg_char_start {
+                    rows.push(VisualRowInfo {
+                        logical_line: line_idx,
+                        char_start: seg_char_start,
+                        char_end: last_word_start_char,
+                        segment_col_start: seg_col_start,
+                        segment_col_end: last_word_start_col,
+                        is_first,
+                    });
+                    is_first = false;
+                    seg_col_start = last_word_start_col;
+                    seg_char_start = last_word_start_char;
+                } else {
+                    rows.push(VisualRowInfo {
+                        logical_line: line_idx,
+                        char_start: seg_char_start,
+                        char_end: char_pos,
+                        segment_col_start: seg_col_start,
+                        segment_col_end: visual_col,
+                        is_first,
+                    });
+                    is_first = false;
+                    seg_col_start = visual_col;
+                    seg_char_start = char_pos;
+                    last_word_start_char = char_pos;
+                    last_word_start_col = visual_col;
+                }
             }
 
             visual_col += w;
@@ -97,6 +134,7 @@ impl DisplayMap {
             char_start: seg_char_start,
             char_end: char_pos,
             segment_col_start: seg_col_start,
+            segment_col_end: visual_col,
             is_first,
         });
 

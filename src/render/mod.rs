@@ -273,7 +273,7 @@ pub(crate) fn render_content_to_layer_offset(
                     default_fg: editor_fg,
                     default_bg: editor_bg,
                     segment_left_col: Some(row_info.segment_col_start),
-                    segment_content_cols: Some(dm.wrap_width),
+                    segment_content_cols: Some(row_info.segment_col_end - row_info.segment_col_start),
                 },
                 &mut highlight_idx,
                 &mut search_match_idx,
