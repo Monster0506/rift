@@ -6,6 +6,12 @@ I use this daily and primarily.
 
 Implemented:
 - Quite a lot more than the below items, I just haven't updated this in a while due to actually working on it.
+- Soft line wrapping (setlocal wrap, with highly optimized rendering)
+- Messages buffer (:messages to view editor messages)
+- Everything-is-a-buffer architecture (file explorer, undotree, terminal, etc. are all buffers)
+- BOM stripping and correct UTF-8 decoding on file load
+- Multi-width unicode character rendering
+- Count indicator in command-line completion
 - Command-line completion engine (commands, subcommands, settings, setting values, file paths)
 - vertical and horizontal splits (:split, :vsplit)
 - split navigation (Ctrl+W h/j/k/l), resize (<, >), freeze
