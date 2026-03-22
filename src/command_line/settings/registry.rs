@@ -125,23 +125,23 @@ impl<T> SettingsRegistry<T> {
                         None
                     }
                 });
-                let dummy = result.map_err(|e| SettingError::ParseError(e))?;
+                let eval_result = result.map_err(|e| SettingError::ParseError(e))?;
                 if let Some(min_val) = min {
-                    if dummy < *min_val {
+                    if eval_result < *min_val {
                         return Err(SettingError::ValidationError(format!(
                             "Value is below minimum {min_val}"
                         )));
                     }
                 }
                 if let Some(max_val) = max {
-                    if dummy > *max_val {
+                    if eval_result > *max_val {
                         return Err(SettingError::ValidationError(format!(
                             "Value is above maximum {max_val}"
                         )));
                     }
                 }
-                if let Ok(n) = value.trim().parse::<usize>() {
-                    return Ok(SettingValue::Integer(n));
+                if value.trim().parse::<usize>().is_ok() {
+                    return Ok(SettingValue::Integer(eval_result));
                 }
                 Ok(SettingValue::Enum(value.to_string()))
             }

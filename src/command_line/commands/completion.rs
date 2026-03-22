@@ -625,11 +625,7 @@ fn type_hint_for(ty: &SettingType) -> String {
         SettingType::Float { .. } => "float".into(),
         SettingType::Enum { variants } => variants.join("|"),
         SettingType::Color => "color".into(),
-        SettingType::IntegerOrKeyword { keywords, .. } => {
-            let mut s = "integer|".to_string();
-            s.push_str(&keywords.join("|"));
-            s
-        }
+        SettingType::IntegerOrKeyword { keywords, .. } => format!("integer|{}", keywords.join("|")),
     }
 }
 

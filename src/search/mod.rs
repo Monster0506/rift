@@ -398,19 +398,9 @@ pub fn find_next(
                 Some(convert_match(&haystack, m))
             } else {
                 // Wrap around: Find the very last match in the file
-                let mut very_last = None;
-                for m in re.find_all_from(haystack) {
-                    very_last = Some(m);
-                }
-                if let Some(m) = very_last {
-                    if m.start >= start_byte {
-                        Some(convert_match(&haystack, m))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
+                re.find_all_from(haystack).last().and_then(|m| {
+                    if m.start >= start_byte { Some(convert_match(&haystack, m)) } else { None }
+                })
             }
         }
     };

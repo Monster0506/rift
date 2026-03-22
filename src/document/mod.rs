@@ -338,6 +338,18 @@ impl Document {
         !matches!(self.kind, BufferKind::File)
     }
 
+    /// Replace this document's buffer with new content, resetting cursor to the top
+    /// and bumping the revision so change-detection fires.
+    fn replace_buffer_content(&mut self, content: &str) {
+        let old_revision = self.buffer.revision;
+        if let Ok(mut new_buffer) = TextBuffer::new(content.len().max(64)) {
+            let _ = new_buffer.insert_str(content);
+            let _ = new_buffer.set_cursor(0);
+            new_buffer.revision = old_revision + 1;
+            self.buffer = new_buffer;
+        }
+    }
+
     /// Populate (or repopulate) this directory buffer from a fresh directory listing.
     pub fn populate_directory_buffer(&mut self, entries: Vec<DirEntry>) {
         use crate::color::Color;
@@ -375,14 +387,7 @@ impl Document {
             content.pop();
         }
 
-        let old_revision = self.buffer.revision;
-        if let Ok(mut new_buffer) = TextBuffer::new(content.len().max(64)) {
-            let _ = new_buffer.insert_str(&content);
-            let _ = new_buffer.set_cursor(0);
-            new_buffer.revision = old_revision + 1;
-            self.buffer = new_buffer;
-        }
-
+        self.replace_buffer_content(&content);
         self.custom_highlights = highlights;
         self.kind = BufferKind::Directory { path: dir_path, entries };
         self.history.mark_saved();
@@ -400,14 +405,7 @@ impl Document {
             _ => return,
         };
 
-        let old_revision = self.buffer.revision;
-        if let Ok(mut new_buffer) = TextBuffer::new(text.len().max(64)) {
-            let _ = new_buffer.insert_str(&text);
-            let _ = new_buffer.set_cursor(0);
-            new_buffer.revision = old_revision + 1;
-            self.buffer = new_buffer;
-        }
-
+        self.replace_buffer_content(&text);
         self.custom_highlights = highlights;
         self.kind = BufferKind::UndoTree { linked_doc_id, sequences };
         self.history.mark_saved();

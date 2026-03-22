@@ -1630,7 +1630,6 @@ impl<T: TerminalBackend> Editor<T> {
     /// Helper to execute buffer commands
     fn execute_buffer_command(&mut self, command: crate::command::Command) -> bool {
         let current_mode = self.current_mode;
-        // Simplified check for now
         if current_mode == Mode::Normal || current_mode == Mode::Insert {
             let viewport_height = self.render_system.viewport.visible_rows();
 

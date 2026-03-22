@@ -204,10 +204,7 @@ impl DisplayMap {
         let mut col: usize = 0;
         let mut pos = row.char_start;
         while pos < row.char_end {
-            let ch = match buf.char_at(pos) {
-                Some(c) => c,
-                None => break,
-            };
+            let Some(ch) = buf.char_at(pos) else { break };
             if ch == Character::Newline {
                 break;
             }
@@ -224,12 +221,7 @@ impl DisplayMap {
 
 #[inline]
 pub fn char_visual_width(ch: Character, abs_col: usize, tab_width: usize) -> usize {
-    if ch == Character::Tab {
-        let next_stop = ((abs_col / tab_width) + 1) * tab_width;
-        next_stop - abs_col
-    } else {
-        ch.render_width(abs_col, tab_width)
-    }
+    ch.render_width(abs_col, tab_width)
 }
 
 pub struct MotionContext<'a> {
