@@ -469,6 +469,7 @@ fn test_execute_unknown_command() {
 
     let command = ParsedCommand::Unknown {
         name: "nonexistent".to_string(),
+        args: vec!["arg1".to_string()],
     };
 
     let settings_registry = create_settings_registry();
@@ -481,20 +482,14 @@ fn test_execute_unknown_command() {
         &settings_registry,
         &document_settings_registry,
     );
+    // Unknown commands are passed to the plugin host as PluginCommand.
+    // The editor checks the plugin host before reporting an error.
     match result {
-        ExecutionResult::Failure => {
-            assert!(state
-                .error_manager
-                .notifications()
-                .iter_active()
-                .any(|n| n.message.contains("Unknown command")));
-            assert!(state
-                .error_manager
-                .notifications()
-                .iter_active()
-                .any(|n| n.message.contains("nonexistent")));
+        ExecutionResult::PluginCommand { name, args } => {
+            assert_eq!(name, "nonexistent");
+            assert_eq!(args, vec!["arg1".to_string()]);
         }
-        _ => panic!("Expected error for unknown command"),
+        _ => panic!("Expected PluginCommand for unknown command, got {:?}", result),
     }
 }
 
@@ -1110,7 +1105,7 @@ fn test_substitute_parsing_requires_space() {
     let command = command_parser.parse(input);
 
     match command {
-        ParsedCommand::Unknown { name } => {
+        ParsedCommand::Unknown { name, .. } => {
             assert_eq!(name, "s/foo/bar");
         }
         _ => panic!("Expected Unknown command, got {:?}", command),

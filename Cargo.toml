@@ -40,6 +40,7 @@ treesitter = [
 ]
 
 [dependencies]
+mlua = { version = "0.10", features = ["lua54", "vendored"] }
 crossterm = "0.28.1"
 monster-regex = "0.2.2"
 unicode-width = "0.2.2"

@@ -216,6 +216,8 @@ pub enum EditorAction {
     RedoCount(Option<u64>),
     UndoGoto(u64),
     NotificationClearAll,
+    /// Invoke a registered plugin action by ID.
+    PluginAction(String),
 }
 
 /// Represents an action in the editor

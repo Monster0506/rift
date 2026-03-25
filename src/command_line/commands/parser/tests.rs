@@ -17,6 +17,7 @@ fn parse_write(_: &SettingsRegistry<UserSettings>, args: &[&str], bangs: usize) 
         },
         _ => ParsedCommand::Unknown {
             name: "write".to_string(),
+            args: vec![],
         },
     }
 }
@@ -34,6 +35,7 @@ fn parse_write_quit(
         },
         _ => ParsedCommand::Unknown {
             name: "wq".to_string(),
+            args: vec![],
         },
     }
 }
@@ -54,6 +56,7 @@ fn parse_set(
     if args.is_empty() {
         return ParsedCommand::Unknown {
             name: "set".to_string(),
+            args: vec![],
         };
     }
 
@@ -382,7 +385,7 @@ fn test_parse_explicit_alias_overrides_ambiguity() {
     // buffer command has no factory, so it returns Unknown with name "buffer"
     // This confirms it matched "buffer" and not "bnext" or Ambiguous
     match result {
-        ParsedCommand::Unknown { name } => assert_eq!(name, "buffer"),
+        ParsedCommand::Unknown { name, .. } => assert_eq!(name, "buffer"),
         _ => panic!("Expected Unknown command 'buffer', got {:?}", result),
     }
 }
@@ -411,7 +414,7 @@ fn test_parse_subcommands() {
 
     // Test partial match (buffer only)
     match parser.parse(":buffer") {
-        ParsedCommand::Unknown { name } => assert_eq!(name, "buffer"),
+        ParsedCommand::Unknown { name, .. } => assert_eq!(name, "buffer"),
         _ => panic!("Expected Unknown command 'buffer'"),
     }
 

@@ -26,6 +26,30 @@ use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
 use std::sync::Arc;
 
+fn plugin_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
+        dirs.push(std::path::PathBuf::from(manifest).join("runtime").join("plugins"));
+    }
+    let user_dir = if cfg!(windows) {
+        std::env::var("APPDATA").ok().map(|d| {
+            std::path::PathBuf::from(d).join("rift").join("plugins")
+        })
+    } else {
+        let base = std::env::var("XDG_CONFIG_HOME")
+            .ok()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config")
+            });
+        Some(base.join("rift").join("plugins"))
+    };
+    if let Some(d) = user_dir {
+        dirs.push(d);
+    }
+    dirs
+}
+
 fn resolve_display_map(
     doc: &Document,
     content_width: usize,
@@ -77,6 +101,8 @@ pub struct Editor<T: TerminalBackend> {
     pub panel_layout: Option<PanelLayout>,
     /// Last seen notification generation; used to detect when to refresh open messages buffers.
     last_notification_generation: u64,
+    /// Plugin host — dispatches editor events to registered plugin handlers.
+    pub plugin_host: crate::plugin::PluginHost,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,10 +213,23 @@ impl<T: TerminalBackend> Editor<T> {
             dot_repeat: DotRepeat::new(),
             panel_layout: None,
             last_notification_generation: 0,
+            // 25 idle polls × 16 ms ≈ 400 ms before CursorHold fires.
+            plugin_host: crate::plugin::PluginHost::new(25),
         };
 
         // Register default keymaps
         crate::keymap::defaults::register_defaults(&mut editor.keymap);
+
+        // Initialize Lua VM
+        if let Some(err) = editor.plugin_host.init_lua() {
+            editor.state.notify(crate::notification::NotificationType::Error, err);
+        } else {
+            for dir in plugin_dirs() {
+                for err in editor.plugin_host.lua_load_dir(&dir) {
+                    editor.state.notify(crate::notification::NotificationType::Error, err);
+                }
+            }
+        }
 
         // Trigger background search cache warming for initial document
         if let Some(doc) = editor.document_manager.active_document() {
@@ -548,6 +587,13 @@ impl<T: TerminalBackend> Editor<T> {
                     continue;
                 }
 
+                // Escape closes an open plugin float before any other key handling.
+                if key_press == Key::Escape && self.plugin_host.has_open_float() {
+                    self.plugin_host.close_float();
+                    self.update_and_render()?;
+                    continue;
+                }
+
                 // Handle terminal input
                 let is_terminal_insert = if let Some(doc) = self.document_manager.active_document()
                 {
@@ -769,6 +815,13 @@ impl<T: TerminalBackend> Editor<T> {
                 let poll_dur =
                     std::time::Duration::from_millis(self.state.settings.poll_timeout_ms);
                 let notif_tick = self.state.error_manager.notifications().tick(poll_dur);
+
+                if let Some(hold_event) = self.plugin_host.tick_idle() {
+                    self.update_lua_state();
+                    self.plugin_host.dispatch(&hold_event);
+                    self.apply_plugin_mutations();
+                }
+
                 if jobs_changed || notif_changed || notif_tick {
                     self.update_and_render()?;
                     self.state.error_manager.notifications_mut().mark_rendered();
@@ -1167,6 +1220,11 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.clear_command_line();
                 true
             }
+            EditorAction::PluginAction(id) => {
+                self.plugin_host.execute_action(id);
+                self.apply_plugin_mutations();
+                true
+            }
         }
     }
 
@@ -1222,6 +1280,71 @@ impl<T: TerminalBackend> Editor<T> {
         // Only re-render if the messages buffer is currently visible
         if self.active_document_id() == doc_id {
             let _ = self.update_and_render();
+        }
+    }
+
+    /// Update the Lua VM's buffer snapshot for the current active document.
+    fn update_lua_state(&self) {
+        let tab_width = self.state.settings.tab_width;
+        let expand_tabs = self.state.settings.expand_tabs;
+        let mode = self.current_mode.as_str();
+
+        let (buf_id, lines, cursor) = if let Some(doc) = self.document_manager.active_document() {
+            let buf_id = doc.id as usize;
+            let text = doc.buffer.to_string();
+            let lines: Vec<String> = text.split('\n').map(|l| l.trim_end_matches('\r').to_string()).collect();
+            let (row, col) = {
+                let cursor = doc.buffer.cursor();
+                let row = doc.buffer.line_index.get_line_at(cursor);
+                let col = cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
+                (row, col)
+            };
+            (buf_id, lines, (row, col))
+        } else {
+            (0, vec![], (0, 0))
+        };
+        self.plugin_host.lua_update_state(buf_id, lines, cursor, tab_width, expand_tabs, mode);
+    }
+
+    /// Drain the plugin mutation queue and apply each mutation.
+    fn apply_plugin_mutations(&mut self) {
+        use crate::plugin::PluginMutation;
+
+        // Drain into a Vec first so we don't hold a borrow on plugin_host.
+        let mutations: Vec<PluginMutation> = self.plugin_host.drain_mutations().collect();
+
+        for mutation in mutations {
+            match mutation {
+                PluginMutation::Notify { message, level } => {
+                    self.state.notify(level, message);
+                }
+                PluginMutation::AppendLines(ref lines) => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        let end = doc.buffer.len();
+                        let _ = doc.buffer.set_cursor(end);
+                        let text = lines.join("\n");
+                        let _ = doc.insert_str(&text);
+                    }
+                    self.do_incremental_syntax_parse();
+                }
+                PluginMutation::InsertAtCursor(text) => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        let _ = doc.insert_str(&text);
+                    }
+                    self.do_incremental_syntax_parse();
+                }
+                PluginMutation::DeleteBefore(n) => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        for _ in 0..n {
+                            doc.delete_backward();
+                        }
+                    }
+                    self.do_incremental_syntax_parse();
+                }
+                PluginMutation::OpenFloat(_) | PluginMutation::CloseFloat => {
+                    self.plugin_host.apply_mutation(mutation);
+                }
+            }
         }
     }
 
@@ -1640,6 +1763,11 @@ impl<T: TerminalBackend> Editor<T> {
                 resolve_display_map(doc, content_width, self.state.settings.soft_wrap, self.state.settings.wrap_width)
             };
 
+            let cursor_before = self
+                .document_manager
+                .active_document()
+                .map(|d| (d.id, d.buffer.cursor()));
+
             let doc = self.document_manager.active_document_mut().unwrap();
             let expand_tabs = doc.options.expand_tabs;
             let tab_width = doc.options.tab_width;
@@ -1664,6 +1792,40 @@ impl<T: TerminalBackend> Editor<T> {
             // Tree-sitter incremental parsing is fast (~1ms for small edits)
             if is_mutating {
                 self.do_incremental_syntax_parse();
+            }
+
+            // ── Plugin events ────────────────────────────────────────────────
+
+            // Collect event info from doc before taking mutable borrows.
+            let plugin_events = self.document_manager.active_document().map(|doc| {
+                let buf = doc.id;
+                let cursor_event = cursor_before.and_then(|(prev_buf, prev_cursor)| {
+                    let new_cursor = doc.buffer.cursor();
+                    if prev_buf != buf || prev_cursor != new_cursor {
+                        let row = doc.buffer.line_index.get_line_at(new_cursor);
+                        let col = new_cursor
+                            .saturating_sub(doc.buffer.line_index.get_line_start(row));
+                        Some((buf, row, col))
+                    } else {
+                        None
+                    }
+                });
+                (buf, is_mutating, cursor_event)
+            });
+
+            if let Some((buf, mutating, cursor_event)) = plugin_events {
+                if mutating {
+                    self.update_lua_state();
+                    self.plugin_host
+                        .dispatch(&crate::plugin::EditorEvent::TextChangedCoarse { buf });
+                    self.apply_plugin_mutations();
+                }
+
+                if let Some((buf, row, col)) = cursor_event {
+                    self.plugin_host
+                        .dispatch(&crate::plugin::EditorEvent::CursorMoved { buf, row, col });
+                    self.apply_plugin_mutations();
+                }
             }
 
             return true;
@@ -1978,6 +2140,8 @@ impl<T: TerminalBackend> Editor<T> {
             self.render_system.viewport.update(cursor_line, viewport_col, total_lines, gutter_width)
         };
 
+        self.render_plugin_float();
+
         if self.split_tree.window_count() > 1 {
             self.update_window_viewports();
             self.render_multi_window(needs_clear)
@@ -2090,6 +2254,23 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = render_system.render(term, state)?;
 
         Ok(())
+    }
+
+    /// If a plugin float is open, render it into the POPUP layer.
+    /// Clears the layer once when a float is closed.
+    fn render_plugin_float(&mut self) {
+        if self.plugin_host.has_open_float() {
+            let layer = self.render_system.compositor
+                .get_layer_mut(crate::layer::LayerPriority::POPUP);
+            layer.clear();
+            let fg = self.state.settings.editor_fg;
+            let bg = self.state.settings.editor_bg;
+            self.plugin_host.render_float_into_layer(layer, fg, bg);
+        } else if self.plugin_host.take_float_closed() {
+            self.render_system.compositor
+                .get_layer_mut(crate::layer::LayerPriority::POPUP)
+                .clear();
+        }
     }
 
     fn update_window_viewports(&mut self) {
@@ -3012,6 +3193,13 @@ impl<T: TerminalBackend> Editor<T> {
     fn set_mode(&mut self, mode: Mode) {
         let old_mode = self.current_mode;
         self.current_mode = mode;
+
+        if old_mode != mode {
+            self.update_lua_state();
+            self.plugin_host
+                .dispatch(&crate::plugin::EditorEvent::ModeChanged { from: old_mode, to: mode });
+            self.apply_plugin_mutations();
+        }
         if (old_mode == Mode::Command || old_mode == Mode::Search) && mode != old_mode {
             self.state.completion_session = None;
             self.render_system
@@ -3384,6 +3572,13 @@ impl<T: TerminalBackend> Editor<T> {
                             format!("Written to {}", res.path.display()),
                         );
 
+                        self.update_lua_state();
+                        self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufSavePost {
+                            buf: res.document_id,
+                            path: res.path.clone(),
+                        });
+                        self.apply_plugin_mutations();
+
                         if self.pending_quit_job_id == Some(id) {
                             self.should_quit = true;
                         }
@@ -3449,6 +3644,18 @@ impl<T: TerminalBackend> Editor<T> {
                                 table, revision,
                             );
                             self.job_manager.spawn(job);
+                        }
+
+                        if let Some(doc) = self.document_manager.get_document(res.document_id) {
+                            let path = doc.path().map(|p| p.to_path_buf());
+                            let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
+                            self.update_lua_state();
+                            self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufOpen {
+                                buf: res.document_id,
+                                path,
+                                filetype,
+                            });
+                            self.apply_plugin_mutations();
                         }
 
                         self.sync_state_with_active_document();
@@ -3631,6 +3838,26 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::OpenDirectory { path } => { self.open_explorer(path); }
             ExecutionResult::OpenUndoTree => { self.open_undotree_split(); }
             ExecutionResult::OpenMessages { show_all } => { self.open_messages(show_all); }
+            ExecutionResult::PluginCommand { name, args } => {
+                if name == "lua" {
+                    let s = cmd.trim_start_matches(':').trim();
+                    let code = s.strip_prefix("lua").map(|r| r.trim_start()).unwrap_or("");
+                    if let Some(err) = self.plugin_host.lua_exec(code) {
+                        self.state.notify(crate::notification::NotificationType::Error, err);
+                    }
+                    self.apply_plugin_mutations();
+                } else if !self.plugin_host.execute_command(&name, &args) {
+                    // No plugin handled it — report as unknown command.
+                    self.state.handle_error(crate::error::RiftError::new(
+                        crate::error::ErrorType::Parse,
+                        "UNKNOWN_COMMAND",
+                        format!("Unknown command: {name}"),
+                    ));
+                    return;
+                } else {
+                    self.apply_plugin_mutations();
+                }
+            }
         }
         if self.current_mode == Mode::Command {
             self.set_mode(Mode::Normal);
