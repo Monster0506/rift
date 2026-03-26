@@ -2031,6 +2031,7 @@ impl<T: TerminalBackend> Editor<T> {
                 )
             })?;
         self.term.show_cursor()?;
+        self.term.flush()?;
         Ok(stats)
     }
 
@@ -2057,7 +2058,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let (start_logical, end_logical) = if let Some(dm) = display_map {
-            let top_vr = render_system.viewport.top_line();
+            let top_vr = render_system.viewport.top_visual_row();
             let bottom_vr = top_vr + render_system.viewport.visible_rows();
             let start_l = dm
                 .get_visual_row(top_vr)

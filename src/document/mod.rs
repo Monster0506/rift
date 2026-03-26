@@ -154,10 +154,15 @@ impl Document {
         let mut normalized_bytes = Vec::with_capacity(bytes.len());
         let mut i = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) { 3 } else { 0 };
         while i < bytes.len() {
-            if bytes[i] == b'\r' && i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
-                line_ending = LineEnding::CRLF;
-                normalized_bytes.push(b'\n');
-                i += 2;
+            if bytes[i] == b'\r' {
+                if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+                    line_ending = LineEnding::CRLF;
+                    normalized_bytes.push(b'\n');
+                    i += 2;
+                } else {
+                    // Standalone \r — strip it
+                    i += 1;
+                }
             } else {
                 normalized_bytes.push(bytes[i]);
                 i += 1;

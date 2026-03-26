@@ -4,7 +4,7 @@ This is a vim-like text editor.
 
 I use this daily and primarily. 
 
-Implemented:
+## Implemented:
 - Quite a lot more than the below items, I just haven't updated this in a while due to actually working on it.
 - Soft line wrapping (setlocal wrap, with highly optimized rendering)
 - Messages buffer (:messages to view editor messages)
@@ -92,7 +92,7 @@ Todo:
 Known issues:
 - 4 byte unicode characters are not able to be inserted on windows (this is a crossterm issue on windows, idk man)
 
-Fixed stuff (lightly tracked):
+## Fixed stuff (lightly tracked):
 - TOCTOU Race Condition between file check and file open
 - Gap Buffer uses a lot of `unsafe`. Write more debug asserts
 - inefficient string construction wrap_text in render loop

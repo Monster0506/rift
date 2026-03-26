@@ -503,6 +503,7 @@ impl RenderSystem {
             self.last_cursor_pos = Some(cursor_info);
         }
         term.show_cursor()?;
+        term.flush()?;
 
         // Update version reference
         self.last_render_version = self.world.current_version;
