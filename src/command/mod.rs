@@ -25,6 +25,8 @@ pub enum Command {
     EnterInsertModeAfter,
     EnterInsertModeAtLineStart,
     EnterInsertModeAtLineEnd,
+    OpenLineBelow,
+    OpenLineAbove,
     Delete(Motion, usize),
     Change(Motion, usize),
     DeleteForward,
@@ -79,6 +81,8 @@ impl Command {
                 | Command::Delete(_, _)
                 | Command::Change(_, _)
                 | Command::ChangeLine
+                | Command::OpenLineBelow
+                | Command::OpenLineAbove
                 | Command::InsertChar(_)
                 | Command::Undo
                 | Command::Redo
@@ -180,6 +184,8 @@ impl Dispatcher {
                 'I' => Command::EnterInsertModeAtLineStart,
                 'a' => Command::EnterInsertModeAfter,
                 'A' => Command::EnterInsertModeAtLineEnd,
+                'o' => Command::OpenLineBelow,
+                'O' => Command::OpenLineAbove,
                 'w' => Command::Move(Motion::NextWord, count),
                 'b' => Command::Move(Motion::PreviousWord, count),
                 '}' => Command::Move(Motion::NextParagraph, count),

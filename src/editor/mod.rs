@@ -894,6 +894,14 @@ impl<T: TerminalBackend> Editor<T> {
                 self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineEnd);
                 true
             }
+            EditorAction::OpenLineBelow => {
+                self.handle_mode_management(crate::command::Command::OpenLineBelow);
+                true
+            }
+            EditorAction::OpenLineAbove => {
+                self.handle_mode_management(crate::command::Command::OpenLineAbove);
+                true
+            }
             EditorAction::EnterCommandMode => {
                 self.handle_mode_management(crate::command::Command::EnterCommandMode);
                 true
@@ -1724,6 +1732,27 @@ impl<T: TerminalBackend> Editor<T> {
                 let doc = self.document_manager.active_document_mut().unwrap();
                 doc.buffer.move_to_line_end();
                 doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                if !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.start_insert_recording(command);
+                }
+                self.set_mode(Mode::Insert);
+            }
+            Command::OpenLineBelow => {
+                let doc = self.document_manager.active_document_mut().unwrap();
+                doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                doc.buffer.move_to_line_end();
+                let _ = doc.insert_char('\n');
+                if !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.start_insert_recording(command);
+                }
+                self.set_mode(Mode::Insert);
+            }
+            Command::OpenLineAbove => {
+                let doc = self.document_manager.active_document_mut().unwrap();
+                doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                doc.buffer.move_to_line_start();
+                let _ = doc.insert_char('\n');
+                doc.buffer.move_up();
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
                 }
