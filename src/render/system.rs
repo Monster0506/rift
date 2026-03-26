@@ -94,6 +94,7 @@ impl RenderSystem {
                 0
             },
             search_matches_count: ctx.state.search_matches.len(),
+            plugin_highlights_len: ctx.plugin_highlights.map(|h| h.len()).unwrap_or(0),
             editor_bg: ctx.state.settings.editor_bg,
             editor_fg: ctx.state.settings.editor_fg,
             theme: ctx.state.settings.theme.clone(),
@@ -307,6 +308,7 @@ impl RenderSystem {
             highlights: state.highlights,
             capture_map: state.capture_map,
             custom_highlights: state.custom_highlights,
+            plugin_highlights: state.plugin_highlights,
             show_line_numbers: state.show_line_numbers,
             display_map: state.display_map,
         };

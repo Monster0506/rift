@@ -173,6 +173,74 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for ColorDecorator<'a, I> {
     }
 }
 
+/// Pick a contrasting foreground color (black or white) for a given background.
+pub fn contrasting_color(bg: Color) -> Color {
+    match bg {
+        Color::Black
+        | Color::DarkGrey
+        | Color::Blue
+        | Color::DarkBlue
+        | Color::Red
+        | Color::DarkRed
+        | Color::Magenta
+        | Color::DarkMagenta
+        | Color::DarkGreen
+        | Color::DarkCyan
+        | Color::DarkYellow => Color::White,
+        Color::White | Color::Grey | Color::Yellow | Color::Green | Color::Cyan => Color::Black,
+        Color::Rgb { r, g, b } => {
+            let lum = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
+            if lum > 128.0 { Color::Black } else { Color::White }
+        }
+        Color::Ansi256(n) => {
+            if n >= 232 {
+                if n >= 244 { Color::Black } else { Color::White }
+            } else {
+                Color::White
+            }
+        }
+        Color::Reset => Color::Reset,
+    }
+}
+
+/// Decorator that applies plugin highlights as background color with contrasting foreground.
+pub struct PluginHighlightDecorator<'a, I: Iterator<Item = RenderItem>> {
+    input: I,
+    highlights: &'a [(std::ops::Range<usize>, Color)],
+    idx: usize,
+}
+
+impl<'a, I: Iterator<Item = RenderItem>> PluginHighlightDecorator<'a, I> {
+    pub fn new(input: I, highlights: &'a [(std::ops::Range<usize>, Color)]) -> Self {
+        Self { input, highlights, idx: 0 }
+    }
+}
+
+impl<'a, I: Iterator<Item = RenderItem>> Iterator for PluginHighlightDecorator<'a, I> {
+    type Item = RenderItem;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut item = self.input.next()?;
+
+        // Advance past expired ranges
+        while self.idx < self.highlights.len()
+            && self.highlights[self.idx].0.end <= item.byte_offset
+        {
+            self.idx += 1;
+        }
+
+        if self.idx < self.highlights.len() {
+            let (range, bg) = &self.highlights[self.idx];
+            if range.start <= item.byte_offset {
+                item.bg = Some(*bg);
+                item.fg = Some(contrasting_color(*bg));
+            }
+        }
+
+        Some(item)
+    }
+}
+
 /// Decorator that applies search match highlighting
 pub struct SearchDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,

@@ -18,6 +18,14 @@ pub mod rope;
 use line_cache::LineCache;
 use line_index::LineIndex;
 
+/// A single mutation recorded by the buffer, expressed in byte coordinates.
+#[derive(Debug, Clone)]
+pub struct ByteEdit {
+    pub byte_pos: usize,
+    pub del_bytes: usize,
+    pub ins_bytes: usize,
+}
+
 /// Text buffer using a Piece Table for efficient insertion and deletion.
 #[derive(Clone)]
 pub struct TextBuffer {
@@ -31,6 +39,7 @@ pub struct TextBuffer {
     pub line_cache: RefCell<LineCache>,
     /// Cache for byte offsets of line starts (expensive to compute)
     pub byte_map_cache: RefCell<Option<crate::buffer::byte_map::ByteLineMap>>,
+    pub edit_log: Vec<ByteEdit>,
 }
 
 impl TextBuffer {
@@ -43,6 +52,7 @@ impl TextBuffer {
             revision: 0,
             line_cache: RefCell::new(LineCache::new()),
             byte_map_cache: RefCell::new(None),
+            edit_log: Vec::new(),
         })
     }
 
@@ -154,9 +164,12 @@ impl TextBuffer {
 
     /// Internal insert helper - exposed for Document
     pub fn insert_chars(&mut self, chars: &[Character]) -> Result<(), RiftError> {
+        let byte_pos = self.char_to_byte(self.cursor);
+        let ins_bytes: usize = chars.iter().map(|c| c.len_utf8()).sum();
         self.line_index.insert(self.cursor, chars);
         self.cursor += chars.len();
         self.revision += 1;
+        self.edit_log.push(ByteEdit { byte_pos, del_bytes: 0, ins_bytes });
         Ok(())
     }
 
@@ -164,8 +177,11 @@ impl TextBuffer {
     pub fn delete_backward(&mut self) -> bool {
         if self.cursor > 0 {
             self.cursor -= 1;
+            let byte_pos = self.char_to_byte(self.cursor);
+            let del_bytes = self.line_index.char_at(self.cursor).len_utf8();
             self.line_index.delete(self.cursor, 1);
             self.revision += 1;
+            self.edit_log.push(ByteEdit { byte_pos, del_bytes, ins_bytes: 0 });
             true
         } else {
             false
@@ -175,8 +191,11 @@ impl TextBuffer {
     /// Delete the Character at the cursor position
     pub fn delete_forward(&mut self) -> bool {
         if self.cursor < self.len() {
+            let byte_pos = self.char_to_byte(self.cursor);
+            let del_bytes = self.line_index.char_at(self.cursor).len_utf8();
             self.line_index.delete(self.cursor, 1);
             self.revision += 1;
+            self.edit_log.push(ByteEdit { byte_pos, del_bytes, ins_bytes: 0 });
             true
         } else {
             false

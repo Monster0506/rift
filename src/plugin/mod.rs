@@ -52,6 +52,32 @@ pub enum PluginMutation {
     InsertAtCursor(String),
     /// Delete `n` characters immediately before the cursor.
     DeleteBefore(usize),
+    /// Delete `n` characters immediately after the cursor.
+    DeleteForward(usize),
+    /// Move the cursor to a specific position. `row` is 1-indexed; `col` is 0-indexed.
+    SetCursor { row: usize, col: usize },
+    /// Replace a line range with new content. `start` and `end` are 1-indexed and inclusive.
+    /// The replaced region is deleted and `lines` are inserted in its place.
+    ReplaceLines { start: usize, end: usize, lines: Vec<String> },
+    /// Add a foreground color highlight over a character range in the active buffer.
+    /// Line numbers are 1-indexed; columns are 0-indexed.
+    /// `color` is a named color ("red", "green", …) or an HTML hex string ("#rrggbb").
+    /// `slot` identifies the plugin handler that owns this highlight.
+    AddHighlight {
+        slot: u32,
+        start_line: usize,
+        start_col: usize,
+        end_line: usize,
+        end_col: usize,
+        color: String,
+    },
+    /// Remove all highlights owned by the given plugin slot.
+    ClearHighlights { slot: u32 },
+    /// Set a per-document option. Supported names: `tab_width`, `expand_tabs`,
+    /// `show_line_numbers`. Value is always a string ("4", "true", "false", …).
+    SetOption { name: String, value: String },
+    /// Trigger a save of the active buffer to disk.
+    SaveBuffer,
     /// Open a plugin-owned floating window.
     OpenFloat(PluginFloat),
     /// Close the currently open plugin float.
@@ -357,6 +383,7 @@ impl PluginHost {
     }
 
     /// Update the Lua VM's buffer snapshot before dispatching events.
+    #[allow(clippy::too_many_arguments)]
     pub fn lua_update_state(
         &self,
         buf_id: usize,
@@ -365,9 +392,12 @@ impl PluginHost {
         tab_width: usize,
         expand_tabs: bool,
         mode: &str,
+        filetype: Option<String>,
+        file_path: Option<String>,
+        buf_list: Vec<(usize, String, bool, bool)>,
     ) {
         if let Some(lua) = &self.lua {
-            lua.update_state(buf_id, lines, cursor, tab_width, expand_tabs, mode);
+            lua.update_state(buf_id, lines, cursor, tab_width, expand_tabs, mode, filetype, file_path, buf_list);
         }
     }
 
@@ -434,7 +464,7 @@ impl PluginHost {
     /// Apply a mutation immediately (used internally by command/action handlers).
     /// Float open/close mutations are applied directly to `open_float`; all
     /// others are queued for the main loop.
-    pub(crate) fn apply_mutation(&mut self, mutation: PluginMutation) {
+    pub fn apply_mutation(&mut self, mutation: PluginMutation) {
         match mutation {
             PluginMutation::OpenFloat(f) => {
                 self.open_float = Some(f);
