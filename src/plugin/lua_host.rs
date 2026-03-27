@@ -38,6 +38,15 @@ struct LuaSharedState {
     current_slot: u32,
     /// Counter used to assign unique slot IDs when `rift.on()` is called.
     next_slot: u32,
+    /// Current terminal dimensions (rows, cols).
+    window_size: (u16, u16),
+    can_undo: bool,
+    can_redo: bool,
+    is_dirty: bool,
+    /// Current scroll position (top_line, left_col).
+    scroll: (usize, usize),
+    /// Current line ending: "lf" or "crlf".
+    line_ending: String,
 }
 
 impl Default for LuaSharedState {
@@ -55,6 +64,12 @@ impl Default for LuaSharedState {
             buf_list: Vec::new(),
             current_slot: 0,
             next_slot: 1,
+            window_size: (0, 0),
+            can_undo: false,
+            can_redo: false,
+            is_dirty: false,
+            scroll: (0, 0),
+            line_ending: "lf".to_string(),
         }
     }
 }
@@ -74,13 +89,14 @@ impl LuaHost {
         let shared = Arc::new(Mutex::new(LuaSharedState::default()));
 
         // Internal handler registry table: _rift_handlers[event_name] = { {slot=n,fn=f}, ... }
+        // _rift_slot_events[slot_id] = event_name  (for rift.off lookup)
         lua.globals().set("_rift_handlers", lua.create_table()?)?;
+        lua.globals().set("_rift_slot_events", lua.create_table()?)?;
 
         let api = lua.create_table()?;
 
-        // rift.on(event_name, handler_fn)
-        // Each registration gets a unique `slot` id so that clear_highlights() only
-        // affects the highlights owned by that particular handler.
+        // rift.on(event_name, handler_fn) → handle (integer)
+        // Returns a handle that can be passed to rift.off() to unregister.
         {
             let sh = Arc::clone(&shared);
             let on_fn = lua.create_function(move |lua, (event_name, callback): (String, LuaFunction)| {
@@ -104,9 +120,40 @@ impl LuaHost {
                 entry.set("slot", slot_id)?;
                 entry.set("fn", callback)?;
                 list.push(entry)?;
-                Ok(())
+                // Record slot → event_name for off() lookup
+                let slot_events: LuaTable = lua.globals().get("_rift_slot_events")?;
+                slot_events.set(slot_id as i64, event_name)?;
+                Ok(slot_id as i64)
             })?;
             api.set("on", on_fn)?;
+        }
+
+        // rift.off(handle) — unregister a handler by its slot handle
+        {
+            let f = lua.create_function(|lua, handle: i64| {
+                let slot_events: LuaTable = lua.globals().get("_rift_slot_events")?;
+                let event_name: Option<String> = slot_events.get(handle)?;
+                let event_name = match event_name {
+                    Some(n) => n,
+                    None => return Ok(()),
+                };
+                let handlers: LuaTable = lua.globals().get("_rift_handlers")?;
+                let list: Option<LuaTable> = handlers.get(event_name.as_str())?;
+                if let Some(list) = list {
+                    let new_list = lua.create_table()?;
+                    for entry in list.sequence_values::<LuaTable>() {
+                        let entry = entry?;
+                        let slot: i64 = entry.get("slot").unwrap_or(0);
+                        if slot != handle {
+                            new_list.push(entry)?;
+                        }
+                    }
+                    handlers.set(event_name.as_str(), new_list)?;
+                }
+                slot_events.set(handle, LuaValue::Nil)?;
+                Ok(())
+            })?;
+            api.set("off", f)?;
         }
 
         // rift.notify(level, message)
@@ -201,11 +248,19 @@ impl LuaHost {
             api.set("get_lines", f)?;
         }
 
-        // rift.register_command(name, fn)  — register an ex-command handler
+        // rift.register_command(name, fn [, description [, arg_type]])
+        // description — shown in tab completion dropdown
+        // arg_type    — drives argument completion: "file", "dir"
         {
-            let f = lua.create_function(|lua, (name, callback): (String, LuaFunction)| {
+            let f = lua.create_function(|lua, (name, callback, desc, arg_type): (String, LuaFunction, Option<String>, Option<String>)| {
                 let cmds: LuaTable = lua.globals().get("_rift_commands")?;
-                cmds.set(name, callback)?;
+                let entry = lua.create_table()?;
+                entry.set("fn", callback)?;
+                entry.set("description", desc.unwrap_or_default())?;
+                if let Some(at) = arg_type {
+                    entry.set("arg_type", at)?;
+                }
+                cmds.set(name, entry)?;
                 Ok(())
             })?;
             api.set("register_command", f)?;
@@ -350,7 +405,7 @@ impl LuaHost {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (name, value): (String, LuaValue)| {
                 let value_str = match &value {
-                    LuaValue::Boolean(b) => if *b { "true".to_string() } else { "false".to_string() },
+                    LuaValue::Boolean(b) => b.to_string(),
                     LuaValue::Integer(n) => n.to_string(),
                     LuaValue::Number(n) => (*n as i64).to_string(),
                     LuaValue::String(s) => s.to_str()?.to_string(),
@@ -459,7 +514,383 @@ impl LuaHost {
             api.set("get_mode", f)?;
         }
 
+        // rift.get_line_count() → integer
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, ()| {
+                Ok(sh.lock().unwrap().buf_lines.len() as i64)
+            })?;
+            api.set("get_line_count", f)?;
+        }
+
+        // rift.can_undo() → bool
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.lock().unwrap().can_undo))?;
+            api.set("can_undo", f)?;
+        }
+
+        // rift.can_redo() → bool
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.lock().unwrap().can_redo))?;
+            api.set("can_redo", f)?;
+        }
+
+        // rift.is_dirty() → bool
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.lock().unwrap().is_dirty))?;
+            api.set("is_dirty", f)?;
+        }
+
+        // rift.get_scroll() → top_line, left_col
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, ()| {
+                let s = sh.lock().unwrap();
+                Ok((s.scroll.0 as i64, s.scroll.1 as i64))
+            })?;
+            api.set("get_scroll", f)?;
+        }
+
+        // rift.set_scroll(top_line, left_col)
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, (top, left): (usize, usize)| {
+                sh.lock().unwrap().mutations.push(PluginMutation::SetScroll(top, left));
+                Ok(())
+            })?;
+            api.set("set_scroll", f)?;
+        }
+
+        // rift.get_line_ending() → "lf" | "crlf"
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.lock().unwrap().line_ending.clone()))?;
+            api.set("get_line_ending", f)?;
+        }
+
+        // rift.set_line_ending(type) — "lf" | "crlf"
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, ending: String| {
+                sh.lock().unwrap().mutations.push(PluginMutation::SetLineEnding(ending));
+                Ok(())
+            })?;
+            api.set("set_line_ending", f)?;
+        }
+
+        // rift.search(needle) → array of {row, col_start, col_end}
+        // Literal search over the current buffer lines.
+        // row is 1-indexed; col_start/col_end are 0-indexed byte offsets within the line.
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |lua, needle: String| {
+                let lines = sh.lock().unwrap().buf_lines.clone();
+                let results = lua.create_table()?;
+                if needle.is_empty() {
+                    return Ok(results);
+                }
+                for (row_idx, line) in lines.iter().enumerate() {
+                    let mut start = 0;
+                    while let Some(pos) = line[start..].find(needle.as_str()) {
+                        let col_start = start + pos;
+                        let col_end = col_start + needle.len();
+                        let entry = lua.create_table()?;
+                        entry.set("row", row_idx + 1)?;
+                        entry.set("col_start", col_start)?;
+                        entry.set("col_end", col_end)?;
+                        results.push(entry)?;
+                        start = col_end;
+                    }
+                }
+                Ok(results)
+            })?;
+            api.set("search", f)?;
+        }
+
+        // rift.get_window_size() → rows, cols
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, ()| {
+                let s = sh.lock().unwrap();
+                Ok((s.window_size.0 as i64, s.window_size.1 as i64))
+            })?;
+            api.set("get_window_size", f)?;
+        }
+
+        // rift.exec_action(action_string) — fire a built-in editor action by name
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, action: String| {
+                sh.lock().unwrap().mutations.push(PluginMutation::ExecAction(action));
+                Ok(())
+            })?;
+            api.set("exec_action", f)?;
+        }
+
+        // rift.map(mode, keys, action) — register a key binding
+        // mode: "n" | "i" | "c" | "s" | "g"
+        // keys: vim notation, e.g. "<C-p>", "gg", "<leader>s"
+        // action: action string, e.g. "editor:save", or a registered plugin action id
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, (mode, keys, action): (String, String, String)| {
+                sh.lock().unwrap().mutations.push(PluginMutation::MapKey { mode, keys, action });
+                Ok(())
+            })?;
+            api.set("map", f)?;
+        }
+
+        // rift.center_on_line(n) — move cursor to line n (1-indexed) and center it in viewport
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, row: usize| {
+                sh.lock().unwrap().mutations.push(PluginMutation::CenterOnLine(row));
+                Ok(())
+            })?;
+            api.set("center_on_line", f)?;
+        }
+
+        // rift.unmap(mode, keys) — remove a key binding
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, (mode, keys): (String, String)| {
+                sh.lock().unwrap().mutations.push(PluginMutation::UnmapKey { mode, keys });
+                Ok(())
+            })?;
+            api.set("unmap", f)?;
+        }
+
         lua.globals().set("rift", api)?;
+
+        // Embedded Lua prelude — convenience wrappers that don't need Rust bindings.
+        lua.load(r#"
+-- rift.log level constants
+rift.log = { DEBUG = "debug", INFO = "info", WARN = "warn", ERROR = "error" }
+
+-- rift.get_current_line() → string
+function rift.get_current_line()
+    local row = select(1, rift.get_cursor())
+    local lines = rift.get_lines(row, row)
+    return lines[1] or ""
+end
+
+-- rift.set_current_line(text)
+function rift.set_current_line(text)
+    local row = select(1, rift.get_cursor())
+    rift.replace_lines(row, row, {text})
+end
+
+-- rift.delete_current_line()
+function rift.delete_current_line()
+    local row = select(1, rift.get_cursor())
+    rift.replace_lines(row, row, {})
+end
+
+-- rift.inspect(val) → string  (pretty-prints any Lua value)
+function rift.inspect(val, _depth)
+    local depth = _depth or 0
+    local t = type(val)
+    if t == "table" then
+        if depth > 4 then return "{...}" end
+        local parts = {}
+        for k, v in pairs(val) do
+            local ks = type(k) == "string" and k or ("[" .. tostring(k) .. "]")
+            table.insert(parts, ks .. " = " .. rift.inspect(v, depth + 1))
+        end
+        return "{" .. table.concat(parts, ", ") .. "}"
+    elseif t == "string" then
+        return string.format("%q", val)
+    else
+        return tostring(val)
+    end
+end
+
+-- rift.json — minimal JSON encode/decode
+rift.json = {}
+function rift.json.encode(val)
+    local t = type(val)
+    if t == "nil" then return "null"
+    elseif t == "boolean" then return val and "true" or "false"
+    elseif t == "number" then return tostring(val)
+    elseif t == "string" then
+        return '"' .. val:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub('\n', '\\n'):gsub('\t', '\\t') .. '"'
+    elseif t == "table" then
+        local n = #val
+        if n > 0 then
+            local parts = {}
+            for i = 1, n do parts[i] = rift.json.encode(val[i]) end
+            return "[" .. table.concat(parts, ",") .. "]"
+        else
+            local parts = {}
+            for k, v in pairs(val) do
+                if type(k) == "string" then
+                    table.insert(parts, rift.json.encode(k) .. ":" .. rift.json.encode(v))
+                end
+            end
+            return "{" .. table.concat(parts, ",") .. "}"
+        end
+    end
+    return "null"
+end
+
+-- rift.fs — path and file utilities
+rift.fs = {}
+function rift.fs.basename(path)
+    return path:match("([^/\\]+)$") or path
+end
+function rift.fs.dirname(path)
+    return path:match("^(.*)[/\\][^/\\]*$") or "."
+end
+function rift.fs.joinpath(...)
+    return table.concat({...}, "/")
+end
+function rift.fs.exists(path)
+    local f = io.open(path, "r")
+    if f then f:close() return true end
+    return false
+end
+function rift.fs.read(path)
+    local f = io.open(path, "r")
+    if not f then return nil end
+    local content = f:read("*a")
+    f:close()
+    return content
+end
+
+-- rift.json.decode(str) → value
+-- Minimal recursive descent JSON parser (no unicode escapes, no numbers in exponent form).
+do
+    local function skip_ws(s, i)
+        while i <= #s and s:sub(i,i):match("%s") do i = i + 1 end
+        return i
+    end
+    local parse_value  -- forward declaration
+
+    local function parse_string(s, i)
+        -- i points at opening quote
+        i = i + 1
+        local out = {}
+        while i <= #s do
+            local c = s:sub(i,i)
+            if c == '"' then return table.concat(out), i + 1 end
+            if c == '\\' then
+                i = i + 1
+                local e = s:sub(i,i)
+                if     e == '"'  then out[#out+1] = '"'
+                elseif e == '\\' then out[#out+1] = '\\'
+                elseif e == '/'  then out[#out+1] = '/'
+                elseif e == 'n'  then out[#out+1] = '\n'
+                elseif e == 't'  then out[#out+1] = '\t'
+                elseif e == 'r'  then out[#out+1] = '\r'
+                else out[#out+1] = e end
+            else
+                out[#out+1] = c
+            end
+            i = i + 1
+        end
+        error("unterminated string")
+    end
+
+    local function parse_array(s, i)
+        i = i + 1  -- skip '['
+        local arr = {}
+        i = skip_ws(s, i)
+        if s:sub(i,i) == ']' then return arr, i + 1 end
+        while true do
+            local v; v, i = parse_value(s, i)
+            arr[#arr+1] = v
+            i = skip_ws(s, i)
+            local c = s:sub(i,i)
+            if c == ']' then return arr, i + 1 end
+            if c ~= ',' then error("expected ',' or ']'") end
+            i = i + 1
+        end
+    end
+
+    local function parse_object(s, i)
+        i = i + 1  -- skip '{'
+        local obj = {}
+        i = skip_ws(s, i)
+        if s:sub(i,i) == '}' then return obj, i + 1 end
+        while true do
+            i = skip_ws(s, i)
+            if s:sub(i,i) ~= '"' then error("expected string key") end
+            local k; k, i = parse_string(s, i)
+            i = skip_ws(s, i)
+            if s:sub(i,i) ~= ':' then error("expected ':'") end
+            i = i + 1
+            local v; v, i = parse_value(s, i)
+            obj[k] = v
+            i = skip_ws(s, i)
+            local c = s:sub(i,i)
+            if c == '}' then return obj, i + 1 end
+            if c ~= ',' then error("expected ',' or '}'") end
+            i = i + 1
+        end
+    end
+
+    parse_value = function(s, i)
+        i = skip_ws(s, i)
+        local c = s:sub(i,i)
+        if c == '"' then return parse_string(s, i)
+        elseif c == '[' then return parse_array(s, i)
+        elseif c == '{' then return parse_object(s, i)
+        elseif s:sub(i, i+3) == "true"  then return true,  i + 4
+        elseif s:sub(i, i+4) == "false" then return false, i + 5
+        elseif s:sub(i, i+3) == "null"  then return nil,   i + 4
+        else
+            -- number
+            local num_str = s:match("^-?%d+%.?%d*", i)
+            if num_str then return tonumber(num_str), i + #num_str end
+            error("unexpected character: " .. c)
+        end
+    end
+
+    function rift.json.decode(str)
+        local ok, val = pcall(function() return (parse_value(str, 1)) end)
+        if ok then return val end
+        return nil, val  -- nil, error_message
+    end
+end
+
+-- rift.get_word_at_cursor() → string
+-- Returns the word (alphanumeric + underscore) under the cursor, or "" if none.
+function rift.get_word_at_cursor()
+    local row, col = rift.get_cursor()
+    local line = rift.get_lines(row, row)[1] or ""
+    -- col is 0-indexed byte offset; Lua strings are 1-indexed
+    local pos = col + 1
+    if pos > #line then pos = #line end
+    if pos < 1 or not line:sub(pos, pos):match("[%w_]") then return "" end
+    -- Walk left to start of word
+    local s = pos
+    while s > 1 and line:sub(s - 1, s - 1):match("[%w_]") do s = s - 1 end
+    -- Walk right to end of word
+    local e = pos
+    while e < #line and line:sub(e + 1, e + 1):match("[%w_]") do e = e + 1 end
+    return line:sub(s, e)
+end
+
+-- rift.debounce(fn, polls) → debounced_fn
+-- Returns a wrapper that only calls fn after it has been invoked `polls`
+-- consecutive times without being reset. Intended for use with
+-- TextChangedCoarse handlers where you want to wait for a pause in typing.
+-- `polls` maps to main-loop idle cycles (~16 ms each by default).
+function rift.debounce(fn, polls)
+    polls = polls or 10
+    local count = 0
+    return function(...)
+        count = count + 1
+        if count >= polls then
+            count = 0
+            fn(...)
+        end
+    end
+end
+"#).set_name("rift:prelude").exec()?;
 
         Ok(Self { lua, shared })
     }
@@ -480,6 +911,12 @@ impl LuaHost {
         filetype: Option<String>,
         file_path: Option<String>,
         buf_list: Vec<BufEntry>,
+        window_size: (u16, u16),
+        can_undo: bool,
+        can_redo: bool,
+        is_dirty: bool,
+        scroll: (usize, usize),
+        line_ending: &str,
     ) {
         let mut s = self.shared.lock().unwrap();
         s.buf_id = buf_id;
@@ -491,6 +928,12 @@ impl LuaHost {
         s.filetype = filetype;
         s.file_path = file_path;
         s.buf_list = buf_list;
+        s.window_size = window_size;
+        s.can_undo = can_undo;
+        s.can_redo = can_redo;
+        s.is_dirty = is_dirty;
+        s.scroll = scroll;
+        s.line_ending = line_ending.to_string();
     }
 
     // ── Event dispatch ────────────────────────────────────────────────────────
@@ -551,13 +994,17 @@ impl LuaHost {
             Ok(t) => t,
             Err(_) => return false,
         };
-        let handler: Option<LuaFunction> = match cmds.get(name) {
+        let entry: Option<LuaTable> = match cmds.get(name) {
             Ok(v) => v,
             Err(_) => return false,
         };
-        let handler = match handler {
-            Some(f) => f,
+        let entry = match entry {
+            Some(e) => e,
             None => return false,
+        };
+        let handler: LuaFunction = match entry.get("fn") {
+            Ok(f) => f,
+            Err(_) => return false,
         };
         let args_table = match self.lua.create_table() {
             Ok(t) => t,
@@ -573,6 +1020,23 @@ impl LuaHost {
             });
         }
         true
+    }
+
+    /// Returns all Lua-registered command names, descriptions, and arg types.
+    pub fn command_list(&self) -> Vec<(String, String, Option<String>)> {
+        let cmds: LuaTable = match self.lua.globals().get("_rift_commands") {
+            Ok(t) => t,
+            Err(_) => return vec![],
+        };
+        let mut list = Vec::new();
+        for pair in cmds.pairs::<String, LuaTable>() {
+            if let Ok((name, entry)) = pair {
+                let desc: String = entry.get("description").unwrap_or_default();
+                let arg_type: Option<String> = entry.get("arg_type").ok().flatten();
+                list.push((name, desc, arg_type));
+            }
+        }
+        list
     }
 
     /// Execute a plugin action registered via `rift.register_action`.
@@ -749,7 +1213,7 @@ mod tests {
     #[test]
     fn test_get_lines_returns_correct_lines() {
         let host = make_host();
-        host.update_state(1, vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()], (0, 0), 4, true, "normal", None, None, vec![]);
+        host.update_state(1, vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()], (0, 0), 4, true, "normal", None, None, vec![], (0, 0), false, false, false, (0, 0), "lf");
         assert!(host.exec("_lines = rift.get_lines(1, -1)").is_none());
         assert!(host.exec("rift.notify('info', _lines[2])").is_none());
         let mutations = host.drain_mutations();
@@ -762,7 +1226,7 @@ mod tests {
     #[test]
     fn test_get_cursor_returns_1indexed_row() {
         let host = make_host();
-        host.update_state(1, vec![], (4, 2), 4, true, "normal", None, None, vec![]);
+        host.update_state(1, vec![], (4, 2), 4, true, "normal", None, None, vec![], (0, 0), false, false, false, (0, 0), "lf");
         assert!(host.exec("local r, c = rift.get_cursor(); rift.notify('info', tostring(r))").is_none());
         let mutations = host.drain_mutations();
         match &mutations[0] {
@@ -774,7 +1238,7 @@ mod tests {
     #[test]
     fn test_current_buf_returns_id() {
         let host = make_host();
-        host.update_state(42, vec![], (0, 0), 4, true, "normal", None, None, vec![]);
+        host.update_state(42, vec![], (0, 0), 4, true, "normal", None, None, vec![], (0, 0), false, false, false, (0, 0), "lf");
         assert!(host.exec("rift.notify('info', tostring(rift.current_buf()))").is_none());
         let mutations = host.drain_mutations();
         match &mutations[0] {
@@ -881,7 +1345,7 @@ mod tests {
     ) -> Vec<PluginMutation> {
         // Prime ai.prev_line_count by firing BufEnter with the original buffer.
         let orig: Vec<String> = lines_before.iter().map(|s| s.to_string()).collect();
-        host.update_state(1, orig, (0, 0), 4, true, "insert", None, None, vec![]);
+        host.update_state(1, orig, (0, 0), 4, true, "insert", None, None, vec![], (0, 0), false, false, false, (0, 0), "lf");
         let _ = host.dispatch_event(&EditorEvent::BufEnter { buf: 1 });
         host.drain_mutations(); // discard any priming mutations
 
@@ -891,7 +1355,7 @@ mod tests {
 
         // Cursor is at the new blank line, col 0.  row is 0-indexed internally.
         let cursor_row = new_row - 1;
-        host.update_state(1, lines_after, (cursor_row, 0), 4, true, "insert", None, None, vec![]);
+        host.update_state(1, lines_after, (cursor_row, 0), 4, true, "insert", None, None, vec![], (0, 0), false, false, false, (0, 0), "lf");
         let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse { buf: 1 });
         assert!(errors.is_empty(), "handler errors: {:?}", errors);
         host.drain_mutations()
@@ -952,7 +1416,7 @@ mod tests {
         let host = load_autoindent();
         // Simulate what press_enter does, but in normal mode.
         let lines = vec!["    hello".to_string(), String::new()];
-        host.update_state(1, lines, (1, 0), 4, true, "normal", None, None, vec![]);
+        host.update_state(1, lines, (1, 0), 4, true, "normal", None, None, vec![], (0, 0), false, false, false, (0, 0), "lf");
         let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse { buf: 1 });
         assert!(errors.is_empty());
         let mutations = host.drain_mutations();
@@ -969,12 +1433,12 @@ mod tests {
         // tab_width = 2, expand_tabs = true
         let opener = "fn foo() {";
         // Prime prev_line_count with the single-line buffer.
-        host.update_state(1, vec![opener.to_string()], (0, 0), 2, true, "insert", None, None, vec![]);
+        host.update_state(1, vec![opener.to_string()], (0, 0), 2, true, "insert", None, None, vec![], (0, 0), false, false, false, (0, 0), "lf");
         let _ = host.dispatch_event(&EditorEvent::BufEnter { buf: 1 });
         host.drain_mutations();
         // Now simulate Enter: two lines, cursor on the new blank line.
         let lines = vec![opener.to_string(), String::new()];
-        host.update_state(1, lines, (1, 0), 2, true, "insert", None, None, vec![]);
+        host.update_state(1, lines, (1, 0), 2, true, "insert", None, None, vec![], (0, 0), false, false, false, (0, 0), "lf");
         let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse { buf: 1 });
         assert!(errors.is_empty());
         let mutations = host.drain_mutations();

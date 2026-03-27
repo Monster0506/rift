@@ -259,6 +259,11 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::ToggleDebug),
     );
     keymap.register(
+        KeyContext::Normal,
+        Key::Escape,
+        Action::Editor(EditorAction::EnterNormalMode),
+    );
+    keymap.register(
         KeyContext::Insert,
         Key::Escape,
         Action::Editor(EditorAction::EnterNormalMode),

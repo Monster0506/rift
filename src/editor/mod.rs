@@ -7,7 +7,7 @@ pub mod actions;
 mod terminal_tests;
 
 use crate::action::{Action, EditorAction, Motion};
-use crate::command::{Command, Dispatcher};
+use crate::command::Command;
 use crate::command_line::commands::{CommandExecutor, CommandParser};
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::document::{Document, DocumentId};
@@ -79,7 +79,6 @@ pub struct Editor<T: TerminalBackend> {
     pub term: T,
     pub document_manager: crate::document::DocumentManager,
     pub render_system: crate::render::RenderSystem,
-    dispatcher: Dispatcher,
     current_mode: Mode,
     should_quit: bool,
     state: State,
@@ -172,9 +171,6 @@ impl<T: TerminalBackend> Editor<T> {
         let render_system =
             crate::render::RenderSystem::new(size.rows as usize, size.cols as usize);
 
-        // Create dispatcher
-        let dispatcher = Dispatcher::new(Mode::Normal);
-
         // Create command registry and settings registry
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(settings_registry.clone());
@@ -194,7 +190,6 @@ impl<T: TerminalBackend> Editor<T> {
             term: terminal,
             render_system,
             document_manager,
-            dispatcher,
             current_mode: Mode::Normal,
             should_quit: false,
             state,
@@ -229,6 +224,8 @@ impl<T: TerminalBackend> Editor<T> {
                     editor.state.notify(crate::notification::NotificationType::Error, err);
                 }
             }
+            // Apply any mutations queued by top-level plugin code (e.g. rift.map()).
+            editor.apply_plugin_mutations();
         }
 
         // Trigger background search cache warming for initial document
@@ -304,6 +301,11 @@ impl<T: TerminalBackend> Editor<T> {
                 editor.apply_plugin_mutations();
             }
         }
+
+        // Dispatch EditorStart after all initialization is complete.
+        editor.update_lua_state();
+        editor.plugin_host.dispatch(&crate::plugin::EditorEvent::EditorStart);
+        editor.apply_plugin_mutations();
 
         Ok(editor)
     }
@@ -1308,7 +1310,7 @@ impl<T: TerminalBackend> Editor<T> {
         let expand_tabs = self.state.settings.expand_tabs;
         let mode = self.current_mode.as_str();
 
-        let (buf_id, lines, cursor, filetype, file_path) =
+        let (buf_id, lines, cursor, filetype, file_path, can_undo, can_redo, is_dirty, line_ending) =
             if let Some(doc) = self.document_manager.active_document() {
                 let buf_id = doc.id as usize;
                 let text = doc.buffer.to_string();
@@ -1324,9 +1326,16 @@ impl<T: TerminalBackend> Editor<T> {
                 };
                 let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
                 let file_path = doc.path().map(|p| p.to_string_lossy().into_owned());
-                (buf_id, lines, (row, col), filetype, file_path)
+                let can_undo = doc.history.can_undo();
+                let can_redo = doc.history.can_redo();
+                let is_dirty = doc.is_dirty();
+                let line_ending = match doc.options.line_ending {
+                    crate::document::LineEnding::LF => "lf",
+                    crate::document::LineEnding::CRLF => "crlf",
+                };
+                (buf_id, lines, (row, col), filetype, file_path, can_undo, can_redo, is_dirty, line_ending)
             } else {
-                (0, vec![], (0, 0), None, None)
+                (0, vec![], (0, 0), None, None, false, false, false, "lf")
             };
 
         let buf_list = self.document_manager.get_buffer_list()
@@ -1334,9 +1343,17 @@ impl<T: TerminalBackend> Editor<T> {
             .map(|b| (b.id as usize, b.name, b.is_dirty, b.is_current))
             .collect();
 
+        let window_size = (
+            self.render_system.compositor.rows() as u16,
+            self.render_system.compositor.cols() as u16,
+        );
+
+        let scroll = self.render_system.viewport.get_scroll();
+
         self.plugin_host.lua_update_state(
             buf_id, lines, cursor, tab_width, expand_tabs, mode,
-            filetype, file_path, buf_list,
+            filetype, file_path, buf_list, window_size,
+            can_undo, can_redo, is_dirty, scroll, line_ending,
         );
     }
 
@@ -1533,7 +1550,9 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 PluginMutation::ClearHighlights { slot } => {
                     if let Some(doc) = self.document_manager.active_document_mut() {
-                        if let Some(s) = doc.highlight_slots.get_mut(&slot) {
+                        if slot == 0 {
+                            doc.highlight_slots.clear();
+                        } else if let Some(s) = doc.highlight_slots.get_mut(&slot) {
                             s.clear();
                         }
                     }
@@ -1564,6 +1583,63 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 PluginMutation::OpenFloat(_) | PluginMutation::CloseFloat => {
                     self.plugin_host.apply_mutation(mutation);
+                }
+                PluginMutation::SetScroll(top, left) => {
+                    self.render_system.viewport.set_scroll(top, left);
+                }
+                PluginMutation::SetLineEnding(ending) => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        doc.options.line_ending = match ending.to_lowercase().as_str() {
+                            "crlf" => crate::document::LineEnding::CRLF,
+                            _ => crate::document::LineEnding::LF,
+                        };
+                    }
+                }
+                PluginMutation::ExecAction(action_str) => {
+                    if let Ok(action) = action_str.parse::<crate::action::Action>() {
+                        self.handle_action(&action);
+                    }
+                }
+                PluginMutation::MapKey { mode, keys, action } => {
+                    use crate::keymap::KeyContext;
+                    let ctx = match mode.as_str() {
+                        "n" | "normal" => KeyContext::Normal,
+                        "i" | "insert" => KeyContext::Insert,
+                        "c" | "command" => KeyContext::Command,
+                        "s" | "search" => KeyContext::Search,
+                        "g" | "global" => KeyContext::Global,
+                        _ => continue,
+                    };
+                    if let (Some(key_seq), Ok(act)) = (
+                        crate::key::parse_key_sequence(&keys),
+                        action.parse::<crate::action::Action>(),
+                    ) {
+                        self.keymap.register_sequence(ctx, key_seq, act);
+                    }
+                }
+                PluginMutation::CenterOnLine(row) => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        let row0 = row.saturating_sub(1);
+                        let total = doc.buffer.get_total_lines();
+                        let row0 = row0.min(total.saturating_sub(1));
+                        let line_start = doc.buffer.line_index.get_line_start(row0);
+                        let _ = doc.buffer.set_cursor(line_start);
+                        self.render_system.viewport.center_on(row0, total);
+                    }
+                }
+                PluginMutation::UnmapKey { mode, keys } => {
+                    use crate::keymap::KeyContext;
+                    let ctx = match mode.as_str() {
+                        "n" | "normal" => KeyContext::Normal,
+                        "i" | "insert" => KeyContext::Insert,
+                        "c" | "command" => KeyContext::Command,
+                        "s" | "search" => KeyContext::Search,
+                        "g" | "global" => KeyContext::Global,
+                        _ => continue,
+                    };
+                    if let Some(key_seq) = crate::key::parse_key_sequence(&keys) {
+                        self.keymap.unregister_sequence(ctx, &key_seq);
+                    }
                 }
             }
         }
@@ -2411,7 +2487,6 @@ impl<T: TerminalBackend> Editor<T> {
             render_system,
             state,
             current_mode,
-            dispatcher: _, // Ignore dispatcher
             term,
             pending_keys,
             pending_count,
@@ -3425,7 +3500,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.job_manager.spawn(reload);
     }
 
-    /// Set editor mode and update dispatcher
     fn set_mode(&mut self, mode: Mode) {
         let old_mode = self.current_mode;
         self.current_mode = mode;
@@ -4083,7 +4157,6 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                     self.apply_plugin_mutations();
                 } else if !self.plugin_host.execute_command(&name, &args) {
-                    // No plugin handled it — report as unknown command.
                     self.state.handle_error(crate::error::RiftError::new(
                         crate::error::ErrorType::Parse,
                         "UNKNOWN_COMMAND",
@@ -4126,11 +4199,28 @@ impl<T: TerminalBackend> Editor<T> {
             CommandLineMessage::RequestCompletion(input) => {
                 use crate::job_manager::jobs::completion::CompletionJob;
                 let current_settings = Some(self.state.settings.clone());
-                let current_doc_options = Some(self.active_document().options.clone());
+                let doc = self.active_document();
+                let current_doc_options = Some(doc.options.clone());
+                let line_count = doc.buffer.get_total_lines();
+                let buf_text = doc.buffer.to_string();
+                let buf_words = {
+                    let mut words: Vec<String> = buf_text
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .filter(|w| w.len() >= 2)
+                        .map(|w| w.to_string())
+                        .collect();
+                    words.sort_unstable();
+                    words.dedup();
+                    words
+                };
+                let plugin_commands = self.plugin_host.command_list();
                 self.job_manager.spawn(CompletionJob {
                     input,
                     current_settings,
                     current_doc_options,
+                    plugin_commands,
+                    line_count,
+                    buf_words,
                 });
             }
         }

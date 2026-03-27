@@ -43,6 +43,25 @@ impl TrieNode {
             .insert(&keys[1..], action);
     }
 
+    /// Remove a sequence from the trie. Returns `true` if a binding was removed.
+    pub fn remove(&mut self, keys: &[Key]) -> bool {
+        if keys.is_empty() {
+            let had = self.action.is_some();
+            self.action = None;
+            return had;
+        }
+        let key = keys[0];
+        if let Some(child) = self.children.get_mut(&key) {
+            let removed = child.remove(&keys[1..]);
+            if child.action.is_none() && child.children.is_empty() {
+                self.children.remove(&key);
+            }
+            removed
+        } else {
+            false
+        }
+    }
+
     /// Look up a sequence
     pub fn lookup<'a>(&'a self, keys: &[Key]) -> MatchResult<'a> {
         if keys.is_empty() {

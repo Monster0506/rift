@@ -47,6 +47,15 @@ impl KeyMap {
             .insert(&keys, action);
     }
 
+    /// Remove a sequence binding. Returns `true` if a binding was removed.
+    pub fn unregister_sequence(&mut self, context: KeyContext, keys: &[Key]) -> bool {
+        if let Some(trie) = self.mappings.get_mut(&context) {
+            trie.remove(keys)
+        } else {
+            false
+        }
+    }
+
     pub fn register_from_str(&mut self, context: KeyContext, key: Key, action_str: &str) {
         if let Ok(action) = Action::from_str(action_str) {
             self.register(context, key, action);

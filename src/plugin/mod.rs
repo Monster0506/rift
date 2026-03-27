@@ -82,6 +82,19 @@ pub enum PluginMutation {
     OpenFloat(PluginFloat),
     /// Close the currently open plugin float.
     CloseFloat,
+    /// Execute an editor action by its string name (e.g. `"editor:save"`, `"mode:normal"`).
+    ExecAction(String),
+    /// Register a key binding. `mode` is "n", "i", "c", "s", or "g".
+    /// `keys` is vim notation (e.g. `"<C-p>"`, `"gg"`). `action` is an action string.
+    MapKey { mode: String, keys: String, action: String },
+    /// Set the viewport scroll position (top_line, left_col).
+    SetScroll(usize, usize),
+    /// Set the line ending for the active document ("lf" or "crlf").
+    SetLineEnding(String),
+    /// Remove a key binding. `mode` and `keys` are the same as `MapKey`.
+    UnmapKey { mode: String, keys: String },
+    /// Move the cursor to `row` (1-indexed) and center the viewport on it.
+    CenterOnLine(usize),
 }
 
 // ─── Plugin float ─────────────────────────────────────────────────────────────
@@ -165,6 +178,8 @@ pub struct PluginHost {
     handlers: std::collections::HashMap<&'static str, Vec<Handler>>,
     /// Registered `:command` handlers. Key is lowercase command name.
     commands: std::collections::HashMap<String, CommandHandler>,
+    /// Optional one-line description for each registered command.
+    command_descriptions: std::collections::HashMap<String, String>,
     /// Registered keymap action handlers. Key matches `EditorAction::PluginAction(id)`.
     actions: std::collections::HashMap<String, ActionHandler>,
     /// Currently open plugin float, if any.
@@ -188,6 +203,7 @@ impl PluginHost {
         Self {
             handlers: std::collections::HashMap::new(),
             commands: std::collections::HashMap::new(),
+            command_descriptions: std::collections::HashMap::new(),
             actions: std::collections::HashMap::new(),
             open_float: None,
             float_just_closed: false,
@@ -241,19 +257,34 @@ impl PluginHost {
         self.commands.contains_key(&name.to_lowercase())
     }
 
+    /// Returns all registered plugin command names, descriptions, and arg types.
+    /// Includes both Rust-registered commands and Lua-registered commands.
+    pub fn command_list(&self) -> Vec<(String, String, Option<String>)> {
+        let mut list: Vec<(String, String, Option<String>)> = self
+            .commands
+            .keys()
+            .map(|name| {
+                let desc = self.command_descriptions.get(name).cloned().unwrap_or_default();
+                (name.clone(), desc, None)
+            })
+            .collect();
+        if let Some(lua) = &self.lua {
+            list.extend(lua.command_list());
+        }
+        list
+    }
+
     /// Execute a registered plugin command, queuing any returned mutations.
     /// Returns `true` if a handler was found (Rust or Lua).
     pub fn execute_command(&mut self, name: &str, args: &[String]) -> bool {
         let key = name.to_lowercase();
         if let Some(handler) = self.commands.get(&key) {
-            // Call handler — borrow ends before we push to queue
             let mutations = handler(args);
             for m in mutations {
                 self.apply_mutation(m);
             }
             return true;
         }
-        // Fall back to Lua-registered commands
         if let Some(lua) = &self.lua {
             if lua.execute_command(name, args) {
                 return true;
@@ -284,7 +315,6 @@ impl PluginHost {
             }
             return true;
         }
-        // Fall back to Lua-registered actions
         if let Some(lua) = &self.lua {
             if lua.execute_action(id) {
                 return true;
@@ -395,9 +425,19 @@ impl PluginHost {
         filetype: Option<String>,
         file_path: Option<String>,
         buf_list: Vec<(usize, String, bool, bool)>,
+        window_size: (u16, u16),
+        can_undo: bool,
+        can_redo: bool,
+        is_dirty: bool,
+        scroll: (usize, usize),
+        line_ending: &str,
     ) {
         if let Some(lua) = &self.lua {
-            lua.update_state(buf_id, lines, cursor, tab_width, expand_tabs, mode, filetype, file_path, buf_list);
+            lua.update_state(
+                buf_id, lines, cursor, tab_width, expand_tabs, mode,
+                filetype, file_path, buf_list, window_size,
+                can_undo, can_redo, is_dirty, scroll, line_ending,
+            );
         }
     }
 
@@ -483,7 +523,6 @@ impl PluginHost {
     /// Drain all queued mutations. Called by the main loop after every
     /// `dispatch` call.
     pub fn drain_mutations(&mut self) -> impl Iterator<Item = PluginMutation> + '_ {
-        // Drain Lua mutations into the main queue first.
         if let Some(lua) = &self.lua {
             self.mutation_queue.extend(lua.drain_mutations());
         }
