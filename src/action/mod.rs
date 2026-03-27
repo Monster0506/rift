@@ -171,6 +171,8 @@ pub enum EditorAction {
     EnterInsertModeAfter,
     EnterInsertModeAtLineStart,
     EnterInsertModeAtLineEnd,
+    OpenLineBelow,
+    OpenLineAbove,
     EnterNormalMode,
     EnterCommandMode,
     EnterSearchMode,
@@ -266,6 +268,8 @@ impl FromStr for Action {
                 Ok(Action::Editor(EditorAction::EnterInsertModeAtLineStart))
             }
             "mode:insert_line_end" => Ok(Action::Editor(EditorAction::EnterInsertModeAtLineEnd)),
+            "mode:open_line_below" => Ok(Action::Editor(EditorAction::OpenLineBelow)),
+            "mode:open_line_above" => Ok(Action::Editor(EditorAction::OpenLineAbove)),
             "mode:command" => Ok(Action::Editor(EditorAction::EnterCommandMode)),
             "mode:search" => Ok(Action::Editor(EditorAction::EnterSearchMode)),
 
