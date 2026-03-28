@@ -381,13 +381,8 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Update gutter width
         if self.state.settings.show_line_numbers {
-            let digits = if total_lines > 0 {
-                (total_lines as f64).log10().floor() as usize + 1
-            } else {
-                1
-            };
             // 1 space padding on each side
-            self.state.gutter_width = digits + 2;
+            self.state.gutter_width = total_lines.to_string().len() + 2;
         } else {
             self.state.gutter_width = 0;
         }
@@ -2688,6 +2683,8 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn update_window_viewports(&mut self) {
         let global_show_line_numbers = self.state.settings.show_line_numbers;
+        let soft_wrap = self.state.settings.soft_wrap;
+        let wrap_width = self.state.settings.wrap_width;
 
         let size = match self.term.get_size() {
             Ok(s) => s,
@@ -2718,12 +2715,7 @@ impl<T: TerminalBackend> Editor<T> {
             let viewport_col = if doc.is_terminal() { 0 } else { cursor_col };
             let doc_show_line_numbers = doc.options.show_line_numbers && global_show_line_numbers;
             let gutter_width = if doc_show_line_numbers {
-                let digits = if total_lines > 0 {
-                    (total_lines as f64).log10().floor() as usize + 1
-                } else {
-                    1
-                };
-                digits + 2
+                total_lines.to_string().len() + 2
             } else {
                 0
             };
@@ -2738,6 +2730,15 @@ impl<T: TerminalBackend> Editor<T> {
             window
                 .viewport
                 .update(cursor_line, viewport_col, total_lines, gutter_width);
+
+            if soft_wrap {
+                let content_width = layout.cols.saturating_sub(gutter_width).max(1);
+                if let Some(dm) = resolve_display_map(doc, content_width, soft_wrap, wrap_width) {
+                    let cursor_visual_row = dm.char_to_visual_row(cursor_pos);
+                    let total_visual = dm.total_visual_rows();
+                    window.viewport.update_visual(cursor_visual_row, 0, total_visual, gutter_width);
+                }
+            }
         }
     }
 
@@ -2791,7 +2792,7 @@ impl<T: TerminalBackend> Editor<T> {
 
             let doc_show_line_numbers = doc.options.show_line_numbers && state.settings.show_line_numbers;
             let gutter_width = if doc_show_line_numbers {
-                state.gutter_width
+                doc.buffer.get_total_lines().to_string().len() + 2
             } else {
                 0
             };
@@ -2799,8 +2800,20 @@ impl<T: TerminalBackend> Editor<T> {
             let content_width = window_cols.saturating_sub(gutter_width).max(1);
             let display_map = resolve_display_map(doc, content_width, state.settings.soft_wrap, state.settings.wrap_width);
 
-            let start_line = window.viewport.top_line();
-            let end_line = start_line + window.viewport.visible_rows();
+            let (start_line, end_line) = if let Some(ref dm) = display_map {
+                let top_vr = window.viewport.top_visual_row();
+                let bottom_vr = top_vr + window.viewport.visible_rows();
+                let start_l = dm.get_visual_row(top_vr).map(|r| r.logical_line).unwrap_or(0);
+                let end_l = dm
+                    .get_visual_row(bottom_vr.saturating_sub(1).min(dm.total_visual_rows().saturating_sub(1)))
+                    .map(|r| r.logical_line + 1)
+                    .unwrap_or(doc.buffer.get_total_lines());
+                (start_l, end_l)
+            } else {
+                let start = window.viewport.top_line();
+                let end = start + window.viewport.visible_rows();
+                (start, end)
+            };
             let start_char = doc.buffer.line_index.get_start(start_line).unwrap_or(0);
             let end_char = if end_line < doc.buffer.get_total_lines() {
                 doc.buffer
@@ -2834,6 +2847,7 @@ impl<T: TerminalBackend> Editor<T> {
                 plugin_highlights: if doc.plugin_highlights.is_empty() { None } else { Some(&doc.plugin_highlights) },
                 show_line_numbers: doc.options.show_line_numbers,
                 display_map: display_map.as_ref(),
+                gutter_width_override: Some(gutter_width),
             };
 
             let content_layer = render_system
@@ -2883,7 +2897,7 @@ impl<T: TerminalBackend> Editor<T> {
         let focused_tab_width = focused_doc.options.tab_width;
         let focused_doc_show_line_numbers = focused_doc.options.show_line_numbers && state.settings.show_line_numbers;
         let focused_gutter_width = if focused_doc_show_line_numbers {
-            state.gutter_width
+            focused_doc.buffer.get_total_lines().to_string().len() + 2
         } else {
             0
         };

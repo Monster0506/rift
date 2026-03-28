@@ -171,6 +171,8 @@ pub struct DrawContext<'a> {
     /// Per-document line number override (AND-ed with global setting).
     pub show_line_numbers: bool,
     pub display_map: Option<&'a DisplayMap>,
+    /// Overrides state.gutter_width for content rendering (per-window in multi-pane mode).
+    pub gutter_width_override: Option<usize>,
 }
 
 /// Cursor position information returned from layer-based rendering
@@ -197,8 +199,9 @@ pub(crate) fn render_content_to_layer_offset(
     let editor_bg = ctx.state.settings.editor_bg;
     let editor_fg = ctx.state.settings.editor_fg;
 
+    let buf_total_lines = ctx.buf.get_total_lines();
     let gutter_width = if ctx.show_line_numbers && ctx.state.settings.show_line_numbers {
-        ctx.state.gutter_width
+        ctx.gutter_width_override.unwrap_or(ctx.state.gutter_width)
     } else {
         0
     };
@@ -258,7 +261,7 @@ pub(crate) fn render_content_to_layer_offset(
                         i + row_offset,
                         col_offset,
                         gutter_width,
-                        ctx.state.total_lines,
+                        buf_total_lines,
                         editor_fg,
                         editor_bg,
                     );
@@ -303,7 +306,7 @@ pub(crate) fn render_content_to_layer_offset(
                     i + row_offset,
                     col_offset,
                     gutter_width,
-                    ctx.state.total_lines,
+                    buf_total_lines,
                     editor_fg,
                     editor_bg,
                 );

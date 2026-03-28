@@ -311,6 +311,7 @@ impl RenderSystem {
             plugin_highlights: state.plugin_highlights,
             show_line_numbers: state.show_line_numbers,
             display_map: state.display_map,
+            gutter_width_override: None,
         };
 
         // Update the ECS world
