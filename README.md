@@ -6,6 +6,9 @@ I use this daily and primarily.
 
 ## Implemented:
 - Quite a lot more than the below items, I just haven't updated this in a while due to actually working on it.
+- Plugin system (Lua, with user-defined events)
+- CLI args: `-v`/`--version`, `+N` jump to line, `+` jump to last line, `+/pattern` search on open, `-c cmd` run ex command on open
+- `o` / `O` to open a new line below/above in normal mode
 - Soft line wrapping (setlocal wrap, with highly optimized rendering)
 - Messages buffer (:messages to view editor messages)
 - Everything-is-a-buffer architecture (file explorer, undotree, terminal, etc. are all buffers)
@@ -87,7 +90,6 @@ Todo:
 - marks and jumps
 - animations
 - operator pending improvements (indent, format, case, etc.)
-- plugin system
 
 Known issues:
 - 4 byte unicode characters are not able to be inserted on windows (this is a crossterm issue on windows, idk man)
