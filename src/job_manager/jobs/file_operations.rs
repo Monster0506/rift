@@ -156,6 +156,7 @@ pub struct FileLoadResult {
     pub line_index: LineIndex,
     pub line_ending: LineEnding,
     pub path: PathBuf,
+    pub is_reload: bool,
 }
 
 impl JobPayload for FileLoadResult {
@@ -175,11 +176,16 @@ impl JobPayload for FileLoadResult {
 pub struct FileLoadJob {
     pub document_id: DocumentId,
     pub path: PathBuf,
+    pub is_reload: bool,
 }
 
 impl FileLoadJob {
     pub fn new(document_id: DocumentId, path: PathBuf) -> Self {
-        Self { document_id, path }
+        Self { document_id, path, is_reload: false }
+    }
+
+    pub fn new_reload(document_id: DocumentId, path: PathBuf) -> Self {
+        Self { document_id, path, is_reload: true }
     }
 }
 
@@ -271,6 +277,7 @@ impl Job for FileLoadJob {
                 line_index,
                 line_ending,
                 path: self.path.clone(),
+                is_reload: self.is_reload,
             })
         };
 

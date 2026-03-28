@@ -113,10 +113,7 @@ fn test_register_from_str() {
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
 }
-
-// ──────────────────────────────────────────────
 // FileExplorer → Normal → Global fallback chain
-// ──────────────────────────────────────────────
 
 #[test]
 fn test_file_explorer_buffer_falls_back_to_normal() {

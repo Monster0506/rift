@@ -9,8 +9,6 @@ use crate::command_line::settings::registry::SettingsRegistry;
 use crate::floating_window::BorderChars;
 use crate::state::UserSettings;
 
-// ── Color formatting ──────────────────────────────────────────────────────────
-
 /// Format a `Color` value as the string a user would type (inverse of `parse_color`).
 fn format_color(color: Option<Color>) -> String {
     match color {

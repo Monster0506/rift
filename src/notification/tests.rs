@@ -1,8 +1,6 @@
 use super::*;
 use std::thread::sleep;
 
-// ── MessageEntry / JobEventKind tests ────────────────────────────────────────
-
 #[test]
 fn test_job_event_kind_eq() {
     assert_eq!(JobEventKind::Started, JobEventKind::Started);

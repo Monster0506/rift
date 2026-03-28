@@ -564,8 +564,6 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::Char('G'),
         Action::Editor(EditorAction::Move(Motion::EndOfFile)),
     );
-
-    // ── Demo plugin keybinds ─────────────────────────────────────────────────
     // <Space>pd — open the demo floating window
     keymap.register_sequence(
         KeyContext::Normal,
