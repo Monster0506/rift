@@ -1,6 +1,6 @@
 [package]
 name = "monster-rift"
-version = "0.3.6"
+version = "0.3.8"
 edition = "2021"
 default-run = "rift"
 description = "A vim-like text editor"
@@ -40,6 +40,7 @@ treesitter = [
 ]
 
 [dependencies]
+mlua = { version = "0.10", features = ["lua54", "vendored"] }
 crossterm = "0.28.1"
 monster-regex = "0.2.2"
 unicode-width = "0.2.2"

@@ -73,6 +73,12 @@ pub enum ExecutionResult {
     OpenMessages {
         show_all: bool,
     },
+    /// An unknown command that may be handled by a plugin.
+    /// The editor checks the plugin host before reporting an error.
+    PluginCommand {
+        name: String,
+        args: Vec<String>,
+    },
 }
 
 impl PartialEq for ExecutionResult {
@@ -174,6 +180,9 @@ impl std::fmt::Debug for ExecutionResult {
                 .finish(),
             Self::OpenUndoTree => write!(f, "OpenUndoTree"),
             Self::OpenMessages { show_all } => write!(f, "OpenMessages({show_all})"),
+            Self::PluginCommand { name, args } => {
+                f.debug_struct("PluginCommand").field("name", name).field("args", args).finish()
+            }
         }
     }
 }
@@ -240,13 +249,9 @@ impl CommandExecutor {
                 // Editor will check if path exists, call Document::save(), then quit
                 ExecutionResult::WriteAndQuit
             }
-            ParsedCommand::Unknown { name } => {
-                state.handle_error(RiftError::new(
-                    ErrorType::Parse,
-                    "UNKNOWN_COMMAND",
-                    format!("Unknown command: {name}"),
-                ));
-                ExecutionResult::Failure
+            ParsedCommand::Unknown { name, args } => {
+                // Pass to the plugin host; the editor will error if no plugin handles it.
+                ExecutionResult::PluginCommand { name, args }
             }
             ParsedCommand::Ambiguous { prefix, matches } => {
                 let matches_str = matches.join(", ");

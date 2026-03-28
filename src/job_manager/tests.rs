@@ -222,7 +222,7 @@ fn test_cache_warming_job_name() {
 #[test]
 fn test_completion_job_name() {
     use crate::job_manager::jobs::completion::CompletionJob;
-    let job = CompletionJob { input: String::new(), current_settings: None, current_doc_options: None };
+    let job = CompletionJob { input: String::new(), current_settings: None, current_doc_options: None, plugin_commands: vec![], line_count: 0, buf_words: vec![] };
     assert_eq!(job.name(), "completion");
     assert!(job.is_silent());
 }

@@ -945,6 +945,30 @@ fn test_from_file_strips_utf8_bom() {
     assert_eq!(doc.buffer.len(), 5);
 }
 
+#[test]
+fn test_from_file_normalizes_crlf() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("crlf.txt");
+    std::fs::write(&path, b"line1\r\nline2\r\nline3").unwrap();
+
+    let doc = Document::from_file(1, &path).unwrap();
+    let text = doc.buffer.to_string();
+    assert!(!text.contains('\r'), "buffer should not contain \\r after CRLF normalization");
+    assert_eq!(text, "line1\nline2\nline3");
+    assert_eq!(doc.options.line_ending, LineEnding::CRLF);
+}
+
+#[test]
+fn test_from_file_strips_standalone_cr() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bare_cr.txt");
+    std::fs::write(&path, b"line1\rline2").unwrap();
+
+    let doc = Document::from_file(1, &path).unwrap();
+    let text = doc.buffer.to_string();
+    assert!(!text.contains('\r'), "buffer should not contain standalone \\r (would render as ^M)");
+}
+
 // ──────────────────────────────────────────────
 // WrapMode
 // ──────────────────────────────────────────────

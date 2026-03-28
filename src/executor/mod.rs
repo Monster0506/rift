@@ -408,7 +408,9 @@ pub fn execute_command(
         Command::EnterInsertMode
         | Command::EnterInsertModeAfter
         | Command::EnterInsertModeAtLineStart
-        | Command::EnterInsertModeAtLineEnd => {
+        | Command::EnterInsertModeAtLineEnd
+        | Command::OpenLineBelow
+        | Command::OpenLineAbove => {
             // Mode change handled by editor
         }
         Command::EnterCommandMode => {

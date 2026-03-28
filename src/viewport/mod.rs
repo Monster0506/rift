@@ -201,6 +201,17 @@ impl Viewport {
         self.first_update = true;
     }
 
+    /// Scroll so that `line` (0-indexed) is vertically centered in the viewport.
+    /// Clamps correctly so no blank space appears below the buffer.
+    pub fn center_on(&mut self, line: usize, total_lines: usize) {
+        let content_rows = self.visible_rows.saturating_sub(1);
+        let half = content_rows / 2;
+        let ideal_top = line.saturating_sub(half);
+        let max_top = total_lines.saturating_sub(content_rows);
+        self.top_line = ideal_top.min(max_top);
+        self.first_update = true;
+    }
+
     /// Get current scroll position as (top_line, left_col)
     pub fn get_scroll(&self) -> (usize, usize) {
         (self.top_line, self.left_col)

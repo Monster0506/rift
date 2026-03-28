@@ -119,8 +119,12 @@ pub struct Document {
     /// What kind of buffer this is (drives save behaviour, key context, display name)
     pub kind: BufferKind,
     /// Per-byte-range foreground color overrides for special buffers (directory, undotree).
-    /// Empty for regular file buffers.
     pub custom_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
+    /// Per-byte-range plugin highlight colors (background + contrasting fg).
+    /// Rebuilt from `highlight_slots` after each plugin mutation batch.
+    pub plugin_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
+    /// Per-slot plugin highlights, keyed by handler slot ID.
+    pub highlight_slots: std::collections::HashMap<u32, Vec<(std::ops::Range<usize>, crate::color::Color)>>,
 }
 
 impl Document {
@@ -141,6 +145,8 @@ impl Document {
             terminal_cursor: None,
             kind: BufferKind::File,
             custom_highlights: vec![],
+            plugin_highlights: vec![],
+            highlight_slots: std::collections::HashMap::new(),
         })
     }
 
@@ -154,10 +160,15 @@ impl Document {
         let mut normalized_bytes = Vec::with_capacity(bytes.len());
         let mut i = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) { 3 } else { 0 };
         while i < bytes.len() {
-            if bytes[i] == b'\r' && i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
-                line_ending = LineEnding::CRLF;
-                normalized_bytes.push(b'\n');
-                i += 2;
+            if bytes[i] == b'\r' {
+                if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+                    line_ending = LineEnding::CRLF;
+                    normalized_bytes.push(b'\n');
+                    i += 2;
+                } else {
+                    // Standalone \r — strip it
+                    i += 1;
+                }
             } else {
                 normalized_bytes.push(bytes[i]);
                 i += 1;
@@ -190,6 +201,8 @@ impl Document {
             terminal_cursor: None,
             kind: BufferKind::File,
             custom_highlights: vec![],
+            plugin_highlights: vec![],
+            highlight_slots: std::collections::HashMap::new(),
         })
     }
 
@@ -223,6 +236,8 @@ impl Document {
                 terminal_cursor: None,
                 kind: BufferKind::Terminal,
                 custom_highlights: vec![],
+            plugin_highlights: vec![],
+            highlight_slots: std::collections::HashMap::new(),
             },
             rx,
         ))
@@ -245,6 +260,8 @@ impl Document {
             terminal_cursor: None,
             kind: BufferKind::Directory { path, entries: vec![] },
             custom_highlights: vec![],
+            plugin_highlights: vec![],
+            highlight_slots: std::collections::HashMap::new(),
         })
     }
 
@@ -265,6 +282,8 @@ impl Document {
             terminal_cursor: None,
             kind: BufferKind::UndoTree { linked_doc_id, sequences: vec![] },
             custom_highlights: vec![],
+            plugin_highlights: vec![],
+            highlight_slots: std::collections::HashMap::new(),
         })
     }
 
@@ -289,6 +308,8 @@ impl Document {
             terminal_cursor: None,
             kind: BufferKind::File,
             custom_highlights: vec![],
+            plugin_highlights: vec![],
+            highlight_slots: std::collections::HashMap::new(),
         })
     }
 
@@ -309,6 +330,8 @@ impl Document {
             terminal_cursor: None,
             kind: BufferKind::Messages { show_all },
             custom_highlights: vec![],
+            plugin_highlights: vec![],
+            highlight_slots: std::collections::HashMap::new(),
         })
     }
 

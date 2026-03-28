@@ -53,6 +53,8 @@ pub struct ContentDrawState {
     pub gutter_width: usize,
     /// Number of search matches (to trigger redraw on search)
     pub search_matches_count: usize,
+    /// Number of plugin custom highlights (to trigger redraw when highlights change)
+    pub plugin_highlights_len: usize,
     /// Theme/Color context
     pub editor_bg: Option<crate::color::Color>,
     pub editor_fg: Option<crate::color::Color>,
@@ -145,6 +147,8 @@ pub struct RenderState<'a> {
     pub terminal_cursor: Option<(usize, usize)>,
     /// Optional per-byte-range foreground color overrides (used by directory/undotree buffers).
     pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
+    /// Plugin highlights: rendered as bg color with contrasting fg.
+    pub plugin_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     /// Per-document line number override (AND-ed with global setting).
     pub show_line_numbers: bool,
     pub display_map: Option<&'a DisplayMap>,
@@ -157,6 +161,7 @@ pub struct DrawContext<'a> {
     pub current_mode: Mode,
     pub pending_key: Option<Key>,
     pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
+    pub plugin_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     pub pending_count: usize,
     pub state: &'a State,
     pub needs_clear: bool,
@@ -413,19 +418,20 @@ fn render_line(
     let source = LineSource::new(buf, config.line_num);
     let highlights = ctx.highlights.unwrap_or(&[]);
     let custom_highlights = ctx.custom_highlights.unwrap_or(&[]);
+    let plugin_highlights = ctx.plugin_highlights.unwrap_or(&[]);
     let search_matches = &ctx.state.search_matches;
 
-    // Decorate
-    let colored = pipeline::ColorDecorator::new(source, custom_highlights);
     let syntax = SyntaxDecorator::new(
-        colored,
+        source,
         highlights,
         highlight_idx,
         ctx.state.settings.syntax_colors.as_ref(),
         ctx.capture_map,
     );
+    let colored = pipeline::ColorDecorator::new(syntax, custom_highlights);
+    let plugin = pipeline::PluginHighlightDecorator::new(colored, plugin_highlights);
 
-    let search = SearchDecorator::new(syntax, search_matches, search_match_idx);
+    let search = SearchDecorator::new(plugin, search_matches, search_match_idx);
 
     // Layout
     let layout = TabLayout::new(search, ctx.tab_width);

@@ -29,6 +29,7 @@ pub enum ParsedCommand {
     /// Unknown command
     Unknown {
         name: String,
+        args: Vec<String>,
     },
     /// Ambiguous command (multiple matches)
     Ambiguous {

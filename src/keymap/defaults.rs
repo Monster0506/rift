@@ -182,6 +182,16 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::Char('A'),
         Action::Editor(EditorAction::EnterInsertModeAtLineEnd),
     );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('o'),
+        Action::Editor(EditorAction::OpenLineBelow),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('O'),
+        Action::Editor(EditorAction::OpenLineAbove),
+    );
     // Normal Mode Arrows/Home/End
     keymap.register(
         KeyContext::Normal,
@@ -257,6 +267,11 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         KeyContext::Normal,
         Key::Char('?'),
         Action::Editor(EditorAction::ToggleDebug),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Escape,
+        Action::Editor(EditorAction::EnterNormalMode),
     );
     keymap.register(
         KeyContext::Insert,
@@ -548,5 +563,19 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         KeyContext::Normal,
         Key::Char('G'),
         Action::Editor(EditorAction::Move(Motion::EndOfFile)),
+    );
+
+    // ── Demo plugin keybinds ─────────────────────────────────────────────────
+    // <Space>pd — open the demo floating window
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char(' '), Key::Char('p'), Key::Char('d')],
+        Action::Editor(EditorAction::PluginAction("demo:window".to_string())),
+    );
+    // <Space>pi — insert demo text into the buffer
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char(' '), Key::Char('p'), Key::Char('i')],
+        Action::Editor(EditorAction::PluginAction("demo:insert".to_string())),
     );
 }

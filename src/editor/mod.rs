@@ -8,7 +8,7 @@ mod terminal_tests;
 
 use crate::action::{Action, EditorAction, Motion};
 use crate::buffer::api::BufferView;
-use crate::command::{Command, Dispatcher};
+use crate::command::Command;
 use crate::command_line::commands::{CommandExecutor, CommandParser};
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::document::{Document, DocumentId};
@@ -26,6 +26,30 @@ use crate::split::tree::SplitTree;
 use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
 use std::sync::Arc;
+
+fn plugin_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
+        dirs.push(std::path::PathBuf::from(manifest).join("runtime").join("plugins"));
+    }
+    let user_dir = if cfg!(windows) {
+        std::env::var("APPDATA").ok().map(|d| {
+            std::path::PathBuf::from(d).join("rift").join("plugins")
+        })
+    } else {
+        let base = std::env::var("XDG_CONFIG_HOME")
+            .ok()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config")
+            });
+        Some(base.join("rift").join("plugins"))
+    };
+    if let Some(d) = user_dir {
+        dirs.push(d);
+    }
+    dirs
+}
 
 fn resolve_display_map(
     doc: &Document,
@@ -56,7 +80,6 @@ pub struct Editor<T: TerminalBackend> {
     pub term: T,
     pub document_manager: crate::document::DocumentManager,
     pub render_system: crate::render::RenderSystem,
-    dispatcher: Dispatcher,
     current_mode: Mode,
     should_quit: bool,
     state: State,
@@ -78,6 +101,8 @@ pub struct Editor<T: TerminalBackend> {
     pub panel_layout: Option<PanelLayout>,
     /// Last seen notification generation; used to detect when to refresh open messages buffers.
     last_notification_generation: u64,
+    /// Plugin host — dispatches editor events to registered plugin handlers.
+    pub plugin_host: crate::plugin::PluginHost,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,9 +172,6 @@ impl<T: TerminalBackend> Editor<T> {
         let render_system =
             crate::render::RenderSystem::new(size.rows as usize, size.cols as usize);
 
-        // Create dispatcher
-        let dispatcher = Dispatcher::new(Mode::Normal);
-
         // Create command registry and settings registry
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(settings_registry.clone());
@@ -169,7 +191,6 @@ impl<T: TerminalBackend> Editor<T> {
             term: terminal,
             render_system,
             document_manager,
-            dispatcher,
             current_mode: Mode::Normal,
             should_quit: false,
             state,
@@ -188,10 +209,25 @@ impl<T: TerminalBackend> Editor<T> {
             dot_repeat: DotRepeat::new(),
             panel_layout: None,
             last_notification_generation: 0,
+            // 25 idle polls × 16 ms ≈ 400 ms before CursorHold fires.
+            plugin_host: crate::plugin::PluginHost::new(25),
         };
 
         // Register default keymaps
         crate::keymap::defaults::register_defaults(&mut editor.keymap);
+
+        // Initialize Lua VM
+        if let Some(err) = editor.plugin_host.init_lua() {
+            editor.state.notify(crate::notification::NotificationType::Error, err);
+        } else {
+            for dir in plugin_dirs() {
+                for err in editor.plugin_host.lua_load_dir(&dir) {
+                    editor.state.notify(crate::notification::NotificationType::Error, err);
+                }
+            }
+            // Apply any mutations queued by top-level plugin code (e.g. rift.map()).
+            editor.apply_plugin_mutations();
+        }
 
         // Trigger background search cache warming for initial document
         if let Some(doc) = editor.document_manager.active_document() {
@@ -247,6 +283,30 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
         }
+
+        // Dispatch BufOpen for the initial synchronously-loaded document.
+        {
+            let buf_info = editor.document_manager.active_document().map(|doc| {
+                let buf = doc.id;
+                let path = doc.path().map(|p| p.to_path_buf());
+                let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
+                (buf, path, filetype)
+            });
+            if let Some((buf, path, filetype)) = buf_info {
+                editor.update_lua_state();
+                editor.plugin_host.dispatch(&crate::plugin::EditorEvent::BufOpen {
+                    buf,
+                    path,
+                    filetype,
+                });
+                editor.apply_plugin_mutations();
+            }
+        }
+
+        // Dispatch EditorStart after all initialization is complete.
+        editor.update_lua_state();
+        editor.plugin_host.dispatch(&crate::plugin::EditorEvent::EditorStart);
+        editor.apply_plugin_mutations();
 
         Ok(editor)
     }
@@ -564,6 +624,13 @@ impl<T: TerminalBackend> Editor<T> {
                     continue;
                 }
 
+                // Escape closes an open plugin float before any other key handling.
+                if key_press == Key::Escape && self.plugin_host.has_open_float() {
+                    self.plugin_host.close_float();
+                    self.update_and_render()?;
+                    continue;
+                }
+
                 // Handle terminal input
                 let is_terminal_insert = if let Some(doc) = self.document_manager.active_document()
                 {
@@ -785,6 +852,13 @@ impl<T: TerminalBackend> Editor<T> {
                 let poll_dur =
                     std::time::Duration::from_millis(self.state.settings.poll_timeout_ms);
                 let notif_tick = self.state.error_manager.notifications().tick(poll_dur);
+
+                if let Some(hold_event) = self.plugin_host.tick_idle() {
+                    self.update_lua_state();
+                    self.plugin_host.dispatch(&hold_event);
+                    self.apply_plugin_mutations();
+                }
+
                 if jobs_changed || notif_changed || notif_tick {
                     self.update_and_render()?;
                     self.state.error_manager.notifications_mut().mark_rendered();
@@ -908,6 +982,14 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::EnterInsertModeAtLineEnd => {
                 self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineEnd);
+                true
+            }
+            EditorAction::OpenLineBelow => {
+                self.handle_mode_management(crate::command::Command::OpenLineBelow);
+                true
+            }
+            EditorAction::OpenLineAbove => {
+                self.handle_mode_management(crate::command::Command::OpenLineAbove);
                 true
             }
             EditorAction::EnterCommandMode => {
@@ -1202,6 +1284,11 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.clear_command_line();
                 true
             }
+            EditorAction::PluginAction(id) => {
+                self.plugin_host.execute_action(id);
+                self.apply_plugin_mutations();
+                true
+            }
         }
     }
 
@@ -1257,6 +1344,360 @@ impl<T: TerminalBackend> Editor<T> {
         // Only re-render if the messages buffer is currently visible
         if self.active_document_id() == doc_id {
             let _ = self.update_and_render();
+        }
+    }
+
+    /// Update the Lua VM's buffer snapshot for the current active document.
+    fn update_lua_state(&self) {
+        let tab_width = self.state.settings.tab_width;
+        let expand_tabs = self.state.settings.expand_tabs;
+        let mode = self.current_mode.as_str();
+
+        let (buf_id, lines, cursor, filetype, file_path, can_undo, can_redo, is_dirty, line_ending) =
+            if let Some(doc) = self.document_manager.active_document() {
+                let buf_id = doc.id as usize;
+                let text = doc.buffer.to_string();
+                let lines: Vec<String> = text
+                    .split('\n')
+                    .map(|l| l.trim_end_matches('\r').to_string())
+                    .collect();
+                let (row, col) = {
+                    let cursor = doc.buffer.cursor();
+                    let row = doc.buffer.line_index.get_line_at(cursor);
+                    let col = cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
+                    (row, col)
+                };
+                let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
+                let file_path = doc.path().map(|p| p.to_string_lossy().into_owned());
+                let can_undo = doc.history.can_undo();
+                let can_redo = doc.history.can_redo();
+                let is_dirty = doc.is_dirty();
+                let line_ending = match doc.options.line_ending {
+                    crate::document::LineEnding::LF => "lf",
+                    crate::document::LineEnding::CRLF => "crlf",
+                };
+                (buf_id, lines, (row, col), filetype, file_path, can_undo, can_redo, is_dirty, line_ending)
+            } else {
+                (0, vec![], (0, 0), None, None, false, false, false, "lf")
+            };
+
+        let buf_list = self.document_manager.get_buffer_list()
+            .into_iter()
+            .map(|b| (b.id as usize, b.name, b.is_dirty, b.is_current))
+            .collect();
+
+        let window_size = (
+            self.render_system.compositor.rows() as u16,
+            self.render_system.compositor.cols() as u16,
+        );
+
+        let scroll = self.render_system.viewport.get_scroll();
+
+        self.plugin_host.lua_update_state(
+            buf_id, lines, cursor, tab_width, expand_tabs, mode,
+            filetype, file_path, buf_list, window_size,
+            can_undo, can_redo, is_dirty, scroll, line_ending,
+        );
+    }
+
+    fn adjust_plugin_highlights_for_edits(&mut self) {
+        use crate::buffer::ByteEdit;
+
+        fn adjust(range: std::ops::Range<usize>, e: &ByteEdit) -> Option<std::ops::Range<usize>> {
+            let s = range.start;
+            let end = range.end;
+            let edit_end = e.byte_pos + e.del_bytes;
+            let delta = e.ins_bytes as isize - e.del_bytes as isize;
+
+            if end <= e.byte_pos {
+                Some(s..end)
+            } else if s >= edit_end {
+                Some(((s as isize + delta) as usize)..((end as isize + delta) as usize))
+            } else if s >= e.byte_pos && end <= edit_end {
+                None
+            } else if s < e.byte_pos && end > edit_end {
+                Some(s..((end as isize + delta) as usize))
+            } else if s >= e.byte_pos && end > edit_end {
+                let ns = e.byte_pos + e.ins_bytes;
+                let ne = (end as isize + delta) as usize;
+                if ns < ne { Some(ns..ne) } else { None }
+            } else {
+                if s < e.byte_pos { Some(s..e.byte_pos) } else { None }
+            }
+        }
+
+        let edits: Vec<ByteEdit> = if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.buffer.edit_log.drain(..).collect()
+        } else {
+            return;
+        };
+
+        if edits.is_empty() {
+            return;
+        }
+
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            for slot in doc.highlight_slots.values_mut() {
+                let mut new_slot: Vec<(std::ops::Range<usize>, crate::color::Color)> =
+                    Vec::with_capacity(slot.len());
+                for (range, color) in slot.drain(..) {
+                    let mut cur = range;
+                    let mut keep = true;
+                    for e in &edits {
+                        match adjust(cur.clone(), e) {
+                            Some(r) => cur = r,
+                            None => { keep = false; break; }
+                        }
+                    }
+                    if keep {
+                        new_slot.push((cur, color));
+                    }
+                }
+                *slot = new_slot;
+            }
+            let mut merged: Vec<(std::ops::Range<usize>, crate::color::Color)> =
+                doc.highlight_slots.values().flatten().cloned().collect();
+            merged.sort_by_key(|(r, _)| r.start);
+            doc.plugin_highlights = merged;
+        }
+    }
+
+    /// Drain the plugin mutation queue and apply each mutation.
+    fn apply_plugin_mutations(&mut self) {
+        use crate::plugin::PluginMutation;
+        use crate::color::Color;
+
+        /// Parse a color name or "#rrggbb" hex string into a `Color`.
+        fn plugin_color(s: &str) -> Color {
+            match s.to_lowercase().as_str() {
+                "red"         => Color::Red,
+                "darkred"     => Color::DarkRed,
+                "green"       => Color::Green,
+                "darkgreen"   => Color::DarkGreen,
+                "blue"        => Color::Blue,
+                "darkblue"    => Color::DarkBlue,
+                "yellow"      => Color::Yellow,
+                "darkyellow"  => Color::DarkYellow,
+                "cyan"        => Color::Cyan,
+                "darkcyan"    => Color::DarkCyan,
+                "magenta"     => Color::Magenta,
+                "darkmagenta" => Color::DarkMagenta,
+                "white"       => Color::White,
+                "black"       => Color::Black,
+                "grey" | "gray"         => Color::Grey,
+                "darkgrey" | "darkgray" => Color::DarkGrey,
+                s if s.starts_with('#') && s.len() == 7 => {
+                    let r = u8::from_str_radix(&s[1..3], 16).unwrap_or(255);
+                    let g = u8::from_str_radix(&s[3..5], 16).unwrap_or(255);
+                    let b = u8::from_str_radix(&s[5..7], 16).unwrap_or(255);
+                    Color::Rgb { r, g, b }
+                }
+                _ => Color::Yellow,
+            }
+        }
+
+        // Drain into a Vec first so we don't hold a borrow on plugin_host.
+        let mutations: Vec<PluginMutation> = self.plugin_host.drain_mutations().collect();
+
+        let mut needs_highlight_merge = false;
+        for mutation in mutations {
+            match mutation {
+                PluginMutation::Notify { message, level } => {
+                    self.state.notify(level, message);
+                }
+                PluginMutation::AppendLines(ref lines) => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        let end = doc.buffer.len();
+                        let _ = doc.buffer.set_cursor(end);
+                        let text = lines.join("\n");
+                        let _ = doc.insert_str(&text);
+                    }
+                    self.do_incremental_syntax_parse();
+                }
+                PluginMutation::InsertAtCursor(text) => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        let _ = doc.insert_str(&text);
+                    }
+                    self.do_incremental_syntax_parse();
+                }
+                PluginMutation::DeleteBefore(n) => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        for _ in 0..n {
+                            doc.delete_backward();
+                        }
+                    }
+                    self.do_incremental_syntax_parse();
+                }
+                PluginMutation::DeleteForward(n) => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        for _ in 0..n {
+                            doc.delete_forward();
+                        }
+                    }
+                    self.do_incremental_syntax_parse();
+                }
+                PluginMutation::SetCursor { row, col } => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        let row0 = row.saturating_sub(1);
+                        let line_count = doc.buffer.line_index.line_count();
+                        let row0 = row0.min(line_count.saturating_sub(1));
+                        let line_start = doc.buffer.line_index.get_line_start(row0);
+                        let total = doc.buffer.len();
+                        let pos = (line_start + col).min(total.saturating_sub(1));
+                        let _ = doc.buffer.set_cursor(pos);
+                    }
+                }
+                PluginMutation::ReplaceLines { start, end, lines } => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        let start0 = start.saturating_sub(1);
+                        let end0 = end.saturating_sub(1);
+                        let line_count = doc.buffer.line_index.line_count();
+                        if start0 < line_count {
+                            let range_start = doc.buffer.line_index.get_line_start(start0);
+                            let range_end = if end0 + 1 < line_count {
+                                doc.buffer.line_index.get_line_start(end0 + 1)
+                            } else {
+                                doc.buffer.len()
+                            };
+                            let _ = doc.delete_range(range_start, range_end);
+                            let _ = doc.buffer.set_cursor(range_start);
+                            if !lines.is_empty() {
+                                let _ = doc.insert_str(&lines.join("\n"));
+                            }
+                        }
+                    }
+                    self.do_incremental_syntax_parse();
+                }
+                PluginMutation::AddHighlight { slot, start_line, start_col, end_line, end_col, color } => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        let parsed_color = plugin_color(&color);
+                        let sl = start_line.saturating_sub(1);
+                        let el = end_line.saturating_sub(1);
+                        let line_count = doc.buffer.line_index.line_count();
+                        if sl < line_count {
+                            let el = el.min(line_count.saturating_sub(1));
+                            let start_char = doc.buffer.line_index.get_line_start(sl) + start_col;
+                            let end_char = (doc.buffer.line_index.get_line_start(el) + end_col)
+                                .min(doc.buffer.len());
+                            let start = doc.buffer.char_to_byte(start_char);
+                            let end = doc.buffer.char_to_byte(end_char);
+                            if start < end {
+                                doc.highlight_slots
+                                    .entry(slot)
+                                    .or_default()
+                                    .push((start..end, parsed_color));
+                            }
+                        }
+                    }
+                    needs_highlight_merge = true;
+                }
+                PluginMutation::ClearHighlights { slot } => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        if slot == 0 {
+                            doc.highlight_slots.clear();
+                        } else if let Some(s) = doc.highlight_slots.get_mut(&slot) {
+                            s.clear();
+                        }
+                    }
+                    needs_highlight_merge = true;
+                }
+                PluginMutation::SetOption { name, value } => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        match name.as_str() {
+                            "tab_width" | "tabwidth" => {
+                                if let Ok(n) = value.parse::<usize>() {
+                                    if n > 0 { doc.options.tab_width = n; }
+                                }
+                            }
+                            "expand_tabs" | "expandtabs" => {
+                                doc.options.expand_tabs =
+                                    matches!(value.as_str(), "true" | "1" | "yes");
+                            }
+                            "show_line_numbers" | "number" => {
+                                doc.options.show_line_numbers =
+                                    matches!(value.as_str(), "true" | "1" | "yes");
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                PluginMutation::SaveBuffer => {
+                    self.do_save();
+                }
+                PluginMutation::OpenFloat(_) | PluginMutation::CloseFloat => {
+                    self.plugin_host.apply_mutation(mutation);
+                }
+                PluginMutation::SetScroll(top, left) => {
+                    self.render_system.viewport.set_scroll(top, left);
+                }
+                PluginMutation::SetLineEnding(ending) => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        doc.options.line_ending = match ending.to_lowercase().as_str() {
+                            "crlf" => crate::document::LineEnding::CRLF,
+                            _ => crate::document::LineEnding::LF,
+                        };
+                    }
+                }
+                PluginMutation::ExecAction(action_str) => {
+                    if let Ok(action) = action_str.parse::<crate::action::Action>() {
+                        self.handle_action(&action);
+                    }
+                }
+                PluginMutation::MapKey { mode, keys, action } => {
+                    use crate::keymap::KeyContext;
+                    let ctx = match mode.as_str() {
+                        "n" | "normal" => KeyContext::Normal,
+                        "i" | "insert" => KeyContext::Insert,
+                        "c" | "command" => KeyContext::Command,
+                        "s" | "search" => KeyContext::Search,
+                        "g" | "global" => KeyContext::Global,
+                        _ => continue,
+                    };
+                    if let (Some(key_seq), Ok(act)) = (
+                        crate::key::parse_key_sequence(&keys),
+                        action.parse::<crate::action::Action>(),
+                    ) {
+                        self.keymap.register_sequence(ctx, key_seq, act);
+                    }
+                }
+                PluginMutation::CenterOnLine(row) => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        let row0 = row.saturating_sub(1);
+                        let total = doc.buffer.get_total_lines();
+                        let row0 = row0.min(total.saturating_sub(1));
+                        let line_start = doc.buffer.line_index.get_line_start(row0);
+                        let _ = doc.buffer.set_cursor(line_start);
+                        self.render_system.viewport.center_on(row0, total);
+                    }
+                }
+                PluginMutation::UnmapKey { mode, keys } => {
+                    use crate::keymap::KeyContext;
+                    let ctx = match mode.as_str() {
+                        "n" | "normal" => KeyContext::Normal,
+                        "i" | "insert" => KeyContext::Insert,
+                        "c" | "command" => KeyContext::Command,
+                        "s" | "search" => KeyContext::Search,
+                        "g" | "global" => KeyContext::Global,
+                        _ => continue,
+                    };
+                    if let Some(key_seq) = crate::key::parse_key_sequence(&keys) {
+                        self.keymap.unregister_sequence(ctx, &key_seq);
+                    }
+                }
+            }
+        }
+
+        if needs_highlight_merge {
+            if let Some(doc) = self.document_manager.active_document_mut() {
+                let mut merged: Vec<(std::ops::Range<usize>, Color)> = doc
+                    .highlight_slots
+                    .values()
+                    .flatten()
+                    .cloned()
+                    .collect();
+                merged.sort_by_key(|(r, _)| r.start);
+                doc.plugin_highlights = merged;
+            }
         }
     }
 
@@ -1675,6 +2116,11 @@ impl<T: TerminalBackend> Editor<T> {
                 resolve_display_map(doc, content_width, self.state.settings.soft_wrap, self.state.settings.wrap_width)
             };
 
+            let cursor_before = self
+                .document_manager
+                .active_document()
+                .map(|d| (d.id, d.buffer.cursor()));
+
             let doc = self.document_manager.active_document_mut().unwrap();
             let expand_tabs = doc.options.expand_tabs;
             let tab_width = doc.options.tab_width;
@@ -1699,6 +2145,39 @@ impl<T: TerminalBackend> Editor<T> {
             // Tree-sitter incremental parsing is fast (~1ms for small edits)
             if is_mutating {
                 self.do_incremental_syntax_parse();
+            }
+
+            // Collect event info from doc before taking mutable borrows.
+            let plugin_events = self.document_manager.active_document().map(|doc| {
+                let buf = doc.id;
+                let cursor_event = cursor_before.and_then(|(prev_buf, prev_cursor)| {
+                    let new_cursor = doc.buffer.cursor();
+                    if prev_buf != buf || prev_cursor != new_cursor {
+                        let row = doc.buffer.line_index.get_line_at(new_cursor);
+                        let col = new_cursor
+                            .saturating_sub(doc.buffer.line_index.get_line_start(row));
+                        Some((buf, row, col))
+                    } else {
+                        None
+                    }
+                });
+                (buf, is_mutating, cursor_event)
+            });
+
+            if let Some((buf, mutating, cursor_event)) = plugin_events {
+                if mutating {
+                    self.adjust_plugin_highlights_for_edits();
+                    self.update_lua_state();
+                    self.plugin_host
+                        .dispatch(&crate::plugin::EditorEvent::TextChangedCoarse { buf });
+                    self.apply_plugin_mutations();
+                }
+
+                if let Some((buf, row, col)) = cursor_event {
+                    self.plugin_host
+                        .dispatch(&crate::plugin::EditorEvent::CursorMoved { buf, row, col });
+                    self.apply_plugin_mutations();
+                }
             }
 
             return true;
@@ -1759,6 +2238,27 @@ impl<T: TerminalBackend> Editor<T> {
                 let doc = self.document_manager.active_document_mut().unwrap();
                 doc.buffer.move_to_line_end();
                 doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                if !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.start_insert_recording(command);
+                }
+                self.set_mode(Mode::Insert);
+            }
+            Command::OpenLineBelow => {
+                let doc = self.document_manager.active_document_mut().unwrap();
+                doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                doc.buffer.move_to_line_end();
+                let _ = doc.insert_char('\n');
+                if !self.dot_repeat.is_replaying() {
+                    self.dot_repeat.start_insert_recording(command);
+                }
+                self.set_mode(Mode::Insert);
+            }
+            Command::OpenLineAbove => {
+                let doc = self.document_manager.active_document_mut().unwrap();
+                doc.begin_transaction(crate::constants::history::INSERT_LABEL);
+                doc.buffer.move_to_line_start();
+                let _ = doc.insert_char('\n');
+                doc.buffer.move_up();
                 if !self.dot_repeat.is_replaying() {
                     self.dot_repeat.start_insert_recording(command);
                 }
@@ -2013,6 +2513,8 @@ impl<T: TerminalBackend> Editor<T> {
             self.render_system.viewport.update(cursor_line, viewport_col, total_lines, gutter_width)
         };
 
+        self.render_plugin_float();
+
         if self.split_tree.window_count() > 1 {
             self.update_window_viewports();
             self.render_multi_window(needs_clear)
@@ -2037,6 +2539,7 @@ impl<T: TerminalBackend> Editor<T> {
                 )
             })?;
         self.term.show_cursor()?;
+        self.term.flush()?;
         Ok(stats)
     }
 
@@ -2048,7 +2551,6 @@ impl<T: TerminalBackend> Editor<T> {
             render_system,
             state,
             current_mode,
-            dispatcher: _,
             term,
             pending_keys,
             pending_count,
@@ -2063,7 +2565,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let (start_logical, end_logical) = if let Some(dm) = display_map {
-            let top_vr = render_system.viewport.top_line();
+            let top_vr = render_system.viewport.top_visual_row();
             let bottom_vr = top_vr + render_system.viewport.visible_rows();
             let start_l = dm
                 .get_visual_row(top_vr)
@@ -2117,6 +2619,7 @@ impl<T: TerminalBackend> Editor<T> {
             cursor_viewport: None,
             terminal_cursor: doc.terminal_cursor,
             custom_highlights: if doc.custom_highlights.is_empty() { None } else { Some(&doc.custom_highlights) },
+            plugin_highlights: if doc.plugin_highlights.is_empty() { None } else { Some(&doc.plugin_highlights) },
             show_line_numbers: doc.options.show_line_numbers,
             display_map,
         };
@@ -2124,6 +2627,23 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = render_system.render(term, state)?;
 
         Ok(())
+    }
+
+    /// If a plugin float is open, render it into the POPUP layer.
+    /// Clears the layer once when a float is closed.
+    fn render_plugin_float(&mut self) {
+        if self.plugin_host.has_open_float() {
+            let layer = self.render_system.compositor
+                .get_layer_mut(crate::layer::LayerPriority::POPUP);
+            layer.clear();
+            let fg = self.state.settings.editor_fg;
+            let bg = self.state.settings.editor_bg;
+            self.plugin_host.render_float_into_layer(layer, fg, bg);
+        } else if self.plugin_host.take_float_closed() {
+            self.render_system.compositor
+                .get_layer_mut(crate::layer::LayerPriority::POPUP)
+                .clear();
+        }
     }
 
     fn update_window_viewports(&mut self) {
@@ -2271,6 +2791,7 @@ impl<T: TerminalBackend> Editor<T> {
                 highlights: highlights.as_deref(),
                 capture_map: capture_names,
                 custom_highlights: if doc.custom_highlights.is_empty() { None } else { Some(&doc.custom_highlights) },
+                plugin_highlights: if doc.plugin_highlights.is_empty() { None } else { Some(&doc.plugin_highlights) },
                 show_line_numbers: doc.options.show_line_numbers,
                 display_map: display_map.as_ref(),
             };
@@ -2346,6 +2867,7 @@ impl<T: TerminalBackend> Editor<T> {
             cursor_viewport: Some(focused_vp),
             terminal_cursor: focused_doc.terminal_cursor,
             custom_highlights: if focused_doc.custom_highlights.is_empty() { None } else { Some(&focused_doc.custom_highlights) },
+            plugin_highlights: if focused_doc.plugin_highlights.is_empty() { None } else { Some(&focused_doc.plugin_highlights) },
             show_line_numbers: focused_doc.options.show_line_numbers,
             display_map: focused_display_map.as_ref(),
         };
@@ -3045,6 +3567,13 @@ impl<T: TerminalBackend> Editor<T> {
     fn set_mode(&mut self, mode: Mode) {
         let old_mode = self.current_mode;
         self.current_mode = mode;
+
+        if old_mode != mode {
+            self.update_lua_state();
+            self.plugin_host
+                .dispatch(&crate::plugin::EditorEvent::ModeChanged { from: old_mode, to: mode });
+            self.apply_plugin_mutations();
+        }
         if (old_mode == Mode::Command || old_mode == Mode::Search) && mode != old_mode {
             self.state.completion_session = None;
             self.render_system
@@ -3417,6 +3946,13 @@ impl<T: TerminalBackend> Editor<T> {
                             format!("Written to {}", res.path.display()),
                         );
 
+                        self.update_lua_state();
+                        self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufSavePost {
+                            buf: res.document_id,
+                            path: res.path.clone(),
+                        });
+                        self.apply_plugin_mutations();
+
                         if self.pending_quit_job_id == Some(id) {
                             self.should_quit = true;
                         }
@@ -3482,6 +4018,18 @@ impl<T: TerminalBackend> Editor<T> {
                                 table, revision,
                             );
                             self.job_manager.spawn(job);
+                        }
+
+                        if let Some(doc) = self.document_manager.get_document(res.document_id) {
+                            let path = doc.path().map(|p| p.to_path_buf());
+                            let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
+                            self.update_lua_state();
+                            self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufOpen {
+                                buf: res.document_id,
+                                path,
+                                filetype,
+                            });
+                            self.apply_plugin_mutations();
                         }
 
                         self.sync_state_with_active_document();
@@ -3664,6 +4212,25 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::OpenDirectory { path } => { self.open_explorer(path); }
             ExecutionResult::OpenUndoTree => { self.open_undotree_split(); }
             ExecutionResult::OpenMessages { show_all } => { self.open_messages(show_all); }
+            ExecutionResult::PluginCommand { name, args } => {
+                if name == "lua" {
+                    let s = cmd.trim_start_matches(':').trim();
+                    let code = s.strip_prefix("lua").map(|r| r.trim_start()).unwrap_or("");
+                    if let Some(err) = self.plugin_host.lua_exec(code) {
+                        self.state.notify(crate::notification::NotificationType::Error, err);
+                    }
+                    self.apply_plugin_mutations();
+                } else if !self.plugin_host.execute_command(&name, &args) {
+                    self.state.handle_error(crate::error::RiftError::new(
+                        crate::error::ErrorType::Parse,
+                        "UNKNOWN_COMMAND",
+                        format!("Unknown command: {name}"),
+                    ));
+                    return;
+                } else {
+                    self.apply_plugin_mutations();
+                }
+            }
         }
         if self.current_mode == Mode::Command {
             self.set_mode(Mode::Normal);
@@ -3696,11 +4263,28 @@ impl<T: TerminalBackend> Editor<T> {
             CommandLineMessage::RequestCompletion(input) => {
                 use crate::job_manager::jobs::completion::CompletionJob;
                 let current_settings = Some(self.state.settings.clone());
-                let current_doc_options = Some(self.active_document().options.clone());
+                let doc = self.active_document();
+                let current_doc_options = Some(doc.options.clone());
+                let line_count = doc.buffer.get_total_lines();
+                let buf_text = doc.buffer.to_string();
+                let buf_words = {
+                    let mut words: Vec<String> = buf_text
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .filter(|w| w.len() >= 2)
+                        .map(|w| w.to_string())
+                        .collect();
+                    words.sort_unstable();
+                    words.dedup();
+                    words
+                };
+                let plugin_commands = self.plugin_host.command_list();
                 self.job_manager.spawn(CompletionJob {
                     input,
                     current_settings,
                     current_doc_options,
+                    plugin_commands,
+                    line_count,
+                    buf_words,
                 });
             }
         }

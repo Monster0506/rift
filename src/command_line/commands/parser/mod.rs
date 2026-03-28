@@ -74,6 +74,7 @@ impl CommandParser {
         if input.is_empty() {
             return ParsedCommand::Unknown {
                 name: String::new(),
+                args: vec![],
             };
         }
 
@@ -82,6 +83,7 @@ impl CommandParser {
         if parts.is_empty() {
             return ParsedCommand::Unknown {
                 name: String::new(),
+                args: vec![],
             };
         }
 
@@ -105,6 +107,7 @@ impl CommandParser {
                 if command_chain.is_empty() {
                     return ParsedCommand::Unknown {
                         name: part.to_string(),
+                        args: parts[i+1..].iter().map(|s| s.to_string()).collect(),
                     };
                 }
                 break;
@@ -136,6 +139,7 @@ impl CommandParser {
                     if command_chain.is_empty() {
                         return ParsedCommand::Unknown {
                             name: part.to_string(),
+                            args: parts[i+1..].iter().map(|s| s.to_string()).collect(),
                         };
                     }
                     // If we have matched something previously, this token is the start of arguments.
@@ -147,6 +151,7 @@ impl CommandParser {
         if command_chain.is_empty() {
             return ParsedCommand::Unknown {
                 name: parts[0].to_string(),
+                args: parts[1..].iter().map(|s| s.to_string()).collect(),
             };
         }
 
@@ -173,6 +178,7 @@ impl CommandParser {
                 // This should theoretically not happen if registry and COMMANDS are in sync
                 return ParsedCommand::Unknown {
                     name: command_chain.join(" "),
+                    args: vec![],
                 };
             }
         }
@@ -186,6 +192,7 @@ impl CommandParser {
         // Command found but no factory (maybe it's a namespace command like "buffer" without args?)
         ParsedCommand::Unknown {
             name: command_chain.join(" "),
+            args: vec![],
         }
     }
 

@@ -4,7 +4,7 @@
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-    execute,
+    execute, queue,
     style::{ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{self, ClearType},
 };
@@ -114,18 +114,18 @@ impl TerminalBackend for CrosstermBackend {
     }
 
     fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), String> {
-        execute!(self.writer, cursor::MoveTo(col, row))
+        queue!(self.writer, cursor::MoveTo(col, row))
             .map_err(|e| format!("Failed to move cursor: {e}"))?;
         Ok(())
     }
 
     fn hide_cursor(&mut self) -> Result<(), String> {
-        execute!(self.writer, cursor::Hide).map_err(|e| format!("Failed to hide cursor: {e}"))?;
+        queue!(self.writer, cursor::Hide).map_err(|e| format!("Failed to hide cursor: {e}"))?;
         Ok(())
     }
 
     fn show_cursor(&mut self) -> Result<(), String> {
-        execute!(self.writer, cursor::Show).map_err(|e| format!("Failed to show cursor: {e}"))?;
+        queue!(self.writer, cursor::Show).map_err(|e| format!("Failed to show cursor: {e}"))?;
         Ok(())
     }
 

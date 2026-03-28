@@ -87,6 +87,66 @@ impl Key {
     }
 }
 
+/// Parse a vim-notation key sequence string into a list of `Key`s.
+/// Supports `<Esc>`, `<CR>`, `<BS>`, `<Tab>`, `<Up>`, `<Down>`, `<Left>`, `<Right>`,
+/// `<Home>`, `<End>`, `<PageUp>`, `<PageDown>`, `<Del>`, `<C-x>`, and bare characters.
+/// Returns `None` if any token is unrecognised.
+pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
+    let mut keys = Vec::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '<' {
+            let mut token = String::new();
+            loop {
+                match chars.next() {
+                    Some('>') => break,
+                    Some(ch) => token.push(ch),
+                    None => return None,
+                }
+            }
+            let low = token.to_lowercase();
+            let key = if low == "esc" || low == "escape" {
+                Key::Escape
+            } else if low == "cr" || low == "enter" || low == "return" {
+                Key::Enter
+            } else if low == "bs" || low == "backspace" {
+                Key::Backspace
+            } else if low == "tab" {
+                Key::Tab
+            } else if low == "s-tab" || low == "shifttab" {
+                Key::ShiftTab
+            } else if low == "del" || low == "delete" {
+                Key::Delete
+            } else if low == "up" {
+                Key::ArrowUp
+            } else if low == "down" {
+                Key::ArrowDown
+            } else if low == "left" {
+                Key::ArrowLeft
+            } else if low == "right" {
+                Key::ArrowRight
+            } else if low == "home" {
+                Key::Home
+            } else if low == "end" {
+                Key::End
+            } else if low == "pageup" {
+                Key::PageUp
+            } else if low == "pagedown" {
+                Key::PageDown
+            } else if low.starts_with("c-") && low.len() == 3 {
+                let ch = low.chars().nth(2)?;
+                Key::Ctrl(ch as u8)
+            } else {
+                return None;
+            };
+            keys.push(key);
+        } else {
+            keys.push(Key::Char(c));
+        }
+    }
+    if keys.is_empty() { None } else { Some(keys) }
+}
+
 /// Build a CSI sequence: `ESC [ {suffix}` or `ESC [ 1 ; {modifier} {suffix}`
 fn csi(suffix: u8, modifier: Option<u8>) -> Vec<u8> {
     match modifier {

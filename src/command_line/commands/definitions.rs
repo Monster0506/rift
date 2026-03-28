@@ -59,6 +59,7 @@ fn parse_write(
         },
         _ => ParsedCommand::Unknown {
             name: "write (too many arguments)".to_string(),
+            args: vec![],
         },
     }
 }
@@ -76,6 +77,7 @@ fn parse_write_quit(
         },
         _ => ParsedCommand::Unknown {
             name: "wq (too many arguments)".to_string(),
+            args: vec![],
         },
     }
 }
@@ -93,6 +95,7 @@ fn parse_edit(
         },
         _ => ParsedCommand::Unknown {
             name: "edit (too many arguments)".to_string(),
+            args: vec![],
         },
     }
 }
@@ -113,6 +116,7 @@ fn parse_notify(
     if args.len() < 2 {
         return ParsedCommand::Unknown {
             name: "notify (usage: :notify <type> <message>)".to_string(),
+            args: vec![],
         };
     }
 
@@ -134,6 +138,7 @@ fn parse_redraw(
     if !args.is_empty() {
         return ParsedCommand::Unknown {
             name: "redraw (usage: :redraw)".to_string(),
+            args: vec![],
         };
     }
     ParsedCommand::Redraw { bangs }
@@ -189,6 +194,7 @@ fn parse_undo(
     // Try to parse as count (for multiple undos)
     ParsedCommand::Unknown {
         name: format!("undo (invalid argument: {})", args[0]),
+        args: vec![],
     }
 }
 
@@ -212,6 +218,7 @@ fn parse_redo(
 
     ParsedCommand::Unknown {
         name: format!("redo (invalid argument: {})", args[0]),
+        args: vec![],
     }
 }
 
@@ -235,6 +242,7 @@ fn parse_substitute_impl(
     if raw_args.is_empty() {
         return ParsedCommand::Unknown {
             name: "substitute (usage: :s/pattern/replacement/flags)".to_string(),
+            args: vec![],
         };
     }
 
@@ -339,6 +347,7 @@ fn parse_set_impl(
     if args.is_empty() {
         return ParsedCommand::Unknown {
             name: "set".to_string(),
+            args: vec![],
         };
     }
 
@@ -581,6 +590,7 @@ fn parse_split(
         if s.starts_with(':') {
             return ParsedCommand::Unknown {
                 name: format!("unknown split subcommand '{s}'"),
+                args: vec![],
             };
         }
     }
@@ -597,6 +607,7 @@ fn parse_vsplit(
         if s.starts_with(':') {
             return ParsedCommand::Unknown {
                 name: format!("unknown vsplit subcommand '{s}'"),
+                args: vec![],
             };
         }
     }
