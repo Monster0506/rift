@@ -175,10 +175,7 @@ fn test_root_saved_no_marker() {
         "Root node should not show saved marker"
     );
 }
-
-// ──────────────────────────────────────────────
 // render_tree_to_text tests
-// ──────────────────────────────────────────────
 
 fn simple_linear_tree() -> UndoTree {
     let mut tree = UndoTree::new();

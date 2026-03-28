@@ -138,8 +138,6 @@ fn test_job_cancellation() {
     assert!(cancelled, "Job should have received cancelled message");
 }
 
-// ── Job name / descriptive label tests ───────────────────────────────────────
-
 #[test]
 fn test_job_default_name() {
     let job = TestJob { duration_ms: 0, succeed: true };
@@ -207,8 +205,6 @@ fn test_multiple_jobs_have_independent_names() {
     assert_eq!(manager.job_name(id1), "file-load");
     assert_eq!(manager.job_name(id2), "undotree-render");
 }
-
-// ── Individual job type name tests (unit-level) ───────────────────────────────
 
 #[test]
 fn test_cache_warming_job_name() {

@@ -7,7 +7,6 @@ use crate::mode::Mode;
 /// The plugin host dispatches them to registered handlers.
 #[derive(Debug, Clone)]
 pub enum EditorEvent {
-    // ── Buffer lifecycle ──────────────────────────────────────────────────────
 
     /// A new buffer was opened (or created). Fired after the document is ready.
     BufOpen {
@@ -42,13 +41,9 @@ pub enum EditorEvent {
     /// A buffer was reloaded from disk (e.g. after an external change).
     BufReload { buf: DocumentId },
 
-    // ── Text changes ──────────────────────────────────────────────────────────
-
     /// Coarse change notification — something in the buffer changed.
     /// Cheap to fire; suitable for tools that just need to know "something changed".
     TextChangedCoarse { buf: DocumentId },
-
-    // ── Cursor ────────────────────────────────────────────────────────────────
 
     /// The cursor moved. Row and col are 0-indexed.
     CursorMoved {
@@ -64,12 +59,8 @@ pub enum EditorEvent {
         col: usize,
     },
 
-    // ── Mode ──────────────────────────────────────────────────────────────────
-
     /// The editor mode changed.
     ModeChanged { from: Mode, to: Mode },
-
-    // ── Editor lifecycle ──────────────────────────────────────────────────────
 
     /// Fired once, after all plugins are loaded and the first render is done.
     EditorStart,
@@ -79,8 +70,6 @@ pub enum EditorEvent {
 
     /// The terminal was resized.
     WindowResized { rows: u16, cols: u16 },
-
-    // ── Inter-plugin ──────────────────────────────────────────────────────────
 
     /// A plugin-defined event. Use `rift.emit("MyPlugin:Ready", ...)` in Lua.
     UserEvent {

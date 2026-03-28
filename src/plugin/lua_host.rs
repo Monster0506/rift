@@ -6,8 +6,6 @@ use crate::notification::NotificationType;
 use crate::plugin::{PluginFloat, PluginMutation};
 use crate::plugin::events::EditorEvent;
 
-// ─── Shared state ─────────────────────────────────────────────────────────────
-
 /// A lightweight buffer entry for the `rift.get_buf_list()` snapshot.
 /// Fields: (id, display_name, is_dirty, is_current)
 type BufEntry = (usize, String, bool, bool);
@@ -73,8 +71,6 @@ impl Default for LuaSharedState {
         }
     }
 }
-
-// ─── LuaHost ──────────────────────────────────────────────────────────────────
 
 /// Owns the Lua VM and registers the `rift.*` API.
 pub struct LuaHost {
@@ -278,16 +274,25 @@ impl LuaHost {
         }
         lua.globals().set("_rift_actions", lua.create_table()?)?;
 
-        // rift.emit(event_name)  — fire a UserEvent to all registered handlers
+        // rift.emit(event_name [, payload])  — fire a UserEvent to all registered handlers
+        // Optional payload table keys are merged into the event table alongside `name`.
         {
-            let f = lua.create_function(|lua, name: String| {
+            let f = lua.create_function(|lua, (name, payload): (String, Option<LuaTable>)| {
                 let handlers: LuaTable = lua.globals().get("_rift_handlers")?;
                 let list: Option<LuaTable> = handlers.get("UserEvent")?;
                 if let Some(list) = list {
                     let ev = lua.create_table()?;
                     ev.set("name", name.as_str())?;
-                    for handler in list.sequence_values::<LuaFunction>() {
-                        handler?.call::<()>(ev.clone())?;
+                    if let Some(p) = payload {
+                        for pair in p.pairs::<LuaValue, LuaValue>() {
+                            let (k, v) = pair?;
+                            ev.set(k, v)?;
+                        }
+                    }
+                    for entry in list.sequence_values::<LuaTable>() {
+                        let entry = entry?;
+                        let f: LuaFunction = entry.get("fn")?;
+                        f.call::<()>(ev.clone())?;
                     }
                 }
                 Ok(())
@@ -397,6 +402,16 @@ impl LuaHost {
                 Ok(())
             })?;
             api.set("clear_highlights", f)?;
+        }
+
+        // rift.set_cursor_hold_delay(ms) — set the CursorHold idle threshold in milliseconds
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, ms: u32| {
+                sh.lock().unwrap().mutations.push(PluginMutation::SetCursorHoldDelay(ms));
+                Ok(())
+            })?;
+            api.set("set_cursor_hold_delay", f)?;
         }
 
         // rift.set_option(name, value) — set a document option
@@ -581,22 +596,40 @@ impl LuaHost {
             api.set("set_line_ending", f)?;
         }
 
-        // rift.search(needle) → array of {row, col_start, col_end}
+        // rift.search(needle [, opts]) → array of {row, col_start, col_end}
         // Literal search over the current buffer lines.
         // row is 1-indexed; col_start/col_end are 0-indexed byte offsets within the line.
+        // opts.whole_word = true  — only match when surrounded by non-word characters.
         {
             let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |lua, needle: String| {
+            let f = lua.create_function(move |lua, (needle, opts): (String, Option<LuaTable>)| {
+                let whole_word = opts
+                    .as_ref()
+                    .and_then(|t| t.get::<bool>("whole_word").ok())
+                    .unwrap_or(false);
                 let lines = sh.lock().unwrap().buf_lines.clone();
                 let results = lua.create_table()?;
                 if needle.is_empty() {
                     return Ok(results);
                 }
                 for (row_idx, line) in lines.iter().enumerate() {
+                    let bytes = line.as_bytes();
                     let mut start = 0;
                     while let Some(pos) = line[start..].find(needle.as_str()) {
                         let col_start = start + pos;
                         let col_end = col_start + needle.len();
+                        if whole_word {
+                            let before_ok = col_start == 0
+                                || !bytes[col_start - 1].is_ascii_alphanumeric()
+                                    && bytes[col_start - 1] != b'_';
+                            let after_ok = col_end >= bytes.len()
+                                || !bytes[col_end].is_ascii_alphanumeric()
+                                    && bytes[col_end] != b'_';
+                            if !before_ok || !after_ok {
+                                start = col_end;
+                                continue;
+                            }
+                        }
                         let entry = lua.create_table()?;
                         entry.set("row", row_idx + 1)?;
                         entry.set("col_start", col_start)?;
@@ -895,8 +928,6 @@ end
         Ok(Self { lua, shared })
     }
 
-    // ── State snapshot ────────────────────────────────────────────────────────
-
     /// Update the buffer snapshot that `rift.get_lines()` and friends read.
     /// Call this before dispatching an event.
     #[allow(clippy::too_many_arguments)]
@@ -935,8 +966,6 @@ end
         s.scroll = scroll;
         s.line_ending = line_ending.to_string();
     }
-
-    // ── Event dispatch ────────────────────────────────────────────────────────
 
     /// Dispatch an `EditorEvent` to all registered Lua handlers.
     /// Returns error strings for any handlers that raised a Lua error.
@@ -984,8 +1013,6 @@ end
         }
         errors
     }
-
-    // ── Lua command/action dispatch ───────────────────────────────────────────
 
     /// Execute a plugin command registered via `rift.register_command`.
     /// Returns `true` if a handler was found and called.
@@ -1063,8 +1090,6 @@ end
         true
     }
 
-    // ── Plugin loading ────────────────────────────────────────────────────────
-
     /// Load all `.lua` files in `dir`, and set `package.path` to include it.
     /// Returns a list of error strings (empty means all loaded OK).
     pub fn load_dir(&self, dir: &std::path::Path) -> Vec<String> {
@@ -1105,14 +1130,10 @@ end
         errors
     }
 
-    // ── Mutation drain ────────────────────────────────────────────────────────
-
     /// Drain all mutations queued by Lua API calls.
     pub fn drain_mutations(&self) -> Vec<PluginMutation> {
         std::mem::take(&mut self.shared.lock().unwrap().mutations)
     }
-
-    // ── Direct Lua execution (for :lua command) ───────────────────────────────
 
     /// Execute a string of Lua code. Returns an error string on failure.
     pub fn exec(&self, code: &str) -> Option<String> {
@@ -1320,8 +1341,6 @@ mod tests {
         let host = make_host();
         assert!(host.exec("assert(rift.get_mode() == 'normal')").is_none());
     }
-
-    // ── autoindent.lua integration tests ────────────────────────────────────
 
     fn load_autoindent() -> LuaHost {
         let host = make_host();

@@ -457,7 +457,7 @@ impl<T: TerminalBackend> Editor<T> {
                             message: crate::constants::errors::MSG_UNSAVED_CHANGES.to_string(),
                         });
                     }
-                    let job = crate::job_manager::jobs::file_operations::FileLoadJob::new(
+                    let job = crate::job_manager::jobs::file_operations::FileLoadJob::new_reload(
                         doc.id,
                         path.to_path_buf(),
                     );
@@ -870,6 +870,9 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
+        self.plugin_host.dispatch(&crate::plugin::EditorEvent::EditorQuit);
+        self.apply_plugin_mutations();
+
         Ok(())
     }
 
@@ -916,6 +919,8 @@ impl<T: TerminalBackend> Editor<T> {
             }
             KeyAction::Resize(cols, rows) => {
                 self.render_system.resize(rows as usize, cols as usize);
+                self.plugin_host.dispatch(&crate::plugin::EditorEvent::WindowResized { rows, cols });
+                self.apply_plugin_mutations();
             }
             KeyAction::SkipAndRender | KeyAction::Continue => {
                 // No special action needed
@@ -1684,6 +1689,10 @@ impl<T: TerminalBackend> Editor<T> {
                         self.keymap.unregister_sequence(ctx, &key_seq);
                     }
                 }
+                PluginMutation::SetCursorHoldDelay(ms) => {
+                    let poll_ms = self.state.settings.poll_timeout_ms as u32;
+                    self.plugin_host.set_cursor_hold_delay_ms(ms, poll_ms);
+                }
             }
         }
 
@@ -1706,12 +1715,21 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.active_document() {
             match &doc.kind {
                 BufferKind::File => {
-                    let doc = self.document_manager.active_document_mut().unwrap();
-                    if let Some(path) = doc.path() {
+                    let save_info = {
+                        let doc = self.document_manager.active_document_mut().unwrap();
+                        doc.path().map(|p| (doc.id, p.to_path_buf()))
+                    };
+                    if let Some((buf_id, path)) = save_info {
+                        self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufSavePre {
+                            buf: buf_id,
+                            path: path.clone(),
+                        });
+                        self.apply_plugin_mutations();
+                        let doc = self.document_manager.active_document_mut().unwrap();
                         let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
                             doc.id,
                             doc.buffer.line_index.table.clone(),
-                            path.to_path_buf(),
+                            path,
                             doc.options.line_ending,
                             doc.history.current_seq(),
                         );
@@ -1837,9 +1855,13 @@ impl<T: TerminalBackend> Editor<T> {
             match result {
                 Err(e) => self.state.handle_error(e),
                 Ok(()) => {
+                    self.update_lua_state();
+                    self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufClose { buf: doc_id });
                     if let Some(new_doc_id) = self.document_manager.active_document_id() {
                         self.split_tree.focused_window_mut().document_id = new_doc_id;
+                        self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_doc_id });
                     }
+                    self.apply_plugin_mutations();
                     self.sync_state_with_active_document();
                     if let Err(e) = self.force_full_redraw() {
                         self.state.handle_error(e);
@@ -1850,6 +1872,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     fn do_buffer_next(&mut self) {
+        let old_buf = self.active_document_id();
         self.save_current_view_state();
         self.document_manager.switch_next_tab();
         if let Some(doc_id) = self.document_manager.active_document_id() {
@@ -1858,12 +1881,21 @@ impl<T: TerminalBackend> Editor<T> {
         self.restore_view_state();
         self.sync_state_with_active_document();
         self.state.clear_command_line();
+        if let Some(new_buf) = self.document_manager.active_document_id() {
+            if new_buf != old_buf {
+                self.update_lua_state();
+                self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufLeave { buf: old_buf });
+                self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_buf });
+                self.apply_plugin_mutations();
+            }
+        }
         if let Err(e) = self.force_full_redraw() {
             self.state.handle_error(e);
         }
     }
 
     fn do_buffer_prev(&mut self) {
+        let old_buf = self.active_document_id();
         self.save_current_view_state();
         self.document_manager.switch_prev_tab();
         if let Some(doc_id) = self.document_manager.active_document_id() {
@@ -1872,6 +1904,14 @@ impl<T: TerminalBackend> Editor<T> {
         self.restore_view_state();
         self.sync_state_with_active_document();
         self.state.clear_command_line();
+        if let Some(new_buf) = self.document_manager.active_document_id() {
+            if new_buf != old_buf {
+                self.update_lua_state();
+                self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufLeave { buf: old_buf });
+                self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_buf });
+                self.apply_plugin_mutations();
+            }
+        }
         if let Err(e) = self.force_full_redraw() {
             self.state.handle_error(e);
         }
@@ -4024,11 +4064,17 @@ impl<T: TerminalBackend> Editor<T> {
                             let path = doc.path().map(|p| p.to_path_buf());
                             let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
                             self.update_lua_state();
-                            self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufOpen {
-                                buf: res.document_id,
-                                path,
-                                filetype,
-                            });
+                            if res.is_reload {
+                                self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufReload {
+                                    buf: res.document_id,
+                                });
+                            } else {
+                                self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufOpen {
+                                    buf: res.document_id,
+                                    path,
+                                    filetype,
+                                });
+                            }
                             self.apply_plugin_mutations();
                         }
 

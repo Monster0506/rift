@@ -4,10 +4,7 @@ use crate::color::Color;
 fn create_manager() -> DocumentManager {
     DocumentManager::new()
 }
-
-// ──────────────────────────────────────────────
 // BufferKind helper predicates
-// ──────────────────────────────────────────────
 
 #[test]
 fn test_new_doc_is_file_kind() {
@@ -123,10 +120,7 @@ fn test_custom_highlights_empty_for_new_undotree() {
     let doc = Document::new_undotree(1, 2).unwrap();
     assert!(doc.custom_highlights.is_empty());
 }
-
-// ──────────────────────────────────────────────
 // directory_path()
-// ──────────────────────────────────────────────
 
 #[test]
 fn test_directory_path_returns_none_for_file() {
@@ -146,10 +140,7 @@ fn test_directory_path_returns_path_for_directory() {
     let doc = Document::new_directory(1, path.clone()).unwrap();
     assert_eq!(doc.directory_path(), Some(&path));
 }
-
-// ──────────────────────────────────────────────
 // populate_directory_buffer — text format
-// ──────────────────────────────────────────────
 
 fn make_dir_entries(names: &[(&str, bool)], base: &str) -> Vec<DirEntry> {
     names.iter().map(|(name, is_dir)| DirEntry {
@@ -247,10 +238,7 @@ fn test_populate_directory_marks_saved() {
     doc.populate_directory_buffer(vec![]);
     assert!(!doc.is_dirty());
 }
-
-// ──────────────────────────────────────────────
 // populate_directory_buffer — highlights
-// ──────────────────────────────────────────────
 
 #[test]
 fn test_populate_directory_highlights_non_empty() {
@@ -329,10 +317,7 @@ fn test_populate_directory_no_overlapping_highlight_ranges() {
                 "highlight ranges must not overlap: {:?} vs {:?}", highlights[i], highlights[i+1]);
     }
 }
-
-// ──────────────────────────────────────────────
 // parse_directory_diff
-// ──────────────────────────────────────────────
 
 fn make_populated_directory_doc(dir: &str, names: &[(&str, bool)]) -> Document {
     let mut doc = Document::new_directory(1, PathBuf::from(dir)).unwrap();
@@ -449,10 +434,7 @@ fn test_parse_diff_noop_on_non_directory_doc() {
     assert!(diff.creates.is_empty());
     assert!(diff.renames.is_empty());
 }
-
-// ──────────────────────────────────────────────
 // populate_undotree_buffer
-// ──────────────────────────────────────────────
 
 #[test]
 fn test_populate_undotree_stores_text() {
@@ -525,10 +507,7 @@ fn test_populate_undotree_replaces_old_highlights() {
     assert_eq!(doc.custom_highlights.len(), 3);
     assert_eq!(doc.custom_highlights[0].1, Color::Blue);
 }
-
-// ──────────────────────────────────────────────
 // Manager: special buffers close without dirty check
-// ──────────────────────────────────────────────
 
 #[test]
 fn test_remove_directory_buffer_without_dirty_check() {
@@ -573,10 +552,7 @@ fn test_iter_documents_mut_allows_mutation() {
     }
     assert!(manager.active_document().unwrap().is_read_only);
 }
-
-// ──────────────────────────────────────────────
 // DirEntry struct
-// ──────────────────────────────────────────────
 
 #[test]
 fn test_dir_entry_no_id_field() {
@@ -597,10 +573,7 @@ fn test_dir_entry_directory() {
     };
     assert!(entry.is_dir);
 }
-
-// ──────────────────────────────────────────────
 // DirectoryDiff — rename detection
-// ──────────────────────────────────────────────
 
 /// Helper: replace the full buffer text of a doc (simulates user editing the explorer buffer).
 fn set_buffer_text(doc: &mut Document, text: &str) {
@@ -697,10 +670,7 @@ fn test_parse_diff_no_change_produces_empty_diff() {
     assert!(diff.deletes.is_empty());
     assert!(diff.creates.is_empty());
 }
-
-// ──────────────────────────────────────────────
 // DirectoryDiff struct
-// ──────────────────────────────────────────────
 
 #[test]
 fn test_parse_diff_multiple_creates() {
@@ -730,10 +700,7 @@ fn test_parse_diff_multiple_deletes() {
     let diff = doc.parse_directory_diff();
     assert_eq!(diff.deletes.len(), 2);
 }
-
-// ──────────────────────────────────────────────
 // Buffer revision increments on populate
-// ──────────────────────────────────────────────
 
 #[test]
 fn test_populate_directory_increments_revision() {
@@ -750,10 +717,7 @@ fn test_populate_undotree_increments_revision() {
     doc.populate_undotree_buffer("text".to_string(), vec![], vec![]);
     assert!(doc.buffer.revision > rev0, "revision should increment after populate");
 }
-
-// ──────────────────────────────────────────────
 // BufferKind — cloneability
-// ──────────────────────────────────────────────
 
 #[test]
 fn test_buffer_kind_file_clones() {
@@ -968,10 +932,7 @@ fn test_from_file_strips_standalone_cr() {
     let text = doc.buffer.to_string();
     assert!(!text.contains('\r'), "buffer should not contain standalone \\r (would render as ^M)");
 }
-
-// ──────────────────────────────────────────────
 // WrapMode
-// ──────────────────────────────────────────────
 
 #[test]
 fn wrap_default_is_auto() {

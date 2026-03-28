@@ -23,8 +23,6 @@ pub use events::EditorEvent;
 use crate::document::DocumentId;
 use crate::notification::NotificationType;
 
-// ─── Handler types ────────────────────────────────────────────────────────────
-
 /// An event handler.
 type Handler = Box<dyn Fn(&EditorEvent) + Send + 'static>;
 
@@ -33,8 +31,6 @@ type CommandHandler = Box<dyn Fn(&[String]) -> Vec<PluginMutation> + Send + 'sta
 
 /// A keymap action handler. Returns mutations to apply.
 type ActionHandler = Box<dyn Fn() -> Vec<PluginMutation> + Send + 'static>;
-
-// ─── Mutations ────────────────────────────────────────────────────────────────
 
 /// A state change requested by a plugin. Queued during event dispatch and
 /// applied by the main loop after dispatch returns.
@@ -95,9 +91,9 @@ pub enum PluginMutation {
     UnmapKey { mode: String, keys: String },
     /// Move the cursor to `row` (1-indexed) and center the viewport on it.
     CenterOnLine(usize),
+    /// Set the CursorHold idle delay in milliseconds.
+    SetCursorHoldDelay(u32),
 }
-
-// ─── Plugin float ─────────────────────────────────────────────────────────────
 
 /// A floating window owned by a plugin. Stored in `PluginHost` and rendered
 /// on each frame until `CloseFloat` is queued.
@@ -112,8 +108,6 @@ impl PluginFloat {
         Self { title: title.into(), lines }
     }
 }
-
-// ─── Cursor-hold tracking ─────────────────────────────────────────────────────
 
 /// Tracks idle time for `CursorHold` events.
 #[derive(Debug)]
@@ -164,8 +158,6 @@ impl CursorHoldState {
     }
 }
 
-// ─── PluginHost ───────────────────────────────────────────────────────────────
-
 /// Central plugin coordinator. Owned by the `Editor`.
 ///
 /// Responsibilities:
@@ -213,8 +205,6 @@ impl PluginHost {
         }
     }
 
-    // ── Handler registration ─────────────────────────────────────────────────
-
     /// Register a handler for a named event.
     ///
     /// `event_name` must match one of the strings returned by
@@ -237,8 +227,6 @@ impl PluginHost {
             .or_default()
             .push(Box::new(handler));
     }
-
-    // ── Command registration ──────────────────────────────────────────────────
 
     /// Register a handler for a `:CommandName [args...]` ex-command.
     ///
@@ -293,8 +281,6 @@ impl PluginHost {
         false
     }
 
-    // ── Keymap action registration ────────────────────────────────────────────
-
     /// Register a handler for `Action::Editor(EditorAction::PluginAction(id))`.
     ///
     /// Call with the same `id` string you pass to `EditorAction::PluginAction`.
@@ -322,8 +308,6 @@ impl PluginHost {
         }
         false
     }
-
-    // ── Float helpers ─────────────────────────────────────────────────────────
 
     /// Returns `true` if a plugin float is currently open.
     pub fn has_open_float(&self) -> bool {
@@ -398,8 +382,6 @@ impl PluginHost {
         window.render(layer, &char_lines);
     }
 
-    // ── Lua integration ───────────────────────────────────────────────────────
-
     /// Initialize the Lua VM. Must be called once at startup.
     /// Returns any error string if Lua initialization fails.
     pub fn init_lua(&mut self) -> Option<String> {
@@ -454,8 +436,6 @@ impl PluginHost {
         self.lua.as_ref()?.exec(code)
     }
 
-    // ── Dispatch ─────────────────────────────────────────────────────────────
-
     /// Dispatch an event to all registered handlers.
     ///
     /// Handlers run synchronously on the calling thread (the main loop).
@@ -494,7 +474,12 @@ impl PluginHost {
         })
     }
 
-    // ── Mutation queue ────────────────────────────────────────────────────────
+    /// Update the CursorHold threshold from a millisecond value.
+    /// `poll_ms` is the main-loop poll interval (typically 16).
+    pub fn set_cursor_hold_delay_ms(&mut self, delay_ms: u32, poll_ms: u32) {
+        let polls = (delay_ms / poll_ms.max(1)).max(1);
+        self.cursor_hold.threshold_polls = polls;
+    }
 
     /// Queue a mutation to be applied by the main loop after dispatch returns.
     pub fn queue_mutation(&mut self, mutation: PluginMutation) {

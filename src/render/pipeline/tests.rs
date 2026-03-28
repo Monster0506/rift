@@ -72,10 +72,7 @@ fn test_syntax_decorator() {
     assert_eq!(items.len(), 9);
     assert_eq!(items[0].char, Character::from('f'));
 }
-
-// ──────────────────────────────────────────────
 // ColorDecorator tests
-// ──────────────────────────────────────────────
 
 #[test]
 fn test_color_decorator_no_highlights_no_color() {

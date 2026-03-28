@@ -86,8 +86,6 @@ pub struct ParsedContext {
     pub token_start: usize,
 }
 
-// ─── Context parsing ──────────────────────────────────────────────────────────
-
 pub fn parse_context(
     input: &str,
     settings_registry: &SettingsRegistry<UserSettings>,
@@ -246,8 +244,6 @@ pub fn parse_context(
         }
     }
 }
-
-// ─── Completion sources ───────────────────────────────────────────────────────
 
 /// Shared name+alias completion: same prefix and same-first-letter alias rule as
 /// command and setting parsing. Used by both complete_from_descriptors and
@@ -451,8 +447,6 @@ pub fn complete_setting_value<T: 'static>(
     CompletionResult::from_candidates(candidates)
 }
 
-// ─── Completion action resolution ─────────────────────────────────────────────
-
 /// Pure description of what the editor should do with a completion result.
 #[derive(Debug)]
 pub enum CompletionAction {
@@ -514,8 +508,6 @@ pub fn resolve_completion(
         CompletionAction::ShowDropdown { candidates }
     }
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 pub fn split_path_prefix(prefix: &str) -> (String, String) {
     if prefix.ends_with('/') || prefix.ends_with('\\') {
@@ -628,8 +620,6 @@ fn type_hint_for(ty: &SettingType) -> String {
         SettingType::IntegerOrKeyword { keywords, .. } => format!("integer|{}", keywords.join("|")),
     }
 }
-
-// ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -994,8 +984,6 @@ mod tests {
         assert_eq!(result.candidates[1].text, "file.rs");
     }
 
-    // ── setlocal parse_context tests (parallel to set) ───────────────────────
-
     #[test]
     fn test_parse_context_local_setting_name_prefix() {
         let reg = create_settings_registry();
@@ -1065,8 +1053,6 @@ mod tests {
         );
     }
 
-    // ── Separation: global vs local setting name completions ─────────────────
-
     #[test]
     fn test_complete_local_setting_name_returns_doc_settings() {
         let doc_reg = create_document_settings_registry();
@@ -1098,8 +1084,6 @@ mod tests {
         assert!(!texts.contains(&"expandtabs"), "local 'expandtabs' must not appear");
         assert!(!texts.contains(&"tabwidth"), "local 'tabwidth' must not appear");
     }
-
-    // ── complete_setting_value with current value ─────────────────────────────
 
     #[test]
     fn test_complete_setting_value_integer_shows_current_value() {

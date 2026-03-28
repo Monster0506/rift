@@ -33,8 +33,6 @@ use std::time::{Duration, Instant};
 /// Number of events kept in the in-memory ring buffer.
 pub const RING_CAPACITY: usize = 256;
 
-// ── public types ─────────────────────────────────────────────────────────────
-
 /// Optional metadata attached to a [`PerfSpan`].
 ///
 /// All fields default to `None`; use struct-update syntax to fill only what is
@@ -94,8 +92,6 @@ impl Drop for PerfSpan {
     }
 }
 
-// ── global sink ───────────────────────────────────────────────────────────────
-
 struct PerfSink {
     log: BufWriter<File>,
     ring: VecDeque<PerfEvent>,
@@ -119,8 +115,6 @@ fn get_sink() -> &'static Mutex<Option<PerfSink>> {
         Mutex::new(maybe)
     })
 }
-
-// ── public API ────────────────────────────────────────────────────────────────
 
 /// Record a [`PerfEvent`] into the ring buffer and append it to `rift-perf.log`.
 ///
