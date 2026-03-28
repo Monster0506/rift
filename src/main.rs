@@ -15,6 +15,8 @@
 /// - Input handling never mutates editor state directly.
 /// - Panics or early exits always restore terminal state.
 /// - Editor behavior is deterministic for a given sequence of commands.
+mod cli;
+
 use monster_rift::editor::Editor;
 use monster_rift::term::crossterm::CrosstermBackend;
 
@@ -27,13 +29,7 @@ fn main() {
         eprintln!("{}", msg);
     }));
 
-    // Parse command line arguments
-    let args: Vec<String> = std::env::args().collect();
-    let file_path = if args.len() > 1 {
-        Some(args[1].clone())
-    } else {
-        None
-    };
+    let args = cli::parse();
 
     // Create terminal backend
     let backend = match CrosstermBackend::new() {
@@ -45,13 +41,31 @@ fn main() {
     };
 
     // Create editor with optional file
-    let mut editor = match Editor::with_file(backend, file_path) {
+    let mut editor = match Editor::with_file(backend, args.file) {
         Ok(e) => e,
         Err(e) => {
             eprintln!("Initialization Error [{}]: {}", e.code, e.message);
             std::process::exit(1);
         }
     };
+
+    // Apply startup commands before first render
+    for cmd in args.commands {
+        editor.run_command(cmd);
+    }
+
+    // Apply cursor position
+    if let Some(goto) = args.goto {
+        match goto {
+            cli::Goto::LastLine => editor.goto_line(0),
+            cli::Goto::Line(n) => editor.goto_line(n),
+        }
+    }
+
+    // Apply search
+    if let Some(pattern) = args.search {
+        editor.jump_to_pattern(&pattern);
+    }
 
     // Run editor
     if let Err(e) = editor.run() {

@@ -193,6 +193,10 @@ pub enum EditorAction {
     Checkpoint,
     /// Execute a command string (e.g. ":w", ":s/foo/bar")
     RunCommand(String),
+    /// Jump to a 1-indexed line. 0 means last line.
+    GotoLine(usize),
+    /// Search forward for a pattern and jump to the first match.
+    Search(String),
     Undo,
     Redo,
     Quit,
@@ -303,6 +307,19 @@ impl FromStr for Action {
             "editor:history_up" => Ok(Action::Editor(EditorAction::HistoryUp)),
             "editor:history_down" => Ok(Action::Editor(EditorAction::HistoryDown)),
             "editor:dot_repeat" => Ok(Action::Editor(EditorAction::DotRepeat)),
+
+            // Navigation / search (parameterised — must precede Buffer catch-all)
+            s if s.starts_with("editor:run:") => {
+                Ok(Action::Editor(EditorAction::RunCommand(s["editor:run:".len()..].to_string())))
+            }
+            "editor:goto:last" => Ok(Action::Editor(EditorAction::GotoLine(0))),
+            s if s.starts_with("editor:goto:line:") => {
+                let n = s["editor:goto:line:".len()..].parse::<usize>().unwrap_or(0);
+                Ok(Action::Editor(EditorAction::GotoLine(n)))
+            }
+            s if s.starts_with("editor:search:") => {
+                Ok(Action::Editor(EditorAction::Search(s["editor:search:".len()..].to_string())))
+            }
 
             // Multi-level editor sub-namespace: editor:X:Y forwards to Buffer action X:Y
             s if s.starts_with("editor:") && s.matches(':').count() >= 2 => {

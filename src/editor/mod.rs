@@ -7,6 +7,7 @@ pub mod actions;
 mod terminal_tests;
 
 use crate::action::{Action, EditorAction, Motion};
+use crate::buffer::api::BufferView;
 use crate::command::{Command, Dispatcher};
 use crate::command_line::commands::{CommandExecutor, CommandParser};
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
@@ -488,6 +489,21 @@ impl<T: TerminalBackend> Editor<T> {
                 false
             }
         }
+    }
+
+    /// Jump to a 1-indexed line. 0 means last line.
+    pub fn goto_line(&mut self, line: usize) {
+        self.handle_action(&Action::Editor(EditorAction::GotoLine(line)));
+    }
+
+    /// Run an ex command string (e.g. `"set wrap"`).
+    pub fn run_command(&mut self, cmd: String) {
+        self.handle_action(&Action::Editor(EditorAction::RunCommand(cmd)));
+    }
+
+    /// Search for a pattern and jump to the first match.
+    pub fn jump_to_pattern(&mut self, pattern: &str) {
+        self.handle_action(&Action::Editor(EditorAction::Search(pattern.to_string())));
     }
 
     /// Run the editor main loop
@@ -1064,6 +1080,25 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::RunCommand(cmd_str) => {
                 let cmd_str = cmd_str.clone();
                 self.execute_command_line(cmd_str);
+                true
+            }
+            EditorAction::GotoLine(n) => {
+                let n = *n;
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    let total = doc.buffer.line_count();
+                    let idx = if n == 0 || n > total {
+                        total.saturating_sub(1)
+                    } else {
+                        n - 1
+                    };
+                    let offset = doc.buffer.line_start(idx);
+                    let _ = doc.buffer.set_cursor(offset);
+                }
+                true
+            }
+            EditorAction::Search(pattern) => {
+                let pattern = pattern.clone();
+                self.perform_search(&pattern, SearchDirection::Forward, false);
                 true
             }
             EditorAction::Operator(op) => {
@@ -2013,7 +2048,7 @@ impl<T: TerminalBackend> Editor<T> {
             render_system,
             state,
             current_mode,
-            dispatcher: _, // Ignore dispatcher
+            dispatcher: _,
             term,
             pending_keys,
             pending_count,
@@ -3007,7 +3042,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.job_manager.spawn(reload);
     }
 
-    /// Set editor mode and update dispatcher
     fn set_mode(&mut self, mode: Mode) {
         let old_mode = self.current_mode;
         self.current_mode = mode;
