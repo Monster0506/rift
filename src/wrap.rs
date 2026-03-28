@@ -118,10 +118,17 @@ impl DisplayMap {
                         is_first,
                     });
                     is_first = false;
+                    if !is_word_char {
+                        visual_col += w;
+                        char_pos += 1;
+                    }
                     seg_col_start = visual_col;
                     seg_char_start = char_pos;
                     last_word_start_char = char_pos;
                     last_word_start_col = visual_col;
+                    if !is_word_char {
+                        continue;
+                    }
                 }
             }
 
