@@ -56,6 +56,7 @@ pub mod errors {
     pub const SEARCH_ERROR: &str = "SEARCH_ERROR";
     pub const UNDO_ERROR: &str = "UNDO_ERROR";
     pub const REDRAW_FAILED: &str = "REDRAW_FAILED";
+    pub const PLUGIN_LOAD_FAILED: &str = "PLUGIN_LOAD_FAILED";
     pub const POLL_FAILED: &str = "POLL_FAILED";
     pub const RENDER_FAILED: &str = "RENDER_FAILED";
     pub const REGEX_PARSE_ERROR: &str = "REGEX_PARSE_ERROR";

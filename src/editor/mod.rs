@@ -216,18 +216,9 @@ impl<T: TerminalBackend> Editor<T> {
         // Register default keymaps
         crate::keymap::defaults::register_defaults(&mut editor.keymap);
 
-        // Initialize Lua VM
-        if let Some(err) = editor.plugin_host.init_lua() {
-            editor.state.notify(crate::notification::NotificationType::Error, err);
-        } else {
-            for dir in plugin_dirs() {
-                for err in editor.plugin_host.lua_load_dir(&dir) {
-                    editor.state.notify(crate::notification::NotificationType::Error, err);
-                }
-            }
-            // Apply any mutations queued by top-level plugin code (e.g. rift.map()).
-            editor.apply_plugin_mutations();
-        }
+        if let Err(e) = editor.load_plugins() {
+            editor.state.notify(crate::notification::NotificationType::Error, e.to_string())
+        }       
 
         // Trigger background search cache warming for initial document
         if let Some(doc) = editor.document_manager.active_document() {
@@ -394,6 +385,22 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_and_render().map_err(|e| {
             RiftError::new(ErrorType::Io, crate::constants::errors::RENDER_FAILED, e.to_string())
         })
+    }
+
+    fn load_plugins(&mut self) -> Result<(), RiftError> {
+        // Initialize Lua VM
+        if let Some(err) = self.plugin_host.init_lua() {
+            return Err(RiftError::new(ErrorType::Internal, crate::constants::errors::PLUGIN_LOAD_FAILED, err.to_string()))
+        } else {
+            for dir in plugin_dirs() {
+                for err in self.plugin_host.lua_load_dir(&dir) {
+                    return Err(RiftError::new(ErrorType::Internal, crate::constants::errors::PLUGIN_LOAD_FAILED, err.to_string()))
+                }
+            }
+            // Apply any mutations queued by top-level plugin code (e.g. rift.map()).
+            self.apply_plugin_mutations();
+        }
+        Ok(())
     }
 
     /// Remove a document by ID with strict tab semantics
@@ -1091,7 +1098,12 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 true
             }
-
+            EditorAction::Reload => {
+                if let Err(e) = self.load_plugins() {
+                    self.state.handle_error(e);
+                }
+                true
+            }
             EditorAction::Save => {
                 self.do_save();
                 true
@@ -4249,7 +4261,10 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::Redraw => {
                 self.state.clear_command_line();
                 if let Err(e) = self.force_full_redraw() { self.state.handle_error(e); }
-            }
+            },
+            ExecutionResult::Reload => {
+                if let Err(e) = self.load_plugins() { self.state.handle_error(e) }
+            },
             ExecutionResult::Edit { path, bangs } => {
                 if let Err(e) = self.open_file(path, bangs > 0) {
                     self.state.handle_error(e);
