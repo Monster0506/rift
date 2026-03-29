@@ -144,6 +144,20 @@ fn parse_redraw(
     ParsedCommand::Redraw { bangs }
 }
 
+fn parse_reload(
+    _registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    if !args.is_empty() {
+        return ParsedCommand::Unknown {
+            name: "reload (usage: :reload)".to_string(),
+            args: vec![],
+        };
+    }
+    ParsedCommand::Reload { bangs }
+}
+
 fn parse_bnext(
     _registry: &SettingsRegistry<UserSettings>,
     _args: &[&str],
@@ -887,6 +901,15 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         aliases: &[],
         description: "Redraw the screen",
         factory: Some(parse_redraw),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "reload",
+        aliases: &[],
+        description: "Reload the plugins",
+        factory: Some(parse_reload),
         subcommands: &[],
         completion: N,
         subcommand_prefix: "",

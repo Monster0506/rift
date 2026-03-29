@@ -46,6 +46,10 @@ pub enum ParsedCommand {
     Redraw {
         bangs: usize,
     },
+    /// Reload the plugins
+    Reload {
+        bangs: usize,
+    },
     /// Edit command (open file)
     Edit {
         path: Option<String>,
