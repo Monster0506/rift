@@ -27,10 +27,25 @@ use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
 use std::sync::Arc;
 
+fn find_repo_root() -> Option<std::path::PathBuf> {
+    if let Ok(exe_path) = std::env::current_exe() {
+        let mut current = exe_path.parent()?;
+        for _ in 0..10 {
+            if current.join("Cargo.toml").exists() {
+                return Some(current.to_path_buf());
+            }
+            current = current.parent()?;
+        }
+    }
+    None
+}
+
 fn plugin_dirs() -> Vec<std::path::PathBuf> {
     let mut dirs = Vec::new();
     if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
         dirs.push(std::path::PathBuf::from(manifest).join("runtime").join("plugins"));
+    } else if let Some(repo_root) = find_repo_root() {
+        dirs.push(repo_root.join("runtime").join("plugins"));
     }
     let user_dir = if cfg!(windows) {
         std::env::var("APPDATA").ok().map(|d| {
