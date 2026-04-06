@@ -560,6 +560,14 @@ fn parse_messages(
     ParsedCommand::Messages { show_all, bangs }
 }
 
+fn parse_clipboard(
+    _registry: &SettingsRegistry<UserSettings>,
+    _args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    ParsedCommand::Clipboard { bangs }
+}
+
 fn parse_terminal(
     _registry: &SettingsRegistry<UserSettings>,
     args: &[&str],
@@ -989,6 +997,15 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         aliases: &["mes"],
         description: "Open messages log buffer",
         factory: Some(parse_messages),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "clipboard",
+        aliases: &["clip"],
+        description: "Open clipboard ring index buffer",
+        factory: Some(parse_clipboard),
         subcommands: &[],
         completion: N,
         subcommand_prefix: "",

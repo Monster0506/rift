@@ -17,6 +17,10 @@ pub enum KeyContext {
     Command,
     Search,
     FileExplorer,
+    /// Clipboard ring index buffer context
+    Clipboard,
+    /// Clipboard entry scratch buffer context
+    ClipboardEntry,
     /// Terminal buffer context — falls through to Insert for passthrough key handling.
     Terminal,
 }
@@ -71,7 +75,7 @@ impl KeyMap {
     /// `Terminal` falls through to `Insert` since it is always in input mode.
     fn parent_context(context: KeyContext) -> Option<KeyContext> {
         match context {
-            KeyContext::FileExplorer | KeyContext::UndoTree => Some(KeyContext::Normal),
+            KeyContext::FileExplorer | KeyContext::UndoTree | KeyContext::Clipboard | KeyContext::ClipboardEntry => Some(KeyContext::Normal),
             KeyContext::Terminal => Some(KeyContext::Insert),
             KeyContext::Normal
             | KeyContext::Insert

@@ -104,6 +104,25 @@ fn set_cmd_window_min_width(
         )),
     }
 }
+fn set_clipboard_size(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Integer(n) => {
+            if n < 1 {
+                return Err(SettingError::ValidationError(
+                    "clipboard.size must be at least 1".to_string(),
+                ));
+            }
+            settings.clipboard_ring_size = n;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError("Expected integer".to_string())),
+    }
+}
+
+fn get_clipboard_size(s: &UserSettings) -> String {
+    s.clipboard_ring_size.to_string()
+}
+
 fn set_poll_rate(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
     match value {
         SettingValue::Integer(n) => {
@@ -459,6 +478,18 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         set: set_show_line_numbers,
         get: None,
         needs_full_redraw: true,
+    },
+    SettingDescriptor {
+        name: "clipboard.size",
+        aliases: &[],
+        description: "Maximum number of entries in the clipboard ring",
+        ty: SettingType::Integer {
+            min: Some(1),
+            max: Some(1000),
+        },
+        set: set_clipboard_size,
+        get: Some(get_clipboard_size),
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "editor.poll_rate",

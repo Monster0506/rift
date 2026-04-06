@@ -119,6 +119,10 @@ pub enum ParsedCommand {
         show_all: bool,
         bangs: usize,
     },
+    /// Open clipboard ring index buffer
+    Clipboard {
+        bangs: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
