@@ -57,6 +57,7 @@ impl LanguageLoader {
             "rb" => "ruby",
             "php" => "php",
             "zig" => "zig",
+            "sql" => "sql",
 
             _ => {
                 return Err(RiftError::new(
@@ -196,7 +197,10 @@ fn get_bundled_language(lang_name: &str) -> Option<(Language, &'static str)> {
             tree_sitter_zig::LANGUAGE.into(),
             tree_sitter_zig::HIGHLIGHTS_QUERY,
         )),
-
+        "sql" => Some((
+            tree_sitter_sequel::LANGUAGE.into(),
+            tree_sitter_sequel::HIGHLIGHTS_QUERY,
+        )),
         _ => None,
     }
 }
