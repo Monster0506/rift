@@ -15,7 +15,6 @@ use crate::buffer::TextBuffer;
 use crate::command::Command;
 use crate::document::Document;
 use crate::error::RiftError;
-use crate::search::{find_next, SearchDirection};
 use crate::wrap::DisplayMap;
 
 /// Calculate the current visual column position on the current line
@@ -38,6 +37,54 @@ fn calculate_current_column(buf: &TextBuffer, tab_width: usize) -> usize {
     col
 }
 
+/// Compute the byte range that a motion-operator pair would affect, without applying it.
+///
+/// Temporarily moves the cursor to simulate the motion, records the resulting
+/// range, then restores the cursor. The document is otherwise not mutated.
+///
+/// Returns `None` if the motion produces an empty range (no movement).
+pub fn compute_motion_range(
+    motion: Motion,
+    count: usize,
+    doc: &mut Document,
+    viewport_height: usize,
+    last_search_query: Option<&str>,
+    tab_width: usize,
+) -> Option<crate::wrap::MotionRange> {
+    use crate::wrap::{MotionRange, OperatorContext};
+
+    let is_linewise = matches!(
+        motion,
+        Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown
+    );
+
+    let anchor = doc.buffer.cursor();
+
+    for _ in 0..count {
+        motion.apply(
+            &mut doc.buffer,
+            None,
+            OperatorContext::Operator,
+            tab_width,
+            viewport_height,
+            last_search_query,
+        );
+    }
+
+    let new_cursor = doc.buffer.cursor();
+    let _ = doc.buffer.set_cursor(anchor);
+
+    if anchor == new_cursor {
+        return None;
+    }
+
+    if is_linewise {
+        Some(MotionRange::linewise(anchor, new_cursor))
+    } else {
+        Some(MotionRange::charwise(anchor, new_cursor))
+    }
+}
+
 /// Execute a command on the editor buffer
 pub fn execute_command(
     cmd: Command,
@@ -56,289 +103,107 @@ pub fn execute_command(
             }
         }
         Command::Delete(motion, count) => {
-            // Check if this is a line-wise motion (Up/Down/PageUp/PageDown)
-            let is_linewise = matches!(
-                motion,
-                Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown
-            );
+            let Some(range) = compute_motion_range(motion, count, doc, viewport_height, last_search_query, tab_width)
+            else {
+                return Ok(());
+            };
 
-            if is_linewise {
-                // Line-wise delete: delete entire lines from current to target
-                // For dj: delete current line + line below (2 lines)
-                // For d16j: delete current line + 16 lines below (17 lines)
-                let start_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+            match range.kind {
+                crate::wrap::RangeKind::Linewise => {
+                    let start_line = doc.buffer.line_index.get_line_at(range.anchor);
+                    let end_line = doc.buffer.line_index.get_line_at(range.new_cursor);
+                    let (first_line, last_line) = if start_line <= end_line {
+                        (start_line, end_line)
+                    } else {
+                        (end_line, start_line)
+                    };
 
-                // Move to find target line
-                for _ in 0..count {
-                    match motion {
-                        Motion::Up => {
-                            doc.buffer.move_up();
+                    let delete_start = doc.buffer.line_index.get_start(first_line).unwrap_or(0);
+                    let delete_end = if last_line + 1 < doc.buffer.get_total_lines() {
+                        doc.buffer
+                            .line_index
+                            .get_start(last_line + 1)
+                            .unwrap_or(doc.buffer.len())
+                    } else {
+                        doc.buffer.len()
+                    };
+
+                    if delete_end > delete_start {
+                        doc.begin_transaction("Delete");
+                        doc.buffer.set_cursor(delete_start)?;
+                        let len = delete_end - delete_start;
+                        for _ in 0..len {
+                            doc.delete_forward();
                         }
-                        Motion::Down => {
-                            doc.buffer.move_down();
-                        }
-                        Motion::PageUp => {
-                            for _ in 0..viewport_height {
-                                doc.buffer.move_up();
-                            }
-                        }
-                        Motion::PageDown => {
-                            for _ in 0..viewport_height {
-                                doc.buffer.move_down();
-                            }
-                        }
-                        _ => {}
+                        doc.commit_transaction();
                     }
                 }
-                let end_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
-
-                // Determine the range of lines to delete
-                let (first_line, last_line) = if start_line <= end_line {
-                    (start_line, end_line)
-                } else {
-                    (end_line, start_line)
-                };
-
-                // Get character positions for the line range
-                let delete_start = doc.buffer.line_index.get_start(first_line).unwrap_or(0);
-                let delete_end = if last_line + 1 < doc.buffer.get_total_lines() {
-                    // Include up to start of next line (to delete the newline)
-                    doc.buffer
-                        .line_index
-                        .get_start(last_line + 1)
-                        .unwrap_or(doc.buffer.len())
-                } else {
-                    // Last line in document - delete to end
-                    doc.buffer.len()
-                };
-
-                if delete_end > delete_start {
-                    doc.begin_transaction("Delete");
-                    doc.buffer.set_cursor(delete_start)?;
-                    let len = delete_end - delete_start;
-                    for _ in 0..len {
-                        doc.delete_forward();
+                crate::wrap::RangeKind::Charwise => {
+                    doc.buffer.set_cursor(range.new_cursor)?;
+                    if range.new_cursor > range.anchor {
+                        let len = range.new_cursor - range.anchor;
+                        doc.begin_transaction("Delete");
+                        for _ in 0..len {
+                            doc.delete_backward();
+                        }
+                        doc.commit_transaction();
+                    } else {
+                        let len = range.anchor - range.new_cursor;
+                        doc.begin_transaction("Delete");
+                        for _ in 0..len {
+                            doc.delete_forward();
+                        }
+                        doc.commit_transaction();
                     }
-                    doc.commit_transaction();
-                }
-            } else {
-                // Character-wise delete: original behavior
-                let start = doc.buffer.cursor();
-                // Perform motion to find end point
-                for _ in 0..count {
-                    match motion {
-                        Motion::Left => {
-                            doc.buffer.move_left();
-                        }
-                        Motion::Right => {
-                            doc.buffer.move_right();
-                        }
-                        Motion::StartOfLine => {
-                            doc.buffer.move_to_line_start();
-                        }
-                        Motion::EndOfLine => {
-                            doc.buffer.move_to_line_end();
-                        }
-                        Motion::StartOfFile => doc.buffer.move_to_start(),
-                        Motion::EndOfFile => doc.buffer.move_to_end(),
-                        Motion::NextWord => {
-                            doc.buffer.move_word_right();
-                        }
-                        Motion::PreviousWord => {
-                            doc.buffer.move_word_left();
-                        }
-                        Motion::NextParagraph => {
-                            doc.buffer.move_paragraph_forward();
-                        }
-                        Motion::PreviousParagraph => {
-                            doc.buffer.move_paragraph_backward();
-                        }
-                        Motion::NextSentence => {
-                            doc.buffer.move_sentence_forward();
-                        }
-                        Motion::PreviousSentence => {
-                            doc.buffer.move_sentence_backward();
-                        }
-                        Motion::NextBigWord => {
-                            doc.buffer.move_word_right();
-                        }
-                        Motion::PreviousBigWord => {
-                            doc.buffer.move_word_left();
-                        }
-                        Motion::NextMatch => {
-                            let buf = &mut doc.buffer;
-                            if let Some(query) = last_search_query {
-                                let search_start = buf.cursor().saturating_add(1);
-                                if let Ok((Some(m), _stats)) =
-                                    find_next(buf, search_start, query, SearchDirection::Forward)
-                                {
-                                    buf.set_cursor(m.range.start)?;
-                                }
-                            }
-                        }
-                        Motion::PreviousMatch => {
-                            let buf = &mut doc.buffer;
-                            if let Some(query) = last_search_query {
-                                if let Ok((Some(m), _stats)) =
-                                    find_next(buf, buf.cursor(), query, SearchDirection::Backward)
-                                {
-                                    buf.set_cursor(m.range.start)?;
-                                }
-                            }
-                        }
-                        // Line-wise motions handled above
-                        Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown => {}
-                    }
-                }
-                let end = doc.buffer.cursor();
-
-                if end > start {
-                    // Forward deletion (e.g. dw)
-                    let len = end - start;
-                    doc.begin_transaction("Delete");
-                    for _ in 0..len {
-                        doc.delete_backward();
-                    }
-                    doc.commit_transaction();
-                } else if end < start {
-                    // Backward deletion (e.g. db)
-                    let len = start - end;
-                    doc.begin_transaction("Delete");
-                    for _ in 0..len {
-                        doc.delete_forward();
-                    }
-                    doc.commit_transaction();
                 }
             }
         }
         Command::Change(motion, count) => {
-            let is_linewise = matches!(
-                motion,
-                Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown
-            );
+            let Some(range) = compute_motion_range(motion, count, doc, viewport_height, last_search_query, tab_width)
+            else {
+                return Ok(());
+            };
 
-            if is_linewise {
-                let start_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
-                for _ in 0..count {
-                    match motion {
-                        Motion::Up => doc.buffer.move_up(),
-                        Motion::Down => doc.buffer.move_down(),
-                        Motion::PageUp => {
-                            for _ in 0..viewport_height {
-                                doc.buffer.move_up();
-                            }
-                            true
-                        }
-                        Motion::PageDown => {
-                            for _ in 0..viewport_height {
-                                doc.buffer.move_down();
-                            }
-                            true
-                        }
-                        _ => false,
+            match range.kind {
+                crate::wrap::RangeKind::Linewise => {
+                    let start_line = doc.buffer.line_index.get_line_at(range.anchor);
+                    let end_line = doc.buffer.line_index.get_line_at(range.new_cursor);
+                    let (first_line, last_line) = if start_line <= end_line {
+                        (start_line, end_line)
+                    } else {
+                        (end_line, start_line)
                     };
-                }
-                let end_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
-                let (first_line, last_line) = if start_line <= end_line {
-                    (start_line, end_line)
-                } else {
-                    (end_line, start_line)
-                };
 
-                let delete_start = doc.buffer.line_index.get_start(first_line).unwrap_or(0);
-                let delete_end = if last_line + 1 < doc.buffer.get_total_lines() {
-                    doc.buffer
-                        .line_index
-                        .get_start(last_line + 1)
-                        .unwrap_or(doc.buffer.len())
-                } else {
-                    doc.buffer.len()
-                };
+                    let delete_start = doc.buffer.line_index.get_start(first_line).unwrap_or(0);
+                    let delete_end = if last_line + 1 < doc.buffer.get_total_lines() {
+                        doc.buffer
+                            .line_index
+                            .get_start(last_line + 1)
+                            .unwrap_or(doc.buffer.len())
+                    } else {
+                        doc.buffer.len()
+                    };
 
-                if delete_end > delete_start {
-                    doc.buffer.set_cursor(delete_start)?;
-                    let len = delete_end - delete_start;
-                    for _ in 0..len {
-                        doc.delete_forward();
+                    if delete_end > delete_start {
+                        doc.buffer.set_cursor(delete_start)?;
+                        let len = delete_end - delete_start;
+                        for _ in 0..len {
+                            doc.delete_forward();
+                        }
                     }
                 }
-            } else {
-                let start = doc.buffer.cursor();
-                for _ in 0..count {
-                    match motion {
-                        Motion::Left => {
-                            doc.buffer.move_left();
+                crate::wrap::RangeKind::Charwise => {
+                    doc.buffer.set_cursor(range.new_cursor)?;
+                    if range.new_cursor > range.anchor {
+                        let len = range.new_cursor - range.anchor;
+                        for _ in 0..len {
+                            doc.delete_backward();
                         }
-                        Motion::Right => {
-                            doc.buffer.move_right();
+                    } else {
+                        let len = range.anchor - range.new_cursor;
+                        for _ in 0..len {
+                            doc.delete_forward();
                         }
-                        Motion::StartOfLine => {
-                            doc.buffer.move_to_line_start();
-                        }
-                        Motion::EndOfLine => {
-                            doc.buffer.move_to_line_end();
-                        }
-                        Motion::StartOfFile => doc.buffer.move_to_start(),
-                        Motion::EndOfFile => doc.buffer.move_to_end(),
-                        Motion::NextWord => {
-                            doc.buffer.move_word_end();
-                        }
-                        Motion::PreviousWord => {
-                            doc.buffer.move_word_left();
-                        }
-                        Motion::NextParagraph => {
-                            doc.buffer.move_paragraph_forward();
-                        }
-                        Motion::PreviousParagraph => {
-                            doc.buffer.move_paragraph_backward();
-                        }
-                        Motion::NextSentence => {
-                            doc.buffer.move_sentence_forward();
-                        }
-                        Motion::PreviousSentence => {
-                            doc.buffer.move_sentence_backward();
-                        }
-                        Motion::NextBigWord => {
-                            doc.buffer.move_word_end();
-                        }
-                        Motion::PreviousBigWord => {
-                            doc.buffer.move_word_left();
-                        }
-                        Motion::NextMatch => {
-                            let buf = &mut doc.buffer;
-                            if let Some(query) = last_search_query {
-                                let search_start = buf.cursor().saturating_add(1);
-                                if let Ok((Some(m), _stats)) =
-                                    find_next(buf, search_start, query, SearchDirection::Forward)
-                                {
-                                    buf.set_cursor(m.range.start)?;
-                                }
-                            }
-                        }
-                        Motion::PreviousMatch => {
-                            let buf = &mut doc.buffer;
-                            if let Some(query) = last_search_query {
-                                if let Ok((Some(m), _stats)) =
-                                    find_next(buf, buf.cursor(), query, SearchDirection::Backward)
-                                {
-                                    buf.set_cursor(m.range.start)?;
-                                }
-                            }
-                        }
-                        Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown => {}
-                    }
-                }
-                let end = doc.buffer.cursor();
-
-                if end > start {
-                    let len = end - start;
-                    for _ in 0..len {
-                        doc.delete_backward();
-                    }
-                } else if end < start {
-                    let len = start - end;
-                    for _ in 0..len {
-                        doc.delete_forward();
                     }
                 }
             }

@@ -3,7 +3,7 @@ use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Character {
-    /// A Unicode scalar value
+   /// A Unicode scalar value
     Unicode(char),
 
     /// A raw byte that is not valid UTF-8
@@ -28,10 +28,11 @@ impl Character {
             Character::Tab => write!(out, "\t"),
             Character::Newline => writeln!(out),
             Character::Control(b) => {
-                // Control chars are usually 0x00-0x1F. We map them to ^@, ^A, etc.
-                // 0 -> @ (64)
-                // 1 -> A (65)
-                write!(out, "^{}", (b + 64) as char)
+                if *b == b'\r' {
+                    write!(out, "\\n")
+                } else {
+                    write!(out, "^{}", (b + 64) as char)
+                }
             }
         }
     }

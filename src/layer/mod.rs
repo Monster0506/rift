@@ -555,12 +555,16 @@ impl LayerCompositor {
 
         // Process each dirty rect
         for rect in dirty_rects {
+            let start_row = rect.start_row.saturating_sub(2);
+            let start_col = rect.start_col.saturating_sub(2);
+            let end_row = (rect.end_row + 2).min(self.rows.saturating_sub(1));
+            let end_col = (rect.end_col + 2).min(self.cols.saturating_sub(1));
             // Iterate over every pixel in the dirty rect
-            for r in rect.start_row..=rect.end_row {
+            for r in start_row..=end_row {
                 if r >= self.rows {
                     continue;
                 }
-                for c in rect.start_col..=rect.end_col {
+                for c in start_col..=end_col {
                     if c >= self.cols {
                         continue;
                     }

@@ -225,6 +225,13 @@ pub enum EditorAction {
     NotificationClearAll,
     /// Invoke a registered plugin action by ID.
     PluginAction(String),
+    /// Paste from the clipboard ring (p = after cursor, P = before)
+    Put { before: bool },
+    /// Cycle through clipboard ring entries, replacing the last paste.
+    /// `forward` = true advances to older entries (C-n), false goes back (C-p).
+    CyclePaste { forward: bool },
+    /// Paste directly from the system clipboard
+    PutSystemClipboard { before: bool },
 }
 
 /// Represents an action in the editor

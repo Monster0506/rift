@@ -4,6 +4,7 @@
 pub mod perf;
 
 pub mod action;
+pub mod clipboard;
 pub mod plugin;
 pub mod buffer;
 pub mod eval;

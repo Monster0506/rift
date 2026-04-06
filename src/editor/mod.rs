@@ -15,6 +15,7 @@ use crate::document::{Document, DocumentId};
 use crate::dot_repeat::{DotRegister, DotRepeat};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::executor::execute_command;
+use arboard;
 use crate::key_handler::KeyAction;
 use crate::keymap::KeyMap;
 
@@ -103,6 +104,21 @@ pub struct Editor<T: TerminalBackend> {
     last_notification_generation: u64,
     /// Plugin host — dispatches editor events to registered plugin handlers.
     pub plugin_host: crate::plugin::PluginHost,
+    /// Clipboard ring buffer — stores yanked/deleted text, capacity 10.
+    pub clipboard_ring: crate::clipboard::ClipboardRing,
+    /// Tracks the active paste so <C-n> can cycle to the next ring entry.
+    post_paste_state: Option<PostPasteState>,
+}
+
+/// State retained between a `Put` and a `CyclePaste` action.
+#[derive(Debug, Clone)]
+struct PostPasteState {
+    /// Which ring index is currently pasted.
+    ring_index: usize,
+    /// Whether the paste was before the cursor (`P`) or after (`p`).
+    before: bool,
+    /// Cursor position before the paste, so cycling can restore it after undo.
+    original_cursor: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -211,6 +227,8 @@ impl<T: TerminalBackend> Editor<T> {
             last_notification_generation: 0,
             // 25 idle polls × 16 ms ≈ 400 ms before CursorHold fires.
             plugin_host: crate::plugin::PluginHost::new(25),
+            clipboard_ring: crate::clipboard::ClipboardRing::new(),
+            post_paste_state: None,
         };
 
         // Register default keymaps
@@ -955,6 +973,11 @@ impl<T: TerminalBackend> Editor<T> {
             Action::Noop => return false,
         };
 
+        // Clear post-paste cycling state on any action except CyclePaste itself.
+        if !matches!(editor_action, EditorAction::CyclePaste { .. }) {
+            self.post_paste_state = None;
+        }
+
         match editor_action {
             EditorAction::Move(motion) => {
                 if self.current_mode == Mode::OperatorPending {
@@ -1055,6 +1078,27 @@ impl<T: TerminalBackend> Editor<T> {
                     if *motion == crate::action::Motion::PreviousWord {
                         self.state.delete_word_back_command_line();
                         return true;
+                    }
+                }
+                // Capture deleted text to ring in Normal mode (x / X).
+                if self.current_mode == Mode::Normal {
+                    let viewport_height = self.render_system.viewport.visible_rows();
+                    let last_search_query = self.state.last_search_query.clone();
+                    let captured =
+                        self.document_manager.active_document_mut().and_then(|doc| {
+                            let tab_width = doc.options.tab_width;
+                            crate::executor::compute_motion_range(
+                                *motion,
+                                1,
+                                doc,
+                                viewport_height,
+                                last_search_query.as_deref(),
+                                tab_width,
+                            )
+                            .map(|range| crate::clipboard::capture_text(&doc.buffer, &range))
+                        });
+                    if let Some(text) = captured.filter(|s| !s.is_empty()) {
+                        self.clipboard_ring.push(text);
                     }
                 }
                 let command = crate::command::Command::Delete(*motion, 1);
@@ -1301,7 +1345,154 @@ impl<T: TerminalBackend> Editor<T> {
                 self.apply_plugin_mutations();
                 true
             }
+
+            EditorAction::Put { before } => {
+                if let Some(text) = self.clipboard_ring.most_recent().map(|s| s.to_owned()) {
+                    let original_cursor = self
+                        .document_manager
+                        .active_document()
+                        .map(|d| d.buffer.cursor())
+                        .unwrap_or(0);
+                    let result = self.insert_text_at_cursor(&text, *before);
+                    if result {
+                        self.post_paste_state = Some(PostPasteState {
+                            ring_index: 0,
+                            before: *before,
+                            original_cursor,
+                        });
+                    }
+                    result
+                } else {
+                    false
+                }
+            }
+
+            EditorAction::CyclePaste { forward } => {
+                if let Some(state) = self.post_paste_state.take() {
+                    let len = self.clipboard_ring.len().max(1);
+                    let next = if *forward {
+                        (state.ring_index + 1) % len
+                    } else {
+                        (state.ring_index + len - 1) % len
+                    };
+                    if let Some(text) = self.clipboard_ring.get(next).map(|s| s.to_owned()) {
+                        if let Some(doc) = self.document_manager.active_document_mut() {
+                            doc.undo();
+                            // Restore cursor to where it was before the original paste so
+                            // insert_text_at_cursor starts from the same position each cycle.
+                            let _ = doc.buffer.set_cursor(state.original_cursor);
+                        }
+                        let result = self.insert_text_at_cursor(&text, state.before);
+                        if result {
+                            self.post_paste_state = Some(PostPasteState {
+                                ring_index: next,
+                                before: state.before,
+                                original_cursor: state.original_cursor,
+                            });
+                        }
+                        result
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+
+            EditorAction::PutSystemClipboard { before } => {
+                let text = arboard::Clipboard::new()
+                    .ok()
+                    .and_then(|mut cb| cb.get_text().ok());
+                if let Some(text) = text {
+                    self.insert_text_at_cursor(&text, *before)
+                } else {
+                    false
+                }
+            }
         }
+    }
+
+    /// Insert `text` at the cursor position.
+    ///
+    /// Linewise text (ends with `\n`) is handled specially:
+    /// - `before = false` (`p`): inserts at the start of the next line (below)
+    /// - `before = true`  (`P`): inserts at the start of the current line (above)
+    ///
+    /// Charwise text: `before = false` advances the cursor one position first.
+    fn insert_text_at_cursor(&mut self, text: &str, before: bool) -> bool {
+        let is_linewise = text.ends_with('\n');
+
+        let Some(doc) = self.document_manager.active_document_mut() else {
+            return false;
+        };
+
+        // Track whether we need to prepend a newline (last-line edge case).
+        let mut needs_leading_newline = false;
+
+        if is_linewise {
+            if before {
+                // P: insert above → start of current line
+                doc.buffer.move_to_line_start();
+            } else {
+                // p: insert below → start of next line
+                let line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+                let total = doc.buffer.get_total_lines();
+                if line + 1 < total {
+                    let next = doc
+                        .buffer
+                        .line_index
+                        .get_start(line + 1)
+                        .unwrap_or(doc.buffer.len());
+                    let _ = doc.buffer.set_cursor(next);
+                } else {
+                    // Last line has no trailing newline — go to end and prepend one.
+                    doc.buffer.move_to_end();
+                    needs_leading_newline = true;
+                }
+            }
+        } else if !before {
+            doc.buffer.move_right();
+        }
+
+        // For linewise paste, remember where the pasted line starts so we can
+        // land the cursor there after the transaction (not at the end of the insert).
+        let linewise_start = if is_linewise {
+            if needs_leading_newline {
+                // The pasted content starts one char after the prepended \n.
+                Some(doc.buffer.cursor() + 1)
+            } else {
+                Some(doc.buffer.cursor())
+            }
+        } else {
+            None
+        };
+
+        doc.begin_transaction("Put");
+        if needs_leading_newline {
+            // Insert "\n" then the text content without its own trailing newline.
+            if doc.insert_char('\n').is_ok() {
+                for ch in text.trim_end_matches('\n').chars() {
+                    if doc.insert_char(ch).is_err() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            for ch in text.chars() {
+                if doc.insert_char(ch).is_err() {
+                    break;
+                }
+            }
+        }
+        doc.commit_transaction();
+
+        // Place cursor at the start of the pasted line, not at the end of the insert.
+        if let Some(start) = linewise_start {
+            let _ = doc.buffer.set_cursor(start);
+        }
+
+        self.do_incremental_syntax_parse();
+        true
     }
 
     fn handle_directory_buffer_action(&mut self, id: &str) {
@@ -2562,12 +2753,45 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.render_plugin_float();
 
+        // Populate the TOOLTIP layer before the main render so it's included
+        // in the same compositor flush.
+        if self.post_paste_state.is_some() {
+            self.render_clipboard_tooltip();
+        } else {
+            self.render_system
+                .compositor
+                .clear_layer(crate::layer::LayerPriority::TOOLTIP);
+        }
+
         if self.split_tree.window_count() > 1 {
             self.update_window_viewports();
             self.render_multi_window(needs_clear)
         } else {
             self.render(needs_clear, display_map.as_ref())
         }
+    }
+
+    /// Render the clipboard ring tooltip to the TOOLTIP layer.
+    fn render_clipboard_tooltip(&mut self) {
+        let selected = self
+            .post_paste_state
+            .as_ref()
+            .map(|s| s.ring_index)
+            .unwrap_or(0);
+        let editor_fg = self.state.settings.editor_fg;
+        let editor_bg = self.state.settings.editor_bg;
+        let layer = self
+            .render_system
+            .compositor
+            .get_layer_mut(crate::layer::LayerPriority::TOOLTIP);
+        layer.clear();
+        crate::clipboard::ClipboardTooltip::render(
+            &self.clipboard_ring,
+            selected,
+            layer,
+            editor_fg,
+            editor_bg,
+        );
     }
 
     /// Render the editor interface (pure read - no mutations)
@@ -3676,6 +3900,25 @@ impl<T: TerminalBackend> Editor<T> {
         self.pending_operator = None;
         self.pending_count = 0;
 
+        // Capture text to ring before any destructive operation, and for yank.
+        let viewport_height = self.render_system.viewport.visible_rows();
+        let last_search_query = self.state.last_search_query.clone();
+        let captured = self.document_manager.active_document_mut().and_then(|doc| {
+            let tab_width = doc.options.tab_width;
+            crate::executor::compute_motion_range(
+                motion,
+                count,
+                doc,
+                viewport_height,
+                last_search_query.as_deref(),
+                tab_width,
+            )
+            .map(|range| crate::clipboard::capture_text(&doc.buffer, &range))
+        });
+        if let Some(text) = captured.filter(|s| !s.is_empty()) {
+            self.clipboard_ring.push(text);
+        }
+
         match op {
             crate::action::OperatorType::Delete => {
                 let command = crate::command::Command::Delete(motion, count);
@@ -3700,15 +3943,25 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Insert);
                 true
             }
-            _ => {
+            crate::action::OperatorType::Yank => {
+                // Text already captured above; just return to Normal.
                 self.set_mode(Mode::Normal);
-                false
+                true
             }
         }
     }
 
     fn execute_operator_linewise(&mut self, op: crate::action::OperatorType) -> bool {
         self.pending_operator = None;
+
+        // Capture current line text for all operators.
+        let captured = self
+            .document_manager
+            .active_document()
+            .map(|doc| crate::clipboard::capture_current_line(&doc.buffer));
+        if let Some(text) = captured.filter(|s| !s.is_empty()) {
+            self.clipboard_ring.push(text);
+        }
 
         match op {
             crate::action::OperatorType::Delete => {
@@ -3734,9 +3987,10 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Insert);
                 true
             }
-            _ => {
+            crate::action::OperatorType::Yank => {
+                // Text already captured above; just return to Normal.
                 self.set_mode(Mode::Normal);
-                false
+                true
             }
         }
     }

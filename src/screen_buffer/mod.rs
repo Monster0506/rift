@@ -10,8 +10,17 @@
 //! - First frame always produces a full-screen diff
 //! - Resize operations force a full redraw on next diff
 
+use crate::character::Character;
 use crate::color::Color;
 use crate::layer::{Cell, Rect};
+
+fn cell_visual_width(cell: &Cell) -> usize {
+    match &cell.content {
+        Character::Control(_) => 2,
+        Character::Byte(_) => 4,
+        _ => 1,
+    }
+}
 
 /// Statistics about a rendered frame
 #[derive(Debug, Clone, Default)]
@@ -299,7 +308,19 @@ impl DoubleBuffer {
                 let idx = row_start_idx + col_idx;
                 let curr = &self.current[idx];
                 let prev = &self.previous[idx];
-                let changed = self.force_full_redraw || curr != prev;
+                let mut changed = self.force_full_redraw || curr != prev;
+
+                // Force-include the tail column of any multi-column character
+                // (e.g. the padding space after ^M) so stale terminal output
+                // from the previous render is overwritten.
+                if !changed && col_idx > start_col {
+                    let prev_idx = row_start_idx + col_idx - 1;
+                    if cell_visual_width(&self.previous[prev_idx]) > 1
+                        || cell_visual_width(&self.current[prev_idx]) > 1
+                    {
+                        changed = true;
+                    }
+                }
 
                 if changed {
                     stats.changed_cells += 1;
@@ -444,9 +465,11 @@ impl DoubleBuffer {
             return Ok(());
         }
 
+        let mut terminal_col = batch.start_col;
+
         // Move cursor if not already at the right position
         let need_move = match last_cursor_pos {
-            Some((last_row, last_col)) => *last_row != batch.row || *last_col != batch.start_col,
+            Some((last_row, last_col)) => *last_row != batch.row || *last_col != terminal_col,
             None => true,
         };
 
@@ -459,7 +482,7 @@ impl DoubleBuffer {
         // Commands buffer for color changes
         let mut cmd_buf = Vec::new();
 
-        for (i, cell) in batch.cells.iter().enumerate() {
+        for cell in batch.cells.iter() {
             // Check if we need to change colors
             if cell.fg != *current_fg || cell.bg != *current_bg {
                 // Flush current text output before color change
@@ -500,13 +523,12 @@ impl DoubleBuffer {
             }
 
             // Render Character to string buffer
-            // We use cell.content.render(&mut output)
             cell.content
                 .render(&mut output)
                 .map_err(|e| format!("Failed to render character: {e}"))?;
 
-            // Update last cursor position
-            *last_cursor_pos = Some((batch.row, batch.start_col + i + 1));
+            terminal_col += cell_visual_width(cell);
+            *last_cursor_pos = Some((batch.row, terminal_col));
         }
 
         // Flush remaining output
