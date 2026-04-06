@@ -22,6 +22,8 @@ pub enum ExecutionResult {
     Failure,
     /// Force a full redraw
     Redraw,
+    /// Reload the plugins
+    Reload,
     /// Edit command - editor should open the specified file
     Edit {
         path: Option<String>,
@@ -90,6 +92,7 @@ impl PartialEq for ExecutionResult {
             (Self::WriteAndQuit, Self::WriteAndQuit) => true,
             (Self::Failure, Self::Failure) => true,
             (Self::Redraw, Self::Redraw) => true,
+            (Self::Reload, Self::Reload) => true,
             (
                 Self::Edit {
                     path: p1,
@@ -140,6 +143,7 @@ impl std::fmt::Debug for ExecutionResult {
             Self::WriteAndQuit => write!(f, "WriteAndQuit"),
             Self::Failure => write!(f, "Failure"),
             Self::Redraw => write!(f, "Redraw"),
+            Self::Reload => write!(f, "Reload"),
             Self::Edit { path, bangs } => f
                 .debug_struct("Edit")
                 .field("path", path)
@@ -263,6 +267,8 @@ impl CommandExecutor {
                 ExecutionResult::Failure
             }
             ParsedCommand::Redraw { bangs: _ } => ExecutionResult::Redraw,
+
+            ParsedCommand::Reload { bangs: _ } => ExecutionResult::Reload,
 
             ParsedCommand::Notify {
                 kind,

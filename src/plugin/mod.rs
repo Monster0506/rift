@@ -385,6 +385,8 @@ impl PluginHost {
     /// Initialize the Lua VM. Must be called once at startup.
     /// Returns any error string if Lua initialization fails.
     pub fn init_lua(&mut self) -> Option<String> {
+        if let Some(host) = self.lua.take() { drop(host) }
+
         match lua_host::LuaHost::new() {
             Ok(host) => {
                 self.lua = Some(host);
