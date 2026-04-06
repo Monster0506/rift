@@ -736,6 +736,7 @@ dependencies = [
  "tree-sitter-python",
  "tree-sitter-ruby",
  "tree-sitter-rust",
+ "tree-sitter-sequel",
  "tree-sitter-typescript",
  "tree-sitter-yaml",
  "tree-sitter-zig",
@@ -862,7 +863,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1502,6 +1503,16 @@ name = "tree-sitter-rust"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b9b18034c684a2420722be8b2a91c9c44f2546b631c039edf575ccba8c61be1"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-sequel"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d198ad3c319c02e43c21efa1ec796b837afcb96ffaef1a40c1978fbdcec7d17"
 dependencies = [
  "cc",
  "tree-sitter-language",
