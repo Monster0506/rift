@@ -4785,13 +4785,9 @@ impl<T: TerminalBackend> Editor<T> {
                                 syntax.update_from_result(*result);
                             }
                         }
-                        // In multi-window mode we must re-render all windows so that
-                        // secondary panes (e.g. explorer preview) get their highlights updated.
-                        if self.split_tree.window_count() > 1 {
-                            self.update_and_render()?;
-                        } else {
-                            self.render(false, None)?;
-                        }
+                        // Re-render after syntax update; always use update_and_render so that
+                        // the display map (soft-wrap) is rebuilt correctly.
+                        self.update_and_render()?;
                     }
                     Err(any_payload) => {
                         // Try CompletionPayload
