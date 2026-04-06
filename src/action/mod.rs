@@ -189,6 +189,7 @@ pub enum EditorAction {
     OpenExplorer,
     OpenUndoTree,
     OpenMessages,
+    OpenClipboard,
     ShowBufferList,
     ClearHighlights,
     ClearNotifications,
@@ -307,6 +308,7 @@ impl FromStr for Action {
             "undotree:open" => Ok(Action::Editor(EditorAction::OpenUndoTree)),
             "terminal:open" => Ok(Action::Editor(EditorAction::OpenTerminal(None))),
             "messages:open" => Ok(Action::Editor(EditorAction::OpenMessages)),
+            "clipboard:open" => Ok(Action::Editor(EditorAction::OpenClipboard)),
 
             // Editor-only actions
             "editor:delete_line" => Ok(Action::Editor(EditorAction::DeleteLine)),

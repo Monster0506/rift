@@ -5,7 +5,7 @@
 //! - `ClipboardRing` is pure storage with no UI coupling.
 //! - `ClipboardTooltip` is a pure renderer; it owns no state.
 //! - The ring always stores the most recent entry at index 0.
-//! - Capacity is fixed at 10 entries.
+//! - Default capacity is 10; adjustable via `clipboard.size` setting.
 
 use std::collections::VecDeque;
 
@@ -15,13 +15,14 @@ use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
 use crate::layer::{Cell, Layer};
 use crate::wrap::{MotionRange, RangeKind};
 
-const RING_CAPACITY: usize = 10;
+pub const DEFAULT_RING_CAPACITY: usize = 10;
 const TOOLTIP_MAX_WIDTH: usize = 42;
 
 // ─── Ring ────────────────────────────────────────────────────────────────────
 
 pub struct ClipboardRing {
     entries: VecDeque<String>,
+    capacity: usize,
 }
 
 impl Default for ClipboardRing {
@@ -33,7 +34,8 @@ impl Default for ClipboardRing {
 impl ClipboardRing {
     pub fn new() -> Self {
         Self {
-            entries: VecDeque::with_capacity(RING_CAPACITY),
+            entries: VecDeque::with_capacity(DEFAULT_RING_CAPACITY),
+            capacity: DEFAULT_RING_CAPACITY,
         }
     }
 
@@ -44,9 +46,22 @@ impl ClipboardRing {
             return;
         }
         self.entries.push_front(text);
-        if self.entries.len() > RING_CAPACITY {
+        while self.entries.len() > self.capacity {
             self.entries.pop_back();
         }
+    }
+
+    /// Update the ring capacity, trimming oldest entries if needed.
+    pub fn set_capacity(&mut self, new_capacity: usize) {
+        let cap = new_capacity.max(1);
+        self.capacity = cap;
+        while self.entries.len() > cap {
+            self.entries.pop_back();
+        }
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.capacity
     }
 
     pub fn get(&self, index: usize) -> Option<&str> {
