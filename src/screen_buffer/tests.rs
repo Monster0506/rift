@@ -376,3 +376,81 @@ fn test_double_buffer_dirty_rect_expansion() {
     assert!(contents.contains(&'A'));
     assert!(contents.contains(&'Z'));
 }
+
+#[test]
+fn test_control_char_tail_included_when_control_changes() {
+    let mut buffer = DoubleBuffer::new(3, 10);
+
+    buffer.set_cell(1, 5, Cell::new(Character::Control(13)));
+    buffer.set_cell(1, 6, Cell::from_char(' '));
+    buffer.swap();
+
+    buffer.set_cell(1, 5, Cell::from_char('x'));
+    buffer.set_cell(1, 6, Cell::from_char(' '));
+
+    let (batches, _stats) = buffer.get_batched_changes();
+
+    let covered_cols: Vec<usize> = batches
+        .iter()
+        .filter(|b| b.row == 1)
+        .flat_map(|b| b.start_col..b.start_col + b.cells.len())
+        .collect();
+
+    assert!(covered_cols.contains(&5));
+    assert!(covered_cols.contains(&6), "tail of previous \\n must be force-included");
+}
+
+#[test]
+fn test_control_char_tail_included_when_control_introduced() {
+    let mut buffer = DoubleBuffer::new(3, 10);
+
+    buffer.set_cell(1, 5, Cell::from_char('a'));
+    buffer.set_cell(1, 6, Cell::from_char('b'));
+    buffer.swap();
+
+    buffer.set_cell(1, 5, Cell::new(Character::Control(13)));
+    buffer.set_cell(1, 6, Cell::from_char(' '));
+
+    let (batches, _stats) = buffer.get_batched_changes();
+
+    let covered_cols: Vec<usize> = batches
+        .iter()
+        .filter(|b| b.row == 1)
+        .flat_map(|b| b.start_col..b.start_col + b.cells.len())
+        .collect();
+
+    assert!(covered_cols.contains(&5));
+    assert!(covered_cols.contains(&6));
+}
+
+#[test]
+fn test_cell_visual_width_values() {
+    assert_eq!(cell_visual_width(&Cell::new(Character::Control(1))), 2);
+    assert_eq!(cell_visual_width(&Cell::new(Character::Byte(0xAB))), 4);
+    assert_eq!(cell_visual_width(&Cell::from_char('A')), 1);
+}
+
+#[test]
+fn test_control_char_cursor_tracking_after_render() {
+    use crate::test_utils::MockTerminal;
+
+    let mut buffer = DoubleBuffer::new(3, 20);
+
+    buffer.set_cell(0, 0, Cell::from_char('a'));
+    buffer.swap();
+
+    buffer.set_cell(0, 0, Cell::new(Character::Control(13)));
+    buffer.set_cell(0, 1, Cell::from_char(' ')); // tail
+    buffer.set_cell(0, 2, Cell::from_char('z'));
+
+    let mut term = MockTerminal::new(3, 20);
+    buffer.render_to_terminal(&mut term).expect("render failed");
+
+    let out = term.get_written_string();
+    assert!(out.contains("\\n"), "output must contain \\n; got: {out:?}");
+    assert!(out.contains('z'), "output must contain z; got: {out:?}");
+
+    // All three cells land in the same run, so at most one cursor move on row 0.
+    let row0_moves = term.cursor_moves.iter().filter(|&&(r, _)| r == 0).count();
+    assert!(row0_moves <= 1, "expected ≤1 cursor move on row 0, got {row0_moves}");
+}

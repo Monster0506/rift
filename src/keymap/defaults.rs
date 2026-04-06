@@ -576,4 +576,36 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         vec![Key::Char(' '), Key::Char('p'), Key::Char('i')],
         Action::Editor(EditorAction::PluginAction("demo:insert".to_string())),
     );
+
+    // Clipboard ring
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('p'),
+        Action::Editor(EditorAction::Put { before: false }),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('P'),
+        Action::Editor(EditorAction::Put { before: true }),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Ctrl(b'n'),
+        Action::Editor(EditorAction::CyclePaste { forward: true }),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Ctrl(b'p'),
+        Action::Editor(EditorAction::CyclePaste { forward: false }),
+    );
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char('g'), Key::Char('p')],
+        Action::Editor(EditorAction::PutSystemClipboard { before: false }),
+    );
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char('g'), Key::Char('P')],
+        Action::Editor(EditorAction::PutSystemClipboard { before: true }),
+    );
 }
