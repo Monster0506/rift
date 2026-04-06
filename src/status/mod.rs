@@ -166,6 +166,7 @@ impl StatusBar {
                 }
             }
             Key::Ctrl(ch) => format!("Ctrl+{}", (ch as char).to_uppercase()),
+            Key::Alt(ch) => format!("Alt+{}", (ch as char).to_uppercase()),
             Key::ArrowUp => "Up".to_string(),
             Key::ArrowDown => "Down".to_string(),
             Key::ArrowLeft => "Left".to_string(),
