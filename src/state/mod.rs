@@ -103,6 +103,8 @@ pub struct UserSettings {
     pub soft_wrap: bool,
     /// Fixed wrap column; None means use the terminal content width
     pub wrap_width: Option<usize>,
+    /// Maximum number of entries in the clipboard ring
+    pub clipboard_ring_size: usize,
 }
 
 impl UserSettings {
@@ -123,6 +125,7 @@ impl UserSettings {
             syntax_colors: None,
             soft_wrap: true,
             wrap_width: None,
+            clipboard_ring_size: crate::clipboard::DEFAULT_RING_CAPACITY,
         };
 
         // Apply default Dark theme

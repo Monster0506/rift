@@ -7,6 +7,8 @@ pub enum Key {
     Char(char),
     /// Control key combination (e.g., Ctrl+A)
     Ctrl(u8),
+    /// Alt key combination (e.g., Alt+A)
+    Alt(u8),
     /// Arrow keys
     ArrowUp,
     ArrowDown,
@@ -53,6 +55,9 @@ impl Key {
             // Ctrl+key → mask to control range (0x00–0x1F)
             Key::Ctrl(c) => vec![c & 0x1f],
 
+            // Alt+key → ESC prefix followed by the character
+            Key::Alt(c) => vec![0x1b, *c],
+
             // Single-byte control characters
             Key::Backspace => vec![0x7f],
             Key::Enter => vec![b'\r'],
@@ -89,7 +94,7 @@ impl Key {
 
 /// Parse a vim-notation key sequence string into a list of `Key`s.
 /// Supports `<Esc>`, `<CR>`, `<BS>`, `<Tab>`, `<Up>`, `<Down>`, `<Left>`, `<Right>`,
-/// `<Home>`, `<End>`, `<PageUp>`, `<PageDown>`, `<Del>`, `<C-x>`, and bare characters.
+/// `<Home>`, `<End>`, `<PageUp>`, `<PageDown>`, `<Del>`, `<C-x>`, `<A-x>`, and bare characters.
 /// Returns `None` if any token is unrecognised.
 pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
     let mut keys = Vec::new();
@@ -136,6 +141,9 @@ pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
             } else if low.starts_with("c-") && low.len() == 3 {
                 let ch = low.chars().nth(2)?;
                 Key::Ctrl(ch as u8)
+            } else if low.starts_with("a-") && low.len() == 3 {
+                let ch = token.chars().nth(2)?;
+                Key::Alt(ch as u8)
             } else {
                 return None;
             };

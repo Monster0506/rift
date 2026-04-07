@@ -43,6 +43,35 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Buffer("undotree:close".to_string()),
     );
 
+    // Clipboard index buffer Defaults
+    keymap.register(
+        KeyContext::Clipboard,
+        Key::Enter,
+        Action::Buffer("clipboard:select".to_string()),
+    );
+    keymap.register(
+        KeyContext::Clipboard,
+        Key::Escape,
+        Action::Buffer("clipboard:close".to_string()),
+    );
+    keymap.register(
+        KeyContext::Clipboard,
+        Key::Char('n'),
+        Action::Buffer("clipboard:new".to_string()),
+    );
+    keymap.register(
+        KeyContext::Clipboard,
+        Key::Char('r'),
+        Action::Buffer("clipboard:refresh".to_string()),
+    );
+
+    // ClipboardEntry scratch buffer — Escape returns focus to index pane
+    keymap.register(
+        KeyContext::ClipboardEntry,
+        Key::Escape,
+        Action::Buffer("clipboard:entry:close".to_string()),
+    );
+
     // Normal Mode Defaults
     // '-' opens the file-explorer buffer for the current file's parent directory
     keymap.register(

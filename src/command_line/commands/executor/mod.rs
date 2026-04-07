@@ -75,6 +75,8 @@ pub enum ExecutionResult {
     OpenMessages {
         show_all: bool,
     },
+    /// Open the clipboard ring index buffer
+    OpenClipboard,
     /// An unknown command that may be handled by a plugin.
     /// The editor checks the plugin host before reporting an error.
     PluginCommand {
@@ -115,6 +117,7 @@ impl PartialEq for ExecutionResult {
             (Self::Checkpoint, Self::Checkpoint) => true,
             (Self::OpenUndoTree, Self::OpenUndoTree) => true,
             (Self::OpenMessages { show_all: a }, Self::OpenMessages { show_all: b }) => a == b,
+            (Self::OpenClipboard, Self::OpenClipboard) => true,
             (Self::OpenDirectory { path: p1 }, Self::OpenDirectory { path: p2 }) => p1 == p2,
             (
                 Self::OpenTerminal { cmd: c1, bangs: b1 },
@@ -184,6 +187,7 @@ impl std::fmt::Debug for ExecutionResult {
                 .finish(),
             Self::OpenUndoTree => write!(f, "OpenUndoTree"),
             Self::OpenMessages { show_all } => write!(f, "OpenMessages({show_all})"),
+            Self::OpenClipboard => write!(f, "OpenClipboard"),
             Self::PluginCommand { name, args } => {
                 f.debug_struct("PluginCommand").field("name", name).field("args", args).finish()
             }
@@ -448,6 +452,7 @@ impl CommandExecutor {
             }
             ParsedCommand::UndoTree { bangs: _ } => ExecutionResult::OpenUndoTree,
             ParsedCommand::Messages { show_all, bangs: _ } => ExecutionResult::OpenMessages { show_all },
+            ParsedCommand::Clipboard { bangs: _ } => ExecutionResult::OpenClipboard,
             ParsedCommand::Split {
                 subcommand,
                 bangs: _,

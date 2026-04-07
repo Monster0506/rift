@@ -6,6 +6,10 @@ I use this daily and primarily.
 
 ## Implemented:
 - Quite a lot more than the below items, I just haven't updated this in a while due to actually working on it.
+- Clipboard ring buffer with multi-entry history (configurable size via `clipboard.size`)
+- System clipboard integration (read/write via arboard, shown in clipboard tooltip)
+- `clipboard.size` setting and `:clipboard` command to view ring
+- `:luareload` command to reload plugins without restarting
 - Plugin system (Lua, with user-defined events)
 - CLI args: `-v`/`--version`, `+N` jump to line, `+` jump to last line, `+/pattern` search on open, `-c cmd` run ex command on open
 - `o` / `O` to open a new line below/above in normal mode
@@ -121,3 +125,5 @@ Known issues:
 - notification padding wrong
 - cursor does not move after typing a space in the terminal
 - input boxes for file explorer not accepting input
+- split rendering and navigation fixes
+- clipboard tooltip not showing system clipboard on Wayland (missing `wayland-data-control` feature)

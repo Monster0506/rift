@@ -160,7 +160,7 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
     let modifiers = key_event.modifiers;
     let ctrl = modifiers.contains(KeyModifiers::CONTROL);
     let _shift = modifiers.contains(KeyModifiers::SHIFT);
-    let _alt = modifiers.contains(KeyModifiers::ALT);
+    let alt = modifiers.contains(KeyModifiers::ALT);
 
     match key_event.code {
         KeyCode::Char(ch) => {
@@ -170,6 +170,8 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
             }
             if ctrl {
                 Key::Ctrl(ch as u8)
+            } else if alt {
+                Key::Alt(ch as u8)
             } else if ch.is_control()
                 && ch as u8 >= 1
                 && ch as u8 <= 26

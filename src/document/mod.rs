@@ -61,6 +61,16 @@ pub enum BufferKind {
         /// When true, shows all job events including silent ones
         show_all: bool,
     },
+    /// Clipboard ring index buffer — editable, :w syncs back to the ring
+    Clipboard {
+        /// Snapshot of ring entries at populate time; used for content-matching on save
+        entries: Vec<String>,
+    },
+    /// Scratch buffer for editing a single clipboard ring entry in place.
+    /// `entry_index` is `None` for a new entry (pushed to ring on save).
+    ClipboardEntry {
+        entry_index: Option<usize>,
+    },
 }
 
 /// Line ending types supported by Rift
@@ -335,6 +345,27 @@ impl Document {
         })
     }
 
+    pub fn new_clipboard(id: DocumentId) -> Result<Self, RiftError> {
+        let buffer = TextBuffer::new(4096)?;
+        Ok(Document {
+            id,
+            buffer,
+            options: DocumentOptions { show_line_numbers: false, ..DocumentOptions::default() },
+            file_path: None,
+            is_read_only: false,
+            syntax: None,
+            history: UndoTree::new(),
+            current_transaction: None,
+            view_state: ViewState::default(),
+            terminal: None,
+            terminal_cursor: None,
+            kind: BufferKind::Clipboard { entries: vec![] },
+            custom_highlights: vec![],
+            plugin_highlights: vec![],
+            highlight_slots: std::collections::HashMap::new(),
+        })
+    }
+
     /// Check if this document is a terminal
     pub fn is_terminal(&self) -> bool {
         matches!(self.kind, BufferKind::Terminal)
@@ -353,6 +384,16 @@ impl Document {
     /// Check if this document is a messages buffer
     pub fn is_messages(&self) -> bool {
         matches!(self.kind, BufferKind::Messages { .. })
+    }
+
+    /// Check if this document is a clipboard index buffer
+    pub fn is_clipboard(&self) -> bool {
+        matches!(self.kind, BufferKind::Clipboard { .. })
+    }
+
+    /// Check if this document is any clipboard-related buffer (index or entry scratch)
+    pub fn is_any_clipboard(&self) -> bool {
+        matches!(self.kind, BufferKind::Clipboard { .. } | BufferKind::ClipboardEntry { .. })
     }
 
     /// Returns true for any non-file buffer (directory, undo-tree, terminal, messages).
@@ -528,11 +569,72 @@ impl Document {
         self.history.mark_saved();
     }
 
+    /// Populate (or repopulate) this clipboard index buffer from the ring.
+    ///
+    /// Each line is simply `[N]` where N is the ring index. The full entry snapshots
+    /// are stored in `BufferKind::Clipboard { entries }` so that `parse_clipboard_order`
+    /// can resolve them on save
+    pub fn populate_clipboard_buffer(&mut self, entries: &std::collections::VecDeque<String>) {
+        use crate::color::Color;
+
+        let mut content = String::new();
+        let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
+
+        if entries.is_empty() {
+            content.push_str("(empty)");
+        } else {
+            for (i, _) in entries.iter().enumerate() {
+                let label = format!("[{i}]");
+                let start = content.len();
+                content.push_str(&label);
+                highlights.push((start..content.len(), Color::Cyan));
+                content.push('\n');
+            }
+            if content.ends_with('\n') {
+                content.pop();
+            }
+        }
+
+        self.replace_buffer_content(&content);
+        self.custom_highlights = highlights;
+        self.kind = BufferKind::Clipboard { entries: entries.iter().cloned().collect() };
+        self.history.mark_saved();
+    }
+
+    /// Parse the current buffer content of a clipboard index buffer and return the
+    /// ordered list of original entry indices.
+    ///
+    /// Lines are expected to be `[N]` labels. Any line that doesn't parse as a valid
+    /// index is silently dropped (entry deleted). Order in the buffer determines the
+    /// new ring order.
+    pub fn parse_clipboard_order(&self) -> Vec<usize> {
+        let entries_len = match &self.kind {
+            BufferKind::Clipboard { entries } => entries.len(),
+            _ => return vec![],
+        };
+
+        let content = self.buffer.to_string();
+        let mut order = Vec::new();
+
+        for line in content.lines() {
+            let line = line.trim();
+            if let Some(inner) = line.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
+                if let Ok(idx) = inner.parse::<usize>() {
+                    if idx < entries_len {
+                        order.push(idx);
+                    }
+                }
+            }
+        }
+
+        order
+    }
+
     /// Parse the current buffer content of a directory buffer and produce a diff
     /// against the stored entry snapshot. Used by the save handler.
     ///
     /// Algorithm: names present in both old and new are unchanged. Unmatched old
-    /// entries and unmatched new names are paired positionally — each pair is a
+    /// entries and unmatched new names are paired positionally, each pair is a
     /// rename. Excess unmatched old entries are deletes; excess unmatched new
     /// names are creates.
     pub fn parse_directory_diff(&self) -> DirectoryDiff {
@@ -1021,6 +1123,11 @@ impl Document {
                     Cow::Borrowed("[Messages]")
                 }
             }
+            BufferKind::Clipboard { .. } => Cow::Borrowed("[Clipboard]"),
+            BufferKind::ClipboardEntry { entry_index: Some(i) } => {
+                Cow::Owned(format!("[Clipboard:{}]", i))
+            }
+            BufferKind::ClipboardEntry { entry_index: None } => Cow::Borrowed("[Clipboard:new]"),
             BufferKind::File => self.file_path
                 .as_ref()
                 .and_then(|p| p.file_name())
