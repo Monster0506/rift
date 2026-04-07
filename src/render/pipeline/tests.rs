@@ -5,12 +5,14 @@ use crate::search::SearchMatch;
 
 // Helper to create basic items
 fn chars(s: &str) -> Vec<RenderItem> {
-    let mut offset = 0;
+    let mut byte_offset = 0;
+    let mut char_offset = 0;
     s.chars()
         .map(|c| {
             let len = c.len_utf8();
-            let item = RenderItem::new(Character::from(c), offset, len);
-            offset += len;
+            let item = RenderItem::new(Character::from(c), byte_offset, len, char_offset);
+            byte_offset += len;
+            char_offset += 1;
             item
         })
         .collect()
@@ -58,6 +60,28 @@ fn test_search_decorator() {
         assert_eq!(items[i].fg, Some(Color::Black));
         assert_eq!(items[i].bg, Some(Color::Yellow));
     }
+}
+
+#[test]
+fn test_search_decorator_multibyte_unicode() {
+    // "日本語" — each char is 3 bytes in UTF-8
+    // char offsets: 日=0, 本=1, 語=2
+    // byte offsets: 日=0, 本=3, 語=6
+    // Match "語" at char offset 2..3 (byte offset 6..9)
+    let input = chars("日本語").into_iter();
+    let matches = vec![SearchMatch { range: 2..3 }];
+    let mut matches_idx = 0;
+
+    let decorator = SearchDecorator::new(input, &matches, &mut matches_idx);
+    let items: Vec<RenderItem> = decorator.collect();
+
+    assert_eq!(items.len(), 3);
+    // 日 and 本 should NOT be highlighted
+    assert!(items[0].bg.is_none(), "日 should not be highlighted");
+    assert!(items[1].bg.is_none(), "本 should not be highlighted");
+    // 語 should be highlighted
+    assert_eq!(items[2].fg, Some(Color::Black), "語 fg");
+    assert_eq!(items[2].bg, Some(Color::Yellow), "語 bg");
 }
 
 #[test]
@@ -160,14 +184,16 @@ fn test_color_decorator_single_char_range() {
 #[test]
 fn test_color_decorator_overwrites_existing_fg() {
     // Start with pre-colored items
-    let mut offset = 0usize;
+    let mut byte_offset = 0usize;
+    let mut char_offset = 0usize;
     let pre_colored: Vec<RenderItem> = "ab"
         .chars()
         .map(|c| {
             let len = c.len_utf8();
-            let mut item = RenderItem::new(Character::from(c), offset, len);
+            let mut item = RenderItem::new(Character::from(c), byte_offset, len, char_offset);
             item.fg = Some(Color::White);
-            offset += len;
+            byte_offset += len;
+            char_offset += 1;
             item
         })
         .collect();

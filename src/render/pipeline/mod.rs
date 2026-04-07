@@ -11,20 +11,23 @@ pub struct RenderItem {
     pub char: Character,
     pub fg: Option<Color>,
     pub bg: Option<Color>,
-    /// Original byte offset in the buffer (for highlighting/search)
+    /// Original byte offset in the buffer (for syntax highlighting)
     pub byte_offset: usize,
     /// Length of the character in bytes
     pub len_bytes: usize,
+    /// Absolute code-point (char) offset in the buffer (for search highlighting)
+    pub char_offset: usize,
 }
 
 impl RenderItem {
-    pub fn new(char: Character, byte_offset: usize, len_bytes: usize) -> Self {
+    pub fn new(char: Character, byte_offset: usize, len_bytes: usize, char_offset: usize) -> Self {
         Self {
             char,
             fg: None,
             bg: None,
             byte_offset,
             len_bytes,
+            char_offset,
         }
     }
 }
@@ -33,6 +36,7 @@ impl RenderItem {
 pub struct LineSource<'a> {
     chars: Box<dyn Iterator<Item = Character> + 'a>,
     current_byte_offset: usize,
+    current_char_offset: usize,
 }
 
 impl<'a> LineSource<'a> {
@@ -45,10 +49,13 @@ impl<'a> LineSource<'a> {
 
         let chars = Box::new(buf.chars(line_start..line_end));
         let current_byte_offset = buf.char_to_byte(line_start);
+        // line_start is already an absolute code-point offset
+        let current_char_offset = line_start;
 
         Self {
             chars,
             current_byte_offset,
+            current_char_offset,
         }
     }
 }
@@ -59,8 +66,9 @@ impl<'a> Iterator for LineSource<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let ch = self.chars.next()?;
         let len = ch.len_utf8();
-        let item = RenderItem::new(ch, self.current_byte_offset, len);
+        let item = RenderItem::new(ch, self.current_byte_offset, len, self.current_char_offset);
         self.current_byte_offset += len;
+        self.current_char_offset += 1;
         Some(item)
     }
 }
@@ -280,9 +288,9 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for SearchDecorator<'a, I> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut item = self.input.next()?;
 
-        // Fast forward matches
+        // Fast forward matches — SearchMatch.range is in code-point (char) offsets
         while *self.idx < self.matches.len() {
-            if self.matches[*self.idx].range.end <= item.byte_offset {
+            if self.matches[*self.idx].range.end <= item.char_offset {
                 *self.idx += 1;
             } else {
                 break;
@@ -291,7 +299,7 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for SearchDecorator<'a, I> {
 
         if *self.idx < self.matches.len() {
             let m = &self.matches[*self.idx];
-            if m.range.start <= item.byte_offset {
+            if m.range.start <= item.char_offset {
                 item.fg = Some(Color::Black);
                 item.bg = Some(Color::Yellow);
             }
