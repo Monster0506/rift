@@ -235,10 +235,10 @@ fn test_render_does_not_clear_screen() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -273,10 +273,10 @@ fn test_render_cursor_positioning() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -310,10 +310,10 @@ fn test_render_empty_buffer() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -350,10 +350,10 @@ fn test_render_multiline_buffer() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -395,10 +395,10 @@ fn test_render_file_loaded_at_start() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -450,10 +450,10 @@ fn test_render_viewport_scrolling() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -489,10 +489,10 @@ fn test_render_viewport_edge_cases() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -527,10 +527,10 @@ fn test_render_large_buffer() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -573,10 +573,10 @@ fn test_render_cursor_at_viewport_boundaries() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -619,10 +619,10 @@ fn test_render_cursor_at_viewport_boundaries() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -700,10 +700,10 @@ fn test_render_line_numbers_enabled() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -754,10 +754,10 @@ fn test_render_line_numbers_disabled() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -798,10 +798,10 @@ fn test_render_line_numbers_gutter_width() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -857,10 +857,10 @@ fn test_render_cursor_position_with_line_numbers() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -894,10 +894,10 @@ fn test_no_redraw_on_noop() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();
@@ -936,10 +936,10 @@ fn test_no_redraw_on_noop() {
                 cursor_col_offset: 0,
                 cursor_viewport: None,
                 terminal_cursor: None,
-            custom_highlights: None,
-            plugin_highlights: None,
-            show_line_numbers: true,
-            display_map: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: true,
+                display_map: None,
             },
         )
         .unwrap();

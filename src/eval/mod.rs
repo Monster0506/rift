@@ -46,7 +46,9 @@ fn tokenize(s: &str) -> Result<Vec<Tok>, String> {
             '0'..='9' => {
                 let mut n: usize = 0;
                 while let Some(&d @ '0'..='9') = it.peek() {
-                    n = n.saturating_mul(10).saturating_add(d as usize - '0' as usize);
+                    n = n
+                        .saturating_mul(10)
+                        .saturating_add(d as usize - '0' as usize);
                     it.next();
                 }
                 out.push(Tok::Num(n));

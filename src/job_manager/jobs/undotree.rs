@@ -64,8 +64,7 @@ impl Job for UndoTreeRenderJob {
             return;
         }
 
-        let (text, sequences, highlights) =
-            crate::undotree_view::render_tree_to_text(&self.tree);
+        let (text, sequences, highlights) = crate::undotree_view::render_tree_to_text(&self.tree);
 
         if signal.is_cancelled() {
             return;
@@ -97,8 +96,10 @@ mod tests {
         let mut tree = UndoTree::new();
         tree.nodes.clear();
         tree.root_seq = 0;
-        tree.nodes.insert(0, EditNode::new(0, EditTransaction::new("root"), None));
-        tree.nodes.insert(1, EditNode::new(1, EditTransaction::new("edit1"), Some(0)));
+        tree.nodes
+            .insert(0, EditNode::new(0, EditTransaction::new("root"), None));
+        tree.nodes
+            .insert(1, EditNode::new(1, EditTransaction::new("edit1"), Some(0)));
         tree.nodes.get_mut(&0).unwrap().children.push(1);
         tree.current = 1;
         tree
@@ -114,14 +115,17 @@ mod tests {
         };
         // JobPayload::as_any downcasting round-trip
         let boxed: Box<dyn JobPayload> = Box::new(result);
-        assert!(boxed.as_any().downcast_ref::<UndoTreeRenderResult>().is_some());
+        assert!(boxed
+            .as_any()
+            .downcast_ref::<UndoTreeRenderResult>()
+            .is_some());
     }
 
     #[test]
     fn test_undotree_render_job_produces_result() {
         use crate::job_manager::{CancellationSignal, JobMessage};
-        use std::sync::{mpsc, Arc};
         use std::sync::atomic::AtomicBool;
+        use std::sync::{mpsc, Arc};
 
         let tree = make_test_tree();
         let job = Box::new(UndoTreeRenderJob::new(42, tree));
@@ -134,8 +138,12 @@ mod tests {
 
         let messages: Vec<JobMessage> = rx.try_iter().collect();
         // Should have a Custom payload and a Finished message
-        let has_custom = messages.iter().any(|m| matches!(m, JobMessage::Custom(1, _)));
-        let has_finished = messages.iter().any(|m| matches!(m, JobMessage::Finished(1, true)));
+        let has_custom = messages
+            .iter()
+            .any(|m| matches!(m, JobMessage::Custom(1, _)));
+        let has_finished = messages
+            .iter()
+            .any(|m| matches!(m, JobMessage::Finished(1, true)));
         assert!(has_custom, "expected Custom message");
         assert!(has_finished, "expected Finished message");
     }
@@ -143,8 +151,8 @@ mod tests {
     #[test]
     fn test_undotree_render_job_result_content() {
         use crate::job_manager::{CancellationSignal, JobMessage};
-        use std::sync::{mpsc, Arc};
         use std::sync::atomic::AtomicBool;
+        use std::sync::{mpsc, Arc};
 
         let tree = make_test_tree();
         let job = Box::new(UndoTreeRenderJob::new(7, tree));
@@ -175,8 +183,8 @@ mod tests {
     #[test]
     fn test_undotree_render_job_cancelled_before_run() {
         use crate::job_manager::{CancellationSignal, JobMessage};
-        use std::sync::{mpsc, Arc};
         use std::sync::atomic::AtomicBool;
+        use std::sync::{mpsc, Arc};
 
         let tree = make_test_tree();
         let job = Box::new(UndoTreeRenderJob::new(1, tree));
@@ -188,7 +196,9 @@ mod tests {
 
         let messages: Vec<JobMessage> = rx.try_iter().collect();
         // Should produce no Custom message when cancelled
-        assert!(!messages.iter().any(|m| matches!(m, JobMessage::Custom(_, _))));
+        assert!(!messages
+            .iter()
+            .any(|m| matches!(m, JobMessage::Custom(_, _))));
     }
 
     #[test]

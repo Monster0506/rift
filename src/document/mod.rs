@@ -49,6 +49,8 @@ pub enum BufferKind {
         path: PathBuf,
         /// Snapshot of entries at populate time; used to diff user edits on :w
         entries: Vec<DirEntry>,
+        /// Whether hidden files (dot-files) are shown
+        show_hidden: bool,
     },
     /// Undo tree visualisation for a linked document
     UndoTree {
@@ -68,9 +70,7 @@ pub enum BufferKind {
     },
     /// Scratch buffer for editing a single clipboard ring entry in place.
     /// `entry_index` is `None` for a new entry (pushed to ring on save).
-    ClipboardEntry {
-        entry_index: Option<usize>,
-    },
+    ClipboardEntry { entry_index: Option<usize> },
 }
 
 /// Line ending types supported by Rift
@@ -134,7 +134,8 @@ pub struct Document {
     /// Rebuilt from `highlight_slots` after each plugin mutation batch.
     pub plugin_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
     /// Per-slot plugin highlights, keyed by handler slot ID.
-    pub highlight_slots: std::collections::HashMap<u32, Vec<(std::ops::Range<usize>, crate::color::Color)>>,
+    pub highlight_slots:
+        std::collections::HashMap<u32, Vec<(std::ops::Range<usize>, crate::color::Color)>>,
 }
 
 impl Document {
@@ -168,7 +169,11 @@ impl Document {
         // Detect line endings and normalize
         let mut line_ending = LineEnding::LF;
         let mut normalized_bytes = Vec::with_capacity(bytes.len());
-        let mut i = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) { 3 } else { 0 };
+        let mut i = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+            3
+        } else {
+            0
+        };
         while i < bytes.len() {
             if bytes[i] == b'\r' {
                 if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
@@ -235,7 +240,10 @@ impl Document {
             Document {
                 id,
                 buffer,
-                options: DocumentOptions { show_line_numbers: false, ..DocumentOptions::default() },
+                options: DocumentOptions {
+                    show_line_numbers: false,
+                    ..DocumentOptions::default()
+                },
                 file_path: None,
                 is_read_only: false,
                 syntax: None,
@@ -246,8 +254,8 @@ impl Document {
                 terminal_cursor: None,
                 kind: BufferKind::Terminal,
                 custom_highlights: vec![],
-            plugin_highlights: vec![],
-            highlight_slots: std::collections::HashMap::new(),
+                plugin_highlights: vec![],
+                highlight_slots: std::collections::HashMap::new(),
             },
             rx,
         ))
@@ -259,7 +267,10 @@ impl Document {
         Ok(Document {
             id,
             buffer,
-            options: DocumentOptions { show_line_numbers: false, ..DocumentOptions::default() },
+            options: DocumentOptions {
+                show_line_numbers: false,
+                ..DocumentOptions::default()
+            },
             file_path: None,
             is_read_only: false,
             syntax: None,
@@ -268,7 +279,11 @@ impl Document {
             view_state: ViewState::default(),
             terminal: None,
             terminal_cursor: None,
-            kind: BufferKind::Directory { path, entries: vec![] },
+            kind: BufferKind::Directory {
+                path,
+                entries: vec![],
+                show_hidden: false,
+            },
             custom_highlights: vec![],
             plugin_highlights: vec![],
             highlight_slots: std::collections::HashMap::new(),
@@ -281,7 +296,10 @@ impl Document {
         Ok(Document {
             id,
             buffer,
-            options: DocumentOptions { show_line_numbers: false, ..DocumentOptions::default() },
+            options: DocumentOptions {
+                show_line_numbers: false,
+                ..DocumentOptions::default()
+            },
             file_path: None,
             is_read_only: true,
             syntax: None,
@@ -290,7 +308,10 @@ impl Document {
             view_state: ViewState::default(),
             terminal: None,
             terminal_cursor: None,
-            kind: BufferKind::UndoTree { linked_doc_id, sequences: vec![] },
+            kind: BufferKind::UndoTree {
+                linked_doc_id,
+                sequences: vec![],
+            },
             custom_highlights: vec![],
             plugin_highlights: vec![],
             highlight_slots: std::collections::HashMap::new(),
@@ -329,7 +350,10 @@ impl Document {
         Ok(Document {
             id,
             buffer,
-            options: DocumentOptions { show_line_numbers: false, ..DocumentOptions::default() },
+            options: DocumentOptions {
+                show_line_numbers: false,
+                ..DocumentOptions::default()
+            },
             file_path: None,
             is_read_only: false,
             syntax: None,
@@ -350,7 +374,10 @@ impl Document {
         Ok(Document {
             id,
             buffer,
-            options: DocumentOptions { show_line_numbers: false, ..DocumentOptions::default() },
+            options: DocumentOptions {
+                show_line_numbers: false,
+                ..DocumentOptions::default()
+            },
             file_path: None,
             is_read_only: false,
             syntax: None,
@@ -393,7 +420,10 @@ impl Document {
 
     /// Check if this document is any clipboard-related buffer (index or entry scratch)
     pub fn is_any_clipboard(&self) -> bool {
-        matches!(self.kind, BufferKind::Clipboard { .. } | BufferKind::ClipboardEntry { .. })
+        matches!(
+            self.kind,
+            BufferKind::Clipboard { .. } | BufferKind::ClipboardEntry { .. }
+        )
     }
 
     /// Returns true for any non-file buffer (directory, undo-tree, terminal, messages).
@@ -418,25 +448,30 @@ impl Document {
     pub fn populate_directory_buffer(&mut self, entries: Vec<DirEntry>) {
         use crate::color::Color;
 
-        let dir_path = match &self.kind {
-            BufferKind::Directory { path, .. } => path.clone(),
+        let (dir_path, show_hidden) = match &self.kind {
+            BufferKind::Directory {
+                path, show_hidden, ..
+            } => (path.clone(), *show_hidden),
             _ => return,
         };
 
         let mut content = String::new();
         let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
 
-        let push_colored = |content: &mut String, highlights: &mut Vec<_>, s: &str, color: Color| {
-            let start = content.len();
-            content.push_str(s);
-            highlights.push((start..content.len(), color));
-        };
+        let push_colored =
+            |content: &mut String, highlights: &mut Vec<_>, s: &str, color: Color| {
+                let start = content.len();
+                content.push_str(s);
+                highlights.push((start..content.len(), color));
+            };
 
         push_colored(&mut content, &mut highlights, "../", Color::Blue);
         content.push('\n');
 
         for entry in &entries {
-            let name = entry.path.file_name()
+            let name = entry
+                .path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
             let (display, color) = if entry.is_dir {
@@ -453,7 +488,11 @@ impl Document {
 
         self.replace_buffer_content(&content);
         self.custom_highlights = highlights;
-        self.kind = BufferKind::Directory { path: dir_path, entries };
+        self.kind = BufferKind::Directory {
+            path: dir_path,
+            entries,
+            show_hidden,
+        };
         self.history.mark_saved();
     }
 
@@ -471,15 +510,15 @@ impl Document {
 
         self.replace_buffer_content(&text);
         self.custom_highlights = highlights;
-        self.kind = BufferKind::UndoTree { linked_doc_id, sequences };
+        self.kind = BufferKind::UndoTree {
+            linked_doc_id,
+            sequences,
+        };
         self.history.mark_saved();
     }
 
     /// Populate this messages buffer from the notification log.
-    pub fn populate_messages_buffer(
-        &mut self,
-        log: &[crate::notification::MessageEntry],
-    ) {
+    pub fn populate_messages_buffer(&mut self, log: &[crate::notification::MessageEntry]) {
         use crate::color::Color;
         use crate::notification::{JobEventKind, MessageEntry, NotificationType};
 
@@ -532,7 +571,12 @@ impl Document {
                     content.push_str(message);
                     content.push('\n');
                 }
-                MessageEntry::JobEvent { job_id, kind, message, .. } => {
+                MessageEntry::JobEvent {
+                    job_id,
+                    kind,
+                    message,
+                    ..
+                } => {
                     let (kind_str, color) = match kind {
                         JobEventKind::Started => ("[job:start]  ", Color::DarkCyan),
                         JobEventKind::Progress(_) => ("[job:progress]", Color::DarkCyan),
@@ -597,7 +641,9 @@ impl Document {
 
         self.replace_buffer_content(&content);
         self.custom_highlights = highlights;
-        self.kind = BufferKind::Clipboard { entries: entries.iter().cloned().collect() };
+        self.kind = BufferKind::Clipboard {
+            entries: entries.iter().cloned().collect(),
+        };
         self.history.mark_saved();
     }
 
@@ -640,7 +686,13 @@ impl Document {
     pub fn parse_directory_diff(&self) -> DirectoryDiff {
         let entries = match &self.kind {
             BufferKind::Directory { entries, .. } => entries,
-            _ => return DirectoryDiff { renames: vec![], deletes: vec![], creates: vec![] },
+            _ => {
+                return DirectoryDiff {
+                    renames: vec![],
+                    deletes: vec![],
+                    creates: vec![],
+                }
+            }
         };
 
         let content = self.buffer.to_string();
@@ -677,7 +729,12 @@ impl Document {
         let pair_count = unmatched_old.len().min(unmatched_new.len());
 
         let renames: Vec<(PathBuf, String)> = (0..pair_count)
-            .map(|i| (unmatched_old[i].path.clone(), unmatched_new[i].trim_end_matches('/').to_string()))
+            .map(|i| {
+                (
+                    unmatched_old[i].path.clone(),
+                    unmatched_new[i].trim_end_matches('/').to_string(),
+                )
+            })
             .collect();
 
         let deletes: Vec<PathBuf> = unmatched_old[pair_count..]
@@ -691,7 +748,11 @@ impl Document {
             .map(|n| n.to_string())
             .collect();
 
-        DirectoryDiff { renames, deletes, creates }
+        DirectoryDiff {
+            renames,
+            deletes,
+            creates,
+        }
     }
 
     /// Return the current directory path if this is a Directory buffer.
@@ -1107,14 +1168,12 @@ impl Document {
                     Cow::Borrowed("[Terminal]")
                 }
             }
-            BufferKind::Directory { path, .. } => {
-                Cow::Owned(
-                    path.file_name()
-                        .and_then(|n| n.to_str())
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| "/".to_string()),
-                )
-            }
+            BufferKind::Directory { path, .. } => Cow::Owned(
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "/".to_string()),
+            ),
             BufferKind::UndoTree { .. } => Cow::Borrowed("[UndoTree]"),
             BufferKind::Messages { show_all } => {
                 if *show_all {
@@ -1124,11 +1183,12 @@ impl Document {
                 }
             }
             BufferKind::Clipboard { .. } => Cow::Borrowed("[Clipboard]"),
-            BufferKind::ClipboardEntry { entry_index: Some(i) } => {
-                Cow::Owned(format!("[Clipboard:{}]", i))
-            }
+            BufferKind::ClipboardEntry {
+                entry_index: Some(i),
+            } => Cow::Owned(format!("[Clipboard:{}]", i)),
             BufferKind::ClipboardEntry { entry_index: None } => Cow::Borrowed("[Clipboard:new]"),
-            BufferKind::File => self.file_path
+            BufferKind::File => self
+                .file_path
                 .as_ref()
                 .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())

@@ -42,7 +42,12 @@ impl DisplayMap {
                 segment_col_end: 0,
                 is_first: true,
             });
-            return DisplayMap { rows, line_first_visual, wrap_width, tab_width };
+            return DisplayMap {
+                rows,
+                line_first_visual,
+                wrap_width,
+                tab_width,
+            };
         }
 
         let mut line_idx: usize = 0;
@@ -138,7 +143,12 @@ impl DisplayMap {
             is_first,
         });
 
-        DisplayMap { rows, line_first_visual, wrap_width, tab_width }
+        DisplayMap {
+            rows,
+            line_first_visual,
+            wrap_width,
+            tab_width,
+        }
     }
 
     pub fn total_visual_rows(&self) -> usize {
@@ -150,7 +160,10 @@ impl DisplayMap {
     }
 
     pub fn logical_to_first_visual(&self, logical_line: usize) -> usize {
-        self.line_first_visual.get(logical_line).copied().unwrap_or(0)
+        self.line_first_visual
+            .get(logical_line)
+            .copied()
+            .unwrap_or(0)
     }
 
     pub fn logical_to_last_visual(&self, logical_line: usize) -> usize {
@@ -163,7 +176,11 @@ impl DisplayMap {
 
     pub fn char_to_visual_row(&self, char_offset: usize) -> usize {
         let idx = self.rows.partition_point(|r| r.char_start <= char_offset);
-        if idx == 0 { 0 } else { idx - 1 }
+        if idx == 0 {
+            0
+        } else {
+            idx - 1
+        }
     }
 
     pub fn char_to_visual_col(&self, char_offset: usize, buf: &TextBuffer) -> usize {
@@ -253,9 +270,17 @@ pub struct MotionRange {
 
 impl MotionRange {
     pub fn charwise(anchor: usize, new_cursor: usize) -> Self {
-        Self { anchor, new_cursor, kind: RangeKind::Charwise }
+        Self {
+            anchor,
+            new_cursor,
+            kind: RangeKind::Charwise,
+        }
     }
     pub fn linewise(anchor: usize, new_cursor: usize) -> Self {
-        Self { anchor, new_cursor, kind: RangeKind::Linewise }
+        Self {
+            anchor,
+            new_cursor,
+            kind: RangeKind::Linewise,
+        }
     }
 }

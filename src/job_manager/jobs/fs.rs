@@ -141,22 +141,26 @@ impl Job for FsMoveJob {
             Ok(_) => {
                 let _ = sender.send(JobMessage::Finished(id, false));
             }
-            Err(_) => {
-                match FsCopyJob::copy_recursive_pub(&self.source, &self.destination) {
-                    Ok(_) => {
-                        let del = if self.source.is_dir() {
-                            fs::remove_dir_all(&self.source)
-                        } else {
-                            fs::remove_file(&self.source)
-                        };
-                        match del {
-                            Ok(_) => { let _ = sender.send(JobMessage::Finished(id, false)); }
-                            Err(e) => { let _ = sender.send(JobMessage::Error(id, e.to_string())); }
+            Err(_) => match FsCopyJob::copy_recursive_pub(&self.source, &self.destination) {
+                Ok(_) => {
+                    let del = if self.source.is_dir() {
+                        fs::remove_dir_all(&self.source)
+                    } else {
+                        fs::remove_file(&self.source)
+                    };
+                    match del {
+                        Ok(_) => {
+                            let _ = sender.send(JobMessage::Finished(id, false));
+                        }
+                        Err(e) => {
+                            let _ = sender.send(JobMessage::Error(id, e.to_string()));
                         }
                     }
-                    Err(e) => { let _ = sender.send(JobMessage::Error(id, e.to_string())); }
                 }
-            }
+                Err(e) => {
+                    let _ = sender.send(JobMessage::Error(id, e.to_string()));
+                }
+            },
         }
     }
 }

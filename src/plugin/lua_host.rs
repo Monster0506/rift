@@ -1,10 +1,10 @@
 //! Lua 5.4 plugin host — embeds mlua and exposes the `rift.*` API.
 
-use std::sync::{Arc, Mutex};
-use mlua::prelude::*;
 use crate::notification::NotificationType;
-use crate::plugin::{PluginFloat, PluginMutation};
 use crate::plugin::events::EditorEvent;
+use crate::plugin::{PluginFloat, PluginMutation};
+use mlua::prelude::*;
+use std::sync::{Arc, Mutex};
 
 /// A lightweight buffer entry for the `rift.get_buf_list()` snapshot.
 /// Fields: (id, display_name, is_dirty, is_current)
@@ -87,7 +87,8 @@ impl LuaHost {
         // Internal handler registry table: _rift_handlers[event_name] = { {slot=n,fn=f}, ... }
         // _rift_slot_events[slot_id] = event_name  (for rift.off lookup)
         lua.globals().set("_rift_handlers", lua.create_table()?)?;
-        lua.globals().set("_rift_slot_events", lua.create_table()?)?;
+        lua.globals()
+            .set("_rift_slot_events", lua.create_table()?)?;
 
         let api = lua.create_table()?;
 
@@ -95,32 +96,33 @@ impl LuaHost {
         // Returns a handle that can be passed to rift.off() to unregister.
         {
             let sh = Arc::clone(&shared);
-            let on_fn = lua.create_function(move |lua, (event_name, callback): (String, LuaFunction)| {
-                let slot_id = {
-                    let mut s = sh.lock().unwrap();
-                    let id = s.next_slot;
-                    s.next_slot += 1;
-                    id
-                };
-                let handlers: LuaTable = lua.globals().get("_rift_handlers")?;
-                let list: Option<LuaTable> = handlers.get(event_name.as_str())?;
-                let list = match list {
-                    Some(t) => t,
-                    None => {
-                        let t = lua.create_table()?;
-                        handlers.set(event_name.as_str(), t.clone())?;
-                        t
-                    }
-                };
-                let entry = lua.create_table()?;
-                entry.set("slot", slot_id)?;
-                entry.set("fn", callback)?;
-                list.push(entry)?;
-                // Record slot → event_name for off() lookup
-                let slot_events: LuaTable = lua.globals().get("_rift_slot_events")?;
-                slot_events.set(slot_id as i64, event_name)?;
-                Ok(slot_id as i64)
-            })?;
+            let on_fn =
+                lua.create_function(move |lua, (event_name, callback): (String, LuaFunction)| {
+                    let slot_id = {
+                        let mut s = sh.lock().unwrap();
+                        let id = s.next_slot;
+                        s.next_slot += 1;
+                        id
+                    };
+                    let handlers: LuaTable = lua.globals().get("_rift_handlers")?;
+                    let list: Option<LuaTable> = handlers.get(event_name.as_str())?;
+                    let list = match list {
+                        Some(t) => t,
+                        None => {
+                            let t = lua.create_table()?;
+                            handlers.set(event_name.as_str(), t.clone())?;
+                            t
+                        }
+                    };
+                    let entry = lua.create_table()?;
+                    entry.set("slot", slot_id)?;
+                    entry.set("fn", callback)?;
+                    list.push(entry)?;
+                    // Record slot → event_name for off() lookup
+                    let slot_events: LuaTable = lua.globals().get("_rift_slot_events")?;
+                    slot_events.set(slot_id as i64, event_name)?;
+                    Ok(slot_id as i64)
+                })?;
             api.set("on", on_fn)?;
         }
 
@@ -163,7 +165,10 @@ impl LuaHost {
                     "success" => NotificationType::Success,
                     _ => NotificationType::Info,
                 };
-                sh.lock().unwrap().mutations.push(PluginMutation::Notify { message, level });
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::Notify { message, level });
                 Ok(())
             })?;
             api.set("notify", f)?;
@@ -177,7 +182,10 @@ impl LuaHost {
                 for s in lines.sequence_values::<String>() {
                     v.push(s?);
                 }
-                sh.lock().unwrap().mutations.push(PluginMutation::AppendLines(v));
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::AppendLines(v));
                 Ok(())
             })?;
             api.set("append_lines", f)?;
@@ -191,7 +199,10 @@ impl LuaHost {
                 for s in lines.sequence_values::<String>() {
                     v.push(s?);
                 }
-                sh.lock().unwrap().mutations.push(PluginMutation::OpenFloat(PluginFloat::new(title, v)));
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::OpenFloat(PluginFloat::new(title, v)));
                 Ok(())
             })?;
             api.set("open_float", f)?;
@@ -201,7 +212,10 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
-                sh.lock().unwrap().mutations.push(PluginMutation::CloseFloat);
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::CloseFloat);
                 Ok(())
             })?;
             api.set("close_float", f)?;
@@ -210,9 +224,7 @@ impl LuaHost {
         // rift.current_buf() → integer buffer id
         {
             let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap().buf_id as i64)
-            })?;
+            let f = lua.create_function(move |_, ()| Ok(sh.lock().unwrap().buf_id as i64))?;
             api.set("current_buf", f)?;
         }
 
@@ -234,7 +246,11 @@ impl LuaHost {
                 let s = sh.lock().unwrap();
                 let len = s.buf_lines.len() as i64;
                 let start = (start - 1).max(0) as usize;
-                let end_ = if end_ < 0 { (len + end_ + 1).max(0) } else { end_.min(len) } as usize;
+                let end_ = if end_ < 0 {
+                    (len + end_ + 1).max(0)
+                } else {
+                    end_.min(len)
+                } as usize;
                 let t = lua.create_table()?;
                 for (i, line) in s.buf_lines[start..end_].iter().enumerate() {
                     t.set(i + 1, line.as_str())?;
@@ -248,17 +264,25 @@ impl LuaHost {
         // description — shown in tab completion dropdown
         // arg_type    — drives argument completion: "file", "dir"
         {
-            let f = lua.create_function(|lua, (name, callback, desc, arg_type): (String, LuaFunction, Option<String>, Option<String>)| {
-                let cmds: LuaTable = lua.globals().get("_rift_commands")?;
-                let entry = lua.create_table()?;
-                entry.set("fn", callback)?;
-                entry.set("description", desc.unwrap_or_default())?;
-                if let Some(at) = arg_type {
-                    entry.set("arg_type", at)?;
-                }
-                cmds.set(name, entry)?;
-                Ok(())
-            })?;
+            let f = lua.create_function(
+                |lua,
+                 (name, callback, desc, arg_type): (
+                    String,
+                    LuaFunction,
+                    Option<String>,
+                    Option<String>,
+                )| {
+                    let cmds: LuaTable = lua.globals().get("_rift_commands")?;
+                    let entry = lua.create_table()?;
+                    entry.set("fn", callback)?;
+                    entry.set("description", desc.unwrap_or_default())?;
+                    if let Some(at) = arg_type {
+                        entry.set("arg_type", at)?;
+                    }
+                    cmds.set(name, entry)?;
+                    Ok(())
+                },
+            )?;
             api.set("register_command", f)?;
         }
         lua.globals().set("_rift_commands", lua.create_table()?)?;
@@ -304,7 +328,10 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, text: String| {
-                sh.lock().unwrap().mutations.push(PluginMutation::InsertAtCursor(text));
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::InsertAtCursor(text));
                 Ok(())
             })?;
             api.set("insert", f)?;
@@ -315,7 +342,10 @@ impl LuaHost {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, n: i64| {
                 if n > 0 {
-                    sh.lock().unwrap().mutations.push(PluginMutation::DeleteBefore(n as usize));
+                    sh.lock()
+                        .unwrap()
+                        .mutations
+                        .push(PluginMutation::DeleteBefore(n as usize));
                 }
                 Ok(())
             })?;
@@ -327,7 +357,10 @@ impl LuaHost {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, n: i64| {
                 if n > 0 {
-                    sh.lock().unwrap().mutations.push(PluginMutation::DeleteForward(n as usize));
+                    sh.lock()
+                        .unwrap()
+                        .mutations
+                        .push(PluginMutation::DeleteForward(n as usize));
                 }
                 Ok(())
             })?;
@@ -339,10 +372,13 @@ impl LuaHost {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (row, col): (i64, i64)| {
                 if row >= 1 {
-                    sh.lock().unwrap().mutations.push(PluginMutation::SetCursor {
-                        row: row as usize,
-                        col: col.max(0) as usize,
-                    });
+                    sh.lock()
+                        .unwrap()
+                        .mutations
+                        .push(PluginMutation::SetCursor {
+                            row: row as usize,
+                            col: col.max(0) as usize,
+                        });
                 }
                 Ok(())
             })?;
@@ -358,11 +394,14 @@ impl LuaHost {
                     v.push(s?);
                 }
                 if start >= 1 && end_ >= start {
-                    sh.lock().unwrap().mutations.push(PluginMutation::ReplaceLines {
-                        start: start as usize,
-                        end: end_ as usize,
-                        lines: v,
-                    });
+                    sh.lock()
+                        .unwrap()
+                        .mutations
+                        .push(PluginMutation::ReplaceLines {
+                            start: start as usize,
+                            end: end_ as usize,
+                            lines: v,
+                        });
                 }
                 Ok(())
             })?;
@@ -374,21 +413,23 @@ impl LuaHost {
         // color: named ("red", "green", …) or hex ("#rrggbb")
         {
             let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, (sl, sc, el, ec, color): (i64, i64, i64, i64, String)| {
-                if sl >= 1 && el >= sl {
-                    let mut s = sh.lock().unwrap();
-                    let slot = s.current_slot;
-                    s.mutations.push(PluginMutation::AddHighlight {
-                        slot,
-                        start_line: sl as usize,
-                        start_col: sc.max(0) as usize,
-                        end_line: el as usize,
-                        end_col: ec.max(0) as usize,
-                        color,
-                    });
-                }
-                Ok(())
-            })?;
+            let f = lua.create_function(
+                move |_, (sl, sc, el, ec, color): (i64, i64, i64, i64, String)| {
+                    if sl >= 1 && el >= sl {
+                        let mut s = sh.lock().unwrap();
+                        let slot = s.current_slot;
+                        s.mutations.push(PluginMutation::AddHighlight {
+                            slot,
+                            start_line: sl as usize,
+                            start_col: sc.max(0) as usize,
+                            end_line: el as usize,
+                            end_col: ec.max(0) as usize,
+                            color,
+                        });
+                    }
+                    Ok(())
+                },
+            )?;
             api.set("add_highlight", f)?;
         }
 
@@ -408,7 +449,10 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ms: u32| {
-                sh.lock().unwrap().mutations.push(PluginMutation::SetCursorHoldDelay(ms));
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::SetCursorHoldDelay(ms));
                 Ok(())
             })?;
             api.set("set_cursor_hold_delay", f)?;
@@ -426,7 +470,13 @@ impl LuaHost {
                     LuaValue::String(s) => s.to_str()?.to_string(),
                     _ => return Ok(()),
                 };
-                sh.lock().unwrap().mutations.push(PluginMutation::SetOption { name, value: value_str });
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::SetOption {
+                        name,
+                        value: value_str,
+                    });
                 Ok(())
             })?;
             api.set("set_option", f)?;
@@ -496,7 +546,10 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
-                sh.lock().unwrap().mutations.push(PluginMutation::SaveBuffer);
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::SaveBuffer);
                 Ok(())
             })?;
             api.set("save", f)?;
@@ -505,36 +558,29 @@ impl LuaHost {
         // rift.get_tab_width() → integer
         {
             let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap().tab_width as i64)
-            })?;
+            let f = lua.create_function(move |_, ()| Ok(sh.lock().unwrap().tab_width as i64))?;
             api.set("get_tab_width", f)?;
         }
 
         // rift.get_expand_tabs() → boolean
         {
             let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap().expand_tabs)
-            })?;
+            let f = lua.create_function(move |_, ()| Ok(sh.lock().unwrap().expand_tabs))?;
             api.set("get_expand_tabs", f)?;
         }
 
         // rift.get_mode() → "normal" | "insert" | "command" | "search"
         {
             let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap().mode.clone())
-            })?;
+            let f = lua.create_function(move |_, ()| Ok(sh.lock().unwrap().mode.clone()))?;
             api.set("get_mode", f)?;
         }
 
         // rift.get_line_count() → integer
         {
             let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap().buf_lines.len() as i64)
-            })?;
+            let f =
+                lua.create_function(move |_, ()| Ok(sh.lock().unwrap().buf_lines.len() as i64))?;
             api.set("get_line_count", f)?;
         }
 
@@ -573,7 +619,10 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (top, left): (usize, usize)| {
-                sh.lock().unwrap().mutations.push(PluginMutation::SetScroll(top, left));
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::SetScroll(top, left));
                 Ok(())
             })?;
             api.set("set_scroll", f)?;
@@ -590,7 +639,10 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ending: String| {
-                sh.lock().unwrap().mutations.push(PluginMutation::SetLineEnding(ending));
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::SetLineEnding(ending));
                 Ok(())
             })?;
             api.set("set_line_ending", f)?;
@@ -602,44 +654,45 @@ impl LuaHost {
         // opts.whole_word = true  — only match when surrounded by non-word characters.
         {
             let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |lua, (needle, opts): (String, Option<LuaTable>)| {
-                let whole_word = opts
-                    .as_ref()
-                    .and_then(|t| t.get::<bool>("whole_word").ok())
-                    .unwrap_or(false);
-                let lines = sh.lock().unwrap().buf_lines.clone();
-                let results = lua.create_table()?;
-                if needle.is_empty() {
-                    return Ok(results);
-                }
-                for (row_idx, line) in lines.iter().enumerate() {
-                    let bytes = line.as_bytes();
-                    let mut start = 0;
-                    while let Some(pos) = line[start..].find(needle.as_str()) {
-                        let col_start = start + pos;
-                        let col_end = col_start + needle.len();
-                        if whole_word {
-                            let before_ok = col_start == 0
-                                || !bytes[col_start - 1].is_ascii_alphanumeric()
-                                    && bytes[col_start - 1] != b'_';
-                            let after_ok = col_end >= bytes.len()
-                                || !bytes[col_end].is_ascii_alphanumeric()
-                                    && bytes[col_end] != b'_';
-                            if !before_ok || !after_ok {
-                                start = col_end;
-                                continue;
-                            }
-                        }
-                        let entry = lua.create_table()?;
-                        entry.set("row", row_idx + 1)?;
-                        entry.set("col_start", col_start)?;
-                        entry.set("col_end", col_end)?;
-                        results.push(entry)?;
-                        start = col_end;
+            let f =
+                lua.create_function(move |lua, (needle, opts): (String, Option<LuaTable>)| {
+                    let whole_word = opts
+                        .as_ref()
+                        .and_then(|t| t.get::<bool>("whole_word").ok())
+                        .unwrap_or(false);
+                    let lines = sh.lock().unwrap().buf_lines.clone();
+                    let results = lua.create_table()?;
+                    if needle.is_empty() {
+                        return Ok(results);
                     }
-                }
-                Ok(results)
-            })?;
+                    for (row_idx, line) in lines.iter().enumerate() {
+                        let bytes = line.as_bytes();
+                        let mut start = 0;
+                        while let Some(pos) = line[start..].find(needle.as_str()) {
+                            let col_start = start + pos;
+                            let col_end = col_start + needle.len();
+                            if whole_word {
+                                let before_ok = col_start == 0
+                                    || !bytes[col_start - 1].is_ascii_alphanumeric()
+                                        && bytes[col_start - 1] != b'_';
+                                let after_ok = col_end >= bytes.len()
+                                    || !bytes[col_end].is_ascii_alphanumeric()
+                                        && bytes[col_end] != b'_';
+                                if !before_ok || !after_ok {
+                                    start = col_end;
+                                    continue;
+                                }
+                            }
+                            let entry = lua.create_table()?;
+                            entry.set("row", row_idx + 1)?;
+                            entry.set("col_start", col_start)?;
+                            entry.set("col_end", col_end)?;
+                            results.push(entry)?;
+                            start = col_end;
+                        }
+                    }
+                    Ok(results)
+                })?;
             api.set("search", f)?;
         }
 
@@ -657,7 +710,10 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, action: String| {
-                sh.lock().unwrap().mutations.push(PluginMutation::ExecAction(action));
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::ExecAction(action));
                 Ok(())
             })?;
             api.set("exec_action", f)?;
@@ -669,10 +725,15 @@ impl LuaHost {
         // action: action string, e.g. "editor:save", or a registered plugin action id
         {
             let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, (mode, keys, action): (String, String, String)| {
-                sh.lock().unwrap().mutations.push(PluginMutation::MapKey { mode, keys, action });
-                Ok(())
-            })?;
+            let f =
+                lua.create_function(move |_, (mode, keys, action): (String, String, String)| {
+                    sh.lock().unwrap().mutations.push(PluginMutation::MapKey {
+                        mode,
+                        keys,
+                        action,
+                    });
+                    Ok(())
+                })?;
             api.set("map", f)?;
         }
 
@@ -680,7 +741,10 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, row: usize| {
-                sh.lock().unwrap().mutations.push(PluginMutation::CenterOnLine(row));
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::CenterOnLine(row));
                 Ok(())
             })?;
             api.set("center_on_line", f)?;
@@ -690,7 +754,10 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (mode, keys): (String, String)| {
-                sh.lock().unwrap().mutations.push(PluginMutation::UnmapKey { mode, keys });
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::UnmapKey { mode, keys });
                 Ok(())
             })?;
             api.set("unmap", f)?;
@@ -984,7 +1051,13 @@ end
         };
         let ev_table = match event.to_lua_table(&self.lua) {
             Ok(t) => t,
-            Err(e) => return vec![format!("failed to build event table for {}: {}", event.name(), e)],
+            Err(e) => {
+                return vec![format!(
+                    "failed to build event table for {}: {}",
+                    event.name(),
+                    e
+                )]
+            }
         };
 
         let mut errors = Vec::new();
@@ -1041,10 +1114,14 @@ end
             let _ = args_table.set(i + 1, arg.as_str());
         }
         if let Err(e) = handler.call::<()>(args_table) {
-            self.shared.lock().unwrap().mutations.push(PluginMutation::Notify {
-                message: format!("[lua:{}] {}", name, e),
-                level: NotificationType::Error,
-            });
+            self.shared
+                .lock()
+                .unwrap()
+                .mutations
+                .push(PluginMutation::Notify {
+                    message: format!("[lua:{}] {}", name, e),
+                    level: NotificationType::Error,
+                });
         }
         true
     }
@@ -1082,10 +1159,14 @@ end
             None => return false,
         };
         if let Err(e) = handler.call::<()>(()) {
-            self.shared.lock().unwrap().mutations.push(PluginMutation::Notify {
-                message: format!("[lua:{}] {}", id, e),
-                level: NotificationType::Error,
-            });
+            self.shared
+                .lock()
+                .unwrap()
+                .mutations
+                .push(PluginMutation::Notify {
+                    message: format!("[lua:{}] {}", id, e),
+                    level: NotificationType::Error,
+                });
         }
         true
     }
@@ -1137,7 +1218,11 @@ end
 
     /// Execute a string of Lua code. Returns an error string on failure.
     pub fn exec(&self, code: &str) -> Option<String> {
-        self.lua.load(code).exec().err().map(|e| format!("[lua] {}", e))
+        self.lua
+            .load(code)
+            .exec()
+            .err()
+            .map(|e| format!("[lua] {}", e))
     }
 }
 

@@ -157,7 +157,11 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
 /// - `highlights` is a list of `(byte_range, Color)` pairs for per-character coloring
 pub fn render_tree_to_text(
     tree: &UndoTree,
-) -> (String, Vec<EditSeq>, Vec<(std::ops::Range<usize>, crate::color::Color)>) {
+) -> (
+    String,
+    Vec<EditSeq>,
+    Vec<(std::ops::Range<usize>, crate::color::Color)>,
+) {
     let (lines, sequences, _cursor) = render_tree(tree);
     let mut text = String::new();
     let mut highlights: Vec<(std::ops::Range<usize>, crate::color::Color)> = Vec::new();
@@ -192,4 +196,3 @@ pub fn render_tree_to_text(
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-

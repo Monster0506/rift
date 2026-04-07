@@ -338,4 +338,3 @@ fn test_gutter_thresholds() {
     assert_eq!(state.gutter_width, 2);
     assert_eq!(state.next_gutter_threshold, 10);
 }
-

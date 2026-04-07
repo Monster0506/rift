@@ -145,7 +145,11 @@ pub struct ColorDecorator<'a, I: Iterator<Item = RenderItem>> {
 
 impl<'a, I: Iterator<Item = RenderItem>> ColorDecorator<'a, I> {
     pub fn new(input: I, highlights: &'a [(std::ops::Range<usize>, Color)]) -> Self {
-        Self { input, highlights, idx: 0 }
+        Self {
+            input,
+            highlights,
+            idx: 0,
+        }
     }
 }
 
@@ -190,11 +194,19 @@ pub fn contrasting_color(bg: Color) -> Color {
         Color::White | Color::Grey | Color::Yellow | Color::Green | Color::Cyan => Color::Black,
         Color::Rgb { r, g, b } => {
             let lum = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
-            if lum > 128.0 { Color::Black } else { Color::White }
+            if lum > 128.0 {
+                Color::Black
+            } else {
+                Color::White
+            }
         }
         Color::Ansi256(n) => {
             if n >= 232 {
-                if n >= 244 { Color::Black } else { Color::White }
+                if n >= 244 {
+                    Color::Black
+                } else {
+                    Color::White
+                }
             } else {
                 Color::White
             }
@@ -212,7 +224,11 @@ pub struct PluginHighlightDecorator<'a, I: Iterator<Item = RenderItem>> {
 
 impl<'a, I: Iterator<Item = RenderItem>> PluginHighlightDecorator<'a, I> {
     pub fn new(input: I, highlights: &'a [(std::ops::Range<usize>, Color)]) -> Self {
-        Self { input, highlights, idx: 0 }
+        Self {
+            input,
+            highlights,
+            idx: 0,
+        }
     }
 }
 

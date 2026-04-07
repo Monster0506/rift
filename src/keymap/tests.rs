@@ -1,5 +1,6 @@
 use super::*;
 use crate::action::{EditorAction, Motion};
+use crate::keymap::defaults::register_defaults;
 
 #[test]
 fn test_register_and_get() {
@@ -206,11 +207,7 @@ fn test_undotree_falls_back_to_global_via_normal() {
 #[test]
 fn test_undotree_override_shadows_normal() {
     let mut map = KeyMap::new();
-    map.register(
-        KeyContext::Normal,
-        Key::Enter,
-        Action::Noop,
-    );
+    map.register(KeyContext::Normal, Key::Enter, Action::Noop);
     map.register(
         KeyContext::UndoTree,
         Key::Enter,
@@ -233,10 +230,7 @@ fn test_normal_does_not_see_file_explorer_buffer_bindings() {
     );
 
     // Normal does NOT fall back to FileExplorer
-    assert_eq!(
-        map.get_action(KeyContext::Normal, Key::Enter),
-        None
-    );
+    assert_eq!(map.get_action(KeyContext::Normal, Key::Enter), None);
 }
 
 #[test]
@@ -248,10 +242,7 @@ fn test_normal_does_not_see_undotree_bindings() {
         Action::Buffer("undotree:select".to_string()),
     );
 
-    assert_eq!(
-        map.get_action(KeyContext::Normal, Key::Enter),
-        None
-    );
+    assert_eq!(map.get_action(KeyContext::Normal, Key::Enter), None);
 }
 
 #[test]
@@ -275,7 +266,8 @@ fn test_file_explorer_buffer_all_normal_motions_accessible() {
         assert_eq!(
             map.get_action(KeyContext::FileExplorer, *key),
             Some(&Action::Editor(EditorAction::Move(*motion))),
-            "FileExplorer should inherit {:?} from Normal", key
+            "FileExplorer should inherit {:?} from Normal",
+            key
         );
     }
 }
@@ -301,11 +293,11 @@ fn test_undotree_all_normal_motions_accessible() {
         assert_eq!(
             map.get_action(KeyContext::UndoTree, *key),
             Some(&Action::Editor(EditorAction::Move(*motion))),
-            "UndoTree should inherit {:?} from Normal", key
+            "UndoTree should inherit {:?} from Normal",
+            key
         );
     }
 }
-
 
 #[test]
 fn test_sequence_fallback_through_normal_to_global() {
@@ -335,5 +327,17 @@ fn test_sequence_fallback_undotree_through_normal_to_global() {
     assert_eq!(
         map.lookup(KeyContext::UndoTree, &[Key::Char('g'), Key::Char('g')]),
         MatchResult::Exact(&Action::Editor(EditorAction::Move(Motion::StartOfFile)))
+    );
+}
+
+#[test]
+fn test_default_explorer_toggle_hidden_keybind() {
+    let mut map = KeyMap::new();
+    register_defaults(&mut map);
+
+    assert_eq!(
+        map.get_action(KeyContext::FileExplorer, Key::Char('.')),
+        Some(&Action::Editor(EditorAction::ExplorerToggleHidden)),
+        "FileExplorer '.' should be bound to ExplorerToggleHidden by default"
     );
 }

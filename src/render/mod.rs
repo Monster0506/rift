@@ -2,7 +2,6 @@
 //! Handles drawing the editor UI to the terminal using layers
 
 use crate::buffer::api::BufferView;
-use crate::wrap::DisplayMap;
 /// ## render/ Invariants
 ///
 /// - Rendering reads editor state and buffer contents only.
@@ -22,6 +21,7 @@ use crate::layer::{Cell, Layer};
 use crate::mode::Mode;
 use crate::state::State;
 use crate::viewport::Viewport;
+use crate::wrap::DisplayMap;
 
 pub mod components;
 pub mod ecs;
@@ -231,7 +231,14 @@ pub(crate) fn render_content_to_layer_offset(
                 Some(r) => r,
                 None => {
                     if gutter_width > 0 {
-                        render_gutter_blank(layer, i + row_offset, col_offset, gutter_width, editor_fg, editor_bg);
+                        render_gutter_blank(
+                            layer,
+                            i + row_offset,
+                            col_offset,
+                            gutter_width,
+                            editor_fg,
+                            editor_bg,
+                        );
                     }
                     for col in (col_offset + gutter_width)..(col_offset + visible_cols) {
                         layer.set_cell(
@@ -266,7 +273,14 @@ pub(crate) fn render_content_to_layer_offset(
                         editor_bg,
                     );
                 } else {
-                    render_gutter_blank(layer, i + row_offset, col_offset, gutter_width, editor_fg, editor_bg);
+                    render_gutter_blank(
+                        layer,
+                        i + row_offset,
+                        col_offset,
+                        gutter_width,
+                        editor_fg,
+                        editor_bg,
+                    );
                 }
             }
 
@@ -281,7 +295,9 @@ pub(crate) fn render_content_to_layer_offset(
                     default_fg: editor_fg,
                     default_bg: editor_bg,
                     segment_left_col: Some(row_info.segment_col_start),
-                    segment_content_cols: Some(row_info.segment_col_end - row_info.segment_col_start),
+                    segment_content_cols: Some(
+                        row_info.segment_col_end - row_info.segment_col_start,
+                    ),
                 },
                 &mut highlight_idx,
                 &mut search_match_idx,
@@ -444,7 +460,9 @@ fn render_line(
         .unwrap_or_else(|| config.visible_cols.saturating_sub(config.gutter_width));
     let mut rendered_col = 0;
 
-    let left_col = config.segment_left_col.unwrap_or_else(|| ctx.viewport.left_col());
+    let left_col = config
+        .segment_left_col
+        .unwrap_or_else(|| ctx.viewport.left_col());
 
     // Internal tracker for absolute visual column (including horizontal scroll)
     let mut current_visual_col = 0;

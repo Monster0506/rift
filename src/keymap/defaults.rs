@@ -28,6 +28,11 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::Escape,
         Action::Buffer("explorer:close".to_string()),
     );
+    keymap.register(
+        KeyContext::FileExplorer,
+        Key::Char('H'),
+        Action::Editor(EditorAction::ExplorerToggleHidden),
+    );
 
     // UndoTree buffer Defaults
     // Normal motions fall through to KeyContext::Normal via the fallback chain.

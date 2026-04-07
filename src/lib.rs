@@ -4,11 +4,9 @@
 pub mod perf;
 
 pub mod action;
-pub mod clipboard;
-pub mod plugin;
 pub mod buffer;
-pub mod eval;
 pub mod character;
+pub mod clipboard;
 pub mod color;
 pub mod command;
 pub mod command_line;
@@ -18,6 +16,7 @@ pub mod dot_repeat;
 pub mod editor;
 pub mod editor_api;
 pub mod error;
+pub mod eval;
 pub mod executor;
 pub mod floating_window;
 pub mod history;
@@ -30,6 +29,7 @@ pub mod message;
 pub mod mode;
 pub mod movement;
 pub mod notification;
+pub mod plugin;
 pub mod render;
 pub mod screen_buffer;
 pub mod search;

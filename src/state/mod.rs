@@ -276,7 +276,6 @@ pub struct State {
     pub completion_session: Option<CompletionSession>,
 }
 
-
 impl State {
     /// Create a new state instance with default values
     #[must_use]

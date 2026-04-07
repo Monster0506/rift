@@ -181,16 +181,17 @@ impl std::fmt::Debug for ExecutionResult {
                 .field("direction", direction)
                 .field("subcommand", subcommand)
                 .finish(),
-            Self::OpenDirectory { path } => f
-                .debug_struct("OpenDirectory")
-                .field("path", path)
-                .finish(),
+            Self::OpenDirectory { path } => {
+                f.debug_struct("OpenDirectory").field("path", path).finish()
+            }
             Self::OpenUndoTree => write!(f, "OpenUndoTree"),
             Self::OpenMessages { show_all } => write!(f, "OpenMessages({show_all})"),
             Self::OpenClipboard => write!(f, "OpenClipboard"),
-            Self::PluginCommand { name, args } => {
-                f.debug_struct("PluginCommand").field("name", name).field("args", args).finish()
-            }
+            Self::PluginCommand { name, args } => f
+                .debug_struct("PluginCommand")
+                .field("name", name)
+                .field("args", args)
+                .finish(),
         }
     }
 }
@@ -451,7 +452,9 @@ impl CommandExecutor {
                 ExecutionResult::Checkpoint
             }
             ParsedCommand::UndoTree { bangs: _ } => ExecutionResult::OpenUndoTree,
-            ParsedCommand::Messages { show_all, bangs: _ } => ExecutionResult::OpenMessages { show_all },
+            ParsedCommand::Messages { show_all, bangs: _ } => {
+                ExecutionResult::OpenMessages { show_all }
+            }
             ParsedCommand::Clipboard { bangs: _ } => ExecutionResult::OpenClipboard,
             ParsedCommand::Split {
                 subcommand,

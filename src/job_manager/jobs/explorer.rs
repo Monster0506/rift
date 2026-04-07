@@ -40,7 +40,11 @@ pub struct DirectoryListJob {
 
 impl DirectoryListJob {
     pub fn new(doc_id: usize, path: PathBuf, show_hidden: bool) -> Self {
-        Self { doc_id, path, show_hidden }
+        Self {
+            doc_id,
+            path,
+            show_hidden,
+        }
     }
 }
 

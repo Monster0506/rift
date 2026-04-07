@@ -585,7 +585,6 @@ fn test_parse_split_resize() {
     );
 }
 
-
 #[test]
 fn test_parse_vsplit() {
     use crate::command_line::commands::SplitSubcommand;
@@ -688,7 +687,6 @@ fn test_parse_split_subcommand_prefix_matching() {
             bangs: 0
         }
     );
-
 }
 
 #[test]
@@ -796,7 +794,6 @@ fn test_parse_split_resize_non_numeric_defaults() {
         }
     );
 }
-
 
 #[test]
 fn test_parse_split_dot_via_alias() {

@@ -51,7 +51,11 @@ pub struct ExplorerPreviewJob {
 
 impl ExplorerPreviewJob {
     pub fn new(right_doc_id: DocumentId, path: PathBuf, show_hidden: bool) -> Self {
-        Self { right_doc_id, path, show_hidden }
+        Self {
+            right_doc_id,
+            path,
+            show_hidden,
+        }
     }
 }
 
@@ -74,17 +78,28 @@ impl Job for ExplorerPreviewJob {
                         continue;
                     }
                     let is_dir = entry.metadata().map(|m| m.is_dir()).unwrap_or(false);
-                    entries.push(DirEntry { path: entry.path(), is_dir });
+                    entries.push(DirEntry {
+                        path: entry.path(),
+                        is_dir,
+                    });
                 }
             }
             entries.sort_by(|a, b| {
                 if a.is_dir != b.is_dir {
                     return b.is_dir.cmp(&a.is_dir);
                 }
-                a.path.file_name().unwrap_or_default()
+                a.path
+                    .file_name()
+                    .unwrap_or_default()
                     .to_string_lossy()
                     .to_lowercase()
-                    .cmp(&b.path.file_name().unwrap_or_default().to_string_lossy().to_lowercase())
+                    .cmp(
+                        &b.path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_lowercase(),
+                    )
             });
 
             let result = Box::new(ExplorerPreviewResult {
@@ -104,7 +119,11 @@ impl Job for ExplorerPreviewJob {
                     let n = file.read(&mut buf).unwrap_or(0);
                     let slice = &buf[..n];
                     match std::str::from_utf8(slice) {
-                        Ok(s) => s.lines().take(FILE_PREVIEW_LINES).collect::<Vec<_>>().join("\n"),
+                        Ok(s) => s
+                            .lines()
+                            .take(FILE_PREVIEW_LINES)
+                            .collect::<Vec<_>>()
+                            .join("\n"),
                         Err(_) => "<binary file>".to_string(),
                     }
                 }
@@ -134,8 +153,8 @@ impl Job for ExplorerPreviewJob {
 mod tests {
     use super::*;
     use crate::job_manager::{CancellationSignal, JobMessage};
-    use std::sync::{mpsc, Arc};
     use std::sync::atomic::AtomicBool;
+    use std::sync::{mpsc, Arc};
 
     fn make_signal(cancelled: bool) -> CancellationSignal {
         CancellationSignal {
@@ -152,7 +171,10 @@ mod tests {
             file_text: None,
         };
         let boxed: Box<dyn JobPayload> = Box::new(r);
-        assert!(boxed.as_any().downcast_ref::<ExplorerPreviewResult>().is_some());
+        assert!(boxed
+            .as_any()
+            .downcast_ref::<ExplorerPreviewResult>()
+            .is_some());
     }
 
     #[test]
@@ -169,17 +191,28 @@ mod tests {
         job.run(1, tx, make_signal(false));
 
         let msgs: Vec<JobMessage> = rx.try_iter().collect();
-        let payload = msgs.into_iter().find_map(|m| {
-            if let JobMessage::Custom(_, p) = m { Some(p) } else { None }
-        }).expect("should have Custom message");
+        let payload = msgs
+            .into_iter()
+            .find_map(|m| {
+                if let JobMessage::Custom(_, p) = m {
+                    Some(p)
+                } else {
+                    None
+                }
+            })
+            .expect("should have Custom message");
 
-        let result = payload.into_any()
+        let result = payload
+            .into_any()
             .downcast::<ExplorerPreviewResult>()
             .expect("should be ExplorerPreviewResult");
 
         assert_eq!(result.right_doc_id, 42);
         assert_eq!(result.path, tmp);
-        assert!(result.dir_entries.is_some(), "dir preview should have entries");
+        assert!(
+            result.dir_entries.is_some(),
+            "dir preview should have entries"
+        );
         assert!(result.file_text.is_none());
     }
 
@@ -191,16 +224,30 @@ mod tests {
         job.run(1, tx, make_signal(false));
 
         let msgs: Vec<JobMessage> = rx.try_iter().collect();
-        let payload = msgs.into_iter().find_map(|m| {
-            if let JobMessage::Custom(_, p) = m { Some(p) } else { None }
-        }).expect("should have Custom message");
+        let payload = msgs
+            .into_iter()
+            .find_map(|m| {
+                if let JobMessage::Custom(_, p) = m {
+                    Some(p)
+                } else {
+                    None
+                }
+            })
+            .expect("should have Custom message");
 
-        let result = payload.into_any()
+        let result = payload
+            .into_any()
             .downcast::<ExplorerPreviewResult>()
             .unwrap();
         assert!(result.file_text.is_some());
-        assert!(result.file_text.as_deref().unwrap().contains("cannot open file")
-            || result.file_text.as_deref().unwrap().is_empty());
+        assert!(
+            result
+                .file_text
+                .as_deref()
+                .unwrap()
+                .contains("cannot open file")
+                || result.file_text.as_deref().unwrap().is_empty()
+        );
     }
 
     #[test]
@@ -222,10 +269,15 @@ mod tests {
 
         let msgs: Vec<JobMessage> = rx.try_iter().collect();
         let payload = msgs.into_iter().find_map(|m| {
-            if let JobMessage::Custom(_, p) = m { Some(p) } else { None }
+            if let JobMessage::Custom(_, p) = m {
+                Some(p)
+            } else {
+                None
+            }
         });
         if let Some(payload) = payload {
-            let result = payload.into_any()
+            let result = payload
+                .into_any()
                 .downcast::<ExplorerPreviewResult>()
                 .unwrap();
             if let Some(entries) = result.dir_entries {
@@ -249,6 +301,8 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         job.run(1, tx, make_signal(false));
         let msgs: Vec<JobMessage> = rx.try_iter().collect();
-        assert!(msgs.iter().any(|m| matches!(m, JobMessage::Finished(1, true))));
+        assert!(msgs
+            .iter()
+            .any(|m| matches!(m, JobMessage::Finished(1, true))));
     }
 }

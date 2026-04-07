@@ -129,10 +129,7 @@ fn test_color_decorator_multiple_ranges() {
 fn test_color_decorator_advances_past_expired_range() {
     // Range 0..2 ends before offset 3. The decorator should skip it and apply range 3..5.
     let input = chars("abcde").into_iter();
-    let highlights = vec![
-        (0..2, Color::Red),
-        (3..5, Color::Yellow),
-    ];
+    let highlights = vec![(0..2, Color::Red), (3..5, Color::Yellow)];
     let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
     assert_eq!(items[3].fg, Some(Color::Yellow));
     assert_eq!(items[4].fg, Some(Color::Yellow));
@@ -164,15 +161,19 @@ fn test_color_decorator_single_char_range() {
 fn test_color_decorator_overwrites_existing_fg() {
     // Start with pre-colored items
     let mut offset = 0usize;
-    let pre_colored: Vec<RenderItem> = "ab".chars().map(|c| {
-        let len = c.len_utf8();
-        let mut item = RenderItem::new(Character::from(c), offset, len);
-        item.fg = Some(Color::White);
-        offset += len;
-        item
-    }).collect();
+    let pre_colored: Vec<RenderItem> = "ab"
+        .chars()
+        .map(|c| {
+            let len = c.len_utf8();
+            let mut item = RenderItem::new(Character::from(c), offset, len);
+            item.fg = Some(Color::White);
+            offset += len;
+            item
+        })
+        .collect();
     let highlights = vec![(0..2, Color::Red)];
-    let items: Vec<RenderItem> = ColorDecorator::new(pre_colored.into_iter(), &highlights).collect();
+    let items: Vec<RenderItem> =
+        ColorDecorator::new(pre_colored.into_iter(), &highlights).collect();
     // ColorDecorator should overwrite with Red
     assert_eq!(items[0].fg, Some(Color::Red));
     assert_eq!(items[1].fg, Some(Color::Red));
@@ -189,10 +190,7 @@ fn test_color_decorator_empty_input() {
 #[test]
 fn test_color_decorator_adjacent_ranges_no_gap() {
     let input = chars("abcd").into_iter();
-    let highlights = vec![
-        (0..2, Color::Red),
-        (2..4, Color::Blue),
-    ];
+    let highlights = vec![(0..2, Color::Red), (2..4, Color::Blue)];
     let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
     assert_eq!(items[0].fg, Some(Color::Red));
     assert_eq!(items[1].fg, Some(Color::Red));
@@ -215,13 +213,14 @@ fn test_color_decorator_preserves_char_values() {
     let input = chars("rust").into_iter();
     let highlights = vec![(0..4, Color::Yellow)];
     let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
-    let result: String = items.iter().map(|i| {
-        match i.char {
+    let result: String = items
+        .iter()
+        .map(|i| match i.char {
             Character::Unicode(c) => c,
             Character::Tab => '\t',
             Character::Newline => '\n',
             _ => '?',
-        }
-    }).collect();
+        })
+        .collect();
     assert_eq!(result, "rust");
 }

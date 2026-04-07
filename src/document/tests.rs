@@ -46,6 +46,17 @@ fn test_new_directory_kind() {
 }
 
 #[test]
+fn test_new_directory_show_hidden_defaults_false() {
+    let doc = Document::new_directory(1, PathBuf::from("/tmp/test")).unwrap();
+    match &doc.kind {
+        BufferKind::Directory { show_hidden, .. } => {
+            assert!(!show_hidden, "show_hidden should default to false");
+        }
+        _ => panic!("expected Directory kind"),
+    }
+}
+
+#[test]
 fn test_new_undotree_kind() {
     let doc = Document::new_undotree(1, 42).unwrap();
     assert!(doc.is_undotree());
@@ -143,10 +154,13 @@ fn test_directory_path_returns_path_for_directory() {
 // populate_directory_buffer — text format
 
 fn make_dir_entries(names: &[(&str, bool)], base: &str) -> Vec<DirEntry> {
-    names.iter().map(|(name, is_dir)| DirEntry {
-        path: PathBuf::from(base).join(name),
-        is_dir: *is_dir,
-    }).collect()
+    names
+        .iter()
+        .map(|(name, is_dir)| DirEntry {
+            path: PathBuf::from(base).join(name),
+            is_dir: *is_dir,
+        })
+        .collect()
 }
 
 #[test]
@@ -186,8 +200,11 @@ fn test_populate_directory_no_ids_in_output() {
     // No numeric IDs like "1 file.rs" or "[1]"
     for line in text.lines() {
         let trimmed = line.trim_start();
-        assert!(!trimmed.starts_with(|c: char| c.is_ascii_digit()),
-                "line should not start with digit: {:?}", line);
+        assert!(
+            !trimmed.starts_with(|c: char| c.is_ascii_digit()),
+            "line should not start with digit: {:?}",
+            line
+        );
     }
 }
 
@@ -257,7 +274,11 @@ fn test_populate_directory_parent_nav_is_blue() {
     let covered = doc.custom_highlights.iter().any(|(r, c)| {
         r.start <= parent_range.start && r.end >= parent_range.end && *c == Color::Blue
     });
-    assert!(covered, "parent nav line should be Blue: {:?}", doc.custom_highlights);
+    assert!(
+        covered,
+        "parent nav line should be Blue: {:?}",
+        doc.custom_highlights
+    );
 }
 
 #[test]
@@ -269,10 +290,15 @@ fn test_populate_directory_file_entry_is_white() {
     // "readme.txt" starts after "../\n" = 4 bytes
     let start = 4;
     let end = start + "readme.txt".len();
-    let covered = doc.custom_highlights.iter().any(|(r, c)| {
-        r.start <= start && r.end >= end && *c == Color::White
-    });
-    assert!(covered, "file entry should be White: {:?}", doc.custom_highlights);
+    let covered = doc
+        .custom_highlights
+        .iter()
+        .any(|(r, c)| r.start <= start && r.end >= end && *c == Color::White);
+    assert!(
+        covered,
+        "file entry should be White: {:?}",
+        doc.custom_highlights
+    );
 }
 
 #[test]
@@ -283,10 +309,15 @@ fn test_populate_directory_dir_entry_is_blue() {
     // "subdir/" starts at offset 4 (after "../\n")
     let start = 4;
     let end = start + "subdir/".len();
-    let covered = doc.custom_highlights.iter().any(|(r, c)| {
-        r.start <= start && r.end >= end && *c == Color::Blue
-    });
-    assert!(covered, "dir entry should be Blue: {:?}", doc.custom_highlights);
+    let covered = doc
+        .custom_highlights
+        .iter()
+        .any(|(r, c)| r.start <= start && r.end >= end && *c == Color::Blue);
+    assert!(
+        covered,
+        "dir entry should be Blue: {:?}",
+        doc.custom_highlights
+    );
 }
 
 #[test]
@@ -302,8 +333,10 @@ fn test_populate_directory_clears_old_highlights_on_repopulate() {
     let second_count = doc.custom_highlights.len();
 
     // Fewer entries → fewer highlight ranges
-    assert!(second_count < first_count || second_count > 0,
-            "highlights should be rebuilt on repopulate");
+    assert!(
+        second_count < first_count || second_count > 0,
+        "highlights should be rebuilt on repopulate"
+    );
 }
 
 #[test]
@@ -313,8 +346,12 @@ fn test_populate_directory_no_overlapping_highlight_ranges() {
     doc.populate_directory_buffer(entries);
     let highlights = &doc.custom_highlights;
     for i in 0..highlights.len().saturating_sub(1) {
-        assert!(highlights[i].0.end <= highlights[i+1].0.start,
-                "highlight ranges must not overlap: {:?} vs {:?}", highlights[i], highlights[i+1]);
+        assert!(
+            highlights[i].0.end <= highlights[i + 1].0.start,
+            "highlight ranges must not overlap: {:?} vs {:?}",
+            highlights[i],
+            highlights[i + 1]
+        );
     }
 }
 // parse_directory_diff
@@ -340,7 +377,8 @@ fn test_parse_diff_deleted_entry() {
     let mut doc = make_populated_directory_doc("/tmp", &[("a.txt", false), ("b.txt", false)]);
     // Remove b.txt from the buffer
     let text = doc.buffer.to_string();
-    let new_text: String = text.lines()
+    let new_text: String = text
+        .lines()
         .filter(|l| !l.contains("b.txt"))
         .collect::<Vec<_>>()
         .join("\n");
@@ -363,8 +401,11 @@ fn test_parse_diff_new_file_entry() {
     let _ = doc.buffer.insert_str("\nnew_file.txt");
 
     let diff = doc.parse_directory_diff();
-    assert!(diff.creates.iter().any(|c| c == "new_file.txt"),
-            "should detect new_file.txt as a create: {:?}", diff.creates);
+    assert!(
+        diff.creates.iter().any(|c| c == "new_file.txt"),
+        "should detect new_file.txt as a create: {:?}",
+        diff.creates
+    );
 }
 
 #[test]
@@ -375,8 +416,11 @@ fn test_parse_diff_new_dir_entry_trailing_slash() {
     let _ = doc.buffer.insert_str("\nnewdir/");
 
     let diff = doc.parse_directory_diff();
-    assert!(diff.creates.iter().any(|c| c == "newdir/"),
-            "should preserve trailing slash in creates: {:?}", diff.creates);
+    assert!(
+        diff.creates.iter().any(|c| c == "newdir/"),
+        "should preserve trailing slash in creates: {:?}",
+        diff.creates
+    );
 }
 
 #[test]
@@ -386,8 +430,11 @@ fn test_parse_diff_new_file_no_trailing_slash() {
     let _ = doc.buffer.insert_str("\nnewfile.txt");
 
     let diff = doc.parse_directory_diff();
-    assert!(diff.creates.iter().any(|c| c == "newfile.txt"),
-            "file creates should not have trailing slash: {:?}", diff.creates);
+    assert!(
+        diff.creates.iter().any(|c| c == "newfile.txt"),
+        "file creates should not have trailing slash: {:?}",
+        diff.creates
+    );
 }
 
 #[test]
@@ -409,7 +456,10 @@ fn test_parse_diff_empty_lines_ignored() {
 
     let diff = doc.parse_directory_diff();
     // Empty line should not show up in creates or deletes
-    assert!(diff.creates.is_empty(), "empty lines not counted as creates");
+    assert!(
+        diff.creates.is_empty(),
+        "empty lines not counted as creates"
+    );
 }
 
 #[test]
@@ -499,11 +549,15 @@ fn test_populate_undotree_replaces_old_highlights() {
     doc.populate_undotree_buffer("ab".to_string(), vec![], vec![(0..2, Color::Red)]);
     assert_eq!(doc.custom_highlights.len(), 1);
 
-    doc.populate_undotree_buffer("xyz".to_string(), vec![], vec![
-        (0..1, Color::Blue),
-        (1..2, Color::Green),
-        (2..3, Color::Yellow),
-    ]);
+    doc.populate_undotree_buffer(
+        "xyz".to_string(),
+        vec![],
+        vec![
+            (0..1, Color::Blue),
+            (1..2, Color::Green),
+            (2..3, Color::Yellow),
+        ],
+    );
     assert_eq!(doc.custom_highlights.len(), 3);
     assert_eq!(doc.custom_highlights[0].1, Color::Blue);
 }
@@ -592,20 +646,33 @@ fn test_parse_diff_rename_simple() {
 
     let diff = doc.parse_directory_diff();
     assert_eq!(diff.renames.len(), 1, "should detect a rename: {:?}", diff);
-    assert!(diff.renames[0].0.to_string_lossy().contains("test1.txt"),
-        "renamed from test1.txt: {:?}", diff.renames[0]);
-    assert_eq!(diff.renames[0].1, "test1.json",
-        "renamed to test1.json: {:?}", diff.renames[0]);
-    assert!(diff.deletes.is_empty(), "rename must not also produce a delete");
-    assert!(diff.creates.is_empty(), "rename must not also produce a create");
+    assert!(
+        diff.renames[0].0.to_string_lossy().contains("test1.txt"),
+        "renamed from test1.txt: {:?}",
+        diff.renames[0]
+    );
+    assert_eq!(
+        diff.renames[0].1, "test1.json",
+        "renamed to test1.json: {:?}",
+        diff.renames[0]
+    );
+    assert!(
+        diff.deletes.is_empty(),
+        "rename must not also produce a delete"
+    );
+    assert!(
+        diff.creates.is_empty(),
+        "rename must not also produce a create"
+    );
 }
 
 #[test]
 fn test_parse_diff_rename_preserves_siblings() {
     // Rename one file, leave others untouched
-    let mut doc = make_populated_directory_doc("/tmp", &[
-        ("a.txt", false), ("b.txt", false), ("c.txt", false),
-    ]);
+    let mut doc = make_populated_directory_doc(
+        "/tmp",
+        &[("a.txt", false), ("b.txt", false), ("c.txt", false)],
+    );
     set_buffer_text(&mut doc, "../\na.txt\nb.json\nc.txt");
 
     let diff = doc.parse_directory_diff();
@@ -618,9 +685,7 @@ fn test_parse_diff_rename_preserves_siblings() {
 
 #[test]
 fn test_parse_diff_rename_multiple() {
-    let mut doc = make_populated_directory_doc("/tmp", &[
-        ("foo.txt", false), ("bar.txt", false),
-    ]);
+    let mut doc = make_populated_directory_doc("/tmp", &[("foo.txt", false), ("bar.txt", false)]);
     set_buffer_text(&mut doc, "../\nfoo.rs\nbar.rs");
 
     let diff = doc.parse_directory_diff();
@@ -632,9 +697,10 @@ fn test_parse_diff_rename_multiple() {
 #[test]
 fn test_parse_diff_rename_with_delete() {
     // Rename one, delete another
-    let mut doc = make_populated_directory_doc("/tmp", &[
-        ("keep.txt", false), ("old.txt", false), ("gone.txt", false),
-    ]);
+    let mut doc = make_populated_directory_doc(
+        "/tmp",
+        &[("keep.txt", false), ("old.txt", false), ("gone.txt", false)],
+    );
     // keep.txt stays, old.txt → new.txt, gone.txt is deleted
     set_buffer_text(&mut doc, "../\nkeep.txt\nnew.txt");
 
@@ -643,8 +709,11 @@ fn test_parse_diff_rename_with_delete() {
     assert_eq!(diff.deletes.len(), 1, "one delete: {:?}", diff);
     assert!(diff.creates.is_empty(), "no creates: {:?}", diff);
     let renamed_from = diff.renames[0].0.file_name().unwrap().to_string_lossy();
-    assert!(renamed_from == "old.txt" || renamed_from == "gone.txt",
-        "renamed from one of the removed entries: {}", renamed_from);
+    assert!(
+        renamed_from == "old.txt" || renamed_from == "gone.txt",
+        "renamed from one of the removed entries: {}",
+        renamed_from
+    );
     assert_eq!(diff.renames[0].1, "new.txt");
 }
 
@@ -687,9 +756,10 @@ fn test_parse_diff_multiple_creates() {
 
 #[test]
 fn test_parse_diff_multiple_deletes() {
-    let mut doc = make_populated_directory_doc("/tmp", &[
-        ("a.txt", false), ("b.txt", false), ("c.txt", false)
-    ]);
+    let mut doc = make_populated_directory_doc(
+        "/tmp",
+        &[("a.txt", false), ("b.txt", false), ("c.txt", false)],
+    );
     // Keep only a.txt
     let new_text = "../\na.txt";
     let old_len = doc.buffer.len();
@@ -707,7 +777,10 @@ fn test_populate_directory_increments_revision() {
     let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
     let rev0 = doc.buffer.revision;
     doc.populate_directory_buffer(vec![]);
-    assert!(doc.buffer.revision > rev0, "revision should increment after populate");
+    assert!(
+        doc.buffer.revision > rev0,
+        "revision should increment after populate"
+    );
 }
 
 #[test]
@@ -715,7 +788,10 @@ fn test_populate_undotree_increments_revision() {
     let mut doc = Document::new_undotree(1, 2).unwrap();
     let rev0 = doc.buffer.revision;
     doc.populate_undotree_buffer("text".to_string(), vec![], vec![]);
-    assert!(doc.buffer.revision > rev0, "revision should increment after populate");
+    assert!(
+        doc.buffer.revision > rev0,
+        "revision should increment after populate"
+    );
 }
 // BufferKind — cloneability
 
@@ -730,11 +806,15 @@ fn test_buffer_kind_file_clones() {
 fn test_buffer_kind_directory_clones() {
     let kind = BufferKind::Directory {
         path: PathBuf::from("/tmp"),
-        entries: vec![DirEntry { path: PathBuf::from("/tmp/a"), is_dir: false }],
+        entries: vec![DirEntry {
+            path: PathBuf::from("/tmp/a"),
+            is_dir: false,
+        }],
+        show_hidden: false,
     };
     let cloned = kind.clone();
     match cloned {
-        BufferKind::Directory { path, entries } => {
+        BufferKind::Directory { path, entries, .. } => {
             assert_eq!(path, PathBuf::from("/tmp"));
             assert_eq!(entries.len(), 1);
         }
@@ -744,10 +824,16 @@ fn test_buffer_kind_directory_clones() {
 
 #[test]
 fn test_buffer_kind_undotree_clones() {
-    let kind = BufferKind::UndoTree { linked_doc_id: 7, sequences: vec![1, 2, 3] };
+    let kind = BufferKind::UndoTree {
+        linked_doc_id: 7,
+        sequences: vec![1, 2, 3],
+    };
     let cloned = kind.clone();
     match cloned {
-        BufferKind::UndoTree { linked_doc_id, sequences } => {
+        BufferKind::UndoTree {
+            linked_doc_id,
+            sequences,
+        } => {
             assert_eq!(linked_doc_id, 7);
             assert_eq!(sequences, vec![1, 2, 3]);
         }
@@ -917,7 +1003,10 @@ fn test_from_file_normalizes_crlf() {
 
     let doc = Document::from_file(1, &path).unwrap();
     let text = doc.buffer.to_string();
-    assert!(!text.contains('\r'), "buffer should not contain \\r after CRLF normalization");
+    assert!(
+        !text.contains('\r'),
+        "buffer should not contain \\r after CRLF normalization"
+    );
     assert_eq!(text, "line1\nline2\nline3");
     assert_eq!(doc.options.line_ending, LineEnding::CRLF);
 }
@@ -930,14 +1019,20 @@ fn test_from_file_strips_standalone_cr() {
 
     let doc = Document::from_file(1, &path).unwrap();
     let text = doc.buffer.to_string();
-    assert!(!text.contains('\r'), "buffer should not contain standalone \\r (would render as ^M)");
+    assert!(
+        !text.contains('\r'),
+        "buffer should not contain standalone \\r (would render as ^M)"
+    );
 }
 // WrapMode
 
 #[test]
 fn wrap_default_is_auto() {
     let doc = Document::new(1).unwrap();
-    assert_eq!(doc.options.wrap, Some(definitions::WrapMode::Expr("auto".to_string())));
+    assert_eq!(
+        doc.options.wrap,
+        Some(definitions::WrapMode::Expr("auto".to_string()))
+    );
 }
 
 #[test]

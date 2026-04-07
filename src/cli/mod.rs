@@ -39,7 +39,9 @@ pub fn parse() -> Args {
         Ok(Some(args)) => args,
         Err(e) => {
             eprintln!("rift: {e}");
-            eprintln!("Usage: rift [+] [+N] [+/pattern] [-c cmd] [--cmd cmd] [-v|--version] [file]");
+            eprintln!(
+                "Usage: rift [+] [+N] [+/pattern] [-c cmd] [--cmd cmd] [-v|--version] [file]"
+            );
             std::process::exit(1);
         }
     }
@@ -77,7 +79,9 @@ pub fn parse_args(args: &[&str]) -> Result<Option<Args>, String> {
             return Err(format!("unknown flag: '{arg}'"));
         } else {
             if result.file.is_some() {
-                return Err(format!("unexpected argument: '{arg}' (only one file is supported)"));
+                return Err(format!(
+                    "unexpected argument: '{arg}' (only one file is supported)"
+                ));
             }
             result.file = Some(arg.to_string());
         }

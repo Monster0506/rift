@@ -58,7 +58,13 @@ fn test_log_job_event_appends_correctly() {
     assert_eq!(log.len(), 3);
 
     match &log[0] {
-        MessageEntry::JobEvent { job_id, kind, silent, message, .. } => {
+        MessageEntry::JobEvent {
+            job_id,
+            kind,
+            silent,
+            message,
+            ..
+        } => {
             assert_eq!(*job_id, 1);
             assert_eq!(*kind, JobEventKind::Started);
             assert!(!silent);
@@ -140,7 +146,11 @@ fn test_log_job_event_increments_generation() {
 #[test]
 fn test_message_log_never_pruned_by_prune_expired() {
     let mut mgr = NotificationManager::new();
-    mgr.add(NotificationType::Info, "expiring", Some(Duration::from_millis(1)));
+    mgr.add(
+        NotificationType::Info,
+        "expiring",
+        Some(Duration::from_millis(1)),
+    );
     mgr.log_job_event(1, JobEventKind::Started, false, "job: started");
 
     sleep(Duration::from_millis(10));
@@ -184,8 +194,14 @@ fn test_multiple_jobs_tracked_independently() {
     mgr.log_job_event(2, JobEventKind::Finished, false, "fs-copy: finished");
 
     let log = mgr.message_log();
-    let job1_entries: Vec<_> = log.iter().filter(|e| matches!(e, MessageEntry::JobEvent { job_id: 1, .. })).collect();
-    let job2_entries: Vec<_> = log.iter().filter(|e| matches!(e, MessageEntry::JobEvent { job_id: 2, .. })).collect();
+    let job1_entries: Vec<_> = log
+        .iter()
+        .filter(|e| matches!(e, MessageEntry::JobEvent { job_id: 1, .. }))
+        .collect();
+    let job2_entries: Vec<_> = log
+        .iter()
+        .filter(|e| matches!(e, MessageEntry::JobEvent { job_id: 2, .. }))
+        .collect();
     assert_eq!(job1_entries.len(), 2);
     assert_eq!(job2_entries.len(), 2);
 }

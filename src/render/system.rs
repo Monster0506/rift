@@ -274,7 +274,6 @@ impl RenderSystem {
         );
         self.world
             .add_layer(notification_entity, LayerPriority::NOTIFICATION);
-
     }
 
     /// Render to terminal using ECS

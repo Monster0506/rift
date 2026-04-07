@@ -183,7 +183,6 @@ fn independent_cursor_positions() {
     assert_eq!(tree.get_window(w2).unwrap().cursor_position, 50);
 }
 
-
 // ============================================================
 // Layout computation
 // ============================================================

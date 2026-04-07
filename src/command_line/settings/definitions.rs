@@ -104,7 +104,10 @@ fn set_cmd_window_min_width(
         )),
     }
 }
-fn set_clipboard_size(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+fn set_clipboard_size(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
     match value {
         SettingValue::Integer(n) => {
             if n < 1 {
@@ -115,7 +118,9 @@ fn set_clipboard_size(settings: &mut UserSettings, value: SettingValue) -> Resul
             settings.clipboard_ring_size = n;
             Ok(())
         }
-        _ => Err(SettingError::ValidationError("Expected integer".to_string())),
+        _ => Err(SettingError::ValidationError(
+            "Expected integer".to_string(),
+        )),
     }
 }
 

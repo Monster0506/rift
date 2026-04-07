@@ -140,20 +140,29 @@ fn test_job_cancellation() {
 
 #[test]
 fn test_job_default_name() {
-    let job = TestJob { duration_ms: 0, succeed: true };
+    let job = TestJob {
+        duration_ms: 0,
+        succeed: true,
+    };
     assert_eq!(job.name(), "job"); // default from trait
 }
 
 #[test]
 fn test_named_job_name() {
-    let job = NamedJob { name: "file-save", silent: false };
+    let job = NamedJob {
+        name: "file-save",
+        silent: false,
+    };
     assert_eq!(job.name(), "file-save");
 }
 
 #[test]
 fn test_job_name_stored_in_handle() {
     let mut manager = JobManager::new();
-    let id = manager.spawn(NamedJob { name: "syntax-parse", silent: true });
+    let id = manager.spawn(NamedJob {
+        name: "syntax-parse",
+        silent: true,
+    });
 
     // Drain the Started message so the handle is registered
     let _ = manager.receiver().recv_timeout(Duration::from_millis(200));
@@ -164,7 +173,10 @@ fn test_job_name_stored_in_handle() {
 #[test]
 fn test_job_name_accessor() {
     let mut manager = JobManager::new();
-    let id = manager.spawn(NamedJob { name: "fs-copy", silent: false });
+    let id = manager.spawn(NamedJob {
+        name: "fs-copy",
+        silent: false,
+    });
 
     // Drain messages
     let _ = manager.receiver().recv_timeout(Duration::from_millis(200));
@@ -182,7 +194,10 @@ fn test_job_name_unknown_id_returns_default() {
 #[test]
 fn test_silent_job_name_preserved() {
     let mut manager = JobManager::new();
-    let id = manager.spawn(NamedJob { name: "cache-warming", silent: true });
+    let id = manager.spawn(NamedJob {
+        name: "cache-warming",
+        silent: true,
+    });
 
     let _ = manager.receiver().recv_timeout(Duration::from_millis(200));
 
@@ -194,8 +209,14 @@ fn test_silent_job_name_preserved() {
 #[test]
 fn test_multiple_jobs_have_independent_names() {
     let mut manager = JobManager::new();
-    let id1 = manager.spawn(NamedJob { name: "file-load", silent: true });
-    let id2 = manager.spawn(NamedJob { name: "undotree-render", silent: true });
+    let id1 = manager.spawn(NamedJob {
+        name: "file-load",
+        silent: true,
+    });
+    let id2 = manager.spawn(NamedJob {
+        name: "undotree-render",
+        silent: true,
+    });
 
     // Drain
     for _ in 0..4 {
@@ -208,8 +229,8 @@ fn test_multiple_jobs_have_independent_names() {
 
 #[test]
 fn test_cache_warming_job_name() {
-    use crate::job_manager::jobs::cache_warming::CacheWarmingJob;
     use crate::buffer::rope::PieceTable;
+    use crate::job_manager::jobs::cache_warming::CacheWarmingJob;
     let job = CacheWarmingJob::new(PieceTable::new(vec![]), 0);
     assert_eq!(job.name(), "cache-warming");
     assert!(job.is_silent());
@@ -218,7 +239,14 @@ fn test_cache_warming_job_name() {
 #[test]
 fn test_completion_job_name() {
     use crate::job_manager::jobs::completion::CompletionJob;
-    let job = CompletionJob { input: String::new(), current_settings: None, current_doc_options: None, plugin_commands: vec![], line_count: 0, buf_words: vec![] };
+    let job = CompletionJob {
+        input: String::new(),
+        current_settings: None,
+        current_doc_options: None,
+        plugin_commands: vec![],
+        line_count: 0,
+        buf_words: vec![],
+    };
     assert_eq!(job.name(), "completion");
     assert!(job.is_silent());
 }
@@ -234,7 +262,10 @@ fn test_directory_list_job_name() {
 #[test]
 fn test_fs_copy_job_name() {
     use crate::job_manager::jobs::fs::FsCopyJob;
-    let job = FsCopyJob::new(std::path::PathBuf::from("/a"), std::path::PathBuf::from("/b"));
+    let job = FsCopyJob::new(
+        std::path::PathBuf::from("/a"),
+        std::path::PathBuf::from("/b"),
+    );
     assert_eq!(job.name(), "fs-copy");
     assert!(!job.is_silent());
 }
@@ -242,7 +273,10 @@ fn test_fs_copy_job_name() {
 #[test]
 fn test_fs_move_job_name() {
     use crate::job_manager::jobs::fs::FsMoveJob;
-    let job = FsMoveJob::new(std::path::PathBuf::from("/a"), std::path::PathBuf::from("/b"));
+    let job = FsMoveJob::new(
+        std::path::PathBuf::from("/a"),
+        std::path::PathBuf::from("/b"),
+    );
     assert_eq!(job.name(), "fs-move");
 }
 

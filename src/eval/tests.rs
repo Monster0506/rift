@@ -5,7 +5,11 @@ fn no_kw(_: &str) -> Option<usize> {
 }
 
 fn with_auto(kw: &str) -> Option<usize> {
-    if kw == "auto" { Some(100) } else { None }
+    if kw == "auto" {
+        Some(100)
+    } else {
+        None
+    }
 }
 
 #[test]

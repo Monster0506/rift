@@ -104,7 +104,10 @@ fn test_quit_last_buffer_quits_editor() {
 
     editor.do_quit(false);
 
-    assert!(editor.should_quit, ":q on last clean buffer should quit the editor");
+    assert!(
+        editor.should_quit,
+        ":q on last clean buffer should quit the editor"
+    );
 }
 
 #[test]
@@ -115,7 +118,10 @@ fn test_quit_dirty_last_buffer_refuses() {
     assert!(editor.active_document().is_dirty());
 
     editor.do_quit(false);
-    assert!(!editor.should_quit, ":q should refuse when last buffer is dirty");
+    assert!(
+        !editor.should_quit,
+        ":q should refuse when last buffer is dirty"
+    );
     assert_eq!(
         editor.document_manager.active_document_id().unwrap(),
         original_id,
@@ -123,7 +129,10 @@ fn test_quit_dirty_last_buffer_refuses() {
     );
 
     editor.do_quit(true);
-    assert!(editor.should_quit, ":q! should quit even with dirty last buffer");
+    assert!(
+        editor.should_quit,
+        ":q! should quit even with dirty last buffer"
+    );
 }
 
 #[test]
@@ -155,7 +164,9 @@ fn test_handle_execution_result_quit_only_checks_current_buffer() {
 #[test]
 fn test_handle_execution_result_edit() {
     let mut editor = create_editor();
-    editor.open_file(Some("test.txt".to_string()), false).unwrap();
+    editor
+        .open_file(Some("test.txt".to_string()), false)
+        .unwrap();
 
     assert_eq!(editor.document_manager.tab_count(), 2);
     assert_eq!(editor.active_document().display_name(), "test.txt");
@@ -308,7 +319,10 @@ fn test_search_stays_open_on_failure() {
 // ============================================================
 
 fn split_current(editor: &mut Editor<MockTerminal>, direction: crate::split::tree::SplitDirection) {
-    editor.do_split_window(direction, crate::command_line::commands::SplitSubcommand::Current);
+    editor.do_split_window(
+        direction,
+        crate::command_line::commands::SplitSubcommand::Current,
+    );
 }
 
 #[test]
@@ -328,9 +342,64 @@ fn test_split_file_not_found_emits_error() {
 
     editor.do_split_window(
         SplitDirection::Horizontal,
-        crate::command_line::commands::SplitSubcommand::File("nonexistent_file_xyz.txt".to_string()),
+        crate::command_line::commands::SplitSubcommand::File(
+            "nonexistent_file_xyz.txt".to_string(),
+        ),
     );
 
     assert_eq!(editor.split_tree.window_count(), 1);
     assert!(!editor.state.error_manager.notifications().is_empty());
+}
+
+#[test]
+fn test_explorer_toggle_hidden_flips_show_hidden() {
+    use crate::action::{Action, EditorAction};
+    use crate::document::BufferKind;
+
+    let mut editor = create_editor();
+
+    // Manually open explorer to a temp dir so we have a Directory buffer
+    let tmp = std::env::temp_dir();
+    editor.open_explorer(tmp.clone());
+
+    // Confirm we have a Directory buffer with show_hidden = false
+    let layout = editor
+        .panel_layout
+        .as_ref()
+        .expect("panel layout should exist after open_explorer");
+    let dir_doc_id = layout.dir_doc_id;
+    {
+        let doc = editor.document_manager.get_document(dir_doc_id).unwrap();
+        match &doc.kind {
+            BufferKind::Directory { show_hidden, .. } => assert!(!show_hidden),
+            _ => panic!("expected Directory kind"),
+        }
+    }
+
+    // Toggle hidden on
+    editor.handle_action(&Action::Editor(EditorAction::ExplorerToggleHidden));
+
+    {
+        let doc = editor.document_manager.get_document(dir_doc_id).unwrap();
+        match &doc.kind {
+            BufferKind::Directory { show_hidden, .. } => {
+                assert!(show_hidden, "show_hidden should be true after first toggle")
+            }
+            _ => panic!("expected Directory kind"),
+        }
+    }
+
+    // Toggle hidden off again
+    editor.handle_action(&Action::Editor(EditorAction::ExplorerToggleHidden));
+
+    {
+        let doc = editor.document_manager.get_document(dir_doc_id).unwrap();
+        match &doc.kind {
+            BufferKind::Directory { show_hidden, .. } => assert!(
+                !show_hidden,
+                "show_hidden should be false after second toggle"
+            ),
+            _ => panic!("expected Directory kind"),
+        }
+    }
 }

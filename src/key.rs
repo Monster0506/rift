@@ -152,7 +152,11 @@ pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
             keys.push(Key::Char(c));
         }
     }
-    if keys.is_empty() { None } else { Some(keys) }
+    if keys.is_empty() {
+        None
+    } else {
+        Some(keys)
+    }
 }
 
 /// Build a CSI sequence: `ESC [ {suffix}` or `ESC [ 1 ; {modifier} {suffix}`

@@ -15,9 +15,9 @@ use crate::document::{Document, DocumentId};
 use crate::dot_repeat::{DotRegister, DotRepeat};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::executor::execute_command;
-use arboard;
 use crate::key_handler::KeyAction;
 use crate::keymap::KeyMap;
+use arboard;
 
 use crate::mode::Mode;
 use crate::render;
@@ -31,12 +31,16 @@ use std::sync::Arc;
 fn plugin_dirs() -> Vec<std::path::PathBuf> {
     let mut dirs = Vec::new();
     if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
-        dirs.push(std::path::PathBuf::from(manifest).join("runtime").join("plugins"));
+        dirs.push(
+            std::path::PathBuf::from(manifest)
+                .join("runtime")
+                .join("plugins"),
+        );
     }
     let user_dir = if cfg!(windows) {
-        std::env::var("APPDATA").ok().map(|d| {
-            std::path::PathBuf::from(d).join("rift").join("plugins")
-        })
+        std::env::var("APPDATA")
+            .ok()
+            .map(|d| std::path::PathBuf::from(d).join("rift").join("plugins"))
     } else {
         let base = std::env::var("XDG_CONFIG_HOME")
             .ok()
@@ -72,7 +76,11 @@ fn resolve_display_map(
             global_wrap_width.unwrap_or(content_width)
         }
     };
-    Some(crate::wrap::DisplayMap::build(&doc.buffer, w, doc.options.tab_width))
+    Some(crate::wrap::DisplayMap::build(
+        &doc.buffer,
+        w,
+        doc.options.tab_width,
+    ))
 }
 
 /// Main editor struct
@@ -236,8 +244,10 @@ impl<T: TerminalBackend> Editor<T> {
         crate::keymap::defaults::register_defaults(&mut editor.keymap);
 
         if let Err(e) = editor.load_plugins() {
-            editor.state.notify(crate::notification::NotificationType::Error, e.to_string())
-        }       
+            editor
+                .state
+                .notify(crate::notification::NotificationType::Error, e.to_string())
+        }
 
         // Trigger background search cache warming for initial document
         if let Some(doc) = editor.document_manager.active_document() {
@@ -304,18 +314,22 @@ impl<T: TerminalBackend> Editor<T> {
             });
             if let Some((buf, path, filetype)) = buf_info {
                 editor.update_lua_state();
-                editor.plugin_host.dispatch(&crate::plugin::EditorEvent::BufOpen {
-                    buf,
-                    path,
-                    filetype,
-                });
+                editor
+                    .plugin_host
+                    .dispatch(&crate::plugin::EditorEvent::BufOpen {
+                        buf,
+                        path,
+                        filetype,
+                    });
                 editor.apply_plugin_mutations();
             }
         }
 
         // Dispatch EditorStart after all initialization is complete.
         editor.update_lua_state();
-        editor.plugin_host.dispatch(&crate::plugin::EditorEvent::EditorStart);
+        editor
+            .plugin_host
+            .dispatch(&crate::plugin::EditorEvent::EditorStart);
         editor.apply_plugin_mutations();
 
         Ok(editor)
@@ -402,18 +416,30 @@ impl<T: TerminalBackend> Editor<T> {
     fn force_full_redraw(&mut self) -> Result<(), RiftError> {
         self.render_system.viewport.mark_needs_full_redraw();
         self.update_and_render().map_err(|e| {
-            RiftError::new(ErrorType::Io, crate::constants::errors::RENDER_FAILED, e.to_string())
+            RiftError::new(
+                ErrorType::Io,
+                crate::constants::errors::RENDER_FAILED,
+                e.to_string(),
+            )
         })
     }
 
     fn load_plugins(&mut self) -> Result<(), RiftError> {
         // Initialize Lua VM
         if let Some(err) = self.plugin_host.init_lua() {
-            return Err(RiftError::new(ErrorType::Internal, crate::constants::errors::PLUGIN_LOAD_FAILED, err.to_string()))
+            return Err(RiftError::new(
+                ErrorType::Internal,
+                crate::constants::errors::PLUGIN_LOAD_FAILED,
+                err.to_string(),
+            ));
         } else {
             for dir in plugin_dirs() {
                 for err in self.plugin_host.lua_load_dir(&dir) {
-                    return Err(RiftError::new(ErrorType::Internal, crate::constants::errors::PLUGIN_LOAD_FAILED, err.to_string()))
+                    return Err(RiftError::new(
+                        ErrorType::Internal,
+                        crate::constants::errors::PLUGIN_LOAD_FAILED,
+                        err.to_string(),
+                    ));
                 }
             }
             // Apply any mutations queued by top-level plugin code (e.g. rift.map()).
@@ -721,17 +747,27 @@ impl<T: TerminalBackend> Editor<T> {
                 loop {
                     // 1. Resolve Context
                     let context = {
-                        let is_directory = self.document_manager.active_document()
+                        let is_directory = self
+                            .document_manager
+                            .active_document()
                             .map(|d| d.is_directory())
                             .unwrap_or(false);
-                        let is_undotree = self.document_manager.active_document()
+                        let is_undotree = self
+                            .document_manager
+                            .active_document()
                             .map(|d| d.is_undotree())
                             .unwrap_or(false);
-                        let is_clipboard = self.document_manager.active_document()
+                        let is_clipboard = self
+                            .document_manager
+                            .active_document()
                             .map(|d| d.is_clipboard())
                             .unwrap_or(false);
-                        let is_clipboard_entry = self.document_manager.active_document()
-                            .map(|d| matches!(d.kind, crate::document::BufferKind::ClipboardEntry { .. }))
+                        let is_clipboard_entry = self
+                            .document_manager
+                            .active_document()
+                            .map(|d| {
+                                matches!(d.kind, crate::document::BufferKind::ClipboardEntry { .. })
+                            })
                             .unwrap_or(false);
                         match self.current_mode {
                             Mode::Normal | Mode::OperatorPending => {
@@ -901,7 +937,8 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        self.plugin_host.dispatch(&crate::plugin::EditorEvent::EditorQuit);
+        self.plugin_host
+            .dispatch(&crate::plugin::EditorEvent::EditorQuit);
         self.apply_plugin_mutations();
 
         Ok(())
@@ -950,7 +987,8 @@ impl<T: TerminalBackend> Editor<T> {
             }
             KeyAction::Resize(cols, rows) => {
                 self.render_system.resize(rows as usize, cols as usize);
-                self.plugin_host.dispatch(&crate::plugin::EditorEvent::WindowResized { rows, cols });
+                self.plugin_host
+                    .dispatch(&crate::plugin::EditorEvent::WindowResized { rows, cols });
                 self.apply_plugin_mutations();
             }
             KeyAction::SkipAndRender | KeyAction::Continue => {
@@ -1098,21 +1136,23 @@ impl<T: TerminalBackend> Editor<T> {
                 if self.current_mode == Mode::Normal {
                     let viewport_height = self.render_system.viewport.visible_rows();
                     let last_search_query = self.state.last_search_query.clone();
-                    let captured =
-                        self.document_manager.active_document_mut().and_then(|doc| {
-                            let tab_width = doc.options.tab_width;
-                            crate::executor::compute_motion_range(
-                                *motion,
-                                1,
-                                doc,
-                                viewport_height,
-                                last_search_query.as_deref(),
-                                tab_width,
-                            )
-                            .map(|range| crate::clipboard::capture_text(&doc.buffer, &range))
-                        });
-                    let in_clipboard = self.document_manager.active_document()
-                        .map(|d| d.is_any_clipboard()).unwrap_or(false);
+                    let captured = self.document_manager.active_document_mut().and_then(|doc| {
+                        let tab_width = doc.options.tab_width;
+                        crate::executor::compute_motion_range(
+                            *motion,
+                            1,
+                            doc,
+                            viewport_height,
+                            last_search_query.as_deref(),
+                            tab_width,
+                        )
+                        .map(|range| crate::clipboard::capture_text(&doc.buffer, &range))
+                    });
+                    let in_clipboard = self
+                        .document_manager
+                        .active_document()
+                        .map(|d| d.is_any_clipboard())
+                        .unwrap_or(false);
                     if let Some(text) = captured.filter(|s| !s.is_empty()) {
                         if !in_clipboard {
                             self.clipboard_ring.push(text);
@@ -1193,6 +1233,10 @@ impl<T: TerminalBackend> Editor<T> {
                     })
                     .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
                 self.open_explorer(path);
+                true
+            }
+            EditorAction::ExplorerToggleHidden => {
+                self.handle_explorer_toggle_hidden();
                 true
             }
             EditorAction::OpenUndoTree => {
@@ -1340,7 +1384,10 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 true
             }
-            EditorAction::SplitWindow { direction, subcommand } => {
+            EditorAction::SplitWindow {
+                direction,
+                subcommand,
+            } => {
                 let direction = *direction;
                 let subcommand = subcommand.clone();
                 self.do_split_window(direction, subcommand);
@@ -1520,9 +1567,9 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_directory_buffer_action(&mut self, id: &str) {
         match id {
-            "explorer:select"  => self.handle_explorer_select(),
-            "explorer:parent"  => self.handle_explorer_parent(),
-            "explorer:close"   => self.close_split_panel(),
+            "explorer:select" => self.handle_explorer_select(),
+            "explorer:parent" => self.handle_explorer_parent(),
+            "explorer:close" => self.close_split_panel(),
             "explorer:refresh" => self.handle_explorer_refresh(),
             _ => {}
         }
@@ -1530,8 +1577,8 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_undotree_buffer_action(&mut self, id: &str) {
         match id {
-            "undotree:select"  => self.handle_undotree_select(),
-            "undotree:close"   => self.close_split_panel(),
+            "undotree:select" => self.handle_undotree_select(),
+            "undotree:close" => self.close_split_panel(),
             "undotree:refresh" => self.handle_undotree_refresh(),
             _ => {}
         }
@@ -1546,10 +1593,10 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn handle_clipboard_buffer_action(&mut self, id: &str) {
         match id {
-            "clipboard:select"  => self.handle_clipboard_select(),
-            "clipboard:new"     => self.handle_clipboard_new(),
+            "clipboard:select" => self.handle_clipboard_select(),
+            "clipboard:new" => self.handle_clipboard_new(),
             "clipboard:refresh" => self.refresh_clipboard_buffer_if_open(),
-            "clipboard:close"   => self.close_split_panel(),
+            "clipboard:close" => self.close_split_panel(),
             _ => {}
         }
     }
@@ -1609,8 +1656,10 @@ impl<T: TerminalBackend> Editor<T> {
             let line_num = doc.buffer.line_index.get_line_at(cursor);
             let line_bytes = doc.buffer.get_line_bytes(line_num);
             let line_text = String::from_utf8_lossy(&line_bytes);
-            let idx = line_text.trim()
-                .strip_prefix('[').and_then(|r| r.strip_suffix(']'))
+            let idx = line_text
+                .trim()
+                .strip_prefix('[')
+                .and_then(|r| r.strip_suffix(']'))
                 .and_then(|inner| inner.parse::<usize>().ok());
             match idx {
                 Some(i) => match &doc.kind {
@@ -1625,7 +1674,10 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         // Populate the preview pane with the full entry text as an editable scratch buffer
-        if let Some(preview) = self.document_manager.get_document_mut(layout.preview_doc_id) {
+        if let Some(preview) = self
+            .document_manager
+            .get_document_mut(layout.preview_doc_id)
+        {
             let old_revision = preview.buffer.revision;
             if let Ok(mut new_buf) = crate::buffer::TextBuffer::new(entry_text.len().max(64)) {
                 let _ = new_buf.insert_str(&entry_text);
@@ -1634,13 +1686,17 @@ impl<T: TerminalBackend> Editor<T> {
                 preview.buffer = new_buf;
             }
             preview.custom_highlights.clear();
-            preview.kind = BufferKind::ClipboardEntry { entry_index: Some(entry_index) };
+            preview.kind = BufferKind::ClipboardEntry {
+                entry_index: Some(entry_index),
+            };
             preview.history.mark_saved();
         }
 
         // Focus the preview pane so the user can edit
         self.split_tree.set_focus(layout.preview_win_id);
-        let _ = self.document_manager.switch_to_document(layout.preview_doc_id);
+        let _ = self
+            .document_manager
+            .switch_to_document(layout.preview_doc_id);
         if let Some(w) = self.split_tree.windows.get_mut(&layout.preview_win_id) {
             w.document_id = layout.preview_doc_id;
         }
@@ -1657,7 +1713,10 @@ impl<T: TerminalBackend> Editor<T> {
             _ => return,
         };
 
-        if let Some(preview) = self.document_manager.get_document_mut(layout.preview_doc_id) {
+        if let Some(preview) = self
+            .document_manager
+            .get_document_mut(layout.preview_doc_id)
+        {
             let old_revision = preview.buffer.revision;
             if let Ok(mut new_buf) = crate::buffer::TextBuffer::new(64) {
                 new_buf.revision = old_revision + 1;
@@ -1669,7 +1728,9 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         self.split_tree.set_focus(layout.preview_win_id);
-        let _ = self.document_manager.switch_to_document(layout.preview_doc_id);
+        let _ = self
+            .document_manager
+            .switch_to_document(layout.preview_doc_id);
         if let Some(w) = self.split_tree.windows.get_mut(&layout.preview_win_id) {
             w.document_id = layout.preview_doc_id;
         }
@@ -1722,7 +1783,10 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Repopulate the index buffer so it reflects the edit
         if let Some(index_doc) = self.document_manager.get_document_mut(
-            self.panel_layout.as_ref().map(|l| l.dir_doc_id).unwrap_or(u64::MAX)
+            self.panel_layout
+                .as_ref()
+                .map(|l| l.dir_doc_id)
+                .unwrap_or(u64::MAX),
         ) {
             if index_doc.is_clipboard() {
                 index_doc.populate_clipboard_buffer(self.clipboard_ring.entries());
@@ -1795,12 +1859,24 @@ impl<T: TerminalBackend> Editor<T> {
                     crate::document::LineEnding::LF => "lf",
                     crate::document::LineEnding::CRLF => "crlf",
                 };
-                (buf_id, lines, (row, col), filetype, file_path, can_undo, can_redo, is_dirty, line_ending)
+                (
+                    buf_id,
+                    lines,
+                    (row, col),
+                    filetype,
+                    file_path,
+                    can_undo,
+                    can_redo,
+                    is_dirty,
+                    line_ending,
+                )
             } else {
                 (0, vec![], (0, 0), None, None, false, false, false, "lf")
             };
 
-        let buf_list = self.document_manager.get_buffer_list()
+        let buf_list = self
+            .document_manager
+            .get_buffer_list()
             .into_iter()
             .map(|b| (b.id as usize, b.name, b.is_dirty, b.is_current))
             .collect();
@@ -1813,9 +1889,21 @@ impl<T: TerminalBackend> Editor<T> {
         let scroll = self.render_system.viewport.get_scroll();
 
         self.plugin_host.lua_update_state(
-            buf_id, lines, cursor, tab_width, expand_tabs, mode,
-            filetype, file_path, buf_list, window_size,
-            can_undo, can_redo, is_dirty, scroll, line_ending,
+            buf_id,
+            lines,
+            cursor,
+            tab_width,
+            expand_tabs,
+            mode,
+            filetype,
+            file_path,
+            buf_list,
+            window_size,
+            can_undo,
+            can_redo,
+            is_dirty,
+            scroll,
+            line_ending,
         );
     }
 
@@ -1839,9 +1927,17 @@ impl<T: TerminalBackend> Editor<T> {
             } else if s >= e.byte_pos && end > edit_end {
                 let ns = e.byte_pos + e.ins_bytes;
                 let ne = (end as isize + delta) as usize;
-                if ns < ne { Some(ns..ne) } else { None }
+                if ns < ne {
+                    Some(ns..ne)
+                } else {
+                    None
+                }
             } else {
-                if s < e.byte_pos { Some(s..e.byte_pos) } else { None }
+                if s < e.byte_pos {
+                    Some(s..e.byte_pos)
+                } else {
+                    None
+                }
             }
         }
 
@@ -1865,7 +1961,10 @@ impl<T: TerminalBackend> Editor<T> {
                     for e in &edits {
                         match adjust(cur.clone(), e) {
                             Some(r) => cur = r,
-                            None => { keep = false; break; }
+                            None => {
+                                keep = false;
+                                break;
+                            }
                         }
                     }
                     if keep {
@@ -1883,27 +1982,27 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Drain the plugin mutation queue and apply each mutation.
     fn apply_plugin_mutations(&mut self) {
-        use crate::plugin::PluginMutation;
         use crate::color::Color;
+        use crate::plugin::PluginMutation;
 
         /// Parse a color name or "#rrggbb" hex string into a `Color`.
         fn plugin_color(s: &str) -> Color {
             match s.to_lowercase().as_str() {
-                "red"         => Color::Red,
-                "darkred"     => Color::DarkRed,
-                "green"       => Color::Green,
-                "darkgreen"   => Color::DarkGreen,
-                "blue"        => Color::Blue,
-                "darkblue"    => Color::DarkBlue,
-                "yellow"      => Color::Yellow,
-                "darkyellow"  => Color::DarkYellow,
-                "cyan"        => Color::Cyan,
-                "darkcyan"    => Color::DarkCyan,
-                "magenta"     => Color::Magenta,
+                "red" => Color::Red,
+                "darkred" => Color::DarkRed,
+                "green" => Color::Green,
+                "darkgreen" => Color::DarkGreen,
+                "blue" => Color::Blue,
+                "darkblue" => Color::DarkBlue,
+                "yellow" => Color::Yellow,
+                "darkyellow" => Color::DarkYellow,
+                "cyan" => Color::Cyan,
+                "darkcyan" => Color::DarkCyan,
+                "magenta" => Color::Magenta,
                 "darkmagenta" => Color::DarkMagenta,
-                "white"       => Color::White,
-                "black"       => Color::Black,
-                "grey" | "gray"         => Color::Grey,
+                "white" => Color::White,
+                "black" => Color::Black,
+                "grey" | "gray" => Color::Grey,
                 "darkgrey" | "darkgray" => Color::DarkGrey,
                 s if s.starts_with('#') && s.len() == 7 => {
                     let r = u8::from_str_radix(&s[1..3], 16).unwrap_or(255);
@@ -1987,7 +2086,14 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                     self.do_incremental_syntax_parse();
                 }
-                PluginMutation::AddHighlight { slot, start_line, start_col, end_line, end_col, color } => {
+                PluginMutation::AddHighlight {
+                    slot,
+                    start_line,
+                    start_col,
+                    end_line,
+                    end_col,
+                    color,
+                } => {
                     if let Some(doc) = self.document_manager.active_document_mut() {
                         let parsed_color = plugin_color(&color);
                         let sl = start_line.saturating_sub(1);
@@ -2025,7 +2131,9 @@ impl<T: TerminalBackend> Editor<T> {
                         match name.as_str() {
                             "tab_width" | "tabwidth" => {
                                 if let Ok(n) = value.parse::<usize>() {
-                                    if n > 0 { doc.options.tab_width = n; }
+                                    if n > 0 {
+                                        doc.options.tab_width = n;
+                                    }
                                 }
                             }
                             "expand_tabs" | "expandtabs" => {
@@ -2112,12 +2220,8 @@ impl<T: TerminalBackend> Editor<T> {
 
         if needs_highlight_merge {
             if let Some(doc) = self.document_manager.active_document_mut() {
-                let mut merged: Vec<(std::ops::Range<usize>, Color)> = doc
-                    .highlight_slots
-                    .values()
-                    .flatten()
-                    .cloned()
-                    .collect();
+                let mut merged: Vec<(std::ops::Range<usize>, Color)> =
+                    doc.highlight_slots.values().flatten().cloned().collect();
                 merged.sort_by_key(|(r, _)| r.start);
                 doc.plugin_highlights = merged;
             }
@@ -2134,10 +2238,11 @@ impl<T: TerminalBackend> Editor<T> {
                         doc.path().map(|p| (doc.id, p.to_path_buf()))
                     };
                     if let Some((buf_id, path)) = save_info {
-                        self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufSavePre {
-                            buf: buf_id,
-                            path: path.clone(),
-                        });
+                        self.plugin_host
+                            .dispatch(&crate::plugin::EditorEvent::BufSavePre {
+                                buf: buf_id,
+                                path: path.clone(),
+                            });
                         self.apply_plugin_mutations();
                         let doc = self.document_manager.active_document_mut().unwrap();
                         let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
@@ -2165,7 +2270,9 @@ impl<T: TerminalBackend> Editor<T> {
                 BufferKind::ClipboardEntry { .. } => {
                     self.apply_clipboard_entry_save();
                 }
-                BufferKind::UndoTree { .. } | BufferKind::Terminal | BufferKind::Messages { .. } => {
+                BufferKind::UndoTree { .. }
+                | BufferKind::Terminal
+                | BufferKind::Messages { .. } => {
                     self.state.handle_error(RiftError::new(
                         ErrorType::Io,
                         "CANT_SAVE",
@@ -2229,7 +2336,9 @@ impl<T: TerminalBackend> Editor<T> {
 
     fn do_quit(&mut self, force: bool) {
         // If focused on a clipboard entry scratch buffer, return to the index pane
-        let in_clipboard_entry = self.document_manager.active_document()
+        let in_clipboard_entry = self
+            .document_manager
+            .active_document()
             .map(|d| matches!(d.kind, crate::document::BufferKind::ClipboardEntry { .. }))
             .unwrap_or(false);
         if in_clipboard_entry {
@@ -2237,10 +2346,14 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        let in_explorer = self.panel_layout.as_ref().map(|l| {
-            let fid = self.split_tree.focused_window_id();
-            fid == l.dir_win_id || fid == l.preview_win_id
-        }).unwrap_or(false);
+        let in_explorer = self
+            .panel_layout
+            .as_ref()
+            .map(|l| {
+                let fid = self.split_tree.focused_window_id();
+                fid == l.dir_win_id || fid == l.preview_win_id
+            })
+            .unwrap_or(false);
         if in_explorer {
             self.close_split_panel();
             return;
@@ -2285,10 +2398,12 @@ impl<T: TerminalBackend> Editor<T> {
                 Err(e) => self.state.handle_error(e),
                 Ok(()) => {
                     self.update_lua_state();
-                    self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufClose { buf: doc_id });
+                    self.plugin_host
+                        .dispatch(&crate::plugin::EditorEvent::BufClose { buf: doc_id });
                     if let Some(new_doc_id) = self.document_manager.active_document_id() {
                         self.split_tree.focused_window_mut().document_id = new_doc_id;
-                        self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_doc_id });
+                        self.plugin_host
+                            .dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_doc_id });
                     }
                     self.apply_plugin_mutations();
                     self.sync_state_with_active_document();
@@ -2313,8 +2428,10 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(new_buf) = self.document_manager.active_document_id() {
             if new_buf != old_buf {
                 self.update_lua_state();
-                self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufLeave { buf: old_buf });
-                self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_buf });
+                self.plugin_host
+                    .dispatch(&crate::plugin::EditorEvent::BufLeave { buf: old_buf });
+                self.plugin_host
+                    .dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_buf });
                 self.apply_plugin_mutations();
             }
         }
@@ -2336,8 +2453,10 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(new_buf) = self.document_manager.active_document_id() {
             if new_buf != old_buf {
                 self.update_lua_state();
-                self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufLeave { buf: old_buf });
-                self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_buf });
+                self.plugin_host
+                    .dispatch(&crate::plugin::EditorEvent::BufLeave { buf: old_buf });
+                self.plugin_host
+                    .dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_buf });
                 self.apply_plugin_mutations();
             }
         }
@@ -2367,7 +2486,8 @@ impl<T: TerminalBackend> Editor<T> {
                 special,
             ));
         }
-        self.state.notify(crate::notification::NotificationType::Info, message);
+        self.state
+            .notify(crate::notification::NotificationType::Info, message);
         self.state.clear_command_line();
     }
 
@@ -2417,10 +2537,9 @@ impl<T: TerminalBackend> Editor<T> {
                 } else {
                     match self.document_manager.create_placeholder(&path) {
                         Ok(id) => {
-                            let job =
-                                crate::job_manager::jobs::file_operations::FileLoadJob::new(
-                                    id, path_buf,
-                                );
+                            let job = crate::job_manager::jobs::file_operations::FileLoadJob::new(
+                                id, path_buf,
+                            );
                             self.job_manager.spawn(job);
                             id
                         }
@@ -2456,7 +2575,8 @@ impl<T: TerminalBackend> Editor<T> {
                     .split_tree
                     .compute_layout(size.rows as usize, size.cols as usize);
                 let delta_ratio = (delta as f64) / (size.cols as f64);
-                self.split_tree.resize_focused(direction, delta_ratio, &layouts);
+                self.split_tree
+                    .resize_focused(direction, delta_ratio, &layouts);
             }
         }
         self.state.clear_command_line();
@@ -2580,9 +2700,23 @@ impl<T: TerminalBackend> Editor<T> {
 
             let display_map = {
                 let doc = self.document_manager.active_document().unwrap();
-                let gutter_width = if self.state.settings.show_line_numbers { self.state.gutter_width } else { 0 };
-                let content_width = self.render_system.viewport.visible_cols().saturating_sub(gutter_width).max(1);
-                resolve_display_map(doc, content_width, self.state.settings.soft_wrap, self.state.settings.wrap_width)
+                let gutter_width = if self.state.settings.show_line_numbers {
+                    self.state.gutter_width
+                } else {
+                    0
+                };
+                let content_width = self
+                    .render_system
+                    .viewport
+                    .visible_cols()
+                    .saturating_sub(gutter_width)
+                    .max(1);
+                resolve_display_map(
+                    doc,
+                    content_width,
+                    self.state.settings.soft_wrap,
+                    self.state.settings.wrap_width,
+                )
             };
 
             let cursor_before = self
@@ -2623,8 +2757,8 @@ impl<T: TerminalBackend> Editor<T> {
                     let new_cursor = doc.buffer.cursor();
                     if prev_buf != buf || prev_cursor != new_cursor {
                         let row = doc.buffer.line_index.get_line_at(new_cursor);
-                        let col = new_cursor
-                            .saturating_sub(doc.buffer.line_index.get_line_start(row));
+                        let col =
+                            new_cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
                         Some((buf, row, col))
                     } else {
                         None
@@ -2741,9 +2875,23 @@ impl<T: TerminalBackend> Editor<T> {
                 let viewport_height = self.render_system.viewport.visible_rows();
                 let display_map = {
                     let doc = self.document_manager.active_document().unwrap();
-                    let gutter_width = if self.state.settings.show_line_numbers { self.state.gutter_width } else { 0 };
-                    let content_width = self.render_system.viewport.visible_cols().saturating_sub(gutter_width).max(1);
-                    resolve_display_map(doc, content_width, self.state.settings.soft_wrap, self.state.settings.wrap_width)
+                    let gutter_width = if self.state.settings.show_line_numbers {
+                        self.state.gutter_width
+                    } else {
+                        0
+                    };
+                    let content_width = self
+                        .render_system
+                        .viewport
+                        .visible_cols()
+                        .saturating_sub(gutter_width)
+                        .max(1);
+                    resolve_display_map(
+                        doc,
+                        content_width,
+                        self.state.settings.soft_wrap,
+                        self.state.settings.wrap_width,
+                    )
                 };
                 self.document_manager
                     .active_document_mut()
@@ -2968,18 +3116,32 @@ impl<T: TerminalBackend> Editor<T> {
 
         let display_map = {
             let doc = self.document_manager.get_document(doc_id).unwrap();
-            let content_width = self.render_system.viewport.visible_cols().saturating_sub(gutter_width).max(1);
-            resolve_display_map(doc, content_width, self.state.settings.soft_wrap, self.state.settings.wrap_width)
+            let content_width = self
+                .render_system
+                .viewport
+                .visible_cols()
+                .saturating_sub(gutter_width)
+                .max(1);
+            resolve_display_map(
+                doc,
+                content_width,
+                self.state.settings.soft_wrap,
+                self.state.settings.wrap_width,
+            )
         };
 
         let needs_clear = if let Some(ref dm) = display_map {
             let doc = self.document_manager.get_document(doc_id).unwrap();
             let visual_row = dm.char_to_visual_row(doc.buffer.cursor());
             let total_visual = dm.total_visual_rows();
-            self.render_system.viewport.update_visual(visual_row, 0, total_visual, gutter_width)
+            self.render_system
+                .viewport
+                .update_visual(visual_row, 0, total_visual, gutter_width)
         } else {
             let viewport_col = if is_terminal { 0 } else { cursor_col };
-            self.render_system.viewport.update(cursor_line, viewport_col, total_lines, gutter_width)
+            self.render_system
+                .viewport
+                .update(cursor_line, viewport_col, total_lines, gutter_width)
         };
 
         self.render_plugin_float();
@@ -3047,7 +3209,11 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Render the editor interface (pure read - no mutations)
     /// Uses the layer compositor for composited rendering
-    fn render(&mut self, needs_clear: bool, display_map: Option<&crate::wrap::DisplayMap>) -> Result<(), RiftError> {
+    fn render(
+        &mut self,
+        needs_clear: bool,
+        display_map: Option<&crate::wrap::DisplayMap>,
+    ) -> Result<(), RiftError> {
         let Editor {
             document_manager,
             render_system,
@@ -3074,7 +3240,11 @@ impl<T: TerminalBackend> Editor<T> {
                 .map(|r| r.logical_line)
                 .unwrap_or(0);
             let end_l = dm
-                .get_visual_row(bottom_vr.saturating_sub(1).min(dm.total_visual_rows().saturating_sub(1)))
+                .get_visual_row(
+                    bottom_vr
+                        .saturating_sub(1)
+                        .min(dm.total_visual_rows().saturating_sub(1)),
+                )
                 .map(|r| r.logical_line + 1)
                 .unwrap_or(doc.buffer.get_total_lines());
             (start_l, end_l)
@@ -3120,8 +3290,16 @@ impl<T: TerminalBackend> Editor<T> {
             cursor_col_offset: 0,
             cursor_viewport: None,
             terminal_cursor: doc.terminal_cursor,
-            custom_highlights: if doc.custom_highlights.is_empty() { None } else { Some(&doc.custom_highlights) },
-            plugin_highlights: if doc.plugin_highlights.is_empty() { None } else { Some(&doc.plugin_highlights) },
+            custom_highlights: if doc.custom_highlights.is_empty() {
+                None
+            } else {
+                Some(&doc.custom_highlights)
+            },
+            plugin_highlights: if doc.plugin_highlights.is_empty() {
+                None
+            } else {
+                Some(&doc.plugin_highlights)
+            },
             show_line_numbers: doc.options.show_line_numbers,
             display_map,
         };
@@ -3135,14 +3313,17 @@ impl<T: TerminalBackend> Editor<T> {
     /// Clears the layer once when a float is closed.
     fn render_plugin_float(&mut self) {
         if self.plugin_host.has_open_float() {
-            let layer = self.render_system.compositor
+            let layer = self
+                .render_system
+                .compositor
                 .get_layer_mut(crate::layer::LayerPriority::POPUP);
             layer.clear();
             let fg = self.state.settings.editor_fg;
             let bg = self.state.settings.editor_bg;
             self.plugin_host.render_float_into_layer(layer, fg, bg);
         } else if self.plugin_host.take_float_closed() {
-            self.render_system.compositor
+            self.render_system
+                .compositor
                 .get_layer_mut(crate::layer::LayerPriority::POPUP)
                 .clear();
         }
@@ -3203,7 +3384,9 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Some(dm) = resolve_display_map(doc, content_width, soft_wrap, wrap_width) {
                     let cursor_visual_row = dm.char_to_visual_row(cursor_pos);
                     let total_visual = dm.total_visual_rows();
-                    window.viewport.update_visual(cursor_visual_row, 0, total_visual, gutter_width);
+                    window
+                        .viewport
+                        .update_visual(cursor_visual_row, 0, total_visual, gutter_width);
                 }
             }
         }
@@ -3257,7 +3440,8 @@ impl<T: TerminalBackend> Editor<T> {
 
             let tab_width = doc.options.tab_width;
 
-            let doc_show_line_numbers = doc.options.show_line_numbers && state.settings.show_line_numbers;
+            let doc_show_line_numbers =
+                doc.options.show_line_numbers && state.settings.show_line_numbers;
             let gutter_width = if doc_show_line_numbers {
                 doc.buffer.get_total_lines().to_string().len() + 2
             } else {
@@ -3265,14 +3449,26 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let window_cols = layout.cols;
             let content_width = window_cols.saturating_sub(gutter_width).max(1);
-            let display_map = resolve_display_map(doc, content_width, state.settings.soft_wrap, state.settings.wrap_width);
+            let display_map = resolve_display_map(
+                doc,
+                content_width,
+                state.settings.soft_wrap,
+                state.settings.wrap_width,
+            );
 
             let (start_line, end_line) = if let Some(ref dm) = display_map {
                 let top_vr = window.viewport.top_visual_row();
                 let bottom_vr = top_vr + window.viewport.visible_rows();
-                let start_l = dm.get_visual_row(top_vr).map(|r| r.logical_line).unwrap_or(0);
+                let start_l = dm
+                    .get_visual_row(top_vr)
+                    .map(|r| r.logical_line)
+                    .unwrap_or(0);
                 let end_l = dm
-                    .get_visual_row(bottom_vr.saturating_sub(1).min(dm.total_visual_rows().saturating_sub(1)))
+                    .get_visual_row(
+                        bottom_vr
+                            .saturating_sub(1)
+                            .min(dm.total_visual_rows().saturating_sub(1)),
+                    )
                     .map(|r| r.logical_line + 1)
                     .unwrap_or(doc.buffer.get_total_lines());
                 (start_l, end_l)
@@ -3310,8 +3506,16 @@ impl<T: TerminalBackend> Editor<T> {
                 tab_width,
                 highlights: highlights.as_deref(),
                 capture_map: capture_names,
-                custom_highlights: if doc.custom_highlights.is_empty() { None } else { Some(&doc.custom_highlights) },
-                plugin_highlights: if doc.plugin_highlights.is_empty() { None } else { Some(&doc.plugin_highlights) },
+                custom_highlights: if doc.custom_highlights.is_empty() {
+                    None
+                } else {
+                    Some(&doc.custom_highlights)
+                },
+                plugin_highlights: if doc.plugin_highlights.is_empty() {
+                    None
+                } else {
+                    Some(&doc.plugin_highlights)
+                },
                 show_line_numbers: doc.options.show_line_numbers,
                 display_map: display_map.as_ref(),
                 gutter_width_override: Some(gutter_width),
@@ -3362,14 +3566,20 @@ impl<T: TerminalBackend> Editor<T> {
             .unwrap_or((0, 0, total_cols));
 
         let focused_tab_width = focused_doc.options.tab_width;
-        let focused_doc_show_line_numbers = focused_doc.options.show_line_numbers && state.settings.show_line_numbers;
+        let focused_doc_show_line_numbers =
+            focused_doc.options.show_line_numbers && state.settings.show_line_numbers;
         let focused_gutter_width = if focused_doc_show_line_numbers {
             focused_doc.buffer.get_total_lines().to_string().len() + 2
         } else {
             0
         };
         let focused_content_width = focused_cols.saturating_sub(focused_gutter_width).max(1);
-        let focused_display_map = resolve_display_map(focused_doc, focused_content_width, state.settings.soft_wrap, state.settings.wrap_width);
+        let focused_display_map = resolve_display_map(
+            focused_doc,
+            focused_content_width,
+            state.settings.soft_wrap,
+            state.settings.wrap_width,
+        );
 
         let focused_vp = &split_tree.focused_window().viewport;
         let render_state = render::RenderState {
@@ -3387,8 +3597,16 @@ impl<T: TerminalBackend> Editor<T> {
             cursor_col_offset: col_off,
             cursor_viewport: Some(focused_vp),
             terminal_cursor: focused_doc.terminal_cursor,
-            custom_highlights: if focused_doc.custom_highlights.is_empty() { None } else { Some(&focused_doc.custom_highlights) },
-            plugin_highlights: if focused_doc.plugin_highlights.is_empty() { None } else { Some(&focused_doc.plugin_highlights) },
+            custom_highlights: if focused_doc.custom_highlights.is_empty() {
+                None
+            } else {
+                Some(&focused_doc.custom_highlights)
+            },
+            plugin_highlights: if focused_doc.plugin_highlights.is_empty() {
+                None
+            } else {
+                Some(&focused_doc.plugin_highlights)
+            },
             show_line_numbers: focused_doc.options.show_line_numbers,
             display_map: focused_display_map.as_ref(),
         };
@@ -3473,18 +3691,40 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Reload a directory buffer with a new path.
-    fn reload_directory_buffer(&mut self, doc_id: crate::document::DocumentId, new_path: std::path::PathBuf) {
+    fn reload_directory_buffer(
+        &mut self,
+        doc_id: crate::document::DocumentId,
+        new_path: std::path::PathBuf,
+    ) {
+        let show_hidden = self
+            .document_manager
+            .get_document(doc_id)
+            .and_then(|d| {
+                if let crate::document::BufferKind::Directory { show_hidden, .. } = &d.kind {
+                    Some(*show_hidden)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(false);
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             doc.kind = crate::document::BufferKind::Directory {
                 path: new_path.clone(),
                 entries: vec![],
+                show_hidden,
             };
             let _ = doc.buffer.set_cursor(0);
             let len = doc.buffer.len();
-            for _ in 0..len { doc.buffer.delete_forward(); }
+            for _ in 0..len {
+                doc.buffer.delete_forward();
+            }
             let _ = doc.buffer.insert_str("Loading...");
         }
-        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(doc_id as usize, new_path, false);
+        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
+            doc_id as usize,
+            new_path,
+            show_hidden,
+        );
         self.job_manager.spawn(job);
     }
 
@@ -3493,9 +3733,14 @@ impl<T: TerminalBackend> Editor<T> {
         use crate::document::BufferKind;
 
         // If we're in the explorer center pane, delegate to split-aware select.
-        let is_explorer_dir = self.panel_layout.as_ref().map(|l| {
-            l.kind == PanelKind::FileExplorer && self.split_tree.focused_window_id() == l.dir_win_id
-        }).unwrap_or(false);
+        let is_explorer_dir = self
+            .panel_layout
+            .as_ref()
+            .map(|l| {
+                l.kind == PanelKind::FileExplorer
+                    && self.split_tree.focused_window_id() == l.dir_win_id
+            })
+            .unwrap_or(false);
         if is_explorer_dir {
             self.handle_explorer_split_select();
             return;
@@ -3532,7 +3777,9 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let entry_name = line_text.trim_end_matches('/').to_string();
-        if entry_name.is_empty() { return; }
+        if entry_name.is_empty() {
+            return;
+        }
 
         let target_path = dir_path.join(&entry_name);
 
@@ -3542,7 +3789,9 @@ impl<T: TerminalBackend> Editor<T> {
             self.state.handle_error(e);
         } else {
             self.state.clear_command_line();
-            if let Err(e) = self.force_full_redraw() { self.state.handle_error(e); }
+            if let Err(e) = self.force_full_redraw() {
+                self.state.handle_error(e);
+            }
         }
     }
 
@@ -3551,9 +3800,14 @@ impl<T: TerminalBackend> Editor<T> {
         use crate::document::BufferKind;
 
         // If we're in the explorer center pane, delegate to split-aware parent.
-        let is_explorer_dir = self.panel_layout.as_ref().map(|l| {
-            l.kind == PanelKind::FileExplorer && self.split_tree.focused_window_id() == l.dir_win_id
-        }).unwrap_or(false);
+        let is_explorer_dir = self
+            .panel_layout
+            .as_ref()
+            .map(|l| {
+                l.kind == PanelKind::FileExplorer
+                    && self.split_tree.focused_window_id() == l.dir_win_id
+            })
+            .unwrap_or(false);
         if is_explorer_dir {
             self.handle_explorer_split_parent();
             return;
@@ -3589,7 +3843,10 @@ impl<T: TerminalBackend> Editor<T> {
         let dir_doc_id = self.document_manager.next_id();
         let dir_doc = match crate::document::Document::new_directory(dir_doc_id, dir.clone()) {
             Ok(d) => d,
-            Err(e) => { self.state.handle_error(e); return; }
+            Err(e) => {
+                self.state.handle_error(e);
+                return;
+            }
         };
         self.document_manager.add_private_document(dir_doc);
 
@@ -3599,11 +3856,17 @@ impl<T: TerminalBackend> Editor<T> {
             std::path::PathBuf::from("[preview]"),
         ) {
             Ok(d) => d,
-            Err(e) => { self.state.handle_error(e); return; }
+            Err(e) => {
+                self.state.handle_error(e);
+                return;
+            }
         };
         self.document_manager.add_private_document(preview_doc);
 
-        let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+        let size = self
+            .term
+            .get_size()
+            .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
         let rows = size.rows as usize;
         let cols = size.cols as usize;
 
@@ -3624,9 +3887,20 @@ impl<T: TerminalBackend> Editor<T> {
         self.split_tree.set_focus(dir_win_id);
         let _ = self.document_manager.switch_to_document(dir_doc_id);
 
-        self.panel_layout = Some(PanelLayout { kind: PanelKind::FileExplorer, dir_win_id, preview_win_id, dir_doc_id, preview_doc_id, original_doc_id });
+        self.panel_layout = Some(PanelLayout {
+            kind: PanelKind::FileExplorer,
+            dir_win_id,
+            preview_win_id,
+            dir_doc_id,
+            preview_doc_id,
+            original_doc_id,
+        });
 
-        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(dir_doc_id as usize, dir, false);
+        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
+            dir_doc_id as usize,
+            dir,
+            false, /* new explorer always starts with hidden off */
+        );
         self.job_manager.spawn(job);
 
         self.sync_state_with_active_document();
@@ -3644,13 +3918,17 @@ impl<T: TerminalBackend> Editor<T> {
             PanelKind::FileExplorer => {
                 // Close preview window, restore original doc to dir window, remove both private docs.
                 self.split_tree.close_window(layout.preview_win_id);
-                self.document_manager.remove_private_document(layout.preview_doc_id);
+                self.document_manager
+                    .remove_private_document(layout.preview_doc_id);
                 if let Some(w) = self.split_tree.windows.get_mut(&layout.dir_win_id) {
                     w.document_id = layout.original_doc_id;
                 }
-                self.document_manager.remove_private_document(layout.dir_doc_id);
+                self.document_manager
+                    .remove_private_document(layout.dir_doc_id);
                 self.split_tree.set_focus(layout.dir_win_id);
-                let _ = self.document_manager.switch_to_document(layout.original_doc_id);
+                let _ = self
+                    .document_manager
+                    .switch_to_document(layout.original_doc_id);
             }
             PanelKind::UndoTree => {
                 // Reassign the preview window to show the original file before removing preview clone.
@@ -3658,20 +3936,28 @@ impl<T: TerminalBackend> Editor<T> {
                     w.document_id = layout.original_doc_id;
                 }
                 self.split_tree.close_window(layout.dir_win_id);
-                self.document_manager.remove_private_document(layout.dir_doc_id);
-                self.document_manager.remove_private_document(layout.preview_doc_id);
+                self.document_manager
+                    .remove_private_document(layout.dir_doc_id);
+                self.document_manager
+                    .remove_private_document(layout.preview_doc_id);
                 self.split_tree.set_focus(layout.preview_win_id);
-                let _ = self.document_manager.switch_to_document(layout.original_doc_id);
+                let _ = self
+                    .document_manager
+                    .switch_to_document(layout.original_doc_id);
             }
             PanelKind::Clipboard => {
                 self.split_tree.close_window(layout.preview_win_id);
-                self.document_manager.remove_private_document(layout.preview_doc_id);
+                self.document_manager
+                    .remove_private_document(layout.preview_doc_id);
                 if let Some(w) = self.split_tree.windows.get_mut(&layout.dir_win_id) {
                     w.document_id = layout.original_doc_id;
                 }
-                self.document_manager.remove_private_document(layout.dir_doc_id);
+                self.document_manager
+                    .remove_private_document(layout.dir_doc_id);
                 self.split_tree.set_focus(layout.dir_win_id);
-                let _ = self.document_manager.switch_to_document(layout.original_doc_id);
+                let _ = self
+                    .document_manager
+                    .switch_to_document(layout.original_doc_id);
             }
         }
         self.sync_state_with_active_document();
@@ -3707,11 +3993,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
         self.split_tree.focused_window_mut().document_id = id;
 
-        self.last_notification_generation = self
-            .state
-            .error_manager
-            .notifications()
-            .generation;
+        self.last_notification_generation = self.state.error_manager.notifications().generation;
 
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
@@ -3731,7 +4013,10 @@ impl<T: TerminalBackend> Editor<T> {
         let index_doc_id = self.document_manager.next_id();
         let mut index_doc = match crate::document::Document::new_clipboard(index_doc_id) {
             Ok(d) => d,
-            Err(e) => { self.state.handle_error(e); return; }
+            Err(e) => {
+                self.state.handle_error(e);
+                return;
+            }
         };
         index_doc.populate_clipboard_buffer(self.clipboard_ring.entries());
         self.document_manager.add_private_document(index_doc);
@@ -3739,11 +4024,17 @@ impl<T: TerminalBackend> Editor<T> {
         let preview_doc_id = self.document_manager.next_id();
         let preview_doc = match crate::document::Document::new_clipboard(preview_doc_id) {
             Ok(d) => d,
-            Err(e) => { self.state.handle_error(e); return; }
+            Err(e) => {
+                self.state.handle_error(e);
+                return;
+            }
         };
         self.document_manager.add_private_document(preview_doc);
 
-        let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+        let size = self
+            .term
+            .get_size()
+            .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
         let rows = size.rows as usize;
         let cols = size.cols as usize;
 
@@ -3781,7 +4072,12 @@ impl<T: TerminalBackend> Editor<T> {
     /// Called after every cursor movement in the clipboard index pane: update the preview.
     fn update_clipboard_preview(&mut self) {
         let layout = match &self.panel_layout {
-            Some(l) if l.kind == PanelKind::Clipboard && self.split_tree.focused_window_id() == l.dir_win_id => l.clone(),
+            Some(l)
+                if l.kind == PanelKind::Clipboard
+                    && self.split_tree.focused_window_id() == l.dir_win_id =>
+            {
+                l.clone()
+            }
             _ => return,
         };
 
@@ -3798,7 +4094,8 @@ impl<T: TerminalBackend> Editor<T> {
 
             // Lines are `[N]` — parse N to look up the entry in the snapshot
             let idx = line_text
-                .strip_prefix('[').and_then(|r| r.strip_suffix(']'))
+                .strip_prefix('[')
+                .and_then(|r| r.strip_suffix(']'))
                 .and_then(|inner| inner.parse::<usize>().ok());
 
             let text = match idx {
@@ -3890,7 +4187,10 @@ impl<T: TerminalBackend> Editor<T> {
         let ut_id = self.document_manager.next_id();
         let ut_doc = match crate::document::Document::new_undotree(ut_id, linked_id) {
             Ok(d) => d,
-            Err(e) => { self.state.handle_error(e); return; }
+            Err(e) => {
+                self.state.handle_error(e);
+                return;
+            }
         };
         self.document_manager.add_private_document(ut_doc);
 
@@ -3900,16 +4200,24 @@ impl<T: TerminalBackend> Editor<T> {
         let preview_doc = {
             let linked = match self.document_manager.get_document(linked_id) {
                 Some(d) => d,
-                None => { return; }
+                None => {
+                    return;
+                }
             };
             match crate::document::Document::new_undotree_preview(preview_id, linked) {
                 Ok(d) => d,
-                Err(e) => { self.state.handle_error(e); return; }
+                Err(e) => {
+                    self.state.handle_error(e);
+                    return;
+                }
             }
         };
         self.document_manager.add_private_document(preview_doc);
 
-        let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+        let size = self
+            .term
+            .get_size()
+            .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
         let rows = size.rows as usize;
         let cols = size.cols as usize;
 
@@ -3952,7 +4260,12 @@ impl<T: TerminalBackend> Editor<T> {
     /// Called after every cursor movement: if in the explorer dir pane, spawn a preview job.
     fn update_explorer_preview(&mut self) {
         let layout = match &self.panel_layout {
-            Some(l) if l.kind == PanelKind::FileExplorer && self.split_tree.focused_window_id() == l.dir_win_id => l.clone(),
+            Some(l)
+                if l.kind == PanelKind::FileExplorer
+                    && self.split_tree.focused_window_id() == l.dir_win_id =>
+            {
+                l.clone()
+            }
             _ => return,
         };
 
@@ -3987,8 +4300,12 @@ impl<T: TerminalBackend> Editor<T> {
     /// Called after every cursor movement in the undotree pane: applies goto_seq on the linked doc.
     fn update_undotree_preview(&mut self) {
         let layout = match &self.panel_layout {
-            Some(l) if l.kind == PanelKind::UndoTree
-                && self.split_tree.focused_window_id() == l.dir_win_id => l.clone(),
+            Some(l)
+                if l.kind == PanelKind::UndoTree
+                    && self.split_tree.focused_window_id() == l.dir_win_id =>
+            {
+                l.clone()
+            }
             _ => return,
         };
 
@@ -4007,9 +4324,14 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
 
-        if seq == u64::MAX { return; }
+        if seq == u64::MAX {
+            return;
+        }
 
-        if let Some(linked_doc) = self.document_manager.get_document_mut(layout.preview_doc_id) {
+        if let Some(linked_doc) = self
+            .document_manager
+            .get_document_mut(layout.preview_doc_id)
+        {
             let _ = linked_doc.goto_seq(seq);
             // Reset cursor to top so the preview viewport starts from the beginning
             let _ = linked_doc.buffer.set_cursor(0);
@@ -4069,7 +4391,9 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.handle_error(e);
             } else {
                 self.state.clear_command_line();
-                if let Err(e) = self.force_full_redraw() { self.state.handle_error(e); }
+                if let Err(e) = self.force_full_redraw() {
+                    self.state.handle_error(e);
+                }
             }
         }
     }
@@ -4114,7 +4438,10 @@ impl<T: TerminalBackend> Editor<T> {
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
             let (linked_id, seq) = match &doc.kind {
-                BufferKind::UndoTree { linked_doc_id, sequences } => {
+                BufferKind::UndoTree {
+                    linked_doc_id,
+                    sequences,
+                } => {
                     let seq = sequences.get(line_num).copied().unwrap_or(u64::MAX);
                     (*linked_doc_id, seq)
                 }
@@ -4123,15 +4450,64 @@ impl<T: TerminalBackend> Editor<T> {
             (linked_id, seq)
         };
 
-        if seq == u64::MAX { return; } // connector line
+        if seq == u64::MAX {
+            return;
+        } // connector line
 
         if let Some(linked_doc) = self.document_manager.get_document_mut(linked_doc_id) {
-            if linked_doc.goto_seq(seq).is_err() { return; }
+            if linked_doc.goto_seq(seq).is_err() {
+                return;
+            }
         }
         self.spawn_syntax_parse_job(linked_doc_id);
 
         // Close the undo tree pane and focus the linked document
         self.close_split_panel();
+    }
+
+    /// Toggle hidden-file visibility for the active file explorer pane.
+    fn handle_explorer_toggle_hidden(&mut self) {
+        use crate::document::BufferKind;
+
+        // Find the directory document for the active explorer (split or standalone).
+        let dir_doc_id = if let Some(layout) = self.panel_layout.as_ref() {
+            if layout.kind == PanelKind::FileExplorer {
+                layout.dir_doc_id
+            } else {
+                return;
+            }
+        } else {
+            // Standalone directory buffer
+            match self.document_manager.active_document() {
+                Some(d) if d.is_directory() => d.id,
+                _ => return,
+            }
+        };
+
+        let (path, show_hidden) = match self.document_manager.get_document(dir_doc_id) {
+            Some(d) => match &d.kind {
+                BufferKind::Directory {
+                    path, show_hidden, ..
+                } => (path.clone(), *show_hidden),
+                _ => return,
+            },
+            None => return,
+        };
+
+        let new_show_hidden = !show_hidden;
+
+        if let Some(doc) = self.document_manager.get_document_mut(dir_doc_id) {
+            if let BufferKind::Directory { show_hidden, .. } = &mut doc.kind {
+                *show_hidden = new_show_hidden;
+            }
+        }
+
+        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
+            dir_doc_id as usize,
+            path,
+            new_show_hidden,
+        );
+        self.job_manager.spawn(job);
     }
 
     /// Re-read the directory listing for the active file explorer pane.
@@ -4140,14 +4516,20 @@ impl<T: TerminalBackend> Editor<T> {
             Some(l) if l.kind == PanelKind::FileExplorer => l.clone(),
             _ => return,
         };
-        let path = match self.document_manager.get_document(layout.dir_doc_id) {
+        let (path, show_hidden) = match self.document_manager.get_document(layout.dir_doc_id) {
             Some(d) => match &d.kind {
-                crate::document::BufferKind::Directory { path, .. } => path.clone(),
+                crate::document::BufferKind::Directory {
+                    path, show_hidden, ..
+                } => (path.clone(), *show_hidden),
                 _ => return,
             },
             None => return,
         };
-        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(layout.dir_doc_id as usize, path, false);
+        let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
+            layout.dir_doc_id as usize,
+            path,
+            show_hidden,
+        );
         self.job_manager.spawn(job);
     }
 
@@ -4171,16 +4553,18 @@ impl<T: TerminalBackend> Editor<T> {
         use crate::document::BufferKind;
         use std::fs;
 
-        let (dir_doc_id, dir_path, diff) = {
+        let (dir_doc_id, dir_path, dir_show_hidden, diff) = {
             let doc = match self.document_manager.active_document() {
                 Some(d) if d.is_directory() => d,
                 _ => return,
             };
-            let path = match &doc.kind {
-                BufferKind::Directory { path, .. } => path.clone(),
+            let (path, show_hidden) = match &doc.kind {
+                BufferKind::Directory {
+                    path, show_hidden, ..
+                } => (path.clone(), *show_hidden),
                 _ => return,
             };
-            (doc.id, path, doc.parse_directory_diff())
+            (doc.id, path, show_hidden, doc.parse_directory_diff())
         };
 
         if diff.renames.is_empty() && diff.deletes.is_empty() && diff.creates.is_empty() {
@@ -4202,20 +4586,38 @@ impl<T: TerminalBackend> Editor<T> {
             let result = fs::rename(old_path, &new_path).or_else(|_| {
                 // Cross-device fallback: copy then delete
                 crate::job_manager::jobs::fs::FsCopyJob::copy_recursive_pub(old_path, &new_path)
-                    .and_then(|_| if old_path.is_dir() { fs::remove_dir_all(old_path) } else { fs::remove_file(old_path) })
+                    .and_then(|_| {
+                        if old_path.is_dir() {
+                            fs::remove_dir_all(old_path)
+                        } else {
+                            fs::remove_file(old_path)
+                        }
+                    })
             });
             match result {
                 Ok(_) => applied += 1,
-                Err(e) => errors.push(format!("rename {:?}: {}", old_path.file_name().unwrap_or_default(), e)),
+                Err(e) => errors.push(format!(
+                    "rename {:?}: {}",
+                    old_path.file_name().unwrap_or_default(),
+                    e
+                )),
             }
         }
 
         // Deletes
         for path in &diff.deletes {
-            let result = if path.is_dir() { fs::remove_dir_all(path) } else { fs::remove_file(path) };
+            let result = if path.is_dir() {
+                fs::remove_dir_all(path)
+            } else {
+                fs::remove_file(path)
+            };
             match result {
                 Ok(_) => applied += 1,
-                Err(e) => errors.push(format!("delete {:?}: {}", path.file_name().unwrap_or_default(), e)),
+                Err(e) => errors.push(format!(
+                    "delete {:?}: {}",
+                    path.file_name().unwrap_or_default(),
+                    e
+                )),
             }
         }
 
@@ -4234,7 +4636,11 @@ impl<T: TerminalBackend> Editor<T> {
             };
             match result {
                 Ok(_) => applied += 1,
-                Err(e) => errors.push(format!("create {:?}: {}", new_path.file_name().unwrap_or_default(), e)),
+                Err(e) => errors.push(format!(
+                    "create {:?}: {}",
+                    new_path.file_name().unwrap_or_default(),
+                    e
+                )),
             }
         }
 
@@ -4245,11 +4651,16 @@ impl<T: TerminalBackend> Editor<T> {
             );
         }
         for err in errors {
-            self.state.notify(crate::notification::NotificationType::Error, err);
+            self.state
+                .notify(crate::notification::NotificationType::Error, err);
         }
 
         // Re-read the current directory now that all operations are complete.
-        let reload = crate::job_manager::jobs::explorer::DirectoryListJob::new(dir_doc_id as usize, dir_path, false);
+        let reload = crate::job_manager::jobs::explorer::DirectoryListJob::new(
+            dir_doc_id as usize,
+            dir_path,
+            dir_show_hidden,
+        );
         self.job_manager.spawn(reload);
     }
 
@@ -4260,7 +4671,10 @@ impl<T: TerminalBackend> Editor<T> {
         if old_mode != mode {
             self.update_lua_state();
             self.plugin_host
-                .dispatch(&crate::plugin::EditorEvent::ModeChanged { from: old_mode, to: mode });
+                .dispatch(&crate::plugin::EditorEvent::ModeChanged {
+                    from: old_mode,
+                    to: mode,
+                });
             self.apply_plugin_mutations();
         }
         if (old_mode == Mode::Command || old_mode == Mode::Search) && mode != old_mode {
@@ -4314,8 +4728,11 @@ impl<T: TerminalBackend> Editor<T> {
             )
             .map(|range| crate::clipboard::capture_text(&doc.buffer, &range))
         });
-        let in_clipboard = self.document_manager.active_document()
-            .map(|d| d.is_any_clipboard()).unwrap_or(false);
+        let in_clipboard = self
+            .document_manager
+            .active_document()
+            .map(|d| d.is_any_clipboard())
+            .unwrap_or(false);
         if let Some(text) = captured.filter(|s| !s.is_empty()) {
             if !in_clipboard {
                 self.clipboard_ring.push(text);
@@ -4363,8 +4780,11 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .active_document()
             .map(|doc| crate::clipboard::capture_current_line(&doc.buffer));
-        let in_clipboard = self.document_manager.active_document()
-            .map(|d| d.is_any_clipboard()).unwrap_or(false);
+        let in_clipboard = self
+            .document_manager
+            .active_document()
+            .map(|d| d.is_any_clipboard())
+            .unwrap_or(false);
         if let Some(text) = captured.filter(|s| !s.is_empty()) {
             if !in_clipboard {
                 self.clipboard_ring.push(text);
@@ -4489,33 +4909,41 @@ impl<T: TerminalBackend> Editor<T> {
         match msg {
             JobMessage::Started(id, silent) => {
                 let name = self.job_manager.job_name(id);
-                self.state
-                    .error_manager
-                    .notifications_mut()
-                    .log_job_event(id, crate::notification::JobEventKind::Started, silent, format!("{}: started", name));
+                self.state.error_manager.notifications_mut().log_job_event(
+                    id,
+                    crate::notification::JobEventKind::Started,
+                    silent,
+                    format!("{}: started", name),
+                );
             }
             JobMessage::Progress(id, percentage, msg) => {
                 let silent = self.job_manager.is_job_silent(id);
                 let name = self.job_manager.job_name(id);
-                self.state
-                    .error_manager
-                    .notifications_mut()
-                    .log_job_event(id, crate::notification::JobEventKind::Progress(percentage), silent, format!("{}: {}", name, msg));
+                self.state.error_manager.notifications_mut().log_job_event(
+                    id,
+                    crate::notification::JobEventKind::Progress(percentage),
+                    silent,
+                    format!("{}: {}", name, msg),
+                );
             }
             JobMessage::Finished(id, silent) => {
                 let name = self.job_manager.job_name(id);
-                self.state
-                    .error_manager
-                    .notifications_mut()
-                    .log_job_event(id, crate::notification::JobEventKind::Finished, silent, format!("{}: finished", name));
+                self.state.error_manager.notifications_mut().log_job_event(
+                    id,
+                    crate::notification::JobEventKind::Finished,
+                    silent,
+                    format!("{}: finished", name),
+                );
             }
             JobMessage::Error(id, err) => {
                 let silent = self.job_manager.is_job_silent(id);
                 let name = self.job_manager.job_name(id);
-                self.state
-                    .error_manager
-                    .notifications_mut()
-                    .log_job_event(id, crate::notification::JobEventKind::Error, silent, format!("{}: {}", name, err));
+                self.state.error_manager.notifications_mut().log_job_event(
+                    id,
+                    crate::notification::JobEventKind::Error,
+                    silent,
+                    format!("{}: {}", name, err),
+                );
                 self.state.notify(
                     crate::notification::NotificationType::Error,
                     format!("{} failed: {}", name, err),
@@ -4524,10 +4952,12 @@ impl<T: TerminalBackend> Editor<T> {
             JobMessage::Cancelled(id) => {
                 let silent = self.job_manager.is_job_silent(id);
                 let name = self.job_manager.job_name(id);
-                self.state
-                    .error_manager
-                    .notifications_mut()
-                    .log_job_event(id, crate::notification::JobEventKind::Cancelled, silent, format!("{}: cancelled", name));
+                self.state.error_manager.notifications_mut().log_job_event(
+                    id,
+                    crate::notification::JobEventKind::Cancelled,
+                    silent,
+                    format!("{}: cancelled", name),
+                );
                 self.state.notify(
                     crate::notification::NotificationType::Warning,
                     format!("{} cancelled", name),
@@ -4538,8 +4968,8 @@ impl<T: TerminalBackend> Editor<T> {
 
                 // Try DirectoryListing — route to the document by id
                 let any_payload = match any_payload
-                    .downcast::<crate::job_manager::jobs::explorer::DirectoryListing>()
-                {
+                    .downcast::<crate::job_manager::jobs::explorer::DirectoryListing>(
+                ) {
                     Ok(listing) => {
                         let doc_id = listing.doc_id as crate::document::DocumentId;
                         let entries: Vec<crate::document::DirEntry> = listing
@@ -4571,11 +5001,10 @@ impl<T: TerminalBackend> Editor<T> {
 
                 // Try UndoTreeRenderResult — populate the matching undotree buffer
                 let any_payload = match any_payload
-                    .downcast::<crate::job_manager::jobs::undotree::UndoTreeRenderResult>()
-                {
+                    .downcast::<crate::job_manager::jobs::undotree::UndoTreeRenderResult>(
+                ) {
                     Ok(res) => {
-                        if let Some(ut_doc) =
-                            self.document_manager.get_document_mut(res.ut_doc_id)
+                        if let Some(ut_doc) = self.document_manager.get_document_mut(res.ut_doc_id)
                         {
                             ut_doc.populate_undotree_buffer(
                                 res.text,
@@ -4613,6 +5042,7 @@ impl<T: TerminalBackend> Editor<T> {
                                 doc.kind = crate::document::BufferKind::Directory {
                                     path: res.path.clone(),
                                     entries: entries.clone(),
+                                    show_hidden: false,
                                 };
                                 doc.populate_directory_buffer(entries);
                             } else if let Some(text) = res.file_text {
@@ -4676,10 +5106,11 @@ impl<T: TerminalBackend> Editor<T> {
                         );
 
                         self.update_lua_state();
-                        self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufSavePost {
-                            buf: res.document_id,
-                            path: res.path.clone(),
-                        });
+                        self.plugin_host
+                            .dispatch(&crate::plugin::EditorEvent::BufSavePost {
+                                buf: res.document_id,
+                                path: res.path.clone(),
+                            });
                         self.apply_plugin_mutations();
 
                         if self.pending_quit_job_id == Some(id) {
@@ -4754,15 +5185,17 @@ impl<T: TerminalBackend> Editor<T> {
                             let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
                             self.update_lua_state();
                             if res.is_reload {
-                                self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufReload {
-                                    buf: res.document_id,
-                                });
+                                self.plugin_host
+                                    .dispatch(&crate::plugin::EditorEvent::BufReload {
+                                        buf: res.document_id,
+                                    });
                             } else {
-                                self.plugin_host.dispatch(&crate::plugin::EditorEvent::BufOpen {
-                                    buf: res.document_id,
-                                    path,
-                                    filetype,
-                                });
+                                self.plugin_host
+                                    .dispatch(&crate::plugin::EditorEvent::BufOpen {
+                                        buf: res.document_id,
+                                        path,
+                                        filetype,
+                                    });
                             }
                             self.apply_plugin_mutations();
                         }
@@ -4914,45 +5347,83 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
             ExecutionResult::Success => {}
-            ExecutionResult::Quit { bangs } => { self.do_quit(bangs > 0); }
-            ExecutionResult::Write => { self.do_save(); }
-            ExecutionResult::WriteAndQuit => { self.do_save_and_quit(); }
+            ExecutionResult::Quit { bangs } => {
+                self.do_quit(bangs > 0);
+            }
+            ExecutionResult::Write => {
+                self.do_save();
+            }
+            ExecutionResult::WriteAndQuit => {
+                self.do_save_and_quit();
+            }
             ExecutionResult::Redraw => {
                 self.state.clear_command_line();
-                if let Err(e) = self.force_full_redraw() { self.state.handle_error(e); }
-            },
+                if let Err(e) = self.force_full_redraw() {
+                    self.state.handle_error(e);
+                }
+            }
             ExecutionResult::Reload => {
-                if let Err(e) = self.load_plugins() { self.state.handle_error(e) }
-            },
+                if let Err(e) = self.load_plugins() {
+                    self.state.handle_error(e)
+                }
+            }
             ExecutionResult::Edit { path, bangs } => {
                 if let Err(e) = self.open_file(path, bangs > 0) {
                     self.state.handle_error(e);
                 } else {
                     self.state.clear_command_line();
-                    if let Err(e) = self.force_full_redraw() { self.state.handle_error(e); }
+                    if let Err(e) = self.force_full_redraw() {
+                        self.state.handle_error(e);
+                    }
                 }
             }
-            ExecutionResult::BufferNext { .. } => { self.do_buffer_next(); }
-            ExecutionResult::BufferPrevious { .. } => { self.do_buffer_prev(); }
-            ExecutionResult::BufferList => { self.do_show_buffer_list(); }
-            ExecutionResult::NotificationClear { bangs } => { self.do_notification_clear(bangs > 0); }
-            ExecutionResult::Undo { count } => { self.do_undo(count); }
-            ExecutionResult::Redo { count } => { self.do_redo(count); }
-            ExecutionResult::UndoGoto { seq } => { self.do_undo_goto(seq); }
+            ExecutionResult::BufferNext { .. } => {
+                self.do_buffer_next();
+            }
+            ExecutionResult::BufferPrevious { .. } => {
+                self.do_buffer_prev();
+            }
+            ExecutionResult::BufferList => {
+                self.do_show_buffer_list();
+            }
+            ExecutionResult::NotificationClear { bangs } => {
+                self.do_notification_clear(bangs > 0);
+            }
+            ExecutionResult::Undo { count } => {
+                self.do_undo(count);
+            }
+            ExecutionResult::Redo { count } => {
+                self.do_redo(count);
+            }
+            ExecutionResult::UndoGoto { seq } => {
+                self.do_undo_goto(seq);
+            }
             ExecutionResult::Checkpoint => {}
-            ExecutionResult::SplitWindow { direction, subcommand } => {
+            ExecutionResult::SplitWindow {
+                direction,
+                subcommand,
+            } => {
                 self.do_split_window(direction, subcommand);
             }
-            ExecutionResult::OpenDirectory { path } => { self.open_explorer(path); }
-            ExecutionResult::OpenUndoTree => { self.open_undotree_split(); }
-            ExecutionResult::OpenMessages { show_all } => { self.open_messages(show_all); }
-            ExecutionResult::OpenClipboard => { self.open_clipboard(); }
+            ExecutionResult::OpenDirectory { path } => {
+                self.open_explorer(path);
+            }
+            ExecutionResult::OpenUndoTree => {
+                self.open_undotree_split();
+            }
+            ExecutionResult::OpenMessages { show_all } => {
+                self.open_messages(show_all);
+            }
+            ExecutionResult::OpenClipboard => {
+                self.open_clipboard();
+            }
             ExecutionResult::PluginCommand { name, args } => {
                 if name == "lua" {
                     let s = cmd.trim_start_matches(':').trim();
                     let code = s.strip_prefix("lua").map(|r| r.trim_start()).unwrap_or("");
                     if let Some(err) = self.plugin_host.lua_exec(code) {
-                        self.state.notify(crate::notification::NotificationType::Error, err);
+                        self.state
+                            .notify(crate::notification::NotificationType::Error, err);
                     }
                     self.apply_plugin_mutations();
                 } else if !self.plugin_host.execute_command(&name, &args) {
@@ -5031,7 +5502,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
         Ok(())
     }
-
 }
 
 impl<T: TerminalBackend> Drop for Editor<T> {

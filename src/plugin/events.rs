@@ -7,7 +7,6 @@ use crate::mode::Mode;
 /// The plugin host dispatches them to registered handlers.
 #[derive(Debug, Clone)]
 pub enum EditorEvent {
-
     /// A new buffer was opened (or created). Fired after the document is ready.
     BufOpen {
         buf: DocumentId,
@@ -72,9 +71,7 @@ pub enum EditorEvent {
     WindowResized { rows: u16, cols: u16 },
 
     /// A plugin-defined event. Use `rift.emit("MyPlugin:Ready", ...)` in Lua.
-    UserEvent {
-        name: String,
-    },
+    UserEvent { name: String },
 }
 
 impl EditorEvent {
@@ -82,14 +79,28 @@ impl EditorEvent {
     pub fn to_lua_table(&self, lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
         let t = lua.create_table()?;
         match self {
-            EditorEvent::BufOpen { buf, path, filetype } => {
+            EditorEvent::BufOpen {
+                buf,
+                path,
+                filetype,
+            } => {
                 t.set("buf", *buf as i64)?;
-                if let Some(p) = path { t.set("path", p.to_string_lossy().as_ref())?; }
-                if let Some(ft) = filetype { t.set("filetype", ft.as_str())?; }
+                if let Some(p) = path {
+                    t.set("path", p.to_string_lossy().as_ref())?;
+                }
+                if let Some(ft) = filetype {
+                    t.set("filetype", ft.as_str())?;
+                }
             }
-            EditorEvent::BufClose { buf } => { t.set("buf", *buf as i64)?; }
-            EditorEvent::BufEnter { buf } => { t.set("buf", *buf as i64)?; }
-            EditorEvent::BufLeave { buf } => { t.set("buf", *buf as i64)?; }
+            EditorEvent::BufClose { buf } => {
+                t.set("buf", *buf as i64)?;
+            }
+            EditorEvent::BufEnter { buf } => {
+                t.set("buf", *buf as i64)?;
+            }
+            EditorEvent::BufLeave { buf } => {
+                t.set("buf", *buf as i64)?;
+            }
             EditorEvent::BufSavePre { buf, path } => {
                 t.set("buf", *buf as i64)?;
                 t.set("path", path.to_string_lossy().as_ref())?;
@@ -98,11 +109,15 @@ impl EditorEvent {
                 t.set("buf", *buf as i64)?;
                 t.set("path", path.to_string_lossy().as_ref())?;
             }
-            EditorEvent::BufReload { buf } => { t.set("buf", *buf as i64)?; }
-            EditorEvent::TextChangedCoarse { buf } => { t.set("buf", *buf as i64)?; }
+            EditorEvent::BufReload { buf } => {
+                t.set("buf", *buf as i64)?;
+            }
+            EditorEvent::TextChangedCoarse { buf } => {
+                t.set("buf", *buf as i64)?;
+            }
             EditorEvent::CursorMoved { buf, row, col } => {
                 t.set("buf", *buf as i64)?;
-                t.set("row", *row as i64 + 1)?;  // 1-indexed for Lua
+                t.set("row", *row as i64 + 1)?; // 1-indexed for Lua
                 t.set("col", *col as i64)?;
             }
             EditorEvent::CursorHold { buf, row, col } => {

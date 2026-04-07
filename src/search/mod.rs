@@ -399,7 +399,11 @@ pub fn find_next(
             } else {
                 // Wrap around: Find the very last match in the file
                 re.find_all_from(haystack).last().and_then(|m| {
-                    if m.start >= start_byte { Some(convert_match(&haystack, m)) } else { None }
+                    if m.start >= start_byte {
+                        Some(convert_match(&haystack, m))
+                    } else {
+                        None
+                    }
                 })
             }
         }

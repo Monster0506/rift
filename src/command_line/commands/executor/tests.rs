@@ -489,7 +489,10 @@ fn test_execute_unknown_command() {
             assert_eq!(name, "nonexistent");
             assert_eq!(args, vec!["arg1".to_string()]);
         }
-        _ => panic!("Expected PluginCommand for unknown command, got {:?}", result),
+        _ => panic!(
+            "Expected PluginCommand for unknown command, got {:?}",
+            result
+        ),
     }
 }
 

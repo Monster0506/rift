@@ -3,7 +3,7 @@ use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Character {
-   /// A Unicode scalar value
+    /// A Unicode scalar value
     Unicode(char),
 
     /// A raw byte that is not valid UTF-8

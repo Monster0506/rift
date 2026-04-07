@@ -169,7 +169,11 @@ impl TextBuffer {
         self.line_index.insert(self.cursor, chars);
         self.cursor += chars.len();
         self.revision += 1;
-        self.edit_log.push(ByteEdit { byte_pos, del_bytes: 0, ins_bytes });
+        self.edit_log.push(ByteEdit {
+            byte_pos,
+            del_bytes: 0,
+            ins_bytes,
+        });
         Ok(())
     }
 
@@ -181,7 +185,11 @@ impl TextBuffer {
             let del_bytes = self.line_index.char_at(self.cursor).len_utf8();
             self.line_index.delete(self.cursor, 1);
             self.revision += 1;
-            self.edit_log.push(ByteEdit { byte_pos, del_bytes, ins_bytes: 0 });
+            self.edit_log.push(ByteEdit {
+                byte_pos,
+                del_bytes,
+                ins_bytes: 0,
+            });
             true
         } else {
             false
@@ -195,7 +203,11 @@ impl TextBuffer {
             let del_bytes = self.line_index.char_at(self.cursor).len_utf8();
             self.line_index.delete(self.cursor, 1);
             self.revision += 1;
-            self.edit_log.push(ByteEdit { byte_pos, del_bytes, ins_bytes: 0 });
+            self.edit_log.push(ByteEdit {
+                byte_pos,
+                del_bytes,
+                ins_bytes: 0,
+            });
             true
         } else {
             false

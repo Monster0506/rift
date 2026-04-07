@@ -13,13 +13,15 @@ impl WrapMode {
     pub fn resolve(&self, terminal_width: usize) -> usize {
         match self {
             WrapMode::Off => 0,
-            WrapMode::Expr(s) => {
-                crate::eval::eval(s, &|kw| {
-                    if kw == "auto" { Some(terminal_width) } else { None }
-                })
-                .unwrap_or(terminal_width)
-                .max(1)
-            }
+            WrapMode::Expr(s) => crate::eval::eval(s, &|kw| {
+                if kw == "auto" {
+                    Some(terminal_width)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(terminal_width)
+            .max(1),
         }
     }
 }
@@ -133,7 +135,11 @@ fn set_wrap(options: &mut DocumentOptions, value: SettingValue) -> Result<(), Se
         }
         SettingValue::Integer(n) => n.to_string(),
         SettingValue::Enum(s) => s,
-        _ => return Err(SettingError::ValidationError("Expected integer or expression".to_string())),
+        _ => {
+            return Err(SettingError::ValidationError(
+                "Expected integer or expression".to_string(),
+            ))
+        }
     };
     options.wrap = Some(WrapMode::Expr(expr));
     Ok(())
@@ -187,7 +193,11 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
         name: "wrap",
         aliases: &[],
         description: "Soft-wrap column (0 = off, n = wrap at column n)",
-        ty: SettingType::IntegerOrKeyword { min: None, max: None, keywords: &["auto"] },
+        ty: SettingType::IntegerOrKeyword {
+            min: None,
+            max: None,
+            keywords: &["auto"],
+        },
         set: set_wrap,
         get: Some(get_wrap),
         needs_full_redraw: true,

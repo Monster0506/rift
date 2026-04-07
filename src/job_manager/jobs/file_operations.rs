@@ -181,11 +181,19 @@ pub struct FileLoadJob {
 
 impl FileLoadJob {
     pub fn new(document_id: DocumentId, path: PathBuf) -> Self {
-        Self { document_id, path, is_reload: false }
+        Self {
+            document_id,
+            path,
+            is_reload: false,
+        }
     }
 
     pub fn new_reload(document_id: DocumentId, path: PathBuf) -> Self {
-        Self { document_id, path, is_reload: true }
+        Self {
+            document_id,
+            path,
+            is_reload: true,
+        }
     }
 }
 
@@ -209,7 +217,11 @@ impl Job for FileLoadJob {
             let mut line_ending = LineEnding::LF;
             let mut normalized_chars = Vec::with_capacity(bytes.len());
 
-            let mut remaining = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) { &bytes[3..] } else { &bytes[..] };
+            let mut remaining = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+                &bytes[3..]
+            } else {
+                &bytes[..]
+            };
             while !remaining.is_empty() {
                 if remaining[0] == b'\r' {
                     if remaining.len() > 1 && remaining[1] == b'\n' {
@@ -243,9 +255,8 @@ impl Job for FileLoadJob {
                     Err(e) => {
                         let valid_up_to = e.valid_up_to();
                         // SAFETY: from_utf8 guarantees remaining[..valid_up_to] is valid UTF-8
-                        let valid = unsafe {
-                            std::str::from_utf8_unchecked(&remaining[..valid_up_to])
-                        };
+                        let valid =
+                            unsafe { std::str::from_utf8_unchecked(&remaining[..valid_up_to]) };
                         let mut chars = valid.chars().peekable();
                         while let Some(c) = chars.next() {
                             if c == '\r' {
@@ -313,7 +324,9 @@ mod tests {
     use std::sync::{atomic::AtomicBool, mpsc, Arc};
 
     fn make_signal() -> CancellationSignal {
-        CancellationSignal { cancelled: Arc::new(AtomicBool::new(false)) }
+        CancellationSignal {
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     fn run_load_job(path: PathBuf) -> FileLoadResult {

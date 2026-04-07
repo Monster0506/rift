@@ -234,7 +234,18 @@ fn test_action_from_str_buffer_forwarding() {
 #[test]
 fn test_action_from_str_noop() {
     assert_eq!(Action::from_str("totally_unknown").unwrap(), Action::Noop);
-    assert_eq!(Action::from_str("editor:unknown_flat").unwrap(), Action::Noop);
+    assert_eq!(
+        Action::from_str("editor:unknown_flat").unwrap(),
+        Action::Noop
+    );
+}
+
+#[test]
+fn test_action_from_str_explorer_toggle_hidden() {
+    assert_eq!(
+        Action::from_str("explorer:toggle_hidden").unwrap(),
+        Action::Editor(EditorAction::ExplorerToggleHidden)
+    );
 }
 
 #[test]
@@ -274,4 +285,3 @@ fn test_hierarchical_motion_string_mappings() {
         );
     }
 }
-

@@ -1081,8 +1081,14 @@ mod tests {
         let reg = create_settings_registry();
         let result = complete_setting_name("", &reg);
         let texts: Vec<&str> = result.candidates.iter().map(|c| c.text.as_str()).collect();
-        assert!(!texts.contains(&"expandtabs"), "local 'expandtabs' must not appear");
-        assert!(!texts.contains(&"tabwidth"), "local 'tabwidth' must not appear");
+        assert!(
+            !texts.contains(&"expandtabs"),
+            "local 'expandtabs' must not appear"
+        );
+        assert!(
+            !texts.contains(&"tabwidth"),
+            "local 'tabwidth' must not appear"
+        );
     }
 
     #[test]

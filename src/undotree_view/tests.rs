@@ -198,8 +198,14 @@ fn test_render_tree_to_text_returns_string() {
 fn test_render_tree_to_text_contains_node_description() {
     let tree = simple_linear_tree();
     let (text, _seqs, _hl) = render_tree_to_text(&tree);
-    assert!(text.contains("edit1"), "text should contain node description");
-    assert!(text.contains("root"), "text should contain root description");
+    assert!(
+        text.contains("edit1"),
+        "text should contain node description"
+    );
+    assert!(
+        text.contains("root"),
+        "text should contain root description"
+    );
 }
 
 #[test]
@@ -208,8 +214,11 @@ fn test_render_tree_to_text_current_node_has_at_marker() {
     let (text, seqs, _hl) = render_tree_to_text(&tree);
     let current_line_idx = seqs.iter().position(|&s| s == 1).unwrap();
     let lines: Vec<&str> = text.lines().collect();
-    assert!(lines[current_line_idx].contains('@'),
-            "current node line must have '@': {:?}", lines[current_line_idx]);
+    assert!(
+        lines[current_line_idx].contains('@'),
+        "current node line must have '@': {:?}",
+        lines[current_line_idx]
+    );
 }
 
 #[test]
@@ -217,14 +226,21 @@ fn test_render_tree_to_text_sequences_match_lines() {
     let tree = simple_linear_tree();
     let (text, seqs, _hl) = render_tree_to_text(&tree);
     let line_count = text.lines().count();
-    assert_eq!(seqs.len(), line_count, "sequences must have one entry per line");
+    assert_eq!(
+        seqs.len(),
+        line_count,
+        "sequences must have one entry per line"
+    );
 }
 
 #[test]
 fn test_render_tree_to_text_highlights_non_empty() {
     let tree = simple_linear_tree();
     let (_text, _seqs, highlights) = render_tree_to_text(&tree);
-    assert!(!highlights.is_empty(), "must have at least some colored characters");
+    assert!(
+        !highlights.is_empty(),
+        "must have at least some colored characters"
+    );
 }
 
 #[test]
@@ -250,8 +266,10 @@ fn test_render_tree_to_text_highlights_sorted_and_non_overlapping() {
 
     let (_text, _seqs, highlights) = render_tree_to_text(&tree);
     for i in 0..highlights.len().saturating_sub(1) {
-        assert!(highlights[i].0.end <= highlights[i+1].0.start,
-                "highlight ranges must be sorted and non-overlapping");
+        assert!(
+            highlights[i].0.end <= highlights[i + 1].0.start,
+            "highlight ranges must be sorted and non-overlapping"
+        );
     }
 }
 
@@ -262,14 +280,19 @@ fn test_render_tree_to_text_connector_lines_have_max_seq() {
     tree.nodes.clear();
     tree.root_seq = 0;
     tree.nodes.insert(0, create_dummy_node(0, None, "root"));
-    tree.nodes.insert(1, create_dummy_node(1, Some(0), "branch_a"));
-    tree.nodes.insert(2, create_dummy_node(2, Some(0), "branch_b"));
+    tree.nodes
+        .insert(1, create_dummy_node(1, Some(0), "branch_a"));
+    tree.nodes
+        .insert(2, create_dummy_node(2, Some(0), "branch_b"));
     tree.current = 1;
 
     let (_text, seqs, _hl) = render_tree_to_text(&tree);
     // With 2 branches from root, there should be at least one connector line (MAX sentinel)
     let has_connector = seqs.iter().any(|&s| s == EditSeq::MAX);
-    assert!(has_connector, "branching tree must produce connector lines with MAX sentinel");
+    assert!(
+        has_connector,
+        "branching tree must produce connector lines with MAX sentinel"
+    );
 }
 
 #[test]
@@ -298,12 +321,25 @@ fn test_render_tree_to_text_current_node_color() {
     let (text, seqs, highlights) = render_tree_to_text(&tree);
     // Find offset of the '@' character (current node marker)
     let current_line_idx = seqs.iter().position(|&s| s == 1).unwrap();
-    let line_start: usize = text.lines().take(current_line_idx).map(|l| l.len() + 1).sum();
-    let at_offset = text[line_start..].find('@').map(|o| line_start + o).unwrap();
+    let line_start: usize = text
+        .lines()
+        .take(current_line_idx)
+        .map(|l| l.len() + 1)
+        .sum();
+    let at_offset = text[line_start..]
+        .find('@')
+        .map(|o| line_start + o)
+        .unwrap();
 
     // The '@' character should be colored (Magenta for current node)
-    let colored = highlights.iter().any(|(r, _c)| r.start <= at_offset && r.end > at_offset);
-    assert!(colored, "'@' marker at offset {} should be colored", at_offset);
+    let colored = highlights
+        .iter()
+        .any(|(r, _c)| r.start <= at_offset && r.end > at_offset);
+    assert!(
+        colored,
+        "'@' marker at offset {} should be colored",
+        at_offset
+    );
 }
 
 #[test]

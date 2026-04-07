@@ -108,9 +108,7 @@ pub fn capture_text(buf: &TextBuffer, range: &MotionRange) -> String {
             range.anchor.max(range.new_cursor),
         ),
     };
-    buf.chars(start..end)
-        .map(|c| c.to_char_lossy())
-        .collect()
+    buf.chars(start..end).map(|c| c.to_char_lossy()).collect()
 }
 
 /// Capture the full current line (including newline) from the buffer.
@@ -158,11 +156,8 @@ impl ClipboardTooltip {
         let sys_rows = if sys_clip.is_some() { 2 } else { 0 }; // separator + entry
         let window_height = ring_rows + sys_rows + 2; // +2 for border
 
-        let window = FloatingWindow::with_style(
-            WindowPosition::Bottom,
-            window_width,
-            window_height,
-            {
+        let window =
+            FloatingWindow::with_style(WindowPosition::Bottom, window_width, window_height, {
                 let mut style = WindowStyle::new()
                     .with_border(true)
                     .with_reverse_video(false);
@@ -173,8 +168,7 @@ impl ClipboardTooltip {
                     style = style.with_bg(bg);
                 }
                 style
-            },
-        );
+            });
 
         let mut content: Vec<Vec<Cell>> = Vec::new();
 
@@ -186,15 +180,16 @@ impl ClipboardTooltip {
 
         if let Some(clip_text) = sys_clip {
             // Separator line
-            let sep = std::iter::repeat(
-                Cell::from_char('─').with_colors(editor_fg, editor_bg),
-            )
-            .take(content_width)
-            .collect::<Vec<_>>();
+            let sep = std::iter::repeat(Cell::from_char('─').with_colors(editor_fg, editor_bg))
+                .take(content_width)
+                .collect::<Vec<_>>();
             content.push(sep);
 
             // System clipboard entry (never highlighted as selected)
-            let label = format!("sys: {}", clip_text.replace('\n', "\\n").replace('\t', "\\t"));
+            let label = format!(
+                "sys: {}",
+                clip_text.replace('\n', "\\n").replace('\t', "\\t")
+            );
             let row = render_entry(&label, content_width, false, editor_fg, editor_bg);
             content.push(row);
         }

@@ -1,7 +1,9 @@
 use super::*;
 
 fn ok(args: &[&str]) -> Args {
-    parse_args(args).expect("expected Ok").expect("expected Some")
+    parse_args(args)
+        .expect("expected Ok")
+        .expect("expected Some")
 }
 
 fn err(args: &[&str]) -> String {

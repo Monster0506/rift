@@ -397,7 +397,10 @@ fn test_control_char_tail_included_when_control_changes() {
         .collect();
 
     assert!(covered_cols.contains(&5));
-    assert!(covered_cols.contains(&6), "tail of previous \\n must be force-included");
+    assert!(
+        covered_cols.contains(&6),
+        "tail of previous \\n must be force-included"
+    );
 }
 
 #[test]
@@ -452,5 +455,8 @@ fn test_control_char_cursor_tracking_after_render() {
 
     // All three cells land in the same run, so at most one cursor move on row 0.
     let row0_moves = term.cursor_moves.iter().filter(|&&(r, _)| r == 0).count();
-    assert!(row0_moves <= 1, "expected ≤1 cursor move on row 0, got {row0_moves}");
+    assert!(
+        row0_moves <= 1,
+        "expected ≤1 cursor move on row 0, got {row0_moves}"
+    );
 }

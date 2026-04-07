@@ -54,7 +54,11 @@ pub enum PluginMutation {
     SetCursor { row: usize, col: usize },
     /// Replace a line range with new content. `start` and `end` are 1-indexed and inclusive.
     /// The replaced region is deleted and `lines` are inserted in its place.
-    ReplaceLines { start: usize, end: usize, lines: Vec<String> },
+    ReplaceLines {
+        start: usize,
+        end: usize,
+        lines: Vec<String>,
+    },
     /// Add a foreground color highlight over a character range in the active buffer.
     /// Line numbers are 1-indexed; columns are 0-indexed.
     /// `color` is a named color ("red", "green", …) or an HTML hex string ("#rrggbb").
@@ -82,7 +86,11 @@ pub enum PluginMutation {
     ExecAction(String),
     /// Register a key binding. `mode` is "n", "i", "c", "s", or "g".
     /// `keys` is vim notation (e.g. `"<C-p>"`, `"gg"`). `action` is an action string.
-    MapKey { mode: String, keys: String, action: String },
+    MapKey {
+        mode: String,
+        keys: String,
+        action: String,
+    },
     /// Set the viewport scroll position (top_line, left_col).
     SetScroll(usize, usize),
     /// Set the line ending for the active document ("lf" or "crlf").
@@ -105,7 +113,10 @@ pub struct PluginFloat {
 
 impl PluginFloat {
     pub fn new(title: impl Into<String>, lines: Vec<String>) -> Self {
-        Self { title: title.into(), lines }
+        Self {
+            title: title.into(),
+            lines,
+        }
     }
 }
 
@@ -252,7 +263,11 @@ impl PluginHost {
             .commands
             .keys()
             .map(|name| {
-                let desc = self.command_descriptions.get(name).cloned().unwrap_or_default();
+                let desc = self
+                    .command_descriptions
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_default();
                 (name.clone(), desc, None)
             })
             .collect();
@@ -352,11 +367,16 @@ impl PluginHost {
         let cols = layer.cols();
 
         // Size the window to fit content, bounded by terminal dimensions.
-        let content_w = float.lines.iter().map(|l| l.len()).max().unwrap_or(20)
+        let content_w = float
+            .lines
+            .iter()
+            .map(|l| l.len())
+            .max()
+            .unwrap_or(20)
             .max(float.title.len() + 2)
             .min(cols.saturating_sub(4));
         let content_h = float.lines.len().min(rows.saturating_sub(4));
-        let width  = (content_w + 2).min(cols);
+        let width = (content_w + 2).min(cols);
         let height = (content_h + 2).min(rows);
 
         let mut style = WindowStyle::default().with_reverse_video(false);
@@ -367,14 +387,11 @@ impl PluginHost {
             style = style.with_bg(b);
         }
 
-        let window = FloatingWindow::with_style(
-            WindowPosition::Center,
-            width,
-            height,
-            style,
-        );
+        let window = FloatingWindow::with_style(WindowPosition::Center, width, height, style);
 
-        let char_lines: Vec<Vec<char>> = float.lines.iter()
+        let char_lines: Vec<Vec<char>> = float
+            .lines
+            .iter()
             .take(content_h)
             .map(|l| l.chars().take(content_w).collect())
             .collect();
@@ -385,7 +402,9 @@ impl PluginHost {
     /// Initialize the Lua VM. Must be called once at startup.
     /// Returns any error string if Lua initialization fails.
     pub fn init_lua(&mut self) -> Option<String> {
-        if let Some(host) = self.lua.take() { drop(host) }
+        if let Some(host) = self.lua.take() {
+            drop(host)
+        }
 
         match lua_host::LuaHost::new() {
             Ok(host) => {
@@ -418,9 +437,21 @@ impl PluginHost {
     ) {
         if let Some(lua) = &self.lua {
             lua.update_state(
-                buf_id, lines, cursor, tab_width, expand_tabs, mode,
-                filetype, file_path, buf_list, window_size,
-                can_undo, can_redo, is_dirty, scroll, line_ending,
+                buf_id,
+                lines,
+                cursor,
+                tab_width,
+                expand_tabs,
+                mode,
+                filetype,
+                file_path,
+                buf_list,
+                window_size,
+                can_undo,
+                can_redo,
+                is_dirty,
+                scroll,
+                line_ending,
             );
         }
     }
@@ -471,9 +502,9 @@ impl PluginHost {
     /// Returns the event to dispatch, if any, so the caller can call
     /// `dispatch()` with it (avoiding a double-borrow).
     pub fn tick_idle(&mut self) -> Option<EditorEvent> {
-        self.cursor_hold.tick().map(|(buf, row, col)| {
-            EditorEvent::CursorHold { buf, row, col }
-        })
+        self.cursor_hold
+            .tick()
+            .map(|(buf, row, col)| EditorEvent::CursorHold { buf, row, col })
     }
 
     /// Update the CursorHold threshold from a millisecond value.

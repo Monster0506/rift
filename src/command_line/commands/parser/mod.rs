@@ -107,7 +107,7 @@ impl CommandParser {
                 if command_chain.is_empty() {
                     return ParsedCommand::Unknown {
                         name: part.to_string(),
-                        args: parts[i+1..].iter().map(|s| s.to_string()).collect(),
+                        args: parts[i + 1..].iter().map(|s| s.to_string()).collect(),
                     };
                 }
                 break;
@@ -139,7 +139,7 @@ impl CommandParser {
                     if command_chain.is_empty() {
                         return ParsedCommand::Unknown {
                             name: part.to_string(),
-                            args: parts[i+1..].iter().map(|s| s.to_string()).collect(),
+                            args: parts[i + 1..].iter().map(|s| s.to_string()).collect(),
                         };
                     }
                     // If we have matched something previously, this token is the start of arguments.

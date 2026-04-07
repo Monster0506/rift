@@ -99,12 +99,25 @@ pub fn execute_command(
         Command::Move(motion, count) => {
             let buf = &mut doc.buffer;
             for _ in 0..count {
-                motion.apply(buf, display_map, crate::wrap::OperatorContext::Move, tab_width, viewport_height, last_search_query);
+                motion.apply(
+                    buf,
+                    display_map,
+                    crate::wrap::OperatorContext::Move,
+                    tab_width,
+                    viewport_height,
+                    last_search_query,
+                );
             }
         }
         Command::Delete(motion, count) => {
-            let Some(range) = compute_motion_range(motion, count, doc, viewport_height, last_search_query, tab_width)
-            else {
+            let Some(range) = compute_motion_range(
+                motion,
+                count,
+                doc,
+                viewport_height,
+                last_search_query,
+                tab_width,
+            ) else {
                 return Ok(());
             };
 
@@ -159,8 +172,14 @@ pub fn execute_command(
             }
         }
         Command::Change(motion, count) => {
-            let Some(range) = compute_motion_range(motion, count, doc, viewport_height, last_search_query, tab_width)
-            else {
+            let Some(range) = compute_motion_range(
+                motion,
+                count,
+                doc,
+                viewport_height,
+                last_search_query,
+                tab_width,
+            ) else {
                 return Ok(());
             };
 

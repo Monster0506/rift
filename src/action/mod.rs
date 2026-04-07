@@ -216,10 +216,16 @@ pub enum EditorAction {
     /// Repeat last buffer mutation (dot-repeat)
     DotRepeat,
     QuitForce,
-    OpenFile { path: Option<String>, force: bool },
+    OpenFile {
+        path: Option<String>,
+        force: bool,
+    },
     OpenDirectory(std::path::PathBuf),
     OpenTerminal(Option<String>),
-    SplitWindow { direction: crate::split::tree::SplitDirection, subcommand: crate::command_line::commands::SplitSubcommand },
+    SplitWindow {
+        direction: crate::split::tree::SplitDirection,
+        subcommand: crate::command_line::commands::SplitSubcommand,
+    },
     UndoCount(Option<u64>),
     RedoCount(Option<u64>),
     UndoGoto(u64),
@@ -227,12 +233,20 @@ pub enum EditorAction {
     /// Invoke a registered plugin action by ID.
     PluginAction(String),
     /// Paste from the clipboard ring (p = after cursor, P = before)
-    Put { before: bool },
+    Put {
+        before: bool,
+    },
     /// Cycle through clipboard ring entries, replacing the last paste.
     /// `forward` = true advances to older entries (C-n), false goes back (C-p).
-    CyclePaste { forward: bool },
+    CyclePaste {
+        forward: bool,
+    },
     /// Paste directly from the system clipboard
-    PutSystemClipboard { before: bool },
+    PutSystemClipboard {
+        before: bool,
+    },
+    /// Toggle display of hidden files (dot-files) in the file explorer
+    ExplorerToggleHidden,
 }
 
 /// Represents an action in the editor
@@ -264,14 +278,28 @@ impl FromStr for Action {
             "editor:move:page:down" => Ok(Action::Editor(EditorAction::Move(Motion::PageDown))),
             "editor:move:word:next" => Ok(Action::Editor(EditorAction::Move(Motion::NextWord))),
             "editor:move:word:prev" => Ok(Action::Editor(EditorAction::Move(Motion::PreviousWord))),
-            "editor:move:bigword:next" => Ok(Action::Editor(EditorAction::Move(Motion::NextBigWord))),
-            "editor:move:bigword:prev" => Ok(Action::Editor(EditorAction::Move(Motion::PreviousBigWord))),
-            "editor:move:paragraph:next" => Ok(Action::Editor(EditorAction::Move(Motion::NextParagraph))),
-            "editor:move:paragraph:prev" => Ok(Action::Editor(EditorAction::Move(Motion::PreviousParagraph))),
-            "editor:move:sentence:next" => Ok(Action::Editor(EditorAction::Move(Motion::NextSentence))),
-            "editor:move:sentence:prev" => Ok(Action::Editor(EditorAction::Move(Motion::PreviousSentence))),
+            "editor:move:bigword:next" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::NextBigWord)))
+            }
+            "editor:move:bigword:prev" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::PreviousBigWord)))
+            }
+            "editor:move:paragraph:next" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::NextParagraph)))
+            }
+            "editor:move:paragraph:prev" => Ok(Action::Editor(EditorAction::Move(
+                Motion::PreviousParagraph,
+            ))),
+            "editor:move:sentence:next" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::NextSentence)))
+            }
+            "editor:move:sentence:prev" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::PreviousSentence)))
+            }
             "editor:move:match:next" => Ok(Action::Editor(EditorAction::Move(Motion::NextMatch))),
-            "editor:move:match:prev" => Ok(Action::Editor(EditorAction::Move(Motion::PreviousMatch))),
+            "editor:move:match:prev" => {
+                Ok(Action::Editor(EditorAction::Move(Motion::PreviousMatch)))
+            }
 
             // Mode transitions
             "mode:normal" => Ok(Action::Editor(EditorAction::EnterNormalMode)),
@@ -305,6 +333,7 @@ impl FromStr for Action {
 
             // Feature openers
             "explorer:open" => Ok(Action::Editor(EditorAction::OpenExplorer)),
+            "explorer:toggle_hidden" => Ok(Action::Editor(EditorAction::ExplorerToggleHidden)),
             "undotree:open" => Ok(Action::Editor(EditorAction::OpenUndoTree)),
             "terminal:open" => Ok(Action::Editor(EditorAction::OpenTerminal(None))),
             "messages:open" => Ok(Action::Editor(EditorAction::OpenMessages)),
@@ -326,26 +355,24 @@ impl FromStr for Action {
             "editor:dot_repeat" => Ok(Action::Editor(EditorAction::DotRepeat)),
 
             // Navigation / search (parameterised — must precede Buffer catch-all)
-            s if s.starts_with("editor:run:") => {
-                Ok(Action::Editor(EditorAction::RunCommand(s["editor:run:".len()..].to_string())))
-            }
+            s if s.starts_with("editor:run:") => Ok(Action::Editor(EditorAction::RunCommand(
+                s["editor:run:".len()..].to_string(),
+            ))),
             "editor:goto:last" => Ok(Action::Editor(EditorAction::GotoLine(0))),
             s if s.starts_with("editor:goto:line:") => {
                 let n = s["editor:goto:line:".len()..].parse::<usize>().unwrap_or(0);
                 Ok(Action::Editor(EditorAction::GotoLine(n)))
             }
-            s if s.starts_with("editor:search:") => {
-                Ok(Action::Editor(EditorAction::Search(s["editor:search:".len()..].to_string())))
-            }
+            s if s.starts_with("editor:search:") => Ok(Action::Editor(EditorAction::Search(
+                s["editor:search:".len()..].to_string(),
+            ))),
 
             // Multi-level editor sub-namespace: editor:X:Y forwards to Buffer action X:Y
             s if s.starts_with("editor:") && s.matches(':').count() >= 2 => {
                 Ok(Action::Buffer(s["editor:".len()..].to_string()))
             }
 
-            s if s.contains(':') && !s.starts_with("editor:") => {
-                Ok(Action::Buffer(s.to_string()))
-            }
+            s if s.contains(':') && !s.starts_with("editor:") => Ok(Action::Buffer(s.to_string())),
             _ => Ok(Action::Noop),
         }
     }

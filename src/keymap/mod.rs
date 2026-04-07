@@ -75,12 +75,14 @@ impl KeyMap {
     /// `Terminal` falls through to `Insert` since it is always in input mode.
     fn parent_context(context: KeyContext) -> Option<KeyContext> {
         match context {
-            KeyContext::FileExplorer | KeyContext::UndoTree | KeyContext::Clipboard | KeyContext::ClipboardEntry => Some(KeyContext::Normal),
+            KeyContext::FileExplorer
+            | KeyContext::UndoTree
+            | KeyContext::Clipboard
+            | KeyContext::ClipboardEntry => Some(KeyContext::Normal),
             KeyContext::Terminal => Some(KeyContext::Insert),
-            KeyContext::Normal
-            | KeyContext::Insert
-            | KeyContext::Command
-            | KeyContext::Search => Some(KeyContext::Global),
+            KeyContext::Normal | KeyContext::Insert | KeyContext::Command | KeyContext::Search => {
+                Some(KeyContext::Global)
+            }
             KeyContext::Global => None,
         }
     }
