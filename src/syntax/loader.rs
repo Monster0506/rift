@@ -101,6 +101,15 @@ impl LanguageLoader {
             }
 
             #[cfg(feature = "treesitter")]
+            if lang_name == "typescript" || lang_name == "tsx" {
+                return Ok(format!(
+                    "{}\n{}",
+                    tree_sitter_javascript::HIGHLIGHT_QUERY,
+                    tree_sitter_typescript::HIGHLIGHTS_QUERY
+                ));
+            }
+
+            #[cfg(feature = "treesitter")]
             if let Some((_, query)) = get_bundled_language(lang_name) {
                 return Ok(query.to_string());
             }
