@@ -160,7 +160,7 @@ impl Document {
 
     /// Mark the document as saved at a specific edit sequence
     pub fn mark_as_saved(&mut self, saved_seq: crate::history::EditSeq) {
-        self.history.saved_seq = saved_seq;
+        self.history.mark_saved_at(saved_seq);
     }
 
     /// Atomic write to file

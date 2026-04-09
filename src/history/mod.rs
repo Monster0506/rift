@@ -414,7 +414,7 @@ pub struct UndoTree {
     next_seq: EditSeq,
     pub root_seq: EditSeq,
     /// The edit sequence that was current when the document was last saved
-    pub saved_seq: EditSeq,
+    pub(crate) saved_seq: EditSeq,
 
     // Checkpoint configuration
     checkpoint_interval: u64,
@@ -641,6 +641,14 @@ impl UndoTree {
         // Move to target
         self.current = target;
 
+        debug_assert_eq!(
+            self.current_seq(),
+            target,
+            "goto_seq: ended at {} instead of target {}",
+            self.current_seq(),
+            target
+        );
+
         Ok(path)
     }
 
@@ -769,6 +777,11 @@ impl UndoTree {
     /// Mark the current node as the saved state
     pub fn mark_saved(&mut self) {
         self.saved_seq = self.current;
+    }
+
+    /// Mark a specific sequence as the saved state (used when loading from disk)
+    pub(crate) fn mark_saved_at(&mut self, seq: EditSeq) {
+        self.saved_seq = seq;
     }
 
     /// Check if the current node is the saved state
