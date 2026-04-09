@@ -1,24 +1,16 @@
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
 use super::Editor;
-use super::{PostPasteState, PanelKind, PanelLayout};
-use super::{resolve_display_map, plugin_dirs};
-use crate::error::{ErrorSeverity, ErrorType, RiftError};
+use super::plugin_dirs;
+use crate::error::{ErrorType, RiftError};
 use crate::mode::Mode;
-use crate::command::Command;
-use crate::action::{Action, EditorAction, Motion};
 use crate::document::{Document, DocumentId};
-use crate::dot_repeat::{DotRepeat, DotRegister};
+use crate::dot_repeat::DotRepeat;
 use crate::keymap::KeyMap;
 use crate::split::tree::SplitTree;
-use crate::state::{State, UserSettings};
-use crate::search::SearchDirection;
-use crate::executor::execute_command;
-use crate::key_handler::KeyAction;
-use crate::render;
-use crate::screen_buffer::FrameStats;
-use crate::command_line::commands::{CommandExecutor, CommandParser};
-use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
+use crate::state::State;
+use crate::command_line::commands::CommandParser;
+use crate::command_line::settings::create_settings_registry;
 use std::sync::Arc;
 
 impl<T: TerminalBackend> Editor<T> {
@@ -307,7 +299,7 @@ impl<T: TerminalBackend> Editor<T> {
             ));
         } else {
             for dir in plugin_dirs() {
-                for err in self.plugin_host.lua_load_dir(&dir) {
+                if let Some(err) = self.plugin_host.lua_load_dir(&dir).into_iter().next() {
                     return Err(RiftError::new(
                         ErrorType::Internal,
                         crate::constants::errors::PLUGIN_LOAD_FAILED,

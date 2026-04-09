@@ -73,6 +73,22 @@ pub enum BufferKind {
     ClipboardEntry { entry_index: Option<usize> },
 }
 
+impl BufferKind {
+    /// Short lowercase string identifier for this kind (e.g. "file", "terminal").
+    /// Used by the plugin API to expose buffer kind to Lua scripts.
+    pub fn kind_str(&self) -> &'static str {
+        match self {
+            BufferKind::File => "file",
+            BufferKind::Terminal => "terminal",
+            BufferKind::Directory { .. } => "directory",
+            BufferKind::UndoTree { .. } => "undotree",
+            BufferKind::Messages { .. } => "messages",
+            BufferKind::Clipboard { .. } => "clipboard",
+            BufferKind::ClipboardEntry { .. } => "clipboard_entry",
+        }
+    }
+}
+
 /// Line ending types supported by Rift
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LineEnding {

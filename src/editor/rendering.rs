@@ -1,25 +1,10 @@
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
 use super::Editor;
-use super::{PostPasteState, PanelKind, PanelLayout};
-use super::{resolve_display_map, plugin_dirs};
-use crate::error::{ErrorSeverity, ErrorType, RiftError};
-use crate::mode::Mode;
-use crate::command::Command;
-use crate::action::{Action, EditorAction, Motion};
-use crate::document::{Document, DocumentId};
-use crate::dot_repeat::{DotRepeat, DotRegister};
-use crate::keymap::KeyMap;
-use crate::split::tree::SplitTree;
-use crate::state::{State, UserSettings};
-use crate::search::SearchDirection;
-use crate::executor::execute_command;
-use crate::key_handler::KeyAction;
+use super::resolve_display_map;
+use crate::error::{ErrorType, RiftError};
 use crate::render;
 use crate::screen_buffer::FrameStats;
-use crate::command_line::commands::{CommandExecutor, CommandParser};
-use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
-use std::sync::Arc;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_state_and_render(

@@ -32,7 +32,7 @@ impl DisplayMap {
         let mut rows: Vec<VisualRowInfo> = Vec::with_capacity(total_lines + 4);
         let mut line_first_visual: Vec<usize> = Vec::with_capacity(total_lines);
 
-        if buf.len() == 0 {
+        if buf.is_empty() {
             line_first_visual.push(0);
             rows.push(VisualRowInfo {
                 logical_line: 0,

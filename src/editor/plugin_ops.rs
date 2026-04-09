@@ -1,35 +1,19 @@
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
 use super::Editor;
-use super::{PostPasteState, PanelKind, PanelLayout};
-use super::{resolve_display_map, plugin_dirs};
-use crate::error::{ErrorSeverity, ErrorType, RiftError};
-use crate::mode::Mode;
-use crate::command::Command;
-use crate::action::{Action, EditorAction, Motion};
-use crate::document::{Document, DocumentId};
-use crate::dot_repeat::{DotRepeat, DotRegister};
-use crate::keymap::KeyMap;
-use crate::split::tree::SplitTree;
-use crate::state::{State, UserSettings};
-use crate::search::SearchDirection;
-use crate::executor::execute_command;
-use crate::key_handler::KeyAction;
-use crate::render;
-use crate::screen_buffer::FrameStats;
-use crate::command_line::commands::{CommandExecutor, CommandParser};
-use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
-use std::sync::Arc;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_lua_state(&self) {
+        use crate::plugin::lua_host::BufEntry;
+
         let tab_width = self.state.settings.tab_width;
         let expand_tabs = self.state.settings.expand_tabs;
         let mode = self.current_mode.as_str();
 
-        let (buf_id, lines, cursor, filetype, file_path, can_undo, can_redo, is_dirty, line_ending) =
+        let (buf_id, buf_kind, lines, cursor, filetype, file_path, can_undo, can_redo, is_dirty, line_ending) =
             if let Some(doc) = self.document_manager.active_document() {
                 let buf_id = doc.id as usize;
+                let buf_kind = doc.kind.kind_str().to_string();
                 let text = doc.buffer.to_string();
                 let lines: Vec<String> = text
                     .split('\n')
@@ -52,6 +36,7 @@ impl<T: TerminalBackend> Editor<T> {
                 };
                 (
                     buf_id,
+                    buf_kind,
                     lines,
                     (row, col),
                     filetype,
@@ -62,14 +47,26 @@ impl<T: TerminalBackend> Editor<T> {
                     line_ending,
                 )
             } else {
-                (0, vec![], (0, 0), None, None, false, false, false, "lf")
+                (0, "file".to_string(), vec![], (0, 0), None, None, false, false, false, "lf")
             };
 
-        let buf_list = self
+        let buf_list: Vec<BufEntry> = self
             .document_manager
             .get_buffer_list()
             .into_iter()
-            .map(|b| (b.id as usize, b.name, b.is_dirty, b.is_current))
+            .filter_map(|b| {
+                let doc = self.document_manager.get_document(b.id)?;
+                Some(BufEntry {
+                    id: b.id as usize,
+                    name: b.name,
+                    is_dirty: b.is_dirty,
+                    is_current: b.is_current,
+                    kind: doc.kind.kind_str().to_string(),
+                    path: doc.path().map(|p| p.to_string_lossy().into_owned()),
+                    line_count: doc.buffer.get_total_lines(),
+                    is_read_only: b.is_read_only,
+                })
+            })
             .collect();
 
         let window_size = (
@@ -79,8 +76,16 @@ impl<T: TerminalBackend> Editor<T> {
 
         let scroll = self.render_system.viewport.get_scroll();
 
+        let commands: Vec<(String, String)> = self
+            .plugin_host
+            .command_list()
+            .into_iter()
+            .map(|(name, desc, _)| (name, desc))
+            .collect();
+
         self.plugin_host.lua_update_state(
             buf_id,
+            buf_kind,
             lines,
             cursor,
             tab_width,
@@ -95,6 +100,7 @@ impl<T: TerminalBackend> Editor<T> {
             is_dirty,
             scroll,
             line_ending,
+            commands,
         );
     }
 
@@ -123,12 +129,10 @@ impl<T: TerminalBackend> Editor<T> {
                 } else {
                     None
                 }
+            } else if s < e.byte_pos {
+                Some(s..e.byte_pos)
             } else {
-                if s < e.byte_pos {
-                    Some(s..e.byte_pos)
-                } else {
-                    None
-                }
+                None
             }
         }
 
@@ -405,6 +409,28 @@ impl<T: TerminalBackend> Editor<T> {
                 PluginMutation::SetCursorHoldDelay(ms) => {
                     let poll_ms = self.state.settings.poll_timeout_ms as u32;
                     self.plugin_host.set_cursor_hold_delay_ms(ms, poll_ms);
+                }
+                PluginMutation::SwitchToBuffer(id) => {
+                    if self.document_manager.switch_to_document(id).is_ok() {
+                        self.sync_state_with_active_document();
+                    }
+                }
+                PluginMutation::OpenFile { path, force } => {
+                    if !force {
+                        if let Some(doc) = self.document_manager.active_document() {
+                            if doc.is_dirty() {
+                                self.state.notify(
+                                    crate::notification::NotificationType::Warning,
+                                    "unsaved changes — use force=true to discard",
+                                );
+                                continue;
+                            }
+                        }
+                    }
+                    let _ = self.open_file(Some(path), force);
+                }
+                PluginMutation::CloseBuffer { force } => {
+                    self.do_quit(force);
                 }
             }
         }

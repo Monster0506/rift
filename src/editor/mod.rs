@@ -29,23 +29,13 @@ mod command_line_handler;
 #[path = "tests.rs"]
 mod tests;
 
-use crate::action::{Action, EditorAction, Motion};
-use crate::buffer::api::BufferView;
-use crate::command::Command;
-use crate::command_line::commands::{CommandExecutor, CommandParser};
-use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
+use crate::command_line::commands::CommandParser;
+use crate::command_line::settings::SettingsRegistry;
 use crate::document::{Document, DocumentId};
-use crate::dot_repeat::{DotRegister, DotRepeat};
-use crate::error::{ErrorSeverity, ErrorType, RiftError};
-use crate::executor::execute_command;
-use crate::key_handler::KeyAction;
+use crate::dot_repeat::DotRepeat;
 use crate::keymap::KeyMap;
-use arboard;
 
 use crate::mode::Mode;
-use crate::render;
-use crate::screen_buffer::FrameStats;
-use crate::search::SearchDirection;
 use crate::split::tree::SplitTree;
 use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;

@@ -101,6 +101,12 @@ pub enum PluginMutation {
     CenterOnLine(usize),
     /// Set the CursorHold idle delay in milliseconds.
     SetCursorHoldDelay(u32),
+    /// Switch the active buffer to the given document ID.
+    SwitchToBuffer(DocumentId),
+    /// Open (or switch to) a file by path. `force` discards unsaved changes.
+    OpenFile { path: String, force: bool },
+    /// Close the current buffer. `force` discards unsaved changes.
+    CloseBuffer { force: bool },
 }
 
 /// A floating window owned by a plugin. Stored in `PluginHost` and rendered
@@ -420,6 +426,7 @@ impl PluginHost {
     pub fn lua_update_state(
         &self,
         buf_id: usize,
+        buf_kind: String,
         lines: Vec<String>,
         cursor: (usize, usize),
         tab_width: usize,
@@ -427,17 +434,19 @@ impl PluginHost {
         mode: &str,
         filetype: Option<String>,
         file_path: Option<String>,
-        buf_list: Vec<(usize, String, bool, bool)>,
+        buf_list: Vec<lua_host::BufEntry>,
         window_size: (u16, u16),
         can_undo: bool,
         can_redo: bool,
         is_dirty: bool,
         scroll: (usize, usize),
         line_ending: &str,
+        commands: Vec<(String, String)>,
     ) {
         if let Some(lua) = &self.lua {
             lua.update_state(
                 buf_id,
+                buf_kind,
                 lines,
                 cursor,
                 tab_width,
@@ -452,6 +461,7 @@ impl PluginHost {
                 is_dirty,
                 scroll,
                 line_ending,
+                commands,
             );
         }
     }
