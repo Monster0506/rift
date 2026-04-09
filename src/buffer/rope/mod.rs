@@ -127,6 +127,9 @@ impl PieceTable {
         });
 
         self.root = insert_node(self.root.take(), pos, new_node, &self.original, &self.add);
+
+        #[cfg(debug_assertions)]
+        assert_tree_metadata(self.root.as_deref(), &self.original, &self.add);
     }
 
     pub fn delete(&mut self, range: std::ops::Range<usize>) {
@@ -141,6 +144,9 @@ impl PieceTable {
         let (_, right) = split(right_part, end - start, &self.original, &self.add);
 
         self.root = merge(left, right);
+
+        #[cfg(debug_assertions)]
+        assert_tree_metadata(self.root.as_deref(), &self.original, &self.add);
     }
 
     pub fn get_line_count(&self) -> usize {
@@ -828,7 +834,13 @@ fn get_char_recursive(
     original: &[Character],
     add: &[Character],
 ) -> Character {
-    let node = node.unwrap();
+    let node = match node {
+        Some(n) => n,
+        None => {
+            debug_assert!(false, "rope traversal reached None unexpectedly");
+            return Character::from('\0');
+        }
+    };
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
 
     if pos < left_len {
@@ -936,7 +948,13 @@ fn find_nth_newline_end(
     original: &[Character],
     add: &[Character],
 ) -> usize {
-    let node = node.unwrap();
+    let node = match node {
+        Some(n) => n,
+        None => {
+            debug_assert!(false, "rope traversal reached None unexpectedly");
+            return 0;
+        }
+    };
     let left_nl = node.left.as_ref().map_or(0, |n| n.newlines);
 
     if target <= left_nl {
@@ -978,7 +996,13 @@ fn get_line_at_pos(
     original: &[Character],
     add: &[Character],
 ) -> usize {
-    let node = node.unwrap();
+    let node = match node {
+        Some(n) => n,
+        None => {
+            debug_assert!(false, "rope traversal reached None unexpectedly");
+            return 0;
+        }
+    };
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
 
     if pos < left_len {
@@ -1015,7 +1039,13 @@ fn get_byte_offset_recursive(
     original: &[Character],
     add: &[Character],
 ) -> usize {
-    let node = node.unwrap();
+    let node = match node {
+        Some(n) => n,
+        None => {
+            debug_assert!(false, "rope traversal reached None unexpectedly");
+            return 0;
+        }
+    };
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
     let left_byte_len = node.left.as_ref().map_or(0, |n| n.byte_len);
 
@@ -1051,7 +1081,13 @@ fn get_char_idx_recursive(
     original: &[Character],
     add: &[Character],
 ) -> usize {
-    let node = node.unwrap();
+    let node = match node {
+        Some(n) => n,
+        None => {
+            debug_assert!(false, "rope traversal reached None unexpectedly");
+            return 0;
+        }
+    };
     let left_byte_len = node.left.as_ref().map_or(0, |n| n.byte_len);
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
 
@@ -1087,6 +1123,38 @@ fn get_char_idx_recursive(
             )
     }
 }
+#[cfg(debug_assertions)]
+fn assert_tree_metadata(node: Option<&Node>, original: &[Character], add: &[Character]) {
+    if let Some(n) = node {
+        let left_len = n.left.as_ref().map_or(0, |l| l.len);
+        let right_len = n.right.as_ref().map_or(0, |r| r.len);
+        assert_eq!(
+            n.len,
+            left_len + n.piece.len + right_len,
+            "len metadata corrupt"
+        );
+
+        let left_nl = n.left.as_ref().map_or(0, |l| l.newlines);
+        let right_nl = n.right.as_ref().map_or(0, |r| r.newlines);
+        assert_eq!(
+            n.newlines,
+            left_nl + n.piece_newlines + right_nl,
+            "newlines metadata corrupt"
+        );
+
+        let left_byte_len = n.left.as_ref().map_or(0, |l| l.byte_len);
+        let right_byte_len = n.right.as_ref().map_or(0, |r| r.byte_len);
+        assert_eq!(
+            n.byte_len,
+            left_byte_len + n.piece_byte_len + right_byte_len,
+            "byte_len metadata corrupt"
+        );
+
+        assert_tree_metadata(n.left.as_deref(), original, add);
+        assert_tree_metadata(n.right.as_deref(), original, add);
+    }
+}
+
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
