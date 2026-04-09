@@ -1,11 +1,11 @@
+use super::resolve_display_map;
+use super::Editor;
+use crate::command::Command;
+use crate::executor::execute_command;
+use crate::mode::Mode;
+use crate::search::SearchDirection;
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
-use super::Editor;
-use super::resolve_display_map;
-use crate::mode::Mode;
-use crate::command::Command;
-use crate::search::SearchDirection;
-use crate::executor::execute_command;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_mode_management(&mut self, command: crate::command::Command) {

@@ -490,8 +490,8 @@ impl PluginHost {
 
         let name = event.name();
         if let Some(handlers) = self.handlers.get(name) {
-            for i in 0..handlers.len() {
-                handlers[i](event);
+            for handler in handlers {
+                handler(event);
             }
         }
 

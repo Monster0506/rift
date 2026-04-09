@@ -1,10 +1,10 @@
-#[allow(unused_imports)]
-use crate::term::TerminalBackend;
 use super::Editor;
+use crate::command_line::commands::CommandExecutor;
 use crate::error::RiftError;
 use crate::mode::Mode;
 use crate::search::SearchDirection;
-use crate::command_line::commands::CommandExecutor;
+#[allow(unused_imports)]
+use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_search_highlights(&mut self) {

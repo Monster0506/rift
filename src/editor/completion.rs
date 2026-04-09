@@ -1,6 +1,6 @@
+use super::Editor;
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
-use super::Editor;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_completion_result(

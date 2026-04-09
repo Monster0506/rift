@@ -1,8 +1,8 @@
-#[allow(unused_imports)]
-use crate::term::TerminalBackend;
 use super::Editor;
 use crate::error::{ErrorType, RiftError};
 use crate::mode::Mode;
+#[allow(unused_imports)]
+use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn do_undo(&mut self, count: Option<u64>) {

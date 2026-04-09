@@ -1,7 +1,7 @@
-#[allow(unused_imports)]
-use crate::term::TerminalBackend;
 use super::Editor;
 use super::{PanelKind, PanelLayout};
+#[allow(unused_imports)]
+use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn reload_directory_buffer(

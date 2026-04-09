@@ -1,16 +1,16 @@
-#[allow(unused_imports)]
-use crate::term::TerminalBackend;
-use super::Editor;
 use super::plugin_dirs;
-use crate::error::{ErrorType, RiftError};
-use crate::mode::Mode;
-use crate::document::{Document, DocumentId};
-use crate::dot_repeat::DotRepeat;
-use crate::keymap::KeyMap;
-use crate::split::tree::SplitTree;
-use crate::state::State;
+use super::Editor;
 use crate::command_line::commands::CommandParser;
 use crate::command_line::settings::create_settings_registry;
+use crate::document::{Document, DocumentId};
+use crate::dot_repeat::DotRepeat;
+use crate::error::{ErrorType, RiftError};
+use crate::keymap::KeyMap;
+use crate::mode::Mode;
+use crate::split::tree::SplitTree;
+use crate::state::State;
+#[allow(unused_imports)]
+use crate::term::TerminalBackend;
 use std::sync::Arc;
 
 impl<T: TerminalBackend> Editor<T> {

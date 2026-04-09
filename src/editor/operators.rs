@@ -1,16 +1,20 @@
-#[allow(unused_imports)]
-use crate::term::TerminalBackend;
 use super::Editor;
-use crate::mode::Mode;
 use crate::action::Motion;
 use crate::dot_repeat::DotRegister;
+use crate::mode::Mode;
+#[allow(unused_imports)]
+use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub fn term_mut(&mut self) -> &mut T {
         &mut self.term
     }
 
-    pub(super) fn execute_operator(&mut self, op: crate::action::OperatorType, motion: Motion) -> bool {
+    pub(super) fn execute_operator(
+        &mut self,
+        op: crate::action::OperatorType,
+        motion: Motion,
+    ) -> bool {
         let count = if self.pending_count > 0 {
             self.pending_count
         } else {

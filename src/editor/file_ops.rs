@@ -1,7 +1,7 @@
-#[allow(unused_imports)]
-use crate::term::TerminalBackend;
 use super::Editor;
 use crate::error::{ErrorType, RiftError};
+#[allow(unused_imports)]
+use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn do_save(&mut self) {

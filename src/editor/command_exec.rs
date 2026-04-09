@@ -1,9 +1,9 @@
+use super::resolve_display_map;
+use super::Editor;
+use crate::executor::execute_command;
+use crate::mode::Mode;
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
-use super::Editor;
-use super::resolve_display_map;
-use crate::mode::Mode;
-use crate::executor::execute_command;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn execute_buffer_command(&mut self, command: crate::command::Command) -> bool {

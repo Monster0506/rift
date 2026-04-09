@@ -590,13 +590,10 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (path, force): (String, Option<bool>)| {
-                sh.lock()
-                    .unwrap()
-                    .mutations
-                    .push(PluginMutation::OpenFile {
-                        path,
-                        force: force.unwrap_or(false),
-                    });
+                sh.lock().unwrap().mutations.push(PluginMutation::OpenFile {
+                    path,
+                    force: force.unwrap_or(false),
+                });
                 Ok(())
             })?;
             api.set("open_file", f)?;

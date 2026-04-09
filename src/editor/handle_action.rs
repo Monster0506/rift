@@ -1,11 +1,11 @@
-#[allow(unused_imports)]
-use crate::buffer::api::BufferView;
-use crate::term::TerminalBackend;
 use super::Editor;
 use super::PostPasteState;
-use crate::mode::Mode;
+#[allow(unused_imports)]
+use crate::buffer::api::BufferView;
 use crate::command::Command;
+use crate::mode::Mode;
 use crate::search::SearchDirection;
+use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_action(&mut self, action: &crate::action::Action) -> bool {

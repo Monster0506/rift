@@ -1,7 +1,7 @@
-#[allow(unused_imports)]
-use crate::term::TerminalBackend;
 use super::Editor;
 use super::PanelKind;
+#[allow(unused_imports)]
+use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_directory_buffer_action(&mut self, id: &str) {
@@ -24,7 +24,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn handle_messages_buffer_action(&mut self, id: &str) {
-        if id == "messages:refresh" { self.refresh_messages_buffer_if_open() }
+        if id == "messages:refresh" {
+            self.refresh_messages_buffer_if_open()
+        }
     }
 
     pub(super) fn handle_clipboard_buffer_action(&mut self, id: &str) {
@@ -38,7 +40,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn handle_clipboard_entry_action(&mut self, id: &str) {
-        if id == "clipboard:entry:close" { self.handle_clipboard_entry_close() }
+        if id == "clipboard:entry:close" {
+            self.handle_clipboard_entry_close()
+        }
     }
 
     pub(super) fn handle_clipboard_entry_close(&mut self) {

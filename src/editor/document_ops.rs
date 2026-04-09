@@ -1,10 +1,10 @@
-#[allow(unused_imports)]
-use crate::term::TerminalBackend;
 use super::Editor;
-use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::action::{Action, EditorAction};
 use crate::document::DocumentId;
+use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::search::SearchDirection;
+#[allow(unused_imports)]
+use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {

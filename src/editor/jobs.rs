@@ -1,8 +1,8 @@
-#[allow(unused_imports)]
-use crate::term::TerminalBackend;
 use super::Editor;
 use crate::error::RiftError;
 use crate::mode::Mode;
+#[allow(unused_imports)]
+use crate::term::TerminalBackend;
 use std::sync::Arc;
 
 impl<T: TerminalBackend> Editor<T> {
@@ -36,7 +36,10 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Handle a message from a background job
-    pub(super) fn handle_job_message(&mut self, msg: crate::job_manager::JobMessage) -> Result<(), RiftError> {
+    pub(super) fn handle_job_message(
+        &mut self,
+        msg: crate::job_manager::JobMessage,
+    ) -> Result<(), RiftError> {
         use crate::job_manager::jobs::syntax::SyntaxParseResult;
         use crate::job_manager::JobMessage;
         // Parser import not needed here

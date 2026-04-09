@@ -1,6 +1,6 @@
+use super::Editor;
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
-use super::Editor;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_lua_state(&self) {
@@ -10,45 +10,66 @@ impl<T: TerminalBackend> Editor<T> {
         let expand_tabs = self.state.settings.expand_tabs;
         let mode = self.current_mode.as_str();
 
-        let (buf_id, buf_kind, lines, cursor, filetype, file_path, can_undo, can_redo, is_dirty, line_ending) =
-            if let Some(doc) = self.document_manager.active_document() {
-                let buf_id = doc.id as usize;
-                let buf_kind = doc.kind.kind_str().to_string();
-                let text = doc.buffer.to_string();
-                let lines: Vec<String> = text
-                    .split('\n')
-                    .map(|l| l.trim_end_matches('\r').to_string())
-                    .collect();
-                let (row, col) = {
-                    let cursor = doc.buffer.cursor();
-                    let row = doc.buffer.line_index.get_line_at(cursor);
-                    let col = cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
-                    (row, col)
-                };
-                let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
-                let file_path = doc.path().map(|p| p.to_string_lossy().into_owned());
-                let can_undo = doc.history.can_undo();
-                let can_redo = doc.history.can_redo();
-                let is_dirty = doc.is_dirty();
-                let line_ending = match doc.options.line_ending {
-                    crate::document::LineEnding::LF => "lf",
-                    crate::document::LineEnding::CRLF => "crlf",
-                };
-                (
-                    buf_id,
-                    buf_kind,
-                    lines,
-                    (row, col),
-                    filetype,
-                    file_path,
-                    can_undo,
-                    can_redo,
-                    is_dirty,
-                    line_ending,
-                )
-            } else {
-                (0, "file".to_string(), vec![], (0, 0), None, None, false, false, false, "lf")
+        let (
+            buf_id,
+            buf_kind,
+            lines,
+            cursor,
+            filetype,
+            file_path,
+            can_undo,
+            can_redo,
+            is_dirty,
+            line_ending,
+        ) = if let Some(doc) = self.document_manager.active_document() {
+            let buf_id = doc.id as usize;
+            let buf_kind = doc.kind.kind_str().to_string();
+            let text = doc.buffer.to_string();
+            let lines: Vec<String> = text
+                .split('\n')
+                .map(|l| l.trim_end_matches('\r').to_string())
+                .collect();
+            let (row, col) = {
+                let cursor = doc.buffer.cursor();
+                let row = doc.buffer.line_index.get_line_at(cursor);
+                let col = cursor.saturating_sub(doc.buffer.line_index.get_line_start(row));
+                (row, col)
             };
+            let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
+            let file_path = doc.path().map(|p| p.to_string_lossy().into_owned());
+            let can_undo = doc.history.can_undo();
+            let can_redo = doc.history.can_redo();
+            let is_dirty = doc.is_dirty();
+            let line_ending = match doc.options.line_ending {
+                crate::document::LineEnding::LF => "lf",
+                crate::document::LineEnding::CRLF => "crlf",
+            };
+            (
+                buf_id,
+                buf_kind,
+                lines,
+                (row, col),
+                filetype,
+                file_path,
+                can_undo,
+                can_redo,
+                is_dirty,
+                line_ending,
+            )
+        } else {
+            (
+                0,
+                "file".to_string(),
+                vec![],
+                (0, 0),
+                None,
+                None,
+                false,
+                false,
+                false,
+                "lf",
+            )
+        };
 
         let buf_list: Vec<BufEntry> = self
             .document_manager

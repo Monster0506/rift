@@ -1,10 +1,10 @@
-#[allow(unused_imports)]
-use crate::term::TerminalBackend;
-use super::Editor;
 use super::resolve_display_map;
+use super::Editor;
 use crate::error::{ErrorType, RiftError};
 use crate::render;
 use crate::screen_buffer::FrameStats;
+#[allow(unused_imports)]
+use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_state_and_render(

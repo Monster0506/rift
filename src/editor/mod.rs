@@ -6,24 +6,23 @@ pub mod actions;
 #[cfg(test)]
 mod terminal_tests;
 
-
+mod command_exec;
+mod command_line_handler;
+mod completion;
 mod context_impl;
-mod init;
 mod document_ops;
-mod run_loop;
+mod explorer;
+mod file_ops;
 mod handle_action;
+mod history;
+mod init;
+mod jobs;
+mod mode_mgmt;
+mod operators;
 mod panel_handlers;
 mod plugin_ops;
-mod file_ops;
-mod history;
-mod command_exec;
-mod mode_mgmt;
 mod rendering;
-mod completion;
-mod explorer;
-mod operators;
-mod jobs;
-mod command_line_handler;
+mod run_loop;
 
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -161,10 +160,8 @@ pub struct PanelLayout {
     pub original_doc_id: DocumentId,
 }
 
-
 impl<T: TerminalBackend> Drop for Editor<T> {
     fn drop(&mut self) {
         self.term.deinit();
     }
 }
-

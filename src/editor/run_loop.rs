@@ -1,11 +1,11 @@
+use super::Editor;
+use crate::action::{Action, EditorAction};
+use crate::command::Command;
+use crate::error::{ErrorType, RiftError};
+use crate::key_handler::KeyAction;
+use crate::mode::Mode;
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
-use super::Editor;
-use crate::error::{ErrorType, RiftError};
-use crate::mode::Mode;
-use crate::command::Command;
-use crate::action::{Action, EditorAction};
-use crate::key_handler::KeyAction;
 
 impl<T: TerminalBackend> Editor<T> {
     pub fn run(&mut self) -> Result<(), RiftError> {
