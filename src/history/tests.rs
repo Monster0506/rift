@@ -1137,3 +1137,164 @@ fn test_clear_resets_saved_seq() {
     assert_eq!(tree.saved_seq, tree.root_seq);
     assert!(tree.is_at_saved());
 }
+
+// =============================================================================
+// goto_seq Branch Navigation Tests
+// =============================================================================
+
+#[test]
+fn test_goto_seq_cross_branch_content() {
+    // Build: 0 -> 1 (A) -> 2 (B) -> 3 (C)
+    //                   \-> 4 (D)   (branch from seq=1 after undoing to seq=2... wait,
+    //                                branch from seq=2 after undoing back)
+    // Actually: 0 -> 1 -> 2 -> 3 (linear A,B,C), then undo to seq=2, push D (seq=4)
+    // Tree:  0 -> 1 -> 2 -> 3
+    //                   \-> 4
+    let mut tree = UndoTree::new();
+
+    let mut tx_a = EditTransaction::new("A");
+    tx_a.record(EditOperation::Insert {
+        position: Position::new(0, 0),
+        text: vec![Character::from('a')],
+        len: 1,
+    });
+    let seq_a = tree.push(tx_a, None); // seq=1
+
+    let mut tx_b = EditTransaction::new("B");
+    tx_b.record(EditOperation::Insert {
+        position: Position::new(0, 1),
+        text: vec![Character::from('b')],
+        len: 1,
+    });
+    let seq_b = tree.push(tx_b, None); // seq=2
+
+    let mut tx_c = EditTransaction::new("C");
+    tx_c.record(EditOperation::Insert {
+        position: Position::new(0, 2),
+        text: vec![Character::from('c')],
+        len: 1,
+    });
+    let seq_c = tree.push(tx_c, None); // seq=3
+    assert_eq!(tree.current_seq(), seq_c);
+
+    // Undo back to B, create branch D
+    tree.undo(); // back to seq=2 (B)
+    assert_eq!(tree.current_seq(), seq_b);
+
+    let mut tx_d = EditTransaction::new("D");
+    tx_d.record(EditOperation::Insert {
+        position: Position::new(0, 2),
+        text: vec![Character::from('d')],
+        len: 1,
+    });
+    let seq_d = tree.push(tx_d, None); // seq=4 — branch from seq_b
+    assert_eq!(tree.current_seq(), seq_d);
+
+    // Now goto_seq to C (seq_c) across the branch
+    let result = tree.goto_seq(seq_c).unwrap();
+    assert_eq!(tree.current_seq(), seq_c);
+
+    // Path: undo D (back to B), redo C
+    assert_eq!(result.undo_ops.len(), 1, "should undo D");
+    assert_eq!(result.redo_ops.len(), 1, "should redo C");
+    assert_eq!(result.undo_ops[0].description, "D");
+    assert_eq!(result.redo_ops[0].description, "C");
+
+    // Confirm seq_a still exists and we can navigate there too
+    let _ = tree.goto_seq(seq_a).unwrap();
+    assert_eq!(tree.current_seq(), seq_a);
+}
+
+#[test]
+fn test_goto_seq_round_trip() {
+    // Build linear: 0 -> 1 (A) -> 2 (B) -> 3 (C)
+    let mut tree = UndoTree::new();
+
+    let mut tx_a = EditTransaction::new("A");
+    tx_a.record(EditOperation::Insert {
+        position: Position::new(0, 0),
+        text: vec![Character::from('a')],
+        len: 1,
+    });
+    let seq_a = tree.push(tx_a, None); // seq=1
+
+    let mut tx_b = EditTransaction::new("B");
+    tx_b.record(EditOperation::Insert {
+        position: Position::new(0, 1),
+        text: vec![Character::from('b')],
+        len: 1,
+    });
+    let seq_b = tree.push(tx_b, None); // seq=2
+
+    let mut tx_c = EditTransaction::new("C");
+    tx_c.record(EditOperation::Insert {
+        position: Position::new(0, 2),
+        text: vec![Character::from('c')],
+        len: 1,
+    });
+    let seq_c = tree.push(tx_c, None); // seq=3
+    assert_eq!(tree.current_seq(), seq_c);
+
+    // Round-trip: goto A, then goto C, then goto A again
+    tree.goto_seq(seq_a).unwrap();
+    assert_eq!(tree.current_seq(), seq_a);
+
+    tree.goto_seq(seq_c).unwrap();
+    assert_eq!(tree.current_seq(), seq_c);
+
+    tree.goto_seq(seq_a).unwrap();
+    assert_eq!(tree.current_seq(), seq_a, "round-trip must end at seq_a");
+
+    // Also verify round-trip B -> C -> B
+    tree.goto_seq(seq_b).unwrap();
+    assert_eq!(tree.current_seq(), seq_b);
+    tree.goto_seq(seq_c).unwrap();
+    assert_eq!(tree.current_seq(), seq_c);
+    tree.goto_seq(seq_b).unwrap();
+    assert_eq!(tree.current_seq(), seq_b, "round-trip must end at seq_b");
+}
+
+#[test]
+fn test_is_at_saved_after_goto_seq() {
+    // Build: 0 -> 1 (A) -> 2 (B) -> 3 (C)
+    let mut tree = UndoTree::new();
+
+    let mut tx_a = EditTransaction::new("A");
+    tx_a.record(EditOperation::Insert {
+        position: Position::new(0, 0),
+        text: vec![Character::from('a')],
+        len: 1,
+    });
+    let _seq_a = tree.push(tx_a, None); // seq=1
+
+    let mut tx_b = EditTransaction::new("B");
+    tx_b.record(EditOperation::Insert {
+        position: Position::new(0, 1),
+        text: vec![Character::from('b')],
+        len: 1,
+    });
+    let seq_b = tree.push(tx_b, None); // seq=2
+
+    let mut tx_c = EditTransaction::new("C");
+    tx_c.record(EditOperation::Insert {
+        position: Position::new(0, 2),
+        text: vec![Character::from('c')],
+        len: 1,
+    });
+    let seq_c = tree.push(tx_c, None); // seq=3
+
+    // Mark saved at seq_b (seq=2)
+    tree.goto_seq(seq_b).unwrap();
+    tree.mark_saved();
+    assert!(tree.is_at_saved(), "should be at saved after mark_saved");
+
+    // Navigate away to seq_c
+    tree.goto_seq(seq_c).unwrap();
+    assert_eq!(tree.current_seq(), seq_c);
+    assert!(!tree.is_at_saved(), "not at saved after navigating away");
+
+    // Navigate back to saved seq
+    tree.goto_seq(seq_b).unwrap();
+    assert_eq!(tree.current_seq(), seq_b);
+    assert!(tree.is_at_saved(), "is_at_saved must be true after goto_seq to saved seq");
+}
