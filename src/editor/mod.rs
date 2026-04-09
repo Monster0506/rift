@@ -687,8 +687,8 @@ impl<T: TerminalBackend> Editor<T> {
                 };
 
                 if is_terminal_insert {
-                    // Ctrl+\ exits terminal insert mode
-                    let is_exit = matches!(key_press, Key::Ctrl(92));
+                    // Ctrl+\ or Alt+A exits terminal insert mode
+                    let is_exit = matches!(key_press, Key::Ctrl(92) | Key::Alt(b'a'));
 
                     if is_exit {
                         self.set_mode(Mode::Normal);
