@@ -336,8 +336,8 @@ fn test_default_explorer_toggle_hidden_keybind() {
     register_defaults(&mut map);
 
     assert_eq!(
-        map.get_action(KeyContext::FileExplorer, Key::Char('.')),
+        map.get_action(KeyContext::FileExplorer, Key::Char('H')),
         Some(&Action::Editor(EditorAction::ExplorerToggleHidden)),
-        "FileExplorer '.' should be bound to ExplorerToggleHidden by default"
+        "FileExplorer 'H' should be bound to ExplorerToggleHidden by default"
     );
 }

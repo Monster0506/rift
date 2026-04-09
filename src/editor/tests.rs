@@ -1,4 +1,5 @@
 use super::*;
+use crate::error::ErrorSeverity;
 use crate::test_utils::MockTerminal;
 
 fn create_editor() -> Editor<MockTerminal> {

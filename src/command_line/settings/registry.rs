@@ -125,7 +125,7 @@ impl<T> SettingsRegistry<T> {
                         None
                     }
                 });
-                let eval_result = result.map_err(|e| SettingError::ParseError(e))?;
+                let eval_result = result.map_err(SettingError::ParseError)?;
                 if let Some(min_val) = min {
                     if eval_result < *min_val {
                         return Err(SettingError::ValidationError(format!(

@@ -119,5 +119,4 @@ impl From<u8> for Character {
 }
 
 #[cfg(test)]
-#[path = "character_tests.rs"]
 mod tests;

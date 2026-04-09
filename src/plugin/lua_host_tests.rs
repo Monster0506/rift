@@ -87,6 +87,7 @@ fn test_get_lines_returns_correct_lines() {
     let host = make_host();
     host.update_state(
         1,
+        "file".to_string(),
         vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()],
         (0, 0),
         4,
@@ -101,6 +102,7 @@ fn test_get_lines_returns_correct_lines() {
         false,
         (0, 0),
         "lf",
+        vec![],
     );
     assert!(host.exec("_lines = rift.get_lines(1, -1)").is_none());
     assert!(host.exec("rift.notify('info', _lines[2])").is_none());
@@ -116,6 +118,7 @@ fn test_get_cursor_returns_1indexed_row() {
     let host = make_host();
     host.update_state(
         1,
+        "file".to_string(),
         vec![],
         (4, 2),
         4,
@@ -130,6 +133,7 @@ fn test_get_cursor_returns_1indexed_row() {
         false,
         (0, 0),
         "lf",
+        vec![],
     );
     assert!(host
         .exec("local r, c = rift.get_cursor(); rift.notify('info', tostring(r))")
@@ -146,6 +150,7 @@ fn test_current_buf_returns_id() {
     let host = make_host();
     host.update_state(
         42,
+        "file".to_string(),
         vec![],
         (0, 0),
         4,
@@ -160,6 +165,7 @@ fn test_current_buf_returns_id() {
         false,
         (0, 0),
         "lf",
+        vec![],
     );
     assert!(host
         .exec("rift.notify('info', tostring(rift.current_buf()))")

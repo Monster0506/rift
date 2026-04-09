@@ -7,8 +7,20 @@ use mlua::prelude::*;
 use std::sync::{Arc, Mutex};
 
 /// A lightweight buffer entry for the `rift.get_buf_list()` snapshot.
-/// Fields: (id, display_name, is_dirty, is_current)
-type BufEntry = (usize, String, bool, bool);
+#[derive(Debug, Clone)]
+pub struct BufEntry {
+    pub id: usize,
+    pub name: String,
+    pub is_dirty: bool,
+    pub is_current: bool,
+    /// Kind string: "file", "terminal", "directory", "undotree", "messages", etc.
+    pub kind: String,
+    /// Absolute path if the buffer has one.
+    pub path: Option<String>,
+    /// Number of lines in the buffer.
+    pub line_count: usize,
+    pub is_read_only: bool,
+}
 
 /// State shared between Lua API closures and the host.
 /// Stored behind `Arc<Mutex>` so closures can be `'static`.
@@ -19,6 +31,8 @@ struct LuaSharedState {
     buf_lines: Vec<String>,
     /// Active buffer ID.
     buf_id: usize,
+    /// Kind string for the active buffer ("file", "terminal", "directory", …).
+    buf_kind: String,
     /// Cursor position (row 0-indexed, col 0-indexed).
     cursor: (usize, usize),
     tab_width: usize,
@@ -28,7 +42,7 @@ struct LuaSharedState {
     filetype: Option<String>,
     /// Absolute path of the active buffer's file, if any.
     file_path: Option<String>,
-    /// Snapshot of all open buffers: (id, display_name, is_dirty, is_current).
+    /// Snapshot of all open buffers with rich metadata.
     buf_list: Vec<BufEntry>,
     /// Slot ID assigned to the handler currently being dispatched.
     /// Each `rift.on()` registration gets a unique stable slot so that
@@ -45,6 +59,8 @@ struct LuaSharedState {
     scroll: (usize, usize),
     /// Current line ending: "lf" or "crlf".
     line_ending: String,
+    /// Snapshot of registered plugin commands: (name, description).
+    commands: Vec<(String, String)>,
 }
 
 impl Default for LuaSharedState {
@@ -53,6 +69,7 @@ impl Default for LuaSharedState {
             mutations: Vec::new(),
             buf_lines: Vec::new(),
             buf_id: 0,
+            buf_kind: "file".to_string(),
             cursor: (0, 0),
             tab_width: 4,
             expand_tabs: true,
@@ -68,6 +85,7 @@ impl Default for LuaSharedState {
             is_dirty: false,
             scroll: (0, 0),
             line_ending: "lf".to_string(),
+            commands: Vec::new(),
         }
     }
 }
@@ -523,23 +541,95 @@ impl LuaHost {
             api.set("get_filepath", f)?;
         }
 
-        // rift.get_buf_list() → sequence of { id, name, is_dirty, is_current }
+        // rift.get_buf_list() → sequence of { id, name, is_dirty, is_current, kind, path, line_count, is_read_only }
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |lua, ()| {
                 let s = sh.lock().unwrap();
                 let result = lua.create_table()?;
-                for (i, (id, name, is_dirty, is_current)) in s.buf_list.iter().enumerate() {
+                for (i, b) in s.buf_list.iter().enumerate() {
                     let entry = lua.create_table()?;
-                    entry.set("id", *id as i64)?;
-                    entry.set("name", name.as_str())?;
-                    entry.set("is_dirty", *is_dirty)?;
-                    entry.set("is_current", *is_current)?;
+                    entry.set("id", b.id as i64)?;
+                    entry.set("name", b.name.as_str())?;
+                    entry.set("is_dirty", b.is_dirty)?;
+                    entry.set("is_current", b.is_current)?;
+                    entry.set("kind", b.kind.as_str())?;
+                    entry.set("line_count", b.line_count as i64)?;
+                    entry.set("is_read_only", b.is_read_only)?;
+                    if let Some(ref p) = b.path {
+                        entry.set("path", p.as_str())?;
+                    }
                     result.set(i + 1, entry)?;
                 }
                 Ok(result)
             })?;
             api.set("get_buf_list", f)?;
+        }
+
+        // rift.buf_kind() → "file" | "terminal" | "directory" | "undotree" | "messages" | …
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.lock().unwrap().buf_kind.clone()))?;
+            api.set("buf_kind", f)?;
+        }
+
+        // rift.switch_buf(buf_id) — switch the active buffer to the given ID
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, id: u64| {
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::SwitchToBuffer(id));
+                Ok(())
+            })?;
+            api.set("switch_buf", f)?;
+        }
+
+        // rift.open_file(path [, force]) — open a file, optionally discarding unsaved changes
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, (path, force): (String, Option<bool>)| {
+                sh.lock().unwrap().mutations.push(PluginMutation::OpenFile {
+                    path,
+                    force: force.unwrap_or(false),
+                });
+                Ok(())
+            })?;
+            api.set("open_file", f)?;
+        }
+
+        // rift.close_buf([force]) — close the current buffer, optionally discarding changes
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, force: Option<bool>| {
+                sh.lock()
+                    .unwrap()
+                    .mutations
+                    .push(PluginMutation::CloseBuffer {
+                        force: force.unwrap_or(false),
+                    });
+                Ok(())
+            })?;
+            api.set("close_buf", f)?;
+        }
+
+        // rift.get_commands() → sequence of { name, description }
+        // Returns all registered plugin commands (both Rust and Lua).
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |lua, ()| {
+                let s = sh.lock().unwrap();
+                let result = lua.create_table()?;
+                for (i, (name, desc)) in s.commands.iter().enumerate() {
+                    let entry = lua.create_table()?;
+                    entry.set("name", name.as_str())?;
+                    entry.set("description", desc.as_str())?;
+                    result.set(i + 1, entry)?;
+                }
+                Ok(result)
+            })?;
+            api.set("get_commands", f)?;
         }
 
         // rift.save() — request a save of the active buffer to disk
@@ -1001,6 +1091,7 @@ end
     pub fn update_state(
         &self,
         buf_id: usize,
+        buf_kind: String,
         lines: Vec<String>,
         cursor: (usize, usize),
         tab_width: usize,
@@ -1015,9 +1106,11 @@ end
         is_dirty: bool,
         scroll: (usize, usize),
         line_ending: &str,
+        commands: Vec<(String, String)>,
     ) {
         let mut s = self.shared.lock().unwrap();
         s.buf_id = buf_id;
+        s.buf_kind = buf_kind;
         s.buf_lines = lines;
         s.cursor = cursor;
         s.tab_width = tab_width;
@@ -1032,6 +1125,7 @@ end
         s.is_dirty = is_dirty;
         s.scroll = scroll;
         s.line_ending = line_ending.to_string();
+        s.commands = commands;
     }
 
     /// Dispatch an `EditorEvent` to all registered Lua handlers.
@@ -1133,12 +1227,10 @@ end
             Err(_) => return vec![],
         };
         let mut list = Vec::new();
-        for pair in cmds.pairs::<String, LuaTable>() {
-            if let Ok((name, entry)) = pair {
-                let desc: String = entry.get("description").unwrap_or_default();
-                let arg_type: Option<String> = entry.get("arg_type").ok().flatten();
-                list.push((name, desc, arg_type));
-            }
+        for (name, entry) in cmds.pairs::<String, LuaTable>().flatten() {
+            let desc: String = entry.get("description").unwrap_or_default();
+            let arg_type: Option<String> = entry.get("arg_type").ok().flatten();
+            list.push((name, desc, arg_type));
         }
         list
     }
@@ -1193,7 +1285,7 @@ end
 
         for entry in rd.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "lua") {
+            if path.extension().is_some_and(|e| e == "lua") {
                 let src = match std::fs::read_to_string(&path) {
                     Ok(s) => s,
                     Err(e) => {

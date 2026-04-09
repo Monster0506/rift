@@ -180,9 +180,11 @@ impl ClipboardTooltip {
 
         if let Some(clip_text) = sys_clip {
             // Separator line
-            let sep = std::iter::repeat(Cell::from_char('─').with_colors(editor_fg, editor_bg))
-                .take(content_width)
-                .collect::<Vec<_>>();
+            let sep = std::iter::repeat_n(
+                Cell::from_char('─').with_colors(editor_fg, editor_bg),
+                content_width,
+            )
+            .collect::<Vec<_>>();
             content.push(sep);
 
             // System clipboard entry (never highlighted as selected)

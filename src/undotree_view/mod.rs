@@ -151,20 +151,15 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
     (lines, sequences, cursor_row)
 }
 
+type Highlights = Vec<(std::ops::Range<usize>, crate::color::Color)>;
 /// Render the undo tree to plain text for use in a buffer.
 /// Returns `(text, sequences, highlights)` where:
 /// - `sequences[i]` is the EditSeq for line i (u64::MAX for connector lines)
 /// - `highlights` is a list of `(byte_range, Color)` pairs for per-character coloring
-pub fn render_tree_to_text(
-    tree: &UndoTree,
-) -> (
-    String,
-    Vec<EditSeq>,
-    Vec<(std::ops::Range<usize>, crate::color::Color)>,
-) {
+pub fn render_tree_to_text(tree: &UndoTree) -> (String, Vec<EditSeq>, Highlights) {
     let (lines, sequences, _cursor) = render_tree(tree);
     let mut text = String::new();
-    let mut highlights: Vec<(std::ops::Range<usize>, crate::color::Color)> = Vec::new();
+    let mut highlights: Highlights = Vec::new();
 
     for (i, line) in lines.iter().enumerate() {
         for cell in line {
