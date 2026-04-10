@@ -493,6 +493,11 @@ impl<T: TerminalBackend> Editor<T> {
                     false
                 }
             }
+
+            EditorAction::ExitTerminalMode => {
+                self.set_mode(Mode::Normal);
+                true
+            }
         }
     }
 

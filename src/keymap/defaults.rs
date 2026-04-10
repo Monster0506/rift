@@ -5,6 +5,13 @@ use crate::keymap::{KeyContext, KeyMap};
 
 /// Register default keybindings
 pub fn register_defaults(keymap: &mut KeyMap) {
+    // Terminal mode Defaults
+    keymap.register(
+        KeyContext::Terminal,
+        Key::Ctrl(92),
+        Action::Editor(EditorAction::ExitTerminalMode),
+    );
+
     // FileExplorer (Directory buffer) Defaults
     // Normal motions fall through to KeyContext::Normal via the fallback chain.
     // Only directory-specific bindings are registered here.

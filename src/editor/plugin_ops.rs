@@ -396,6 +396,7 @@ impl<T: TerminalBackend> Editor<T> {
                         "c" | "command" => KeyContext::Command,
                         "s" | "search" => KeyContext::Search,
                         "g" | "global" => KeyContext::Global,
+                        "t" | "terminal" => KeyContext::Terminal,
                         _ => continue,
                     };
                     if let (Some(key_seq), Ok(act)) = (
@@ -423,6 +424,7 @@ impl<T: TerminalBackend> Editor<T> {
                         "c" | "command" => KeyContext::Command,
                         "s" | "search" => KeyContext::Search,
                         "g" | "global" => KeyContext::Global,
+                        "t" | "terminal" => KeyContext::Terminal,
                         _ => continue,
                     };
                     if let Some(key_seq) = crate::key::parse_key_sequence(&keys) {

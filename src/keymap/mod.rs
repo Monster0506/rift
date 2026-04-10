@@ -79,7 +79,7 @@ impl KeyMap {
             | KeyContext::UndoTree
             | KeyContext::Clipboard
             | KeyContext::ClipboardEntry => Some(KeyContext::Normal),
-            KeyContext::Terminal => Some(KeyContext::Insert),
+            KeyContext::Terminal => Some(KeyContext::Global),
             KeyContext::Normal | KeyContext::Insert | KeyContext::Command | KeyContext::Search => {
                 Some(KeyContext::Global)
             }

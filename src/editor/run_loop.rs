@@ -81,11 +81,13 @@ impl<T: TerminalBackend> Editor<T> {
                 };
 
                 if is_terminal_insert {
-                    // Ctrl+\ exits terminal insert mode
-                    let is_exit = matches!(key_press, Key::Ctrl(92));
-
-                    if is_exit {
-                        self.set_mode(Mode::Normal);
+                    let terminal_match =
+                        self.keymap.lookup(crate::keymap::KeyContext::Terminal, &[key_press]);
+                    if let crate::keymap::MatchResult::Exact(action)
+                    | crate::keymap::MatchResult::Ambiguous(action) = terminal_match
+                    {
+                        let action = action.clone();
+                        self.handle_action(&action);
                         self.update_state_and_render(
                             key_press,
                             crate::key_handler::KeyAction::Continue,

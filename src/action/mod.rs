@@ -247,6 +247,8 @@ pub enum EditorAction {
     },
     /// Toggle display of hidden files (dot-files) in the file explorer
     ExplorerToggleHidden,
+    /// Exit terminal insert mode (return to Normal). Default: Ctrl+\
+    ExitTerminalMode,
 }
 
 /// Represents an action in the editor
@@ -334,6 +336,7 @@ impl FromStr for Action {
             // Feature openers
             "explorer:open" => Ok(Action::Editor(EditorAction::OpenExplorer)),
             "explorer:toggle_hidden" => Ok(Action::Editor(EditorAction::ExplorerToggleHidden)),
+            "terminal:exit" => Ok(Action::Editor(EditorAction::ExitTerminalMode)),
             "undotree:open" => Ok(Action::Editor(EditorAction::OpenUndoTree)),
             "terminal:open" => Ok(Action::Editor(EditorAction::OpenTerminal(None))),
             "messages:open" => Ok(Action::Editor(EditorAction::OpenMessages)),
