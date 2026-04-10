@@ -298,7 +298,11 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::GotoLine(n) => {
-                let n = *n;
+                let n = if self.pending_count > 0 {
+                    self.pending_count
+                } else {
+                    *n
+                };
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     let total = doc.buffer.line_count();
                     let idx = if n == 0 || n > total {

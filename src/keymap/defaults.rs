@@ -596,7 +596,7 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     keymap.register(
         KeyContext::Normal,
         Key::Char('G'),
-        Action::Editor(EditorAction::Move(Motion::EndOfFile)),
+        Action::Editor(EditorAction::GotoLine(0)),
     );
     // <Space>pd — open the demo floating window
     keymap.register_sequence(

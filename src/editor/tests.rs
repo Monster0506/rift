@@ -404,3 +404,87 @@ fn test_explorer_toggle_hidden_flips_show_hidden() {
         }
     }
 }
+
+fn load_text(editor: &mut Editor<MockTerminal>, text: &str) {
+    let doc = editor.active_document();
+    doc.buffer.move_to_start();
+    doc.buffer.insert_str(text).unwrap();
+    doc.buffer.move_to_start();
+}
+
+#[test]
+fn test_g_no_count_goes_to_last_line() {
+    use crate::action::{Action, EditorAction};
+    use crate::buffer::api::BufferView;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "line1\nline2\nline3\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
+
+    let doc = editor.active_document();
+    let last_line = doc.buffer.line_count() - 1;
+    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(last_line));
+}
+
+#[test]
+fn test_g_with_count_jumps_to_line() {
+    use crate::action::{Action, EditorAction};
+    use crate::buffer::api::BufferView;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "alpha\nbeta\ngamma\ndelta\n");
+
+    editor.pending_count = 3;
+    editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
+
+    let doc = editor.active_document();
+    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(2));
+}
+
+#[test]
+fn test_g_count_beyond_last_line_clamps() {
+    use crate::action::{Action, EditorAction};
+    use crate::buffer::api::BufferView;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "one\ntwo\nthree\n");
+
+    editor.pending_count = 999;
+    editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
+
+    let doc = editor.active_document();
+    let last_line = doc.buffer.line_count() - 1;
+    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(last_line));
+}
+
+#[test]
+fn test_g_count_one_goes_to_first_line() {
+    use crate::action::{Action, EditorAction};
+    use crate::buffer::api::BufferView;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "first\nsecond\nthird\n");
+
+    editor.pending_count = 0;
+    editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
+    editor.pending_count = 1;
+    editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
+
+    let doc = editor.active_document();
+    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(0));
+}
+
+#[test]
+fn test_goto_line_explicit_n_no_count() {
+    use crate::action::{Action, EditorAction};
+    use crate::buffer::api::BufferView;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "a\nb\nc\nd\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::GotoLine(2)));
+
+    let doc = editor.active_document();
+    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(1));
+}
