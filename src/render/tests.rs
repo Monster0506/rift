@@ -990,3 +990,27 @@ fn test_cursor_column_truncated_utf8() {
     buf.insert_bytes(&[0xE2, 0x80]).unwrap();
     assert_eq!(calculate_cursor_column(&buf, 0, 4), 8);
 }
+
+// ============================================================================
+// wrap_text unicode display-width tests
+// ============================================================================
+
+#[test]
+fn test_wrap_text_cjk_counts_as_two_columns() {
+    use crate::render::wrap_text;
+
+    // "你好" is 2 CJK chars, each 2 columns wide → display width 4.
+    // With wrap_width=4 it should fit on one line; with wrap_width=3 it must
+    // wrap (the word itself is 4 columns wide, so it stays on a line alone).
+    let lines = wrap_text("你好", 4);
+    assert_eq!(lines.len(), 1, "2 CJK chars (display width 4) should fit in width 4");
+    assert_eq!(lines[0], "你好");
+
+    // If we follow a word that would push total display-width past limit,
+    // it should wrap to a new line.
+    // "AB 你好": "AB" is 2 cols, space is 1, "你好" is 4 → total 7 > width 5.
+    let lines = wrap_text("AB 你好", 5);
+    assert_eq!(lines.len(), 2, "\"AB 你好\" should wrap at width 5 (display widths: 2+1+4=7 > 5)");
+    assert_eq!(lines[0], "AB");
+    assert_eq!(lines[1], "你好");
+}

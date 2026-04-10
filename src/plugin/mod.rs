@@ -22,6 +22,7 @@ pub use events::EditorEvent;
 
 use crate::document::DocumentId;
 use crate::notification::NotificationType;
+use std::sync::Arc;
 
 /// An event handler.
 type Handler = Box<dyn Fn(&EditorEvent) + Send + 'static>;
@@ -427,7 +428,7 @@ impl PluginHost {
         &self,
         buf_id: usize,
         buf_kind: String,
-        lines: Vec<String>,
+        lines: Arc<Vec<String>>,
         cursor: (usize, usize),
         tab_width: usize,
         expand_tabs: bool,

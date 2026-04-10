@@ -7,6 +7,7 @@ use crate::state::State;
 use crate::state::UserSettings;
 
 /// Result of executing a command
+#[derive(PartialEq, Eq)]
 pub enum ExecutionResult {
     /// Command executed successfully
     Success,
@@ -85,58 +86,6 @@ pub enum ExecutionResult {
     },
 }
 
-impl PartialEq for ExecutionResult {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Success, Self::Success) => true,
-            (Self::Quit { bangs: b1 }, Self::Quit { bangs: b2 }) => b1 == b2,
-            (Self::Write, Self::Write) => true,
-            (Self::WriteAndQuit, Self::WriteAndQuit) => true,
-            (Self::Failure, Self::Failure) => true,
-            (Self::Redraw, Self::Redraw) => true,
-            (Self::Reload, Self::Reload) => true,
-            (
-                Self::Edit {
-                    path: p1,
-                    bangs: b1,
-                },
-                Self::Edit {
-                    path: p2,
-                    bangs: b2,
-                },
-            ) => p1 == p2 && b1 == b2,
-            (Self::BufferNext { bangs: b1 }, Self::BufferNext { bangs: b2 }) => b1 == b2,
-            (Self::BufferPrevious { bangs: b1 }, Self::BufferPrevious { bangs: b2 }) => b1 == b2,
-            (Self::BufferList, Self::BufferList) => true,
-            (Self::NotificationClear { bangs: b1 }, Self::NotificationClear { bangs: b2 }) => {
-                b1 == b2
-            }
-            (Self::Undo { count: c1 }, Self::Undo { count: c2 }) => c1 == c2,
-            (Self::Redo { count: c1 }, Self::Redo { count: c2 }) => c1 == c2,
-            (Self::UndoGoto { seq: s1 }, Self::UndoGoto { seq: s2 }) => s1 == s2,
-            (Self::Checkpoint, Self::Checkpoint) => true,
-            (Self::OpenUndoTree, Self::OpenUndoTree) => true,
-            (Self::OpenMessages { show_all: a }, Self::OpenMessages { show_all: b }) => a == b,
-            (Self::OpenClipboard, Self::OpenClipboard) => true,
-            (Self::OpenDirectory { path: p1 }, Self::OpenDirectory { path: p2 }) => p1 == p2,
-            (
-                Self::OpenTerminal { cmd: c1, bangs: b1 },
-                Self::OpenTerminal { cmd: c2, bangs: b2 },
-            ) => c1 == c2 && b1 == b2,
-            (
-                Self::SplitWindow {
-                    direction: d1,
-                    subcommand: s1,
-                },
-                Self::SplitWindow {
-                    direction: d2,
-                    subcommand: s2,
-                },
-            ) => d1 == d2 && s1 == s2,
-            _ => false,
-        }
-    }
-}
 impl std::fmt::Debug for ExecutionResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -195,8 +144,6 @@ impl std::fmt::Debug for ExecutionResult {
         }
     }
 }
-
-impl Eq for ExecutionResult {}
 
 /// Command executor
 pub struct CommandExecutor;

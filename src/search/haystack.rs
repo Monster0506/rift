@@ -224,6 +224,29 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
             return None;
         }
 
+        // Safety: The regex engine must only request byte positions that are on a character
+        // boundary. Positions that fall in the middle of a multi-byte UTF-8 sequence are
+        // invalid and will cause `char_at` to return `None` (see the `current_byte > offset_in_line`
+        // guard below). In debug builds we assert eagerly so mis-aligned calls surface quickly.
+        #[cfg(debug_assertions)]
+        {
+            let (debug_line_idx, debug_offset) = self.find_line_for_byte(pos).unwrap_or((0, 0));
+            let debug_line_char_start = self.line_char_starts[debug_line_idx];
+            let mut debug_byte = 0usize;
+            for c in self.buffer.iter_at(debug_line_char_start) {
+                if debug_byte == debug_offset {
+                    // We landed on a char boundary — assertion passes.
+                    break;
+                }
+                debug_byte += c.len_utf8();
+                debug_assert!(
+                    debug_byte <= debug_offset,
+                    "char_at({pos}): byte offset {debug_offset} within line {debug_line_idx} \
+                     splits a multi-byte UTF-8 sequence (overshot at byte {debug_byte})"
+                );
+            }
+        }
+
         let (line_idx, offset_in_line) = self.find_line_for_byte(pos)?;
 
         // Critical Optimization: Use cached char start for the line

@@ -54,12 +54,15 @@ pub fn find_all(
     match tier {
         SearchTier::Literal => {
             let pattern_orig = extract_pattern(query);
-            let (pattern, check_anchor) =
+            let (pattern_raw, check_anchor) =
                 if pattern_orig.starts_with('^') && is_literal(&pattern_orig[1..]) {
                     (pattern_orig[1..].to_string(), true)
                 } else {
                     (pattern_orig, false)
                 };
+            // Unescape backslash sequences (e.g. `\.` → `.`) so the literal search
+            // compares against the actual characters the user intends to match.
+            let pattern = unescape_literal(&pattern_raw);
 
             let t1 = std::time::Instant::now();
             let mut matches = Vec::new();
@@ -345,12 +348,76 @@ fn extract_pattern(query: &str) -> String {
     query.to_string()
 }
 
+/// Returns true if `pattern` is a plain literal string with no unescaped regex metacharacters.
+///
+/// Backslash-escaped metacharacters (e.g. `\.`, `\[`, `\\`) are treated as literal characters
+/// for classification purposes, since a regex engine will also match them literally.
+/// True regex constructs — character classes `[abc]`, quantifiers `*+?`, anchors `^$`,
+/// alternation `|`, groups `()`, and word boundaries `\b` — cause this to return false.
+///
+/// Examples:
+/// - `"hello"` → true   (no metacharacters)
+/// - `"hel.o"` → false  (unescaped `.`)
+/// - `"\.rs"`  → true   (escaped dot — matches literal ".rs")
+/// - `"^foo"`  → false  (unescaped anchor — caller handles anchored-literal as a special case)
+/// - `"[abc]"` → false  (character class)
+/// - `"\b"`    → false  (word-boundary assertion)
 fn is_literal(pattern: &str) -> bool {
-    !pattern.chars().any(|c| ".^$*+?()[]{}|\\".contains(c))
+    // Metacharacters that, when *unescaped*, make a pattern non-literal.
+    const UNESCAPED_SPECIALS: &str = ".^$*+?()[]{}|";
+
+    let mut chars = pattern.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                // Regex assertions / character-class shorthands — not literal.
+                Some('b') | Some('B') | Some('d') | Some('D') | Some('w') | Some('W')
+                | Some('s') | Some('S') | Some('A') | Some('Z') | Some('z') | Some('G') => {
+                    return false;
+                }
+                // Control-character escapes — let the regex engine handle these.
+                Some('n') | Some('t') | Some('r') => {
+                    return false;
+                }
+                // \X where X is any other char (including metacharacters like \. \[ \\)
+                // → the pair matches that character literally; continue scanning.
+                Some(_) => {}
+                // Trailing backslash → invalid, treat as non-literal.
+                None => return false,
+            }
+        } else if UNESCAPED_SPECIALS.contains(c) {
+            return false;
+        }
+    }
+    true
 }
 
 fn is_line_scoped(pattern: &str) -> bool {
     !pattern.contains("\\n") && !pattern.contains("(?s)")
+}
+
+/// Unescape a pattern that `is_literal` has approved.
+///
+/// Converts escape sequences like `\.` → `.`, `\\` → `\`, etc. back to the literal
+/// characters they represent, so the string can be fed to `find_literal` for a
+/// plain-text comparison rather than a regex match.
+///
+/// Only call this on patterns that `is_literal` returns `true` for.
+fn unescape_literal(pattern: &str) -> String {
+    let mut out = String::with_capacity(pattern.len());
+    let mut chars = pattern.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                // Push the escaped character literally (e.g. '\' + '.' → '.')
+                out.push(next);
+            }
+            // Trailing backslash: is_literal already rejects this, but be safe.
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Find the next occurrence of the pattern in the buffer.
