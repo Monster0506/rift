@@ -565,6 +565,14 @@ pub fn register_defaults(keymap: &mut KeyMap) {
             1,
         )))),
     );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('D'),
+        Action::Editor(EditorAction::Command(Box::new(Command::Delete(
+            Motion::EndOfLine,
+            1,
+        )))),
+    );
 
     // Sequences
     keymap.register_sequence(
