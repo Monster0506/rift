@@ -992,6 +992,125 @@ fn test_cursor_column_truncated_utf8() {
 }
 
 // ============================================================================
+// Tab rendering tests
+// ============================================================================
+
+#[test]
+fn test_tab_rendered_as_space_not_raw_tab() {
+    // A tab character must be stored as a space Cell in the layer so that the
+    // screen buffer never writes a raw '\t' to the terminal (which would jump
+    // to the terminal's own tab stop instead of the editor's tab_width).
+    let mut term = MockTerminal::new(5, 40);
+    let mut buf = TextBuffer::new(64).unwrap();
+    buf.insert_str("\thello").unwrap();
+    let mut state = State::new();
+    state.update_buffer_stats(1, 6, crate::document::LineEnding::LF);
+    let mut system = RenderSystem::new(5, 40);
+    system
+        .render(
+            &mut term,
+            RenderState {
+                buf: &buf,
+                current_mode: Mode::Normal,
+                pending_key: None,
+                pending_count: 0,
+                state: &state,
+                needs_clear: true,
+                tab_width: 4,
+                highlights: None,
+                capture_map: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
+                terminal_cursor: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: false,
+                display_map: None,
+            },
+        )
+        .unwrap();
+
+    let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
+    // The first 4 cells (tab expanded to 4 spaces) must all be spaces.
+    for col in 0..4 {
+        let cell = layer.get_cell(0, col).unwrap();
+        assert_ne!(
+            cell.content,
+            Character::Tab,
+            "col {col}: raw tab must not be stored in cell"
+        );
+        assert_eq!(
+            cell.content,
+            Character::from(' '),
+            "col {col}: expanded tab cell should be a space"
+        );
+    }
+    // Column 4 should be 'h'.
+    assert_eq!(
+        layer.get_cell(0, 4).unwrap().content,
+        Character::from('h')
+    );
+}
+
+#[test]
+fn test_tab_straddling_left_col_does_not_shift_text() {
+    // A tab that straddles the left_col boundary must not push subsequent
+    // characters rightward by its full width.
+    //
+    // Buffer: "\thello"
+    // tab_width = 4, so tab spans cols 0-3 (width 4).
+    // With left_col = 2 the tab is partially scrolled off; only 2 of its
+    // 4 columns are visible. 'h' should appear at rendered_col 2, not 4.
+    let mut term = MockTerminal::new(5, 40);
+    let mut buf = TextBuffer::new(64).unwrap();
+    buf.insert_str("\thello").unwrap();
+    let mut state = State::new();
+    state.update_buffer_stats(1, 6, crate::document::LineEnding::LF);
+    let mut system = RenderSystem::new(5, 40);
+
+    // Scroll two columns to the right so the tab straddles left_col.
+    system.viewport.set_scroll(0, 2);
+
+    system
+        .render(
+            &mut term,
+            RenderState {
+                buf: &buf,
+                current_mode: Mode::Normal,
+                pending_key: None,
+                pending_count: 0,
+                state: &state,
+                needs_clear: true,
+                tab_width: 4,
+                highlights: None,
+                capture_map: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
+                terminal_cursor: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                show_line_numbers: false,
+                display_map: None,
+            },
+        )
+        .unwrap();
+
+    let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
+    // With left_col=2 the visible portion of the tab is 2 cells (cols 2-3 of
+    // the logical line), so they map to screen cols 0-1 → spaces.
+    // 'h' (first char of "hello") must appear at screen col 2, not col 4.
+    assert_eq!(
+        layer.get_cell(0, 2).unwrap().content,
+        Character::from('h'),
+        "after partial tab, 'h' must be at screen col 2"
+    );
+}
+
+// ============================================================================
 // wrap_text unicode display-width tests
 // ============================================================================
 

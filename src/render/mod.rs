@@ -481,7 +481,10 @@ fn render_line(
 
         // Check visibility against viewport
         if next_visual_col > left_col {
-            // Item is at least partially visible
+            // Number of columns this item contributes to the visible area.
+            // For items that straddle the left edge (current_visual_col < left_col),
+            // only count the portion that is actually in view.
+            let visible_width = next_visual_col - left_col.max(current_visual_col);
 
             // Calculate where to draw in the layer (relative to gutter)
             let display_col = rendered_col + config.gutter_width;
@@ -490,26 +493,37 @@ fn render_line(
                 let fg = item.fg.or(config.default_fg);
                 let bg = item.bg.or(config.default_bg);
 
+                // Tabs are already expanded by TabLayout — store a space so the
+                // terminal never receives a raw \t (which would jump to the
+                // terminal's own tab stop rather than the editor's tab_width).
+                // Wide chars (width > 1) also fill their remaining columns with spaces.
+                let display_char = if item.char == Character::Tab {
+                    Character::from(' ')
+                } else {
+                    item.char
+                };
+
                 layer.set_cell(
                     config.row_idx,
                     display_col,
-                    Cell::new(item.char).with_colors(fg, bg),
+                    Cell::new(display_char).with_colors(fg, bg),
                 );
 
-                if width > 1 {
+                // Fill the rest of the visible span with spaces.
+                if visible_width > 1 {
                     let empty_cell = Cell {
                         content: Character::from(' '),
                         fg,
                         bg,
                     };
-                    for k in 1..width {
+                    for k in 1..visible_width {
                         if display_col + k < config.visible_cols {
                             layer.set_cell(config.row_idx, display_col + k, empty_cell.clone());
                         }
                     }
                 }
             }
-            rendered_col += width;
+            rendered_col += visible_width;
         }
 
         current_visual_col = next_visual_col;
@@ -576,6 +590,8 @@ pub fn calculate_cursor_column_at(
 
 /// Helper to wrap text to a specific width
 pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    use unicode_width::UnicodeWidthStr;
+
     let mut lines = Vec::new();
 
     for paragraph in text.split('\n') {
@@ -587,7 +603,9 @@ pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
 
         let mut current_line = String::with_capacity(width);
         for word in words {
-            if current_line.len() + word.len() + 1 > width && !current_line.is_empty() {
+            let current_w = UnicodeWidthStr::width(current_line.as_str());
+            let word_w = UnicodeWidthStr::width(word);
+            if current_w + word_w + 1 > width && !current_line.is_empty() {
                 lines.push(current_line);
                 current_line = String::with_capacity(width);
             }
