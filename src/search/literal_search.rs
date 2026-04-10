@@ -36,6 +36,17 @@ where
     let pattern_len = pattern_chars.len();
     let first_char = pattern_chars[0];
 
+    // Chunk boundary handling
+    // ───────────────────────
+    // The buffer may deliver its content in multiple contiguous chunks (e.g. the two
+    // halves of a piece-table entry). When a potential match starts near the *end* of a
+    // chunk there may not be enough characters remaining in that chunk to verify the full
+    // pattern inline (the "fast path" below). In that case we fall back to
+    // `check_match_slow`, which calls `view.iter_at` — an iterator that transparently
+    // crosses chunk boundaries. This means **no cross-chunk match is ever missed**.
+    //
+    // The fast path is only taken when `remaining_in_chunk >= pattern_len`, guaranteeing
+    // every character of the candidate slice is already in memory.
     let chunk_iter = view.iter_chunks_at(start_pos);
     let mut current_pos = start_pos;
 
@@ -48,7 +59,7 @@ where
                 let remaining_in_chunk = chunk.len() - idx;
 
                 if remaining_in_chunk >= pattern_len {
-                    // Fast path
+                    // Fast path: the entire pattern fits within the current chunk.
                     let slice = &chunk[idx..idx + pattern_len];
                     let mut match_found = true;
                     for (i, &sc) in slice.iter().skip(1).enumerate() {
@@ -63,7 +74,8 @@ where
                         });
                     }
                 } else {
-                    // Slow path
+                    // Slow path: pattern spans this chunk and the next one(s).
+                    // check_match_slow uses iter_at which crosses chunk boundaries.
                     if check_match_slow(view, match_start, &pattern_chars) {
                         return Some(SearchMatch {
                             range: match_start..match_start + pattern_len,

@@ -1,6 +1,7 @@
 use super::*;
 use crate::notification::NotificationType;
 use crate::plugin::events::EditorEvent;
+use std::sync::Arc;
 
 fn make_host() -> LuaHost {
     LuaHost::new().expect("LuaHost::new failed")
@@ -88,7 +89,7 @@ fn test_get_lines_returns_correct_lines() {
     host.update_state(
         1,
         "file".to_string(),
-        vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()],
+        Arc::new(vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()]),
         (0, 0),
         4,
         true,
@@ -119,7 +120,7 @@ fn test_get_cursor_returns_1indexed_row() {
     host.update_state(
         1,
         "file".to_string(),
-        vec![],
+        Arc::new(vec![]),
         (4, 2),
         4,
         true,
@@ -151,7 +152,7 @@ fn test_current_buf_returns_id() {
     host.update_state(
         42,
         "file".to_string(),
-        vec![],
+        Arc::new(vec![]),
         (0, 0),
         4,
         true,

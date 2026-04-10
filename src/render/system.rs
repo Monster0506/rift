@@ -67,9 +67,6 @@ impl RenderSystem {
         self.last_command_cursor = None;
     }
 
-    /// Rebuild the ECS world from the current DrawContext
-    // Static helper to avoid self-borrow issues
-    /// Update the ECS world components based on current context
     /// Update the ECS world components based on current context
     fn update_world(&mut self, ctx: &DrawContext) {
         self.world.tick();
@@ -78,7 +75,9 @@ impl RenderSystem {
         if self.content_entity.is_none() {
             self.content_entity = Some(self.world.create_entity());
         }
-        let content_entity = self.content_entity.unwrap();
+        let content_entity = self
+            .content_entity
+            .expect("entity not initialized: call update_world before draw");
 
         let effective_line_numbers = ctx.show_line_numbers && ctx.state.settings.show_line_numbers;
         let content_state = ContentDrawState {
@@ -104,16 +103,17 @@ impl RenderSystem {
                 .syntax_colors
                 .as_ref()
                 .map(|_| {
-                    use std::hash::{Hash, Hasher};
-                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                    if let Some(h) = ctx.highlights {
-                        h.len().hash(&mut hasher);
-                        if !h.is_empty() {
-                            h[0].hash(&mut hasher);
-                            h[h.len() - 1].hash(&mut hasher);
-                        }
+                    let highlights = ctx.highlights.unwrap_or(&[]);
+                    let mut hash: u64 = highlights.len() as u64;
+                    for (range, _color) in highlights.iter().take(16) {
+                        hash = hash
+                            .wrapping_mul(6364136223846793005)
+                            .wrapping_add(range.start as u64);
+                        hash = hash
+                            .wrapping_mul(6364136223846793005)
+                            .wrapping_add(range.end as u64 + 1);
                     }
-                    hasher.finish()
+                    hash
                 })
                 .unwrap_or(0),
         };
@@ -135,7 +135,9 @@ impl RenderSystem {
         if self.status_entity.is_none() {
             self.status_entity = Some(self.world.create_entity());
         }
-        let status_entity = self.status_entity.unwrap();
+        let status_entity = self
+            .status_entity
+            .expect("entity not initialized: call update_world before draw");
 
         let (search_match_index, search_total_matches) = if !ctx.state.search_matches.is_empty() {
             let cursor_offset = ctx.buf.cursor();
@@ -182,7 +184,9 @@ impl RenderSystem {
             if self.command_entity.is_none() {
                 self.command_entity = Some(self.world.create_entity());
             }
-            let command_entity = self.command_entity.unwrap();
+            let command_entity = self
+                .command_entity
+                .expect("entity not initialized: call update_world before draw");
 
             let command_state = CommandDrawState {
                 content: ctx.state.command_line.clone(),

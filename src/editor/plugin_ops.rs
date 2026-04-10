@@ -1,6 +1,7 @@
 use super::Editor;
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
+use std::sync::Arc;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_lua_state(&self) {
@@ -25,10 +26,11 @@ impl<T: TerminalBackend> Editor<T> {
             let buf_id = doc.id as usize;
             let buf_kind = doc.kind.kind_str().to_string();
             let text = doc.buffer.to_string();
-            let lines: Vec<String> = text
-                .split('\n')
-                .map(|l| l.trim_end_matches('\r').to_string())
-                .collect();
+            let lines: Arc<Vec<String>> = Arc::new(
+                text.split('\n')
+                    .map(|l| l.trim_end_matches('\r').to_string())
+                    .collect(),
+            );
             let (row, col) = {
                 let cursor = doc.buffer.cursor();
                 let row = doc.buffer.line_index.get_line_at(cursor);
@@ -60,7 +62,7 @@ impl<T: TerminalBackend> Editor<T> {
             (
                 0,
                 "file".to_string(),
-                vec![],
+                Arc::new(vec![]),
                 (0, 0),
                 None,
                 None,
