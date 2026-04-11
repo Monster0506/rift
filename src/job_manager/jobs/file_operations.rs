@@ -66,7 +66,7 @@ impl Job for FileSaveJob {
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         let parent = self.path.parent().unwrap_or_else(|| Path::new("."));
         let temp_path = parent.join(format!(
-            ".{}.tmp",
+            "{}~",
             self.path
                 .file_name()
                 .and_then(|n| n.to_str())
@@ -359,6 +359,39 @@ mod tests {
 
         assert_eq!(chars.len(), 5);
         assert_eq!(chars[0], Character::Unicode('h'));
+    }
+
+    fn run_save_job(path: PathBuf, content: &str) -> bool {
+        let (tx, rx) = mpsc::channel();
+        let chars: Vec<Character> = content.chars().map(Character::Unicode).collect();
+        let piece_table = crate::buffer::rope::PieceTable::new(chars);
+        let job = Box::new(FileSaveJob::new(
+            1,
+            piece_table,
+            path,
+            crate::document::LineEnding::LF,
+            0,
+        ));
+        job.run(1, tx, make_signal());
+        rx.into_iter()
+            .any(|m| matches!(m, JobMessage::Finished(_, true)))
+    }
+
+    #[test]
+    fn file_save_job_uses_tilde_suffix_for_temp_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hello.txt");
+
+        let succeeded = run_save_job(path.clone(), "hello");
+        assert!(succeeded);
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello");
+
+        let old_tmp = dir.path().join(".hello.txt.tmp");
+        assert!(!old_tmp.exists(), "old-style temp file should not exist: {old_tmp:?}");
+
+        let tilde_tmp = dir.path().join("hello.txt~");
+        assert!(!tilde_tmp.exists(), "tilde temp file should be renamed away: {tilde_tmp:?}");
     }
 
     #[test]
