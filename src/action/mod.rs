@@ -48,6 +48,20 @@ pub enum Motion {
     NextMatch,
     /// Move to the previous search match
     PreviousMatch,
+    /// Find next occurrence of a character on the current line (f)
+    FindCharForward(char),
+    /// Find previous occurrence of a character on the current line (F)
+    FindCharBackward(char),
+    /// Move to one position before the next occurrence of a character on the line (t)
+    TillCharForward(char),
+    /// Move to one position after the previous occurrence of a character on the line (T)
+    TillCharBackward(char),
+    /// Repeat last f/F/t/T in the same direction (n / vim's ;)
+    RepeatFindForward,
+    /// Repeat last f/F/t/T in the opposite direction (N / vim's ,)
+    RepeatFindBackward,
+    /// Move to the start of a specific 0-based line (linewise, used by G/nG operators)
+    ToLine(usize),
 }
 
 impl Motion {
@@ -145,6 +159,83 @@ impl Motion {
                         find_next(buf, buf.cursor(), query, SearchDirection::Backward)
                     {
                         let _ = buf.set_cursor(m.range.start);
+                    }
+                }
+            }
+            Motion::TillCharForward(ch) => {
+                let target = crate::character::Character::from(ch);
+                let current_line = buf.get_line();
+                let total_len = buf.len();
+                let line_end = buf
+                    .line_index
+                    .get_end(current_line, total_len)
+                    .unwrap_or(total_len);
+                let cursor = buf.cursor();
+                let start = if buf.char_at(cursor + 1) == Some(target) {
+                    cursor + 2
+                } else {
+                    cursor + 1
+                };
+                for pos in start..line_end {
+                    if buf.char_at(pos) == Some(target) {
+                        let _ = buf.set_cursor(pos.saturating_sub(1));
+                        return;
+                    }
+                }
+            }
+            Motion::TillCharBackward(ch) => {
+                let target = crate::character::Character::from(ch);
+                let current_line = buf.get_line();
+                let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
+                let cursor = buf.cursor();
+                if cursor > line_start {
+                    let end = if cursor > 0 && buf.char_at(cursor - 1) == Some(target) {
+                        cursor - 1
+                    } else {
+                        cursor
+                    };
+                    if end > line_start {
+                        for pos in (line_start..end).rev() {
+                            if buf.char_at(pos) == Some(target) {
+                                let _ = buf.set_cursor(pos + 1);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            Motion::RepeatFindForward | Motion::RepeatFindBackward => {}
+            Motion::ToLine(line_idx) => {
+                let start = buf.line_index.get_start(line_idx).unwrap_or(0);
+                let _ = buf.set_cursor(start);
+            }
+            Motion::FindCharForward(ch) => {
+                let target = crate::character::Character::from(ch);
+                let current_line = buf.get_line();
+                let total_len = buf.len();
+                let line_end = buf
+                    .line_index
+                    .get_end(current_line, total_len)
+                    .unwrap_or(total_len);
+                let start = buf.cursor() + 1;
+                for pos in start..line_end {
+                    if buf.char_at(pos) == Some(target) {
+                        let _ = buf.set_cursor(pos);
+                        return;
+                    }
+                }
+            }
+            Motion::FindCharBackward(ch) => {
+                let target = crate::character::Character::from(ch);
+                let current_line = buf.get_line();
+                let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
+                let cursor = buf.cursor();
+                if cursor > line_start {
+                    for pos in (line_start..cursor).rev() {
+                        if buf.char_at(pos) == Some(target) {
+                            let _ = buf.set_cursor(pos);
+                            return;
+                        }
                     }
                 }
             }
@@ -249,6 +340,11 @@ pub enum EditorAction {
     ExplorerToggleHidden,
     /// Exit terminal insert mode (return to Normal). Default: Ctrl+\
     ExitTerminalMode,
+    /// Enter char-pending state for f/F/t/T (next keypress becomes the target char)
+    FindCharPending {
+        forward: bool,
+        till: bool,
+    },
 }
 
 /// Represents an action in the editor

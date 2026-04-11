@@ -86,10 +86,16 @@ impl Job for SyntaxParseJob {
             document_id,
         } = *self;
 
-        // Parse
+        // Parse using logical bytes so tree-sitter node offsets are in the
+        // same coordinate space as the slice we later pass to the query cursor.
+        // Previously this used `text.to_string()` (the rendered representation),
+        // which expands Control characters to "^X" (2 bytes each) while
+        // `to_logical_bytes()` keeps them as a single byte — causing the
+        // "range start index out of range" panic when both representations
+        // were mixed within the same parse/query cycle.
         let text = buffer;
-        let source_code = text.to_string();
-        let tree = parser.parse(&source_code, old_tree.as_ref());
+        let source_bytes = text.to_logical_bytes();
+        let tree = parser.parse(source_bytes.as_slice(), old_tree.as_ref());
 
         if signal.is_cancelled() {
             return;
@@ -99,7 +105,7 @@ impl Job for SyntaxParseJob {
         let mut highlights = Vec::new();
         if let (Some(tree), Some(query)) = (&tree, &highlights_query) {
             let root_node = tree.root_node();
-            let full_bytes = text.to_logical_bytes();
+            let full_bytes = source_bytes; // same representation as parse
 
             let mut cursor = QueryCursor::new();
             cursor.set_byte_range(0..full_bytes.len());

@@ -1296,5 +1296,8 @@ fn test_is_at_saved_after_goto_seq() {
     // Navigate back to saved seq
     tree.goto_seq(seq_b).unwrap();
     assert_eq!(tree.current_seq(), seq_b);
-    assert!(tree.is_at_saved(), "is_at_saved must be true after goto_seq to saved seq");
+    assert!(
+        tree.is_at_saved(),
+        "is_at_saved must be true after goto_seq to saved seq"
+    );
 }

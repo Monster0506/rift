@@ -54,7 +54,6 @@ fn test_editor_remove_last_tab() {
     let mut editor = create_editor();
     let doc_id = editor.document_manager.get_document_id_at(0).unwrap();
 
-    // Removing the only tab should create a new empty one
     let result = editor.remove_document(doc_id);
     assert!(result.is_ok());
     assert_eq!(editor.document_manager.tab_count(), 1);
@@ -71,7 +70,6 @@ fn test_editor_remove_dirty_tab() {
     editor.active_document().insert_char('x').unwrap();
     let doc_id = editor.document_manager.get_document_id_at(0).unwrap();
 
-    // Removing a dirty tab should return a warning
     let result = editor.remove_document(doc_id);
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -81,7 +79,6 @@ fn test_editor_remove_dirty_tab() {
 #[test]
 fn test_editor_open_file() {
     let mut editor = create_editor();
-    // Open a new "file" (doesn't exist on disk, should create empty buffer)
     editor
         .open_file(Some("new_file.txt".to_string()), false)
         .unwrap();
@@ -90,7 +87,6 @@ fn test_editor_open_file() {
     assert_eq!(editor.document_manager.active_tab_index(), 1);
     assert_eq!(editor.active_document().display_name(), "new_file.txt");
 
-    // Open same file again, should just switch
     editor
         .open_file(Some("new_file.txt".to_string()), false)
         .unwrap();
@@ -140,19 +136,16 @@ fn test_quit_dirty_last_buffer_refuses() {
 fn test_handle_execution_result_quit_only_checks_current_buffer() {
     let mut editor = create_editor();
 
-    // Make the first buffer dirty, then switch to a clean second buffer
     editor.active_document().insert_char('x').unwrap();
     editor
         .open_file(Some("test2.txt".to_string()), false)
         .unwrap();
 
-    // Active buffer (test2.txt) is clean; a different buffer is dirty
     assert!(!editor.active_document().is_dirty());
     assert!(editor.document_manager.has_unsaved_changes());
 
     let clean_id = editor.document_manager.active_document_id().unwrap();
 
-    // :q should close the clean active buffer without error
     editor.do_quit(false);
     assert!(!editor.should_quit, ":q should not quit the editor");
     assert_ne!(
@@ -183,24 +176,19 @@ fn test_handle_execution_result_buffer_navigation() {
         .open_file(Some("doc2.txt".to_string()), false)
         .unwrap();
 
-    // We have [unnamed, doc1, doc2]
     assert_eq!(editor.document_manager.active_tab_index(), 2);
 
-    // Previous
     editor.do_buffer_prev();
     assert_eq!(editor.document_manager.active_tab_index(), 1);
     assert_eq!(editor.active_document().display_name(), "doc1.txt");
 
-    // Next
     editor.do_buffer_next();
     assert_eq!(editor.document_manager.active_tab_index(), 2);
     assert_eq!(editor.active_document().display_name(), "doc2.txt");
 
-    // Wrap around next
     editor.do_buffer_next();
     assert_eq!(editor.document_manager.active_tab_index(), 0);
 
-    // Wrap around previous
     editor.do_buffer_prev();
     assert_eq!(editor.document_manager.active_tab_index(), 2);
 }
@@ -209,7 +197,6 @@ fn test_handle_execution_result_buffer_navigation() {
 fn test_search_closes_on_success() {
     let mut editor = create_editor();
 
-    // Open a file with content
     editor
         .open_file(Some("test.txt".to_string()), false)
         .unwrap();
@@ -219,23 +206,19 @@ fn test_search_closes_on_success() {
         .insert_str("hello world")
         .unwrap();
 
-    // Enter Search Mode
     editor.handle_action(&crate::action::Action::Editor(
         crate::action::EditorAction::EnterSearchMode,
     ));
     assert_eq!(editor.current_mode, Mode::Search);
 
-    // Type "hello"
     for c in "hello".chars() {
         editor.state.append_to_command_line(c);
     }
 
-    // Submit Search
     editor.handle_action(&crate::action::Action::Editor(
         crate::action::EditorAction::Submit,
     ));
 
-    // Verify: Mode Normal, Layer Cleared
     assert_eq!(editor.current_mode, Mode::Normal);
     editor.update_and_render().unwrap();
 
@@ -244,7 +227,6 @@ fn test_search_closes_on_success() {
         .compositor
         .get_layer(crate::layer::LayerPriority::FLOATING_WINDOW)
         .unwrap();
-    // Check if layer is empty
     for row in 0..layer.rows() {
         for col in 0..layer.cols() {
             assert!(
@@ -259,7 +241,6 @@ fn test_search_closes_on_success() {
 fn test_search_stays_open_on_failure() {
     let mut editor = create_editor();
 
-    // Open a file with content
     editor
         .open_file(Some("test.txt".to_string()), false)
         .unwrap();
@@ -269,23 +250,19 @@ fn test_search_stays_open_on_failure() {
         .insert_str("hello world")
         .unwrap();
 
-    // Enter Search Mode
     editor.handle_action(&crate::action::Action::Editor(
         crate::action::EditorAction::EnterSearchMode,
     ));
     assert_eq!(editor.current_mode, Mode::Search);
 
-    // Type "goodbye" (not in text)
     for c in "goodbye".chars() {
         editor.state.append_to_command_line(c);
     }
 
-    // Submit Search
     editor.handle_action(&crate::action::Action::Editor(
         crate::action::EditorAction::Submit,
     ));
 
-    // Verify: Mode Search, Layer NOT Cleared
     assert_eq!(
         editor.current_mode,
         Mode::Search,
@@ -298,7 +275,6 @@ fn test_search_stays_open_on_failure() {
         .compositor
         .get_layer(crate::layer::LayerPriority::FLOATING_WINDOW);
     assert!(layer.is_some(), "Layer should exist");
-    // Check if layer has content (search bar)
     let layer = layer.unwrap();
     let mut has_content = false;
     for row in 0..layer.rows() {
@@ -314,10 +290,6 @@ fn test_search_stays_open_on_failure() {
     }
     assert!(has_content, "Search bar should remain visible on failure");
 }
-
-// ============================================================
-// Split window tests
-// ============================================================
 
 fn split_current(editor: &mut Editor<MockTerminal>, direction: crate::split::tree::SplitDirection) {
     editor.do_split_window(
@@ -359,11 +331,9 @@ fn test_explorer_toggle_hidden_flips_show_hidden() {
 
     let mut editor = create_editor();
 
-    // Manually open explorer to a temp dir so we have a Directory buffer
     let tmp = std::env::temp_dir();
     editor.open_explorer(tmp.clone());
 
-    // Confirm we have a Directory buffer with show_hidden = false
     let layout = editor
         .panel_layout
         .as_ref()
@@ -377,7 +347,6 @@ fn test_explorer_toggle_hidden_flips_show_hidden() {
         }
     }
 
-    // Toggle hidden on
     editor.handle_action(&Action::Editor(EditorAction::ExplorerToggleHidden));
 
     {
@@ -390,7 +359,6 @@ fn test_explorer_toggle_hidden_flips_show_hidden() {
         }
     }
 
-    // Toggle hidden off again
     editor.handle_action(&Action::Editor(EditorAction::ExplorerToggleHidden));
 
     {
@@ -487,4 +455,462 @@ fn test_goto_line_explicit_n_no_count() {
 
     let doc = editor.active_document();
     assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(1));
+}
+
+#[test]
+fn test_f_find_char_forward_moves_to_char() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::FindCharForward('o'),
+    )));
+
+    assert_eq!(editor.active_document().buffer.cursor(), 4);
+}
+
+#[test]
+fn test_f_find_char_forward_not_found_stays() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::FindCharForward('z'),
+    )));
+
+    assert_eq!(editor.active_document().buffer.cursor(), 0);
+}
+
+#[test]
+fn test_f_find_char_backward_moves_to_char() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world\n");
+    editor.active_document().buffer.set_cursor(10).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::FindCharBackward('h'),
+    )));
+
+    assert_eq!(editor.active_document().buffer.cursor(), 0);
+}
+
+#[test]
+fn test_find_char_pending_sets_state() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::FindCharPending {
+        forward: true,
+        till: false,
+    }));
+
+    assert_eq!(editor.pending_find_char_dir, Some((true, false)));
+}
+
+#[test]
+fn test_find_char_pending_backward_sets_state() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+
+    editor.handle_action(&Action::Editor(EditorAction::FindCharPending {
+        forward: false,
+        till: false,
+    }));
+
+    assert_eq!(editor.pending_find_char_dir, Some((false, false)));
+}
+
+#[test]
+fn test_f_keybinding_is_registered() {
+    use crate::key::Key;
+    use crate::keymap::KeyContext;
+
+    let editor = create_editor();
+    let action = editor.keymap.get_action(KeyContext::Normal, Key::Char('f'));
+    assert!(
+        action.is_some(),
+        "'f' should have a keybinding in Normal mode"
+    );
+}
+
+#[test]
+fn test_shift_f_keybinding_is_registered() {
+    use crate::key::Key;
+    use crate::keymap::KeyContext;
+
+    let editor = create_editor();
+    let action = editor.keymap.get_action(KeyContext::Normal, Key::Char('F'));
+    assert!(
+        action.is_some(),
+        "'F' should have a keybinding in Normal mode"
+    );
+}
+
+#[test]
+fn test_t_keybinding_is_registered() {
+    use crate::key::Key;
+    use crate::keymap::KeyContext;
+
+    let editor = create_editor();
+    let action = editor.keymap.get_action(KeyContext::Normal, Key::Char('t'));
+    assert!(
+        action.is_some(),
+        "'t' should have a keybinding in Normal mode"
+    );
+}
+
+#[test]
+fn test_shift_t_keybinding_is_registered() {
+    use crate::key::Key;
+    use crate::keymap::KeyContext;
+
+    let editor = create_editor();
+    let action = editor.keymap.get_action(KeyContext::Normal, Key::Char('T'));
+    assert!(
+        action.is_some(),
+        "'T' should have a keybinding in Normal mode"
+    );
+}
+
+#[test]
+fn test_till_forward_stops_one_before_target() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::TillCharForward('o'),
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), 3);
+}
+
+#[test]
+fn test_till_backward_stops_one_after_target() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world\n");
+    editor.active_document().buffer.set_cursor(10).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::TillCharBackward('o'),
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), 8);
+}
+
+#[test]
+fn test_till_records_last_find_and_repeats() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(
+        &mut editor,
+        "#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n",
+    );
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::TillCharForward('C'),
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), 15);
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindForward,
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), 22);
+}
+
+#[test]
+fn test_till_direction_not_flipped_by_repeat() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(
+        &mut editor,
+        "#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n",
+    );
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::TillCharForward('C'),
+    )));
+    let pos_before_clone = editor.active_document().buffer.cursor();
+    assert_eq!(pos_before_clone, 15);
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindForward,
+    )));
+    let pos_before_copy = editor.active_document().buffer.cursor();
+    assert_eq!(pos_before_copy, 22);
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindBackward,
+    )));
+    let pos_after_clone = editor.active_document().buffer.cursor();
+    assert_eq!(pos_after_clone, 17);
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindBackward,
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), 17);
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindForward,
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), pos_before_copy);
+}
+
+#[test]
+fn test_dG_deletes_from_cursor_to_end_of_file() {
+    use crate::action::{Action, EditorAction, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "line1\nline2\nline3\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
+
+    assert_eq!(editor.active_document().buffer.len(), 0);
+}
+
+#[test]
+fn test_dG_with_count_deletes_to_specific_line() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::buffer::api::BufferView;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "line1\nline2\nline3\nline4\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.pending_count = 2;
+    editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
+
+    let doc = editor.active_document();
+    assert!(doc.buffer.len() > 0);
+    let remaining = doc.buffer.get_total_lines();
+    assert!(remaining <= 3);
+}
+
+#[test]
+fn test_G_outside_operator_pending_just_moves_cursor() {
+    use crate::action::{Action, EditorAction};
+    use crate::buffer::api::BufferView;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "line1\nline2\nline3\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
+
+    let doc = editor.active_document();
+    let last_line = doc.buffer.line_count() - 1;
+    assert_eq!(doc.buffer.cursor(), doc.buffer.line_start(last_line));
+    assert_eq!(doc.buffer.len(), 18);
+}
+
+#[test]
+fn test_n_repeats_last_forward_find_in_same_direction() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "ababa\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::FindCharForward('b'),
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), 1);
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindForward,
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), 3);
+}
+
+#[test]
+fn test_n_repeats_last_backward_find_in_same_direction() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "ababa\n");
+    editor.active_document().buffer.set_cursor(4).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::FindCharBackward('b'),
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), 3);
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindForward,
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), 1);
+}
+
+#[test]
+fn test_shift_n_repeats_find_in_opposite_direction() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "ababa\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::FindCharForward('b'),
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), 1);
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::FindCharForward('b'),
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), 3);
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindBackward,
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), 1);
+}
+
+#[test]
+fn test_fn_direction_not_flipped_by_repeat() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(
+        &mut editor,
+        "#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n",
+    );
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::FindCharForward('C'),
+    )));
+    let pos_clone = editor.active_document().buffer.cursor();
+    assert_eq!(pos_clone, 16, "fC: expected C of Clone at col 16");
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindForward,
+    )));
+    let pos_copy = editor.active_document().buffer.cursor();
+    assert_eq!(pos_copy, 23, "n: expected C of Copy at col 23");
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindBackward,
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), pos_clone);
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindBackward,
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), pos_clone);
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindForward,
+    )));
+    assert_eq!(editor.active_document().buffer.cursor(), pos_copy);
+}
+
+#[test]
+fn test_n_falls_back_to_search_when_no_find_char() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world hello\n");
+    editor.state.last_search_query = Some("hello".to_string());
+    editor.state.last_find_char = None;
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindForward,
+    )));
+
+    assert_eq!(editor.active_document().buffer.cursor(), 12);
+}
+
+#[test]
+fn test_shift_n_falls_back_to_prev_search_when_no_find_char() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world hello\n");
+    editor.active_document().buffer.set_cursor(12).unwrap();
+    editor.state.last_search_query = Some("hello".to_string());
+    editor.state.last_find_char = None;
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindBackward,
+    )));
+
+    assert_eq!(editor.active_document().buffer.cursor(), 0);
+}
+
+#[test]
+fn test_search_clears_last_find_char() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world hello\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::FindCharForward('o'),
+    )));
+    assert!(editor.state.last_find_char.is_some());
+
+    editor.state.command_line = "hello".to_string();
+    editor.handle_mode_management(crate::command::Command::ExecuteSearch);
+
+    assert!(editor.state.last_find_char.is_none());
+}
+
+#[test]
+fn test_n_with_no_previous_find_stays_put() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindForward,
+    )));
+
+    assert_eq!(editor.active_document().buffer.cursor(), 0);
+}
+
+#[test]
+fn test_n_keybinding_maps_to_repeat_find_forward() {
+    use crate::action::{Action, EditorAction, Motion};
+    use crate::key::Key;
+    use crate::keymap::KeyContext;
+
+    let editor = create_editor();
+    let action = editor.keymap.get_action(KeyContext::Normal, Key::Char('n'));
+    assert_eq!(
+        action,
+        Some(&Action::Editor(EditorAction::Move(
+            Motion::RepeatFindForward
+        ))),
+        "'n' should map to RepeatFindForward"
+    );
+}
+
+#[test]
+fn test_shift_n_keybinding_maps_to_repeat_find_backward() {
+    use crate::action::{Action, EditorAction, Motion};
+    use crate::key::Key;
+    use crate::keymap::KeyContext;
+
+    let editor = create_editor();
+    let action = editor.keymap.get_action(KeyContext::Normal, Key::Char('N'));
+    assert_eq!(
+        action,
+        Some(&Action::Editor(EditorAction::Move(
+            Motion::RepeatFindBackward
+        ))),
+        "'N' should map to RepeatFindBackward"
+    );
 }

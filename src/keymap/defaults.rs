@@ -119,12 +119,45 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     keymap.register(
         KeyContext::Normal,
         Key::Char('n'),
-        Action::Editor(EditorAction::Move(Motion::NextMatch)),
+        Action::Editor(EditorAction::Move(Motion::RepeatFindForward)),
     );
     keymap.register(
         KeyContext::Normal,
         Key::Char('N'),
-        Action::Editor(EditorAction::Move(Motion::PreviousMatch)),
+        Action::Editor(EditorAction::Move(Motion::RepeatFindBackward)),
+    );
+    // Find-char motion (f / F) and till motion (t / T)
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('f'),
+        Action::Editor(EditorAction::FindCharPending {
+            forward: true,
+            till: false,
+        }),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('F'),
+        Action::Editor(EditorAction::FindCharPending {
+            forward: false,
+            till: false,
+        }),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('t'),
+        Action::Editor(EditorAction::FindCharPending {
+            forward: true,
+            till: true,
+        }),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('T'),
+        Action::Editor(EditorAction::FindCharPending {
+            forward: false,
+            till: true,
+        }),
     );
     // Word Motion
     keymap.register(

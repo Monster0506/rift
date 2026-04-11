@@ -208,9 +208,15 @@ mod tests {
         assert!(path.exists());
 
         let old_tmp = dir.path().join(".note.txt.tmp");
-        assert!(!old_tmp.exists(), "old-style temp file should not exist: {old_tmp:?}");
+        assert!(
+            !old_tmp.exists(),
+            "old-style temp file should not exist: {old_tmp:?}"
+        );
 
         let tilde_tmp = dir.path().join("note.txt~");
-        assert!(!tilde_tmp.exists(), "tilde temp file should be renamed away: {tilde_tmp:?}");
+        assert!(
+            !tilde_tmp.exists(),
+            "tilde temp file should be renamed away: {tilde_tmp:?}"
+        );
     }
 }

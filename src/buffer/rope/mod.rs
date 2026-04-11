@@ -129,7 +129,7 @@ impl PieceTable {
         self.root = insert_node(self.root.take(), pos, new_node, &self.original, &self.add);
 
         #[cfg(debug_assertions)]
-        assert_tree_metadata(self.root.as_deref(), &self.original, &self.add);
+        assert_tree_metadata(self.root.as_deref());
     }
 
     pub fn delete(&mut self, range: std::ops::Range<usize>) {
@@ -146,7 +146,7 @@ impl PieceTable {
         self.root = merge(left, right);
 
         #[cfg(debug_assertions)]
-        assert_tree_metadata(self.root.as_deref(), &self.original, &self.add);
+        assert_tree_metadata(self.root.as_deref());
     }
 
     pub fn get_line_count(&self) -> usize {
@@ -1124,7 +1124,7 @@ fn get_char_idx_recursive(
     }
 }
 #[cfg(debug_assertions)]
-fn assert_tree_metadata(node: Option<&Node>, original: &[Character], add: &[Character]) {
+fn assert_tree_metadata(node: Option<&Node>) {
     if let Some(n) = node {
         let left_len = n.left.as_ref().map_or(0, |l| l.len);
         let right_len = n.right.as_ref().map_or(0, |r| r.len);
@@ -1150,8 +1150,8 @@ fn assert_tree_metadata(node: Option<&Node>, original: &[Character], add: &[Char
             "byte_len metadata corrupt"
         );
 
-        assert_tree_metadata(n.left.as_deref(), original, add);
-        assert_tree_metadata(n.right.as_deref(), original, add);
+        assert_tree_metadata(n.left.as_deref());
+        assert_tree_metadata(n.right.as_deref());
     }
 }
 

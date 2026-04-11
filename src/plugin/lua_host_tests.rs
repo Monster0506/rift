@@ -89,7 +89,11 @@ fn test_get_lines_returns_correct_lines() {
     host.update_state(
         1,
         "file".to_string(),
-        Arc::new(vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()]),
+        Arc::new(vec![
+            "alpha".to_string(),
+            "beta".to_string(),
+            "gamma".to_string(),
+        ]),
         (0, 0),
         4,
         true,

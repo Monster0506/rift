@@ -41,9 +41,55 @@ impl<T: TerminalBackend> Editor<T> {
 
         match editor_action {
             EditorAction::Move(motion) => {
+                use crate::action::Motion;
+
+                let resolved = match motion {
+                    Motion::RepeatFindForward => {
+                        if let Some((ch, forward, is_till)) = self.state.last_find_char {
+                            match (forward, is_till) {
+                                (true, false) => Motion::FindCharForward(ch),
+                                (true, true) => Motion::TillCharForward(ch),
+                                (false, false) => Motion::FindCharBackward(ch),
+                                (false, true) => Motion::TillCharBackward(ch),
+                            }
+                        } else {
+                            Motion::NextMatch
+                        }
+                    }
+                    Motion::RepeatFindBackward => {
+                        if let Some((ch, forward, is_till)) = self.state.last_find_char {
+                            match (forward, is_till) {
+                                (true, false) => Motion::FindCharBackward(ch),
+                                (true, true) => Motion::TillCharBackward(ch),
+                                (false, false) => Motion::FindCharForward(ch),
+                                (false, true) => Motion::TillCharForward(ch),
+                            }
+                        } else {
+                            Motion::PreviousMatch
+                        }
+                    }
+                    other => *other,
+                };
+
+                match motion {
+                    Motion::FindCharForward(ch) => {
+                        self.state.last_find_char = Some((*ch, true, false))
+                    }
+                    Motion::FindCharBackward(ch) => {
+                        self.state.last_find_char = Some((*ch, false, false))
+                    }
+                    Motion::TillCharForward(ch) => {
+                        self.state.last_find_char = Some((*ch, true, true))
+                    }
+                    Motion::TillCharBackward(ch) => {
+                        self.state.last_find_char = Some((*ch, false, true))
+                    }
+                    _ => {}
+                }
+
                 if self.current_mode == Mode::OperatorPending {
                     if let Some(op) = self.pending_operator {
-                        return self.execute_operator(op, *motion);
+                        return self.execute_operator(op, resolved);
                     }
                 }
                 let count = if self.pending_count > 0 {
@@ -51,7 +97,7 @@ impl<T: TerminalBackend> Editor<T> {
                 } else {
                     1
                 };
-                let command = crate::command::Command::Move(*motion, count);
+                let command = crate::command::Command::Move(resolved, count);
                 // Execute immediately
                 self.handle_mode_management(command);
                 let consumed = self.execute_buffer_command(command);
@@ -298,17 +344,35 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::GotoLine(n) => {
-                let n = if self.pending_count > 0 {
+                use crate::action::Motion;
+                let target_n = if self.pending_count > 0 {
                     self.pending_count
                 } else {
                     *n
                 };
+                if self.current_mode == Mode::OperatorPending {
+                    if let Some(op) = self.pending_operator {
+                        let target_line = {
+                            if let Some(doc) = self.document_manager.active_document() {
+                                let total = doc.buffer.line_count();
+                                if target_n == 0 || target_n > total {
+                                    total.saturating_sub(1)
+                                } else {
+                                    target_n - 1
+                                }
+                            } else {
+                                return false;
+                            }
+                        };
+                        return self.execute_operator(op, Motion::ToLine(target_line));
+                    }
+                }
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     let total = doc.buffer.line_count();
-                    let idx = if n == 0 || n > total {
+                    let idx = if target_n == 0 || target_n > total {
                         total.saturating_sub(1)
                     } else {
-                        n - 1
+                        target_n - 1
                     };
                     let offset = doc.buffer.line_start(idx);
                     let _ = doc.buffer.set_cursor(offset);
@@ -496,6 +560,10 @@ impl<T: TerminalBackend> Editor<T> {
 
             EditorAction::ExitTerminalMode => {
                 self.set_mode(Mode::Normal);
+                true
+            }
+            EditorAction::FindCharPending { forward, till } => {
+                self.pending_find_char_dir = Some((*forward, *till));
                 true
             }
         }

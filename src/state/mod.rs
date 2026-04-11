@@ -262,6 +262,8 @@ pub struct State {
     pub line_ending: LineEnding,
     /// Error and notification manager
     pub error_manager: ErrorManager,
+    /// Last f/F/t/T find: (char, forward, is_till). Used by n/N (RepeatFind*) motions.
+    pub last_find_char: Option<(char, bool, bool)>,
     /// Last search query
     pub last_search_query: Option<String>,
     /// Search direction
@@ -297,6 +299,7 @@ impl State {
             is_dirty: false,
             line_ending: LineEnding::LF,
             error_manager: ErrorManager::new(),
+            last_find_char: None,
             last_search_query: None,
             search_direction: SearchDirection::Forward,
             search_matches: Vec::new(),
@@ -326,6 +329,7 @@ impl State {
             is_dirty: false,
             line_ending: LineEnding::LF,
             error_manager: ErrorManager::new(),
+            last_find_char: None,
             last_search_query: None,
             search_direction: SearchDirection::Forward,
             search_matches: Vec::new(),

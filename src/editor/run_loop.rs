@@ -81,8 +81,9 @@ impl<T: TerminalBackend> Editor<T> {
                 };
 
                 if is_terminal_insert {
-                    let terminal_match =
-                        self.keymap.lookup(crate::keymap::KeyContext::Terminal, &[key_press]);
+                    let terminal_match = self
+                        .keymap
+                        .lookup(crate::keymap::KeyContext::Terminal, &[key_press]);
                     if let crate::keymap::MatchResult::Exact(action)
                     | crate::keymap::MatchResult::Ambiguous(action) = terminal_match
                     {
@@ -109,6 +110,26 @@ impl<T: TerminalBackend> Editor<T> {
                             }
                         }
                     }
+                    continue;
+                }
+
+                if let Some((forward, till)) = self.pending_find_char_dir.take() {
+                    if let crate::key::Key::Char(ch) = key_press {
+                        use crate::action::{Action, EditorAction, Motion};
+                        let motion = match (forward, till) {
+                            (true, false) => Motion::FindCharForward(ch),
+                            (true, true) => Motion::TillCharForward(ch),
+                            (false, false) => Motion::FindCharBackward(ch),
+                            (false, true) => Motion::TillCharBackward(ch),
+                        };
+                        self.handle_action(&Action::Editor(EditorAction::Move(motion)));
+                        self.pending_count = 0;
+                    }
+                    self.update_state_and_render(
+                        key_press,
+                        crate::key_handler::KeyAction::Continue,
+                        crate::command::Command::Noop,
+                    )?;
                     continue;
                 }
 

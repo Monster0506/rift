@@ -39,6 +39,13 @@ fn test_all_motions_debug_and_clone() {
         Motion::PreviousParagraph,
         Motion::NextSentence,
         Motion::PreviousSentence,
+        Motion::FindCharForward('a'),
+        Motion::FindCharBackward('z'),
+        Motion::TillCharForward('a'),
+        Motion::TillCharBackward('z'),
+        Motion::RepeatFindForward,
+        Motion::RepeatFindBackward,
+        Motion::ToLine(5),
     ];
 
     for motion in motions {

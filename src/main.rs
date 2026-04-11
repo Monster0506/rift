@@ -23,7 +23,13 @@ use monster_rift::term::crossterm::CrosstermBackend;
 fn main() {
     // Raw mode swallows stderr, so log panics to a file.
     std::panic::set_hook(Box::new(|info| {
-        let msg = format!("RIFT PANIC: {}\n  at {:?}\n", info, info.location());
+        let backtrace = std::backtrace::Backtrace::capture();
+        let msg = format!(
+            "RIFT PANIC: {}\n  at {:?}\n\nBacktrace:\n{}\n",
+            info,
+            info.location(),
+            backtrace,
+        );
         let _ = std::fs::write(std::env::temp_dir().join("rift-panic.log"), &msg);
         let _ = std::fs::write("rift-panic.log", &msg);
         eprintln!("{}", msg);

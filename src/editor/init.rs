@@ -96,6 +96,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_keys: Vec::new(),
             pending_count: 0,
             pending_operator: None,
+            pending_find_char_dir: None,
             dot_repeat: DotRepeat::new(),
             panel_layout: None,
             last_notification_generation: 0,
