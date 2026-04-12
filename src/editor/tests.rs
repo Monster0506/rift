@@ -668,6 +668,72 @@ fn test_till_direction_not_flipped_by_repeat() {
 }
 
 #[test]
+fn test_dt_on_char_not_found_does_nothing() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::TillCharForward('a'))));
+
+    assert_eq!(editor.active_document().buffer.len(), 6);
+    assert_eq!(editor.active_document().buffer.cursor(), 0);
+}
+
+#[test]
+fn test_dt_does_not_cross_line_boundary() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "bcdef\naXXa\n");
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::TillCharForward('a'))));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "bcdef\naXXa\n");
+    assert_eq!(editor.active_document().buffer.cursor(), 0);
+}
+
+#[test]
+fn test_dtf_on_abcdef_leaves_f_only() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::TillCharForward('f'))));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "f");
+}
+
+#[test]
+fn test_dta_with_second_a_leaves_only_that_a() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abca");
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::TillCharForward('a'))));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "a");
+}
+
+#[test]
+fn test_tf_move_still_stops_one_before_target() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::TillCharForward('f'))));
+
+    assert_eq!(editor.active_document().buffer.cursor(), 4);
+}
+
+#[test]
 fn test_dG_deletes_from_cursor_to_end_of_file() {
     use crate::action::{Action, EditorAction, OperatorType};
 

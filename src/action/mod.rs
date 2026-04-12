@@ -178,7 +178,12 @@ impl Motion {
                 };
                 for pos in start..line_end {
                     if buf.char_at(pos) == Some(target) {
-                        let _ = buf.set_cursor(pos.saturating_sub(1));
+                        let land = if op_ctx == crate::wrap::OperatorContext::Operator {
+                            pos
+                        } else {
+                            pos.saturating_sub(1)
+                        };
+                        let _ = buf.set_cursor(land);
                         return;
                     }
                 }
@@ -197,7 +202,12 @@ impl Motion {
                     if end > line_start {
                         for pos in (line_start..end).rev() {
                             if buf.char_at(pos) == Some(target) {
-                                let _ = buf.set_cursor(pos + 1);
+                                let land = if op_ctx == crate::wrap::OperatorContext::Operator {
+                                    pos
+                                } else {
+                                    pos + 1
+                                };
+                                let _ = buf.set_cursor(land);
                                 return;
                             }
                         }
