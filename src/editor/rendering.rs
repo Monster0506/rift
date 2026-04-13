@@ -236,6 +236,11 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 Some(&doc.plugin_highlights)
             },
+            terminal_cell_colors: if doc.terminal_cell_colors.is_empty() {
+                None
+            } else {
+                Some(&doc.terminal_cell_colors)
+            },
             show_line_numbers: doc.options.show_line_numbers,
             display_map,
         };
@@ -286,23 +291,72 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let cursor_pos = window.cursor_position;
             let doc_id = window.document_id;
-            let doc = match self.document_manager.get_document(doc_id) {
-                Some(d) => d,
-                None => continue,
+
+            let (
+                _tab_width,
+                cursor_line,
+                _cursor_col,
+                total_lines,
+                viewport_col,
+                gutter_width,
+                terminal_resize,
+            ) = {
+                let doc = match self.document_manager.get_document(doc_id) {
+                    Some(d) => d,
+                    None => continue,
+                };
+                let tab_width = doc.options.tab_width;
+                let cursor_line = doc.buffer.line_index.get_line_at(cursor_pos);
+                let cursor_col = render::calculate_cursor_column_at(
+                    &doc.buffer,
+                    cursor_line,
+                    tab_width,
+                    cursor_pos,
+                );
+                let total_lines = doc.buffer.get_total_lines();
+                let viewport_col = if doc.is_terminal() { 0 } else { cursor_col };
+                let doc_show_line_numbers =
+                    doc.options.show_line_numbers && global_show_line_numbers;
+                let gutter_width = if doc_show_line_numbers {
+                    total_lines.to_string().len() + 2
+                } else {
+                    0
+                };
+                let terminal_resize = if doc.is_terminal() {
+                    let new_rows = layout.rows as u16;
+                    let new_cols = layout.cols as u16;
+                    let needs = doc
+                        .terminal
+                        .as_ref()
+                        .map(|t| t.size != (new_rows, new_cols))
+                        .unwrap_or(false);
+                    if needs {
+                        Some((new_rows, new_cols))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                (
+                    tab_width,
+                    cursor_line,
+                    cursor_col,
+                    total_lines,
+                    viewport_col,
+                    gutter_width,
+                    terminal_resize,
+                )
             };
 
-            let tab_width = doc.options.tab_width;
-            let cursor_line = doc.buffer.line_index.get_line_at(cursor_pos);
-            let cursor_col =
-                render::calculate_cursor_column_at(&doc.buffer, cursor_line, tab_width, cursor_pos);
-            let total_lines = doc.buffer.get_total_lines();
-            let viewport_col = if doc.is_terminal() { 0 } else { cursor_col };
-            let doc_show_line_numbers = doc.options.show_line_numbers && global_show_line_numbers;
-            let gutter_width = if doc_show_line_numbers {
-                total_lines.to_string().len() + 2
-            } else {
-                0
-            };
+            if let Some((new_rows, new_cols)) = terminal_resize {
+                if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                    if let Some(terminal) = &mut doc.terminal {
+                        let _ = terminal.resize(new_rows, new_cols);
+                    }
+                    doc.handle_terminal_data(&[]);
+                }
+            }
 
             let window = match self.split_tree.get_window_mut(layout.window_id) {
                 Some(w) => w,
@@ -317,6 +371,10 @@ impl<T: TerminalBackend> Editor<T> {
 
             if soft_wrap {
                 let content_width = layout.cols.saturating_sub(gutter_width).max(1);
+                let doc = match self.document_manager.get_document(doc_id) {
+                    Some(d) => d,
+                    None => continue,
+                };
                 if let Some(dm) = resolve_display_map(doc, content_width, soft_wrap, wrap_width) {
                     let cursor_visual_row = dm.char_to_visual_row(cursor_pos);
                     let total_visual = dm.total_visual_rows();
@@ -452,6 +510,11 @@ impl<T: TerminalBackend> Editor<T> {
                 } else {
                     Some(&doc.plugin_highlights)
                 },
+                terminal_cell_colors: if doc.terminal_cell_colors.is_empty() {
+                    None
+                } else {
+                    Some(&doc.terminal_cell_colors)
+                },
                 show_line_numbers: doc.options.show_line_numbers,
                 display_map: display_map.as_ref(),
                 gutter_width_override: Some(gutter_width),
@@ -542,6 +605,11 @@ impl<T: TerminalBackend> Editor<T> {
                 None
             } else {
                 Some(&focused_doc.plugin_highlights)
+            },
+            terminal_cell_colors: if focused_doc.terminal_cell_colors.is_empty() {
+                None
+            } else {
+                Some(&focused_doc.terminal_cell_colors)
             },
             show_line_numbers: focused_doc.options.show_line_numbers,
             display_map: focused_display_map.as_ref(),

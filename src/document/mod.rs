@@ -128,6 +128,7 @@ pub struct Document {
     pub kind: BufferKind,
     pub custom_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
     pub plugin_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
+    pub terminal_cell_colors: crate::color::CellColorSpans,
     pub highlight_slots:
         std::collections::HashMap<u32, Vec<(std::ops::Range<usize>, crate::color::Color)>>,
 }

@@ -312,6 +312,7 @@ impl RenderSystem {
             capture_map: state.capture_map,
             custom_highlights: state.custom_highlights,
             plugin_highlights: state.plugin_highlights,
+            terminal_cell_colors: state.terminal_cell_colors,
             show_line_numbers: state.show_line_numbers,
             display_map: state.display_map,
             gutter_width_override: None,
@@ -441,11 +442,17 @@ impl RenderSystem {
             } else {
                 0
             };
-            let max_content_row = viewport.visible_rows().saturating_sub(2);
+            // Use the focused pane's viewport for row/col clamping when available,
+            // so the cursor never escapes the pane boundary and corrupts the outer
+            // terminal (especially in multi-window / vsplit layouts).
+            let pane_vp = cursor_viewport.unwrap_or(&viewport);
+            let max_content_row = pane_vp.visible_rows().saturating_sub(2);
             let clamped_row = term_row.min(max_content_row);
+            let max_content_col = pane_vp.visible_cols().saturating_sub(gutter_width + 1);
+            let clamped_col = term_col.min(max_content_col);
             CursorPosition::Absolute(
                 (clamped_row + cursor_row_offset) as u16,
-                (term_col + cursor_col_offset + gutter_width) as u16,
+                (clamped_col + cursor_col_offset + gutter_width) as u16,
             )
         } else {
             let vp = cursor_viewport.unwrap_or(&viewport);

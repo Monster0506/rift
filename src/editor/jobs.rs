@@ -397,10 +397,9 @@ impl<T: TerminalBackend> Editor<T> {
             JobMessage::TerminalOutput(doc_id, data) => {
                 if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
                     doc.handle_terminal_data(&data);
-                    // Trigger redraw if this is the active document
-                    if self.active_document_id() == doc_id {
-                        let _ = self.update_and_render();
-                    }
+                }
+                if !self.split_tree.windows_for_document(doc_id).is_empty() {
+                    let _ = self.update_and_render();
                 }
             }
             JobMessage::TerminalExit(doc_id) => {

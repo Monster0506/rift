@@ -137,6 +137,16 @@ impl Terminal {
 
     pub fn resize(&mut self, rows: u16, cols: u16) -> io::Result<()> {
         self.size = (rows, cols);
+        let new_dims = TermDims {
+            rows: rows as usize,
+            cols: cols as usize,
+        };
+        // Resize the alacritty Term grid synchronously so that read_screen()
+        // called immediately after sees content at the new dimensions rather
+        // than the stale old-width content (the EventLoop resize is async).
+        self.term.lock().resize(new_dims);
+        // Also notify the EventLoop so the OS PTY gets TIOCSWINSZ / ConPTY
+        // resize and the shell receives SIGWINCH and redraws.
         let size = WindowSize {
             num_lines: rows,
             num_cols: cols,
@@ -154,7 +164,7 @@ impl Terminal {
         Ok(())
     }
 
-    pub fn read_screen(&self) -> (String, usize, usize) {
+    pub fn read_screen(&self) -> (String, usize, usize, crate::color::CellColorSpans) {
         use alacritty_terminal::grid::Dimensions as _;
 
         let term = self.term.lock();
@@ -169,6 +179,12 @@ impl Terminal {
         let cursor_col = cursor_point.column.0.min(num_cols.saturating_sub(1));
 
         let mut lines: Vec<String> = Vec::with_capacity(num_lines);
+        let mut color_spans: crate::color::CellColorSpans = Vec::new();
+
+        let mut byte_offset: usize = 0;
+        let mut span_start: usize = 0;
+        let mut span_fg: Option<crate::color::Color> = None;
+        let mut span_bg: Option<crate::color::Color> = None;
 
         for line_idx in 0..num_lines {
             let line = alacritty_terminal::index::Line(line_idx as i32);
@@ -178,9 +194,18 @@ impl Terminal {
             // Unicode (box-drawing chars, cargo's ✓/█, vim status-line glyphs)
             // causes truncate() to panic at a non-char-boundary.
             let mut line_chars: Vec<char> = Vec::with_capacity(num_cols);
+            let mut line_cell_colors: Vec<(
+                Option<crate::color::Color>,
+                Option<crate::color::Color>,
+            )> = Vec::with_capacity(num_cols);
             for col_idx in 0..num_cols {
                 let col = alacritty_terminal::index::Column(col_idx);
-                line_chars.push(grid[line][col].c);
+                let cell = &grid[line][col];
+                line_chars.push(cell.c);
+                line_cell_colors.push((
+                    alacritty_color_to_rift(cell.fg),
+                    alacritty_color_to_rift(cell.bg),
+                ));
             }
 
             // Find last non-space char index (char position, not byte).
@@ -202,9 +227,83 @@ impl Terminal {
             };
 
             lines.push(line_chars[..trim_to].iter().collect());
+
+            for col_idx in 0..trim_to {
+                let (fg, bg) = line_cell_colors[col_idx];
+                let ch_bytes = line_chars[col_idx].len_utf8();
+
+                if (fg, bg) != (span_fg, span_bg) {
+                    if (span_fg.is_some() || span_bg.is_some()) && byte_offset > span_start {
+                        color_spans.push((span_start..byte_offset, (span_fg, span_bg)));
+                    }
+                    span_start = byte_offset;
+                    span_fg = fg;
+                    span_bg = bg;
+                }
+
+                byte_offset += ch_bytes;
+            }
+
+            // Don't let spans bleed across the '\n' separator.
+            if (span_fg.is_some() || span_bg.is_some()) && byte_offset > span_start {
+                color_spans.push((span_start..byte_offset, (span_fg, span_bg)));
+            }
+            span_fg = None;
+            span_bg = None;
+
+            // Account for the '\n' joining character (except after the last line).
+            if line_idx + 1 < num_lines {
+                byte_offset += 1;
+            }
+            span_start = byte_offset;
         }
 
         let content = lines.join("\n");
-        (content, cursor_line, cursor_col)
+        (content, cursor_line, cursor_col, color_spans)
+    }
+}
+
+fn alacritty_color_to_rift(c: alacritty_terminal::vte::ansi::Color) -> Option<crate::color::Color> {
+    use crate::color::Color;
+    use alacritty_terminal::vte::ansi::{Color as AColor, NamedColor};
+
+    match c {
+        AColor::Named(
+            NamedColor::Foreground
+            | NamedColor::Background
+            | NamedColor::BrightForeground
+            | NamedColor::DimForeground
+            | NamedColor::Cursor,
+        ) => None,
+        AColor::Named(NamedColor::Black) => Some(Color::Black),
+        AColor::Named(NamedColor::Red) => Some(Color::DarkRed),
+        AColor::Named(NamedColor::Green) => Some(Color::DarkGreen),
+        AColor::Named(NamedColor::Yellow) => Some(Color::DarkYellow),
+        AColor::Named(NamedColor::Blue) => Some(Color::DarkBlue),
+        AColor::Named(NamedColor::Magenta) => Some(Color::DarkMagenta),
+        AColor::Named(NamedColor::Cyan) => Some(Color::DarkCyan),
+        AColor::Named(NamedColor::White) => Some(Color::Grey),
+        AColor::Named(NamedColor::BrightBlack) => Some(Color::DarkGrey),
+        AColor::Named(NamedColor::BrightRed) => Some(Color::Red),
+        AColor::Named(NamedColor::BrightGreen) => Some(Color::Green),
+        AColor::Named(NamedColor::BrightYellow) => Some(Color::Yellow),
+        AColor::Named(NamedColor::BrightBlue) => Some(Color::Blue),
+        AColor::Named(NamedColor::BrightMagenta) => Some(Color::Magenta),
+        AColor::Named(NamedColor::BrightCyan) => Some(Color::Cyan),
+        AColor::Named(NamedColor::BrightWhite) => Some(Color::White),
+        AColor::Named(NamedColor::DimBlack) => Some(Color::Black),
+        AColor::Named(NamedColor::DimRed) => Some(Color::DarkRed),
+        AColor::Named(NamedColor::DimGreen) => Some(Color::DarkGreen),
+        AColor::Named(NamedColor::DimYellow) => Some(Color::DarkYellow),
+        AColor::Named(NamedColor::DimBlue) => Some(Color::DarkBlue),
+        AColor::Named(NamedColor::DimMagenta) => Some(Color::DarkMagenta),
+        AColor::Named(NamedColor::DimCyan) => Some(Color::DarkCyan),
+        AColor::Named(NamedColor::DimWhite) => Some(Color::Grey),
+        AColor::Indexed(n) => Some(Color::Ansi256(n)),
+        AColor::Spec(rgb) => Some(Color::Rgb {
+            r: rgb.r,
+            g: rgb.g,
+            b: rgb.b,
+        }),
     }
 }

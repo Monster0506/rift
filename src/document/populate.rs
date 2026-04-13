@@ -320,7 +320,8 @@ impl Document {
 
     /// Update terminal buffer content from the emulator's screen.
     pub fn handle_terminal_data(&mut self, _data: &[u8]) {
-        let (content, cursor_line, cursor_col) = if let Some(terminal) = &self.terminal {
+        let (content, cursor_line, cursor_col, cell_colors) = if let Some(terminal) = &self.terminal
+        {
             terminal.read_screen()
         } else {
             return;
@@ -345,6 +346,7 @@ impl Document {
             new_buffer.revision = old_revision + 1;
             self.buffer = new_buffer;
             self.terminal_cursor = Some((cursor_line, cursor_col));
+            self.terminal_cell_colors = cell_colors;
             self.mark_dirty();
         }
     }

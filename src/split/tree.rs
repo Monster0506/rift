@@ -222,20 +222,29 @@ impl SplitTree {
                     return false;
                 }
 
-                if *d == direction && (in_first || in_second) {
+                // Try deeper first so the innermost matching split is adjusted,
+                // not the outermost ancestor (which would shift all sibling panes).
+                let child_adjusted = if in_first {
+                    Self::resize_node(first, target_id, direction, delta)
+                } else {
+                    Self::resize_node(second, target_id, direction, delta)
+                };
+
+                if child_adjusted {
+                    return true;
+                }
+
+                // No deeper match in this direction — adjust at this level.
+                if *d == direction {
                     let new_ratio = if in_first {
                         *ratio + delta
                     } else {
                         *ratio - delta
                     };
                     *ratio = new_ratio.clamp(0.1, 0.9);
-                    return true;
-                }
-
-                if in_first {
-                    Self::resize_node(first, target_id, direction, delta)
+                    true
                 } else {
-                    Self::resize_node(second, target_id, direction, delta)
+                    false
                 }
             }
         }

@@ -83,7 +83,8 @@ impl<T: TerminalBackend> Editor<T> {
                         0
                     };
                     let content_width = self
-                        .render_system
+                        .split_tree
+                        .focused_window()
                         .viewport
                         .visible_cols()
                         .saturating_sub(gutter_width)

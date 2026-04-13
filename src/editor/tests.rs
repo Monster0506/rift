@@ -7,6 +7,181 @@ fn create_editor() -> Editor<MockTerminal> {
     Editor::new(term).unwrap()
 }
 
+fn create_editor_sized(rows: u16, cols: u16) -> Editor<MockTerminal> {
+    Editor::new(MockTerminal::new(rows, cols)).unwrap()
+}
+
+fn render_ascii(editor: &mut Editor<MockTerminal>) -> String {
+    editor.update_and_render().unwrap();
+    let rows = editor.render_system.compositor.rows();
+    let cols = editor.render_system.compositor.cols();
+    let cells = editor.render_system.compositor.get_composited_slice();
+    (0..rows)
+        .map(|r| {
+            (0..cols)
+                .map(|c| cells[r * cols + c].to_char())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn do_vsplit(editor: &mut Editor<MockTerminal>) {
+    editor.do_split_window(
+        crate::split::tree::SplitDirection::Vertical,
+        crate::command_line::commands::SplitSubcommand::Current,
+    );
+    editor.update_and_render().unwrap();
+}
+
+fn do_resize_pane(editor: &mut Editor<MockTerminal>, delta: i32) {
+    editor.do_split_window(
+        crate::split::tree::SplitDirection::Vertical,
+        crate::command_line::commands::SplitSubcommand::Resize(delta),
+    );
+    editor.update_and_render().unwrap();
+}
+
+fn set_content(editor: &mut Editor<MockTerminal>, text: &str) {
+    let doc = editor.active_document();
+    doc.buffer.move_to_start();
+    let len = doc.buffer.len();
+    for _ in 0..len {
+        doc.buffer.delete_forward();
+    }
+    doc.buffer.insert_str(text).unwrap();
+    doc.buffer.move_to_start();
+}
+
+fn divider_cols(screen: &str) -> Vec<usize> {
+    screen
+        .lines()
+        .next()
+        .unwrap_or("")
+        .chars()
+        .enumerate()
+        .filter(|(_, c)| *c == '│')
+        .map(|(i, _)| i)
+        .collect()
+}
+
+#[test]
+fn test_vsplit_divider_appears() {
+    let mut editor = create_editor_sized(10, 40);
+    set_content(&mut editor, "hello world\n");
+    do_vsplit(&mut editor);
+    let screen = render_ascii(&mut editor);
+    assert!(
+        screen.contains('│'),
+        "vsplit divider should be visible\n{}",
+        screen
+    );
+}
+
+#[test]
+fn test_resize_pane_moves_divider() {
+    let mut editor = create_editor_sized(10, 40);
+    set_content(&mut editor, "hello world\n");
+    do_vsplit(&mut editor);
+
+    let before = render_ascii(&mut editor);
+    let before_col = before.lines().next().and_then(|l| l.find('│'));
+
+    do_resize_pane(&mut editor, -5);
+
+    let after = render_ascii(&mut editor);
+    let after_col = after.lines().next().and_then(|l| l.find('│'));
+
+    assert!(
+        before_col.is_some() && after_col.is_some(),
+        "divider should be present before and after\nbefore:\n{}\nafter:\n{}",
+        before,
+        after
+    );
+    assert_ne!(
+        before_col, after_col,
+        "divider column should shift\nbefore:\n{}\nafter:\n{}",
+        before, after
+    );
+}
+
+#[test]
+fn test_resize_pane_only_shifts_divider_not_all_content() {
+    let mut editor = create_editor_sized(10, 60);
+    set_content(&mut editor, "hello world\n");
+    do_vsplit(&mut editor); // [A | B]
+    do_vsplit(&mut editor); // [A | B | C]
+
+    let before = render_ascii(&mut editor);
+    let before_divs = divider_cols(&before);
+
+    do_resize_pane(&mut editor, -5);
+
+    let after = render_ascii(&mut editor);
+    let after_divs = divider_cols(&after);
+
+    assert_eq!(
+        before_divs.len(),
+        after_divs.len(),
+        "divider count unchanged\nbefore:\n{}\nafter:\n{}",
+        before,
+        after
+    );
+    assert_eq!(
+        before_divs[0], after_divs[0],
+        "left divider fixed\nbefore:{:?} after:{:?}",
+        before_divs, after_divs
+    );
+    assert_ne!(
+        before_divs[1], after_divs[1],
+        "right divider moved\nbefore:{:?} after:{:?}",
+        before_divs, after_divs
+    );
+}
+
+#[test]
+fn test_pane_content_stays_within_boundary_after_resize() {
+    let mut editor = create_editor_sized(10, 40);
+    set_content(&mut editor, "AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH12345678\n");
+    do_vsplit(&mut editor);
+    do_resize_pane(&mut editor, -5);
+
+    let screen = render_ascii(&mut editor);
+    let cols = editor.render_system.compositor.cols();
+
+    for line in screen.lines() {
+        assert_eq!(
+            line.chars().count(),
+            cols,
+            "row must be exactly {} chars wide",
+            cols
+        );
+    }
+    let div_col = screen.lines().next().and_then(|l| l.find('│'));
+    assert!(
+        div_col.map(|c| c > 0 && c < cols - 1).unwrap_or(false),
+        "divider should be inside the screen\n{}",
+        screen
+    );
+}
+
+#[test]
+fn test_terminal_resize_updates_layout() {
+    let mut editor = create_editor_sized(24, 80);
+    set_content(&mut editor, "hello world\n");
+    do_vsplit(&mut editor);
+
+    editor.term.size = (24, 60);
+    editor.render_system.resize(24, 60);
+    editor.update_and_render().unwrap();
+
+    assert_eq!(
+        editor.render_system.compositor.cols(),
+        60,
+        "compositor should reflect new terminal width"
+    );
+}
+
 #[test]
 fn test_escape_closes_completion_dropdown_only() {
     use crate::command_line::commands::completion::CompletionCandidate;
@@ -674,8 +849,12 @@ fn test_dt_on_char_not_found_does_nothing() {
     let mut editor = create_editor();
     load_text(&mut editor, "abcdef");
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
-    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::TillCharForward('a'))));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::TillCharForward('a'),
+    )));
 
     assert_eq!(editor.active_document().buffer.len(), 6);
     assert_eq!(editor.active_document().buffer.cursor(), 0);
@@ -688,8 +867,12 @@ fn test_dt_does_not_cross_line_boundary() {
     let mut editor = create_editor();
     load_text(&mut editor, "bcdef\naXXa\n");
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
-    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::TillCharForward('a'))));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::TillCharForward('a'),
+    )));
 
     assert_eq!(editor.active_document().buffer.to_string(), "bcdef\naXXa\n");
     assert_eq!(editor.active_document().buffer.cursor(), 0);
@@ -702,8 +885,12 @@ fn test_dtf_on_abcdef_leaves_f_only() {
     let mut editor = create_editor();
     load_text(&mut editor, "abcdef");
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
-    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::TillCharForward('f'))));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::TillCharForward('f'),
+    )));
 
     assert_eq!(editor.active_document().buffer.to_string(), "f");
 }
@@ -715,8 +902,12 @@ fn test_dta_with_second_a_leaves_only_that_a() {
     let mut editor = create_editor();
     load_text(&mut editor, "abca");
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
-    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::TillCharForward('a'))));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::TillCharForward('a'),
+    )));
 
     assert_eq!(editor.active_document().buffer.to_string(), "a");
 }
@@ -728,7 +919,9 @@ fn test_tf_move_still_stops_one_before_target() {
     let mut editor = create_editor();
     load_text(&mut editor, "abcdef");
 
-    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::TillCharForward('f'))));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::TillCharForward('f'),
+    )));
 
     assert_eq!(editor.active_document().buffer.cursor(), 4);
 }

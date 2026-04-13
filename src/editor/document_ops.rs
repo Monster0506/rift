@@ -98,9 +98,23 @@ impl<T: TerminalBackend> Editor<T> {
             .map_err(|e| RiftError::new(ErrorType::Internal, "TERM_SIZE", e))?;
 
         let id = self.document_manager.next_id();
-        let terminal_rows = size.rows.saturating_sub(1).max(1); // exclude status bar row
-        let (doc, rx) =
-            crate::document::Document::new_terminal(id, terminal_rows, size.cols, shell_cmd)?;
+        let terminal_rows = (size.rows as usize).saturating_sub(1).max(1);
+        let content_rows = (size.rows as usize).saturating_sub(1);
+        let layouts = self
+            .split_tree
+            .compute_layout(content_rows, size.cols as usize);
+        let focused_id = self.split_tree.focused_window_id();
+        let terminal_cols = layouts
+            .iter()
+            .find(|l| l.window_id == focused_id)
+            .map(|l| l.cols)
+            .unwrap_or(size.cols as usize);
+        let (doc, rx) = crate::document::Document::new_terminal(
+            id,
+            terminal_rows as u16,
+            terminal_cols as u16,
+            shell_cmd,
+        )?;
 
         self.document_manager.add_document(doc);
 

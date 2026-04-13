@@ -9,6 +9,15 @@ pub mod theme;
 
 pub use theme::{Theme, ThemeVariant};
 
+/// A pair of optional foreground and background colors.
+pub type ColorPair = (Option<Color>, Option<Color>);
+
+/// A byte-range to color-pair mapping, used for terminal cell colors.
+pub type CellColorSpan = (std::ops::Range<usize>, ColorPair);
+
+/// A slice of cell color spans.
+pub type CellColorSpans = Vec<CellColorSpan>;
+
 /// Color representation wrapping crossterm's Color enum
 /// Supports 16 colors, 256 colors, and RGB colors
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

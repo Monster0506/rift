@@ -149,6 +149,8 @@ pub struct RenderState<'a> {
     pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     /// Plugin highlights: rendered as bg color with contrasting fg.
     pub plugin_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
+    /// Per-character fg+bg colors from the terminal emulator (terminal documents only).
+    pub terminal_cell_colors: Option<&'a [crate::color::CellColorSpan]>,
     /// Per-document line number override (AND-ed with global setting).
     pub show_line_numbers: bool,
     pub display_map: Option<&'a DisplayMap>,
@@ -162,6 +164,7 @@ pub struct DrawContext<'a> {
     pub pending_key: Option<Key>,
     pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     pub plugin_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
+    pub terminal_cell_colors: Option<&'a [crate::color::CellColorSpan]>,
     pub pending_count: usize,
     pub state: &'a State,
     pub needs_clear: bool,
@@ -438,6 +441,7 @@ fn render_line(
     let highlights = ctx.highlights.unwrap_or(&[]);
     let custom_highlights = ctx.custom_highlights.unwrap_or(&[]);
     let plugin_highlights = ctx.plugin_highlights.unwrap_or(&[]);
+    let terminal_cell_colors = ctx.terminal_cell_colors.unwrap_or(&[]);
     let search_matches = &ctx.state.search_matches;
 
     let syntax = SyntaxDecorator::new(
@@ -448,7 +452,8 @@ fn render_line(
         ctx.capture_map,
     );
     let colored = pipeline::ColorDecorator::new(syntax, custom_highlights);
-    let plugin = pipeline::PluginHighlightDecorator::new(colored, plugin_highlights);
+    let term_colored = pipeline::TerminalColorDecorator::new(colored, terminal_cell_colors);
+    let plugin = pipeline::PluginHighlightDecorator::new(term_colored, plugin_highlights);
 
     let search = SearchDecorator::new(plugin, search_matches, search_match_idx);
 

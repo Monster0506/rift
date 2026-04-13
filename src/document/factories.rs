@@ -30,6 +30,7 @@ impl Document {
             kind: BufferKind::File,
             custom_highlights: vec![],
             plugin_highlights: vec![],
+            terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
         })
     }
@@ -87,6 +88,7 @@ impl Document {
             kind: BufferKind::File,
             custom_highlights: vec![],
             plugin_highlights: vec![],
+            terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
         })
     }
@@ -121,6 +123,7 @@ impl Document {
                 kind: BufferKind::Terminal,
                 custom_highlights: vec![],
                 plugin_highlights: vec![],
+                terminal_cell_colors: vec![],
                 highlight_slots: std::collections::HashMap::new(),
             },
             rx,
@@ -152,6 +155,7 @@ impl Document {
             },
             custom_highlights: vec![],
             plugin_highlights: vec![],
+            terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
         })
     }
@@ -183,6 +187,7 @@ impl Document {
             },
             custom_highlights: vec![],
             plugin_highlights: vec![],
+            terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
         })
     }
@@ -210,6 +215,7 @@ impl Document {
             kind: BufferKind::File,
             custom_highlights: vec![],
             plugin_highlights: vec![],
+            terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
         })
     }
@@ -235,6 +241,7 @@ impl Document {
             kind: BufferKind::Messages { show_all },
             custom_highlights: vec![],
             plugin_highlights: vec![],
+            terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
         })
     }
@@ -259,6 +266,7 @@ impl Document {
             kind: BufferKind::Clipboard { entries: vec![] },
             custom_highlights: vec![],
             plugin_highlights: vec![],
+            terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
         })
     }

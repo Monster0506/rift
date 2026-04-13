@@ -223,6 +223,52 @@ pub fn contrasting_color(bg: Color) -> Color {
     }
 }
 
+/// Decorator that applies per-character terminal fg+bg colors.
+/// Used exclusively for `BufferKind::Terminal` documents where every cell in the
+/// alacritty grid can carry its own foreground and background color.
+pub struct TerminalColorDecorator<'a, I: Iterator<Item = RenderItem>> {
+    input: I,
+    colors: &'a [crate::color::CellColorSpan],
+    idx: usize,
+}
+
+impl<'a, I: Iterator<Item = RenderItem>> TerminalColorDecorator<'a, I> {
+    pub fn new(input: I, colors: &'a [crate::color::CellColorSpan]) -> Self {
+        Self {
+            input,
+            colors,
+            idx: 0,
+        }
+    }
+}
+
+impl<'a, I: Iterator<Item = RenderItem>> Iterator for TerminalColorDecorator<'a, I> {
+    type Item = RenderItem;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut item = self.input.next()?;
+
+        // Advance past expired ranges.
+        while self.idx < self.colors.len() && self.colors[self.idx].0.end <= item.byte_offset {
+            self.idx += 1;
+        }
+
+        if self.idx < self.colors.len() {
+            let (range, (fg, bg)) = &self.colors[self.idx];
+            if range.start <= item.byte_offset {
+                if let Some(c) = fg {
+                    item.fg = Some(*c);
+                }
+                if let Some(c) = bg {
+                    item.bg = Some(*c);
+                }
+            }
+        }
+
+        Some(item)
+    }
+}
+
 /// Decorator that applies plugin highlights as background color with contrasting foreground.
 pub struct PluginHighlightDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,

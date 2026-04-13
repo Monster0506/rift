@@ -353,6 +353,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let delta_ratio = (delta as f64) / (size.cols as f64);
                 self.split_tree
                     .resize_focused(direction, delta_ratio, &layouts);
+                self.render_system.viewport.mark_needs_full_redraw();
             }
         }
         self.state.clear_command_line();
