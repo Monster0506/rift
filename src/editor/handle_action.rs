@@ -562,6 +562,20 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Normal);
                 true
             }
+
+            EditorAction::TerminalScrollback(delta) => {
+                let doc_id = self.active_document_id();
+                if let Some(doc) = self.document_manager.get_document(doc_id) {
+                    if let Some(term) = &doc.terminal {
+                        term.scroll_display(*delta);
+                    }
+                }
+                if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                    doc.sync_terminal_buffer();
+                }
+                let _ = self.update_and_render();
+                true
+            }
             EditorAction::FindCharPending { forward, till } => {
                 self.pending_find_char_dir = Some((*forward, *till));
                 true

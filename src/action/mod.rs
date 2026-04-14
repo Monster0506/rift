@@ -350,6 +350,8 @@ pub enum EditorAction {
     ExplorerToggleHidden,
     /// Exit terminal insert mode (return to Normal). Default: Ctrl+\
     ExitTerminalMode,
+    /// Scroll the terminal scrollback by `lines` (negative = up, positive = down).
+    TerminalScrollback(i32),
     /// Enter char-pending state for f/F/t/T (next keypress becomes the target char)
     FindCharPending {
         forward: bool,
@@ -443,6 +445,10 @@ impl FromStr for Action {
             "explorer:open" => Ok(Action::Editor(EditorAction::OpenExplorer)),
             "explorer:toggle_hidden" => Ok(Action::Editor(EditorAction::ExplorerToggleHidden)),
             "terminal:exit" => Ok(Action::Editor(EditorAction::ExitTerminalMode)),
+            "terminal:scroll_up" => Ok(Action::Editor(EditorAction::TerminalScrollback(5))),
+            "terminal:scroll_down" => Ok(Action::Editor(EditorAction::TerminalScrollback(-5))),
+            "terminal:scroll_page_up" => Ok(Action::Editor(EditorAction::TerminalScrollback(20))),
+            "terminal:scroll_page_down" => Ok(Action::Editor(EditorAction::TerminalScrollback(-20))),
             "undotree:open" => Ok(Action::Editor(EditorAction::OpenUndoTree)),
             "terminal:open" => Ok(Action::Editor(EditorAction::OpenTerminal(None))),
             "messages:open" => Ok(Action::Editor(EditorAction::OpenMessages)),

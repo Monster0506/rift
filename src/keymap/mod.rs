@@ -21,8 +21,11 @@ pub enum KeyContext {
     Clipboard,
     /// Clipboard entry scratch buffer context
     ClipboardEntry,
-    /// Terminal buffer context — falls through to Insert for passthrough key handling.
+    /// Terminal buffer in insert mode — falls through to Global only (no Normal bindings
+    /// should intercept typed characters).
     Terminal,
+    /// Terminal buffer in normal mode — falls through to Normal so all vim motions work.
+    TerminalNormal,
 }
 
 /// KeyMap stores mappings from (Context, Key Sequence) -> Action
@@ -80,6 +83,7 @@ impl KeyMap {
             | KeyContext::Clipboard
             | KeyContext::ClipboardEntry => Some(KeyContext::Normal),
             KeyContext::Terminal => Some(KeyContext::Global),
+            KeyContext::TerminalNormal => Some(KeyContext::Normal),
             KeyContext::Normal | KeyContext::Insert | KeyContext::Command | KeyContext::Search => {
                 Some(KeyContext::Global)
             }
