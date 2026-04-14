@@ -320,6 +320,11 @@ impl Document {
 
     /// Update terminal buffer content from the emulator's screen.
     pub fn handle_terminal_data(&mut self, _data: &[u8]) {
+        self.sync_terminal_buffer();
+    }
+
+    /// Re-read the terminal emulator's current visible grid into the document buffer.
+    pub fn sync_terminal_buffer(&mut self) {
         let (content, cursor_line, cursor_col, cell_colors) = if let Some(terminal) = &self.terminal
         {
             terminal.read_screen()

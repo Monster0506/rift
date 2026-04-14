@@ -164,6 +164,16 @@ impl Terminal {
         Ok(())
     }
 
+    pub fn scroll_display(&self, delta: i32) {
+        use alacritty_terminal::grid::Scroll;
+        self.term.lock().grid_mut().scroll_display(Scroll::Delta(delta));
+    }
+
+    pub fn scroll_to_bottom(&self) {
+        use alacritty_terminal::grid::Scroll;
+        self.term.lock().grid_mut().scroll_display(Scroll::Bottom);
+    }
+
     pub fn read_screen(&self) -> (String, usize, usize, crate::color::CellColorSpans) {
         use alacritty_terminal::grid::Dimensions as _;
 
@@ -172,10 +182,17 @@ impl Terminal {
 
         let num_cols = grid.columns();
         let num_lines = grid.screen_lines();
+        let display_offset = grid.display_offset() as i32;
 
         let cursor_point = grid.cursor.point;
-        // Line indices can be negative in alacritty (scrollback). Clamp to screen.
-        let cursor_line = (cursor_point.line.0.max(0) as usize).min(num_lines.saturating_sub(1));
+        // Cursor line relative to the currently visible window (may be off-screen when scrolled).
+        let cursor_abs = cursor_point.line.0;
+        let cursor_line_in_view = cursor_abs + display_offset;
+        let cursor_line = if cursor_line_in_view >= 0 && (cursor_line_in_view as usize) < num_lines {
+            cursor_line_in_view as usize
+        } else {
+            num_lines // sentinel: cursor not visible in current scroll position
+        };
         let cursor_col = cursor_point.column.0.min(num_cols.saturating_sub(1));
 
         let mut lines: Vec<String> = Vec::with_capacity(num_lines);
@@ -187,7 +204,8 @@ impl Terminal {
         let mut span_bg: Option<crate::color::Color> = None;
 
         for line_idx in 0..num_lines {
-            let line = alacritty_terminal::index::Line(line_idx as i32);
+            // When scrolled back, visible line 0 is at Line(-display_offset).
+            let line = alacritty_terminal::index::Line(line_idx as i32 - display_offset);
 
             // Collect this line as chars so all trimming is char-indexed, not
             // byte-indexed. Using byte indices on a string containing multi-byte
@@ -305,5 +323,89 @@ fn alacritty_color_to_rift(c: alacritty_terminal::vte::ansi::Color) -> Option<cr
             g: rgb.g,
             b: rgb.b,
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alacritty_terminal::grid::Dimensions as _;
+
+    fn make_terminal(rows: u16, cols: u16) -> Terminal {
+        let (term, _rx) = Terminal::new(rows, cols, None).expect("failed to spawn terminal");
+        term
+    }
+
+    fn write_and_wait(term: &mut Terminal, data: &[u8]) {
+        term.write(data).unwrap();
+        // Give the PTY time to process the bytes.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    #[test]
+    fn test_display_offset_changes_after_scroll() {
+        let mut term = make_terminal(5, 40);
+
+        // Write enough to create scrollback.
+        for i in 0..20u32 {
+            write_and_wait(&mut term, format!("echo LINE{i}\r\n").as_bytes());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(400));
+
+        let offset_before = term.term.lock().grid().display_offset();
+        let history_before = term.term.lock().grid().history_size();
+        eprintln!("display_offset before scroll: {offset_before}, history_size: {history_before}");
+
+        // Positive delta = scroll UP (toward older content, increases display_offset).
+        term.scroll_display(3);
+
+        let offset_after = term.term.lock().grid().display_offset();
+        eprintln!("display_offset after scroll(+3): {offset_after}");
+
+        assert!(
+            history_before > 0,
+            "expected scrollback history to be non-empty, got {history_before}"
+        );
+        assert_eq!(
+            offset_after,
+            3.min(history_before),
+            "display_offset should be 3 after scroll(+3)"
+        );
+    }
+
+    #[test]
+    fn test_scrollback_changes_visible_content() {
+        let mut term = make_terminal(5, 40);
+
+        for i in 0..20u32 {
+            write_and_wait(&mut term, format!("echo LINE{i}\r\n").as_bytes());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(400));
+
+        let history = term.term.lock().grid().history_size();
+        assert!(history > 0, "need scrollback history for this test, got 0");
+
+        let (bottom_screen, _, _, _) = term.read_screen();
+        eprintln!("bottom_screen:\n{bottom_screen}");
+
+        // Positive delta = scroll UP (toward older content).
+        term.scroll_display(3);
+        let offset = term.term.lock().grid().display_offset();
+        eprintln!("display_offset after scroll(+3): {offset}");
+
+        let (scrolled_screen, _, _, _) = term.read_screen();
+        eprintln!("scrolled_screen:\n{scrolled_screen}");
+
+        assert_ne!(
+            bottom_screen, scrolled_screen,
+            "screen content should differ after scrolling up (display_offset={offset})"
+        );
+
+        term.scroll_to_bottom();
+        let (restored_screen, _, _, _) = term.read_screen();
+        assert_eq!(
+            bottom_screen, restored_screen,
+            "screen content should match original after scrolling back to bottom"
+        );
     }
 }

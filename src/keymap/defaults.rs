@@ -11,6 +11,26 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::Ctrl(92),
         Action::Editor(EditorAction::ExitTerminalMode),
     );
+    keymap.register(
+        KeyContext::Terminal,
+        Key::Ctrl(b'u'),
+        Action::Editor(EditorAction::TerminalScrollback(10)),
+    );
+    keymap.register(
+        KeyContext::Terminal,
+        Key::Ctrl(b'd'),
+        Action::Editor(EditorAction::TerminalScrollback(-10)),
+    );
+    keymap.register(
+        KeyContext::TerminalNormal,
+        Key::Ctrl(b'u'),
+        Action::Editor(EditorAction::TerminalScrollback(10)),
+    );
+    keymap.register(
+        KeyContext::TerminalNormal,
+        Key::Ctrl(b'd'),
+        Action::Editor(EditorAction::TerminalScrollback(-10)),
+    );
 
     // FileExplorer (Directory buffer) Defaults
     // Normal motions fall through to KeyContext::Normal via the fallback chain.

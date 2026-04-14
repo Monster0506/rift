@@ -101,6 +101,7 @@ impl<T: TerminalBackend> Editor<T> {
                         if let Some(term) = &mut doc.terminal {
                             let bytes = key_press.to_vt100_bytes();
                             if !bytes.is_empty() {
+                                term.scroll_to_bottom();
                                 if let Err(e) = term.write(&bytes) {
                                     self.state.notify(
                                         crate::notification::NotificationType::Error,
@@ -186,6 +187,11 @@ impl<T: TerminalBackend> Editor<T> {
                                 matches!(d.kind, crate::document::BufferKind::ClipboardEntry { .. })
                             })
                             .unwrap_or(false);
+                        let is_terminal = self
+                            .document_manager
+                            .active_document()
+                            .map(|d| d.is_terminal())
+                            .unwrap_or(false);
                         match self.current_mode {
                             Mode::Normal | Mode::OperatorPending => {
                                 if is_directory {
@@ -196,6 +202,8 @@ impl<T: TerminalBackend> Editor<T> {
                                     KeyContext::Clipboard
                                 } else if is_clipboard_entry {
                                     KeyContext::ClipboardEntry
+                                } else if is_terminal {
+                                    KeyContext::TerminalNormal
                                 } else {
                                     KeyContext::Normal
                                 }
