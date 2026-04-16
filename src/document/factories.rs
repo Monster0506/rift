@@ -32,6 +32,7 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
+            invisible_ranges: vec![],
         })
     }
 
@@ -90,6 +91,7 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
+            invisible_ranges: vec![],
         })
     }
 
@@ -125,6 +127,7 @@ impl Document {
                 plugin_highlights: vec![],
                 terminal_cell_colors: vec![],
                 highlight_slots: std::collections::HashMap::new(),
+                invisible_ranges: vec![],
             },
             rx,
         ))
@@ -157,6 +160,7 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
+            invisible_ranges: vec![],
         })
     }
 
@@ -189,6 +193,7 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
+            invisible_ranges: vec![],
         })
     }
 
@@ -217,6 +222,7 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
+            invisible_ranges: vec![],
         })
     }
 
@@ -243,6 +249,7 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
+            invisible_ranges: vec![],
         })
     }
 
@@ -268,6 +275,7 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
+            invisible_ranges: vec![],
         })
     }
 }

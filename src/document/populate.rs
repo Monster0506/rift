@@ -17,7 +17,11 @@ impl Document {
     }
 
     /// Populate (or repopulate) this directory buffer from a fresh directory listing.
-    pub fn populate_directory_buffer(&mut self, entries: Vec<DirEntry>) {
+    ///
+    /// Each entry line is prefixed with an invisible `/NNN ` ID (5 bytes) so the diff
+    /// algorithm can unambiguously identify entries even after reordering. The renderer
+    /// skips these byte ranges via `invisible_ranges`.
+    pub fn populate_directory_buffer(&mut self, mut entries: Vec<DirEntry>) {
         use crate::color::Color;
 
         let (dir_path, show_hidden) = match &self.kind {
@@ -29,6 +33,7 @@ impl Document {
 
         let mut content = String::new();
         let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
+        let mut invisible: Vec<std::ops::Range<usize>> = Vec::new();
 
         let push_colored =
             |content: &mut String, highlights: &mut Vec<_>, s: &str, color: Color| {
@@ -40,12 +45,19 @@ impl Document {
         push_colored(&mut content, &mut highlights, "../", Color::Blue);
         content.push('\n');
 
-        for entry in &entries {
+        for (i, entry) in entries.iter_mut().enumerate() {
+            entry.id = (i + 1) as u16;
             let name = entry
                 .path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
+
+            let prefix_start = content.len();
+            let prefix = format!("/{:03} ", entry.id);
+            content.push_str(&prefix);
+            invisible.push(prefix_start..content.len());
+
             let (display, color) = if entry.is_dir {
                 (format!("{}/", name), Color::Blue)
             } else {
@@ -60,6 +72,7 @@ impl Document {
 
         self.replace_buffer_content(&content);
         self.custom_highlights = highlights;
+        self.invisible_ranges = invisible;
         self.kind = BufferKind::Directory {
             path: dir_path,
             entries,
@@ -240,6 +253,8 @@ impl Document {
 
     /// Parse the current buffer content of a directory buffer and produce a diff.
     pub fn parse_directory_diff(&self) -> DirectoryDiff {
+        use super::DIR_ID_PREFIX_LEN;
+
         let entries = match &self.kind {
             BufferKind::Directory { entries, .. } => entries,
             _ => {
@@ -251,64 +266,48 @@ impl Document {
             }
         };
 
+        let id_map: std::collections::HashMap<u16, &DirEntry> =
+            entries.iter().filter(|e| e.id != 0).map(|e| (e.id, e)).collect();
+
         let content = self.buffer.to_string();
 
-        let buffer_lines: Vec<&str> = content
-            .lines()
-            .filter(|l| *l != "../" && !l.trim().is_empty())
-            .collect();
+        let mut renames: Vec<(std::path::PathBuf, String)> = Vec::new();
+        let mut creates: Vec<String> = Vec::new();
+        let mut seen_ids: HashSet<u16> = HashSet::new();
 
-        let entry_name_set: HashSet<&str> = entries
-            .iter()
-            .filter_map(|e| e.path.file_name().and_then(|n| n.to_str()))
-            .collect();
+        for line in content.lines() {
+            if line == "../" {
+                continue;
+            }
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
 
-        let mut buffer_name_set: HashSet<&str> = buffer_lines
-            .iter()
-            .map(|l| l.trim_end_matches('/'))
-            .collect();
-
-        for line in &buffer_lines {
-            if let Some(slash_pos) = line.find('/') {
-                if slash_pos < line.len() - 1 {
-                    buffer_name_set.insert(&line[..slash_pos]);
+            if let Some(id) = parse_id_prefix(line) {
+                seen_ids.insert(id);
+                if let Some(entry) = id_map.get(&id) {
+                    let visible = &line[DIR_ID_PREFIX_LEN..];
+                    let new_name = visible.trim_end_matches('/').to_string();
+                    let orig_name = entry
+                        .path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if new_name != orig_name {
+                        renames.push((entry.path.clone(), new_name));
+                    }
                 }
+            } else if !trimmed.is_empty() {
+                creates.push(trimmed.to_string());
             }
         }
 
-        let unmatched_new: Vec<&str> = buffer_lines
+        let deletes: Vec<std::path::PathBuf> = entries
             .iter()
-            .filter(|l| !entry_name_set.contains(l.trim_end_matches('/')))
-            .copied()
-            .collect();
-
-        let unmatched_old: Vec<&DirEntry> = entries
-            .iter()
-            .filter(|e| {
-                let name = e.path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                !buffer_name_set.contains(name)
-            })
-            .collect();
-
-        let pair_count = unmatched_old.len().min(unmatched_new.len());
-
-        let renames = (0..pair_count)
-            .map(|i| {
-                (
-                    unmatched_old[i].path.clone(),
-                    unmatched_new[i].trim_end_matches('/').to_string(),
-                )
-            })
-            .collect();
-
-        let deletes = unmatched_old[pair_count..]
-            .iter()
+            .filter(|e| e.id != 0 && !seen_ids.contains(&e.id))
             .map(|e| e.path.clone())
-            .collect();
-
-        let creates = unmatched_new[pair_count..]
-            .iter()
-            .map(|n| n.to_string())
             .collect();
 
         DirectoryDiff {
@@ -362,5 +361,24 @@ impl Document {
             self.terminal_cell_colors = cell_colors;
             self.mark_dirty();
         }
+    }
+}
+
+/// Extract the numeric ID from a `/NNN ` prefix if present.
+/// Returns `None` for lines that have no valid prefix (header, user-typed lines).
+fn parse_id_prefix(line: &str) -> Option<u16> {
+    use super::DIR_ID_PREFIX_LEN;
+    let b = line.as_bytes();
+    if b.len() >= DIR_ID_PREFIX_LEN
+        && b[0] == b'/'
+        && b[1].is_ascii_digit()
+        && b[2].is_ascii_digit()
+        && b[3].is_ascii_digit()
+        && b[4] == b' '
+    {
+        let digits = &line[1..4];
+        digits.parse::<u16>().ok()
+    } else {
+        None
     }
 }

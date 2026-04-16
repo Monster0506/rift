@@ -149,6 +149,75 @@ mod tests {
         FsCopyJob::copy_recursive_pub(&src, &dst).unwrap();
         assert_eq!(std::fs::read_to_string(dst.join("a.txt")).unwrap(), "aaa");
     }
+
+    #[test]
+    fn copy_recursive_pub_copies_nested_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("outer");
+        std::fs::create_dir_all(src.join("inner")).unwrap();
+        std::fs::write(src.join("inner").join("deep.txt"), "deep").unwrap();
+        let dst = dir.path().join("copy");
+        FsCopyJob::copy_recursive_pub(&src, &dst).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dst.join("inner").join("deep.txt")).unwrap(),
+            "deep"
+        );
+    }
+
+    #[test]
+    fn copy_recursive_pub_copies_empty_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("empty");
+        std::fs::create_dir(&src).unwrap();
+        let dst = dir.path().join("empty_copy");
+        FsCopyJob::copy_recursive_pub(&src, &dst).unwrap();
+        assert!(dst.is_dir(), "empty directory must be created at destination");
+    }
+
+    #[test]
+    fn copy_recursive_pub_errors_on_nonexistent_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("does_not_exist");
+        let dst = dir.path().join("dst");
+        let result = FsCopyJob::copy_recursive_pub(&src, &dst);
+        // Source doesn't exist: is_dir() returns false, falls into the file branch,
+        // then fs::copy fails because the source path doesn't exist.
+        assert!(result.is_err(), "missing source must return an error");
+    }
+
+    #[test]
+    fn copy_recursive_pub_file_to_existing_destination_overwrites() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src.txt");
+        let dst = dir.path().join("dst.txt");
+        std::fs::write(&src, "new content").unwrap();
+        std::fs::write(&dst, "old content").unwrap();
+        FsCopyJob::copy_recursive_pub(&src, &dst).unwrap();
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "new content");
+    }
+
+    #[test]
+    fn copy_recursive_pub_preserves_file_contents_exactly() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("binary.bin");
+        let data: Vec<u8> = (0u8..=255).collect();
+        std::fs::write(&src, &data).unwrap();
+        let dst = dir.path().join("binary_copy.bin");
+        FsCopyJob::copy_recursive_pub(&src, &dst).unwrap();
+        assert_eq!(std::fs::read(&dst).unwrap(), data);
+    }
+
+    #[test]
+    fn copy_recursive_pub_destination_prefix_not_confused_with_inside_source() {
+        // "src_extra" starts with "src" but is NOT inside "src" — must not be rejected.
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir(&src).unwrap();
+        std::fs::write(src.join("f.txt"), "hi").unwrap();
+        let dst = dir.path().join("src_extra");
+        FsCopyJob::copy_recursive_pub(&src, &dst).unwrap();
+        assert_eq!(std::fs::read_to_string(dst.join("f.txt")).unwrap(), "hi");
+    }
 }
 
 /// Job to move/rename a file or directory

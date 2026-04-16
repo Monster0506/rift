@@ -53,6 +53,10 @@ impl<T: TerminalBackend> Editor<T> {
                 display_map.as_ref(),
             );
 
+            // Clamp cursor out of invisible ranges (e.g. `/NNN ` ID prefixes in directory buffers).
+            let doc = self.document_manager.active_document_mut().unwrap();
+            doc.clamp_cursor_past_invisible();
+
             // Record insert-mode mutations for dot-repeat
             if is_mutating && self.current_mode == Mode::Insert && !self.dot_repeat.is_replaying() {
                 self.dot_repeat.record_insert_command(command);

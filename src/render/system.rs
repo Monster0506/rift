@@ -3,7 +3,7 @@ use crate::layer::{LayerCompositor, LayerPriority};
 use crate::render::components::{Rect, Renderable};
 use crate::render::ecs::World;
 use crate::render::{
-    calculate_cursor_column, CommandDrawState, ContentDrawState, CursorPosition, DrawContext,
+    calculate_cursor_column_at, CommandDrawState, ContentDrawState, CursorPosition, DrawContext,
     NotificationDrawState, RenderState, StatusDrawState,
 };
 use crate::term::TerminalBackend;
@@ -316,6 +316,7 @@ impl RenderSystem {
             show_line_numbers: state.show_line_numbers,
             display_map: state.display_map,
             gutter_width_override: None,
+            invisible_ranges: state.invisible_ranges,
         };
 
         // Update the ECS world
@@ -464,13 +465,26 @@ impl RenderSystem {
 
             if let Some(dm) = ctx.display_map {
                 let cursor_visual_row = dm.char_to_visual_row(ctx.buf.cursor());
-                let cursor_visual_col = dm.char_to_visual_col(ctx.buf.cursor(), ctx.buf);
                 let top_visual = vp.top_visual_row();
 
                 let row_in_viewport = if cursor_visual_row >= top_visual {
                     (cursor_visual_row - top_visual).min(vp.visible_rows().saturating_sub(2))
                 } else {
                     0
+                };
+
+                // display_map doesn't account for invisible ID prefixes; fall back when present.
+                let cursor_visual_col = if ctx.invisible_ranges.map_or(false, |r| !r.is_empty()) {
+                    let cursor_line = ctx.buf.get_line();
+                    calculate_cursor_column_at(
+                        ctx.buf,
+                        cursor_line,
+                        ctx.tab_width,
+                        ctx.buf.cursor(),
+                        ctx.invisible_ranges.unwrap_or(&[]),
+                    )
+                } else {
+                    dm.char_to_visual_col(ctx.buf.cursor(), ctx.buf)
                 };
 
                 let display_col =
@@ -490,7 +504,13 @@ impl RenderSystem {
                     0
                 };
 
-                let cursor_col = calculate_cursor_column(ctx.buf, cursor_line, ctx.tab_width);
+                let cursor_col = calculate_cursor_column_at(
+                    ctx.buf,
+                    cursor_line,
+                    ctx.tab_width,
+                    ctx.buf.cursor(),
+                    ctx.invisible_ranges.unwrap_or(&[]),
+                );
                 let visual_cursor_col = cursor_col.saturating_sub(vp.left_col());
                 let display_col =
                     (visual_cursor_col + gutter_width).min(vp.visible_cols().saturating_sub(1));

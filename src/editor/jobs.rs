@@ -119,6 +119,7 @@ impl<T: TerminalBackend> Editor<T> {
                             .map(|e| crate::document::DirEntry {
                                 path: e.path.clone(),
                                 is_dir: e.is_dir,
+                                id: 0,
                             })
                             .collect();
                         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
@@ -189,6 +190,7 @@ impl<T: TerminalBackend> Editor<T> {
                             } else if let Some(text) = res.file_text {
                                 doc.kind = crate::document::BufferKind::File;
                                 doc.set_path(&preview_path);
+                                doc.invisible_ranges.clear();
                                 let _ = doc.buffer.insert_str(&text);
                                 let _ = doc.buffer.set_cursor(0);
                             }

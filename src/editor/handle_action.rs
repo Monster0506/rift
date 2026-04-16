@@ -209,8 +209,18 @@ impl<T: TerminalBackend> Editor<T> {
                         .active_document()
                         .map(|d| d.is_any_clipboard())
                         .unwrap_or(false);
+                    let is_directory = self
+                        .document_manager
+                        .active_document()
+                        .map(|d| d.is_directory())
+                        .unwrap_or(false);
                     if let Some(text) = captured.filter(|s| !s.is_empty()) {
                         if !in_clipboard {
+                            let text = if is_directory {
+                                crate::editor::operators::strip_dir_id_prefixes(&text)
+                            } else {
+                                text
+                            };
                             self.clipboard_ring.push(text);
                             self.refresh_clipboard_buffer_if_open();
                         }

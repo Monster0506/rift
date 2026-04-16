@@ -250,3 +250,79 @@ fn test_color_decorator_preserves_char_values() {
         .collect();
     assert_eq!(result, "rust");
 }
+
+fn visible_chars(items: &[RenderItem]) -> String {
+    items
+        .iter()
+        .map(|i| match i.char {
+            Character::Unicode(c) => c,
+            Character::Tab => '\t',
+            Character::Newline => '\n',
+            _ => '?',
+        })
+        .collect()
+}
+
+#[test]
+fn test_invisible_filter_no_ranges_passes_all() {
+    let input = chars("hello").into_iter();
+    let items: Vec<RenderItem> = InvisibleFilter::new(input, &[]).collect();
+    assert_eq!(items.len(), 5);
+    assert_eq!(visible_chars(&items), "hello");
+}
+
+#[test]
+fn test_invisible_filter_removes_prefix() {
+    // Simulate /001 prefix (5 bytes: '/', '0', '0', '1', ' ') followed by "file.txt"
+    let input = chars("/001 file.txt").into_iter();
+    let ranges = vec![0..5usize];
+    let items: Vec<RenderItem> = InvisibleFilter::new(input, &ranges).collect();
+    assert_eq!(visible_chars(&items), "file.txt");
+}
+
+#[test]
+fn test_invisible_filter_range_in_middle_removed() {
+    // "ab[cd]ef" — bytes 2..4 invisible
+    let input = chars("abcdef").into_iter();
+    let ranges = vec![2..4usize];
+    let items: Vec<RenderItem> = InvisibleFilter::new(input, &ranges).collect();
+    assert_eq!(visible_chars(&items), "abef");
+}
+
+#[test]
+fn test_invisible_filter_multiple_ranges() {
+    // "/001 a /002 b" — two prefixes at offsets 0..5 and 7..12
+    let input = chars("/001 a /002 b").into_iter();
+    let ranges = vec![0..5usize, 7..12];
+    let items: Vec<RenderItem> = InvisibleFilter::new(input, &ranges).collect();
+    assert_eq!(visible_chars(&items), "a b");
+}
+
+#[test]
+fn test_invisible_filter_all_hidden_yields_empty() {
+    let input = chars("abc").into_iter();
+    let ranges = vec![0..3usize];
+    let items: Vec<RenderItem> = InvisibleFilter::new(input, &ranges).collect();
+    assert!(items.is_empty());
+}
+
+#[test]
+fn test_invisible_filter_range_beyond_input_harmless() {
+    let input = chars("hi").into_iter();
+    let ranges = vec![10..20usize]; // entirely past the input
+    let items: Vec<RenderItem> = InvisibleFilter::new(input, &ranges).collect();
+    assert_eq!(visible_chars(&items), "hi");
+}
+
+#[test]
+fn test_invisible_filter_preserves_byte_offsets_of_visible_items() {
+    // Input: "/001 abc" — prefix 0..5 invisible
+    // 'a' is at byte 5, 'b' at 6, 'c' at 7
+    let input = chars("/001 abc").into_iter();
+    let ranges = vec![0..5usize];
+    let items: Vec<RenderItem> = InvisibleFilter::new(input, &ranges).collect();
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0].byte_offset, 5);
+    assert_eq!(items[1].byte_offset, 6);
+    assert_eq!(items[2].byte_offset, 7);
+}

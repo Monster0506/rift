@@ -77,6 +77,44 @@ impl<'a> Iterator for LineSource<'a> {
 pub trait Pipe: Iterator<Item = RenderItem> {}
 impl<T: Iterator<Item = RenderItem>> Pipe for T {}
 
+/// Pipeline stage that skips render items whose byte offset falls inside an invisible range.
+pub struct InvisibleFilter<'a, I: Iterator<Item = RenderItem>> {
+    input: I,
+    ranges: &'a [std::ops::Range<usize>],
+    idx: usize,
+}
+
+impl<'a, I: Iterator<Item = RenderItem>> InvisibleFilter<'a, I> {
+    pub fn new(input: I, ranges: &'a [std::ops::Range<usize>]) -> Self {
+        Self {
+            input,
+            ranges,
+            idx: 0,
+        }
+    }
+}
+
+impl<'a, I: Iterator<Item = RenderItem>> Iterator for InvisibleFilter<'a, I> {
+    type Item = RenderItem;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let item = self.input.next()?;
+            while self.idx < self.ranges.len()
+                && self.ranges[self.idx].end <= item.byte_offset
+            {
+                self.idx += 1;
+            }
+            if self.idx < self.ranges.len()
+                && self.ranges[self.idx].start <= item.byte_offset
+            {
+                continue;
+            }
+            return Some(item);
+        }
+    }
+}
+
 /// Decorator that applies syntax highlighting
 pub struct SyntaxDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,

@@ -34,7 +34,13 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(doc) = self.document_manager.get_document(doc_id) {
                 let tw = doc.options.tab_width;
                 let line = doc.buffer.get_line();
-                let col = render::calculate_cursor_column(&doc.buffer, line, tw);
+                let col = render::calculate_cursor_column_at(
+                    &doc.buffer,
+                    line,
+                    tw,
+                    doc.buffer.cursor(),
+                    &doc.invisible_ranges,
+                );
                 let total = doc.buffer.get_total_lines();
                 (line, col, total, doc.is_terminal())
             } else {
@@ -243,6 +249,11 @@ impl<T: TerminalBackend> Editor<T> {
             },
             show_line_numbers: doc.options.show_line_numbers,
             display_map,
+            invisible_ranges: if doc.invisible_ranges.is_empty() {
+                None
+            } else {
+                Some(&doc.invisible_ranges)
+            },
         };
 
         let _ = render_system.render(term, state)?;
@@ -312,6 +323,7 @@ impl<T: TerminalBackend> Editor<T> {
                     cursor_line,
                     tab_width,
                     cursor_pos,
+                    &doc.invisible_ranges,
                 );
                 let total_lines = doc.buffer.get_total_lines();
                 let viewport_col = if doc.is_terminal() { 0 } else { cursor_col };
@@ -518,6 +530,11 @@ impl<T: TerminalBackend> Editor<T> {
                 show_line_numbers: doc.options.show_line_numbers,
                 display_map: display_map.as_ref(),
                 gutter_width_override: Some(gutter_width),
+                invisible_ranges: if doc.invisible_ranges.is_empty() {
+                    None
+                } else {
+                    Some(&doc.invisible_ranges)
+                },
             };
 
             let content_layer = render_system
@@ -613,6 +630,11 @@ impl<T: TerminalBackend> Editor<T> {
             },
             show_line_numbers: focused_doc.options.show_line_numbers,
             display_map: focused_display_map.as_ref(),
+            invisible_ranges: if focused_doc.invisible_ranges.is_empty() {
+                None
+            } else {
+                Some(&focused_doc.invisible_ranges)
+            },
         };
 
         let _ = render_system.render(term, render_state)?;

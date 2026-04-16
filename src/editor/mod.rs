@@ -75,7 +75,9 @@ fn resolve_display_map(
     global_wrap_width: Option<usize>,
 ) -> Option<crate::wrap::DisplayMap> {
     use crate::document::definitions::WrapMode;
-    if doc.is_terminal() {
+    // Terminal and directory buffers never use soft-wrap: terminals manage their own
+    // cursor, and directory buffers have invisible ID prefixes the display map doesn't know about.
+    if doc.is_terminal() || doc.is_directory() {
         return None;
     }
     let w = match &doc.options.wrap {

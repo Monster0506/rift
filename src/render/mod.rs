@@ -154,6 +154,9 @@ pub struct RenderState<'a> {
     /// Per-document line number override (AND-ed with global setting).
     pub show_line_numbers: bool,
     pub display_map: Option<&'a DisplayMap>,
+    /// Byte ranges in the buffer that should render as zero visual width (e.g., `/NNN ` ID
+    /// prefixes in directory buffers). `None` means no invisible ranges (same as `Some(&[])`).
+    pub invisible_ranges: Option<&'a [std::ops::Range<usize>]>,
 }
 
 /// Context for rendering passed to helpers
@@ -176,6 +179,8 @@ pub struct DrawContext<'a> {
     pub display_map: Option<&'a DisplayMap>,
     /// Overrides state.gutter_width for content rendering (per-window in multi-pane mode).
     pub gutter_width_override: Option<usize>,
+    /// Byte ranges in the buffer that should render as zero visual width.
+    pub invisible_ranges: Option<&'a [std::ops::Range<usize>]>,
 }
 
 /// Cursor position information returned from layer-based rendering
@@ -442,10 +447,12 @@ fn render_line(
     let custom_highlights = ctx.custom_highlights.unwrap_or(&[]);
     let plugin_highlights = ctx.plugin_highlights.unwrap_or(&[]);
     let terminal_cell_colors = ctx.terminal_cell_colors.unwrap_or(&[]);
+    let invisible_ranges = ctx.invisible_ranges.unwrap_or(&[]);
     let search_matches = &ctx.state.search_matches;
 
+    let filtered = pipeline::InvisibleFilter::new(source, invisible_ranges);
     let syntax = SyntaxDecorator::new(
-        source,
+        filtered,
         highlights,
         highlight_idx,
         ctx.state.settings.syntax_colors.as_ref(),
@@ -546,15 +553,19 @@ fn render_line(
 
 /// Calculate the cursor column position accounting for tab width and wide characters
 pub fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) -> usize {
-    calculate_cursor_column_at(buf, line, tab_width, buf.cursor())
+    calculate_cursor_column_at(buf, line, tab_width, buf.cursor(), &[])
 }
 
-/// Like `calculate_cursor_column` but with an explicit cursor position
+/// Like `calculate_cursor_column` but with an explicit cursor position and invisible ranges.
+///
+/// `invisible_ranges` are absolute byte ranges in the buffer that should not contribute to the
+/// visual column count (e.g., the `/NNN ` ID prefix in directory buffer lines).
 pub fn calculate_cursor_column_at(
     buf: &TextBuffer,
     line: usize,
     tab_width: usize,
     cursor_pos: usize,
+    invisible_ranges: &[std::ops::Range<usize>],
 ) -> usize {
     if line >= buf.get_total_lines() {
         return 0;
@@ -563,24 +574,36 @@ pub fn calculate_cursor_column_at(
     let line_start = buf.line_index.get_start(line).unwrap_or(0);
     let target_char_idx = cursor_pos.saturating_sub(line_start);
 
-    // We iterate chars from line start up to cursor
-    // Bounds check? cursor_pos should be <= len.
-    // get_line_start gives us start.
-    // We iterate chars.
-
     let mut col = 0;
+    let end = buf.len();
 
-    let end = buf.len(); // cap at buffer end
+    let line_start_byte = buf.char_to_byte(line_start);
+    let invisible_char_ranges: Vec<std::ops::Range<usize>> = invisible_ranges
+        .iter()
+        .filter_map(|r| {
+            if r.end <= line_start_byte {
+                return None;
+            }
+            let rel_start = r.start.saturating_sub(line_start_byte);
+            let rel_end = r.end - line_start_byte;
+            Some(rel_start..rel_end)
+        })
+        .collect();
 
-    // Iterate manually over line
     for (current_idx, ch) in BufferView::chars(buf, line_start..end).enumerate() {
         if current_idx >= target_char_idx {
             break;
         }
 
         if ch == Character::Newline {
-            // Cursor on newline?
             break;
+        }
+
+        let is_invisible = invisible_char_ranges
+            .iter()
+            .any(|r| r.start <= current_idx && current_idx < r.end);
+        if is_invisible {
+            continue;
         }
 
         if ch == Character::Tab {

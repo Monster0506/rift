@@ -43,8 +43,18 @@ impl<T: TerminalBackend> Editor<T> {
             .active_document()
             .map(|d| d.is_any_clipboard())
             .unwrap_or(false);
+        let is_directory = self
+            .document_manager
+            .active_document()
+            .map(|d| d.is_directory())
+            .unwrap_or(false);
         if let Some(text) = captured.filter(|s| !s.is_empty()) {
             if !in_clipboard {
+                let text = if is_directory {
+                    strip_dir_id_prefixes(&text)
+                } else {
+                    text
+                };
                 self.clipboard_ring.push(text);
                 self.refresh_clipboard_buffer_if_open();
             }
@@ -95,8 +105,18 @@ impl<T: TerminalBackend> Editor<T> {
             .active_document()
             .map(|d| d.is_any_clipboard())
             .unwrap_or(false);
+        let is_directory = self
+            .document_manager
+            .active_document()
+            .map(|d| d.is_directory())
+            .unwrap_or(false);
         if let Some(text) = captured.filter(|s| !s.is_empty()) {
             if !in_clipboard {
+                let text = if is_directory {
+                    strip_dir_id_prefixes(&text)
+                } else {
+                    text
+                };
                 self.clipboard_ring.push(text);
                 self.refresh_clipboard_buffer_if_open();
             }
@@ -176,5 +196,65 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.dot_repeat.set_replaying(false);
         true
+    }
+}
+
+pub(super) fn strip_dir_id_prefixes(text: &str) -> String {
+    text.lines()
+        .map(crate::document::dir_entry_name_from_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_dir_id_prefixes;
+
+    #[test]
+    fn strip_empty_string() {
+        assert_eq!(strip_dir_id_prefixes(""), "");
+    }
+
+    #[test]
+    fn strip_single_line_with_prefix() {
+        assert_eq!(strip_dir_id_prefixes("/001 hello.txt"), "hello.txt");
+    }
+
+    #[test]
+    fn strip_single_line_no_prefix_passes_through() {
+        assert_eq!(strip_dir_id_prefixes("hello.txt"), "hello.txt");
+    }
+
+    #[test]
+    fn strip_multiline_mixed_prefix_and_plain() {
+        let input = "../\n/001 a.txt\n/002 b.rs\nno_prefix.txt";
+        let got = strip_dir_id_prefixes(input);
+        assert_eq!(got, "../\na.txt\nb.rs\nno_prefix.txt");
+    }
+
+    #[test]
+    fn strip_prefix_only_line_yields_empty_line() {
+        // "/001 " with nothing visible after — output line must be empty, not garbage.
+        let got = strip_dir_id_prefixes("/001 ");
+        assert_eq!(got, "");
+    }
+
+    #[test]
+    fn strip_partial_prefix_not_stripped() {
+        // Missing the trailing space — not a valid prefix, must pass through unchanged.
+        assert_eq!(strip_dir_id_prefixes("/001file.txt"), "/001file.txt");
+    }
+
+    #[test]
+    fn strip_preserves_trailing_slash_on_dirs() {
+        assert_eq!(strip_dir_id_prefixes("/042 subdir/"), "subdir/");
+    }
+
+    #[test]
+    fn strip_line_count_preserved() {
+        // Input has 3 lines → output must also have 3 lines (join("\n") not join("\n\n")).
+        let input = "/001 a.txt\n/002 b.txt\n/003 c.txt";
+        let out = strip_dir_id_prefixes(input);
+        assert_eq!(out.lines().count(), 3);
     }
 }

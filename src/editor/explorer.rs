@@ -89,7 +89,8 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        let entry_name = line_text.trim_end_matches('/').to_string();
+        let visible = crate::document::dir_entry_name_from_line(&line_text);
+        let entry_name = visible.trim_end_matches('/').to_string();
         if entry_name.is_empty() {
             return;
         }
@@ -595,7 +596,8 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::document::BufferKind::Directory { path, .. } => path.clone(),
                 _ => return,
             };
-            let entry_name = line_text.trim_end_matches('/');
+            let visible = crate::document::dir_entry_name_from_line(&line_text);
+            let entry_name = visible.trim_end_matches('/');
             if entry_name.is_empty() || entry_name == ".." {
                 return;
             }
@@ -687,7 +689,8 @@ impl<T: TerminalBackend> Editor<T> {
             (line_text, dir_path)
         };
 
-        let entry_name = line_text.trim_end_matches('/');
+        let visible = crate::document::dir_entry_name_from_line(&line_text);
+        let entry_name = visible.trim_end_matches('/');
         if entry_name.is_empty() || entry_name == ".." {
             self.handle_explorer_split_parent();
             return;

@@ -81,6 +81,7 @@ impl Job for ExplorerPreviewJob {
                     entries.push(DirEntry {
                         path: entry.path(),
                         is_dir,
+                        id: 0,
                     });
                 }
             }

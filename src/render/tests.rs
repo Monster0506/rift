@@ -7,7 +7,8 @@ use crate::layer::Cell;
 use crate::layer::{Layer, LayerPriority};
 use crate::mode::Mode;
 use crate::render::{
-    calculate_cursor_column, CursorInfo, RenderState, RenderSystem, StatusDrawState,
+    calculate_cursor_column, calculate_cursor_column_at, CursorInfo, RenderState, RenderSystem,
+    StatusDrawState,
 };
 use crate::state::State;
 use crate::status::StatusBar;
@@ -240,6 +241,7 @@ fn test_render_does_not_clear_screen() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -279,6 +281,7 @@ fn test_render_cursor_positioning() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -317,6 +320,7 @@ fn test_render_empty_buffer() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -358,6 +362,7 @@ fn test_render_multiline_buffer() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -404,6 +409,7 @@ fn test_render_file_loaded_at_start() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -460,6 +466,7 @@ fn test_render_viewport_scrolling() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -500,6 +507,7 @@ fn test_render_viewport_edge_cases() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -539,6 +547,7 @@ fn test_render_large_buffer() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -586,6 +595,7 @@ fn test_render_cursor_at_viewport_boundaries() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -633,6 +643,7 @@ fn test_render_cursor_at_viewport_boundaries() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -715,6 +726,7 @@ fn test_render_line_numbers_enabled() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -770,6 +782,7 @@ fn test_render_line_numbers_disabled() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -815,6 +828,7 @@ fn test_render_line_numbers_gutter_width() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -875,6 +889,7 @@ fn test_render_cursor_position_with_line_numbers() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -913,6 +928,7 @@ fn test_no_redraw_on_noop() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -956,6 +972,7 @@ fn test_no_redraw_on_noop() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -1045,6 +1062,7 @@ fn test_tab_rendered_as_space_not_raw_tab() {
                 terminal_cell_colors: None,
                 show_line_numbers: false,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -1110,6 +1128,7 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
                 terminal_cell_colors: None,
                 show_line_numbers: false,
                 display_map: None,
+                invisible_ranges: None,
             },
         )
         .unwrap();
@@ -1155,4 +1174,86 @@ fn test_wrap_text_cjk_counts_as_two_columns() {
     );
     assert_eq!(lines[0], "AB");
     assert_eq!(lines[1], "你好");
+}
+
+// ============================================================================
+// calculate_cursor_column_at — invisible ranges
+// ============================================================================
+
+#[test]
+fn test_cursor_column_at_no_invisible_ranges_matches_plain() {
+    // Without invisible ranges, calculate_cursor_column_at should agree with
+    // calculate_cursor_column.
+    let mut buf = TextBuffer::new(64).unwrap();
+    buf.insert_str("hello").unwrap();
+    // Cursor is at end (char 5).
+    assert_eq!(
+        calculate_cursor_column_at(&buf, 0, 4, buf.cursor(), &[]),
+        calculate_cursor_column(&buf, 0, 4),
+    );
+}
+
+#[test]
+fn test_cursor_column_at_cursor_before_invisible_range_unaffected() {
+    // "/001 file.txt" — prefix bytes 0..5 are invisible.
+    // Cursor at char 0 (the '/' which is invisible) — clamping happens elsewhere,
+    // but column calculation for chars *before* the range is unaffected.
+    // Here we place the cursor past the prefix to verify chars before it don't
+    // contribute to the visual column.
+    let mut buf = TextBuffer::new(64).unwrap();
+    buf.insert_str("/001 hello").unwrap(); // 10 chars, cursor at 10
+    let invisible: Vec<std::ops::Range<usize>> = vec![0..5];
+
+    // Cursor at the end (char 10 = after "hello").
+    // "/001 " is 5 invisible chars; visible text is "hello" (5 chars) → col = 5.
+    assert_eq!(
+        calculate_cursor_column_at(&buf, 0, 4, buf.cursor(), &invisible),
+        5,
+        "invisible prefix must not count toward visual column"
+    );
+}
+
+#[test]
+fn test_cursor_column_at_cursor_at_first_visible_char_after_prefix() {
+    // "/001 f" — cursor at char 5 (the 'f'), prefix 0..5 invisible.
+    // Visual column = 0 (the 'f' is the first visible char, not yet counted).
+    let mut buf = TextBuffer::new(64).unwrap();
+    buf.insert_str("/001 file.txt").unwrap();
+    let _ = buf.set_cursor(5); // position at 'f'
+    let invisible: Vec<std::ops::Range<usize>> = vec![0..5];
+
+    assert_eq!(
+        calculate_cursor_column_at(&buf, 0, 4, buf.cursor(), &invisible),
+        0,
+        "cursor at first visible char → col 0"
+    );
+}
+
+#[test]
+fn test_cursor_column_at_mid_visible_text() {
+    // "/001 file.txt" — cursor at char 8 (after "fil"), prefix 0..5 invisible.
+    // Visible chars before cursor: 'f','i','l' → col 3.
+    let mut buf = TextBuffer::new(64).unwrap();
+    buf.insert_str("/001 file.txt").unwrap();
+    let _ = buf.set_cursor(8); // 5 (prefix) + 3 (fil) = 8
+    let invisible: Vec<std::ops::Range<usize>> = vec![0..5];
+
+    assert_eq!(
+        calculate_cursor_column_at(&buf, 0, 4, buf.cursor(), &invisible),
+        3,
+        "three visible chars before cursor → col 3"
+    );
+}
+
+#[test]
+fn test_cursor_column_at_no_invisible_gives_raw_column() {
+    // With no invisible ranges, column equals the number of chars before cursor.
+    let mut buf = TextBuffer::new(64).unwrap();
+    buf.insert_str("abcde").unwrap();
+    let _ = buf.set_cursor(3);
+
+    assert_eq!(
+        calculate_cursor_column_at(&buf, 0, 4, buf.cursor(), &[]),
+        3,
+    );
 }
