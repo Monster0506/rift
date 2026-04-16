@@ -484,6 +484,66 @@ fn test_parse_diff_noop_on_non_directory_doc() {
     assert!(diff.creates.is_empty());
     assert!(diff.renames.is_empty());
 }
+
+#[test]
+fn test_parse_diff_move_file_into_subdir() {
+    // User edits buffer from:
+    //   ../
+    //   A/
+    //   b.c
+    // to:
+    //   ../
+    //   A/b.c
+    //
+    // Expected: rename b.c → A/b.c; directory A is preserved unchanged.
+    // Must NOT generate: rename A → A/b.c (which would move the dir into itself).
+    let mut doc = make_populated_directory_doc("/tmp", &[("A", true), ("b.c", false)]);
+    set_buffer_text(&mut doc, "../\nA/b.c");
+
+    let diff = doc.parse_directory_diff();
+    assert!(
+        diff.deletes.is_empty(),
+        "A/ should not be deleted: {:?}",
+        diff
+    );
+    assert_eq!(
+        diff.renames.len(),
+        1,
+        "should produce exactly one rename: {:?}",
+        diff
+    );
+    assert!(
+        diff.renames[0].0.to_string_lossy().contains("b.c"),
+        "rename source should be b.c, not A: {:?}",
+        diff.renames[0]
+    );
+    assert_eq!(
+        diff.renames[0].1, "A/b.c",
+        "rename target should be A/b.c: {:?}",
+        diff.renames[0]
+    );
+    assert!(diff.creates.is_empty(), "no creates expected: {:?}", diff);
+}
+
+#[test]
+fn test_parse_diff_move_one_of_two_files_into_subdir() {
+    // Buffer: A/, b.c, c.d  →  A/c.d, b.c
+    // Expected: rename c.d → A/c.d; b.c and A are unchanged.
+    let mut doc =
+        make_populated_directory_doc("/tmp", &[("A", true), ("b.c", false), ("c.d", false)]);
+    set_buffer_text(&mut doc, "../\nA/c.d\nb.c");
+
+    let diff = doc.parse_directory_diff();
+    assert!(diff.deletes.is_empty(), "nothing should be deleted: {:?}", diff);
+    assert_eq!(diff.renames.len(), 1, "exactly one rename: {:?}", diff);
+    assert!(
+        diff.renames[0].0.to_string_lossy().contains("c.d"),
+        "rename source should be c.d: {:?}",
+        diff.renames[0]
+    );
+    assert_eq!(diff.renames[0].1, "A/c.d");
+    assert!(diff.creates.is_empty(), "no creates: {:?}", diff);
+}
 // populate_undotree_buffer
 
 #[test]

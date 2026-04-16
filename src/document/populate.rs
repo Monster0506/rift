@@ -263,10 +263,18 @@ impl Document {
             .filter_map(|e| e.path.file_name().and_then(|n| n.to_str()))
             .collect();
 
-        let buffer_name_set: HashSet<&str> = buffer_lines
+        let mut buffer_name_set: HashSet<&str> = buffer_lines
             .iter()
             .map(|l| l.trim_end_matches('/'))
             .collect();
+
+        for line in &buffer_lines {
+            if let Some(slash_pos) = line.find('/') {
+                if slash_pos < line.len() - 1 {
+                    buffer_name_set.insert(&line[..slash_pos]);
+                }
+            }
+        }
 
         let unmatched_new: Vec<&str> = buffer_lines
             .iter()

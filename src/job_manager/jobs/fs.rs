@@ -19,6 +19,15 @@ impl FsCopyJob {
     }
 
     pub fn copy_recursive_pub(source: &Path, destination: &Path) -> std::io::Result<()> {
+        if source.is_dir() && destination.starts_with(source) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "cannot copy {:?}: destination {:?} is inside the source",
+                    source, destination
+                ),
+            ));
+        }
         if source.is_dir() {
             fs::create_dir_all(destination)?;
             for entry in fs::read_dir(source)? {
@@ -96,6 +105,49 @@ impl Job for FsCopyJob {
                 let _ = sender.send(JobMessage::Error(id, e.to_string()));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn copy_recursive_pub_errors_when_destination_is_inside_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("mydir");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("file.txt"), "hello").unwrap();
+
+        // destination is a subdirectory of source — must be rejected
+        let destination = source.join("sub");
+        let result = FsCopyJob::copy_recursive_pub(&source, &destination);
+        assert!(
+            result.is_err(),
+            "copy_recursive_pub must error when destination is inside source"
+        );
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn copy_recursive_pub_copies_file_successfully() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("hello.txt");
+        std::fs::write(&src, "world").unwrap();
+        let dst = dir.path().join("hello_copy.txt");
+        FsCopyJob::copy_recursive_pub(&src, &dst).unwrap();
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "world");
+    }
+
+    #[test]
+    fn copy_recursive_pub_copies_directory_successfully() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("srcdir");
+        std::fs::create_dir(&src).unwrap();
+        std::fs::write(src.join("a.txt"), "aaa").unwrap();
+        let dst = dir.path().join("dstdir");
+        FsCopyJob::copy_recursive_pub(&src, &dst).unwrap();
+        assert_eq!(std::fs::read_to_string(dst.join("a.txt")).unwrap(), "aaa");
     }
 }
 
