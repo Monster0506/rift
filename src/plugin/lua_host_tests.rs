@@ -108,6 +108,9 @@ fn test_get_lines_returns_correct_lines() {
         (0, 0),
         "lf",
         vec![],
+        vec![],
+        0,
+        None,
     );
     assert!(host.exec("_lines = rift.get_lines(1, -1)").is_none());
     assert!(host.exec("rift.notify('info', _lines[2])").is_none());
@@ -139,6 +142,9 @@ fn test_get_cursor_returns_1indexed_row() {
         (0, 0),
         "lf",
         vec![],
+        vec![],
+        0,
+        None,
     );
     assert!(host
         .exec("local r, c = rift.get_cursor(); rift.notify('info', tostring(r))")
@@ -171,6 +177,9 @@ fn test_current_buf_returns_id() {
         (0, 0),
         "lf",
         vec![],
+        vec![],
+        0,
+        None,
     );
     assert!(host
         .exec("rift.notify('info', tostring(rift.current_buf()))")

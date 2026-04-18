@@ -108,6 +108,12 @@ pub enum PluginMutation {
     OpenFile { path: String, force: bool },
     /// Close the current buffer. `force` discards unsaved changes.
     CloseBuffer { force: bool },
+    /// Move the focused window in the given direction.
+    MoveWindow { direction: crate::split::navigation::Direction },
+    /// Swap the contents of the focused window with the previously focused window.
+    SwapWindows,
+    /// Focus the previously focused window.
+    FocusPreviousWindow,
 }
 
 /// A floating window owned by a plugin. Stored in `PluginHost` and rendered
@@ -443,6 +449,9 @@ impl PluginHost {
         scroll: (usize, usize),
         line_ending: &str,
         commands: Vec<(String, String)>,
+        win_list: Vec<lua_host::WinEntry>,
+        focused_win_id: u64,
+        previous_win_id: Option<u64>,
     ) {
         if let Some(lua) = &self.lua {
             lua.update_state(
@@ -463,6 +472,9 @@ impl PluginHost {
                 scroll,
                 line_ending,
                 commands,
+                win_list,
+                focused_win_id,
+                previous_win_id,
             );
         }
     }

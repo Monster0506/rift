@@ -28,6 +28,9 @@ mod run_loop;
 #[path = "tests.rs"]
 mod tests;
 
+#[cfg(test)]
+mod split_move_tests;
+
 use crate::command_line::commands::CommandParser;
 use crate::command_line::settings::SettingsRegistry;
 use crate::document::{Document, DocumentId};

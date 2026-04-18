@@ -339,6 +339,19 @@ fn get_editor_fg(s: &UserSettings) -> String {
 }
 
 /// Static registry of all settings
+fn set_equalize_proportional(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Bool(b) => {
+            settings.equalize_proportional = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError("Expected boolean".to_string())),
+    }
+}
+
 pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line.borderstyle",
@@ -506,6 +519,15 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         },
         set: set_poll_rate,
         get: Some(get_poll_rate),
+        needs_full_redraw: false,
+    },
+    SettingDescriptor {
+        name: "split.equalize_proportional",
+        aliases: &["eqprop"],
+        description: "When on, ^w= distributes space proportionally to leaf count; when off, each split gets 50/50",
+        ty: SettingType::Boolean,
+        set: set_equalize_proportional,
+        get: None,
         needs_full_redraw: false,
     },
 ];

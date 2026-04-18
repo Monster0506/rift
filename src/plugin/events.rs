@@ -72,6 +72,18 @@ pub enum EditorEvent {
 
     /// A plugin-defined event. Use `rift.emit("MyPlugin:Ready", ...)` in Lua.
     UserEvent { name: String },
+
+    /// A split window gained focus.
+    WinEnter { win: u64, buf: crate::document::DocumentId },
+
+    /// A split window lost focus.
+    WinLeave { win: u64, buf: crate::document::DocumentId },
+
+    /// A window was repositioned via ^WH/J/K/L move.
+    WinMoved { win: u64 },
+
+    /// Two windows had their contents swapped via exchange.
+    WinSwapped { win1: u64, win2: u64 },
 }
 
 impl EditorEvent {
@@ -137,6 +149,21 @@ impl EditorEvent {
                 t.set("name", name.as_str())?;
             }
             EditorEvent::EditorStart | EditorEvent::EditorQuit => {}
+            EditorEvent::WinEnter { win, buf } => {
+                t.set("win", *win as i64)?;
+                t.set("buf", *buf as i64)?;
+            }
+            EditorEvent::WinLeave { win, buf } => {
+                t.set("win", *win as i64)?;
+                t.set("buf", *buf as i64)?;
+            }
+            EditorEvent::WinMoved { win } => {
+                t.set("win", *win as i64)?;
+            }
+            EditorEvent::WinSwapped { win1, win2 } => {
+                t.set("win1", *win1 as i64)?;
+                t.set("win2", *win2 as i64)?;
+            }
         }
         Ok(t)
     }
@@ -159,6 +186,10 @@ impl EditorEvent {
             EditorEvent::EditorQuit => "EditorQuit",
             EditorEvent::WindowResized { .. } => "WindowResized",
             EditorEvent::UserEvent { .. } => "UserEvent",
+            EditorEvent::WinEnter { .. } => "WinEnter",
+            EditorEvent::WinLeave { .. } => "WinLeave",
+            EditorEvent::WinMoved { .. } => "WinMoved",
+            EditorEvent::WinSwapped { .. } => "WinSwapped",
         }
     }
 }

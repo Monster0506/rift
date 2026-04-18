@@ -474,7 +474,7 @@ impl RenderSystem {
                 };
 
                 // display_map doesn't account for invisible ID prefixes; fall back when present.
-                let cursor_visual_col = if ctx.invisible_ranges.map_or(false, |r| !r.is_empty()) {
+                let cursor_visual_col = if ctx.invisible_ranges.is_some_and(|r| !r.is_empty()) {
                     let cursor_line = ctx.buf.get_line();
                     calculate_cursor_column_at(
                         ctx.buf,

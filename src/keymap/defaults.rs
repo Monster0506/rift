@@ -647,8 +647,17 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         ('j', ":split :d"),
         ('k', ":split :u"),
         ('l', ":split :r"),
-        ('<', ":vsplit :-5"),
-        ('>', ":vsplit :+5"),
+        ('<', ":vsplit :resize -5"),
+        ('>', ":vsplit :resize 5"),
+        (',', ":split :resize -5"),
+        ('.', ":split :resize 5"),
+        ('H', ":split :H"),
+        ('J', ":split :J"),
+        ('K', ":split :K"),
+        ('L', ":split :L"),
+        ('x', ":split :x"),
+        ('W', ":split :w"),
+        ('=', ":split :="),
     ] {
         keymap.register_sequence(
             KeyContext::Normal,
@@ -656,6 +665,11 @@ pub fn register_defaults(keymap: &mut KeyMap) {
             Action::Editor(EditorAction::RunCommand(cmd.to_string())),
         );
     }
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![ww, Key::Ctrl(b'w')],
+        Action::Editor(EditorAction::RunCommand(":split :w".to_string())),
+    );
     keymap.register_sequence(
         KeyContext::Normal,
         vec![Key::Char('g'), Key::Char('g')],

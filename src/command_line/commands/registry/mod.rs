@@ -110,64 +110,53 @@ impl CommandRegistry {
     /// 5. Return unknown if no match
     #[must_use]
     pub fn match_command(&self, input: &str) -> MatchResult {
-        let input = input.trim().to_lowercase();
+        let input = input.trim();
+        let input_lower = input.to_lowercase();
 
         if input.is_empty() {
-            return MatchResult::Unknown(input);
+            return MatchResult::Unknown(input.to_string());
         }
 
-        // Step 1: Check exact matches (command names and aliases)
+        // Aliases are matched case-sensitively so "H"/"L" and "h"/"l" stay distinct.
         for cmd in &self.commands {
-            if cmd.name.to_lowercase() == input {
-                return MatchResult::Exact(cmd.name.clone());
-            }
             for alias in &cmd.aliases {
-                if alias.to_lowercase() == input {
+                if *alias == input {
                     return MatchResult::Exact(cmd.name.clone());
                 }
             }
         }
 
-        // Step 2: Check if input matches any explicit alias exactly
-
-        // Step 3: Find all commands that start with the input prefix
-        let mut matches = Vec::new();
-
         for cmd in &self.commands {
-            let cmd_lower = cmd.name.to_lowercase();
-            if cmd_lower.starts_with(&input) {
+            if cmd.name.to_lowercase() == input_lower {
+                return MatchResult::Exact(cmd.name.clone());
+            }
+        }
+
+        let mut matches = Vec::new();
+        for cmd in &self.commands {
+            if cmd.name.to_lowercase().starts_with(&input_lower) {
                 matches.push(cmd.name.clone());
             }
-
-            // Also check aliases
             for alias in &cmd.aliases {
-                let alias_lower = alias.to_lowercase();
-                if alias_lower.starts_with(&input) {
-                    // Only add if not already in matches (avoid duplicates)
-                    if !matches.contains(&cmd.name) {
-                        matches.push(cmd.name.clone());
-                    }
+                if alias.starts_with(input) && !matches.contains(&cmd.name) {
+                    matches.push(cmd.name.clone());
                 }
             }
         }
 
-        // Step 4: Handle results
         match matches.len() {
-            0 => MatchResult::Unknown(input),
+            0 => MatchResult::Unknown(input.to_string()),
             1 => MatchResult::Prefix(matches[0].clone()),
             _ => {
-                // Multiple matches - check if any explicit alias matches exactly
-                // This allows explicit aliases to override prefix matching
                 for cmd in &self.commands {
                     for alias in &cmd.aliases {
-                        if alias.to_lowercase() == input {
+                        if *alias == input {
                             return MatchResult::Exact(cmd.name.clone());
                         }
                     }
                 }
-                // Still ambiguous
                 MatchResult::Ambiguous {
-                    prefix: input,
+                    prefix: input.to_string(),
                     matches,
                 }
             }

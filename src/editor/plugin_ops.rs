@@ -106,6 +106,28 @@ impl<T: TerminalBackend> Editor<T> {
             .map(|(name, desc, _)| (name, desc))
             .collect();
 
+        let total_rows = self.render_system.compositor.rows();
+        let total_cols = self.render_system.compositor.cols();
+        let win_layouts = self.split_tree.compute_layout(total_rows, total_cols);
+        let win_list: Vec<crate::plugin::lua_host::WinEntry> = win_layouts
+            .iter()
+            .map(|l| {
+                let buf = self.split_tree.get_window(l.window_id)
+                    .map(|w| w.document_id as usize)
+                    .unwrap_or(0);
+                crate::plugin::lua_host::WinEntry {
+                    id: l.window_id,
+                    buf,
+                    row: l.row,
+                    col: l.col,
+                    rows: l.rows,
+                    cols: l.cols,
+                }
+            })
+            .collect();
+        let focused_win_id = self.split_tree.focused_window_id();
+        let previous_win_id = self.split_tree.previous_window;
+
         self.plugin_host.lua_update_state(
             buf_id,
             buf_kind,
@@ -124,6 +146,9 @@ impl<T: TerminalBackend> Editor<T> {
             scroll,
             line_ending,
             commands,
+            win_list,
+            focused_win_id,
+            previous_win_id,
         );
     }
 
@@ -458,6 +483,39 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 PluginMutation::CloseBuffer { force } => {
                     self.do_quit(force);
+                }
+                PluginMutation::MoveWindow { direction } => {
+                    let size = self.term.get_size().unwrap();
+                    let layouts = self.split_tree.compute_layout(size.rows as usize, size.cols as usize);
+                    let moved_id = self.split_tree.focused_window_id();
+                    if self.split_tree.move_window(direction, &layouts) {
+                        self.render_system.viewport.mark_needs_full_redraw();
+                        self.plugin_host.dispatch(&crate::plugin::EditorEvent::WinMoved { win: moved_id });
+                    }
+                }
+                PluginMutation::SwapWindows => {
+                    let focused_id = self.split_tree.focused_window_id();
+                    if let Some(prev_id) = self.split_tree.previous_window {
+                        if self.split_tree.exchange_windows(focused_id, prev_id) {
+                            let new_doc = self.split_tree.focused_window().document_id;
+                            let new_cursor = self.split_tree.focused_window().cursor_position;
+                            let _ = self.document_manager.switch_to_document(new_doc);
+                            if let Some(doc) = self.document_manager.get_document_mut(new_doc) {
+                                let _ = doc.buffer.set_cursor(new_cursor);
+                            }
+                            self.sync_state_with_active_document();
+                            self.render_system.viewport.mark_needs_full_redraw();
+                            self.plugin_host.dispatch(&crate::plugin::EditorEvent::WinSwapped {
+                                win1: focused_id,
+                                win2: prev_id,
+                            });
+                        }
+                    }
+                }
+                PluginMutation::FocusPreviousWindow => {
+                    if let Some(target_id) = self.split_tree.previous_window {
+                        self.switch_focus(target_id);
+                    }
                 }
             }
         }

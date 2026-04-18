@@ -24,7 +24,7 @@ fn navigate_from(
     direction: Direction,
     layouts: &[WindowLayout],
 ) -> Option<WindowId> {
-    let mut best: Option<(WindowId, usize)> = None;
+    let mut best: Option<(WindowId, usize, usize)> = None;
 
     for candidate in layouts {
         if candidate.window_id == from.window_id {
@@ -69,10 +69,22 @@ fn navigate_from(
             continue;
         }
 
-        if best.is_none_or(|(_, best_overlap)| overlap > best_overlap) {
-            best = Some((candidate.window_id, overlap));
+        // Tie-break by leftmost left-edge for Up/Down, topmost top-edge for Left/Right.
+        let tiebreaker = match direction {
+            Direction::Left | Direction::Right => candidate.row,
+            Direction::Up   | Direction::Down  => candidate.col,
+        };
+
+        let better = match best {
+            None => true,
+            Some((_, best_ov, best_tb)) => {
+                overlap > best_ov || (overlap == best_ov && tiebreaker < best_tb)
+            }
+        };
+        if better {
+            best = Some((candidate.window_id, overlap, tiebreaker));
         }
     }
 
-    best.map(|(id, _)| id)
+    best.map(|(id, _, _)| id)
 }

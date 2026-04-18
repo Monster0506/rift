@@ -135,4 +135,12 @@ pub enum SplitSubcommand {
     File(String),
     Navigate(crate::split::navigation::Direction),
     Resize(i32),
+    /// Move the focused window to the given side.
+    Move(crate::split::navigation::Direction),
+    /// Swap focused window contents with the previously focused window.
+    Exchange,
+    /// Focus the previously focused window.
+    PreviousWindow,
+    /// Make all windows as equal in size as possible.
+    Equalize,
 }

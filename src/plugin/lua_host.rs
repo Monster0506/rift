@@ -61,6 +61,23 @@ struct LuaSharedState {
     line_ending: String,
     /// Snapshot of registered plugin commands: (name, description).
     commands: Vec<(String, String)>,
+    /// Snapshot of all split windows with layout info, updated before each dispatch.
+    win_list: Vec<WinEntry>,
+    /// ID of the currently focused window.
+    focused_win_id: u64,
+    /// ID of the previously focused window, if any.
+    previous_win_id: Option<u64>,
+}
+
+/// A lightweight entry for the `rift.windows.list()` snapshot.
+#[derive(Debug, Clone)]
+pub struct WinEntry {
+    pub id: u64,
+    pub buf: usize,
+    pub row: usize,
+    pub col: usize,
+    pub rows: usize,
+    pub cols: usize,
 }
 
 impl Default for LuaSharedState {
@@ -86,6 +103,9 @@ impl Default for LuaSharedState {
             scroll: (0, 0),
             line_ending: "lf".to_string(),
             commands: Vec::new(),
+            win_list: Vec::new(),
+            focused_win_id: 0,
+            previous_win_id: None,
         }
     }
 }
@@ -881,6 +901,123 @@ impl LuaHost {
             api.set("unmap", f)?;
         }
 
+        // rift.windows — window management sub-table
+        {
+            let windows = lua.create_table()?;
+
+            // rift.windows.move(direction) — move focused window in a direction
+            // direction: "left" | "right" | "up" | "down"
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, dir: String| {
+                    use crate::split::navigation::Direction;
+                    let direction = match dir.as_str() {
+                        "left" => Direction::Left,
+                        "right" => Direction::Right,
+                        "up" => Direction::Up,
+                        "down" => Direction::Down,
+                        _ => return Err(mlua::Error::RuntimeError(format!("unknown direction: {dir}"))),
+                    };
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::MoveWindow { direction });
+                    Ok(())
+                })?;
+                windows.set("move", f)?;
+            }
+
+            // rift.windows.exchange() — swap focused window contents with previously focused window
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, ()| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::SwapWindows);
+                    Ok(())
+                })?;
+                windows.set("exchange", f)?;
+            }
+
+            // rift.windows.focus_prev() — focus the previously focused window
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, ()| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::FocusPreviousWindow);
+                    Ok(())
+                })?;
+                windows.set("focus_prev", f)?;
+            }
+
+            // rift.windows.list() → array of { id, buf, row, col, rows, cols }
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |lua, ()| {
+                    let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                    let t = lua.create_table()?;
+                    for (i, w) in s.win_list.iter().enumerate() {
+                        let entry = lua.create_table()?;
+                        entry.set("id",   w.id as i64)?;
+                        entry.set("buf",  w.buf as i64)?;
+                        entry.set("row",  w.row as i64)?;
+                        entry.set("col",  w.col as i64)?;
+                        entry.set("rows", w.rows as i64)?;
+                        entry.set("cols", w.cols as i64)?;
+                        t.set(i + 1, entry)?;
+                    }
+                    Ok(t)
+                })?;
+                windows.set("list", f)?;
+            }
+
+            // rift.windows.current() → integer window id of the focused window
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, ()| {
+                    Ok(sh.lock().unwrap_or_else(|e| e.into_inner()).focused_win_id as i64)
+                })?;
+                windows.set("current", f)?;
+            }
+
+            // rift.windows.previous() → integer window id of the previously focused window, or nil
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, ()| {
+                    Ok(sh.lock().unwrap_or_else(|e| e.into_inner())
+                        .previous_win_id
+                        .map(|id| id as i64))
+                })?;
+                windows.set("previous", f)?;
+            }
+
+            // rift.windows.navigate(direction) — move focus to adjacent window
+            // direction: "left" | "right" | "up" | "down"
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, dir: String| {
+                    let cmd = match dir.as_str() {
+                        "left" => ":split :l",
+                        "right" => ":split :r",
+                        "up" => ":split :u",
+                        "down" => ":split :d",
+                        _ => return Err(mlua::Error::RuntimeError(format!("unknown direction: {dir}"))),
+                    };
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::ExecAction(cmd.to_string()));
+                    Ok(())
+                })?;
+                windows.set("navigate", f)?;
+            }
+
+            api.set("windows", windows)?;
+        }
+
         lua.globals().set("rift", api)?;
 
         // Embedded Lua prelude — convenience wrappers that don't need Rust bindings.
@@ -1135,6 +1272,9 @@ end
         scroll: (usize, usize),
         line_ending: &str,
         commands: Vec<(String, String)>,
+        win_list: Vec<WinEntry>,
+        focused_win_id: u64,
+        previous_win_id: Option<u64>,
     ) {
         let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
         s.buf_id = buf_id;
@@ -1154,6 +1294,9 @@ end
         s.scroll = scroll;
         s.line_ending = line_ending.to_string();
         s.commands = commands;
+        s.win_list = win_list;
+        s.focused_win_id = focused_win_id;
+        s.previous_win_id = previous_win_id;
     }
 
     /// Dispatch an `EditorEvent` to all registered Lua handlers.

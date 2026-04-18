@@ -697,6 +697,47 @@ fn parse_vsplit_resize(
     )
 }
 
+fn parse_split_move_left(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    split_cmd(SplitSubcommand::Move(Direction::Left), b)
+}
+fn parse_split_move_right(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    split_cmd(SplitSubcommand::Move(Direction::Right), b)
+}
+fn parse_split_move_up(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    split_cmd(SplitSubcommand::Move(Direction::Up), b)
+}
+fn parse_split_move_down(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    split_cmd(SplitSubcommand::Move(Direction::Down), b)
+}
+fn parse_split_exchange(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    split_cmd(SplitSubcommand::Exchange, b)
+}
+fn parse_split_prev(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    split_cmd(SplitSubcommand::PreviousWindow, b)
+}
+fn parse_split_equalize(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    split_cmd(SplitSubcommand::Equalize, b)
+}
+
+fn parse_vsplit_move_left(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    vsplit_cmd(SplitSubcommand::Move(Direction::Left), b)
+}
+fn parse_vsplit_move_right(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    vsplit_cmd(SplitSubcommand::Move(Direction::Right), b)
+}
+fn parse_vsplit_move_up(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    vsplit_cmd(SplitSubcommand::Move(Direction::Up), b)
+}
+fn parse_vsplit_move_down(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    vsplit_cmd(SplitSubcommand::Move(Direction::Down), b)
+}
+fn parse_vsplit_exchange(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    vsplit_cmd(SplitSubcommand::Exchange, b)
+}
+fn parse_vsplit_prev(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+    vsplit_cmd(SplitSubcommand::PreviousWindow, b)
+}
+
 const SPLIT_SUB_DESC: &[CommandDescriptor] = &[
     CommandDescriptor {
         name: "left",
@@ -739,6 +780,69 @@ const SPLIT_SUB_DESC: &[CommandDescriptor] = &[
         aliases: &[],
         description: "Resize pane",
         factory: Some(parse_split_resize),
+        subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "move-left",
+        aliases: &["H"],
+        description: "Move window to the left",
+        factory: Some(parse_split_move_left),
+        subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "move-right",
+        aliases: &["L"],
+        description: "Move window to the right",
+        factory: Some(parse_split_move_right),
+        subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "move-up",
+        aliases: &["K"],
+        description: "Move window upward",
+        factory: Some(parse_split_move_up),
+        subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "move-down",
+        aliases: &["J"],
+        description: "Move window downward",
+        factory: Some(parse_split_move_down),
+        subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "exchange",
+        aliases: &["x"],
+        description: "Swap focused window with previous window",
+        factory: Some(parse_split_exchange),
+        subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "prev",
+        aliases: &["w"],
+        description: "Focus previously focused window",
+        factory: Some(parse_split_prev),
+        subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "equalize",
+        aliases: &["=", "eq"],
+        description: "Make all windows equal size",
+        factory: Some(parse_split_equalize),
         subcommands: &[],
         completion: CompletionHint::None,
         subcommand_prefix: "",
@@ -787,6 +891,60 @@ const VSPLIT_SUB_DESC: &[CommandDescriptor] = &[
         aliases: &[],
         description: "Resize pane",
         factory: Some(parse_vsplit_resize),
+        subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "move-left",
+        aliases: &["H"],
+        description: "Move window to the left",
+        factory: Some(parse_vsplit_move_left),
+        subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "move-right",
+        aliases: &["L"],
+        description: "Move window to the right",
+        factory: Some(parse_vsplit_move_right),
+        subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "move-up",
+        aliases: &["K"],
+        description: "Move window upward",
+        factory: Some(parse_vsplit_move_up),
+        subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "move-down",
+        aliases: &["J"],
+        description: "Move window downward",
+        factory: Some(parse_vsplit_move_down),
+        subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "exchange",
+        aliases: &["x"],
+        description: "Swap focused window with previous window",
+        factory: Some(parse_vsplit_exchange),
+        subcommands: &[],
+        completion: CompletionHint::None,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "prev",
+        aliases: &["w"],
+        description: "Focus previously focused window",
+        factory: Some(parse_vsplit_prev),
         subcommands: &[],
         completion: CompletionHint::None,
         subcommand_prefix: "",

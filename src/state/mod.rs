@@ -105,6 +105,8 @@ pub struct UserSettings {
     pub wrap_width: Option<usize>,
     /// Maximum number of entries in the clipboard ring
     pub clipboard_ring_size: usize,
+    /// When true, ^w= distributes space proportionally to leaf count instead of 50/50
+    pub equalize_proportional: bool,
 }
 
 impl UserSettings {
@@ -126,6 +128,7 @@ impl UserSettings {
             soft_wrap: true,
             wrap_width: None,
             clipboard_ring_size: crate::clipboard::DEFAULT_RING_CAPACITY,
+            equalize_proportional: false,
         };
 
         // Apply default Dark theme
