@@ -1252,8 +1252,5 @@ fn test_cursor_column_at_no_invisible_gives_raw_column() {
     buf.insert_str("abcde").unwrap();
     let _ = buf.set_cursor(3);
 
-    assert_eq!(
-        calculate_cursor_column_at(&buf, 0, 4, buf.cursor(), &[]),
-        3,
-    );
+    assert_eq!(calculate_cursor_column_at(&buf, 0, 4, buf.cursor(), &[]), 3,);
 }

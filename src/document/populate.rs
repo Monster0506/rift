@@ -266,8 +266,11 @@ impl Document {
             }
         };
 
-        let id_map: std::collections::HashMap<u16, &DirEntry> =
-            entries.iter().filter(|e| e.id != 0).map(|e| (e.id, e)).collect();
+        let id_map: std::collections::HashMap<u16, &DirEntry> = entries
+            .iter()
+            .filter(|e| e.id != 0)
+            .map(|e| (e.id, e))
+            .collect();
 
         let content = self.buffer.to_string();
 

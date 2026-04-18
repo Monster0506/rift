@@ -220,10 +220,11 @@ impl<T: TerminalBackend> Editor<T> {
             self.split_tree.focused_window_mut().cursor_position = cursor;
         }
 
-        self.plugin_host.dispatch(&crate::plugin::EditorEvent::WinLeave {
-            win: old_win_id,
-            buf: old_doc_id,
-        });
+        self.plugin_host
+            .dispatch(&crate::plugin::EditorEvent::WinLeave {
+                win: old_win_id,
+                buf: old_doc_id,
+            });
         self.apply_plugin_mutations();
 
         self.split_tree.set_focus(target_id);
@@ -237,10 +238,11 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.sync_state_with_active_document();
 
-        self.plugin_host.dispatch(&crate::plugin::EditorEvent::WinEnter {
-            win: target_id,
-            buf: new_doc_id,
-        });
+        self.plugin_host
+            .dispatch(&crate::plugin::EditorEvent::WinEnter {
+                win: target_id,
+                buf: new_doc_id,
+            });
         self.apply_plugin_mutations();
     }
 

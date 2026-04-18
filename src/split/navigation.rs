@@ -72,7 +72,7 @@ fn navigate_from(
         // Tie-break by leftmost left-edge for Up/Down, topmost top-edge for Left/Right.
         let tiebreaker = match direction {
             Direction::Left | Direction::Right => candidate.row,
-            Direction::Up   | Direction::Down  => candidate.col,
+            Direction::Up | Direction::Down => candidate.col,
         };
 
         let better = match best {

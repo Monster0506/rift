@@ -588,7 +588,10 @@ fn move_window_no_neighbor_flips_parent_direction() {
     let new_layouts = tree.compute_layout(24, 81);
     let l1 = new_layouts.iter().find(|l| l.window_id == w1).unwrap();
     let l2 = new_layouts.iter().find(|l| l.window_id == w2).unwrap();
-    assert!(l2.col > l1.col, "w2 should be to the right of w1 after flip");
+    assert!(
+        l2.col > l1.col,
+        "w2 should be to the right of w1 after flip"
+    );
 }
 
 #[test]
@@ -606,7 +609,10 @@ fn move_window_no_neighbor_flip_left_swaps_children() {
     let new_layouts = tree.compute_layout(24, 81);
     let l1 = new_layouts.iter().find(|l| l.window_id == w1).unwrap();
     let l2 = new_layouts.iter().find(|l| l.window_id == w2).unwrap();
-    assert!(l2.col < l1.col, "w2 should be to the left of w1 after flip+swap");
+    assert!(
+        l2.col < l1.col,
+        "w2 should be to the left of w1 after flip+swap"
+    );
 }
 
 #[test]
@@ -632,8 +638,11 @@ fn move_window_no_neighbor_preserves_ratio() {
     // The ratio in the tree is preserved: the second child's share should match
     // what it was before (within rounding).
     let ratio_before = l2_before as f64 / total_before as f64;
-    let ratio_after  = l2_after as f64 / (l1_after + 1 + l2_after) as f64;
-    assert!((ratio_before - ratio_after).abs() < 0.05, "ratio should be approximately preserved");
+    let ratio_after = l2_after as f64 / (l1_after + 1 + l2_after) as f64;
+    assert!(
+        (ratio_before - ratio_after).abs() < 0.05,
+        "ratio should be approximately preserved"
+    );
 }
 
 // --- has-neighbor: re-insert adjacent ---
@@ -671,17 +680,24 @@ fn move_window_preserves_size_when_has_neighbor() {
     let new_layouts = tree.compute_layout(24, 81);
     let w1_cols_after = new_layouts.iter().find(|l| l.window_id == w1).unwrap().cols;
     // Allow ±2 cols tolerance for separator and rounding
-    assert!((w1_cols_after as i32 - w1_cols_before as i32).abs() <= 2,
-        "w1 cols before={w1_cols_before} after={w1_cols_after}");
+    assert!(
+        (w1_cols_after as i32 - w1_cols_before as i32).abs() <= 2,
+        "w1 cols before={w1_cols_before} after={w1_cols_after}"
+    );
 }
 
 // Helper: build H(V(w1,w2), w3) and return (tree, w1, w2, w3).
 // w1=top-left, w2=top-right, w3=full-width bottom.
-fn three_window_tree() -> (SplitTree, super::window::WindowId, super::window::WindowId, super::window::WindowId) {
+fn three_window_tree() -> (
+    SplitTree,
+    super::window::WindowId,
+    super::window::WindowId,
+    super::window::WindowId,
+) {
     let mut tree = SplitTree::new(1, 48, 80);
     let w1 = tree.focused_window_id();
     let w3 = tree.split(SplitDirection::Horizontal, w1, 3, 24, 80); // H(w1, w3)
-    let w2 = tree.split(SplitDirection::Vertical,   w1, 2, 24, 40); // H(V(w1,w2), w3)
+    let w2 = tree.split(SplitDirection::Vertical, w1, 2, 24, 40); // H(V(w1,w2), w3)
     (tree, w1, w2, w3)
 }
 

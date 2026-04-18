@@ -697,16 +697,28 @@ fn parse_vsplit_resize(
     )
 }
 
-fn parse_split_move_left(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+fn parse_split_move_left(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     split_cmd(SplitSubcommand::Move(Direction::Left), b)
 }
-fn parse_split_move_right(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+fn parse_split_move_right(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     split_cmd(SplitSubcommand::Move(Direction::Right), b)
 }
 fn parse_split_move_up(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
     split_cmd(SplitSubcommand::Move(Direction::Up), b)
 }
-fn parse_split_move_down(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+fn parse_split_move_down(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     split_cmd(SplitSubcommand::Move(Direction::Down), b)
 }
 fn parse_split_exchange(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
@@ -719,19 +731,35 @@ fn parse_split_equalize(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize
     split_cmd(SplitSubcommand::Equalize, b)
 }
 
-fn parse_vsplit_move_left(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+fn parse_vsplit_move_left(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Move(Direction::Left), b)
 }
-fn parse_vsplit_move_right(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+fn parse_vsplit_move_right(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Move(Direction::Right), b)
 }
 fn parse_vsplit_move_up(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Move(Direction::Up), b)
 }
-fn parse_vsplit_move_down(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+fn parse_vsplit_move_down(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Move(Direction::Down), b)
 }
-fn parse_vsplit_exchange(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {
+fn parse_vsplit_exchange(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    b: usize,
+) -> ParsedCommand {
     vsplit_cmd(SplitSubcommand::Exchange, b)
 }
 fn parse_vsplit_prev(_: &SettingsRegistry<UserSettings>, _: &[&str], b: usize) -> ParsedCommand {

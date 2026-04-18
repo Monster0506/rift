@@ -171,7 +171,10 @@ mod tests {
         std::fs::create_dir(&src).unwrap();
         let dst = dir.path().join("empty_copy");
         FsCopyJob::copy_recursive_pub(&src, &dst).unwrap();
-        assert!(dst.is_dir(), "empty directory must be created at destination");
+        assert!(
+            dst.is_dir(),
+            "empty directory must be created at destination"
+        );
     }
 
     #[test]

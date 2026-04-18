@@ -74,10 +74,16 @@ pub enum EditorEvent {
     UserEvent { name: String },
 
     /// A split window gained focus.
-    WinEnter { win: u64, buf: crate::document::DocumentId },
+    WinEnter {
+        win: u64,
+        buf: crate::document::DocumentId,
+    },
 
     /// A split window lost focus.
-    WinLeave { win: u64, buf: crate::document::DocumentId },
+    WinLeave {
+        win: u64,
+        buf: crate::document::DocumentId,
+    },
 
     /// A window was repositioned via ^WH/J/K/L move.
     WinMoved { win: u64 },

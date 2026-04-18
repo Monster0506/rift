@@ -819,6 +819,70 @@ fn render_node_dividers(
     }
 }
 
+pub(crate) fn highlight_focused_window_border(
+    layer: &mut Layer,
+    layout: &crate::split::layout::WindowLayout,
+    content_rows: usize,
+    total_cols: usize,
+    fg: Option<Color>,
+    bg: Option<Color>,
+) {
+    let is_divider = |ch: char| ch == '│' || ch == '─';
+
+    if layout.col > 0 {
+        let bc = layout.col - 1;
+        for r in layout.row..layout.row + layout.rows {
+            if layer
+                .get_cell(r, bc)
+                .map_or(false, |c| is_divider(c.content.to_char_lossy()))
+            {
+                layer.set_cell(r, bc, Cell::new(Character::from('│')).with_colors(fg, bg));
+            }
+        }
+    }
+    let right = layout.col + layout.cols;
+    if right < total_cols {
+        for r in layout.row..layout.row + layout.rows {
+            if layer
+                .get_cell(r, right)
+                .map_or(false, |c| is_divider(c.content.to_char_lossy()))
+            {
+                layer.set_cell(
+                    r,
+                    right,
+                    Cell::new(Character::from('│')).with_colors(fg, bg),
+                );
+            }
+        }
+    }
+    if layout.row > 0 {
+        let br = layout.row - 1;
+        for c in layout.col..layout.col + layout.cols {
+            if layer
+                .get_cell(br, c)
+                .map_or(false, |c2| is_divider(c2.content.to_char_lossy()))
+            {
+                layer.set_cell(br, c, Cell::new(Character::from('─')).with_colors(fg, bg));
+            }
+        }
+    }
+    let bottom = layout.row + layout.rows;
+    if bottom < content_rows {
+        for c in layout.col..layout.col + layout.cols {
+            if layer
+                .get_cell(bottom, c)
+                .map_or(false, |c2| is_divider(c2.content.to_char_lossy()))
+            {
+                layer.set_cell(
+                    bottom,
+                    c,
+                    Cell::new(Character::from('─')).with_colors(fg, bg),
+                );
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;

@@ -100,14 +100,10 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for InvisibleFilter<'a, I> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let item = self.input.next()?;
-            while self.idx < self.ranges.len()
-                && self.ranges[self.idx].end <= item.byte_offset
-            {
+            while self.idx < self.ranges.len() && self.ranges[self.idx].end <= item.byte_offset {
                 self.idx += 1;
             }
-            if self.idx < self.ranges.len()
-                && self.ranges[self.idx].start <= item.byte_offset
-            {
+            if self.idx < self.ranges.len() && self.ranges[self.idx].start <= item.byte_offset {
                 continue;
             }
             return Some(item);

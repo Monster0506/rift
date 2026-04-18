@@ -348,7 +348,9 @@ fn set_equalize_proportional(
             settings.equalize_proportional = b;
             Ok(())
         }
-        _ => Err(SettingError::ValidationError("Expected boolean".to_string())),
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
     }
 }
 

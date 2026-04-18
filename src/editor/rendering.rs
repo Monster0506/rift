@@ -562,6 +562,26 @@ impl<T: TerminalBackend> Editor<T> {
             state.settings.editor_bg,
         );
 
+        if layouts.len() > 1 {
+            if let Some(fl) = layouts.iter().find(|l| l.window_id == focused_id) {
+                let focused_border_fg = state
+                    .settings
+                    .editor_fg
+                    .or(Some(crate::color::Color::White));
+                let content_layer = render_system
+                    .compositor
+                    .get_layer_mut(crate::layer::LayerPriority::CONTENT);
+                render::highlight_focused_window_border(
+                    content_layer,
+                    fl,
+                    content_rows,
+                    total_cols,
+                    focused_border_fg,
+                    state.settings.editor_bg,
+                );
+            }
+        }
+
         let focused_layout = layouts.iter().find(|l| l.window_id == focused_id).cloned();
 
         let focused_window = split_tree.focused_window();

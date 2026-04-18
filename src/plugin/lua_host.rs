@@ -916,7 +916,11 @@ impl LuaHost {
                         "right" => Direction::Right,
                         "up" => Direction::Up,
                         "down" => Direction::Down,
-                        _ => return Err(mlua::Error::RuntimeError(format!("unknown direction: {dir}"))),
+                        _ => {
+                            return Err(mlua::Error::RuntimeError(format!(
+                                "unknown direction: {dir}"
+                            )))
+                        }
                     };
                     sh.lock()
                         .unwrap_or_else(|e| e.into_inner())
@@ -961,10 +965,10 @@ impl LuaHost {
                     let t = lua.create_table()?;
                     for (i, w) in s.win_list.iter().enumerate() {
                         let entry = lua.create_table()?;
-                        entry.set("id",   w.id as i64)?;
-                        entry.set("buf",  w.buf as i64)?;
-                        entry.set("row",  w.row as i64)?;
-                        entry.set("col",  w.col as i64)?;
+                        entry.set("id", w.id as i64)?;
+                        entry.set("buf", w.buf as i64)?;
+                        entry.set("row", w.row as i64)?;
+                        entry.set("col", w.col as i64)?;
                         entry.set("rows", w.rows as i64)?;
                         entry.set("cols", w.cols as i64)?;
                         t.set(i + 1, entry)?;
@@ -987,7 +991,9 @@ impl LuaHost {
             {
                 let sh = Arc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
-                    Ok(sh.lock().unwrap_or_else(|e| e.into_inner())
+                    Ok(sh
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
                         .previous_win_id
                         .map(|id| id as i64))
                 })?;
@@ -1004,7 +1010,11 @@ impl LuaHost {
                         "right" => ":split :r",
                         "up" => ":split :u",
                         "down" => ":split :d",
-                        _ => return Err(mlua::Error::RuntimeError(format!("unknown direction: {dir}"))),
+                        _ => {
+                            return Err(mlua::Error::RuntimeError(format!(
+                                "unknown direction: {dir}"
+                            )))
+                        }
                     };
                     sh.lock()
                         .unwrap_or_else(|e| e.into_inner())
