@@ -448,7 +448,9 @@ impl FromStr for Action {
             "terminal:scroll_up" => Ok(Action::Editor(EditorAction::TerminalScrollback(5))),
             "terminal:scroll_down" => Ok(Action::Editor(EditorAction::TerminalScrollback(-5))),
             "terminal:scroll_page_up" => Ok(Action::Editor(EditorAction::TerminalScrollback(20))),
-            "terminal:scroll_page_down" => Ok(Action::Editor(EditorAction::TerminalScrollback(-20))),
+            "terminal:scroll_page_down" => {
+                Ok(Action::Editor(EditorAction::TerminalScrollback(-20)))
+            }
             "undotree:open" => Ok(Action::Editor(EditorAction::OpenUndoTree)),
             "terminal:open" => Ok(Action::Editor(EditorAction::OpenTerminal(None))),
             "messages:open" => Ok(Action::Editor(EditorAction::OpenMessages)),

@@ -109,7 +109,9 @@ pub enum PluginMutation {
     /// Close the current buffer. `force` discards unsaved changes.
     CloseBuffer { force: bool },
     /// Move the focused window in the given direction.
-    MoveWindow { direction: crate::split::navigation::Direction },
+    MoveWindow {
+        direction: crate::split::navigation::Direction,
+    },
     /// Swap the contents of the focused window with the previously focused window.
     SwapWindows,
     /// Focus the previously focused window.

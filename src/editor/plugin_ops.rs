@@ -112,7 +112,9 @@ impl<T: TerminalBackend> Editor<T> {
         let win_list: Vec<crate::plugin::lua_host::WinEntry> = win_layouts
             .iter()
             .map(|l| {
-                let buf = self.split_tree.get_window(l.window_id)
+                let buf = self
+                    .split_tree
+                    .get_window(l.window_id)
                     .map(|w| w.document_id as usize)
                     .unwrap_or(0);
                 crate::plugin::lua_host::WinEntry {
@@ -486,11 +488,14 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 PluginMutation::MoveWindow { direction } => {
                     let size = self.term.get_size().unwrap();
-                    let layouts = self.split_tree.compute_layout(size.rows as usize, size.cols as usize);
+                    let layouts = self
+                        .split_tree
+                        .compute_layout(size.rows as usize, size.cols as usize);
                     let moved_id = self.split_tree.focused_window_id();
                     if self.split_tree.move_window(direction, &layouts) {
                         self.render_system.viewport.mark_needs_full_redraw();
-                        self.plugin_host.dispatch(&crate::plugin::EditorEvent::WinMoved { win: moved_id });
+                        self.plugin_host
+                            .dispatch(&crate::plugin::EditorEvent::WinMoved { win: moved_id });
                     }
                 }
                 PluginMutation::SwapWindows => {
@@ -505,10 +510,11 @@ impl<T: TerminalBackend> Editor<T> {
                             }
                             self.sync_state_with_active_document();
                             self.render_system.viewport.mark_needs_full_redraw();
-                            self.plugin_host.dispatch(&crate::plugin::EditorEvent::WinSwapped {
-                                win1: focused_id,
-                                win2: prev_id,
-                            });
+                            self.plugin_host
+                                .dispatch(&crate::plugin::EditorEvent::WinSwapped {
+                                    win1: focused_id,
+                                    win2: prev_id,
+                                });
                         }
                     }
                 }

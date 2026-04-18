@@ -540,7 +540,11 @@ fn test_parse_diff_move_one_of_two_files_into_subdir() {
     set_buffer_text(&mut doc, "../\n/001 A/\n/002 b.c\n/003 A/c.d");
 
     let diff = doc.parse_directory_diff();
-    assert!(diff.deletes.is_empty(), "nothing should be deleted: {:?}", diff);
+    assert!(
+        diff.deletes.is_empty(),
+        "nothing should be deleted: {:?}",
+        diff
+    );
     assert_eq!(diff.renames.len(), 1, "exactly one rename: {:?}", diff);
     assert!(
         diff.renames[0].0.to_string_lossy().contains("c.d"),
@@ -1144,7 +1148,10 @@ fn test_invisible_ranges_none_for_header_line() {
 #[test]
 fn test_invisible_ranges_count_matches_entries() {
     let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    let entries = make_dir_entries(&[("a.txt", false), ("b.txt", false), ("c.txt", false)], "/tmp");
+    let entries = make_dir_entries(
+        &[("a.txt", false), ("b.txt", false), ("c.txt", false)],
+        "/tmp",
+    );
     doc.populate_directory_buffer(entries);
     assert_eq!(doc.invisible_ranges.len(), 3);
 }
@@ -1161,13 +1168,15 @@ fn test_invisible_ranges_first_entry_offset() {
 #[test]
 fn test_invisible_ranges_each_is_five_bytes() {
     let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    let entries = make_dir_entries(
-        &[("a.rs", false), ("b.rs", false), ("c.rs", false)],
-        "/tmp",
-    );
+    let entries = make_dir_entries(&[("a.rs", false), ("b.rs", false), ("c.rs", false)], "/tmp");
     doc.populate_directory_buffer(entries);
     for r in &doc.invisible_ranges {
-        assert_eq!(r.end - r.start, 5, "each invisible range must be 5 bytes: {:?}", r);
+        assert_eq!(
+            r.end - r.start,
+            5,
+            "each invisible range must be 5 bytes: {:?}",
+            r
+        );
     }
 }
 
@@ -1228,7 +1237,11 @@ fn test_clamp_cursor_at_range_start_advances_to_end() {
     // Move cursor to char 4 (start of invisible prefix).
     let _ = doc.buffer.set_cursor(4);
     doc.clamp_cursor_past_invisible();
-    assert_eq!(doc.buffer.cursor(), 9, "cursor clamped past 5-byte prefix to char 9");
+    assert_eq!(
+        doc.buffer.cursor(),
+        9,
+        "cursor clamped past 5-byte prefix to char 9"
+    );
 }
 
 #[test]
@@ -1256,11 +1269,16 @@ fn test_clamp_cursor_after_range_is_noop() {
 #[test]
 fn test_parse_diff_reorder_without_rename_produces_no_diff() {
     // The ID system: swapping order of lines does not change IDs → no renames.
-    let mut doc = make_populated_directory_doc("/tmp", &[("alpha.txt", false), ("beta.txt", false)]);
+    let mut doc =
+        make_populated_directory_doc("/tmp", &[("alpha.txt", false), ("beta.txt", false)]);
     // Swap order but keep IDs — both names unchanged.
     set_buffer_text(&mut doc, "../\n/002 beta.txt\n/001 alpha.txt");
     let diff = doc.parse_directory_diff();
-    assert!(diff.renames.is_empty(), "reorder without name change → no renames: {:?}", diff);
+    assert!(
+        diff.renames.is_empty(),
+        "reorder without name change → no renames: {:?}",
+        diff
+    );
     assert!(diff.deletes.is_empty());
     assert!(diff.creates.is_empty());
 }
@@ -1276,10 +1294,22 @@ fn test_parse_diff_entry_with_zero_id_silently_ignored() {
     let _ = doc.buffer.insert_str("\n/000 ghost.txt");
     let diff = doc.parse_directory_diff();
     // Existing entry "real.txt" (id=1) is still present → no deletes.
-    assert!(diff.deletes.is_empty(), "real.txt should not be deleted: {:?}", diff);
+    assert!(
+        diff.deletes.is_empty(),
+        "real.txt should not be deleted: {:?}",
+        diff
+    );
     // "/000 " is parsed as an ID line (not a raw create).
-    assert!(diff.creates.is_empty(), "id=0 line must not become a create: {:?}", diff);
-    assert!(diff.renames.is_empty(), "id=0 line must not become a rename: {:?}", diff);
+    assert!(
+        diff.creates.is_empty(),
+        "id=0 line must not become a create: {:?}",
+        diff
+    );
+    assert!(
+        diff.renames.is_empty(),
+        "id=0 line must not become a rename: {:?}",
+        diff
+    );
 }
 
 #[test]
@@ -1291,7 +1321,12 @@ fn test_parse_diff_all_entries_deleted() {
     // Buffer only contains the header — all entry IDs absent → all deleted.
     set_buffer_text(&mut doc, "../");
     let diff = doc.parse_directory_diff();
-    assert_eq!(diff.deletes.len(), 3, "all three entries deleted: {:?}", diff);
+    assert_eq!(
+        diff.deletes.len(),
+        3,
+        "all three entries deleted: {:?}",
+        diff
+    );
     assert!(diff.renames.is_empty());
     assert!(diff.creates.is_empty());
 }
@@ -1379,8 +1414,11 @@ fn test_parse_diff_dotdot_line_is_always_filtered() {
     set_buffer_text(&mut doc, "../\n/001 a.txt\n../");
 
     let diff = doc.parse_directory_diff();
-    assert!(!diff.creates.iter().any(|c| c == "../"),
-        "dotdot must never appear in creates: {:?}", diff.creates);
+    assert!(
+        !diff.creates.iter().any(|c| c == "../"),
+        "dotdot must never appear in creates: {:?}",
+        diff.creates
+    );
     assert!(diff.deletes.is_empty());
     assert!(diff.renames.is_empty());
 }
@@ -1391,8 +1429,11 @@ fn test_parse_diff_whitespace_only_line_not_a_create() {
     set_buffer_text(&mut doc, "../\n/001 a.txt\n   ");
 
     let diff = doc.parse_directory_diff();
-    assert!(diff.creates.is_empty(),
-        "whitespace-only line must not become a create: {:?}", diff.creates);
+    assert!(
+        diff.creates.is_empty(),
+        "whitespace-only line must not become a create: {:?}",
+        diff.creates
+    );
 }
 
 #[test]
@@ -1408,8 +1449,10 @@ fn test_parse_diff_rename_to_empty_visible_name_is_ignored() {
     // This is a known edge case: the rename target is empty, which apply_directory_diff must guard.
     // Here we just verify the diff is consistent (either no rename or exactly one rename to "").
     if !diff.renames.is_empty() {
-        assert_eq!(diff.renames[0].1, "",
-            "if rename produced, target must be empty string not garbage");
+        assert_eq!(
+            diff.renames[0].1, "",
+            "if rename produced, target must be empty string not garbage"
+        );
     }
 }
 
@@ -1421,8 +1464,11 @@ fn test_parse_diff_id_only_line_no_trailing_text_not_counted_as_create() {
     set_buffer_text(&mut doc, "../\n/001 ");
 
     let diff = doc.parse_directory_diff();
-    assert!(diff.creates.is_empty(),
-        "line with only an ID prefix must not be a create: {:?}", diff.creates);
+    assert!(
+        diff.creates.is_empty(),
+        "line with only an ID prefix must not be a create: {:?}",
+        diff.creates
+    );
 }
 
 #[test]
@@ -1433,8 +1479,11 @@ fn test_parse_diff_line_with_path_separator_is_create() {
     set_buffer_text(&mut doc, "../\nsub/file.txt");
 
     let diff = doc.parse_directory_diff();
-    assert!(diff.creates.iter().any(|c| c == "sub/file.txt"),
-        "path with separator must be a create: {:?}", diff.creates);
+    assert!(
+        diff.creates.iter().any(|c| c == "sub/file.txt"),
+        "path with separator must be a create: {:?}",
+        diff.creates
+    );
 }
 
 #[test]
@@ -1444,7 +1493,10 @@ fn test_parse_diff_many_entries_ids_are_stable() {
     let names: Vec<(&str, bool)> = (0..100).map(|_| ("x.txt", false)).collect();
     let doc = make_populated_directory_doc("/tmp", &names);
     let diff = doc.parse_directory_diff();
-    assert!(diff.renames.is_empty(), "unmodified buffer must have no renames");
+    assert!(
+        diff.renames.is_empty(),
+        "unmodified buffer must have no renames"
+    );
     assert!(diff.deletes.is_empty());
     assert!(diff.creates.is_empty());
 }
@@ -1473,6 +1525,9 @@ fn test_clamp_cursor_multiple_ranges_advances_to_correct_range() {
     let second_range = &doc.invisible_ranges[1].clone();
     let _ = doc.buffer.set_cursor(second_range.start);
     doc.clamp_cursor_past_invisible();
-    assert_eq!(doc.buffer.cursor(), second_range.end,
-        "cursor must advance to end of the second invisible range");
+    assert_eq!(
+        doc.buffer.cursor(),
+        second_range.end,
+        "cursor must advance to end of the second invisible range"
+    );
 }

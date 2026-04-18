@@ -166,7 +166,10 @@ impl Terminal {
 
     pub fn scroll_display(&self, delta: i32) {
         use alacritty_terminal::grid::Scroll;
-        self.term.lock().grid_mut().scroll_display(Scroll::Delta(delta));
+        self.term
+            .lock()
+            .grid_mut()
+            .scroll_display(Scroll::Delta(delta));
     }
 
     pub fn scroll_to_bottom(&self) {
@@ -188,7 +191,8 @@ impl Terminal {
         // Cursor line relative to the currently visible window (may be off-screen when scrolled).
         let cursor_abs = cursor_point.line.0;
         let cursor_line_in_view = cursor_abs + display_offset;
-        let cursor_line = if cursor_line_in_view >= 0 && (cursor_line_in_view as usize) < num_lines {
+        let cursor_line = if cursor_line_in_view >= 0 && (cursor_line_in_view as usize) < num_lines
+        {
             cursor_line_in_view as usize
         } else {
             num_lines // sentinel: cursor not visible in current scroll position

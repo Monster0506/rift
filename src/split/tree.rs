@@ -172,7 +172,11 @@ impl SplitTree {
         }
     }
 
-    pub fn move_window(&mut self, direction: Direction, layouts: &[super::layout::WindowLayout]) -> bool {
+    pub fn move_window(
+        &mut self,
+        direction: Direction,
+        layouts: &[super::layout::WindowLayout],
+    ) -> bool {
         if self.windows.len() <= 1 {
             return false;
         }
@@ -184,10 +188,10 @@ impl SplitTree {
             layouts.iter().map(|l| (l.window_id, l.cols)).collect();
 
         let (split_dir, focused_is_first) = match direction {
-            Direction::Left  => (SplitDirection::Vertical,   true),
-            Direction::Right => (SplitDirection::Vertical,   false),
-            Direction::Up    => (SplitDirection::Horizontal, true),
-            Direction::Down  => (SplitDirection::Horizontal, false),
+            Direction::Left => (SplitDirection::Vertical, true),
+            Direction::Right => (SplitDirection::Vertical, false),
+            Direction::Up => (SplitDirection::Horizontal, true),
+            Direction::Down => (SplitDirection::Horizontal, false),
         };
 
         if let Some(nid) = neighbor_id {
@@ -205,15 +209,18 @@ impl SplitTree {
                 0.5,
             );
             Self::rebalance_cols(&mut self.root, &desired_cols);
-        } else if Self::is_correctly_positioned(&self.root, focused_id, split_dir, focused_is_first) {
-            let w_size = layouts.iter().find(|l| l.window_id == focused_id)
+        } else if Self::is_correctly_positioned(&self.root, focused_id, split_dir, focused_is_first)
+        {
+            let w_size = layouts
+                .iter()
+                .find(|l| l.window_id == focused_id)
                 .map(|l| match split_dir {
-                    SplitDirection::Vertical   => l.cols,
+                    SplitDirection::Vertical => l.cols,
                     SplitDirection::Horizontal => l.rows,
                 })
                 .unwrap_or(1);
             let total = match split_dir {
-                SplitDirection::Vertical   => layouts.iter().map(|l| l.cols).max().unwrap_or(1),
+                SplitDirection::Vertical => layouts.iter().map(|l| l.cols).max().unwrap_or(1),
                 SplitDirection::Horizontal => layouts.iter().map(|l| l.rows).max().unwrap_or(1),
             };
             let ratio = if focused_is_first {
@@ -231,14 +238,14 @@ impl SplitTree {
                 SplitNode::Split {
                     direction: split_dir,
                     ratio,
-                    first:  Box::new(SplitNode::Leaf(focused_id)),
+                    first: Box::new(SplitNode::Leaf(focused_id)),
                     second: Box::new(old_root),
                 }
             } else {
                 SplitNode::Split {
                     direction: split_dir,
                     ratio,
-                    first:  Box::new(old_root),
+                    first: Box::new(old_root),
                     second: Box::new(SplitNode::Leaf(focused_id)),
                 }
             };
@@ -251,26 +258,35 @@ impl SplitTree {
         true
     }
 
-    fn flip_parent_direction(node: &mut SplitNode, target_id: WindowId, direction: Direction) -> bool {
+    fn flip_parent_direction(
+        node: &mut SplitNode,
+        target_id: WindowId,
+        direction: Direction,
+    ) -> bool {
         match node {
             SplitNode::Leaf(_) => false,
-            SplitNode::Split { direction: d, first, second, .. } => {
-                let in_first  = Self::contains_window(first,  target_id);
+            SplitNode::Split {
+                direction: d,
+                first,
+                second,
+                ..
+            } => {
+                let in_first = Self::contains_window(first, target_id);
                 let in_second = Self::contains_window(second, target_id);
 
                 if !in_first && !in_second {
                     return false;
                 }
 
-                let is_first_leaf  = matches!(&**first,  SplitNode::Leaf(id) if *id == target_id);
+                let is_first_leaf = matches!(&**first,  SplitNode::Leaf(id) if *id == target_id);
                 let is_second_leaf = matches!(&**second, SplitNode::Leaf(id) if *id == target_id);
 
                 if is_first_leaf || is_second_leaf {
                     let (new_dir, should_be_first) = match direction {
-                        Direction::Left  => (SplitDirection::Vertical,   true),
-                        Direction::Right => (SplitDirection::Vertical,   false),
-                        Direction::Up    => (SplitDirection::Horizontal, true),
-                        Direction::Down  => (SplitDirection::Horizontal, false),
+                        Direction::Left => (SplitDirection::Vertical, true),
+                        Direction::Right => (SplitDirection::Vertical, false),
+                        Direction::Up => (SplitDirection::Horizontal, true),
+                        Direction::Down => (SplitDirection::Horizontal, false),
                     };
                     *d = new_dir;
                     if should_be_first != is_first_leaf {
@@ -314,11 +330,30 @@ impl SplitTree {
                     }
                 }
             }
-            SplitNode::Split { direction: d, ratio: r, first, second } => SplitNode::Split {
+            SplitNode::Split {
                 direction: d,
                 ratio: r,
-                first:  Box::new(Self::insert_adjacent(*first,  target_id, direction, new_id, new_is_first, ratio)),
-                second: Box::new(Self::insert_adjacent(*second, target_id, direction, new_id, new_is_first, ratio)),
+                first,
+                second,
+            } => SplitNode::Split {
+                direction: d,
+                ratio: r,
+                first: Box::new(Self::insert_adjacent(
+                    *first,
+                    target_id,
+                    direction,
+                    new_id,
+                    new_is_first,
+                    ratio,
+                )),
+                second: Box::new(Self::insert_adjacent(
+                    *second,
+                    target_id,
+                    direction,
+                    new_id,
+                    new_is_first,
+                    ratio,
+                )),
             },
             other => other,
         }
@@ -446,8 +481,13 @@ impl SplitTree {
     ) -> bool {
         match node {
             SplitNode::Leaf(_) => false,
-            SplitNode::Split { direction, first, second, .. } => {
-                let is_first_leaf  = matches!(&**first,  SplitNode::Leaf(id) if *id == target_id);
+            SplitNode::Split {
+                direction,
+                first,
+                second,
+                ..
+            } => {
+                let is_first_leaf = matches!(&**first,  SplitNode::Leaf(id) if *id == target_id);
                 let is_second_leaf = matches!(&**second, SplitNode::Leaf(id) if *id == target_id);
                 if is_first_leaf && *direction == expected_dir && should_be_first {
                     return true;
@@ -455,8 +495,13 @@ impl SplitTree {
                 if is_second_leaf && *direction == expected_dir && !should_be_first {
                     return true;
                 }
-                Self::is_correctly_positioned(first,  target_id, expected_dir, should_be_first)
-                    || Self::is_correctly_positioned(second, target_id, expected_dir, should_be_first)
+                Self::is_correctly_positioned(first, target_id, expected_dir, should_be_first)
+                    || Self::is_correctly_positioned(
+                        second,
+                        target_id,
+                        expected_dir,
+                        should_be_first,
+                    )
             }
         }
     }
@@ -473,7 +518,13 @@ impl SplitTree {
     fn rebalance_cols(node: &mut SplitNode, desired: &std::collections::HashMap<WindowId, usize>) {
         match node {
             SplitNode::Leaf(_) => {}
-            SplitNode::Split { direction, ratio, first, second, .. } => {
+            SplitNode::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => {
                 if *direction == SplitDirection::Vertical {
                     let fs = Self::sum_leaf_cols(first, desired);
                     let ss = Self::sum_leaf_cols(second, desired);
@@ -488,10 +539,18 @@ impl SplitTree {
         }
     }
 
-    fn sum_leaf_cols(node: &SplitNode, desired: &std::collections::HashMap<WindowId, usize>) -> usize {
+    fn sum_leaf_cols(
+        node: &SplitNode,
+        desired: &std::collections::HashMap<WindowId, usize>,
+    ) -> usize {
         match node {
             SplitNode::Leaf(id) => *desired.get(id).unwrap_or(&1),
-            SplitNode::Split { direction, first, second, .. } => {
+            SplitNode::Split {
+                direction,
+                first,
+                second,
+                ..
+            } => {
                 if *direction == SplitDirection::Vertical {
                     Self::sum_leaf_cols(first, desired) + Self::sum_leaf_cols(second, desired)
                 } else {
@@ -508,7 +567,12 @@ impl SplitTree {
     fn equalize_node(node: &mut SplitNode, proportional: bool) {
         match node {
             SplitNode::Leaf(_) => {}
-            SplitNode::Split { ratio, first, second, .. } => {
+            SplitNode::Split {
+                ratio,
+                first,
+                second,
+                ..
+            } => {
                 *ratio = if proportional {
                     let fc = Self::count_leaves(first) as f64;
                     let sc = Self::count_leaves(second) as f64;
