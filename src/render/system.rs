@@ -310,6 +310,7 @@ impl RenderSystem {
             tab_width: state.tab_width,
             highlights: state.highlights,
             capture_map: state.capture_map,
+            injection_highlights: state.injection_highlights,
             custom_highlights: state.custom_highlights,
             plugin_highlights: state.plugin_highlights,
             terminal_cell_colors: state.terminal_cell_colors,

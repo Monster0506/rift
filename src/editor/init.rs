@@ -129,10 +129,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = editor.document_manager.active_document_mut() {
             if let Some(path) = doc.path() {
                 let path = path.to_path_buf();
-                // Load language
                 if let Ok(loaded) = editor.language_loader.load_language_for_file(&path) {
-                    // Load and compile query
-                    // Load and compile query
                     let highlights_query = editor
                         .language_loader
                         .load_query(&loaded.name, "highlights")
@@ -140,28 +137,11 @@ impl<T: TerminalBackend> Editor<T> {
                         .and_then(|source| tree_sitter::Query::new(&loaded.language, &source).ok())
                         .map(Arc::new);
 
-                    if let Ok(syntax) = crate::syntax::Syntax::new(loaded, highlights_query) {
-                        doc.set_syntax(syntax);
-                        let doc_id = doc.id;
-                        editor.spawn_syntax_parse_job(doc_id);
-                    }
-                }
-            }
-        }
-
-        // Trigger initial syntax parse
-        if let Some(doc) = editor.document_manager.active_document_mut() {
-            if let Some(path) = doc.path() {
-                let path = path.to_path_buf();
-                // Load language
-                if let Ok(loaded) = editor.language_loader.load_language_for_file(&path) {
-                    let highlights = editor
-                        .language_loader
-                        .load_query(&loaded.name, "highlights")
-                        .ok()
-                        .and_then(|source| tree_sitter::Query::new(&loaded.language, &source).ok())
-                        .map(Arc::new);
-                    if let Ok(syntax) = crate::syntax::Syntax::new(loaded, highlights) {
+                    if let Ok(syntax) = crate::syntax::build_syntax(
+                        loaded,
+                        highlights_query,
+                        editor.language_loader.clone(),
+                    ) {
                         doc.set_syntax(syntax);
                         let doc_id = doc.id;
                         editor.spawn_syntax_parse_job(doc_id);

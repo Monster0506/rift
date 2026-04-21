@@ -38,7 +38,7 @@ impl Document {
         self.mark_dirty();
 
         if let Some(syntax) = &mut self.syntax {
-            syntax.tree = None;
+            syntax.invalidate_trees();
         }
         true
     }
@@ -65,7 +65,7 @@ impl Document {
         self.mark_dirty();
 
         if let Some(syntax) = &mut self.syntax {
-            syntax.tree = None;
+            syntax.invalidate_trees();
         }
         true
     }

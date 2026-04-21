@@ -1028,6 +1028,45 @@ impl LuaHost {
             api.set("windows", windows)?;
         }
 
+        // rift.register_filetype(ext, lang_name) — map a file extension to a language name
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, (ext, lang_name): (String, String)| {
+                sh.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .mutations
+                    .push(PluginMutation::RegisterFiletype { ext, lang_name });
+                Ok(())
+            })?;
+            api.set("register_filetype", f)?;
+        }
+
+        // rift.register_language_query(lang_name, query_src) — override highlights query
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, (lang_name, query_src): (String, String)| {
+                sh.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .mutations
+                    .push(PluginMutation::RegisterLanguageQuery { lang_name, query_src });
+                Ok(())
+            })?;
+            api.set("register_language_query", f)?;
+        }
+
+        // rift.register_injections_query(lang_name, query_src) — set injections query
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, (lang_name, query_src): (String, String)| {
+                sh.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .mutations
+                    .push(PluginMutation::RegisterInjectionsQuery { lang_name, query_src });
+                Ok(())
+            })?;
+            api.set("register_injections_query", f)?;
+        }
+
         lua.globals().set("rift", api)?;
 
         // Embedded Lua prelude — convenience wrappers that don't need Rust bindings.

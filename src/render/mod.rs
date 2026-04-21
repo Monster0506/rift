@@ -139,6 +139,8 @@ pub struct RenderState<'a> {
     pub tab_width: usize,
     pub highlights: Option<&'a [(std::ops::Range<usize>, u32)]>,
     pub capture_map: Option<&'a [&'a str]>,
+    /// Injection-layer highlights (capture name resolved, sorted by range start).
+    pub injection_highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
     pub skip_content: bool,
     pub cursor_row_offset: usize,
     pub cursor_col_offset: usize,
@@ -174,6 +176,8 @@ pub struct DrawContext<'a> {
     pub tab_width: usize,
     pub highlights: Option<&'a [(std::ops::Range<usize>, u32)]>,
     pub capture_map: Option<&'a [&'a str]>,
+    /// Injection-layer highlights (capture name resolved, sorted by range start).
+    pub injection_highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
     /// Per-document line number override (AND-ed with global setting).
     pub show_line_numbers: bool,
     pub display_map: Option<&'a DisplayMap>,
@@ -458,7 +462,13 @@ fn render_line(
         ctx.state.settings.syntax_colors.as_ref(),
         ctx.capture_map,
     );
-    let colored = pipeline::ColorDecorator::new(syntax, custom_highlights);
+    let injection_highlights = ctx.injection_highlights.unwrap_or(&[]);
+    let injected = pipeline::InjectionDecorator::new(
+        syntax,
+        injection_highlights,
+        ctx.state.settings.syntax_colors.as_ref(),
+    );
+    let colored = pipeline::ColorDecorator::new(injected, custom_highlights);
     let term_colored = pipeline::TerminalColorDecorator::new(colored, terminal_cell_colors);
     let plugin = pipeline::PluginHighlightDecorator::new(term_colored, plugin_highlights);
 

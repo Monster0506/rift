@@ -523,6 +523,15 @@ impl<T: TerminalBackend> Editor<T> {
                         self.switch_focus(target_id);
                     }
                 }
+                PluginMutation::RegisterFiletype { ext, lang_name } => {
+                    self.language_loader.register_filetype(&ext, &lang_name);
+                }
+                PluginMutation::RegisterLanguageQuery { lang_name, query_src } => {
+                    self.language_loader.register_language_query(&lang_name, &query_src);
+                }
+                PluginMutation::RegisterInjectionsQuery { lang_name, query_src } => {
+                    self.language_loader.register_injections_query(&lang_name, &query_src);
+                }
             }
         }
 

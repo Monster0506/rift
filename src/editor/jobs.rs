@@ -204,7 +204,11 @@ impl<T: TerminalBackend> Editor<T> {
                                     .ok()
                                     .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
                                     .map(Arc::new);
-                                if let Ok(syntax) = crate::syntax::Syntax::new(loaded, highlights) {
+                                if let Ok(syntax) = crate::syntax::build_syntax(
+                                    loaded,
+                                    highlights,
+                                    self.language_loader.clone(),
+                                ) {
                                     if let Some(doc) = self.document_manager.get_document_mut(preview_doc_id) {
                                         doc.set_syntax(syntax);
                                         // Synchronously parse so highlights are ready for the
@@ -302,7 +306,11 @@ impl<T: TerminalBackend> Editor<T> {
                                     })
                                     .map(Arc::new);
 
-                                if let Ok(syntax) = crate::syntax::Syntax::new(loaded, highlights) {
+                                if let Ok(syntax) = crate::syntax::build_syntax(
+                                    loaded,
+                                    highlights,
+                                    self.language_loader.clone(),
+                                ) {
                                     if let Some(doc) =
                                         self.document_manager.get_document_mut(res.document_id)
                                     {
@@ -357,8 +365,13 @@ impl<T: TerminalBackend> Editor<T> {
                     Ok(result) => {
                         let doc_id = result.document_id;
                         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                            let source = doc.buffer.to_logical_bytes();
                             if let Some(syntax) = &mut doc.syntax {
                                 syntax.update_from_result(*result);
+                                // Re-run injection parsing against the live source.
+                                // The background job only parses the host grammar, so
+                                // injections must be derived here from the current buffer.
+                                syntax.parse_injections_pub(&source);
                             }
                         }
                         // Re-render after syntax update; always use update_and_render so that

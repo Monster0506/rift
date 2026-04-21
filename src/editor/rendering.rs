@@ -216,6 +216,10 @@ impl<T: TerminalBackend> Editor<T> {
             .map(|syntax| syntax.highlights(Some(start_byte..end_byte)));
 
         let capture_names = doc.syntax.as_ref().map(|s| s.capture_names());
+        let injection_hl = doc
+            .syntax
+            .as_ref()
+            .map(|s| s.injection_highlights_named(Some(start_byte..end_byte)));
 
         let state = render::RenderState {
             buf: &doc.buffer,
@@ -227,6 +231,7 @@ impl<T: TerminalBackend> Editor<T> {
             tab_width: doc.options.tab_width,
             highlights: highlights.as_deref(),
             capture_map: capture_names,
+            injection_highlights: injection_hl.as_deref(),
             skip_content: false,
             cursor_row_offset: 0,
             cursor_col_offset: 0,
@@ -500,6 +505,10 @@ impl<T: TerminalBackend> Editor<T> {
                 .as_mut()
                 .map(|syntax| syntax.highlights(Some(start_byte..end_byte)));
             let capture_names = doc.syntax.as_ref().map(|s| s.capture_names());
+            let injection_hl = doc
+                .syntax
+                .as_ref()
+                .map(|s| s.injection_highlights_named(Some(start_byte..end_byte)));
 
             let ctx = render::DrawContext {
                 buf: &doc.buffer,
@@ -512,6 +521,7 @@ impl<T: TerminalBackend> Editor<T> {
                 tab_width,
                 highlights: highlights.as_deref(),
                 capture_map: capture_names,
+                injection_highlights: injection_hl.as_deref(),
                 custom_highlights: if doc.custom_highlights.is_empty() {
                     None
                 } else {
@@ -595,6 +605,10 @@ impl<T: TerminalBackend> Editor<T> {
             .as_mut()
             .map(|syntax| syntax.highlights(None));
         let capture_names = focused_doc.syntax.as_ref().map(|s| s.capture_names());
+        let injection_hl = focused_doc
+            .syntax
+            .as_ref()
+            .map(|s| s.injection_highlights_named(None));
 
         let (row_off, col_off, focused_cols) = focused_layout
             .as_ref()
@@ -628,6 +642,7 @@ impl<T: TerminalBackend> Editor<T> {
             tab_width: focused_tab_width,
             highlights: highlights.as_deref(),
             capture_map: capture_names,
+            injection_highlights: injection_hl.as_deref(),
             skip_content: true,
             cursor_row_offset: row_off,
             cursor_col_offset: col_off,

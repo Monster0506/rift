@@ -177,6 +177,65 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for SyntaxDecorator<'a, I> {
     }
 }
 
+/// Decorator that applies injection-layer highlights using capture names.
+///
+/// Sits immediately after `SyntaxDecorator` and overrides its colour in any
+/// byte range belonging to an injected language (TypeScript in Svelte, etc.).
+pub struct InjectionDecorator<'a, I: Iterator<Item = RenderItem>> {
+    input: I,
+    /// Sorted by range start. Each entry is (byte_range, capture_name).
+    highlights: &'a [(std::ops::Range<usize>, String)],
+    idx: usize,
+    syntax_colors: Option<&'a crate::color::theme::SyntaxColors>,
+}
+
+impl<'a, I: Iterator<Item = RenderItem>> InjectionDecorator<'a, I> {
+    pub fn new(
+        input: I,
+        highlights: &'a [(std::ops::Range<usize>, String)],
+        syntax_colors: Option<&'a crate::color::theme::SyntaxColors>,
+    ) -> Self {
+        Self {
+            input,
+            highlights,
+            idx: 0,
+            syntax_colors,
+        }
+    }
+}
+
+impl<'a, I: Iterator<Item = RenderItem>> Iterator for InjectionDecorator<'a, I> {
+    type Item = RenderItem;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut item = self.input.next()?;
+
+        while self.idx < self.highlights.len() {
+            if self.highlights[self.idx].0.end <= item.byte_offset {
+                self.idx += 1;
+            } else {
+                break;
+            }
+        }
+
+        for (range, name) in self.highlights.iter().skip(self.idx) {
+            if range.start > item.byte_offset {
+                break;
+            }
+            if range.end > item.byte_offset {
+                if let Some(colors) = self.syntax_colors {
+                    if let Some(color) = colors.get_color(name) {
+                        item.fg = Some(color);
+                    }
+                }
+                break;
+            }
+        }
+
+        Some(item)
+    }
+}
+
 /// Decorator that applies custom per-byte-range foreground colors.
 /// Used by directory and undo-tree buffers to reproduce the original cell-level colours.
 pub struct ColorDecorator<'a, I: Iterator<Item = RenderItem>> {
