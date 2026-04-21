@@ -72,6 +72,15 @@ impl<T: TerminalBackend> Editor<T> {
                     continue;
                 }
 
+                // Escape always cancels OperatorPending, regardless of keymap overrides.
+                if key_press == Key::Escape && self.current_mode == Mode::OperatorPending {
+                    self.set_mode(Mode::Normal);
+                    self.pending_keys.clear();
+                    self.pending_count = 0;
+                    self.update_and_render()?;
+                    continue;
+                }
+
                 // Handle terminal input
                 let is_terminal_insert = if let Some(doc) = self.document_manager.active_document()
                 {
@@ -328,6 +337,11 @@ impl<T: TerminalBackend> Editor<T> {
                                     }
                                 } else {
                                     self.pending_keys.clear();
+                                    // Unrecognized key cancels any pending operator.
+                                    if self.current_mode == Mode::OperatorPending {
+                                        self.set_mode(Mode::Normal);
+                                        self.pending_count = 0;
+                                    }
                                 }
                             }
 
