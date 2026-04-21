@@ -24,6 +24,12 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
+        if self.split_tree.window_count() == 1 {
+            let rows = self.render_system.viewport.visible_rows();
+            let cols = self.render_system.viewport.visible_cols();
+            self.split_tree.focused_window_mut().viewport.set_size(rows, cols);
+        }
+
         // Sync buffer cursor to focused window
         let doc_id = self.split_tree.focused_window().document_id;
         if let Some(doc) = self.document_manager.get_document(doc_id) {
