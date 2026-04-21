@@ -1,7 +1,7 @@
 use crate::error::{ErrorType, RiftError};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
 use tree_sitter::Language;
 
 /// Handle to a loaded language, keeping the library alive
@@ -35,6 +35,10 @@ pub struct DynamicRegistry {
 pub struct LanguageLoader {
     _grammar_dir: PathBuf,
     pub dynamic: RwLock<DynamicRegistry>,
+    /// Shared libraries loaded at runtime — must outlive every Language derived from them.
+    loaded_libs: Mutex<Vec<libloading::Library>>,
+    /// Grammars registered via `register_grammar()`, keyed by language name.
+    dynamic_languages: RwLock<HashMap<String, Language>>,
 }
 
 impl LanguageLoader {
@@ -42,6 +46,8 @@ impl LanguageLoader {
         Self {
             _grammar_dir: grammar_dir,
             dynamic: RwLock::new(DynamicRegistry::default()),
+            loaded_libs: Mutex::new(Vec::new()),
+            dynamic_languages: RwLock::new(HashMap::new()),
         }
     }
 
@@ -65,6 +71,53 @@ impl LanguageLoader {
         let mut reg = self.dynamic.write().unwrap_or_else(|e| e.into_inner());
         reg.injections_queries
             .insert(lang_name.to_string(), query_src.to_string());
+    }
+
+    /// Load a tree-sitter grammar from a shared library at runtime.
+    ///
+    /// `so_path`: path to the compiled `.so` / `.dll` / `.dylib`.
+    /// `fn_name`: exported C symbol, e.g. `"tree_sitter_toml"`.
+    ///
+    /// The library is kept alive for the lifetime of this `LanguageLoader`.
+    /// After a successful call, `lang_name` can be used with `register_filetype`
+    /// and `register_language_query` from Lua like any built-in language.
+    pub fn register_grammar(
+        &self,
+        lang_name: &str,
+        so_path: &str,
+        fn_name: &str,
+    ) -> Result<(), String> {
+        let lib = unsafe {
+            libloading::Library::new(so_path)
+                .map_err(|e| format!("dlopen '{}': {}", so_path, e))?
+        };
+
+        let language: Language = unsafe {
+            type LangFn = unsafe extern "C" fn() -> *const tree_sitter::ffi::TSLanguage;
+            let sym: libloading::Symbol<LangFn> = lib
+                .get(fn_name.as_bytes())
+                .map_err(|e| format!("symbol '{}' in '{}': {}", fn_name, so_path, e))?;
+            let ptr = sym();
+            if ptr.is_null() {
+                return Err(format!(
+                    "'{}' returned a null TSLanguage pointer",
+                    fn_name
+                ));
+            }
+            Language::from_raw(ptr)
+        };
+
+        self.loaded_libs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(lib);
+
+        self.dynamic_languages
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(lang_name.to_string(), language);
+
+        Ok(())
     }
 
     // -------------------------------------------------------------------------
@@ -125,6 +178,16 @@ impl LanguageLoader {
     /// Load a specific language by name (e.g., "rust").
     #[allow(unused_variables)]
     pub fn load_language(&self, lang_name: &str) -> Result<LoadedLanguage, RiftError> {
+        {
+            let langs = self
+                .dynamic_languages
+                .read()
+                .unwrap_or_else(|e| e.into_inner());
+            if let Some(lang) = langs.get(lang_name).cloned() {
+                return Ok(LoadedLanguage::bundled(lang, lang_name));
+            }
+        }
+
         #[cfg(feature = "treesitter")]
         if let Some((lang, _)) = get_bundled_language(lang_name) {
             return Ok(LoadedLanguage::bundled(lang, lang_name));
