@@ -1071,6 +1071,24 @@ impl LuaHost {
             api.set("register_injections_query", f)?;
         }
 
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(
+                move |_, (lang_name, so_path, fn_name): (String, String, String)| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::RegisterGrammar {
+                            lang_name,
+                            so_path,
+                            fn_name,
+                        });
+                    Ok(())
+                },
+            )?;
+            api.set("register_grammar", f)?;
+        }
+
         lua.globals().set("rift", api)?;
 
         // Embedded Lua prelude — convenience wrappers that don't need Rust bindings.

@@ -128,6 +128,14 @@ pub enum PluginMutation {
         lang_name: String,
         query_src: String,
     },
+    /// Load a tree-sitter grammar from a compiled shared library at runtime.
+    /// `so_path` is the filesystem path to the `.so` / `.dll` / `.dylib`.
+    /// `fn_name` is the exported C symbol, e.g. `"tree_sitter_toml"`.
+    RegisterGrammar {
+        lang_name: String,
+        so_path: String,
+        fn_name: String,
+    },
 }
 
 /// A floating window owned by a plugin. Stored in `PluginHost` and rendered
