@@ -196,7 +196,8 @@ mod markdown_tests {
         Arc::new(LanguageLoader::new(PathBuf::from(".")))
     }
 
-    const MD_SRC: &str = "# Hello\n\n```rust\nlet x: u32 = 42;\n```\n\n```python\ndef foo(): pass\n```\n";
+    const MD_SRC: &str =
+        "# Hello\n\n```rust\nlet x: u32 = 42;\n```\n\n```python\ndef foo(): pass\n```\n";
 
     #[test]
     fn test_markdown_parse_succeeds() {

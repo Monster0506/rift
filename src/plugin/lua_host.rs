@@ -1045,10 +1045,12 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (lang_name, query_src): (String, String)| {
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .mutations
-                    .push(PluginMutation::RegisterLanguageQuery { lang_name, query_src });
+                sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
+                    PluginMutation::RegisterLanguageQuery {
+                        lang_name,
+                        query_src,
+                    },
+                );
                 Ok(())
             })?;
             api.set("register_language_query", f)?;
@@ -1058,10 +1060,12 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (lang_name, query_src): (String, String)| {
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .mutations
-                    .push(PluginMutation::RegisterInjectionsQuery { lang_name, query_src });
+                sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
+                    PluginMutation::RegisterInjectionsQuery {
+                        lang_name,
+                        query_src,
+                    },
+                );
                 Ok(())
             })?;
             api.set("register_injections_query", f)?;

@@ -99,11 +99,9 @@ impl Document {
                     .unwrap_or(0);
                 let end_offset = end_line_start + range.end.col as usize;
 
-                let _ = buffer.set_cursor(start_offset);
                 let count = end_offset.saturating_sub(start_offset);
-                for _ in 0..count {
-                    buffer.delete_forward();
-                }
+                buffer.delete_range(start_offset, count);
+                let _ = buffer.set_cursor(start_offset.min(buffer.len()));
             }
             EditOperation::Replace {
                 range, new_text, ..
@@ -119,11 +117,9 @@ impl Document {
                     .unwrap_or(0);
                 let end_offset = end_line_start + range.end.col as usize;
 
-                let _ = buffer.set_cursor(start_offset);
                 let count = end_offset.saturating_sub(start_offset);
-                for _ in 0..count {
-                    buffer.delete_forward();
-                }
+                buffer.delete_range(start_offset, count);
+                let _ = buffer.set_cursor(start_offset.min(buffer.len()));
                 let _ = buffer.insert_chars(new_text);
             }
             EditOperation::BlockChange {
@@ -140,11 +136,9 @@ impl Document {
                     .unwrap_or(0);
                 let end_offset = end_line_start + range.end.col as usize;
 
-                let _ = buffer.set_cursor(start_offset);
                 let count = end_offset.saturating_sub(start_offset);
-                for _ in 0..count {
-                    buffer.delete_forward();
-                }
+                buffer.delete_range(start_offset, count);
+                let _ = buffer.set_cursor(start_offset.min(buffer.len()));
                 for (i, line) in new_content.iter().enumerate() {
                     if i > 0 {
                         let _ = buffer.insert_character(crate::character::Character::Newline);

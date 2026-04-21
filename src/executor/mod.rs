@@ -143,29 +143,20 @@ pub fn execute_command(
 
                     if delete_end > delete_start {
                         doc.begin_transaction("Delete");
-                        doc.buffer.set_cursor(delete_start)?;
-                        let len = delete_end - delete_start;
-                        for _ in 0..len {
-                            doc.delete_forward();
-                        }
+                        let _ = doc.delete_range(delete_start, delete_end);
                         doc.commit_transaction();
                     }
                 }
                 crate::wrap::RangeKind::Charwise => {
-                    doc.buffer.set_cursor(range.new_cursor)?;
                     if range.new_cursor > range.anchor {
-                        let len = range.new_cursor - range.anchor;
+                        let (del_start, del_end) = (range.anchor, range.new_cursor);
                         doc.begin_transaction("Delete");
-                        for _ in 0..len {
-                            doc.delete_backward();
-                        }
+                        let _ = doc.delete_range(del_start, del_end);
                         doc.commit_transaction();
                     } else {
-                        let len = range.anchor - range.new_cursor;
+                        let (del_start, del_end) = (range.new_cursor, range.anchor);
                         doc.begin_transaction("Delete");
-                        for _ in 0..len {
-                            doc.delete_forward();
-                        }
+                        let _ = doc.delete_range(del_start, del_end);
                         doc.commit_transaction();
                     }
                 }
@@ -204,25 +195,14 @@ pub fn execute_command(
                     };
 
                     if delete_end > delete_start {
-                        doc.buffer.set_cursor(delete_start)?;
-                        let len = delete_end - delete_start;
-                        for _ in 0..len {
-                            doc.delete_forward();
-                        }
+                        let _ = doc.delete_range(delete_start, delete_end);
                     }
                 }
                 crate::wrap::RangeKind::Charwise => {
-                    doc.buffer.set_cursor(range.new_cursor)?;
                     if range.new_cursor > range.anchor {
-                        let len = range.new_cursor - range.anchor;
-                        for _ in 0..len {
-                            doc.delete_backward();
-                        }
+                        let _ = doc.delete_range(range.anchor, range.new_cursor);
                     } else {
-                        let len = range.anchor - range.new_cursor;
-                        for _ in 0..len {
-                            doc.delete_forward();
-                        }
+                        let _ = doc.delete_range(range.new_cursor, range.anchor);
                     }
                 }
             }
@@ -233,10 +213,7 @@ pub fn execute_command(
             doc.buffer.move_to_line_end();
             let end = doc.buffer.cursor();
             if end > start {
-                let len = end - start;
-                for _ in 0..len {
-                    doc.delete_backward();
-                }
+                let _ = doc.delete_range(start, end);
             }
         }
         Command::DeleteForward => {
@@ -251,23 +228,14 @@ pub fn execute_command(
             let start = doc.buffer.cursor();
             if doc.buffer.move_down() {
                 let end = doc.buffer.cursor();
-                doc.buffer.set_cursor(start)?;
-                let len = end - start;
-                for _ in 0..len {
-                    doc.delete_forward();
-                }
+                let _ = doc.delete_range(start, end);
             } else {
-                // Last line
+                // Last line: delete content then preceding newline
                 doc.buffer.move_to_line_end();
                 let end = doc.buffer.cursor();
-                // Delete content
                 if end > start {
-                    let len = end - start;
-                    for _ in 0..len {
-                        doc.delete_backward();
-                    }
+                    let _ = doc.delete_range(start, end);
                 }
-                // Delete preceding newline if exists
                 if start > 0 {
                     doc.delete_backward();
                     doc.buffer.move_to_line_start();

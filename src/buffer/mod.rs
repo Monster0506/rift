@@ -177,6 +177,36 @@ impl TextBuffer {
         Ok(())
     }
 
+    /// Delete `count` characters starting at `start`, in a single rope operation.
+    ///
+    /// This is O(log N) vs O(N log N) for a character-by-character loop.
+    /// Cursor is clamped: if it was inside the deleted region it moves to `start`;
+    /// if it was after the region it shifts back by `count`.
+    pub fn delete_range(&mut self, start: usize, count: usize) -> bool {
+        if count == 0 {
+            return false;
+        }
+        let end = start + count;
+        if end > self.len() {
+            return false;
+        }
+        let byte_pos = self.char_to_byte(start);
+        let del_bytes = self.char_to_byte(end) - byte_pos;
+        self.line_index.delete(start, count);
+        if self.cursor >= end {
+            self.cursor -= count;
+        } else if self.cursor > start {
+            self.cursor = start;
+        }
+        self.revision += 1;
+        self.edit_log.push(ByteEdit {
+            byte_pos,
+            del_bytes,
+            ins_bytes: 0,
+        });
+        true
+    }
+
     /// Delete the Character before the cursor
     pub fn delete_backward(&mut self) -> bool {
         if self.cursor > 0 {

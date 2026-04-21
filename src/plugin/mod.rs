@@ -119,9 +119,15 @@ pub enum PluginMutation {
     /// Register a file extension → language name mapping.
     RegisterFiletype { ext: String, lang_name: String },
     /// Register (or override) the highlights query for a language.
-    RegisterLanguageQuery { lang_name: String, query_src: String },
+    RegisterLanguageQuery {
+        lang_name: String,
+        query_src: String,
+    },
     /// Register an injections query for a language (enables embedded-language highlighting).
-    RegisterInjectionsQuery { lang_name: String, query_src: String },
+    RegisterInjectionsQuery {
+        lang_name: String,
+        query_src: String,
+    },
 }
 
 /// A floating window owned by a plugin. Stored in `PluginHost` and rendered

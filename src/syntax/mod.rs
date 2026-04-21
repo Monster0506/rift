@@ -554,9 +554,7 @@ pub fn build_syntax(
                         let layer_query = language_loader
                             .load_query(&lang_name, "highlights")
                             .ok()
-                            .and_then(|src| {
-                                Query::new(&lang_loaded.language, &src).ok()
-                            })
+                            .and_then(|src| Query::new(&lang_loaded.language, &src).ok())
                             .map(Arc::new);
 
                         capture_langs.push((idx as u32, lang_name.clone()));

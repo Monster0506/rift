@@ -247,13 +247,9 @@ impl Document {
         let start_byte = self.buffer.char_to_byte(start);
         let old_end_byte = self.buffer.char_to_byte(end);
 
-        self.buffer.set_cursor(start)?;
         let count = end - start;
-        for _ in 0..count {
-            if !self.buffer.delete_forward() {
-                break;
-            }
-        }
+        self.buffer.delete_range(start, count);
+        let _ = self.buffer.set_cursor(start.min(self.buffer.len()));
 
         self.mark_dirty();
 

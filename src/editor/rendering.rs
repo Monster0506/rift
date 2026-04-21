@@ -27,7 +27,10 @@ impl<T: TerminalBackend> Editor<T> {
         if self.split_tree.window_count() == 1 {
             let rows = self.render_system.viewport.visible_rows();
             let cols = self.render_system.viewport.visible_cols();
-            self.split_tree.focused_window_mut().viewport.set_size(rows, cols);
+            self.split_tree
+                .focused_window_mut()
+                .viewport
+                .set_size(rows, cols);
         }
 
         // Sync buffer cursor to focused window
