@@ -6,6 +6,16 @@ I use this daily and primarily.
 
 ## Implemented:
 - Quite a lot more than the below items, I just haven't updated this in a while due to actually working on it.
+- `f`/`F`/`t`/`T` character-find motions with `N`/`n` repeat
+- `D` to delete to end of line
+- `{N}G` to jump to line N
+- Terminal scrollback buffer
+- Highlight active split pane
+- `H` in file explorer to toggle hidden (dotfile) visibility
+- Plugin support for arbitrary language syntax grammars (register via Lua API)
+- SQL syntax highlighting (tree-sitter)
+- Alt key modifier support in keybindings
+- Expanded plugin API: buffer metadata, navigation, richer event hooks
 - Clipboard ring buffer with multi-entry history (configurable size via `clipboard.size`)
 - System clipboard integration (read/write via arboard, shown in clipboard tooltip)
 - `clipboard.size` setting and `:clipboard` command to view ring
@@ -21,7 +31,9 @@ I use this daily and primarily.
 - Count indicator in command-line completion
 - Command-line completion engine (commands, subcommands, settings, setting values, file paths)
 - vertical and horizontal splits (:split, :vsplit)
-- split navigation (Ctrl+W h/j/k/l), resize (<, >), freeze
+- split navigation (Ctrl+W h/j/k/l), resize (`<`/`>`/`,`/`.`), freeze
+- split equalization (`:equalize`, `Ctrl+W =`) with `split.equalize_proportional` mode (equal vs. proportional redistribution)
+- split moving (H/J/K/L to move pane in a direcion)
 - terminal emulator (:terminal, via alacritty_terminal)
 - change command (c, C)
 - dot repeat (.)
@@ -88,12 +100,17 @@ I use this daily and primarily.
 Todo:
 - LSP
 - registers + unified yank/paste/delete
-- visual selection
-- macros
+- visual selection (v, V, Ctrl+V)
+- macros (q{reg} / @{reg})
+- text objects (iw, aw, i", a(, etc.)
+- jump list (Ctrl+O / Ctrl+I)
+- marks and jumps (m{a-z}, '{mark})
+- change list (g; / g,)
 - help manual
-- marks and jumps
-- animations
+- .riftrc config file
+- code folding (zf/zo/zc)
 - operator pending improvements (indent, format, case, etc.)
+- animations
 
 Known issues:
 - 4 byte unicode characters are not able to be inserted on windows (this is a crossterm issue on windows, idk man)
@@ -127,3 +144,20 @@ Known issues:
 - input boxes for file explorer not accepting input
 - split rendering and navigation fixes
 - clipboard tooltip not showing system clipboard on Wayland (missing `wayland-data-control` feature)
+- search highlight offset wrong on non-ASCII characters
+- operator pending mode blocking on certain key sequences
+- file explorer entry duplication on recursive directory traversal
+- terminal keybinding actions not bindable to other keys
+
+
+## Install
+
+```sh
+cargo install monster-rift
+```
+
+With syntax highlighting: 
+
+```sh
+cargo install -F treesitter monster-rift
+```
