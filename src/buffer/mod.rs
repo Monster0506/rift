@@ -88,7 +88,20 @@ impl TextBuffer {
         self.line_index.is_empty()
     }
 
-    /// Move cursor left by one Character
+    /// Compute the column offset of the cursor from the start of its line.
+    fn col_on_line(&self, line: usize) -> usize {
+        let line_start = self.line_index.get_start(line).unwrap_or(0);
+        self.cursor.saturating_sub(line_start)
+    }
+
+    /// Find the char position on `line` at column `col`, clamped to line bounds.
+    fn char_pos_for_col(&self, line: usize, col: usize) -> usize {
+        let line_start = self.line_index.get_start(line).unwrap_or(0);
+        let line_end = self.line_index.get_end(line, self.len()).unwrap_or(self.len());
+        (line_start + col).min(line_end)
+    }
+
+    /// Move cursor left by one Character.
     pub fn move_left(&mut self) -> bool {
         if self.cursor > 0 {
             self.cursor -= 1;
@@ -98,7 +111,7 @@ impl TextBuffer {
         }
     }
 
-    /// Move cursor right by one Character
+    /// Move cursor right by one Character.
     pub fn move_right(&mut self) -> bool {
         let len = self.len();
         if self.cursor < len {
@@ -207,41 +220,40 @@ impl TextBuffer {
         true
     }
 
-    /// Delete the Character before the cursor
+    /// Delete the Character before the cursor.
     pub fn delete_backward(&mut self) -> bool {
-        if self.cursor > 0 {
-            self.cursor -= 1;
-            let byte_pos = self.char_to_byte(self.cursor);
-            let del_bytes = self.line_index.char_at(self.cursor).len_utf8();
-            self.line_index.delete(self.cursor, 1);
-            self.revision += 1;
-            self.edit_log.push(ByteEdit {
-                byte_pos,
-                del_bytes,
-                ins_bytes: 0,
-            });
-            true
-        } else {
-            false
+        if self.cursor == 0 {
+            return false;
         }
+        self.cursor -= 1;
+        let byte_pos = self.char_to_byte(self.cursor);
+        let del_bytes = self.line_index.char_at(self.cursor).len_utf8();
+        self.line_index.delete(self.cursor, 1);
+        self.revision += 1;
+        self.edit_log.push(ByteEdit {
+            byte_pos,
+            del_bytes,
+            ins_bytes: 0,
+        });
+        true
     }
 
-    /// Delete the Character at the cursor position
+    /// Delete the Character at the cursor position.
     pub fn delete_forward(&mut self) -> bool {
-        if self.cursor < self.len() {
-            let byte_pos = self.char_to_byte(self.cursor);
-            let del_bytes = self.line_index.char_at(self.cursor).len_utf8();
-            self.line_index.delete(self.cursor, 1);
-            self.revision += 1;
-            self.edit_log.push(ByteEdit {
-                byte_pos,
-                del_bytes,
-                ins_bytes: 0,
-            });
-            true
-        } else {
-            false
+        if self.cursor >= self.len() {
+            return false;
         }
+        let target = self.line_index.char_at(self.cursor);
+        let byte_pos = self.char_to_byte(self.cursor);
+        let del_bytes = target.len_utf8();
+        self.line_index.delete(self.cursor, 1);
+        self.revision += 1;
+        self.edit_log.push(ByteEdit {
+            byte_pos,
+            del_bytes,
+            ins_bytes: 0,
+        });
+        true
     }
 
     /// Get the line number at the cursor position
@@ -316,7 +328,7 @@ impl TextBuffer {
         }
     }
 
-    /// Move cursor up one line
+    /// Move cursor up one line, preserving column.
     pub fn move_up(&mut self) -> bool {
         let current_line = self.get_line();
         if current_line == 0 {
@@ -324,20 +336,12 @@ impl TextBuffer {
         }
 
         let prev_line = current_line - 1;
-        let current_line_start = self.line_index.get_start(current_line).unwrap_or(0);
-        let col = self.cursor - current_line_start;
-
-        let prev_line_start = self.line_index.get_start(prev_line).unwrap_or(0);
-        let prev_line_end = self.line_index.get_end(prev_line, self.len()).unwrap_or(0);
-
-        // Target is min(start + col, end)
-        let target = std::cmp::min(prev_line_start + col, prev_line_end);
-
-        self.cursor = target;
+        let col = self.col_on_line(current_line);
+        self.cursor = self.char_pos_for_col(prev_line, col);
         true
     }
 
-    /// Move cursor down one line
+    /// Move cursor down one line, preserving column.
     pub fn move_down(&mut self) -> bool {
         let current_line = self.get_line();
         let total_lines = self.get_total_lines();
@@ -346,32 +350,22 @@ impl TextBuffer {
         }
 
         let next_line = current_line + 1;
-        let current_line_start = self.line_index.get_start(current_line).unwrap_or(0);
-        let col = self.cursor - current_line_start;
-
-        let next_line_start = self.line_index.get_start(next_line).unwrap_or(0);
-        let next_line_end = self
-            .line_index
-            .get_end(next_line, self.len())
-            .unwrap_or(self.len());
-
-        let target = std::cmp::min(next_line_start + col, next_line_end);
-
-        self.cursor = target;
+        let col = self.col_on_line(current_line);
+        self.cursor = self.char_pos_for_col(next_line, col);
         true
     }
 
-    /// Move to start of buffer
+    /// Move to start of buffer.
     pub fn move_to_start(&mut self) {
         self.cursor = 0;
     }
 
-    /// Move to end of buffer
+    /// Move to end of buffer.
     pub fn move_to_end(&mut self) {
         self.cursor = self.len();
     }
 
-    /// Move to start of current line
+    /// Move to start of current line.
     pub fn move_to_line_start(&mut self) {
         let line = self.get_line();
         if let Some(start) = self.line_index.get_start(line) {

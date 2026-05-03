@@ -8,6 +8,10 @@ impl Document {
     /// Start a transaction for grouping multiple edits
     pub fn begin_transaction(&mut self, description: impl Into<String>) {
         self.current_transaction = Some(EditTransaction::new(description));
+        if self.is_directory() {
+            self.pending_annotation_snapshot =
+                Some(self.annotations.directory_entries_by_line());
+        }
     }
 
     /// Commit the current transaction to undo history
@@ -15,6 +19,12 @@ impl Document {
         if let Some(tx) = self.current_transaction.take() {
             if !tx.is_empty() {
                 self.history.push(tx, None);
+                if let Some(snapshot) = self.pending_annotation_snapshot.take() {
+                    self.dir_annotation_undo_stack.push(snapshot);
+                    self.dir_annotation_redo_stack.clear();
+                }
+            } else {
+                self.pending_annotation_snapshot = None;
             }
         }
     }
@@ -36,6 +46,14 @@ impl Document {
 
         self.history.undo();
         self.mark_dirty();
+
+        if self.is_directory() {
+            if let Some(snapshot) = self.dir_annotation_undo_stack.pop() {
+                let current = self.annotations.directory_entries_by_line();
+                self.dir_annotation_redo_stack.push(current);
+                self.restore_annotation_snapshot(snapshot);
+            }
+        }
 
         if let Some(syntax) = &mut self.syntax {
             syntax.invalidate_trees();
@@ -62,12 +80,27 @@ impl Document {
             self.apply_operation(&op);
         }
 
+        if self.is_directory() {
+            if let Some(snapshot) = self.dir_annotation_redo_stack.pop() {
+                let current = self.annotations.directory_entries_by_line();
+                self.dir_annotation_undo_stack.push(current);
+                self.restore_annotation_snapshot(snapshot);
+            }
+        }
+
         self.mark_dirty();
 
         if let Some(syntax) = &mut self.syntax {
             syntax.invalidate_trees();
         }
         true
+    }
+
+    fn restore_annotation_snapshot(&mut self, snapshot: Vec<(usize, u16)>) {
+        self.annotations.clear();
+        for (line, entry_id) in snapshot {
+            self.annotations.create_directory_entry(line, entry_id);
+        }
     }
 
     /// Apply an edit operation to this document's buffer (used by undo/redo).

@@ -263,66 +263,27 @@ fn visible_chars(items: &[RenderItem]) -> String {
         .collect()
 }
 
+// Note: AnnotationFilter was removed because Character::Annotation no longer exists.
+// Directory entry IDs are now stored in the AnnotationStore sidecar (src/annotations/mod.rs),
+// so the buffer character stream is always clean and needs no annotation filtering.
+
 #[test]
-fn test_invisible_filter_no_ranges_passes_all() {
-    let input = chars("hello").into_iter();
-    let items: Vec<RenderItem> = InvisibleFilter::new(input, &[]).collect();
-    assert_eq!(items.len(), 5);
-    assert_eq!(visible_chars(&items), "hello");
+fn test_line_source_renders_plain_directory_line() {
+    // After migration, directory buffer lines contain only visible chars — no annotation prefix.
+    // LineSource should yield all characters as-is.
+    let items = chars("hello.txt").into_iter();
+    let collected: Vec<RenderItem> = items.collect();
+    assert_eq!(collected.len(), 9);
+    assert_eq!(visible_chars(&collected), "hello.txt");
 }
 
 #[test]
-fn test_invisible_filter_removes_prefix() {
-    // Simulate /001 prefix (5 bytes: '/', '0', '0', '1', ' ') followed by "file.txt"
-    let input = chars("/001 file.txt").into_iter();
-    let ranges = vec![0..5usize];
-    let items: Vec<RenderItem> = InvisibleFilter::new(input, &ranges).collect();
-    assert_eq!(visible_chars(&items), "file.txt");
-}
-
-#[test]
-fn test_invisible_filter_range_in_middle_removed() {
-    // "ab[cd]ef" — bytes 2..4 invisible
-    let input = chars("abcdef").into_iter();
-    let ranges = vec![2..4usize];
-    let items: Vec<RenderItem> = InvisibleFilter::new(input, &ranges).collect();
-    assert_eq!(visible_chars(&items), "abef");
-}
-
-#[test]
-fn test_invisible_filter_multiple_ranges() {
-    // "/001 a /002 b" — two prefixes at offsets 0..5 and 7..12
-    let input = chars("/001 a /002 b").into_iter();
-    let ranges = vec![0..5usize, 7..12];
-    let items: Vec<RenderItem> = InvisibleFilter::new(input, &ranges).collect();
-    assert_eq!(visible_chars(&items), "a b");
-}
-
-#[test]
-fn test_invisible_filter_all_hidden_yields_empty() {
-    let input = chars("abc").into_iter();
-    let ranges = vec![0..3usize];
-    let items: Vec<RenderItem> = InvisibleFilter::new(input, &ranges).collect();
-    assert!(items.is_empty());
-}
-
-#[test]
-fn test_invisible_filter_range_beyond_input_harmless() {
-    let input = chars("hi").into_iter();
-    let ranges = vec![10..20usize]; // entirely past the input
-    let items: Vec<RenderItem> = InvisibleFilter::new(input, &ranges).collect();
-    assert_eq!(visible_chars(&items), "hi");
-}
-
-#[test]
-fn test_invisible_filter_preserves_byte_offsets_of_visible_items() {
-    // Input: "/001 abc" — prefix 0..5 invisible
-    // 'a' is at byte 5, 'b' at 6, 'c' at 7
-    let input = chars("/001 abc").into_iter();
-    let ranges = vec![0..5usize];
-    let items: Vec<RenderItem> = InvisibleFilter::new(input, &ranges).collect();
-    assert_eq!(items.len(), 3);
-    assert_eq!(items[0].byte_offset, 5);
-    assert_eq!(items[1].byte_offset, 6);
-    assert_eq!(items[2].byte_offset, 7);
+fn test_tab_layout_directory_filename_width() {
+    // Ensure a plain filename (no annotation bytes) goes through TabLayout without width=0 items.
+    let input = chars("src/").into_iter();
+    let layout: Vec<LayoutItem> = TabLayout::new(input, 4).collect();
+    assert_eq!(layout.len(), 4);
+    for item in &layout {
+        assert!(item.width > 0, "all chars should have non-zero width");
+    }
 }

@@ -104,6 +104,7 @@ impl<T: TerminalBackend> Editor<T> {
             plugin_host: crate::plugin::PluginHost::new(25),
             clipboard_ring: crate::clipboard::ClipboardRing::new(),
             post_paste_state: None,
+            pending_cursor_entry: None,
         };
 
         // Register default keymaps

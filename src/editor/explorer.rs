@@ -3,6 +3,20 @@ use super::{PanelKind, PanelLayout};
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
+fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
+    let mut out = std::path::PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn reload_directory_buffer(
         &mut self,
@@ -26,12 +40,7 @@ impl<T: TerminalBackend> Editor<T> {
                 entries: vec![],
                 show_hidden,
             };
-            let _ = doc.buffer.set_cursor(0);
-            let len = doc.buffer.len();
-            for _ in 0..len {
-                doc.buffer.delete_forward();
-            }
-            let _ = doc.buffer.insert_str("Loading...");
+            doc.replace_buffer_content("Loading...");
         }
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
             doc_id as usize,
@@ -64,7 +73,8 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(d) if d.is_directory() => d,
                 _ => return,
             };
-            if doc.is_dirty() {
+            let diff = doc.parse_directory_diff();
+            if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
                 self.state.notify(
                     crate::notification::NotificationType::Warning,
                     "Unsaved changes — write with :w first".to_string(),
@@ -89,8 +99,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        let visible = crate::document::dir_entry_name_from_line(&line_text);
-        let entry_name = visible.trim_end_matches('/').to_string();
+        let entry_name = line_text.trim_end_matches('/').to_string();
         if entry_name.is_empty() {
             return;
         }
@@ -143,9 +152,9 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Open a 3-panel file explorer centred on `center_dir`.
+    /// Open a 2-panel file explorer centred on `dir`.
     ///
-    /// Layout after call:  [left: parent dir | center: center_dir | right: preview]
+    /// Layout after call:  [left: dir | right: preview]
     pub fn open_explorer(&mut self, dir: std::path::PathBuf) {
         // If already active, just focus the dir pane.
         if let Some(ref layout) = self.panel_layout.clone() {
@@ -596,13 +605,25 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::document::BufferKind::Directory { path, .. } => path.clone(),
                 _ => return,
             };
-            let visible = crate::document::dir_entry_name_from_line(&line_text);
-            let entry_name = visible.trim_end_matches('/');
+            let entry_name = line_text.trim_end_matches('/');
             if entry_name.is_empty() || entry_name == ".." {
                 return;
             }
             (dir_path.join(entry_name), layout.preview_doc_id)
         };
+
+        // Skip if the preview pane is already showing this path.
+        let already_showing = self
+            .document_manager
+            .get_document(preview_doc_id)
+            .map(|d| match &d.kind {
+                crate::document::BufferKind::Directory { path, .. } => *path == target_path,
+                _ => d.path() == Some(target_path.as_path()),
+            })
+            .unwrap_or(false);
+        if already_showing {
+            return;
+        }
 
         let job = crate::job_manager::jobs::explorer_preview::ExplorerPreviewJob::new(
             preview_doc_id,
@@ -671,7 +692,8 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(d) => d,
                 None => return,
             };
-            if doc.is_dirty() {
+            let diff = doc.parse_directory_diff();
+            if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
                 self.state.notify(
                     crate::notification::NotificationType::Warning,
                     "Unsaved changes — write with :w first".to_string(),
@@ -689,8 +711,7 @@ impl<T: TerminalBackend> Editor<T> {
             (line_text, dir_path)
         };
 
-        let visible = crate::document::dir_entry_name_from_line(&line_text);
-        let entry_name = visible.trim_end_matches('/');
+        let entry_name = line_text.trim_end_matches('/');
         if entry_name.is_empty() || entry_name == ".." {
             self.handle_explorer_split_parent();
             return;
@@ -721,21 +742,28 @@ impl<T: TerminalBackend> Editor<T> {
             None => return,
         };
 
-        let parent_path = {
+        let (parent_path, child_name) = {
             let doc = match self.document_manager.get_document(layout.dir_doc_id) {
                 Some(d) => d,
                 None => return,
             };
             match &doc.kind {
                 crate::document::BufferKind::Directory { path, .. } => {
+                    let child = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|s| s.to_string());
                     match path.parent().map(|p| p.to_path_buf()) {
-                        Some(p) => p,
+                        Some(p) => (p, child),
                         None => return,
                     }
                 }
                 _ => return,
             }
         };
+
+        // Remember which child entry to restore the cursor to after the listing arrives.
+        self.pending_cursor_entry = child_name;
 
         self.reload_directory_buffer(layout.dir_doc_id, parent_path);
         self.update_explorer_preview();
@@ -810,6 +838,18 @@ impl<T: TerminalBackend> Editor<T> {
             None => return,
         };
 
+        // Guard: refuse to discard unsaved renames/deletes/creates.
+        if let Some(doc) = self.document_manager.get_document(dir_doc_id) {
+            let diff = doc.parse_directory_diff();
+            if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
+                self.state.notify(
+                    crate::notification::NotificationType::Warning,
+                    "Unsaved changes — write with :w first".to_string(),
+                );
+                return;
+            }
+        }
+
         let new_show_hidden = !show_hidden;
 
         if let Some(doc) = self.document_manager.get_document_mut(dir_doc_id) {
@@ -828,21 +868,42 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Re-read the directory listing for the active file explorer pane.
     pub(super) fn handle_explorer_refresh(&mut self) {
-        let layout = match self.panel_layout.as_ref() {
-            Some(l) if l.kind == PanelKind::FileExplorer => l.clone(),
-            _ => return,
+        use crate::document::BufferKind;
+
+        let dir_doc_id = if let Some(l) = self.panel_layout.as_ref() {
+            if l.kind == PanelKind::FileExplorer {
+                l.dir_doc_id
+            } else {
+                return;
+            }
+        } else {
+            match self.document_manager.active_document() {
+                Some(d) if d.is_directory() => d.id,
+                _ => return,
+            }
         };
-        let (path, show_hidden) = match self.document_manager.get_document(layout.dir_doc_id) {
+
+        let (path, show_hidden) = match self.document_manager.get_document(dir_doc_id) {
             Some(d) => match &d.kind {
-                crate::document::BufferKind::Directory {
-                    path, show_hidden, ..
-                } => (path.clone(), *show_hidden),
+                BufferKind::Directory { path, show_hidden, .. } => (path.clone(), *show_hidden),
                 _ => return,
             },
             None => return,
         };
+
+        if let Some(doc) = self.document_manager.get_document(dir_doc_id) {
+            let diff = doc.parse_directory_diff();
+            if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
+                self.state.notify(
+                    crate::notification::NotificationType::Warning,
+                    "Unsaved changes — write with :w first".to_string(),
+                );
+                return;
+            }
+        }
+
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
-            layout.dir_doc_id as usize,
+            dir_doc_id as usize,
             path,
             show_hidden,
         );
@@ -893,6 +954,20 @@ impl<T: TerminalBackend> Editor<T> {
         // Renames — run synchronously so the reload sees the final state
         for (old_path, new_name) in &diff.renames {
             let new_path = old_path.parent().unwrap_or(&dir_path).join(new_name);
+            // Guard: moving a directory inside itself is never valid.
+            if old_path.is_dir() {
+                let old_canonical = fs::canonicalize(old_path).unwrap_or_else(|_| old_path.clone());
+                let new_parent_raw = new_path.parent().unwrap_or(&new_path);
+                let new_canonical = fs::canonicalize(new_parent_raw)
+                    .unwrap_or_else(|_| normalize_path(new_parent_raw));
+                if new_canonical.starts_with(&old_canonical) {
+                    errors.push(format!(
+                        "rename {:?}: destination is inside the source",
+                        old_path.file_name().unwrap_or_default()
+                    ));
+                    continue;
+                }
+            }
             if let Some(parent) = new_path.parent() {
                 if let Err(e) = fs::create_dir_all(parent) {
                     errors.push(format!("mkdir {:?}: {}", parent, e));
@@ -941,6 +1016,14 @@ impl<T: TerminalBackend> Editor<T> {
         for name in &diff.creates {
             let is_dir = name.ends_with('/');
             let clean_name = name.trim_end_matches('/');
+            // Guard: reject path traversal in create names.
+            if std::path::Path::new(clean_name)
+                .components()
+                .any(|c| c == std::path::Component::ParentDir)
+            {
+                errors.push(format!("create {:?}: path traversal not allowed", clean_name));
+                continue;
+            }
             let new_path = dir_path.join(clean_name);
             let result = if is_dir {
                 fs::create_dir_all(&new_path)

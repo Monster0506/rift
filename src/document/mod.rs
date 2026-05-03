@@ -10,6 +10,7 @@ mod persistence;
 mod populate;
 mod search;
 
+use crate::annotations::AnnotationStore;
 use crate::buffer::TextBuffer;
 use crate::history::{EditSeq, EditTransaction, UndoTree};
 use crate::syntax::Syntax;
@@ -21,10 +22,6 @@ use std::path::PathBuf;
 /// Unique identifier for documents
 pub type DocumentId = u64;
 
-/// The length in bytes of the invisible ID prefix written at the start of every directory
-/// buffer line (format: `/NNN `: slash, three decimal digits, space).
-pub const DIR_ID_PREFIX_LEN: usize = 5;
-
 /// A single entry in a directory buffer
 #[derive(Debug, Clone)]
 pub struct DirEntry {
@@ -34,25 +31,8 @@ pub struct DirEntry {
     pub id: u16,
 }
 
-/// Strip the invisible `/NNN ` ID prefix from a raw directory buffer line.
-/// Returns the filename portion only; passes non-prefixed lines through unchanged.
-pub fn dir_entry_name_from_line(line: &str) -> &str {
-    let b = line.as_bytes();
-    if b.len() >= DIR_ID_PREFIX_LEN
-        && b[0] == b'/'
-        && b[1].is_ascii_digit()
-        && b[2].is_ascii_digit()
-        && b[3].is_ascii_digit()
-        && b[4] == b' '
-    {
-        &line[DIR_ID_PREFIX_LEN..]
-    } else {
-        line
-    }
-}
-
 /// Diff produced by parsing a directory buffer before save
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DirectoryDiff {
     pub renames: Vec<(PathBuf, String)>,
     pub deletes: Vec<PathBuf>,
@@ -154,9 +134,14 @@ pub struct Document {
     pub terminal_cell_colors: crate::color::CellColorSpans,
     pub highlight_slots:
         std::collections::HashMap<u32, Vec<(std::ops::Range<usize>, crate::color::Color)>>,
-    /// Byte ranges in the buffer that the renderer should treat as zero-width (invisible).
-    /// Used by directory buffers to hide the `/NNN ` ID prefix on each entry line.
-    pub invisible_ranges: Vec<std::ops::Range<usize>>,
+    /// Structured metadata sidecar — replaces `Character::Annotation` byte embedding.
+    pub annotations: AnnotationStore,
+    /// Per-transaction annotation snapshot for directory buffers (captured at begin_transaction).
+    pending_annotation_snapshot: Option<Vec<(usize, u16)>>,
+    /// Undo stack of annotation snapshots for directory buffers, parallel to undo history.
+    dir_annotation_undo_stack: Vec<Vec<(usize, u16)>>,
+    /// Redo stack of annotation snapshots for directory buffers.
+    dir_annotation_redo_stack: Vec<Vec<(usize, u16)>>,
 }
 
 impl Document {
@@ -202,23 +187,6 @@ impl Document {
         !matches!(self.kind, BufferKind::File)
     }
 
-    /// If the cursor is inside an invisible byte range, advance it past that range.
-    pub fn clamp_cursor_past_invisible(&mut self) {
-        if self.invisible_ranges.is_empty() {
-            return;
-        }
-        let cursor_char = self.buffer.cursor();
-        let cursor_byte = self.buffer.char_to_byte(cursor_char);
-        for r in &self.invisible_ranges {
-            if r.start <= cursor_byte && cursor_byte < r.end {
-                // Prefix chars are all ASCII, so byte count == char count.
-                let bytes_to_advance = r.end - cursor_byte;
-                let new_cursor = cursor_char + bytes_to_advance;
-                let _ = self.buffer.set_cursor(new_cursor.min(self.buffer.len()));
-                break;
-            }
-        }
-    }
 }
 
 #[cfg(test)]

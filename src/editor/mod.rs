@@ -134,6 +134,9 @@ pub struct Editor<T: TerminalBackend> {
     pub clipboard_ring: crate::clipboard::ClipboardRing,
     /// Tracks the active paste so <C-n> can cycle to the next ring entry.
     post_paste_state: Option<PostPasteState>,
+    /// After navigating to a parent directory, the name of the child entry to
+    /// restore the cursor to once the listing arrives.
+    pending_cursor_entry: Option<String>,
 }
 
 /// State retained between a `Put` and a `CyclePaste` action.

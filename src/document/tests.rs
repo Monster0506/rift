@@ -179,8 +179,7 @@ fn test_populate_directory_file_entry_no_slash() {
     doc.populate_directory_buffer(entries);
     let text = doc.buffer.to_string();
     let lines: Vec<&str> = text.lines().collect();
-    // Entry line has invisible /001 prefix; strip it to get the visible name.
-    assert_eq!(dir_entry_name_from_line(lines[1]), "hello.txt");
+    assert_eq!(lines[1], "hello.txt");
 }
 
 #[test]
@@ -190,8 +189,7 @@ fn test_populate_directory_dir_entry_has_trailing_slash() {
     doc.populate_directory_buffer(entries);
     let text = doc.buffer.to_string();
     let lines: Vec<&str> = text.lines().collect();
-    // Strip invisible ID prefix before checking visible name.
-    assert_eq!(dir_entry_name_from_line(lines[1]), "subdir/");
+    assert_eq!(lines[1], "subdir/");
 }
 
 #[test]
@@ -219,9 +217,9 @@ fn test_populate_directory_multiple_entries_order() {
     let text = doc.buffer.to_string();
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines[0], "../");
-    assert_eq!(dir_entry_name_from_line(lines[1]), "a.txt");
-    assert_eq!(dir_entry_name_from_line(lines[2]), "b.txt");
-    assert_eq!(dir_entry_name_from_line(lines[3]), "c/");
+    assert_eq!(lines[1], "a.txt");
+    assert_eq!(lines[2], "b.txt");
+    assert_eq!(lines[3], "c/");
 }
 
 #[test]
@@ -290,8 +288,8 @@ fn test_populate_directory_file_entry_is_white() {
     let entries = make_dir_entries(&[("readme.txt", false)], "/tmp");
     doc.populate_directory_buffer(entries);
     let _text = doc.buffer.to_string();
-    // "readme.txt" starts after "../\n" (4 bytes) + "/001 " ID prefix (5 bytes) = byte 9.
-    let start = 9;
+    // "readme.txt" starts after "../\n" (4 bytes) = byte 4.
+    let start = 4;
     let end = start + "readme.txt".len();
     let covered = doc
         .custom_highlights
@@ -309,8 +307,8 @@ fn test_populate_directory_dir_entry_is_blue() {
     let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("subdir", true)], "/tmp");
     doc.populate_directory_buffer(entries);
-    // "subdir/" starts at offset 4 (after "../\n") + 5 ("/001 " ID prefix) = byte 9.
-    let start = 9;
+    // "subdir/" starts at offset 4 (after "../\n") = byte 4.
+    let start = 4;
     let end = start + "subdir/".len();
     let covered = doc
         .custom_highlights
@@ -378,18 +376,8 @@ fn test_parse_diff_no_changes_empty_deletes_creates() {
 #[test]
 fn test_parse_diff_deleted_entry() {
     let mut doc = make_populated_directory_doc("/tmp", &[("a.txt", false), ("b.txt", false)]);
-    // Remove b.txt from the buffer
-    let text = doc.buffer.to_string();
-    let new_text: String = text
-        .lines()
-        .filter(|l| !l.contains("b.txt"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    // Replace buffer content via Document API
-    let old_len = doc.buffer.len();
-    let _ = doc.buffer.set_cursor(0);
-    let _ = doc.delete_range(0, old_len);
-    let _ = doc.insert_str(&new_text);
+    // Remove b.txt from the buffer — keep only the header and a.txt (id=1).
+    set_annotated_buffer(&mut doc, "../\n/001 a.txt");
 
     let diff = doc.parse_directory_diff();
     assert_eq!(diff.deletes.len(), 1);
@@ -471,7 +459,7 @@ fn test_parse_diff_one_entry_replaced_is_rename() {
     // With the ID system, the user edits the visible name after the invisible /001 prefix.
     let mut doc = make_populated_directory_doc("/tmp", &[("old.txt", false)]);
     // /001 is the ID of old.txt; user changed the visible name to new.txt
-    set_buffer_text(&mut doc, "../\n/001 new.txt");
+    set_annotated_buffer(&mut doc, "../\n/001 new.txt");
 
     let diff = doc.parse_directory_diff();
     assert_eq!(diff.renames.len(), 1, "ID-based replacement is a rename");
@@ -492,59 +480,32 @@ fn test_parse_diff_noop_on_non_directory_doc() {
 
 #[test]
 fn test_parse_diff_move_file_into_subdir() {
-    // User edits buffer from:
-    //   ../
-    //   [invis /001] A/
-    //   [invis /002] b.c
-    // to:
-    //   ../
-    //   [invis /001] A/        (unchanged)
-    //   [invis /002] A/b.c     (b.c moved into A/)
-    //
-    // Expected: rename b.c → A/b.c; directory A is preserved unchanged.
-    // The ID system makes this unambiguous: id=1 (A) unchanged, id=2 (b.c) renamed.
+    // User renames "b.c" to "A/b.c" (move into subdirectory A/).
+    // The filesystem handles the actual move; parse layer must produce a rename.
     let mut doc = make_populated_directory_doc("/tmp", &[("A", true), ("b.c", false)]);
-    set_buffer_text(&mut doc, "../\n/001 A/\n/002 A/b.c");
+    set_annotated_buffer(&mut doc, "../\n/001 A/\n/002 A/b.c");
 
     let diff = doc.parse_directory_diff();
-    assert!(
-        diff.deletes.is_empty(),
-        "A/ should not be deleted: {:?}",
-        diff
-    );
-    assert_eq!(
-        diff.renames.len(),
-        1,
-        "should produce exactly one rename: {:?}",
-        diff
-    );
+    assert!(diff.deletes.is_empty(), "no deletes expected: {:?}", diff);
+    assert_eq!(diff.renames.len(), 1, "should produce one rename: {:?}", diff);
     assert!(
         diff.renames[0].0.to_string_lossy().contains("b.c"),
-        "rename source should be b.c, not A: {:?}",
+        "rename source should be b.c: {:?}",
         diff.renames[0]
     );
-    assert_eq!(
-        diff.renames[0].1, "A/b.c",
-        "rename target should be A/b.c: {:?}",
-        diff.renames[0]
-    );
+    assert_eq!(diff.renames[0].1, "A/b.c");
     assert!(diff.creates.is_empty(), "no creates expected: {:?}", diff);
 }
 
 #[test]
 fn test_parse_diff_move_one_of_two_files_into_subdir() {
-    // Buffer: A/ (id=1), b.c (id=2), c.d (id=3) → A/ unchanged, b.c unchanged, c.d → A/c.d.
-    // The ID system makes it unambiguous: id=3 was c.d, now shows A/c.d → rename.
+    // User renames "c.d" to "A/c.d" (move into subdirectory A/).
     let mut doc =
         make_populated_directory_doc("/tmp", &[("A", true), ("b.c", false), ("c.d", false)]);
-    set_buffer_text(&mut doc, "../\n/001 A/\n/002 b.c\n/003 A/c.d");
+    set_annotated_buffer(&mut doc, "../\n/001 A/\n/002 b.c\n/003 A/c.d");
 
     let diff = doc.parse_directory_diff();
-    assert!(
-        diff.deletes.is_empty(),
-        "nothing should be deleted: {:?}",
-        diff
-    );
+    assert!(diff.deletes.is_empty(), "nothing should be deleted: {:?}", diff);
     assert_eq!(diff.renames.len(), 1, "exactly one rename: {:?}", diff);
     assert!(
         diff.renames[0].0.to_string_lossy().contains("c.d"),
@@ -710,11 +671,57 @@ fn set_buffer_text(doc: &mut Document, text: &str) {
     let _ = doc.insert_str(text);
 }
 
+/// Simulate a user-edited directory buffer state for testing.
+///
+/// Parses lines like `"../\n/001 a.txt\n/002 b.txt"`:
+/// - Lines with a `/NNN ` prefix record an annotation entry at that line in the store.
+/// - The buffer is populated with the plain text (no prefix bytes).
+///
+/// This replaces the old `Character::Annotation`-based approach and exercises
+/// `parse_directory_diff` with the new annotation store path.
+fn set_annotated_buffer(doc: &mut Document, text: &str) {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut plain_lines: Vec<&str> = Vec::new();
+    let mut line_annotations: Vec<(usize, u16)> = Vec::new();
+
+    for (line_idx, line) in lines.iter().enumerate() {
+        let b = line.as_bytes();
+        let has_annotation_prefix = b.len() >= 5
+            && b[0] == b'/'
+            && b[1].is_ascii_digit()
+            && b[2].is_ascii_digit()
+            && b[3].is_ascii_digit()
+            && b[4] == b' ';
+
+        if has_annotation_prefix {
+            if let Ok(digits) = std::str::from_utf8(&b[1..4]) {
+                if let Ok(entry_id) = digits.parse::<u16>() {
+                    line_annotations.push((line_idx, entry_id));
+                }
+            }
+            plain_lines.push(&line[5..]);
+        } else {
+            plain_lines.push(line);
+        }
+    }
+
+    // Set buffer to plain text
+    let plain_text = plain_lines.join("\n");
+    set_buffer_text(doc, &plain_text);
+
+    // Rebuild annotation store
+    doc.annotations.clear();
+    for (line, entry_id) in line_annotations {
+        doc.annotations.create_directory_entry(line, entry_id);
+    }
+}
+
+
 #[test]
 fn test_parse_diff_rename_simple() {
     // User edits the visible name after the invisible /001 prefix.
     let mut doc = make_populated_directory_doc("/tmp", &[("test1.txt", false)]);
-    set_buffer_text(&mut doc, "../\n/001 test1.json");
+    set_annotated_buffer(&mut doc, "../\n/001 test1.json");
 
     let diff = doc.parse_directory_diff();
     assert_eq!(diff.renames.len(), 1, "should detect a rename: {:?}", diff);
@@ -746,7 +753,7 @@ fn test_parse_diff_rename_preserves_siblings() {
         "/tmp",
         &[("a.txt", false), ("b.txt", false), ("c.txt", false)],
     );
-    set_buffer_text(&mut doc, "../\n/001 a.txt\n/002 b.json\n/003 c.txt");
+    set_annotated_buffer(&mut doc, "../\n/001 a.txt\n/002 b.json\n/003 c.txt");
 
     let diff = doc.parse_directory_diff();
     assert_eq!(diff.renames.len(), 1);
@@ -760,7 +767,7 @@ fn test_parse_diff_rename_preserves_siblings() {
 fn test_parse_diff_rename_multiple() {
     // IDs: 001=foo.txt, 002=bar.txt
     let mut doc = make_populated_directory_doc("/tmp", &[("foo.txt", false), ("bar.txt", false)]);
-    set_buffer_text(&mut doc, "../\n/001 foo.rs\n/002 bar.rs");
+    set_annotated_buffer(&mut doc, "../\n/001 foo.rs\n/002 bar.rs");
 
     let diff = doc.parse_directory_diff();
     assert_eq!(diff.renames.len(), 2);
@@ -777,7 +784,7 @@ fn test_parse_diff_rename_with_delete() {
         &[("keep.txt", false), ("old.txt", false), ("gone.txt", false)],
     );
     // keep.txt stays (id=1), old.txt renamed to new.txt (id=2), gone.txt deleted (id=3 absent)
-    set_buffer_text(&mut doc, "../\n/001 keep.txt\n/002 new.txt");
+    set_annotated_buffer(&mut doc, "../\n/001 keep.txt\n/002 new.txt");
 
     let diff = doc.parse_directory_diff();
     assert_eq!(diff.renames.len(), 1, "one rename: {:?}", diff);
@@ -801,7 +808,7 @@ fn test_parse_diff_rename_with_create() {
     // Rename one, add a new entry.
     // ID 001=original.txt; user renames it (keeps /001 prefix) and types a brand new name.
     let mut doc = make_populated_directory_doc("/tmp", &[("original.txt", false)]);
-    set_buffer_text(&mut doc, "../\n/001 renamed.txt\nbrand_new.txt");
+    set_annotated_buffer(&mut doc, "../\n/001 renamed.txt\nbrand_new.txt");
 
     let diff = doc.parse_directory_diff();
     assert_eq!(diff.renames.len(), 1);
@@ -841,11 +848,116 @@ fn test_parse_diff_multiple_deletes() {
         &[("a.txt", false), ("b.txt", false), ("c.txt", false)],
     );
     // Keep only a.txt (id=1); b.txt (id=2) and c.txt (id=3) are absent → deleted.
-    set_buffer_text(&mut doc, "../\n/001 a.txt");
+    set_annotated_buffer(&mut doc, "../\n/001 a.txt");
 
     let diff = doc.parse_directory_diff();
     assert_eq!(diff.deletes.len(), 2);
 }
+
+#[test]
+fn test_parse_diff_rename_to_subdirectory_path() {
+    // User edits the name of "test" to "Playground/test" — a rename into a subdirectory.
+    // This is achieved by editing the text in the entry's buffer line directly.
+    // Expected: test (id=2) renamed to Playground/test; Playground (id=1) unchanged.
+    let mut doc =
+        make_populated_directory_doc("/tmp", &[("Playground", true), ("test", false)]);
+    set_annotated_buffer(&mut doc, "../\n/001 Playground/\n/002 Playground/test");
+
+    let diff = doc.parse_directory_diff();
+    assert!(
+        diff.deletes.is_empty(),
+        "neither Playground nor test should be deleted: {:?}",
+        diff.deletes
+    );
+    assert!(
+        diff.creates.is_empty(),
+        "no new entries expected: {:?}",
+        diff.creates
+    );
+    assert_eq!(
+        diff.renames.len(),
+        1,
+        "exactly one rename (test → Playground/test): {:?}",
+        diff
+    );
+    assert!(
+        diff.renames[0].0.to_string_lossy().contains("test"),
+        "rename should be from 'test': {:?}",
+        diff.renames[0]
+    );
+    assert_eq!(
+        diff.renames[0].1, "Playground/test",
+        "rename should be to 'Playground/test': {:?}",
+        diff.renames[0]
+    );
+}
+
+#[test]
+fn test_parse_diff_rename_into_dir_while_dir_line_removed_does_not_delete_dir() {
+    // Bug: user changes "test" → "Playground/test" AND removes the "Playground/" line.
+    // The old dir entry (id=1) must be protected from deletion because it is the parent
+    // of the rename destination — removing it would wipe the file that was just moved in.
+    let mut doc =
+        make_populated_directory_doc("/tmp", &[("Playground", true), ("test", false)]);
+    // Buffer after user edit: Playground/ line gone, test line rewritten as Playground/test.
+    set_annotated_buffer(&mut doc, "../\n/002 Playground/test");
+
+    let diff = doc.parse_directory_diff();
+    assert!(
+        diff.deletes.is_empty(),
+        "Playground/ must be protected from deletion when it is the rename destination parent: {:?}",
+        diff.deletes
+    );
+    assert_eq!(diff.renames.len(), 1, "one rename expected: {:?}", diff);
+    assert_eq!(diff.renames[0].1, "Playground/test");
+    assert!(diff.creates.is_empty(), "no creates expected: {:?}", diff.creates);
+}
+
+#[test]
+fn test_parse_diff_dir_entry_replaced_with_path_is_create_not_rename() {
+    // User changes the "Playground/" line to "Playground/newfolder/newfile".
+    // The annotation still maps that line to the Playground/ directory, but the
+    // new text has an internal slash — it should be treated as a create, not a
+    // rename of the directory to an invalid path.
+    let mut doc = make_populated_directory_doc("/tmp", &[("Playground", true)]);
+    set_annotated_buffer(&mut doc, "../\n/001 Playground/newfolder/newfile");
+
+    let diff = doc.parse_directory_diff();
+    assert!(diff.renames.is_empty(), "must not rename the dir: {:?}", diff.renames);
+    assert!(diff.deletes.is_empty(), "Playground/ must not be deleted: {:?}", diff.deletes);
+    assert_eq!(diff.creates.len(), 1, "one create expected: {:?}", diff.creates);
+    assert_eq!(diff.creates[0], "Playground/newfolder/newfile");
+}
+
+#[test]
+fn test_parse_diff_dir_line_replaced_with_path_plus_sibling_create() {
+    // User has Playground/ and adds Playground/newfile and Playground/newfolder/newfile.
+    // Playground/ should stay; both paths should be creates.
+    let mut doc = make_populated_directory_doc("/tmp", &[("Playground", true)]);
+    // Playground/ line present, two new unannotated lines added below
+    set_annotated_buffer(&mut doc, "../\n/001 Playground/\nPlayground/newfolder/newfile\nPlayground/newfile");
+
+    let diff = doc.parse_directory_diff();
+    assert!(diff.renames.is_empty(), "no renames expected: {:?}", diff.renames);
+    assert!(diff.deletes.is_empty(), "no deletes expected: {:?}", diff.deletes);
+    assert_eq!(diff.creates.len(), 2, "two creates expected: {:?}", diff.creates);
+    assert!(diff.creates.iter().any(|c| c == "Playground/newfolder/newfile"));
+    assert!(diff.creates.iter().any(|c| c == "Playground/newfile"));
+}
+
+#[test]
+fn test_parse_diff_file_entry_with_path_prefix_is_still_rename() {
+    // A file entry (not a dir) changed to "Playground/test" is a move, not a create.
+    let mut doc = make_populated_directory_doc("/tmp", &[("Playground", true), ("test", false)]);
+    set_annotated_buffer(&mut doc, "../\n/001 Playground/\n/002 Playground/test");
+
+    let diff = doc.parse_directory_diff();
+    assert_eq!(diff.renames.len(), 1, "one rename (move) expected: {:?}", diff.renames);
+    assert_eq!(diff.renames[0].1, "Playground/test");
+    assert!(diff.deletes.is_empty(), "Playground/ must not be deleted: {:?}", diff.deletes);
+    assert!(diff.creates.is_empty(), "no creates expected: {:?}", diff.creates);
+}
+
 // Buffer revision increments on populate
 
 #[test]
@@ -1088,183 +1200,72 @@ fn test_from_file_normalizes_crlf() {
     assert_eq!(doc.options.line_ending, LineEnding::CRLF);
 }
 
-#[test]
-fn test_dir_entry_name_from_line_strips_valid_prefix() {
-    assert_eq!(dir_entry_name_from_line("/001 hello.txt"), "hello.txt");
-}
+// Annotation store integration — directory entry tracking
 
 #[test]
-fn test_dir_entry_name_from_line_no_prefix_passes_through() {
-    assert_eq!(dir_entry_name_from_line("hello.txt"), "hello.txt");
-}
-
-#[test]
-fn test_dir_entry_name_from_line_parent_nav_unchanged() {
-    assert_eq!(dir_entry_name_from_line("../"), "../");
-}
-
-#[test]
-fn test_dir_entry_name_from_line_empty_string() {
-    assert_eq!(dir_entry_name_from_line(""), "");
-}
-
-#[test]
-fn test_dir_entry_name_from_line_partial_prefix_not_stripped() {
-    // Only 4 bytes "/001" — missing the trailing space, not a valid prefix
-    assert_eq!(dir_entry_name_from_line("/001file.txt"), "/001file.txt");
-}
-
-#[test]
-fn test_dir_entry_name_from_line_max_id() {
-    assert_eq!(dir_entry_name_from_line("/999 max.rs"), "max.rs");
-}
-
-#[test]
-fn test_dir_entry_name_from_line_dir_trailing_slash_preserved() {
-    assert_eq!(dir_entry_name_from_line("/042 subdir/"), "subdir/");
-}
-
-#[test]
-fn test_dir_entry_name_from_line_exactly_prefix_only() {
-    // Five bytes "/001 " with nothing after — returns empty string
-    assert_eq!(dir_entry_name_from_line("/001 "), "");
-}
-
-#[test]
-fn test_invisible_ranges_empty_for_new_doc() {
-    let doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    assert!(doc.invisible_ranges.is_empty());
-}
-
-#[test]
-fn test_invisible_ranges_none_for_header_line() {
-    // The "../" header has no invisible range.
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    doc.populate_directory_buffer(vec![]);
-    // Empty directory → only the header line → no invisible ranges.
-    assert!(doc.invisible_ranges.is_empty());
-}
-
-#[test]
-fn test_invisible_ranges_count_matches_entries() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    let entries = make_dir_entries(
-        &[("a.txt", false), ("b.txt", false), ("c.txt", false)],
-        "/tmp",
-    );
-    doc.populate_directory_buffer(entries);
-    assert_eq!(doc.invisible_ranges.len(), 3);
-}
-
-#[test]
-fn test_invisible_ranges_first_entry_offset() {
-    // "../\n" = 4 bytes → first entry prefix starts at byte 4, length 5 → 4..9
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    let entries = make_dir_entries(&[("file.txt", false)], "/tmp");
-    doc.populate_directory_buffer(entries);
-    assert_eq!(doc.invisible_ranges[0], 4..9, "first prefix at bytes 4..9");
-}
-
-#[test]
-fn test_invisible_ranges_each_is_five_bytes() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    let entries = make_dir_entries(&[("a.rs", false), ("b.rs", false), ("c.rs", false)], "/tmp");
-    doc.populate_directory_buffer(entries);
-    for r in &doc.invisible_ranges {
-        assert_eq!(
-            r.end - r.start,
-            5,
-            "each invisible range must be 5 bytes: {:?}",
-            r
-        );
-    }
-}
-
-#[test]
-fn test_invisible_ranges_cleared_on_repopulate() {
+fn test_populate_directory_creates_annotations_in_store() {
     let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("a.txt", false), ("b.txt", false)], "/tmp");
     doc.populate_directory_buffer(entries);
-    assert_eq!(doc.invisible_ranges.len(), 2);
-
-    // Repopulate with one entry → should have exactly 1 range.
-    let entries2 = make_dir_entries(&[("only.txt", false)], "/tmp");
-    doc.populate_directory_buffer(entries2);
-    assert_eq!(doc.invisible_ranges.len(), 1);
+    // Line 0 = "../" (no annotation), line 1 = "a.txt" (id=1), line 2 = "b.txt" (id=2)
+    assert_eq!(doc.annotations.directory_entry_id_at_line(0), None);
+    assert_eq!(doc.annotations.directory_entry_id_at_line(1), Some(1));
+    assert_eq!(doc.annotations.directory_entry_id_at_line(2), Some(2));
 }
 
 #[test]
-fn test_invisible_ranges_non_overlapping_and_ordered() {
+fn test_populate_directory_clears_previous_annotations_on_repopulate() {
     let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    let entries = make_dir_entries(&[("aaa", false), ("bbb", false), ("ccc", false)], "/tmp");
-    doc.populate_directory_buffer(entries);
-    let ranges = &doc.invisible_ranges;
-    for i in 0..ranges.len().saturating_sub(1) {
-        assert!(
-            ranges[i].end <= ranges[i + 1].start,
-            "invisible ranges must be ordered and non-overlapping: {:?}",
-            ranges
-        );
+    doc.populate_directory_buffer(make_dir_entries(&[("a.txt", false), ("b.txt", false)], "/tmp"));
+    doc.populate_directory_buffer(make_dir_entries(&[("c.txt", false)], "/tmp"));
+    // Only one entry annotation should remain
+    assert_eq!(doc.annotations.directory_entry_id_at_line(1), Some(1));
+    assert_eq!(doc.annotations.directory_entry_id_at_line(2), None);
+}
+
+#[test]
+fn test_annotation_store_line_insert_shifts_entries() {
+    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    doc.populate_directory_buffer(make_dir_entries(&[("a.txt", false), ("b.txt", false)], "/tmp"));
+    // Simulate inserting a line at position 2 (between a.txt and b.txt)
+    doc.annotations.on_line_inserted(2);
+    assert_eq!(doc.annotations.directory_entry_id_at_line(1), Some(1)); // a.txt unchanged
+    assert_eq!(doc.annotations.directory_entry_id_at_line(2), None);     // gap line
+    assert_eq!(doc.annotations.directory_entry_id_at_line(3), Some(2)); // b.txt shifted
+}
+
+#[test]
+fn test_annotation_store_line_delete_removes_entry() {
+    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    doc.populate_directory_buffer(make_dir_entries(
+        &[("a.txt", false), ("b.txt", false), ("c.txt", false)],
+        "/tmp",
+    ));
+    // Delete line 2 (b.txt)
+    doc.annotations.on_lines_deleted(2, 1);
+    assert_eq!(doc.annotations.directory_entry_id_at_line(1), Some(1)); // a.txt unchanged
+    assert_eq!(doc.annotations.directory_entry_id_at_line(2), Some(3)); // c.txt shifted up
+    assert_eq!(doc.annotations.directory_entry_id_at_line(3), None);
+}
+
+#[test]
+fn test_buffer_text_has_no_annotation_prefix_after_populate() {
+    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    doc.populate_directory_buffer(make_dir_entries(&[("readme.md", false)], "/tmp"));
+    let text = doc.buffer.to_string();
+    // Buffer must not contain any /NNN prefix bytes
+    for line in text.lines() {
+        let b = line.as_bytes();
+        let is_id_prefix = b.len() >= 5
+            && b[0] == b'/'
+            && b[1].is_ascii_digit()
+            && b[2].is_ascii_digit()
+            && b[3].is_ascii_digit()
+            && b[4] == b' ';
+        assert!(!is_id_prefix, "buffer line must not start with /NNN prefix: {:?}", line);
     }
 }
 
-#[test]
-fn test_clamp_cursor_no_ranges_is_noop() {
-    let mut doc = Document::new(1).unwrap();
-    let _ = doc.buffer.insert_str("hello");
-    let _ = doc.buffer.set_cursor(0);
-    doc.clamp_cursor_past_invisible();
-    assert_eq!(doc.buffer.cursor(), 0);
-}
-
-#[test]
-fn test_clamp_cursor_not_in_range_is_noop() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    let entries = make_dir_entries(&[("file.txt", false)], "/tmp");
-    doc.populate_directory_buffer(entries);
-    // Position cursor at the '../' header (char 0) — not in any invisible range.
-    let _ = doc.buffer.set_cursor(0);
-    doc.clamp_cursor_past_invisible();
-    assert_eq!(doc.buffer.cursor(), 0, "cursor on header stays at 0");
-}
-
-#[test]
-fn test_clamp_cursor_at_range_start_advances_to_end() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    let entries = make_dir_entries(&[("file.txt", false)], "/tmp");
-    doc.populate_directory_buffer(entries);
-    // First entry prefix is at chars 4..9 (after "../\n" which is 4 chars).
-    // Move cursor to char 4 (start of invisible prefix).
-    let _ = doc.buffer.set_cursor(4);
-    doc.clamp_cursor_past_invisible();
-    assert_eq!(
-        doc.buffer.cursor(),
-        9,
-        "cursor clamped past 5-byte prefix to char 9"
-    );
-}
-
-#[test]
-fn test_clamp_cursor_inside_range_advances_to_end() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    let entries = make_dir_entries(&[("file.txt", false)], "/tmp");
-    doc.populate_directory_buffer(entries);
-    // Prefix chars are 4..9; put cursor in the middle at char 6.
-    let _ = doc.buffer.set_cursor(6);
-    doc.clamp_cursor_past_invisible();
-    assert_eq!(doc.buffer.cursor(), 9, "cursor clamped past prefix");
-}
-
-#[test]
-fn test_clamp_cursor_after_range_is_noop() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    let entries = make_dir_entries(&[("file.txt", false)], "/tmp");
-    doc.populate_directory_buffer(entries);
-    // Cursor at char 9 is past the prefix → visible "file.txt" territory.
-    let _ = doc.buffer.set_cursor(9);
-    doc.clamp_cursor_past_invisible();
-    assert_eq!(doc.buffer.cursor(), 9, "cursor after range unchanged");
-}
 
 #[test]
 fn test_parse_diff_reorder_without_rename_produces_no_diff() {
@@ -1272,7 +1273,7 @@ fn test_parse_diff_reorder_without_rename_produces_no_diff() {
     let mut doc =
         make_populated_directory_doc("/tmp", &[("alpha.txt", false), ("beta.txt", false)]);
     // Swap order but keep IDs — both names unchanged.
-    set_buffer_text(&mut doc, "../\n/002 beta.txt\n/001 alpha.txt");
+    set_annotated_buffer(&mut doc, "../\n/002 beta.txt\n/001 alpha.txt");
     let diff = doc.parse_directory_diff();
     assert!(
         diff.renames.is_empty(),
@@ -1289,9 +1290,8 @@ fn test_parse_diff_entry_with_zero_id_silently_ignored() {
     // for id=0 in its map (entries start at id=1), so the line is silently ignored —
     // it does NOT appear in creates, renames, or deletes.
     let mut doc = make_populated_directory_doc("/tmp", &[("real.txt", false)]);
-    // Append a line that looks like id=0 (invalid — assigned IDs start at 1).
-    let _ = doc.buffer.set_cursor(doc.buffer.len());
-    let _ = doc.buffer.insert_str("\n/000 ghost.txt");
+    // Replace buffer with annotation-encoded /000 prefix (id=0 not in map → silently ignored).
+    set_annotated_buffer(&mut doc, "../\n/001 real.txt\n/000 ghost.txt");
     let diff = doc.parse_directory_diff();
     // Existing entry "real.txt" (id=1) is still present → no deletes.
     assert!(
@@ -1319,7 +1319,7 @@ fn test_parse_diff_all_entries_deleted() {
         &[("a.txt", false), ("b.txt", false), ("c.txt", false)],
     );
     // Buffer only contains the header — all entry IDs absent → all deleted.
-    set_buffer_text(&mut doc, "../");
+    set_annotated_buffer(&mut doc, "../");
     let diff = doc.parse_directory_diff();
     assert_eq!(
         diff.deletes.len(),
@@ -1411,7 +1411,7 @@ fn test_parse_diff_dotdot_line_is_always_filtered() {
     // A user who types "../" as a new entry has it silently dropped — it can never
     // become a create, which prevents accidental parent-directory operations.
     let mut doc = make_populated_directory_doc("/tmp", &[("a.txt", false)]);
-    set_buffer_text(&mut doc, "../\n/001 a.txt\n../");
+    set_annotated_buffer(&mut doc, "../\n/001 a.txt\n../");
 
     let diff = doc.parse_directory_diff();
     assert!(
@@ -1426,7 +1426,7 @@ fn test_parse_diff_dotdot_line_is_always_filtered() {
 #[test]
 fn test_parse_diff_whitespace_only_line_not_a_create() {
     let mut doc = make_populated_directory_doc("/tmp", &[("a.txt", false)]);
-    set_buffer_text(&mut doc, "../\n/001 a.txt\n   ");
+    set_annotated_buffer(&mut doc, "../\n/001 a.txt\n   ");
 
     let diff = doc.parse_directory_diff();
     assert!(
@@ -1442,7 +1442,7 @@ fn test_parse_diff_rename_to_empty_visible_name_is_ignored() {
     // The trimmed visible part is empty → no rename should be produced.
     let mut doc = make_populated_directory_doc("/tmp", &[("a.txt", false)]);
     // Buffer line: "/001 " — visible part is "" after stripping prefix.
-    set_buffer_text(&mut doc, "../\n/001 ");
+    set_annotated_buffer(&mut doc, "../\n/001 ");
 
     let diff = doc.parse_directory_diff();
     // trim_end_matches('/') on "" is still ""; new_name == "" ≠ "a.txt" → would produce rename to "".
@@ -1461,7 +1461,7 @@ fn test_parse_diff_id_only_line_no_trailing_text_not_counted_as_create() {
     // A line that exactly matches a valid ID prefix format but with nothing visible after it
     // must not land in creates (it has a prefix → handled as a known-ID line, not a raw create).
     let mut doc = make_populated_directory_doc("/tmp", &[("a.txt", false)]);
-    set_buffer_text(&mut doc, "../\n/001 ");
+    set_annotated_buffer(&mut doc, "../\n/001 ");
 
     let diff = doc.parse_directory_diff();
     assert!(
@@ -1476,7 +1476,7 @@ fn test_parse_diff_line_with_path_separator_is_create() {
     // A user might type "sub/file.txt" — this should appear in creates verbatim.
     // apply_directory_diff handles the path join; parse layer must not strip or drop it.
     let mut doc = make_populated_directory_doc("/tmp", &[]);
-    set_buffer_text(&mut doc, "../\nsub/file.txt");
+    set_annotated_buffer(&mut doc, "../\nsub/file.txt");
 
     let diff = doc.parse_directory_diff();
     assert!(
@@ -1501,33 +1501,3 @@ fn test_parse_diff_many_entries_ids_are_stable() {
     assert!(diff.creates.is_empty());
 }
 
-// clamp_cursor_past_invisible — boundary at buffer end
-
-#[test]
-fn test_clamp_cursor_at_buffer_end_does_not_panic() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    let entries = make_dir_entries(&[("f.txt", false)], "/tmp");
-    doc.populate_directory_buffer(entries);
-    // Force cursor to the very last char position.
-    let last = doc.buffer.len().saturating_sub(1);
-    let _ = doc.buffer.set_cursor(last);
-    doc.clamp_cursor_past_invisible(); // must not panic
-}
-
-#[test]
-fn test_clamp_cursor_multiple_ranges_advances_to_correct_range() {
-    // Two entries → two invisible ranges. Place cursor in the second range and
-    // confirm it advances to the end of the second range, not the first.
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    let entries = make_dir_entries(&[("a.txt", false), ("b.txt", false)], "/tmp");
-    doc.populate_directory_buffer(entries);
-    // "../\n" = 4 bytes, "/001 a.txt\n" = 11 bytes → second prefix starts at 4+11=15, ends at 20.
-    let second_range = &doc.invisible_ranges[1].clone();
-    let _ = doc.buffer.set_cursor(second_range.start);
-    doc.clamp_cursor_past_invisible();
-    assert_eq!(
-        doc.buffer.cursor(),
-        second_range.end,
-        "cursor must advance to end of the second invisible range"
-    );
-}

@@ -2,6 +2,7 @@
 
 use super::definitions;
 use super::{BufferKind, Document, LineEnding, ViewState};
+use crate::annotations::AnnotationStore;
 use crate::buffer::TextBuffer;
 use crate::error::{ErrorType, RiftError};
 use crate::history::UndoTree;
@@ -32,7 +33,10 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
-            invisible_ranges: vec![],
+            annotations: AnnotationStore::new(),
+            pending_annotation_snapshot: None,
+            dir_annotation_undo_stack: Vec::new(),
+            dir_annotation_redo_stack: Vec::new(),
         })
     }
 
@@ -91,7 +95,10 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
-            invisible_ranges: vec![],
+            annotations: AnnotationStore::new(),
+            pending_annotation_snapshot: None,
+            dir_annotation_undo_stack: Vec::new(),
+            dir_annotation_redo_stack: Vec::new(),
         })
     }
 
@@ -127,7 +134,10 @@ impl Document {
                 plugin_highlights: vec![],
                 terminal_cell_colors: vec![],
                 highlight_slots: std::collections::HashMap::new(),
-                invisible_ranges: vec![],
+                annotations: AnnotationStore::new(),
+            pending_annotation_snapshot: None,
+            dir_annotation_undo_stack: Vec::new(),
+            dir_annotation_redo_stack: Vec::new(),
             },
             rx,
         ))
@@ -160,7 +170,10 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
-            invisible_ranges: vec![],
+            annotations: AnnotationStore::new(),
+            pending_annotation_snapshot: None,
+            dir_annotation_undo_stack: Vec::new(),
+            dir_annotation_redo_stack: Vec::new(),
         })
     }
 
@@ -193,7 +206,10 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
-            invisible_ranges: vec![],
+            annotations: AnnotationStore::new(),
+            pending_annotation_snapshot: None,
+            dir_annotation_undo_stack: Vec::new(),
+            dir_annotation_redo_stack: Vec::new(),
         })
     }
 
@@ -222,7 +238,10 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
-            invisible_ranges: vec![],
+            annotations: AnnotationStore::new(),
+            pending_annotation_snapshot: None,
+            dir_annotation_undo_stack: Vec::new(),
+            dir_annotation_redo_stack: Vec::new(),
         })
     }
 
@@ -249,7 +268,10 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
-            invisible_ranges: vec![],
+            annotations: AnnotationStore::new(),
+            pending_annotation_snapshot: None,
+            dir_annotation_undo_stack: Vec::new(),
+            dir_annotation_redo_stack: Vec::new(),
         })
     }
 
@@ -275,7 +297,10 @@ impl Document {
             plugin_highlights: vec![],
             terminal_cell_colors: vec![],
             highlight_slots: std::collections::HashMap::new(),
-            invisible_ranges: vec![],
+            annotations: AnnotationStore::new(),
+            pending_annotation_snapshot: None,
+            dir_annotation_undo_stack: Vec::new(),
+            dir_annotation_redo_stack: Vec::new(),
         })
     }
 }

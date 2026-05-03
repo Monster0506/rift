@@ -129,10 +129,56 @@ impl<T: TerminalBackend> Editor<T> {
                                 if *path == listing.path);
                             if path_matches {
                                 doc.populate_directory_buffer(entries);
-                                self.sync_state_with_active_document();
-                                let _ = self.force_full_redraw();
-                                self.update_explorer_preview();
                             }
+                        }
+                        // Restore cursor to the child entry we navigated away from, if any.
+                        if let Some(target_name) = self.pending_cursor_entry.take() {
+                            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                                let path_matches = matches!(&doc.kind,
+                                    crate::document::BufferKind::Directory { path, .. }
+                                    if *path == listing.path);
+                                if path_matches {
+                                    let line_pos = doc
+                                        .annotations
+                                        .directory_entries_by_line()
+                                        .into_iter()
+                                        .find_map(|(line, eid)| {
+                                            if let crate::document::BufferKind::Directory {
+                                                entries, ..
+                                            } = &doc.kind
+                                            {
+                                                entries.iter().find(|e| e.id == eid).and_then(
+                                                    |e| {
+                                                        e.path
+                                                            .file_name()
+                                                            .and_then(|n| n.to_str())
+                                                            .filter(|n| *n == target_name)
+                                                            .map(|_| {
+                                                                doc.buffer
+                                                                    .line_index
+                                                                    .get_start(line)
+                                                                    .unwrap_or(0)
+                                                            })
+                                                    },
+                                                )
+                                            } else {
+                                                None
+                                            }
+                                        });
+                                    if let Some(pos) = line_pos {
+                                        let _ = doc.buffer.set_cursor(pos);
+                                    }
+                                }
+                            }
+                        }
+                        if matches!(self.document_manager.get_document(doc_id),
+                            Some(doc) if matches!(&doc.kind,
+                                crate::document::BufferKind::Directory { path, .. }
+                                if *path == listing.path))
+                        {
+                            self.sync_state_with_active_document();
+                            let _ = self.force_full_redraw();
+                            self.update_explorer_preview();
                         }
                         self.job_manager
                             .update_job_state(&JobMessage::Finished(id, true));
@@ -172,11 +218,7 @@ impl<T: TerminalBackend> Editor<T> {
                         let preview_path = res.path.clone();
                         let is_file_preview = res.dir_entries.is_none();
                         if let Some(doc) = self.document_manager.get_document_mut(preview_doc_id) {
-                            let _ = doc.buffer.set_cursor(0);
-                            let len = doc.buffer.len();
-                            for _ in 0..len {
-                                doc.buffer.delete_forward();
-                            }
+                            doc.replace_buffer_content("");
                             doc.syntax = None;
                             doc.custom_highlights.clear();
 
@@ -190,7 +232,6 @@ impl<T: TerminalBackend> Editor<T> {
                             } else if let Some(text) = res.file_text {
                                 doc.kind = crate::document::BufferKind::File;
                                 doc.set_path(&preview_path);
-                                doc.invisible_ranges.clear();
                                 let _ = doc.buffer.insert_str(&text);
                                 let _ = doc.buffer.set_cursor(0);
                             }

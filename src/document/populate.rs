@@ -2,11 +2,12 @@
 
 use super::{BufferKind, DirEntry, DirectoryDiff, Document};
 use crate::buffer::TextBuffer;
+use crate::character::Character;
 use std::collections::HashSet;
 
 impl Document {
     /// Replace this document's buffer with new content, resetting cursor to the top.
-    pub(super) fn replace_buffer_content(&mut self, content: &str) {
+    pub fn replace_buffer_content(&mut self, content: &str) {
         let old_revision = self.buffer.revision;
         if let Ok(mut new_buffer) = TextBuffer::new(content.len().max(64)) {
             let _ = new_buffer.insert_str(content);
@@ -16,11 +17,22 @@ impl Document {
         }
     }
 
+    /// Replace this document's buffer with a sequence of Characters.
+    pub(super) fn replace_buffer_content_chars(&mut self, chars: &[Character]) {
+        let old_revision = self.buffer.revision;
+        let byte_len: usize = chars.iter().map(|c| c.len_utf8()).sum();
+        if let Ok(mut new_buffer) = TextBuffer::new(byte_len.max(64)) {
+            let _ = new_buffer.insert_chars(chars);
+            let _ = new_buffer.set_cursor(0);
+            new_buffer.revision = old_revision + 1;
+            self.buffer = new_buffer;
+        }
+    }
+
     /// Populate (or repopulate) this directory buffer from a fresh directory listing.
     ///
-    /// Each entry line is prefixed with an invisible `/NNN ` ID (5 bytes) so the diff
-    /// algorithm can unambiguously identify entries even after reordering. The renderer
-    /// skips these byte ranges via `invisible_ranges`.
+    /// Entry IDs are stored in the annotation store rather than embedded as bytes in the
+    /// buffer. The buffer contains only the visible filenames.
     pub fn populate_directory_buffer(&mut self, mut entries: Vec<DirEntry>) {
         use crate::color::Color;
 
@@ -31,19 +43,22 @@ impl Document {
             _ => return,
         };
 
-        let mut content = String::new();
+        let mut chars: Vec<Character> = Vec::new();
         let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
-        let mut invisible: Vec<std::ops::Range<usize>> = Vec::new();
+        let mut byte_offset = 0usize;
 
-        let push_colored =
-            |content: &mut String, highlights: &mut Vec<_>, s: &str, color: Color| {
-                let start = content.len();
-                content.push_str(s);
-                highlights.push((start..content.len(), color));
-            };
+        {
+            let start = byte_offset;
+            for c in "../".chars() {
+                chars.push(Character::from(c));
+            }
+            highlights.push((start..start + 3, Color::Blue));
+            byte_offset += 3;
+        }
+        chars.push(Character::Newline);
+        byte_offset += 1;
 
-        push_colored(&mut content, &mut highlights, "../", Color::Blue);
-        content.push('\n');
+        self.annotations.clear();
 
         for (i, entry) in entries.iter_mut().enumerate() {
             entry.id = (i + 1) as u16;
@@ -53,32 +68,92 @@ impl Document {
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
 
-            let prefix_start = content.len();
-            let prefix = format!("/{:03} ", entry.id);
-            content.push_str(&prefix);
-            invisible.push(prefix_start..content.len());
-
             let (display, color) = if entry.is_dir {
                 (format!("{}/", name), Color::Blue)
             } else {
                 (name.to_string(), Color::White)
             };
-            push_colored(&mut content, &mut highlights, &display, color);
-            content.push('\n');
+
+            let start = byte_offset;
+            for c in display.chars() {
+                chars.push(Character::from(c));
+                byte_offset += c.len_utf8();
+            }
+            highlights.push((start..byte_offset, color));
+
+            chars.push(Character::Newline);
+            byte_offset += 1;
+
+            self.annotations.create_directory_entry(i + 1, entry.id);
         }
-        if content.ends_with('\n') {
-            content.pop();
+        if chars.last() == Some(&Character::Newline) {
+            chars.pop();
         }
 
-        self.replace_buffer_content(&content);
+        self.replace_buffer_content_chars(&chars);
         self.custom_highlights = highlights;
-        self.invisible_ranges = invisible;
         self.kind = BufferKind::Directory {
             path: dir_path,
             entries,
             show_hidden,
         };
         self.history.mark_saved();
+    }
+
+    /// Recompute `custom_highlights` from the current buffer state for directory buffers.
+    ///
+    /// Called before each render so that highlights stay accurate after user edits.
+    pub fn recompute_directory_highlights(&mut self) {
+        use crate::color::Color;
+
+        if !matches!(&self.kind, BufferKind::Directory { .. }) {
+            return;
+        }
+
+        let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
+        let mut byte_pos = 0usize;
+        let mut line_start = 0usize;
+        let mut line_has_content = false;
+        let mut last_visible_char = '\0';
+
+        for ch in self.buffer.iter_at(0) {
+            let char_len = ch.len_utf8();
+            match ch {
+                Character::Newline => {
+                    if line_has_content {
+                        let color = if last_visible_char == '/' {
+                            Color::Blue
+                        } else {
+                            Color::White
+                        };
+                        highlights.push((line_start..byte_pos, color));
+                    }
+                    line_start = byte_pos + 1;
+                    line_has_content = false;
+                    last_visible_char = '\0';
+                }
+                c => {
+                    if !line_has_content {
+                        line_start = byte_pos;
+                        line_has_content = true;
+                    }
+                    last_visible_char = c.to_char_lossy();
+                }
+            }
+            byte_pos += char_len;
+        }
+
+        // Last line (no trailing newline)
+        if line_has_content {
+            let color = if last_visible_char == '/' {
+                Color::Blue
+            } else {
+                Color::White
+            };
+            highlights.push((line_start..byte_pos, color));
+        }
+
+        self.custom_highlights = highlights;
     }
 
     /// Populate this undo-tree buffer from the given history.
@@ -252,18 +327,14 @@ impl Document {
     }
 
     /// Parse the current buffer content of a directory buffer and produce a diff.
+    ///
+    /// Queries the annotation store for each line to find the entry ID, then compares
+    /// the visible buffer text against the original entry path to detect renames,
+    /// deletes, and creates.
     pub fn parse_directory_diff(&self) -> DirectoryDiff {
-        use super::DIR_ID_PREFIX_LEN;
-
-        let entries = match &self.kind {
-            BufferKind::Directory { entries, .. } => entries,
-            _ => {
-                return DirectoryDiff {
-                    renames: vec![],
-                    deletes: vec![],
-                    creates: vec![],
-                }
-            }
+        let (entries, dir_path) = match &self.kind {
+            BufferKind::Directory { entries, path, .. } => (entries, path),
+            _ => return DirectoryDiff::default(),
         };
 
         let id_map: std::collections::HashMap<u16, &DirEntry> = entries
@@ -272,45 +343,89 @@ impl Document {
             .map(|e| (e.id, e))
             .collect();
 
-        let content = self.buffer.to_string();
-
+        let total_lines = self.buffer.get_total_lines();
         let mut renames: Vec<(std::path::PathBuf, String)> = Vec::new();
         let mut creates: Vec<String> = Vec::new();
         let mut seen_ids: HashSet<u16> = HashSet::new();
 
-        for line in content.lines() {
-            if line == "../" {
-                continue;
-            }
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
+        for line_idx in 0..total_lines {
+            let line_start = self.buffer.line_index.get_start(line_idx).unwrap_or(0);
+            let line_end = self
+                .buffer
+                .line_index
+                .get_end(line_idx, self.buffer.len())
+                .unwrap_or(self.buffer.len());
 
-            if let Some(id) = parse_id_prefix(line) {
-                seen_ids.insert(id);
-                if let Some(entry) = id_map.get(&id) {
-                    let visible = &line[DIR_ID_PREFIX_LEN..];
-                    let new_name = visible.trim_end_matches('/').to_string();
+            // Collect the visible text of this line (no annotation bytes to strip).
+            let line_text: String = self
+                .buffer
+                .iter_at(line_start)
+                .take(line_end - line_start)
+                .filter_map(|c| {
+                    if c == Character::Newline {
+                        None
+                    } else {
+                        Some(c.to_char_lossy())
+                    }
+                })
+                .collect();
+
+            // Look up the annotation for this line in the store.
+            let annotation_entry_id = self.annotations.directory_entry_id_at_line(line_idx);
+
+            if let Some(entry_id) = annotation_entry_id {
+                // Line has a known annotation. entry_id=0 is the "no-id" sentinel → skip silently.
+                if entry_id == 0 {
+                    continue;
+                }
+
+                // Primary entry name: visible line content with trailing slash and whitespace stripped.
+                let primary_name = line_text.trim_end_matches('/').trim().to_string();
+
+                // A blank annotated line means the user erased the entry — treat as deleted.
+                if primary_name.is_empty() {
+                    continue;
+                }
+
+                seen_ids.insert(entry_id);
+
+                if let Some(entry) = id_map.get(&entry_id) {
                     let orig_name = entry
                         .path
                         .file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or("")
                         .to_string();
-                    if new_name != orig_name {
-                        renames.push((entry.path.clone(), new_name));
+
+                    if entry.is_dir && primary_name.contains('/') {
+                        creates.push(line_text.trim().to_string());
+                    } else if primary_name != orig_name {
+                        renames.push((entry.path.clone(), primary_name));
                     }
                 }
-            } else if !trimmed.is_empty() {
-                creates.push(trimmed.to_string());
+            } else {
+                let trimmed = line_text.trim();
+                if !trimmed.is_empty() && trimmed != "../" {
+                    creates.push(trimmed.to_string());
+                }
             }
         }
+
+        let protected_dirs: HashSet<std::path::PathBuf> = renames
+            .iter()
+            .filter_map(|(_, new_name)| {
+                let p = std::path::Path::new(new_name.as_str());
+                p.parent()
+                    .filter(|parent| *parent != std::path::Path::new(""))
+                    .map(|parent| dir_path.join(parent))
+            })
+            .collect();
 
         let deletes: Vec<std::path::PathBuf> = entries
             .iter()
             .filter(|e| e.id != 0 && !seen_ids.contains(&e.id))
             .map(|e| e.path.clone())
+            .filter(|p| !protected_dirs.contains(p))
             .collect();
 
         DirectoryDiff {
@@ -364,24 +479,5 @@ impl Document {
             self.terminal_cell_colors = cell_colors;
             self.mark_dirty();
         }
-    }
-}
-
-/// Extract the numeric ID from a `/NNN ` prefix if present.
-/// Returns `None` for lines that have no valid prefix (header, user-typed lines).
-fn parse_id_prefix(line: &str) -> Option<u16> {
-    use super::DIR_ID_PREFIX_LEN;
-    let b = line.as_bytes();
-    if b.len() >= DIR_ID_PREFIX_LEN
-        && b[0] == b'/'
-        && b[1].is_ascii_digit()
-        && b[2].is_ascii_digit()
-        && b[3].is_ascii_digit()
-        && b[4] == b' '
-    {
-        let digits = &line[1..4];
-        digits.parse::<u16>().ok()
-    } else {
-        None
     }
 }

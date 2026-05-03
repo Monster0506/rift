@@ -39,6 +39,11 @@ impl<T: TerminalBackend> Editor<T> {
             self.split_tree.focused_window_mut().cursor_position = doc.buffer.cursor();
         }
 
+        // Recompute highlights before reading cursor state so the status bar col is correct.
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+            doc.recompute_directory_highlights();
+        }
+
         let (cursor_line, cursor_col, total_lines, is_terminal) =
             if let Some(doc) = self.document_manager.get_document(doc_id) {
                 let tw = doc.options.tab_width;
@@ -48,7 +53,6 @@ impl<T: TerminalBackend> Editor<T> {
                     line,
                     tw,
                     doc.buffer.cursor(),
-                    &doc.invisible_ranges,
                 );
                 let total = doc.buffer.get_total_lines();
                 (line, col, total, doc.is_terminal())
@@ -106,6 +110,8 @@ impl<T: TerminalBackend> Editor<T> {
                 .compositor
                 .clear_layer(crate::layer::LayerPriority::TOOLTIP);
         }
+
+        self.render_explorer_diff_tooltip();
 
         if self.split_tree.window_count() > 1 {
             self.update_window_viewports();
@@ -177,11 +183,12 @@ impl<T: TerminalBackend> Editor<T> {
         } = self;
 
         // We need mutable access to call syntax.highlights() which potentially
-        // updates parse tree
+        // updates parse tree, and to recompute directory highlights.
         let doc = match document_manager.active_document_mut() {
             Some(d) => d,
             None => return Ok(()),
         };
+        doc.recompute_directory_highlights();
 
         let (start_logical, end_logical) = if let Some(dm) = display_map {
             let top_vr = render_system.viewport.top_visual_row();
@@ -263,11 +270,6 @@ impl<T: TerminalBackend> Editor<T> {
             },
             show_line_numbers: doc.options.show_line_numbers,
             display_map,
-            invisible_ranges: if doc.invisible_ranges.is_empty() {
-                None
-            } else {
-                Some(&doc.invisible_ranges)
-            },
         };
 
         let _ = render_system.render(term, state)?;
@@ -337,7 +339,6 @@ impl<T: TerminalBackend> Editor<T> {
                     cursor_line,
                     tab_width,
                     cursor_pos,
-                    &doc.invisible_ranges,
                 );
                 let total_lines = doc.buffer.get_total_lines();
                 let viewport_col = if doc.is_terminal() { 0 } else { cursor_col };
@@ -457,6 +458,7 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(d) => d,
                 None => continue,
             };
+            doc.recompute_directory_highlights();
 
             let tab_width = doc.options.tab_width;
 
@@ -549,11 +551,6 @@ impl<T: TerminalBackend> Editor<T> {
                 show_line_numbers: doc.options.show_line_numbers,
                 display_map: display_map.as_ref(),
                 gutter_width_override: Some(gutter_width),
-                invisible_ranges: if doc.invisible_ranges.is_empty() {
-                    None
-                } else {
-                    Some(&doc.invisible_ranges)
-                },
             };
 
             let content_layer = render_system
@@ -608,6 +605,7 @@ impl<T: TerminalBackend> Editor<T> {
             Some(d) => d,
             None => return Ok(()),
         };
+        focused_doc.recompute_directory_highlights();
 
         let highlights = focused_doc
             .syntax
@@ -674,15 +672,104 @@ impl<T: TerminalBackend> Editor<T> {
             },
             show_line_numbers: focused_doc.options.show_line_numbers,
             display_map: focused_display_map.as_ref(),
-            invisible_ranges: if focused_doc.invisible_ranges.is_empty() {
-                None
-            } else {
-                Some(&focused_doc.invisible_ranges)
-            },
         };
 
         let _ = render_system.render(term, render_state)?;
 
         Ok(())
+    }
+
+    /// Render a pending-changes tooltip at the top of the screen when a directory
+    /// buffer has unsaved edits. Clears the HOVER layer when there is nothing to show.
+    pub(super) fn render_explorer_diff_tooltip(&mut self) {
+        use crate::color::Color;
+        use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
+        use crate::layer::{Cell, LayerPriority};
+
+        let doc_id = self.split_tree.focused_window().document_id;
+        let is_dir = self
+            .document_manager
+            .get_document(doc_id)
+            .map(|d| d.is_directory())
+            .unwrap_or(false);
+
+        if !is_dir {
+            self.render_system
+                .compositor
+                .clear_layer(LayerPriority::HOVER);
+            return;
+        }
+
+        // parse_directory_diff compares live buffer text against annotated originals,
+        // so it correctly reflects in-progress insert-mode edits even before history commits.
+        let diff = self
+            .document_manager
+            .get_document(doc_id)
+            .map(|d| d.parse_directory_diff())
+            .unwrap_or_default();
+
+        if diff.renames.is_empty() && diff.deletes.is_empty() && diff.creates.is_empty() {
+            self.render_system
+                .compositor
+                .clear_layer(LayerPriority::HOVER);
+            return;
+        }
+
+        const MAX_WIDTH: usize = 52;
+        let mut rows: Vec<Vec<Cell>> = Vec::new();
+
+        for (old_path, new_name) in &diff.renames {
+            let old_name = old_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?");
+            let text = format!("~ {} -> {}", old_name, new_name);
+            let row: Vec<Cell> = text
+                .chars()
+                .take(MAX_WIDTH)
+                .map(|c| Cell::from_char(c).with_colors(Some(Color::Yellow), None))
+                .collect();
+            rows.push(row);
+        }
+        for path in &diff.deletes {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+            let text = format!("- {}", name);
+            let row: Vec<Cell> = text
+                .chars()
+                .take(MAX_WIDTH)
+                .map(|c| Cell::from_char(c).with_colors(Some(Color::Red), None))
+                .collect();
+            rows.push(row);
+        }
+        for name in &diff.creates {
+            let text = format!("+ {}", name);
+            let row: Vec<Cell> = text
+                .chars()
+                .take(MAX_WIDTH)
+                .map(|c| Cell::from_char(c).with_colors(Some(Color::Green), None))
+                .collect();
+            rows.push(row);
+        }
+
+        let editor_fg = self.state.settings.editor_fg;
+        let editor_bg = self.state.settings.editor_bg;
+
+        let window = FloatingWindow::with_style(
+            WindowPosition::Top,
+            MAX_WIDTH + 2,
+            rows.len() + 2,
+            WindowStyle::new()
+                .with_border(true)
+                .with_reverse_video(false)
+                .with_fg(editor_fg.unwrap_or(Color::White))
+                .with_bg(editor_bg.unwrap_or(Color::Black)),
+        );
+
+        let layer = self
+            .render_system
+            .compositor
+            .get_layer_mut(LayerPriority::HOVER);
+        layer.clear();
+        window.render_cells(layer, &rows);
     }
 }

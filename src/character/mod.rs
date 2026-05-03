@@ -43,7 +43,7 @@ impl Character {
             Character::Unicode(c) => UnicodeWidthChar::width(*c).unwrap_or(0),
             Character::Byte(_) => 4, // \xNN is 4 chars
             Character::Tab => tab_width - (col % tab_width),
-            Character::Newline => 0,    // usually implied
+            Character::Newline => 0,
             Character::Control(_) => 2, // ^C is 2 chars
         }
     }
@@ -83,7 +83,7 @@ impl Character {
     pub fn to_char_lossy(&self) -> char {
         match self {
             Character::Unicode(c) => *c,
-            Character::Byte(_) => '\u{FFFD}', // Replacement char
+            Character::Byte(_) => '\u{FFFD}',
             Character::Tab => '\t',
             Character::Newline => '\n',
             Character::Control(b) => *b as char,

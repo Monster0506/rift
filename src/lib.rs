@@ -4,6 +4,7 @@
 pub mod perf;
 
 pub mod action;
+pub mod annotations;
 pub mod buffer;
 pub mod character;
 pub mod clipboard;
