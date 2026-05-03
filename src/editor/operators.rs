@@ -178,4 +178,3 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 }
-

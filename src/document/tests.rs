@@ -487,7 +487,12 @@ fn test_parse_diff_move_file_into_subdir() {
 
     let diff = doc.parse_directory_diff();
     assert!(diff.deletes.is_empty(), "no deletes expected: {:?}", diff);
-    assert_eq!(diff.renames.len(), 1, "should produce one rename: {:?}", diff);
+    assert_eq!(
+        diff.renames.len(),
+        1,
+        "should produce one rename: {:?}",
+        diff
+    );
     assert!(
         diff.renames[0].0.to_string_lossy().contains("b.c"),
         "rename source should be b.c: {:?}",
@@ -505,7 +510,11 @@ fn test_parse_diff_move_one_of_two_files_into_subdir() {
     set_annotated_buffer(&mut doc, "../\n/001 A/\n/002 b.c\n/003 A/c.d");
 
     let diff = doc.parse_directory_diff();
-    assert!(diff.deletes.is_empty(), "nothing should be deleted: {:?}", diff);
+    assert!(
+        diff.deletes.is_empty(),
+        "nothing should be deleted: {:?}",
+        diff
+    );
     assert_eq!(diff.renames.len(), 1, "exactly one rename: {:?}", diff);
     assert!(
         diff.renames[0].0.to_string_lossy().contains("c.d"),
@@ -716,7 +725,6 @@ fn set_annotated_buffer(doc: &mut Document, text: &str) {
     }
 }
 
-
 #[test]
 fn test_parse_diff_rename_simple() {
     // User edits the visible name after the invisible /001 prefix.
@@ -859,8 +867,7 @@ fn test_parse_diff_rename_to_subdirectory_path() {
     // User edits the name of "test" to "Playground/test" — a rename into a subdirectory.
     // This is achieved by editing the text in the entry's buffer line directly.
     // Expected: test (id=2) renamed to Playground/test; Playground (id=1) unchanged.
-    let mut doc =
-        make_populated_directory_doc("/tmp", &[("Playground", true), ("test", false)]);
+    let mut doc = make_populated_directory_doc("/tmp", &[("Playground", true), ("test", false)]);
     set_annotated_buffer(&mut doc, "../\n/001 Playground/\n/002 Playground/test");
 
     let diff = doc.parse_directory_diff();
@@ -897,8 +904,7 @@ fn test_parse_diff_rename_into_dir_while_dir_line_removed_does_not_delete_dir() 
     // Bug: user changes "test" → "Playground/test" AND removes the "Playground/" line.
     // The old dir entry (id=1) must be protected from deletion because it is the parent
     // of the rename destination — removing it would wipe the file that was just moved in.
-    let mut doc =
-        make_populated_directory_doc("/tmp", &[("Playground", true), ("test", false)]);
+    let mut doc = make_populated_directory_doc("/tmp", &[("Playground", true), ("test", false)]);
     // Buffer after user edit: Playground/ line gone, test line rewritten as Playground/test.
     set_annotated_buffer(&mut doc, "../\n/002 Playground/test");
 
@@ -910,7 +916,11 @@ fn test_parse_diff_rename_into_dir_while_dir_line_removed_does_not_delete_dir() 
     );
     assert_eq!(diff.renames.len(), 1, "one rename expected: {:?}", diff);
     assert_eq!(diff.renames[0].1, "Playground/test");
-    assert!(diff.creates.is_empty(), "no creates expected: {:?}", diff.creates);
+    assert!(
+        diff.creates.is_empty(),
+        "no creates expected: {:?}",
+        diff.creates
+    );
 }
 
 #[test]
@@ -923,9 +933,22 @@ fn test_parse_diff_dir_entry_replaced_with_path_is_create_not_rename() {
     set_annotated_buffer(&mut doc, "../\n/001 Playground/newfolder/newfile");
 
     let diff = doc.parse_directory_diff();
-    assert!(diff.renames.is_empty(), "must not rename the dir: {:?}", diff.renames);
-    assert!(diff.deletes.is_empty(), "Playground/ must not be deleted: {:?}", diff.deletes);
-    assert_eq!(diff.creates.len(), 1, "one create expected: {:?}", diff.creates);
+    assert!(
+        diff.renames.is_empty(),
+        "must not rename the dir: {:?}",
+        diff.renames
+    );
+    assert!(
+        diff.deletes.is_empty(),
+        "Playground/ must not be deleted: {:?}",
+        diff.deletes
+    );
+    assert_eq!(
+        diff.creates.len(),
+        1,
+        "one create expected: {:?}",
+        diff.creates
+    );
     assert_eq!(diff.creates[0], "Playground/newfolder/newfile");
 }
 
@@ -935,13 +958,32 @@ fn test_parse_diff_dir_line_replaced_with_path_plus_sibling_create() {
     // Playground/ should stay; both paths should be creates.
     let mut doc = make_populated_directory_doc("/tmp", &[("Playground", true)]);
     // Playground/ line present, two new unannotated lines added below
-    set_annotated_buffer(&mut doc, "../\n/001 Playground/\nPlayground/newfolder/newfile\nPlayground/newfile");
+    set_annotated_buffer(
+        &mut doc,
+        "../\n/001 Playground/\nPlayground/newfolder/newfile\nPlayground/newfile",
+    );
 
     let diff = doc.parse_directory_diff();
-    assert!(diff.renames.is_empty(), "no renames expected: {:?}", diff.renames);
-    assert!(diff.deletes.is_empty(), "no deletes expected: {:?}", diff.deletes);
-    assert_eq!(diff.creates.len(), 2, "two creates expected: {:?}", diff.creates);
-    assert!(diff.creates.iter().any(|c| c == "Playground/newfolder/newfile"));
+    assert!(
+        diff.renames.is_empty(),
+        "no renames expected: {:?}",
+        diff.renames
+    );
+    assert!(
+        diff.deletes.is_empty(),
+        "no deletes expected: {:?}",
+        diff.deletes
+    );
+    assert_eq!(
+        diff.creates.len(),
+        2,
+        "two creates expected: {:?}",
+        diff.creates
+    );
+    assert!(diff
+        .creates
+        .iter()
+        .any(|c| c == "Playground/newfolder/newfile"));
     assert!(diff.creates.iter().any(|c| c == "Playground/newfile"));
 }
 
@@ -952,10 +994,23 @@ fn test_parse_diff_file_entry_with_path_prefix_is_still_rename() {
     set_annotated_buffer(&mut doc, "../\n/001 Playground/\n/002 Playground/test");
 
     let diff = doc.parse_directory_diff();
-    assert_eq!(diff.renames.len(), 1, "one rename (move) expected: {:?}", diff.renames);
+    assert_eq!(
+        diff.renames.len(),
+        1,
+        "one rename (move) expected: {:?}",
+        diff.renames
+    );
     assert_eq!(diff.renames[0].1, "Playground/test");
-    assert!(diff.deletes.is_empty(), "Playground/ must not be deleted: {:?}", diff.deletes);
-    assert!(diff.creates.is_empty(), "no creates expected: {:?}", diff.creates);
+    assert!(
+        diff.deletes.is_empty(),
+        "Playground/ must not be deleted: {:?}",
+        diff.deletes
+    );
+    assert!(
+        diff.creates.is_empty(),
+        "no creates expected: {:?}",
+        diff.creates
+    );
 }
 
 // Buffer revision increments on populate
@@ -1216,7 +1271,10 @@ fn test_populate_directory_creates_annotations_in_store() {
 #[test]
 fn test_populate_directory_clears_previous_annotations_on_repopulate() {
     let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    doc.populate_directory_buffer(make_dir_entries(&[("a.txt", false), ("b.txt", false)], "/tmp"));
+    doc.populate_directory_buffer(make_dir_entries(
+        &[("a.txt", false), ("b.txt", false)],
+        "/tmp",
+    ));
     doc.populate_directory_buffer(make_dir_entries(&[("c.txt", false)], "/tmp"));
     // Only one entry annotation should remain
     assert_eq!(doc.annotations.directory_entry_id_at_line(1), Some(1));
@@ -1226,11 +1284,14 @@ fn test_populate_directory_clears_previous_annotations_on_repopulate() {
 #[test]
 fn test_annotation_store_line_insert_shifts_entries() {
     let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    doc.populate_directory_buffer(make_dir_entries(&[("a.txt", false), ("b.txt", false)], "/tmp"));
+    doc.populate_directory_buffer(make_dir_entries(
+        &[("a.txt", false), ("b.txt", false)],
+        "/tmp",
+    ));
     // Simulate inserting a line at position 2 (between a.txt and b.txt)
     doc.annotations.on_line_inserted(2);
     assert_eq!(doc.annotations.directory_entry_id_at_line(1), Some(1)); // a.txt unchanged
-    assert_eq!(doc.annotations.directory_entry_id_at_line(2), None);     // gap line
+    assert_eq!(doc.annotations.directory_entry_id_at_line(2), None); // gap line
     assert_eq!(doc.annotations.directory_entry_id_at_line(3), Some(2)); // b.txt shifted
 }
 
@@ -1262,10 +1323,13 @@ fn test_buffer_text_has_no_annotation_prefix_after_populate() {
             && b[2].is_ascii_digit()
             && b[3].is_ascii_digit()
             && b[4] == b' ';
-        assert!(!is_id_prefix, "buffer line must not start with /NNN prefix: {:?}", line);
+        assert!(
+            !is_id_prefix,
+            "buffer line must not start with /NNN prefix: {:?}",
+            line
+        );
     }
 }
-
 
 #[test]
 fn test_parse_diff_reorder_without_rename_produces_no_diff() {
@@ -1500,4 +1564,3 @@ fn test_parse_diff_many_entries_ids_are_stable() {
     assert!(diff.deletes.is_empty());
     assert!(diff.creates.is_empty());
 }
-

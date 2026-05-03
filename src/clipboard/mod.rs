@@ -108,9 +108,7 @@ pub fn capture_text(buf: &TextBuffer, range: &MotionRange) -> String {
             range.anchor.max(range.new_cursor),
         ),
     };
-    buf.chars(start..end)
-        .map(|c| c.to_char_lossy())
-        .collect()
+    buf.chars(start..end).map(|c| c.to_char_lossy()).collect()
 }
 
 /// Capture the full current line (including newline) from the buffer.
@@ -123,9 +121,7 @@ pub fn capture_current_line(buf: &TextBuffer) -> String {
     } else {
         buf.len()
     };
-    buf.chars(start..end)
-        .map(|c| c.to_char_lossy())
-        .collect()
+    buf.chars(start..end).map(|c| c.to_char_lossy()).collect()
 }
 
 // ─── Tooltip ──────────────────────────────────────────────────────────────────

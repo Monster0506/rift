@@ -186,7 +186,6 @@ impl Document {
     pub fn is_special(&self) -> bool {
         !matches!(self.kind, BufferKind::File)
     }
-
 }
 
 #[cfg(test)]

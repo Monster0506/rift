@@ -9,8 +9,7 @@ impl Document {
     pub fn begin_transaction(&mut self, description: impl Into<String>) {
         self.current_transaction = Some(EditTransaction::new(description));
         if self.is_directory() {
-            self.pending_annotation_snapshot =
-                Some(self.annotations.directory_entries_by_line());
+            self.pending_annotation_snapshot = Some(self.annotations.directory_entries_by_line());
         }
     }
 

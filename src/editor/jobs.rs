@@ -144,23 +144,22 @@ impl<T: TerminalBackend> Editor<T> {
                                         .into_iter()
                                         .find_map(|(line, eid)| {
                                             if let crate::document::BufferKind::Directory {
-                                                entries, ..
+                                                entries,
+                                                ..
                                             } = &doc.kind
                                             {
-                                                entries.iter().find(|e| e.id == eid).and_then(
-                                                    |e| {
-                                                        e.path
-                                                            .file_name()
-                                                            .and_then(|n| n.to_str())
-                                                            .filter(|n| *n == target_name)
-                                                            .map(|_| {
-                                                                doc.buffer
-                                                                    .line_index
-                                                                    .get_start(line)
-                                                                    .unwrap_or(0)
-                                                            })
-                                                    },
-                                                )
+                                                entries.iter().find(|e| e.id == eid).and_then(|e| {
+                                                    e.path
+                                                        .file_name()
+                                                        .and_then(|n| n.to_str())
+                                                        .filter(|n| *n == target_name)
+                                                        .map(|_| {
+                                                            doc.buffer
+                                                                .line_index
+                                                                .get_start(line)
+                                                                .unwrap_or(0)
+                                                        })
+                                                })
                                             } else {
                                                 None
                                             }

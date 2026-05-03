@@ -1075,14 +1075,13 @@ impl LuaHost {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(
                 move |_, (lang_name, so_path, fn_name): (String, String, String)| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .mutations
-                        .push(PluginMutation::RegisterGrammar {
+                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
+                        PluginMutation::RegisterGrammar {
                             lang_name,
                             so_path,
                             fn_name,
-                        });
+                        },
+                    );
                     Ok(())
                 },
             )?;

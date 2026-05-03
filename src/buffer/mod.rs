@@ -97,7 +97,10 @@ impl TextBuffer {
     /// Find the char position on `line` at column `col`, clamped to line bounds.
     fn char_pos_for_col(&self, line: usize, col: usize) -> usize {
         let line_start = self.line_index.get_start(line).unwrap_or(0);
-        let line_end = self.line_index.get_end(line, self.len()).unwrap_or(self.len());
+        let line_end = self
+            .line_index
+            .get_end(line, self.len())
+            .unwrap_or(self.len());
         (line_start + col).min(line_end)
     }
 

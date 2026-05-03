@@ -48,12 +48,8 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(doc) = self.document_manager.get_document(doc_id) {
                 let tw = doc.options.tab_width;
                 let line = doc.buffer.get_line();
-                let col = render::calculate_cursor_column_at(
-                    &doc.buffer,
-                    line,
-                    tw,
-                    doc.buffer.cursor(),
-                );
+                let col =
+                    render::calculate_cursor_column_at(&doc.buffer, line, tw, doc.buffer.cursor());
                 let total = doc.buffer.get_total_lines();
                 (line, col, total, doc.is_terminal())
             } else {
@@ -719,10 +715,7 @@ impl<T: TerminalBackend> Editor<T> {
         let mut rows: Vec<Vec<Cell>> = Vec::new();
 
         for (old_path, new_name) in &diff.renames {
-            let old_name = old_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("?");
+            let old_name = old_path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
             let text = format!("~ {} -> {}", old_name, new_name);
             let row: Vec<Cell> = text
                 .chars()

@@ -813,7 +813,7 @@ pub(crate) fn highlight_focused_window_border(
         for r in layout.row..layout.row + layout.rows {
             if layer
                 .get_cell(r, bc)
-                .map_or(false, |c| is_divider(c.content.to_char_lossy()))
+                .is_some_and(|c| is_divider(c.content.to_char_lossy()))
             {
                 layer.set_cell(r, bc, Cell::new(Character::from('│')).with_colors(fg, bg));
             }
@@ -824,7 +824,7 @@ pub(crate) fn highlight_focused_window_border(
         for r in layout.row..layout.row + layout.rows {
             if layer
                 .get_cell(r, right)
-                .map_or(false, |c| is_divider(c.content.to_char_lossy()))
+                .is_some_and(|c| is_divider(c.content.to_char_lossy()))
             {
                 layer.set_cell(
                     r,
@@ -839,7 +839,7 @@ pub(crate) fn highlight_focused_window_border(
         for c in layout.col..layout.col + layout.cols {
             if layer
                 .get_cell(br, c)
-                .map_or(false, |c2| is_divider(c2.content.to_char_lossy()))
+                .is_some_and(|c2| is_divider(c2.content.to_char_lossy()))
             {
                 layer.set_cell(br, c, Cell::new(Character::from('─')).with_colors(fg, bg));
             }
@@ -850,7 +850,7 @@ pub(crate) fn highlight_focused_window_border(
         for c in layout.col..layout.col + layout.cols {
             if layer
                 .get_cell(bottom, c)
-                .map_or(false, |c2| is_divider(c2.content.to_char_lossy()))
+                .is_some_and(|c2| is_divider(c2.content.to_char_lossy()))
             {
                 layer.set_cell(
                     bottom,

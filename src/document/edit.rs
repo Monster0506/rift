@@ -213,10 +213,7 @@ impl Document {
             return false;
         }
 
-        let deleted_char = self
-            .buffer
-            .char_at(cursor)
-            .unwrap_or(Character::from('\0'));
+        let deleted_char = self.buffer.char_at(cursor).unwrap_or(Character::from('\0'));
 
         // For directory buffers, block newline deletion to prevent line merges.
         if self.is_directory() && deleted_char == Character::Newline {

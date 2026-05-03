@@ -545,9 +545,9 @@ impl<T: TerminalBackend> Editor<T> {
                     so_path,
                     fn_name,
                 } => {
-                    if let Err(e) =
-                        self.language_loader
-                            .register_grammar(&lang_name, &so_path, &fn_name)
+                    if let Err(e) = self
+                        .language_loader
+                        .register_grammar(&lang_name, &so_path, &fn_name)
                     {
                         self.state.notify(
                             crate::notification::NotificationType::Error,

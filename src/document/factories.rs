@@ -135,9 +135,9 @@ impl Document {
                 terminal_cell_colors: vec![],
                 highlight_slots: std::collections::HashMap::new(),
                 annotations: AnnotationStore::new(),
-            pending_annotation_snapshot: None,
-            dir_annotation_undo_stack: Vec::new(),
-            dir_annotation_redo_stack: Vec::new(),
+                pending_annotation_snapshot: None,
+                dir_annotation_undo_stack: Vec::new(),
+                dir_annotation_redo_stack: Vec::new(),
             },
             rx,
         ))

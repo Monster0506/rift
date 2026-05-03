@@ -129,9 +129,7 @@ impl AnnotationStore {
     pub fn directory_entry_id_at_line(&self, line: usize) -> Option<u16> {
         self.annotations
             .iter()
-            .find(|a| {
-                a.kind == AnnotationKind::DirectoryEntry && a.anchor == Anchor::Line(line)
-            })
+            .find(|a| a.kind == AnnotationKind::DirectoryEntry && a.anchor == Anchor::Line(line))
             .and_then(|a| a.entry_id)
     }
 
@@ -198,9 +196,6 @@ impl AnnotationStore {
     }
 }
 
-
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
-
-

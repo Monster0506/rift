@@ -88,8 +88,7 @@ impl LanguageLoader {
         fn_name: &str,
     ) -> Result<(), String> {
         let lib = unsafe {
-            libloading::Library::new(so_path)
-                .map_err(|e| format!("dlopen '{}': {}", so_path, e))?
+            libloading::Library::new(so_path).map_err(|e| format!("dlopen '{}': {}", so_path, e))?
         };
 
         let language: Language = unsafe {
@@ -99,10 +98,7 @@ impl LanguageLoader {
                 .map_err(|e| format!("symbol '{}' in '{}': {}", fn_name, so_path, e))?;
             let ptr = sym();
             if ptr.is_null() {
-                return Err(format!(
-                    "'{}' returned a null TSLanguage pointer",
-                    fn_name
-                ));
+                return Err(format!("'{}' returned a null TSLanguage pointer", fn_name));
             }
             Language::from_raw(ptr)
         };

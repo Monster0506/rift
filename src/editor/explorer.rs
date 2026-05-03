@@ -885,7 +885,9 @@ impl<T: TerminalBackend> Editor<T> {
 
         let (path, show_hidden) = match self.document_manager.get_document(dir_doc_id) {
             Some(d) => match &d.kind {
-                BufferKind::Directory { path, show_hidden, .. } => (path.clone(), *show_hidden),
+                BufferKind::Directory {
+                    path, show_hidden, ..
+                } => (path.clone(), *show_hidden),
                 _ => return,
             },
             None => return,
@@ -1021,7 +1023,10 @@ impl<T: TerminalBackend> Editor<T> {
                 .components()
                 .any(|c| c == std::path::Component::ParentDir)
             {
-                errors.push(format!("create {:?}: path traversal not allowed", clean_name));
+                errors.push(format!(
+                    "create {:?}: path traversal not allowed",
+                    clean_name
+                ));
                 continue;
             }
             let new_path = dir_path.join(clean_name);
