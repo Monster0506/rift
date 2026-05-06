@@ -306,7 +306,14 @@ impl StatusBar {
                     Cell::new(Character::from(' ')).with_colors(fg, bg),
                 );
                 col += 1;
-                layer.write_str_colored(status_row, col, lsp, Some(crate::color::Color::Cyan), bg);
+                let lsp_color = if lsp.contains('E') {
+                    state.lsp_error_color.or(Some(Color::Red))
+                } else if lsp.contains('W') {
+                    state.lsp_warn_color.or(Some(Color::Yellow))
+                } else {
+                    state.lsp_ok_color.or(Some(Color::Cyan))
+                };
+                layer.write_str_colored(status_row, col, lsp, lsp_color, bg);
                 col += lsp.len();
             }
         }

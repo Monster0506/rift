@@ -187,6 +187,24 @@ impl RenderSystem {
             editor_bg: ctx.state.settings.editor_bg,
             editor_fg: ctx.state.settings.editor_fg,
             lsp_status: ctx.state.lsp_status.clone(),
+            lsp_ok_color: ctx
+                .state
+                .settings
+                .syntax_colors
+                .as_ref()
+                .and_then(|c| c.get_color("ui.lsp.ok")),
+            lsp_error_color: ctx
+                .state
+                .settings
+                .syntax_colors
+                .as_ref()
+                .and_then(|c| c.get_color("ui.lsp.error")),
+            lsp_warn_color: ctx
+                .state
+                .settings
+                .syntax_colors
+                .as_ref()
+                .and_then(|c| c.get_color("ui.lsp.warn")),
         };
 
         self.world

@@ -160,6 +160,16 @@ impl Theme {
             (PARAMETER, Color::Black),
             (PROPERTY, Color::Black),
             (ATTRIBUTE, Color::Black),
+            ("ui.lsp.ok", Color::DarkBlue),
+            ("ui.lsp.error", Color::DarkRed),
+            (
+                "ui.lsp.warn",
+                Color::Rgb {
+                    r: 175,
+                    g: 100,
+                    b: 0,
+                },
+            ),
             (NAMESPACE, Color::Black),
             (OPERATOR, Color::Black),
             (PUNCTUATION, Color::Black),
@@ -233,6 +243,9 @@ impl Theme {
             (OPERATOR, Color::White),
             (PUNCTUATION, Color::White),
             (CONSTRUCTOR, Color::Yellow),
+            ("ui.lsp.ok", Color::Cyan),
+            ("ui.lsp.error", Color::Red),
+            ("ui.lsp.warn", Color::Yellow),
             (BUILTIN, Color::Blue),
             (TEXT_TITLE, Color::Blue),
             (TEXT_LITERAL, Color::Green),
@@ -590,6 +603,30 @@ impl Theme {
                     b: 172,
                 },
             ), // Blue
+            (
+                "ui.lsp.ok",
+                Color::Rgb {
+                    r: 131,
+                    g: 165,
+                    b: 152,
+                },
+            ), // #83a598 gruvbox aqua
+            (
+                "ui.lsp.error",
+                Color::Rgb {
+                    r: 251,
+                    g: 73,
+                    b: 52,
+                },
+            ), // #fb4934 gruvbox red
+            (
+                "ui.lsp.warn",
+                Color::Rgb {
+                    r: 250,
+                    g: 189,
+                    b: 47,
+                },
+            ), // #fabd2f gruvbox yellow
         ]);
 
         Theme::new(
@@ -893,6 +930,30 @@ impl Theme {
                     b: 193,
                 },
             ), // Blue
+            (
+                "ui.lsp.ok",
+                Color::Rgb {
+                    r: 143,
+                    g: 188,
+                    b: 187,
+                },
+            ), // #8FBCBB nordic teal
+            (
+                "ui.lsp.error",
+                Color::Rgb {
+                    r: 191,
+                    g: 97,
+                    b: 106,
+                },
+            ), // #BF616A nordic red
+            (
+                "ui.lsp.warn",
+                Color::Rgb {
+                    r: 235,
+                    g: 203,
+                    b: 139,
+                },
+            ), // #EBCB8B nordic yellow
         ]);
 
         Theme::new(

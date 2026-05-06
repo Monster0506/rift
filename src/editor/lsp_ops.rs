@@ -66,7 +66,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .server_name(&language)
                     .unwrap_or(&language)
                     .to_string();
-                self.state.lsp_status = Some(format!("{}: ready", name));
+                self.refresh_lsp_diag_status(&language, &name);
                 self.update_lua_state();
                 self.plugin_host
                     .dispatch(&crate::plugin::EditorEvent::LspServerReady {
@@ -100,6 +100,24 @@ impl<T: TerminalBackend> Editor<T> {
                 self.apply_plugin_mutations();
             }
         }
+    }
+
+    /// Recount errors and warnings across all files for `language` and update `lsp_status`.
+    fn refresh_lsp_diag_status(&mut self, language: &str, server_name: &str) {
+        let mut errors = 0usize;
+        let mut warnings = 0usize;
+        for (uri, diags) in &self.lsp_diagnostics {
+            if self.lsp_manager.language_for_uri(uri) == Some(language) {
+                errors += diags.iter().filter(|d| d.severity == Some(1)).count();
+                warnings += diags.iter().filter(|d| d.severity == Some(2)).count();
+            }
+        }
+        self.state.lsp_status = Some(match (errors, warnings) {
+            (0, 0) => format!("{}: ready", server_name),
+            (e, 0) => format!("{}: {}E", server_name, e),
+            (0, w) => format!("{}: {}W", server_name, w),
+            (e, w) => format!("{}: {}E {}W", server_name, e, w),
+        });
     }
 
     fn handle_lsp_diagnostics(&mut self, uri: String, diagnostics: Vec<LspDiagnostic>) {
@@ -137,12 +155,6 @@ impl<T: TerminalBackend> Editor<T> {
             doc.annotations.create_lsp_diagnostic(line, tooltip);
         }
 
-        // Show error/warning count in notification
-        let errors = diagnostics.iter().filter(|d| d.severity == Some(1)).count();
-        let warnings = diagnostics.iter().filter(|d| d.severity == Some(2)).count();
-
-        // Only notify once the server has finished indexing — early diagnostics are
-        // often stale partial results from an incomplete initial analysis.
         let lang = self
             .lsp_manager
             .language_for_uri(&key)
@@ -151,38 +163,13 @@ impl<T: TerminalBackend> Editor<T> {
             .as_ref()
             .map(|l| self.lsp_ready_servers.contains(l))
             .unwrap_or(false);
-        if server_ready && (errors > 0 || warnings > 0) {
-            let file = path
-                .as_ref()
-                .and_then(|p| p.file_name())
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "unknown".to_string());
-            let mut parts = Vec::new();
-            if errors > 0 {
-                parts.push(format!(
-                    "{} error{}",
-                    errors,
-                    if errors == 1 { "" } else { "s" }
-                ));
+        if server_ready {
+            if let Some(ref l) = lang {
+                let name = self.lsp_manager.server_name(l).unwrap_or(l).to_string();
+                self.refresh_lsp_diag_status(l, &name);
             }
-            if warnings > 0 {
-                parts.push(format!(
-                    "{} warning{}",
-                    warnings,
-                    if warnings == 1 { "" } else { "s" }
-                ));
-            }
-            self.state.notify(
-                if errors > 0 {
-                    NotificationType::Error
-                } else {
-                    NotificationType::Warning
-                },
-                format!("{}: {}", file, parts.join(", ")),
-            );
         }
 
-        // Fire event so plugins can react to diagnostic changes (e.g. status bar count).
         let error_count = diagnostics.iter().filter(|d| d.severity == Some(1)).count();
         let warning_count = diagnostics.iter().filter(|d| d.severity == Some(2)).count();
         self.update_lua_state();

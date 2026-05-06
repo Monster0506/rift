@@ -20,6 +20,8 @@ impl<T: TerminalBackend> Editor<T> {
             "undotree:select" => self.handle_undotree_select(),
             "undotree:close" => self.close_split_panel(),
             "undotree:refresh" => self.handle_undotree_refresh(),
+            "undotree:next" => self.handle_undotree_move(1),
+            "undotree:prev" => self.handle_undotree_move(-1),
             _ => {}
         }
     }

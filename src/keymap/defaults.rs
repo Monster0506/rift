@@ -62,8 +62,17 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     );
 
     // UndoTree buffer Defaults
-    // Normal motions fall through to KeyContext::Normal via the fallback chain.
-    // Only <CR> is overridden to jump to the node under the cursor.
+    // j/k are overridden to skip connector lines; <CR> selects the node.
+    keymap.register(
+        KeyContext::UndoTree,
+        Key::Char('j'),
+        Action::Buffer("undotree:next".to_string()),
+    );
+    keymap.register(
+        KeyContext::UndoTree,
+        Key::Char('k'),
+        Action::Buffer("undotree:prev".to_string()),
+    );
     keymap.register(
         KeyContext::UndoTree,
         Key::Enter,

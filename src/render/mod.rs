@@ -83,6 +83,10 @@ pub struct StatusDrawState {
     pub editor_fg: Option<crate::color::Color>,
     /// LSP indexing progress shown in the status bar, e.g. "rust: 2/5".
     pub lsp_status: Option<String>,
+    /// Theme colors for LSP status states
+    pub lsp_ok_color: Option<crate::color::Color>,
+    pub lsp_error_color: Option<crate::color::Color>,
+    pub lsp_warn_color: Option<crate::color::Color>,
 }
 
 /// Minimal state required to trigger a re-render of the command line

@@ -215,7 +215,11 @@ impl LspManager {
             // the global workspace root (cwd at launch).
             let root_uri = file_hint
                 .and_then(|f| {
-                    self.pending_logs.push(format!("LSP [{}]: file_hint={}", language, f.display()));
+                    self.pending_logs.push(format!(
+                        "LSP [{}]: file_hint={}",
+                        language,
+                        f.display()
+                    ));
                     Self::find_workspace_root(f, &server.root_markers)
                 })
                 .or_else(|| self.workspace_root.clone())
@@ -684,9 +688,7 @@ impl LspManager {
                             results.push(LspMessage::Log {
                                 message: format!(
                                     "LSP [{}]: unrouted response method='{}' result={}",
-                                    lang,
-                                    method,
-                                    result
+                                    lang, method, result
                                 ),
                             });
                         }
@@ -751,9 +753,7 @@ impl LspManager {
                             results.push(LspMessage::Log {
                                 message: format!(
                                     "LSP [{}]: unhandled notification '{}' params={}",
-                                    lang,
-                                    method,
-                                    params
+                                    lang, method, params
                                 ),
                             });
                         }

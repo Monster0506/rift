@@ -670,10 +670,6 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
 
-        if seq == u64::MAX {
-            return;
-        }
-
         if let Some(linked_doc) = self
             .document_manager
             .get_document_mut(layout.preview_doc_id)
@@ -817,6 +813,41 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Close the undo tree pane and focus the linked document
         self.close_split_panel();
+    }
+
+    /// Move the cursor up (`delta=-1`) or down (`delta=1`) in the undo tree, skipping connector lines.
+    pub(super) fn handle_undotree_move(&mut self, delta: i64) {
+        use crate::document::BufferKind;
+
+        let doc_id = self.active_document_id();
+        let target_line = {
+            let doc = match self.document_manager.get_document(doc_id) {
+                Some(d) if d.is_undotree() => d,
+                _ => return,
+            };
+            let cursor = doc.buffer.cursor();
+            let line_num = doc.buffer.line_index.get_line_at(cursor) as i64;
+            let total = doc.buffer.get_total_lines() as i64;
+            let sequences = match &doc.kind {
+                BufferKind::UndoTree { sequences, .. } => sequences,
+                _ => return,
+            };
+            let mut target = line_num + delta;
+            // Skip over connector lines in the direction of travel.
+            while target >= 0
+                && target < total
+                && sequences.get(target as usize).copied().unwrap_or(u64::MAX) == u64::MAX
+            {
+                target += delta;
+            }
+            target.clamp(0, total - 1) as usize
+        };
+
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+            let pos = doc.buffer.line_index.get_line_start(target_line);
+            let _ = doc.buffer.set_cursor(pos);
+        }
+        self.update_undotree_preview();
     }
 
     /// Toggle hidden-file visibility for the active file explorer pane.

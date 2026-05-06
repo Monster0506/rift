@@ -59,6 +59,9 @@ fn create_default_statusdrawstate() -> StatusDrawState {
         search_total_matches: 0,
         cursor: CursorInfo { row: 0, col: 0 },
         lsp_status: None,
+        lsp_ok_color: None,
+        lsp_error_color: None,
+        lsp_warn_color: None,
     }
 }
 // ============================================================================
