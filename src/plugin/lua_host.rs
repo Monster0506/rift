@@ -1131,7 +1131,7 @@ impl LuaHost {
                         .map(|t| {
                             t.sequence_values::<String>()
                                 .filter_map(|v| v.ok())
-                                .filter_map(|s| crate::lsp::config::LspCapability::from_str(&s))
+                                .filter_map(|s| crate::lsp::config::LspCapability::parse(&s))
                                 .collect()
                         })
                         .unwrap_or_default();

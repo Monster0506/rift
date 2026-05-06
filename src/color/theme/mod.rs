@@ -47,15 +47,11 @@ pub struct DefaultThemeHandler;
 
 impl ThemeHandler for DefaultThemeHandler {
     fn apply_theme(&self, theme: &Theme, settings: &mut UserSettings) {
-        // Store theme name
         settings.theme = Some(theme.name.to_string());
-
-        // Apply background and foreground colors
         settings.editor_bg = Some(theme.background);
         settings.editor_fg = Some(theme.foreground);
-
-        // Apply syntax colors
         settings.syntax_colors = theme.syntax.clone();
+        settings.cursor_color = Some(theme.cursor_color);
     }
 }
 
@@ -113,6 +109,8 @@ pub struct Theme {
     pub background: Color,
     /// Foreground (text) color
     pub foreground: Color,
+    /// Cursor accent color (block fill in Normal mode, bar color in Insert mode)
+    pub cursor_color: Color,
     /// Optional syntax highlighting colors
     pub syntax: Option<SyntaxColors>,
 }
@@ -132,6 +130,7 @@ impl Theme {
         variant: ThemeVariant,
         background: Color,
         foreground: Color,
+        cursor_color: Color,
         syntax: Option<SyntaxColors>,
     ) -> Self {
         Theme {
@@ -139,6 +138,7 @@ impl Theme {
             variant,
             background,
             foreground,
+            cursor_color,
             syntax,
         }
     }
@@ -203,6 +203,11 @@ impl Theme {
                 b: 255,
             }, // #FFFFFF - Pure white
             Color::Rgb { r: 0, g: 0, b: 0 }, // #000000 - Pure black
+            Color::Rgb {
+                r: 0,
+                g: 120,
+                b: 212,
+            }, // #0078D4 - Fluent blue
             Some(syntax),
         )
     }
@@ -271,6 +276,11 @@ impl Theme {
                 g: 224,
                 b: 224,
             }, // #E0E0E0 - Light gray
+            Color::Rgb {
+                r: 86,
+                g: 156,
+                b: 214,
+            }, // #569CD6 - VS Code blue
             Some(syntax),
         )
     }
@@ -591,6 +601,11 @@ impl Theme {
                 b: 32,
             }, // #282828
             fg,
+            Color::Rgb {
+                r: 255,
+                g: 146,
+                b: 47,
+            }, // #FF922F - Andrew Orange
             Some(syntax),
         )
     }
@@ -889,6 +904,11 @@ impl Theme {
                 b: 64,
             }, // #2E3440
             fg,
+            Color::Rgb {
+                r: 136,
+                g: 192,
+                b: 208,
+            }, // #88C0D0 - Nordic frost
             Some(syntax),
         )
     }

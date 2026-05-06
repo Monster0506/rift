@@ -12,6 +12,7 @@ pub mod color;
 pub mod command;
 pub mod command_line;
 pub mod constants;
+pub mod cursor;
 pub mod document;
 pub mod dot_repeat;
 pub mod editor;

@@ -17,6 +17,12 @@ pub struct Size {
     pub cols: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursorShape {
+    SteadyBlock,
+    SteadyBar,
+}
+
 /// Terminal backend trait
 /// All terminal backends must implement these operations
 pub trait TerminalBackend {
@@ -56,6 +62,9 @@ pub trait TerminalBackend {
 
     /// Clear from cursor to end of line
     fn clear_to_end_of_line(&mut self) -> Result<(), String>;
+
+    /// Change the terminal cursor shape (DECSCUSR).
+    fn set_cursor_shape(&mut self, shape: CursorShape) -> Result<(), String>;
 }
 
 /// Extension trait for color support

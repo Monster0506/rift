@@ -167,7 +167,7 @@ fn spawn_reader_thread(stdout: ChildStdout, tx: Sender<RawLspMessage>) -> thread
 
             // Read body
             let mut body = vec![0u8; n];
-            if let Err(_) = read_exact(&mut reader, &mut body) {
+            if read_exact(&mut reader, &mut body).is_err() {
                 return;
             }
 

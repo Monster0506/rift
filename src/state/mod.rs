@@ -107,6 +107,8 @@ pub struct UserSettings {
     pub clipboard_ring_size: usize,
     /// When true, ^w= distributes space proportionally to leaf count instead of 50/50
     pub equalize_proportional: bool,
+    /// Cursor accent color (block fill in Normal, bar color in Insert)
+    pub cursor_color: Option<Color>,
 }
 
 impl UserSettings {
@@ -129,6 +131,7 @@ impl UserSettings {
             wrap_width: None,
             clipboard_ring_size: crate::clipboard::DEFAULT_RING_CAPACITY,
             equalize_proportional: false,
+            cursor_color: None,
         };
 
         // Apply default Dark theme

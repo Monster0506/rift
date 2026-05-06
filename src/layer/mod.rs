@@ -86,8 +86,10 @@ impl LayerPriority {
     pub const HOVER: LayerPriority = LayerPriority(40);
     /// Tooltips and hints
     pub const TOOLTIP: LayerPriority = LayerPriority(50);
-    /// Notifications (highest priority)
+    /// Notifications
     pub const NOTIFICATION: LayerPriority = LayerPriority(60);
+    /// Software cursor
+    pub const CURSOR: LayerPriority = LayerPriority(100);
 }
 
 /// A cell in the terminal buffer
@@ -602,6 +604,18 @@ impl LayerCompositor {
             self.composite();
         }
         self.buffer.current_slice()
+    }
+
+    /// Get a single composited cell, compositing first if any layer is dirty.
+    pub fn get_composited_cell(&mut self, row: usize, col: usize) -> Option<Cell> {
+        if self.has_dirty() {
+            self.composite();
+        }
+        if row < self.rows && col < self.cols {
+            Some(self.buffer.current_slice()[row * self.cols + col].clone())
+        } else {
+            None
+        }
     }
 
     /// Render the composited output to the terminal using double buffering

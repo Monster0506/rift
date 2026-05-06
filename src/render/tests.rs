@@ -14,6 +14,32 @@ use crate::state::State;
 use crate::status::StatusBar;
 use crate::test_utils::MockTerminal;
 
+/// Remove ANSI escape sequences (CSI and OSC) from a string so tests can match
+/// plain text content without being affected by color/cursor escape codes.
+fn strip_ansi(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\x1b' {
+            i += 1;
+            if i < bytes.len() && bytes[i] == b'[' {
+                i += 1;
+                while i < bytes.len() && !(0x40..=0x7E).contains(&bytes[i]) {
+                    i += 1;
+                }
+                i += 1;
+            } else {
+                i += 1;
+            }
+        } else {
+            out.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    out
+}
+
 fn create_default_statusdrawstate() -> StatusDrawState {
     StatusDrawState {
         mode: Mode::Normal,
@@ -376,17 +402,15 @@ fn test_render_multiline_buffer() {
 
 #[test]
 fn test_render_file_loaded_at_start() {
-    // Simulate file loading: content inserted, then cursor moved to start
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(100).unwrap();
-    // Insert content (simulating file load)
+
     buf.insert_bytes(b"line1\nline2\nline3\n").unwrap();
     buf.move_to_start();
 
     let state = State::new();
     let mut system = RenderSystem::new(10, 80);
 
-    // First render (simulating initial render after file load)
     system
         .render(
             &mut term,
@@ -418,13 +442,12 @@ fn test_render_file_loaded_at_start() {
     // Should NOT clear screen on first render
     assert_eq!(term.clear_screen_calls, 0);
 
-    // Should render all lines
-    let written = term.get_written_string();
-    assert!(written.contains("line1"));
-    assert!(written.contains("line2"));
-    assert!(written.contains("line3"));
+    let raw = term.get_written_string();
+    let plain = strip_ansi(&raw);
+    assert!(plain.contains("line1"), "expected 'line1' in: {plain:?}");
+    assert!(plain.contains("line2"), "expected 'line2' in: {plain:?}");
+    assert!(plain.contains("line3"), "expected 'line3' in: {plain:?}");
 
-    // Verify cursor is at start (line 0, column 0)
     assert_eq!(buf.get_line(), 0);
     assert_eq!(buf.cursor(), 0);
 }

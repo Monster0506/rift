@@ -48,7 +48,7 @@
 /// - Buffer and executor logic are testable without a terminal.
 /// - Boundary and edge cases are explicitly tested.
 use crate::key::Key;
-use crate::term::{Size, TerminalBackend};
+use crate::term::{CursorShape, Size, TerminalBackend};
 
 /// Mock terminal backend for testing
 ///
@@ -154,6 +154,10 @@ impl TerminalBackend for MockTerminal {
     }
 
     fn clear_to_end_of_line(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn set_cursor_shape(&mut self, _shape: CursorShape) -> Result<(), String> {
         Ok(())
     }
 }

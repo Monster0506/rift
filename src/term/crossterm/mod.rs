@@ -1,6 +1,7 @@
 //! Crossterm-based terminal backend
 //! Cross-platform terminal operations using crossterm
 
+use crate::term::CursorShape;
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -132,6 +133,15 @@ impl TerminalBackend for CrosstermBackend {
     fn clear_to_end_of_line(&mut self) -> Result<(), String> {
         execute!(self.writer, terminal::Clear(ClearType::UntilNewLine))
             .map_err(|e| format!("Failed to clear to end of line: {e}"))?;
+        Ok(())
+    }
+
+    fn set_cursor_shape(&mut self, shape: CursorShape) -> Result<(), String> {
+        let style = match shape {
+            CursorShape::SteadyBlock => cursor::SetCursorStyle::SteadyBlock,
+            CursorShape::SteadyBar => cursor::SetCursorStyle::SteadyBar,
+        };
+        queue!(self.writer, style).map_err(|e| format!("Failed to set cursor shape: {e}"))?;
         Ok(())
     }
 }

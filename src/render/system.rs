@@ -12,6 +12,7 @@ use crate::viewport::Viewport;
 use crate::command_line::CommandLine;
 use crate::mode::Mode;
 use crate::status::StatusBar;
+use crate::term::CursorShape;
 
 /// Persistent rendering system that holds all render-related state
 pub struct RenderSystem {
@@ -30,6 +31,8 @@ pub struct RenderSystem {
     last_render_version: u64,
     last_cursor_pos: Option<CursorPosition>,
     last_command_cursor: Option<CursorPosition>,
+    last_soft_cursor: Option<(usize, usize)>,
+    last_cursor_shape: Option<CursorShape>,
 }
 
 impl RenderSystem {
@@ -47,6 +50,8 @@ impl RenderSystem {
             last_render_version: 0,
             last_cursor_pos: None,
             last_command_cursor: None,
+            last_soft_cursor: None,
+            last_cursor_shape: None,
         }
     }
 
@@ -65,6 +70,8 @@ impl RenderSystem {
         self.last_render_version = 0;
         self.last_cursor_pos = None;
         self.last_command_cursor = None;
+        self.last_soft_cursor = None;
+        self.last_cursor_shape = None;
     }
 
     /// Update the ECS world components based on current context
@@ -516,20 +523,60 @@ impl RenderSystem {
             }
         };
 
-        let stats = self
-            .compositor
+        let (cursor_row, cursor_col) = match cursor_info {
+            CursorPosition::Absolute(r, c) => (r as usize, c as usize),
+        };
+
+        let software = crate::cursor::is_software_cursor(ctx.current_mode);
+
+        if software {
+            {
+                let layer = self.compositor.get_layer_mut(LayerPriority::CURSOR);
+                layer.clear_cell(cursor_row, cursor_col);
+                if let Some((pr, pc)) = self.last_soft_cursor {
+                    if (pr, pc) != (cursor_row, cursor_col) {
+                        layer.clear_cell(pr, pc);
+                    }
+                }
+            }
+
+            let underlying = self.compositor.get_composited_cell(cursor_row, cursor_col);
+            let cursor_cell = crate::cursor::SoftCursor::block_cell(
+                underlying.as_ref(),
+                ctx.state.settings.cursor_color,
+                ctx.state.settings.editor_fg,
+                ctx.state.settings.editor_bg,
+            );
+
+            if cursor_row < self.compositor.rows() && cursor_col < self.compositor.cols() {
+                self.compositor
+                    .get_layer_mut(LayerPriority::CURSOR)
+                    .set_cell(cursor_row, cursor_col, cursor_cell);
+                self.last_soft_cursor = Some((cursor_row, cursor_col));
+            }
+        } else if let Some((pr, pc)) = self.last_soft_cursor.take() {
+            self.compositor
+                .get_layer_mut(LayerPriority::CURSOR)
+                .clear_cell(pr, pc);
+        }
+
+        self.compositor
             .render_to_terminal(term, ctx.needs_clear)
             .map_err(|e| RiftError::new(crate::error::ErrorType::Renderer, "RENDER_FAILED", e))?;
 
-        if stats.changed_cells > 0 || self.last_cursor_pos != Some(cursor_info) {
-            match cursor_info {
-                CursorPosition::Absolute(row, col) => {
-                    term.move_cursor(row, col)?;
-                }
+        if !software {
+            let desired_shape = CursorShape::SteadyBar;
+            if self.last_cursor_shape != Some(desired_shape) {
+                term.set_cursor_shape(desired_shape)?;
+                self.last_cursor_shape = Some(desired_shape);
             }
-            self.last_cursor_pos = Some(cursor_info);
+            term.move_cursor(cursor_row as u16, cursor_col as u16)?;
+            term.show_cursor()?;
+        } else {
+            self.last_cursor_shape = None;
         }
-        term.show_cursor()?;
+
+        self.last_cursor_pos = Some(cursor_info);
         term.flush()?;
 
         // Update version reference

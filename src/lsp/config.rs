@@ -11,7 +11,7 @@ pub enum LspCapability {
 }
 
 impl LspCapability {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "definition" => Some(Self::GotoDefinition),
             "references" => Some(Self::References),
