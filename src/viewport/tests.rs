@@ -25,28 +25,24 @@ fn test_viewport_update_cursor_at_top() {
 #[test]
 fn test_viewport_update_cursor_scroll_down() {
     let mut viewport = Viewport::new(10, 80);
-    // 10 visible rows = 9 content rows (1 for status bar)
-    // Move cursor to line 10 (beyond visible area)
+    // 10 visible rows -> 9 content rows, half = 4
+    // cursor=10 -> ideal_top = 10 - 4 = 6
     let scrolled = viewport.update(10, 0, 100, 0);
-    // Should scroll so cursor is visible
-    // top_line should be 10 - (9 - 1) = 10 - 8 = 2
-    assert_eq!(viewport.top_line(), 2);
-    assert!(scrolled); // Should have scrolled
-                       // Cursor line 10 should now be visible (lines 2-10 shown)
+    assert_eq!(viewport.top_line(), 6);
+    assert!(scrolled);
 }
 
 #[test]
 fn test_viewport_update_cursor_scroll_up() {
     let mut viewport = Viewport::new(10, 80);
-    // Start scrolled down
+    // cursor=20 -> ideal_top = 20 - 4 = 16
     let _ = viewport.update(20, 0, 100, 0);
     assert!(viewport.top_line() > 0);
 
-    // Move cursor back up
+    // cursor=5 -> ideal_top = 5 - 4 = 1
     let scrolled = viewport.update(5, 0, 100, 0);
-    // Should scroll up to show cursor
-    assert_eq!(viewport.top_line(), 5);
-    assert!(scrolled); // Should have scrolled
+    assert_eq!(viewport.top_line(), 1);
+    assert!(scrolled);
 }
 
 #[test]
@@ -62,34 +58,25 @@ fn test_viewport_update_small_buffer() {
 fn test_viewport_update_cursor_at_bottom_of_buffer() {
     let mut viewport = Viewport::new(10, 80);
     let total_lines = 50;
-    // Move cursor to last line
+    // cursor=49, half=4 -> ideal_top=45, max_top=41 -> clamped to 41
     let _ = viewport.update(total_lines - 1, 0, total_lines, 0);
-    // Should scroll to show last line
-    // top_line should be (total_lines - 1) - (content_rows - 1)
-    // = 49 - 8 = 41, showing lines 41-49
-    let content_rows = viewport.visible_rows() - 1;
-    let expected_top = (total_lines - 1).saturating_sub(content_rows - 1);
-    assert_eq!(viewport.top_line(), expected_top);
+    assert_eq!(viewport.top_line(), 41);
 }
 
 #[test]
 fn test_viewport_update_cursor_middle() {
     let mut viewport = Viewport::new(10, 80);
-    // Cursor in middle of visible area, shouldn't scroll
+    // cursor=5, half=4 -> ideal_top = 1
     let _ = viewport.update(5, 0, 100, 0);
-    // Should stay at top since cursor is visible
-    assert_eq!(viewport.top_line(), 0);
+    assert_eq!(viewport.top_line(), 1);
 }
 
 #[test]
 fn test_viewport_update_cursor_just_below_visible() {
     let mut viewport = Viewport::new(10, 80);
-    // 9 content rows, so lines 0-8 visible
-    // Cursor at line 9 (just below)
+    // cursor=9, half=4 -> ideal_top = 5
     viewport.update(9, 0, 100, 0);
-    // Should scroll to show line 9
-    // top_line = 9 - (9 - 1) = 9 - 8 = 1
-    assert_eq!(viewport.top_line(), 1);
+    assert_eq!(viewport.top_line(), 5);
 }
 
 #[test]
@@ -125,49 +112,44 @@ fn test_viewport_scroll_sequence() {
     let _ = viewport.update(0, 0, total_lines, 0);
     assert_eq!(viewport.top_line(), 0);
 
-    // Scroll down gradually
-    for i in 1..20 {
+    // Cursor scrolls immediately: at line i, top_line = max(0, i - 4)
+    for i in 1..20usize {
         let _ = viewport.update(i, 0, total_lines, 0);
-        // Should scroll when cursor goes beyond visible area
-        if i > 8 {
-            // Beyond 9 content rows
-            assert!(viewport.top_line() > 0);
-        }
+        let expected = i.saturating_sub(4);
+        assert_eq!(viewport.top_line(), expected);
     }
 
-    // Scroll back up
+    // cursor=5, half=4 -> top_line = 1
     let _ = viewport.update(5, 0, total_lines, 0);
-    assert_eq!(viewport.top_line(), 5);
+    assert_eq!(viewport.top_line(), 1);
 }
 
 #[test]
 fn test_viewport_large_buffer() {
     let mut viewport = Viewport::new(10, 80);
     let total_lines = 1000;
+    // content_rows = 9, half = 4, max_top = 991
 
-    // Move to middle
+    // cursor=500 -> ideal_top = 496, clamped to 496
     let _ = viewport.update(500, 0, total_lines, 0);
-    let content_rows = viewport.visible_rows() - 1;
-    let expected_top = 500usize.saturating_sub(content_rows - 1);
-    assert_eq!(viewport.top_line(), expected_top);
+    assert_eq!(viewport.top_line(), 496);
 
-    // Move to end
+    // cursor=999 -> ideal_top = 995, clamped to max_top = 991
     let _ = viewport.update(total_lines - 1, 0, total_lines, 0);
-    let expected_top_end = (total_lines - 1).saturating_sub(content_rows - 1);
-    assert_eq!(viewport.top_line(), expected_top_end);
+    assert_eq!(viewport.top_line(), 991);
 }
 
 #[test]
 fn test_viewport_cursor_at_exact_bottom() {
     let mut viewport = Viewport::new(10, 80);
-    // 9 content rows, so bottom visible is line 8 when top_line = 0
-    // Cursor at line 8 should be visible, no scroll needed
+    // content_rows=9, half=4
+    // cursor=8 -> ideal_top = 4
     let _ = viewport.update(8, 0, 100, 0);
-    assert_eq!(viewport.top_line(), 0);
+    assert_eq!(viewport.top_line(), 4);
 
-    // Cursor at line 9 should trigger scroll
+    // cursor=9 -> ideal_top = 5
     viewport.update(9, 0, 100, 0);
-    assert_eq!(viewport.top_line(), 1);
+    assert_eq!(viewport.top_line(), 5);
 }
 
 #[test]

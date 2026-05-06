@@ -338,6 +338,38 @@ fn get_editor_fg(s: &UserSettings) -> String {
     format_color(s.editor_fg)
 }
 
+fn set_cursor_color(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Color(color) => {
+            settings.cursor_color = if color == Color::Reset {
+                None
+            } else {
+                Some(color)
+            };
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError("Expected color".to_string())),
+    }
+}
+
+fn get_cursor_color(s: &UserSettings) -> String {
+    format_color(s.cursor_color)
+}
+
+fn set_cursor_speed(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Float(f) => {
+            settings.cursor_speed = f;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError("Expected float".to_string())),
+    }
+}
+
+fn get_cursor_speed(s: &UserSettings) -> String {
+    s.cursor_speed.to_string()
+}
+
 /// Static registry of all settings
 fn set_equalize_proportional(
     settings: &mut UserSettings,
@@ -437,6 +469,27 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         set: set_editor_fg,
         get: Some(get_editor_fg),
         needs_full_redraw: true,
+    },
+    SettingDescriptor {
+        name: "appearance.cursor_color",
+        aliases: &["cursorcolor"],
+        description: "Cursor block color in Normal mode",
+        ty: SettingType::Color,
+        set: set_cursor_color,
+        get: Some(get_cursor_color),
+        needs_full_redraw: false,
+    },
+    SettingDescriptor {
+        name: "appearance.cursor_speed",
+        aliases: &["cursorspeed"],
+        description: "Cursor animation speed: fraction of remaining distance covered per frame (0.0-1.0)",
+        ty: SettingType::Float {
+            min: Some(0.0),
+            max: Some(1.0),
+        },
+        set: set_cursor_speed,
+        get: Some(get_cursor_speed),
+        needs_full_redraw: false,
     },
     SettingDescriptor {
         name: "appearance.theme",

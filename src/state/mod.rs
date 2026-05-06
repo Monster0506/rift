@@ -109,6 +109,8 @@ pub struct UserSettings {
     pub equalize_proportional: bool,
     /// Cursor accent color (block fill in Normal, bar color in Insert)
     pub cursor_color: Option<Color>,
+    /// Cursor animation speed: fraction of remaining distance covered per frame (0.0-1.0)
+    pub cursor_speed: f64,
 }
 
 impl UserSettings {
@@ -132,6 +134,7 @@ impl UserSettings {
             clipboard_ring_size: crate::clipboard::DEFAULT_RING_CAPACITY,
             equalize_proportional: false,
             cursor_color: None,
+            cursor_speed: 0.8,
         };
 
         // Apply default Dark theme

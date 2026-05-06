@@ -49,9 +49,10 @@ impl Viewport {
         }
     }
 
-    /// Update viewport based on cursor position and total lines
-    /// Ensures the cursor is always visible by scrolling when necessary
-    /// Returns true if the viewport scrolled or if this is the first update
+    /// Update viewport based on cursor position and total lines.
+    /// Keeps the cursor vertically centered whenever the document is large enough;
+    /// clamps naturally at the top and bottom edges.
+    /// Returns true if the viewport scrolled or if this is the first update.
     pub fn update(
         &mut self,
         cursor_line: usize,
@@ -59,65 +60,28 @@ impl Viewport {
         total_lines: usize,
         gutter_width: usize,
     ) -> bool {
-        // Store previous positions
         self.prev_top_line = self.top_line;
         self.prev_left_col = self.left_col;
         let was_first = self.first_update;
         self.first_update = false;
 
-        // --- Vertical Scrolling ---
-
-        // Calculate content rows (excluding status bar)
+        // --- Vertical: keep cursor centered ---
         let content_rows = self.visible_rows.saturating_sub(1);
+        let half = content_rows / 2;
+        let ideal_top = cursor_line.saturating_sub(half);
+        let max_top = total_lines.saturating_sub(content_rows);
+        self.top_line = ideal_top.min(max_top);
 
-        // Calculate the last visible content line (0-indexed)
-        let bottom_content_line = self.top_line + content_rows.saturating_sub(1);
-
-        // If cursor is above visible area, scroll up
-        if cursor_line < self.top_line {
-            self.top_line = cursor_line;
-        }
-
-        // If cursor is below visible area, scroll down
-        if cursor_line > bottom_content_line {
-            let new_top = cursor_line.saturating_sub(content_rows.saturating_sub(1));
-            self.top_line = new_top;
-        }
-
-        // Ensure we don't scroll past the end of the buffer
-        if total_lines > 0 && total_lines <= content_rows {
-            self.top_line = 0;
-        } else if self.top_line + content_rows > total_lines && total_lines > content_rows {
-            self.top_line = total_lines.saturating_sub(content_rows);
-        }
-
-        // Ensure top_line doesn't go negative
-        if self.top_line > total_lines.saturating_sub(1) && total_lines > 0 {
-            self.top_line = total_lines.saturating_sub(1).max(0);
-        }
-
-        // --- Horizontal Scrolling ---
-
-        // Effective visible width depends on gutter
+        // --- Horizontal: scroll just enough to keep cursor visible ---
         let content_width = self.visible_cols.saturating_sub(gutter_width);
-
-        // If content width is 0 (terminal too small), we can't do much
         if content_width > 0 {
-            let right_limit = self.left_col + content_width.saturating_sub(1);
-
-            // If cursor is to the left of visible area, scroll left
             if cursor_col < self.left_col {
                 self.left_col = cursor_col;
-            }
-
-            // If cursor is to the right of visible area, scroll right
-            if cursor_col > right_limit {
-                // Position cursor at right edge
+            } else if cursor_col >= self.left_col + content_width {
                 self.left_col = cursor_col.saturating_sub(content_width.saturating_sub(1));
             }
         }
 
-        // Return true if viewport scrolled or if this is the first update
         self.top_line != self.prev_top_line || self.left_col != self.prev_left_col || was_first
     }
 
@@ -129,31 +93,19 @@ impl Viewport {
         _gutter_width: usize,
     ) -> bool {
         self.prev_top_visual_row = self.top_visual_row;
-        let prev_left = self.prev_left_col;
         let was_first = self.first_update;
         self.first_update = false;
 
         let content_rows = self.visible_rows.saturating_sub(1);
-        let bottom = self.top_visual_row + content_rows.saturating_sub(1);
-
-        if cursor_visual_row < self.top_visual_row {
-            self.top_visual_row = cursor_visual_row;
-        }
-        if cursor_visual_row > bottom {
-            self.top_visual_row = cursor_visual_row.saturating_sub(content_rows.saturating_sub(1));
-        }
-        if total_visual_rows > 0 && total_visual_rows <= content_rows {
-            self.top_visual_row = 0;
-        } else if self.top_visual_row + content_rows > total_visual_rows
-            && total_visual_rows > content_rows
-        {
-            self.top_visual_row = total_visual_rows.saturating_sub(content_rows);
-        }
+        let half = content_rows / 2;
+        let ideal_top = cursor_visual_row.saturating_sub(half);
+        let max_top = total_visual_rows.saturating_sub(content_rows);
+        self.top_visual_row = ideal_top.min(max_top);
 
         self.left_col = 0;
         self.prev_left_col = 0;
 
-        self.top_visual_row != self.prev_top_visual_row || self.left_col != prev_left || was_first
+        self.top_visual_row != self.prev_top_visual_row || was_first
     }
 
     /// Get the previous top line (before last update)

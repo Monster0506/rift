@@ -33,6 +33,7 @@ pub struct RenderSystem {
     last_command_cursor: Option<CursorPosition>,
     last_soft_cursor: Option<(usize, usize)>,
     last_cursor_shape: Option<CursorShape>,
+    cursor_animator: crate::cursor::CursorAnimator,
 }
 
 impl RenderSystem {
@@ -52,7 +53,12 @@ impl RenderSystem {
             last_command_cursor: None,
             last_soft_cursor: None,
             last_cursor_shape: None,
+            cursor_animator: crate::cursor::CursorAnimator::new(),
         }
+    }
+
+    pub fn needs_animation_frame(&self) -> bool {
+        self.cursor_animator.is_animating()
     }
 
     /// Resize the render system
@@ -72,6 +78,7 @@ impl RenderSystem {
         self.last_command_cursor = None;
         self.last_soft_cursor = None;
         self.last_cursor_shape = None;
+        self.cursor_animator.reset();
     }
 
     /// Update the ECS world components based on current context
@@ -530,17 +537,25 @@ impl RenderSystem {
         let software = crate::cursor::is_software_cursor(ctx.current_mode);
 
         if software {
+            self.cursor_animator.set_target(cursor_row, cursor_col);
+        } else {
+            self.cursor_animator.snap_to(cursor_row, cursor_col);
+        }
+        self.cursor_animator.step(ctx.state.settings.cursor_speed);
+        let (anim_row, anim_col) = self.cursor_animator.display_pos();
+
+        if software {
             {
                 let layer = self.compositor.get_layer_mut(LayerPriority::CURSOR);
-                layer.clear_cell(cursor_row, cursor_col);
+                layer.clear_cell(anim_row, anim_col);
                 if let Some((pr, pc)) = self.last_soft_cursor {
-                    if (pr, pc) != (cursor_row, cursor_col) {
+                    if (pr, pc) != (anim_row, anim_col) {
                         layer.clear_cell(pr, pc);
                     }
                 }
             }
 
-            let underlying = self.compositor.get_composited_cell(cursor_row, cursor_col);
+            let underlying = self.compositor.get_composited_cell(anim_row, anim_col);
             let cursor_cell = crate::cursor::SoftCursor::block_cell(
                 underlying.as_ref(),
                 ctx.state.settings.cursor_color,
@@ -548,11 +563,11 @@ impl RenderSystem {
                 ctx.state.settings.editor_bg,
             );
 
-            if cursor_row < self.compositor.rows() && cursor_col < self.compositor.cols() {
+            if anim_row < self.compositor.rows() && anim_col < self.compositor.cols() {
                 self.compositor
                     .get_layer_mut(LayerPriority::CURSOR)
-                    .set_cell(cursor_row, cursor_col, cursor_cell);
-                self.last_soft_cursor = Some((cursor_row, cursor_col));
+                    .set_cell(anim_row, anim_col, cursor_cell);
+                self.last_soft_cursor = Some((anim_row, anim_col));
             }
         } else if let Some((pr, pc)) = self.last_soft_cursor.take() {
             self.compositor

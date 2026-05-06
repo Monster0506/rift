@@ -44,3 +44,85 @@ impl SoftCursor {
         Cell::new(content).with_fg(block_fg).with_bg(block_bg)
     }
 }
+
+/// Animates the software cursor toward its logical target using exponential smoothing.
+pub struct CursorAnimator {
+    row: f64,
+    col: f64,
+    target_row: usize,
+    target_col: usize,
+    initialized: bool,
+    animating: bool,
+}
+
+impl CursorAnimator {
+    pub fn new() -> Self {
+        Self {
+            row: 0.0,
+            col: 0.0,
+            target_row: 0,
+            target_col: 0,
+            initialized: false,
+            animating: false,
+        }
+    }
+
+    pub fn set_target(&mut self, row: usize, col: usize) {
+        if !self.initialized {
+            self.row = row as f64;
+            self.col = col as f64;
+            self.target_row = row;
+            self.target_col = col;
+            self.initialized = true;
+            return;
+        }
+        if row != self.target_row || col != self.target_col {
+            self.target_row = row;
+            self.target_col = col;
+            self.animating = true;
+        }
+    }
+
+    pub fn snap_to(&mut self, row: usize, col: usize) {
+        self.row = row as f64;
+        self.col = col as f64;
+        self.target_row = row;
+        self.target_col = col;
+        self.initialized = true;
+        self.animating = false;
+    }
+
+    pub fn step(&mut self, factor: f64) {
+        if !self.animating {
+            return;
+        }
+        self.row += (self.target_row as f64 - self.row) * factor;
+        self.col += (self.target_col as f64 - self.col) * factor;
+        if (self.row - self.target_row as f64).abs() < 0.5
+            && (self.col - self.target_col as f64).abs() < 0.5
+        {
+            self.row = self.target_row as f64;
+            self.col = self.target_col as f64;
+            self.animating = false;
+        }
+    }
+
+    pub fn display_pos(&self) -> (usize, usize) {
+        (self.row.round() as usize, self.col.round() as usize)
+    }
+
+    pub fn is_animating(&self) -> bool {
+        self.animating
+    }
+
+    pub fn reset(&mut self) {
+        self.initialized = false;
+        self.animating = false;
+    }
+}
+
+impl Default for CursorAnimator {
+    fn default() -> Self {
+        Self::new()
+    }
+}

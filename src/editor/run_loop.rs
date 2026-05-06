@@ -385,7 +385,11 @@ impl<T: TerminalBackend> Editor<T> {
                     self.apply_plugin_mutations();
                 }
 
-                if jobs_changed || notif_changed || notif_tick {
+                if jobs_changed
+                    || notif_changed
+                    || notif_tick
+                    || self.render_system.needs_animation_frame()
+                {
                     self.update_and_render()?;
                     self.state.error_manager.notifications_mut().mark_rendered();
                 }
