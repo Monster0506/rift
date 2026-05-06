@@ -269,7 +269,7 @@ impl LspManager {
                         work_done_progress: true,
                     },
                 },
-                initialization_options: None,
+                initialization_options: server.initialization_options.clone(),
             })
             .ok()?;
 

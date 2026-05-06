@@ -36,6 +36,8 @@ pub struct LspServerConfig {
     pub root_markers: Vec<String>,
     /// Capabilities declared by this server.
     pub capabilities: Vec<LspCapability>,
+    /// Passed verbatim as `initializationOptions` in the LSP initialize request.
+    pub initialization_options: Option<serde_json::Value>,
 }
 
 impl LspServerConfig {

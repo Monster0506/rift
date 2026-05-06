@@ -6,6 +6,40 @@ use crate::plugin::{PluginFloat, PluginMutation};
 use mlua::prelude::*;
 use std::sync::{Arc, Mutex};
 
+fn lua_to_json(v: LuaValue) -> Result<serde_json::Value, String> {
+    match v {
+        LuaValue::Nil => Ok(serde_json::Value::Null),
+        LuaValue::Boolean(b) => Ok(serde_json::Value::Bool(b)),
+        LuaValue::Integer(n) => Ok(serde_json::Value::Number(n.into())),
+        LuaValue::Number(f) => serde_json::Number::from_f64(f)
+            .map(serde_json::Value::Number)
+            .ok_or_else(|| format!("non-finite float {f}")),
+        LuaValue::String(s) => Ok(serde_json::Value::String(s.to_string_lossy().to_string())),
+        LuaValue::Table(t) => {
+            let len = t.raw_len();
+            if len > 0 {
+                let arr: Result<Vec<_>, _> = (1..=len)
+                    .map(|i| lua_to_json(t.raw_get::<LuaValue>(i).map_err(|e| e.to_string())?))
+                    .collect();
+                Ok(serde_json::Value::Array(arr?))
+            } else {
+                let mut map = serde_json::Map::new();
+                for pair in t.pairs::<LuaValue, LuaValue>() {
+                    let (k, val) = pair.map_err(|e| e.to_string())?;
+                    let key = match k {
+                        LuaValue::String(s) => s.to_string_lossy().to_string(),
+                        LuaValue::Integer(n) => n.to_string(),
+                        _ => continue,
+                    };
+                    map.insert(key, lua_to_json(val)?);
+                }
+                Ok(serde_json::Value::Object(map))
+            }
+        }
+        _ => Err(format!("unsupported Lua type")),
+    }
+}
+
 /// A lightweight buffer entry for the `rift.get_buf_list()` snapshot.
 #[derive(Debug, Clone)]
 pub struct BufEntry {
@@ -1135,6 +1169,9 @@ impl LuaHost {
                                 .collect()
                         })
                         .unwrap_or_default();
+                    let initialization_options = tbl
+                        .get::<Option<LuaValue>>("initialization_options")?
+                        .and_then(|v| lua_to_json(v).ok());
                     sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
                         PluginMutation::LspRegisterServer {
                             language,
@@ -1144,6 +1181,7 @@ impl LuaHost {
                                 extensions,
                                 root_markers,
                                 capabilities,
+                                initialization_options,
                             },
                         },
                     );
