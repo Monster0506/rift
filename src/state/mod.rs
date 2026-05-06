@@ -111,6 +111,8 @@ pub struct UserSettings {
     pub cursor_color: Option<Color>,
     /// Cursor animation speed: fraction of remaining distance covered per frame (0.0-1.0)
     pub cursor_speed: f64,
+    /// Emit LSP protocol events as info notifications for debugging
+    pub lsp_debug_log: bool,
 }
 
 impl UserSettings {
@@ -135,6 +137,7 @@ impl UserSettings {
             equalize_proportional: false,
             cursor_color: None,
             cursor_speed: 0.8,
+            lsp_debug_log: false,
         };
 
         // Apply default Dark theme

@@ -23,6 +23,8 @@ pub enum RawLspMessage {
         method: String,
         params: Value,
     },
+    /// A JSON parse error on a message from the server.
+    ParseError { message: String },
 }
 
 /// One live connection to a language server process.
@@ -173,7 +175,11 @@ fn spawn_reader_thread(stdout: ChildStdout, tx: Sender<RawLspMessage>) -> thread
 
             let msg: JsonRpcMessage = match serde_json::from_slice(&body) {
                 Ok(m) => m,
-                Err(_) => {
+                Err(e) => {
+                    let snippet = String::from_utf8_lossy(&body[..body.len().min(200)]);
+                    let _ = tx.send(RawLspMessage::ParseError {
+                        message: format!("JSON parse error: {} | body: {}", e, snippet),
+                    });
                     continue;
                 }
             };

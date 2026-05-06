@@ -52,6 +52,9 @@ pub enum LspMessage {
         method: String,
         message: String,
     },
+    Log {
+        message: String,
+    },
     /// Emitted once after a language server's initialize handshake completes.
     ServerConnected {
         language: String,
@@ -111,6 +114,8 @@ pub struct LspManager {
     /// Documents queued for didOpen before their server's initialize handshake completes.
     /// language -> list of (uri, params) waiting to be sent.
     pending_opens: HashMap<String, Vec<(String, serde_json::Value)>>,
+    /// Debug log messages queued by internal methods that can't return LspMessage directly.
+    pending_logs: Vec<String>,
 }
 
 impl LspManager {
@@ -147,6 +152,7 @@ impl LspManager {
             server_names: HashMap::new(),
             indexing_idle_since: HashMap::new(),
             pending_opens: HashMap::new(),
+            pending_logs: Vec::new(),
         }
     }
 
@@ -208,10 +214,18 @@ impl LspManager {
             // Prefer the project root nearest to the opened file; fall back to
             // the global workspace root (cwd at launch).
             let root_uri = file_hint
-                .and_then(|f| Self::find_workspace_root(f, &server.root_markers))
+                .and_then(|f| {
+                    self.pending_logs.push(format!("LSP [{}]: file_hint={}", language, f.display()));
+                    Self::find_workspace_root(f, &server.root_markers)
+                })
                 .or_else(|| self.workspace_root.clone())
                 .as_ref()
                 .map(|p| protocol::path_to_uri(p));
+            self.pending_logs.push(format!(
+                "LSP [{}]: rootUri={}",
+                language,
+                root_uri.as_deref().unwrap_or("null")
+            ));
 
             let mut client = LspClient::start(
                 language.to_string(),
@@ -222,9 +236,17 @@ impl LspManager {
             .ok()?;
 
             // Send initialize
+            let workspace_folders = root_uri.as_ref().map(|uri| {
+                let name = uri.rsplit('/').next().unwrap_or("workspace").to_string();
+                vec![protocol::WorkspaceFolder {
+                    uri: uri.clone(),
+                    name,
+                }]
+            });
             let params = serde_json::to_value(InitializeParams {
                 process_id: Some(std::process::id()),
                 root_uri,
+                workspace_folders,
                 capabilities: ClientCapabilities {
                     general: GeneralCapabilities {
                         position_encodings: vec!["utf-8".into()],
@@ -312,7 +334,7 @@ impl LspManager {
             self.pending_opens
                 .entry(language.to_string())
                 .or_default()
-                .push((uri, params));
+                .push((uri.clone(), params));
         }
     }
 
@@ -585,6 +607,10 @@ impl LspManager {
     pub fn poll(&mut self) -> Vec<LspMessage> {
         let mut results = Vec::new();
 
+        for msg in self.pending_logs.drain(..) {
+            results.push(LspMessage::Log { message: msg });
+        }
+
         let languages: Vec<String> = self.clients.keys().cloned().collect();
 
         for lang in &languages {
@@ -608,6 +634,9 @@ impl LspManager {
 
                         // Mark initialized after successful initialize
                         if method == "initialize" {
+                            results.push(LspMessage::Log {
+                                message: format!("LSP [{}]: initialize response received", lang),
+                            });
                             if let Some(c) = self.clients.get_mut(lang) {
                                 c.initialized = true;
                                 c.send_notification("initialized", serde_json::json!({}));
@@ -615,7 +644,17 @@ impl LspManager {
 
                             // Flush any didOpen calls that arrived before initialization.
                             let queued = self.pending_opens.remove(lang).unwrap_or_default();
-                            for (_uri, params) in queued {
+                            results.push(LspMessage::Log {
+                                message: format!(
+                                    "LSP [{}]: flushing {} queued didOpen(s)",
+                                    lang,
+                                    queued.len()
+                                ),
+                            });
+                            for (uri, params) in queued {
+                                results.push(LspMessage::Log {
+                                    message: format!("LSP [{}]: didOpen -> {}", lang, uri),
+                                });
                                 if let Some(c) = self.clients.get_mut(lang) {
                                     c.send_notification("textDocument/didOpen", params);
                                 }
@@ -635,8 +674,21 @@ impl LspManager {
                                 language: lang.to_string(),
                                 server_name,
                             });
-                        } else if let Some(msg) = route_response(method, uri, result) {
+                            // Seed the idle timer so ServerReady fires if no $/progress tokens arrive.
+                            self.indexing_idle_since
+                                .entry(lang.to_string())
+                                .or_insert_with(std::time::Instant::now);
+                        } else if let Some(msg) = route_response(method, uri, result.clone()) {
                             results.push(msg);
+                        } else if !method.is_empty() {
+                            results.push(LspMessage::Log {
+                                message: format!(
+                                    "LSP [{}]: unrouted response method='{}' result={}",
+                                    lang,
+                                    method,
+                                    result
+                                ),
+                            });
                         }
                     }
                     RawLspMessage::ResponseError { id, message } => {
@@ -693,8 +745,17 @@ impl LspManager {
                                 _ => {}
                             }
                         }
-                        if let Some(msg) = route_notification(&method, params) {
+                        if let Some(msg) = route_notification(&method, params.clone()) {
                             results.push(msg);
+                        } else if method != "$/progress" {
+                            results.push(LspMessage::Log {
+                                message: format!(
+                                    "LSP [{}]: unhandled notification '{}' params={}",
+                                    lang,
+                                    method,
+                                    params
+                                ),
+                            });
                         }
                     }
                     RawLspMessage::ServerRequest { id, method: _, .. } => {
@@ -702,6 +763,11 @@ impl LspManager {
                         if let Some(c) = self.clients.get_mut(lang) {
                             c.send_response(id, Value::Null);
                         }
+                    }
+                    RawLspMessage::ParseError { message } => {
+                        results.push(LspMessage::Log {
+                            message: format!("LSP [{}]: {}", lang, message),
+                        });
                     }
                 }
             }

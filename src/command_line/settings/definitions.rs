@@ -386,6 +386,18 @@ fn set_equalize_proportional(
     }
 }
 
+fn set_lsp_debug_log(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Bool(b) => {
+            settings.lsp_debug_log = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
+    }
+}
+
 pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line.borderstyle",
@@ -582,6 +594,15 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "When on, ^w= distributes space proportionally to leaf count; when off, each split gets 50/50",
         ty: SettingType::Boolean,
         set: set_equalize_proportional,
+        get: None,
+        needs_full_redraw: false,
+    },
+    SettingDescriptor {
+        name: "lsp.debug_log",
+        aliases: &["lspdebug"],
+        description: "Show LSP protocol debug messages as notifications",
+        ty: SettingType::Boolean,
+        set: set_lsp_debug_log,
         get: None,
         needs_full_redraw: false,
     },

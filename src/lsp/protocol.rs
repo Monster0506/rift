@@ -72,11 +72,20 @@ pub struct LspTextEdit {
 }
 
 #[derive(Debug, Serialize)]
+pub struct WorkspaceFolder {
+    pub uri: String,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct InitializeParams {
     #[serde(rename = "processId")]
     pub process_id: Option<u32>,
     #[serde(rename = "rootUri")]
     pub root_uri: Option<String>,
+    #[serde(rename = "workspaceFolders")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_folders: Option<Vec<WorkspaceFolder>>,
     pub capabilities: ClientCapabilities,
     #[serde(rename = "initializationOptions")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -356,10 +365,31 @@ pub fn normalize_uri(uri: &str) -> String {
     }
 }
 
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                    out.push(byte as char);
+                    i += 3;
+                    continue;
+                }
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
 pub fn uri_to_path(uri: &str) -> Option<std::path::PathBuf> {
     let path = uri.strip_prefix("file://")?;
+    let path = percent_decode(path);
     let path = if cfg!(windows) {
-        path.strip_prefix('/').unwrap_or(path).replace('/', "\\")
+        path.strip_prefix('/').unwrap_or(&path).replace('/', "\\")
     } else {
         path.to_string()
     };

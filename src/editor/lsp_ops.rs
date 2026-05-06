@@ -75,6 +75,11 @@ impl<T: TerminalBackend> Editor<T> {
                     });
                 self.apply_plugin_mutations();
             }
+            LspMessage::Log { message } => {
+                if self.state.settings.lsp_debug_log {
+                    self.state.notify(NotificationType::Info, message);
+                }
+            }
             LspMessage::Progress { language, .. } => {
                 let name = self
                     .lsp_manager
