@@ -148,6 +148,7 @@ impl StatusBar {
             Mode::Insert => crate::constants::modes::INSERT,
             Mode::Command => crate::constants::modes::COMMAND,
             Mode::Search => crate::constants::modes::SEARCH,
+            Mode::Rename => crate::constants::modes::RENAME,
             Mode::OperatorPending => crate::constants::modes::OPERATOR_PENDING,
         }
     }
@@ -294,6 +295,19 @@ impl StatusBar {
                     layer.write_str_colored(status_row, col, &stats, fg, bg);
                     col += stats.len();
                 }
+            }
+        }
+
+        if let Some(lsp) = &state.lsp_status {
+            if !lsp.is_empty() {
+                layer.set_cell(
+                    status_row,
+                    col,
+                    Cell::new(Character::from(' ')).with_colors(fg, bg),
+                );
+                col += 1;
+                layer.write_str_colored(status_row, col, lsp, Some(crate::color::Color::Cyan), bg);
+                col += lsp.len();
             }
         }
 

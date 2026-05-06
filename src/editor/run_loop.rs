@@ -27,6 +27,16 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
 
+            // Poll LSP messages
+            let lsp_msgs = self.lsp_manager.poll();
+            let had_lsp = !lsp_msgs.is_empty();
+            for msg in lsp_msgs {
+                self.handle_lsp_message(msg);
+            }
+            if had_lsp {
+                let _ = self.update_and_render();
+            }
+
             let current_gen = self.state.error_manager.notifications().generation;
             let notif_changed = current_gen != self.last_notification_generation;
             if notif_changed {
@@ -150,6 +160,7 @@ impl<T: TerminalBackend> Editor<T> {
                     && self.current_mode != Mode::Insert
                     && self.current_mode != Mode::Command
                     && self.current_mode != Mode::Search
+                    && self.current_mode != Mode::Rename
                 {
                     if let Key::Char(ch) = key_press {
                         if ch.is_ascii_digit() && (ch != '0' || self.pending_count > 0) {
@@ -201,6 +212,11 @@ impl<T: TerminalBackend> Editor<T> {
                             .active_document()
                             .map(|d| d.is_terminal())
                             .unwrap_or(false);
+                        let is_location_list = self
+                            .document_manager
+                            .active_document()
+                            .map(|d| d.is_location_list())
+                            .unwrap_or(false);
                         match self.current_mode {
                             Mode::Normal | Mode::OperatorPending => {
                                 if is_directory {
@@ -213,6 +229,8 @@ impl<T: TerminalBackend> Editor<T> {
                                     KeyContext::ClipboardEntry
                                 } else if is_terminal {
                                     KeyContext::TerminalNormal
+                                } else if is_location_list {
+                                    KeyContext::LocationList
                                 } else {
                                     KeyContext::Normal
                                 }
@@ -220,6 +238,7 @@ impl<T: TerminalBackend> Editor<T> {
                             Mode::Insert => KeyContext::Insert,
                             Mode::Command => KeyContext::Command,
                             Mode::Search => KeyContext::Search,
+                            Mode::Rename => KeyContext::Command,
                         }
                     };
 
@@ -316,6 +335,7 @@ impl<T: TerminalBackend> Editor<T> {
                                     // Else ignore?
                                 } else if self.current_mode == Mode::Command
                                     || self.current_mode == Mode::Search
+                                    || self.current_mode == Mode::Rename
                                 {
                                     // Command Line typing handling (fallback)
                                     // Since KeyMap might not have all chars registered

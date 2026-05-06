@@ -1,4 +1,5 @@
 use super::Editor;
+use crate::buffer::api::BufferView;
 use crate::error::RiftError;
 use crate::mode::Mode;
 #[allow(unused_imports)]
@@ -299,6 +300,7 @@ impl<T: TerminalBackend> Editor<T> {
                                 path: res.path.clone(),
                             });
                         self.apply_plugin_mutations();
+                        self.lsp_manager.did_save(&res.path, None);
 
                         if self.pending_quit_job_id == Some(id) {
                             self.should_quit = true;
@@ -389,6 +391,30 @@ impl<T: TerminalBackend> Editor<T> {
                                     });
                             }
                             self.apply_plugin_mutations();
+                        }
+
+                        // Notify LSP after opening a new (non-reload) file
+                        if !res.is_reload {
+                            self.lsp_notify_open();
+                        }
+
+                        // Apply any deferred goto-definition jump that was stashed
+                        // because the file wasn't open when the LSP response arrived.
+                        if let Some((goto_doc, goto_line, goto_col)) =
+                            self.pending_goto_target.take()
+                        {
+                            if goto_doc == res.document_id {
+                                if let Some(doc) =
+                                    self.document_manager.get_document_mut(res.document_id)
+                                {
+                                    let line_offset = doc.buffer.line_start(goto_line);
+                                    let target = (line_offset + goto_col).min(doc.buffer.len());
+                                    let _ = doc.buffer.set_cursor(target);
+                                }
+                            } else {
+                                // Wrong document loaded — put the target back
+                                self.pending_goto_target = Some((goto_doc, goto_line, goto_col));
+                            }
                         }
 
                         self.sync_state_with_active_document();

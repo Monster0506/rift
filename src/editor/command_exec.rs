@@ -88,6 +88,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.plugin_host
                         .dispatch(&crate::plugin::EditorEvent::TextChangedCoarse { buf });
                     self.apply_plugin_mutations();
+                    self.lsp_notify_change();
                 }
 
                 if let Some((buf, row, col)) = cursor_event {

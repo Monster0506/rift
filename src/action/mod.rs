@@ -357,6 +357,24 @@ pub enum EditorAction {
         forward: bool,
         till: bool,
     },
+    /// LSP: go to definition under cursor (gd)
+    LspGotoDefinition,
+    /// LSP: go to references under cursor (gr)
+    LspReferences,
+    /// LSP: show hover documentation (K)
+    LspHover,
+    /// LSP: rename symbol under cursor
+    LspRename,
+    /// LSP: show code actions
+    LspCodeAction,
+    /// LSP: format current document
+    LspFormat,
+    /// LSP: jump to next diagnostic
+    LspDiagnosticNext,
+    /// LSP: jump to previous diagnostic
+    LspDiagnosticPrev,
+    /// LSP: open diagnostics panel (<space>e)
+    LspDiagnosticsPanel,
 }
 
 /// Represents an action in the editor
@@ -488,6 +506,17 @@ impl FromStr for Action {
             s if s.starts_with("editor:") && s.matches(':').count() >= 2 => {
                 Ok(Action::Buffer(s["editor:".len()..].to_string()))
             }
+
+            // LSP actions
+            "lsp:definition" => Ok(Action::Editor(EditorAction::LspGotoDefinition)),
+            "lsp:references" => Ok(Action::Editor(EditorAction::LspReferences)),
+            "lsp:hover" => Ok(Action::Editor(EditorAction::LspHover)),
+            "lsp:rename" => Ok(Action::Editor(EditorAction::LspRename)),
+            "lsp:code_action" => Ok(Action::Editor(EditorAction::LspCodeAction)),
+            "lsp:format" => Ok(Action::Editor(EditorAction::LspFormat)),
+            "lsp:diagnostic:next" => Ok(Action::Editor(EditorAction::LspDiagnosticNext)),
+            "lsp:diagnostic:prev" => Ok(Action::Editor(EditorAction::LspDiagnosticPrev)),
+            "lsp:diagnostics_panel" => Ok(Action::Editor(EditorAction::LspDiagnosticsPanel)),
 
             s if s.contains(':') && !s.starts_with("editor:") => Ok(Action::Buffer(s.to_string())),
             _ => Ok(Action::Noop),

@@ -1025,6 +1025,131 @@ const BUFFER_SUBS: &[CommandDescriptor] = &[
     },
 ];
 
+// Each LSP subcommand factory re-wraps itself as Unknown { name: "lsp", args: [subcmd, ...rest] }
+// so the executor maps it to PluginCommand { name: "lsp", args: [subcmd, ...] } and the Lua
+// handler registered as "lsp" receives the subcommand as its first argument.
+
+fn parse_lsp_sub(subcmd: &str, extra: &[&str]) -> ParsedCommand {
+    let mut args = vec![subcmd.to_string()];
+    args.extend(extra.iter().map(|s| s.to_string()));
+    ParsedCommand::Unknown {
+        name: "lsp".to_string(),
+        args,
+    }
+}
+
+fn parse_lsp_definition(_: &SettingsRegistry<UserSettings>, _: &[&str], _: usize) -> ParsedCommand {
+    parse_lsp_sub("definition", &[])
+}
+fn parse_lsp_references(_: &SettingsRegistry<UserSettings>, _: &[&str], _: usize) -> ParsedCommand {
+    parse_lsp_sub("references", &[])
+}
+fn parse_lsp_hover(_: &SettingsRegistry<UserSettings>, _: &[&str], _: usize) -> ParsedCommand {
+    parse_lsp_sub("hover", &[])
+}
+fn parse_lsp_rename(_: &SettingsRegistry<UserSettings>, _: &[&str], _: usize) -> ParsedCommand {
+    parse_lsp_sub("rename", &[])
+}
+fn parse_lsp_code_action(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    _: usize,
+) -> ParsedCommand {
+    parse_lsp_sub("code_action", &[])
+}
+fn parse_lsp_format(_: &SettingsRegistry<UserSettings>, _: &[&str], _: usize) -> ParsedCommand {
+    parse_lsp_sub("format", &[])
+}
+fn parse_lsp_diagnostic(
+    _: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    _: usize,
+) -> ParsedCommand {
+    parse_lsp_sub("diagnostic", args)
+}
+fn parse_lsp_diagnostics_panel(
+    _: &SettingsRegistry<UserSettings>,
+    _: &[&str],
+    _: usize,
+) -> ParsedCommand {
+    parse_lsp_sub("diagnostics_panel", &[])
+}
+
+const LSP_SUBS: &[CommandDescriptor] = &[
+    CommandDescriptor {
+        name: "definition",
+        aliases: &["def"],
+        description: "Go to definition",
+        factory: Some(parse_lsp_definition),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "references",
+        aliases: &["ref"],
+        description: "Show all references",
+        factory: Some(parse_lsp_references),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "hover",
+        aliases: &["hov"],
+        description: "Show hover documentation",
+        factory: Some(parse_lsp_hover),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "rename",
+        aliases: &["rn"],
+        description: "Open rename dialog",
+        factory: Some(parse_lsp_rename),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "code_action",
+        aliases: &["ca"],
+        description: "Show code actions",
+        factory: Some(parse_lsp_code_action),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "format",
+        aliases: &["fmt"],
+        description: "Format document",
+        factory: Some(parse_lsp_format),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "diagnostic",
+        aliases: &["diag"],
+        description: "Navigate diagnostics: diagnostic next / diagnostic prev",
+        factory: Some(parse_lsp_diagnostic),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "diagnostics_panel",
+        aliases: &["dp"],
+        description: "Open diagnostics panel",
+        factory: Some(parse_lsp_diagnostics_panel),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+];
+
 pub const COMMANDS: &[CommandDescriptor] = &[
     // Core
     CommandDescriptor {
@@ -1216,6 +1341,16 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         description: "Open clipboard ring index buffer",
         factory: Some(parse_clipboard),
         subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    // LSP
+    CommandDescriptor {
+        name: "lsp",
+        aliases: &[],
+        description: "LSP actions",
+        factory: None,
+        subcommands: LSP_SUBS,
         completion: N,
         subcommand_prefix: "",
     },

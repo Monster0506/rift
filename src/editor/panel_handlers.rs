@@ -1,6 +1,7 @@
 use super::Editor;
 use super::PanelKind;
 #[allow(unused_imports)]
+use crate::buffer::api::BufferView;
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
@@ -264,6 +265,144 @@ impl<T: TerminalBackend> Editor<T> {
         // Only re-render if the messages buffer is currently visible
         if self.active_document_id() == doc_id {
             let _ = self.update_and_render();
+        }
+    }
+
+    pub(super) fn handle_location_list_action(&mut self, id: &str) {
+        match id {
+            "location_list:select" => self.handle_location_list_select(),
+            "location_list:code_action" => self.handle_location_list_code_action(),
+            "location_list:close" => self.close_split_panel(),
+            _ => {}
+        }
+    }
+
+    fn handle_location_list_select(&mut self) {
+        use crate::document::BufferKind;
+
+        let layout = match &self.panel_layout {
+            Some(l) if l.kind == PanelKind::LocationList => l.clone(),
+            _ => return,
+        };
+
+        let entry = {
+            let doc = match self.document_manager.get_document(layout.dir_doc_id) {
+                Some(d) => d,
+                None => return,
+            };
+            let cursor = doc.buffer.cursor();
+            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            match &doc.kind {
+                BufferKind::LocationList { entries, .. } => entries.get(line_num).cloned(),
+                _ => return,
+            }
+        };
+
+        let Some(entry) = entry else { return };
+
+        // Empty URI signals a code action row — apply it.
+        if entry.uri.is_empty() {
+            let idx = entry.line as usize;
+            let action = self.pending_code_actions.get(idx).cloned();
+            self.close_split_panel();
+            if let Some(action) = action {
+                self.execute_code_action(action);
+            }
+            return;
+        }
+
+        let path = match crate::lsp::protocol::uri_to_path(&entry.uri) {
+            Some(p) => p,
+            None => return,
+        };
+
+        self.close_split_panel();
+
+        if let Err(e) = self.open_file(Some(path.to_string_lossy().into_owned()), false) {
+            self.state.handle_error(e);
+            return;
+        }
+
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            let line_offset = doc.buffer.line_start(entry.line as usize);
+            let target = line_offset + entry.col as usize;
+            let _ = doc.buffer.set_cursor(target.min(doc.buffer.len()));
+        }
+
+        let _ = self.force_full_redraw();
+    }
+
+    /// Space on a diagnostic entry — send a code action request scoped to that diagnostic.
+    fn handle_location_list_code_action(&mut self) {
+        use crate::document::BufferKind;
+
+        let layout = match &self.panel_layout {
+            Some(l) if l.kind == PanelKind::LocationList => l.clone(),
+            _ => return,
+        };
+
+        let entry = {
+            let doc = match self.document_manager.get_document(layout.dir_doc_id) {
+                Some(d) => d,
+                None => return,
+            };
+            let cursor = doc.buffer.cursor();
+            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            match &doc.kind {
+                BufferKind::LocationList { entries, .. } => entries.get(line_num).cloned(),
+                _ => return,
+            }
+        };
+
+        let Some(entry) = entry else { return };
+
+        // Already a code action row — Space applies it (same as Enter).
+        if entry.uri.is_empty() {
+            let idx = entry.line as usize;
+            let action = self.pending_code_actions.get(idx).cloned();
+            self.close_split_panel();
+            if let Some(action) = action {
+                self.execute_code_action(action);
+            }
+            return;
+        }
+
+        let path = match crate::lsp::protocol::uri_to_path(&entry.uri) {
+            Some(p) => p,
+            None => return,
+        };
+
+        if self.lsp_manager.is_indexing_path(&path) {
+            self.state.notify(
+                crate::notification::NotificationType::Warning,
+                "LSP: still indexing, please wait...".to_string(),
+            );
+            return;
+        }
+
+        // Collect the matching diagnostics for richer context.
+        let norm_uri = crate::lsp::protocol::normalize_uri(&entry.uri);
+        let diagnostics: Vec<crate::lsp::protocol::LspDiagnostic> = self
+            .lsp_diagnostics
+            .get(&norm_uri)
+            .map(|diags| {
+                diags
+                    .iter()
+                    .filter(|d| d.range.start.line == entry.line)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if self
+            .lsp_manager
+            .code_action(&path, entry.line, entry.col, diagnostics)
+            .is_none()
+        {
+            self.state.notify(
+                crate::notification::NotificationType::Warning,
+                "LSP: no server for this file".to_string(),
+            );
         }
     }
 }

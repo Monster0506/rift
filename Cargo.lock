@@ -749,6 +749,8 @@ dependencies = [
  "libloading",
  "mlua",
  "monster-regex",
+ "serde",
+ "serde_json",
  "streaming-iterator",
  "tempfile",
  "tree-sitter",

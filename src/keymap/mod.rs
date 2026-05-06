@@ -26,6 +26,8 @@ pub enum KeyContext {
     Terminal,
     /// Terminal buffer in normal mode — falls through to Normal so all vim motions work.
     TerminalNormal,
+    /// Location list panel (diagnostics, references).
+    LocationList,
 }
 
 /// KeyMap stores mappings from (Context, Key Sequence) -> Action
@@ -81,7 +83,8 @@ impl KeyMap {
             KeyContext::FileExplorer
             | KeyContext::UndoTree
             | KeyContext::Clipboard
-            | KeyContext::ClipboardEntry => Some(KeyContext::Normal),
+            | KeyContext::ClipboardEntry
+            | KeyContext::LocationList => Some(KeyContext::Normal),
             KeyContext::Terminal => Some(KeyContext::Global),
             KeyContext::TerminalNormal => Some(KeyContext::Normal),
             KeyContext::Normal | KeyContext::Insert | KeyContext::Command | KeyContext::Search => {

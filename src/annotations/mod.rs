@@ -104,6 +104,38 @@ impl AnnotationStore {
         self.annotations.clear();
     }
 
+    /// Remove all LSP diagnostic annotations (for refresh before new diagnostics arrive).
+    pub fn clear_lsp_diagnostics(&mut self) {
+        self.annotations.retain(|a| {
+            !(a.kind == AnnotationKind::LspDiagnostic && a.owner == AnnotationOwner::Lsp)
+        });
+    }
+
+    /// Create an LSP diagnostic annotation anchored at `line` with a tooltip message.
+    pub fn create_lsp_diagnostic(&mut self, line: usize, tooltip: String) -> AnnotationId {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.annotations.push(Annotation {
+            id,
+            anchor: Anchor::Line(line),
+            kind: AnnotationKind::LspDiagnostic,
+            owner: AnnotationOwner::Lsp,
+            stickiness: Stickiness::Persist,
+            visible: true,
+            read_only: true,
+            entry_id: None,
+            tooltip: Some(tooltip),
+        });
+        id
+    }
+
+    /// Return all LSP diagnostic annotations.
+    pub fn lsp_diagnostics(&self) -> impl Iterator<Item = &Annotation> {
+        self.annotations
+            .iter()
+            .filter(|a| a.kind == AnnotationKind::LspDiagnostic && a.owner == AnnotationOwner::Lsp)
+    }
+
     /// Create a `DirectoryEntry` annotation anchored at `line` with a stable entry ID.
     ///
     /// Returns the new annotation's ID.

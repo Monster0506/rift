@@ -172,6 +172,7 @@ impl RenderSystem {
             reverse_video: ctx.state.settings.status_line.reverse_video,
             editor_bg: ctx.state.settings.editor_bg,
             editor_fg: ctx.state.settings.editor_fg,
+            lsp_status: ctx.state.lsp_status.clone(),
         };
 
         self.world
@@ -180,7 +181,10 @@ impl RenderSystem {
             .add_layer(status_entity, LayerPriority::STATUS_BAR);
 
         // 3. Command Line Window
-        if ctx.current_mode == Mode::Command || ctx.current_mode == Mode::Search {
+        if ctx.current_mode == Mode::Command
+            || ctx.current_mode == Mode::Search
+            || ctx.current_mode == Mode::Rename
+        {
             if self.command_entity.is_none() {
                 self.command_entity = Some(self.world.create_entity());
             }
@@ -387,6 +391,8 @@ impl RenderSystem {
                                 bg: state.editor_bg,
                                 prompt: if ctx.current_mode == Mode::Search {
                                     '/'
+                                } else if ctx.current_mode == Mode::Rename {
+                                    '@'
                                 } else {
                                     ':'
                                 },
@@ -429,6 +435,7 @@ impl RenderSystem {
 
         if ctx.current_mode != Mode::Command
             && ctx.current_mode != Mode::Search
+            && ctx.current_mode != Mode::Rename
             && self.last_command_cursor.is_some()
         {
             self.compositor.clear_layer(LayerPriority::FLOATING_WINDOW);

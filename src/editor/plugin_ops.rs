@@ -130,6 +130,25 @@ impl<T: TerminalBackend> Editor<T> {
         let focused_win_id = self.split_tree.focused_window_id();
         let previous_win_id = self.split_tree.previous_window;
 
+        let lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>> = self
+            .lsp_diagnostics
+            .iter()
+            .map(|(uri, diags)| {
+                let entries = diags
+                    .iter()
+                    .map(|d| {
+                        (
+                            d.range.start.line,
+                            d.range.start.character,
+                            d.severity.unwrap_or(1),
+                            d.message.clone(),
+                        )
+                    })
+                    .collect();
+                (uri.clone(), entries)
+            })
+            .collect();
+
         self.plugin_host.lua_update_state(
             buf_id,
             buf_kind,
@@ -151,6 +170,7 @@ impl<T: TerminalBackend> Editor<T> {
             win_list,
             focused_win_id,
             previous_win_id,
+            lsp_diagnostics,
         );
     }
 
@@ -554,6 +574,70 @@ impl<T: TerminalBackend> Editor<T> {
                             format!("register_grammar '{}': {}", lang_name, e),
                         );
                     }
+                }
+                PluginMutation::LspRegisterServer { language, config } => {
+                    self.lsp_manager.register_server(language, config);
+                }
+                PluginMutation::LspGotoDefinition => {
+                    self.handle_action(&crate::action::Action::Editor(
+                        crate::action::EditorAction::LspGotoDefinition,
+                    ));
+                }
+                PluginMutation::LspReferences => {
+                    self.handle_action(&crate::action::Action::Editor(
+                        crate::action::EditorAction::LspReferences,
+                    ));
+                }
+                PluginMutation::LspHover => {
+                    self.handle_action(&crate::action::Action::Editor(
+                        crate::action::EditorAction::LspHover,
+                    ));
+                }
+                PluginMutation::LspRename { new_name } => {
+                    let path = self
+                        .document_manager
+                        .active_document()
+                        .and_then(|d| d.path())
+                        .map(|p| p.to_path_buf());
+                    let pos = self.document_manager.active_document().map(|doc| {
+                        let cursor = doc.buffer.cursor();
+                        let line = doc.buffer.line_index.get_line_at(cursor);
+                        let col = cursor.saturating_sub(doc.buffer.line_index.get_line_start(line));
+                        (line as u32, col as u32)
+                    });
+                    if let (Some(path), Some((line, col))) = (path, pos) {
+                        self.lsp_manager.rename(&path, line, col, new_name);
+                    }
+                }
+                PluginMutation::LspRenameDialog => {
+                    self.handle_action(&crate::action::Action::Editor(
+                        crate::action::EditorAction::LspRename,
+                    ));
+                }
+                PluginMutation::LspDiagnosticsPanel => {
+                    self.handle_action(&crate::action::Action::Editor(
+                        crate::action::EditorAction::LspDiagnosticsPanel,
+                    ));
+                }
+                PluginMutation::LspFormat => {
+                    self.handle_action(&crate::action::Action::Editor(
+                        crate::action::EditorAction::LspFormat,
+                    ));
+                }
+                PluginMutation::LspCodeAction => {
+                    self.handle_action(&crate::action::Action::Editor(
+                        crate::action::EditorAction::LspCodeAction,
+                    ));
+                }
+                PluginMutation::LspDiagnosticNext => {
+                    self.handle_action(&crate::action::Action::Editor(
+                        crate::action::EditorAction::LspDiagnosticNext,
+                    ));
+                }
+                PluginMutation::LspDiagnosticPrev => {
+                    self.handle_action(&crate::action::Action::Editor(
+                        crate::action::EditorAction::LspDiagnosticPrev,
+                    ));
                 }
             }
         }

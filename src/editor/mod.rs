@@ -17,6 +17,7 @@ mod handle_action;
 mod history;
 mod init;
 mod jobs;
+mod lsp_ops;
 mod mode_mgmt;
 mod operators;
 mod panel_handlers;
@@ -137,6 +138,22 @@ pub struct Editor<T: TerminalBackend> {
     /// After navigating to a parent directory, the name of the child entry to
     /// restore the cursor to once the listing arrives.
     pending_cursor_entry: Option<String>,
+    /// LSP integration layer.
+    pub lsp_manager: crate::lsp::LspManager,
+    /// Cached LSP diagnostics per document URI for navigation ([d / ]d).
+    lsp_diagnostics: std::collections::HashMap<String, Vec<crate::lsp::protocol::LspDiagnostic>>,
+    /// Languages whose server has completed initialization and indexing.
+    /// Diagnostic notifications are suppressed until the language appears here.
+    lsp_ready_servers: std::collections::HashSet<String>,
+    /// Code actions returned by the last textDocument/codeAction request.
+    /// Used to apply the selection from the code-action picker panel.
+    pending_code_actions: Vec<serde_json::Value>,
+    /// Stored position when LSP rename dialog was opened (path, line, col).
+    rename_context: Option<(std::path::PathBuf, u32, u32)>,
+    /// Deferred goto-definition target: set when the destination file wasn't open
+    /// yet and had to be loaded asynchronously. The FileLoadResult handler applies
+    /// it once the buffer is populated. Tuple is (doc_id, line, col), 0-indexed.
+    pending_goto_target: Option<(crate::document::DocumentId, usize, usize)>,
 }
 
 /// State retained between a `Put` and a `CyclePaste` action.
@@ -155,6 +172,8 @@ pub enum PanelKind {
     FileExplorer,
     UndoTree,
     Clipboard,
+    /// Diagnostics or references location list.
+    LocationList,
 }
 
 /// Tracks the two windows and documents that make up a live explorer session.

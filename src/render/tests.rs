@@ -32,6 +32,7 @@ fn create_default_statusdrawstate() -> StatusDrawState {
         search_match_index: None,
         search_total_matches: 0,
         cursor: CursorInfo { row: 0, col: 0 },
+        lsp_status: None,
     }
 }
 // ============================================================================

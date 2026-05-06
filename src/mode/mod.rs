@@ -13,6 +13,8 @@ pub enum Mode {
     Search,
     /// Operator pending mode (e.g. after pressing 'd')
     OperatorPending,
+    /// LSP rename dialog (entered with <Space>rn, prompt char @)
+    Rename,
 }
 
 impl Mode {
@@ -24,6 +26,7 @@ impl Mode {
             Mode::Insert => "insert",
             Mode::Command => "command",
             Mode::Search => "search",
+            Mode::Rename => "rename",
         }
     }
 }

@@ -279,6 +279,9 @@ pub struct State {
     pub search_history: crate::history::command::CommandHistory,
     /// Active tab-completion session (None when not completing)
     pub completion_session: Option<CompletionSession>,
+    /// LSP status indicator for the status bar (e.g. "LSP: 2/5 indexing").
+    /// None when no LSP activity is in progress.
+    pub lsp_status: Option<String>,
 }
 
 impl State {
@@ -309,6 +312,7 @@ impl State {
             command_history: crate::history::command::CommandHistory::default(),
             search_history: crate::history::command::CommandHistory::default(),
             completion_session: None,
+            lsp_status: None,
         }
     }
 
@@ -339,6 +343,7 @@ impl State {
             command_history: crate::history::command::CommandHistory::default(),
             search_history: crate::history::command::CommandHistory::default(),
             completion_session: None,
+            lsp_status: None,
         }
     }
 

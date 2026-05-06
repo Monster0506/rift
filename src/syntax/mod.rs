@@ -109,6 +109,7 @@ impl Syntax {
     /// The next `incremental_parse()` will do a full re-parse from scratch.
     pub fn invalidate_trees(&mut self) {
         self.tree = None;
+        self.cached_highlights = IntervalTree::default();
         for layer in &mut self.injection_layers {
             layer.tree = None;
             layer.cached_highlights = IntervalTree::default();

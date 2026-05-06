@@ -235,37 +235,51 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             Command::Move(crate::action::Motion::Left, _)
-                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
+                if self.current_mode == Mode::Command
+                    || self.current_mode == Mode::Search
+                    || self.current_mode == Mode::Rename =>
             {
                 self.state.move_command_line_left();
             }
             Command::Move(crate::action::Motion::Right, _)
-                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
+                if self.current_mode == Mode::Command
+                    || self.current_mode == Mode::Search
+                    || self.current_mode == Mode::Rename =>
             {
                 self.state.move_command_line_right();
             }
             Command::Move(crate::action::Motion::StartOfLine, _)
-                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
+                if self.current_mode == Mode::Command
+                    || self.current_mode == Mode::Search
+                    || self.current_mode == Mode::Rename =>
             {
                 self.state.move_command_line_home();
             }
             Command::Move(crate::action::Motion::EndOfLine, _)
-                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
+                if self.current_mode == Mode::Command
+                    || self.current_mode == Mode::Search
+                    || self.current_mode == Mode::Rename =>
             {
                 self.state.move_command_line_end();
             }
             Command::Move(crate::action::Motion::PreviousWord, _)
-                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
+                if self.current_mode == Mode::Command
+                    || self.current_mode == Mode::Search
+                    || self.current_mode == Mode::Rename =>
             {
                 self.state.move_command_line_word_left();
             }
             Command::Move(crate::action::Motion::NextWord, _)
-                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
+                if self.current_mode == Mode::Command
+                    || self.current_mode == Mode::Search
+                    || self.current_mode == Mode::Rename =>
             {
                 self.state.move_command_line_word_right();
             }
             Command::DeleteForward
-                if self.current_mode == Mode::Command || self.current_mode == Mode::Search =>
+                if self.current_mode == Mode::Command
+                    || self.current_mode == Mode::Search
+                    || self.current_mode == Mode::Rename =>
             {
                 self.state.delete_forward_command_line();
             }
@@ -285,7 +299,9 @@ impl<T: TerminalBackend> Editor<T> {
                 });
             self.apply_plugin_mutations();
         }
-        if (old_mode == Mode::Command || old_mode == Mode::Search) && mode != old_mode {
+        if (old_mode == Mode::Command || old_mode == Mode::Search || old_mode == Mode::Rename)
+            && mode != old_mode
+        {
             self.state.completion_session = None;
             self.render_system
                 .compositor
@@ -298,12 +314,9 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         match mode {
-            Mode::Command => {
-                // Command line handled via RenderSystem state
-            }
-            Mode::Search => {
-                // Search line handled via RenderSystem state
-            }
+            Mode::Command => {}
+            Mode::Search => {}
+            Mode::Rename => {}
             _ => {}
         }
     }

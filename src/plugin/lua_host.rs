@@ -67,6 +67,9 @@ struct LuaSharedState {
     focused_win_id: u64,
     /// ID of the previously focused window, if any.
     previous_win_id: Option<u64>,
+    /// Snapshot of LSP diagnostics: normalized_uri → [(line, col, severity, message)].
+    /// severity: 1=error, 2=warning, 3=info, 4=hint
+    lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>>,
 }
 
 /// A lightweight entry for the `rift.windows.list()` snapshot.
@@ -106,6 +109,7 @@ impl Default for LuaSharedState {
             win_list: Vec::new(),
             focused_win_id: 0,
             previous_win_id: None,
+            lsp_diagnostics: std::collections::HashMap::new(),
         }
     }
 }
@@ -1088,6 +1092,231 @@ impl LuaHost {
             api.set("register_grammar", f)?;
         }
 
+        // rift.lsp — Language Server Protocol sub-table
+        {
+            let lsp = lua.create_table()?;
+
+            // rift.lsp.register({ language, command, args?, extensions?, root_markers?, capabilities? })
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, tbl: LuaTable| {
+                    let language: String = tbl.get("language")?;
+                    let command: String = tbl.get("command")?;
+                    let args: Vec<String> = tbl
+                        .get::<Option<LuaTable>>("args")?
+                        .map(|t| {
+                            t.sequence_values::<String>()
+                                .filter_map(|v| v.ok())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let extensions: Vec<String> = tbl
+                        .get::<Option<LuaTable>>("extensions")?
+                        .map(|t| {
+                            t.sequence_values::<String>()
+                                .filter_map(|v| v.ok())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let root_markers: Vec<String> = tbl
+                        .get::<Option<LuaTable>>("root_markers")?
+                        .map(|t| {
+                            t.sequence_values::<String>()
+                                .filter_map(|v| v.ok())
+                                .collect()
+                        })
+                        .unwrap_or_else(|| vec![".git".to_string()]);
+                    let capabilities: Vec<crate::lsp::config::LspCapability> = tbl
+                        .get::<Option<LuaTable>>("capabilities")?
+                        .map(|t| {
+                            t.sequence_values::<String>()
+                                .filter_map(|v| v.ok())
+                                .filter_map(|s| crate::lsp::config::LspCapability::from_str(&s))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
+                        PluginMutation::LspRegisterServer {
+                            language,
+                            config: crate::lsp::config::LspServerConfig {
+                                command,
+                                args,
+                                extensions,
+                                root_markers,
+                                capabilities,
+                            },
+                        },
+                    );
+                    Ok(())
+                })?;
+                lsp.set("register", f)?;
+            }
+
+            // rift.lsp.goto_definition()
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, ()| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::LspGotoDefinition);
+                    Ok(())
+                })?;
+                lsp.set("goto_definition", f)?;
+            }
+
+            // rift.lsp.references()
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, ()| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::LspReferences);
+                    Ok(())
+                })?;
+                lsp.set("references", f)?;
+            }
+
+            // rift.lsp.hover()
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, ()| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::LspHover);
+                    Ok(())
+                })?;
+                lsp.set("hover", f)?;
+            }
+
+            // rift.lsp.rename(new_name)
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, new_name: String| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::LspRename { new_name });
+                    Ok(())
+                })?;
+                lsp.set("rename", f)?;
+            }
+
+            // rift.lsp.rename_dialog()
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, ()| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::LspRenameDialog);
+                    Ok(())
+                })?;
+                lsp.set("rename_dialog", f)?;
+            }
+
+            // rift.lsp.diagnostics_panel()
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, ()| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::LspDiagnosticsPanel);
+                    Ok(())
+                })?;
+                lsp.set("diagnostics_panel", f)?;
+            }
+
+            // rift.lsp.format()
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, ()| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::LspFormat);
+                    Ok(())
+                })?;
+                lsp.set("format", f)?;
+            }
+
+            // rift.lsp.code_action()
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, ()| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::LspCodeAction);
+                    Ok(())
+                })?;
+                lsp.set("code_action", f)?;
+            }
+
+            // rift.lsp.diagnostic_next()
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, ()| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::LspDiagnosticNext);
+                    Ok(())
+                })?;
+                lsp.set("diagnostic_next", f)?;
+            }
+
+            // rift.lsp.diagnostic_prev()
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, ()| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::LspDiagnosticPrev);
+                    Ok(())
+                })?;
+                lsp.set("diagnostic_prev", f)?;
+            }
+
+            // rift.lsp.get_diagnostics([uri]) → array of {line, col, severity, message}
+            // uri is optional; if omitted, uses the active file's URI.
+            // severity: 1=error, 2=warning, 3=info, 4=hint
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |lua, uri: Option<String>| {
+                    let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                    let result = lua.create_table()?;
+                    let lookup_key = if let Some(u) = uri {
+                        Some(u)
+                    } else {
+                        s.file_path.as_deref().map(|p| {
+                            format!("file:///{}", p.replace('\\', "/").trim_start_matches('/'))
+                        })
+                    };
+                    if let Some(key) = lookup_key {
+                        if let Some(diags) = s.lsp_diagnostics.get(&key) {
+                            for (i, (line, col, severity, message)) in diags.iter().enumerate() {
+                                let entry = lua.create_table()?;
+                                entry.set("line", *line as i64 + 1)?; // 1-indexed for Lua
+                                entry.set("col", *col as i64)?;
+                                entry.set("severity", *severity as i64)?;
+                                entry.set("message", message.as_str())?;
+                                result.set(i + 1, entry)?;
+                            }
+                        }
+                    }
+                    Ok(result)
+                })?;
+                lsp.set("get_diagnostics", f)?;
+            }
+
+            api.set("lsp", lsp)?;
+        }
+
         lua.globals().set("rift", api)?;
 
         // Embedded Lua prelude — convenience wrappers that don't need Rust bindings.
@@ -1345,6 +1574,7 @@ end
         win_list: Vec<WinEntry>,
         focused_win_id: u64,
         previous_win_id: Option<u64>,
+        lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>>,
     ) {
         let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
         s.buf_id = buf_id;
@@ -1367,6 +1597,7 @@ end
         s.win_list = win_list;
         s.focused_win_id = focused_win_id;
         s.previous_win_id = previous_win_id;
+        s.lsp_diagnostics = lsp_diagnostics;
     }
 
     /// Dispatch an `EditorEvent` to all registered Lua handlers.

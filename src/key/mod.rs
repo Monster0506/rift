@@ -138,6 +138,8 @@ pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
                 Key::PageUp
             } else if low == "pagedown" {
                 Key::PageDown
+            } else if low == "space" {
+                Key::Char(' ')
             } else if low.starts_with("c-") && low.len() == 3 {
                 let ch = low.chars().nth(2)?;
                 Key::Ctrl(ch as u8)

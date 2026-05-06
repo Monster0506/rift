@@ -105,6 +105,12 @@ impl<T: TerminalBackend> Editor<T> {
             clipboard_ring: crate::clipboard::ClipboardRing::new(),
             post_paste_state: None,
             pending_cursor_entry: None,
+            lsp_manager: crate::lsp::LspManager::new(std::env::current_dir().ok()),
+            lsp_diagnostics: std::collections::HashMap::new(),
+            lsp_ready_servers: std::collections::HashSet::new(),
+            pending_code_actions: Vec::new(),
+            rename_context: None,
+            pending_goto_target: None,
         };
 
         // Register default keymaps
@@ -169,6 +175,7 @@ impl<T: TerminalBackend> Editor<T> {
                         filetype,
                     });
                 editor.apply_plugin_mutations();
+                editor.lsp_notify_open();
             }
         }
 

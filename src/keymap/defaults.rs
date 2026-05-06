@@ -724,4 +724,68 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         vec![Key::Char('g'), Key::Char('P')],
         Action::Editor(EditorAction::PutSystemClipboard { before: true }),
     );
+
+    // LSP keybindings — also registered by runtime/plugins/lsp.lua (plugin overrides these)
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char('g'), Key::Char('d')],
+        Action::Editor(EditorAction::LspGotoDefinition),
+    );
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char('g'), Key::Char('r')],
+        Action::Editor(EditorAction::LspReferences),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('K'),
+        Action::Editor(EditorAction::LspHover),
+    );
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char(']'), Key::Char('d')],
+        Action::Editor(EditorAction::LspDiagnosticNext),
+    );
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char('['), Key::Char('d')],
+        Action::Editor(EditorAction::LspDiagnosticPrev),
+    );
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char(' '), Key::Char('f')],
+        Action::Editor(EditorAction::LspFormat),
+    );
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char(' '), Key::Char('c'), Key::Char('a')],
+        Action::Editor(EditorAction::LspCodeAction),
+    );
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char(' '), Key::Char('r'), Key::Char('n')],
+        Action::Editor(EditorAction::LspRename),
+    );
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char(' '), Key::Char('e')],
+        Action::Editor(EditorAction::LspDiagnosticsPanel),
+    );
+
+    // Location list panel bindings (diagnostics / references)
+    keymap.register(
+        KeyContext::LocationList,
+        Key::Enter,
+        Action::Buffer("location_list:select".to_string()),
+    );
+    keymap.register(
+        KeyContext::LocationList,
+        Key::Char('q'),
+        Action::Buffer("location_list:close".to_string()),
+    );
+    keymap.register(
+        KeyContext::LocationList,
+        Key::Char(' '),
+        Action::Buffer("location_list:code_action".to_string()),
+    );
 }

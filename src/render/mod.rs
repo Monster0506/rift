@@ -81,6 +81,8 @@ pub struct StatusDrawState {
     /// Theme/Color context
     pub editor_bg: Option<crate::color::Color>,
     pub editor_fg: Option<crate::color::Color>,
+    /// LSP indexing progress shown in the status bar, e.g. "rust: 2/5".
+    pub lsp_status: Option<String>,
 }
 
 /// Minimal state required to trigger a re-render of the command line
@@ -648,11 +650,11 @@ pub(crate) fn render_notifications(
 
     for notification in notifications.iter_active().rev() {
         let message = &notification.message;
-        let color = match notification.kind {
-            crate::notification::NotificationType::Error => Color::Red,
-            crate::notification::NotificationType::Warning => Color::Yellow,
-            crate::notification::NotificationType::Info => Color::Blue,
-            crate::notification::NotificationType::Success => Color::Green,
+        let (fg_color, bg_color) = match notification.kind {
+            crate::notification::NotificationType::Error => (Color::White, Color::Red),
+            crate::notification::NotificationType::Warning => (Color::Black, Color::Yellow),
+            crate::notification::NotificationType::Info => (Color::White, Color::Blue),
+            crate::notification::NotificationType::Success => (Color::Black, Color::Green),
         };
 
         let lines = wrap_text(message, max_width);
@@ -669,7 +671,7 @@ pub(crate) fn render_notifications(
                 layer.set_cell(
                     current_row,
                     start_col + i,
-                    Cell::new(Character::from(' ')).with_colors(Some(Color::White), Some(color)),
+                    Cell::new(Character::from(' ')).with_colors(Some(fg_color), Some(bg_color)),
                 );
             }
 
@@ -679,14 +681,14 @@ pub(crate) fn render_notifications(
                 layer.set_cell(
                     current_row,
                     current_col,
-                    Cell::from_char(ch).with_colors(Some(Color::White), Some(color)),
+                    Cell::from_char(ch).with_colors(Some(fg_color), Some(bg_color)),
                 );
 
                 if ch_width > 1 {
                     let empty_cell = Cell {
                         content: Character::from(' '),
-                        fg: Some(Color::White),
-                        bg: Some(color),
+                        fg: Some(fg_color),
+                        bg: Some(bg_color),
                     };
                     for k in 1..ch_width {
                         layer.set_cell(current_row, current_col + k, empty_cell.clone());

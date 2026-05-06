@@ -27,6 +27,7 @@ impl<T: TerminalBackend> Editor<T> {
                     BufferKind::Messages { .. } => self.handle_messages_buffer_action(id),
                     BufferKind::Clipboard { .. } => self.handle_clipboard_buffer_action(id),
                     BufferKind::ClipboardEntry { .. } => self.handle_clipboard_entry_action(id),
+                    BufferKind::LocationList { .. } => self.handle_location_list_action(id),
                     _ => {}
                 }
                 return true;
@@ -151,6 +152,7 @@ impl<T: TerminalBackend> Editor<T> {
                 // Reset history navigation when exiting command/search mode
                 self.state.command_history.reset_navigation();
                 self.state.search_history.reset_navigation();
+                self.rename_context = None;
                 self.set_mode(Mode::Normal);
                 self.state.clear_command_line();
                 self.state.search_matches.clear();
@@ -172,12 +174,18 @@ impl<T: TerminalBackend> Editor<T> {
                 } else if self.current_mode == Mode::Search {
                     self.handle_mode_management(crate::command::Command::ExecuteSearch);
                     true
+                } else if self.current_mode == Mode::Rename {
+                    self.execute_lsp_rename();
+                    true
                 } else {
                     false
                 }
             }
             EditorAction::Delete(motion) => {
-                if self.current_mode == Mode::Command || self.current_mode == Mode::Search {
+                if self.current_mode == Mode::Command
+                    || self.current_mode == Mode::Search
+                    || self.current_mode == Mode::Rename
+                {
                     // Assuming left motion is backspace
                     if *motion == crate::action::Motion::Left {
                         self.handle_mode_management(crate::command::Command::DeleteFromCommandLine);
@@ -232,7 +240,10 @@ impl<T: TerminalBackend> Editor<T> {
                 result
             }
             EditorAction::InsertChar(c) => {
-                if self.current_mode == Mode::Command || self.current_mode == Mode::Search {
+                if self.current_mode == Mode::Command
+                    || self.current_mode == Mode::Search
+                    || self.current_mode == Mode::Rename
+                {
                     self.handle_mode_management(crate::command::Command::AppendToCommandLine(*c));
                     return true;
                 }
@@ -578,6 +589,187 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::FindCharPending { forward, till } => {
                 self.pending_find_char_dir = Some((*forward, *till));
+                true
+            }
+
+            EditorAction::LspGotoDefinition => {
+                use crate::buffer::api::BufferView;
+                if let Some(doc) = self.document_manager.active_document() {
+                    if let Some(path) = doc.path().map(|p| p.to_path_buf()) {
+                        if self.lsp_manager.is_indexing_path(&path) {
+                            self.state.notify(
+                                crate::notification::NotificationType::Info,
+                                "LSP: still indexing, please wait...".to_string(),
+                            );
+                        } else {
+                            let line = doc.buffer.get_line() as u32;
+                            let line_start = doc.buffer.line_start(doc.buffer.get_line());
+                            let col = (doc.buffer.cursor().saturating_sub(line_start)) as u32;
+                            if self.lsp_manager.goto_definition(&path, line, col).is_none() {
+                                self.state.notify(
+                                    crate::notification::NotificationType::Warning,
+                                    "LSP: no server available for this file".to_string(),
+                                );
+                            }
+                        }
+                    }
+                }
+                true
+            }
+
+            EditorAction::LspReferences => {
+                use crate::buffer::api::BufferView;
+                if let Some(doc) = self.document_manager.active_document() {
+                    if let Some(path) = doc.path().map(|p| p.to_path_buf()) {
+                        if self.lsp_manager.is_indexing_path(&path) {
+                            self.state.notify(
+                                crate::notification::NotificationType::Info,
+                                "LSP: still indexing, please wait...".to_string(),
+                            );
+                        } else {
+                            let line = doc.buffer.get_line() as u32;
+                            let line_start = doc.buffer.line_start(doc.buffer.get_line());
+                            let col = (doc.buffer.cursor().saturating_sub(line_start)) as u32;
+                            if self.lsp_manager.references(&path, line, col).is_none() {
+                                self.state.notify(
+                                    crate::notification::NotificationType::Warning,
+                                    "LSP: no server available for this file".to_string(),
+                                );
+                            }
+                        }
+                    }
+                }
+                true
+            }
+
+            EditorAction::LspHover => {
+                use crate::buffer::api::BufferView;
+                if let Some(doc) = self.document_manager.active_document() {
+                    if let Some(path) = doc.path().map(|p| p.to_path_buf()) {
+                        if self.lsp_manager.is_indexing_path(&path) {
+                            self.state.notify(
+                                crate::notification::NotificationType::Info,
+                                "LSP: still indexing, please wait...".to_string(),
+                            );
+                        } else {
+                            let line = doc.buffer.get_line() as u32;
+                            let line_start = doc.buffer.line_start(doc.buffer.get_line());
+                            let col = (doc.buffer.cursor().saturating_sub(line_start)) as u32;
+                            if self.lsp_manager.hover(&path, line, col).is_none() {
+                                self.state.notify(
+                                    crate::notification::NotificationType::Warning,
+                                    "LSP: no server available for this file".to_string(),
+                                );
+                            }
+                        }
+                    }
+                }
+                true
+            }
+
+            EditorAction::LspRename => {
+                use crate::buffer::api::BufferView;
+                let ctx = self.document_manager.active_document().and_then(|doc| {
+                    let path = doc.path()?.to_path_buf();
+                    let line = doc.buffer.get_line() as u32;
+                    let line_start = doc.buffer.line_start(doc.buffer.get_line());
+                    let col = (doc.buffer.cursor().saturating_sub(line_start)) as u32;
+                    Some((path, line, col))
+                });
+                if let Some(ctx) = ctx {
+                    self.rename_context = Some(ctx);
+                    self.state.clear_command_line();
+                    self.set_mode(Mode::Rename);
+                } else {
+                    self.state.notify(
+                        crate::notification::NotificationType::Warning,
+                        "LSP rename: no file open".to_string(),
+                    );
+                }
+                true
+            }
+
+            EditorAction::LspCodeAction => {
+                use crate::buffer::api::BufferView;
+                if let Some(doc) = self.document_manager.active_document() {
+                    if let Some(path) = doc.path().map(|p| p.to_path_buf()) {
+                        if self.lsp_manager.is_indexing_path(&path) {
+                            self.state.notify(
+                                crate::notification::NotificationType::Warning,
+                                "LSP: still indexing, please wait...".to_string(),
+                            );
+                        } else {
+                            let line = doc.buffer.get_line() as u32;
+                            let line_start = doc.buffer.line_start(doc.buffer.get_line());
+                            let col = (doc.buffer.cursor().saturating_sub(line_start)) as u32;
+                            let uri = crate::lsp::protocol::path_to_uri(&path);
+                            let norm_uri = crate::lsp::protocol::normalize_uri(&uri);
+                            let diagnostics: Vec<crate::lsp::protocol::LspDiagnostic> = self
+                                .lsp_diagnostics
+                                .get(&norm_uri)
+                                .map(|diags| {
+                                    diags
+                                        .iter()
+                                        .filter(|d| d.range.start.line == line)
+                                        .cloned()
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            if self
+                                .lsp_manager
+                                .code_action(&path, line, col, diagnostics)
+                                .is_none()
+                            {
+                                self.state.notify(
+                                    crate::notification::NotificationType::Warning,
+                                    "LSP: no server for this file".to_string(),
+                                );
+                            }
+                        }
+                    }
+                }
+                true
+            }
+
+            EditorAction::LspFormat => {
+                let info = self.document_manager.active_document().and_then(|doc| {
+                    let path = doc.path()?.to_path_buf();
+                    let tab_size = doc.options.tab_width as u32;
+                    let insert_spaces = doc.options.expand_tabs;
+                    Some((path, tab_size, insert_spaces))
+                });
+                if let Some((path, tab_size, insert_spaces)) = info {
+                    if self.lsp_manager.is_indexing_path(&path) {
+                        self.state.notify(
+                            crate::notification::NotificationType::Info,
+                            "LSP: still indexing, please wait...".to_string(),
+                        );
+                    } else if self
+                        .lsp_manager
+                        .format(&path, tab_size, insert_spaces)
+                        .is_none()
+                    {
+                        self.state.notify(
+                            crate::notification::NotificationType::Warning,
+                            "LSP: no server available for this file".to_string(),
+                        );
+                    }
+                }
+                true
+            }
+
+            EditorAction::LspDiagnosticNext => {
+                self.lsp_diagnostic_next();
+                true
+            }
+
+            EditorAction::LspDiagnosticPrev => {
+                self.lsp_diagnostic_prev();
+                true
+            }
+
+            EditorAction::LspDiagnosticsPanel => {
+                self.open_diagnostics_panel();
                 true
             }
         }

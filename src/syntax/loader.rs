@@ -61,6 +61,47 @@ impl LanguageLoader {
             .insert(ext.to_string(), lang_name.to_string());
     }
 
+    /// Return the language name for a file path from the filetype registry alone,
+    /// without requiring a tree-sitter grammar to be available. Returns `None` for
+    /// files with no extension or an unrecognised extension.
+    pub fn language_name_for_file(&self, path: &Path) -> Option<String> {
+        let ext = path.extension()?.to_str()?;
+        // Dynamic registry (from plugins) takes priority.
+        {
+            let reg = self.dynamic.read().unwrap_or_else(|e| e.into_inner());
+            if let Some(name) = reg.filetype_map.get(ext) {
+                return Some(name.clone());
+            }
+        }
+        // Built-in extension map (mirrors load_language_for_file).
+        let name = match ext {
+            "c" | "h" => "c",
+            "cc" | "cpp" | "cxx" | "hpp" => "cpp",
+            "css" => "css",
+            "go" => "go",
+            "html" | "htm" => "html",
+            "js" | "jsx" | "mjs" => "javascript",
+            "json" => "json",
+            "lua" => "lua",
+            "md" | "markdown" => "markdown",
+            "py" => "python",
+            "rs" => "rust",
+            "sh" | "bash" | "zsh" => "bash",
+            "svelte" => "svelte",
+            "ts" => "typescript",
+            "tsx" => "tsx",
+            "yaml" | "yml" => "yaml",
+            "java" => "java",
+            "cs" => "c_sharp",
+            "rb" => "ruby",
+            "php" => "php",
+            "zig" => "zig",
+            "sql" => "sql",
+            _ => return None,
+        };
+        Some(name.to_string())
+    }
+
     pub fn register_language_query(&self, lang_name: &str, query_src: &str) {
         let mut reg = self.dynamic.write().unwrap_or_else(|e| e.into_inner());
         reg.highlights_overrides

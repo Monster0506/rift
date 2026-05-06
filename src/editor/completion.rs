@@ -49,11 +49,13 @@ impl<T: TerminalBackend> Editor<T> {
                 candidates,
             } => {
                 self.apply_completion_text(&text, token_start);
-                self.state.completion_session = Some(crate::state::CompletionSession::new(
+                let mut session = crate::state::CompletionSession::new(
                     self.state.command_line.clone(),
                     candidates,
                     token_start,
-                ));
+                );
+                session.dropdown_open = true;
+                self.state.completion_session = Some(session);
             }
             CompletionAction::ShowDropdown { candidates } => {
                 let mut session = crate::state::CompletionSession::new(

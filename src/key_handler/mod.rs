@@ -50,6 +50,7 @@ impl KeyHandler {
             Mode::Insert => Self::process_insert_mode_key(key),
             Mode::Command => Self::process_command_mode_key(key),
             Mode::Search => Self::process_search_mode_key(key),
+            Mode::Rename => Self::process_command_mode_key(key),
             Mode::OperatorPending => KeyAction::Continue,
         }
     }

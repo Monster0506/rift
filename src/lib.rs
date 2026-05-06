@@ -26,6 +26,7 @@ pub mod key;
 pub mod key_handler;
 pub mod keymap;
 pub mod layer;
+pub mod lsp;
 pub mod message;
 pub mod mode;
 pub mod movement;

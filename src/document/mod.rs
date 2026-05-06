@@ -39,6 +39,19 @@ pub struct DirectoryDiff {
     pub creates: Vec<String>,
 }
 
+/// A single entry in a location list (diagnostics, references, etc.)
+#[derive(Debug, Clone)]
+pub struct LocationEntry {
+    /// Document URI for this location.
+    pub uri: String,
+    /// 0-indexed line.
+    pub line: u32,
+    /// 0-indexed column.
+    pub col: u32,
+    /// Pre-formatted display string shown in the buffer.
+    pub display: String,
+}
+
 /// Identifies the role and behaviour of a document
 #[derive(Debug, Clone)]
 pub enum BufferKind {
@@ -72,6 +85,11 @@ pub enum BufferKind {
     },
     /// Scratch buffer for editing a single clipboard ring entry in place.
     ClipboardEntry { entry_index: Option<usize> },
+    /// Read-only location list (diagnostics, references, quickfix).
+    LocationList {
+        source_doc_id: DocumentId,
+        entries: Vec<LocationEntry>,
+    },
 }
 
 impl BufferKind {
@@ -85,6 +103,7 @@ impl BufferKind {
             BufferKind::Messages { .. } => "messages",
             BufferKind::Clipboard { .. } => "clipboard",
             BufferKind::ClipboardEntry { .. } => "clipboard_entry",
+            BufferKind::LocationList { .. } => "location_list",
         }
     }
 }
@@ -172,6 +191,11 @@ impl Document {
     /// Check if this document is a clipboard index buffer
     pub fn is_clipboard(&self) -> bool {
         matches!(self.kind, BufferKind::Clipboard { .. })
+    }
+
+    /// Check if this document is a location list buffer (diagnostics/references).
+    pub fn is_location_list(&self) -> bool {
+        matches!(self.kind, BufferKind::LocationList { .. })
     }
 
     /// Check if this document is any clipboard-related buffer

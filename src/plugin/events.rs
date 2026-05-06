@@ -70,6 +70,34 @@ pub enum EditorEvent {
     /// The terminal was resized.
     WindowResized { rows: u16, cols: u16 },
 
+    /// An LSP server process spawned and connected (before it finishes indexing).
+    LspServerConnected {
+        language: String,
+        server_name: String,
+    },
+
+    /// An LSP server finished indexing and is ready for requests.
+    LspServerReady {
+        language: String,
+        server_name: String,
+    },
+
+    /// An LSP server sent a work-done progress tick.
+    LspProgress {
+        language: String,
+        server_name: String,
+    },
+
+    /// LSP diagnostics were received for a file.
+    LspDiagnosticsChanged {
+        /// Normalized URI of the file.
+        uri: String,
+        /// Number of errors (severity 1).
+        error_count: usize,
+        /// Number of warnings (severity 2).
+        warning_count: usize,
+    },
+
     /// A plugin-defined event. Use `rift.emit("MyPlugin:Ready", ...)` in Lua.
     UserEvent { name: String },
 
@@ -151,6 +179,36 @@ impl EditorEvent {
                 t.set("rows", *rows as i64)?;
                 t.set("cols", *cols as i64)?;
             }
+            EditorEvent::LspServerConnected {
+                language,
+                server_name,
+            } => {
+                t.set("language", language.as_str())?;
+                t.set("server_name", server_name.as_str())?;
+            }
+            EditorEvent::LspServerReady {
+                language,
+                server_name,
+            } => {
+                t.set("language", language.as_str())?;
+                t.set("server_name", server_name.as_str())?;
+            }
+            EditorEvent::LspProgress {
+                language,
+                server_name,
+            } => {
+                t.set("language", language.as_str())?;
+                t.set("server_name", server_name.as_str())?;
+            }
+            EditorEvent::LspDiagnosticsChanged {
+                uri,
+                error_count,
+                warning_count,
+            } => {
+                t.set("uri", uri.as_str())?;
+                t.set("error_count", *error_count as i64)?;
+                t.set("warning_count", *warning_count as i64)?;
+            }
             EditorEvent::UserEvent { name } => {
                 t.set("name", name.as_str())?;
             }
@@ -196,6 +254,10 @@ impl EditorEvent {
             EditorEvent::WinLeave { .. } => "WinLeave",
             EditorEvent::WinMoved { .. } => "WinMoved",
             EditorEvent::WinSwapped { .. } => "WinSwapped",
+            EditorEvent::LspServerConnected { .. } => "LspServerConnected",
+            EditorEvent::LspServerReady { .. } => "LspServerReady",
+            EditorEvent::LspProgress { .. } => "LspProgress",
+            EditorEvent::LspDiagnosticsChanged { .. } => "LspDiagnosticsChanged",
         }
     }
 }

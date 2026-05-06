@@ -40,7 +40,7 @@ impl<T: TerminalBackend> Editor<T> {
                 entries: vec![],
                 show_hidden,
             };
-            doc.replace_buffer_content("Loading...");
+            doc.replace_buffer_content("");
         }
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
             doc_id as usize,
@@ -278,6 +278,16 @@ impl<T: TerminalBackend> Editor<T> {
                 self.document_manager
                     .remove_private_document(layout.dir_doc_id);
                 self.split_tree.set_focus(layout.dir_win_id);
+                let _ = self
+                    .document_manager
+                    .switch_to_document(layout.original_doc_id);
+            }
+            PanelKind::LocationList => {
+                // Close the location list window; focus returns to the source window.
+                self.split_tree.close_window(layout.dir_win_id);
+                self.document_manager
+                    .remove_private_document(layout.dir_doc_id);
+                self.split_tree.set_focus(layout.preview_win_id);
                 let _ = self
                     .document_manager
                     .switch_to_document(layout.original_doc_id);
@@ -1048,12 +1058,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        if applied > 0 {
-            self.state.notify(
-                crate::notification::NotificationType::Info,
-                format!("Applied {} change(s)", applied),
-            );
-        }
+        let _ = applied;
         for err in errors {
             self.state
                 .notify(crate::notification::NotificationType::Error, err);

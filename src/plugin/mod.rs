@@ -136,6 +136,31 @@ pub enum PluginMutation {
         so_path: String,
         fn_name: String,
     },
+    /// Register a language server for a filetype (plugin-provided config).
+    LspRegisterServer {
+        language: String,
+        config: crate::lsp::config::LspServerConfig,
+    },
+    /// Request goto definition at the current cursor position.
+    LspGotoDefinition,
+    /// Request all references at the current cursor position.
+    LspReferences,
+    /// Request hover documentation at the current cursor position.
+    LspHover,
+    /// Request a rename of the symbol at the current cursor position (direct, no dialog).
+    LspRename { new_name: String },
+    /// Open the rename dialog at the current cursor position.
+    LspRenameDialog,
+    /// Request document formatting.
+    LspFormat,
+    /// Request code actions at the current cursor position.
+    LspCodeAction,
+    /// Jump to the next LSP diagnostic in the active document.
+    LspDiagnosticNext,
+    /// Jump to the previous LSP diagnostic in the active document.
+    LspDiagnosticPrev,
+    /// Open the diagnostics panel.
+    LspDiagnosticsPanel,
 }
 
 /// A floating window owned by a plugin. Stored in `PluginHost` and rendered
@@ -392,6 +417,7 @@ impl PluginHost {
         bg: Option<crate::color::Color>,
     ) {
         use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
+        use unicode_width::UnicodeWidthStr;
 
         let float = match &self.open_float {
             Some(f) => f,
@@ -401,14 +427,16 @@ impl PluginHost {
         let rows = layer.rows();
         let cols = layer.cols();
 
-        // Size the window to fit content, bounded by terminal dimensions.
+        // Size the window to fit content using unicode display width, bounded by
+        // terminal dimensions. Using `.len()` (byte length) here would give wrong
+        // widths for CJK or other multi-byte characters.
         let content_w = float
             .lines
             .iter()
-            .map(|l| l.len())
+            .map(|l| UnicodeWidthStr::width(l.as_str()))
             .max()
             .unwrap_or(20)
-            .max(float.title.len() + 2)
+            .max(UnicodeWidthStr::width(float.title.as_str()) + 2)
             .min(cols.saturating_sub(4));
         let content_h = float.lines.len().min(rows.saturating_sub(4));
         let width = (content_w + 2).min(cols);
@@ -428,7 +456,7 @@ impl PluginHost {
             .lines
             .iter()
             .take(content_h)
-            .map(|l| l.chars().take(content_w).collect())
+            .map(|l| l.chars().collect())
             .collect();
 
         window.render(layer, &char_lines);
@@ -474,6 +502,7 @@ impl PluginHost {
         win_list: Vec<lua_host::WinEntry>,
         focused_win_id: u64,
         previous_win_id: Option<u64>,
+        lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>>,
     ) {
         if let Some(lua) = &self.lua {
             lua.update_state(
@@ -497,6 +526,7 @@ impl PluginHost {
                 win_list,
                 focused_win_id,
                 previous_win_id,
+                lsp_diagnostics,
             );
         }
     }
