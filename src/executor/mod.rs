@@ -57,6 +57,10 @@ pub fn compute_motion_range(
         motion,
         Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown | Motion::ToLine(_)
     );
+    let is_inclusive = matches!(
+        motion,
+        Motion::FindCharForward(_) | Motion::FindCharBackward(_)
+    );
 
     let anchor = doc.buffer.cursor();
 
@@ -80,6 +84,8 @@ pub fn compute_motion_range(
 
     if is_linewise {
         Some(MotionRange::linewise(anchor, new_cursor))
+    } else if is_inclusive {
+        Some(MotionRange::charwise_inclusive(anchor, new_cursor))
     } else {
         Some(MotionRange::charwise(anchor, new_cursor))
     }
@@ -148,15 +154,16 @@ pub fn execute_command(
                     }
                 }
                 crate::wrap::RangeKind::Charwise => {
+                    let end_offset = if range.inclusive { 1 } else { 0 };
                     if range.new_cursor > range.anchor {
-                        let (del_start, del_end) = (range.anchor, range.new_cursor);
+                        let del_end = (range.new_cursor + end_offset).min(doc.buffer.len());
                         doc.begin_transaction("Delete");
-                        let _ = doc.delete_range(del_start, del_end);
+                        let _ = doc.delete_range(range.anchor, del_end);
                         doc.commit_transaction();
                     } else {
-                        let (del_start, del_end) = (range.new_cursor, range.anchor);
+                        let del_end = (range.anchor + end_offset).min(doc.buffer.len());
                         doc.begin_transaction("Delete");
-                        let _ = doc.delete_range(del_start, del_end);
+                        let _ = doc.delete_range(range.new_cursor, del_end);
                         doc.commit_transaction();
                     }
                 }
@@ -199,10 +206,13 @@ pub fn execute_command(
                     }
                 }
                 crate::wrap::RangeKind::Charwise => {
+                    let end_offset = if range.inclusive { 1 } else { 0 };
                     if range.new_cursor > range.anchor {
-                        let _ = doc.delete_range(range.anchor, range.new_cursor);
+                        let del_end = (range.new_cursor + end_offset).min(doc.buffer.len());
+                        let _ = doc.delete_range(range.anchor, del_end);
                     } else {
-                        let _ = doc.delete_range(range.new_cursor, range.anchor);
+                        let del_end = (range.anchor + end_offset).min(doc.buffer.len());
+                        let _ = doc.delete_range(range.new_cursor, del_end);
                     }
                 }
             }

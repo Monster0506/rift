@@ -58,6 +58,86 @@ fn test_execute_insert_char() {
 }
 
 #[test]
+fn test_delete_find_char_forward_inclusive() {
+    // dfa in "dcba" with cursor at 0 should delete "dcba" (inclusive of 'a')
+    let mut doc = create_doc();
+    doc.buffer.insert_str("dcba").unwrap();
+    doc.buffer.set_cursor(0).unwrap();
+
+    execute_command(
+        Command::Delete(Motion::FindCharForward('a'), 1),
+        &mut doc,
+        false,
+        8,
+        24,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(doc.buffer.to_string(), "");
+}
+
+#[test]
+fn test_delete_find_char_forward_inclusive_partial() {
+    // dfc in "dcba" with cursor at 0 should delete "dc" (inclusive of 'c')
+    let mut doc = create_doc();
+    doc.buffer.insert_str("dcba").unwrap();
+    doc.buffer.set_cursor(0).unwrap();
+
+    execute_command(
+        Command::Delete(Motion::FindCharForward('c'), 1),
+        &mut doc,
+        false,
+        8,
+        24,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(doc.buffer.to_string(), "ba");
+}
+
+#[test]
+fn test_delete_find_char_backward_includes_cursor_char() {
+    // dFa in "abcd" with cursor at 3 ('d') should delete "abcd" (includes cursor char 'd')
+    let mut doc = create_doc();
+    doc.buffer.insert_str("abcd").unwrap();
+    doc.buffer.set_cursor(3).unwrap();
+
+    execute_command(
+        Command::Delete(Motion::FindCharBackward('a'), 1),
+        &mut doc,
+        false,
+        8,
+        24,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(doc.buffer.to_string(), "");
+}
+
+#[test]
+fn test_delete_find_char_backward_partial() {
+    // dFb in "abcd" with cursor at 3 ('d') should delete "bcd" (from 'b' through 'd' inclusive)
+    let mut doc = create_doc();
+    doc.buffer.insert_str("abcd").unwrap();
+    doc.buffer.set_cursor(3).unwrap();
+
+    execute_command(
+        Command::Delete(Motion::FindCharBackward('b'), 1),
+        &mut doc,
+        false,
+        8,
+        24,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(doc.buffer.to_string(), "a");
+}
+
+#[test]
 fn test_execute_insert_newline() {
     let mut doc = create_doc();
     doc.buffer.insert_str("hello").unwrap();

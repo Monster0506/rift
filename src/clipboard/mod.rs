@@ -103,10 +103,13 @@ pub fn capture_text(buf: &TextBuffer, range: &MotionRange) -> String {
             };
             (s, e)
         }
-        RangeKind::Charwise => (
-            range.anchor.min(range.new_cursor),
-            range.anchor.max(range.new_cursor),
-        ),
+        RangeKind::Charwise => {
+            let end_offset = if range.inclusive { 1 } else { 0 };
+            (
+                range.anchor.min(range.new_cursor),
+                (range.anchor.max(range.new_cursor) + end_offset).min(buf.len()),
+            )
+        }
     };
     buf.chars(start..end).map(|c| c.to_char_lossy()).collect()
 }

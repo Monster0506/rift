@@ -266,6 +266,8 @@ pub struct MotionRange {
     pub anchor: usize,
     pub new_cursor: usize,
     pub kind: RangeKind,
+    /// When true, the endpoint (new_cursor for forward, anchor for backward) is included.
+    pub inclusive: bool,
 }
 
 impl MotionRange {
@@ -274,6 +276,15 @@ impl MotionRange {
             anchor,
             new_cursor,
             kind: RangeKind::Charwise,
+            inclusive: false,
+        }
+    }
+    pub fn charwise_inclusive(anchor: usize, new_cursor: usize) -> Self {
+        Self {
+            anchor,
+            new_cursor,
+            kind: RangeKind::Charwise,
+            inclusive: true,
         }
     }
     pub fn linewise(anchor: usize, new_cursor: usize) -> Self {
@@ -281,6 +292,7 @@ impl MotionRange {
             anchor,
             new_cursor,
             kind: RangeKind::Linewise,
+            inclusive: false,
         }
     }
 }
