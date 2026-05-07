@@ -6,6 +6,12 @@ I use this daily and primarily.
 
 ## Implemented:
 - Quite a lot more than the below items, I just haven't updated this in a while due to actually working on it.
+- LSP client: diagnostics with inline annotations, go to definition, find references, hover documentation, rename, document formatting, code actions (with resolve)
+- LSP status bar integration: error/warning counts with color coding per language server
+- Plugins can configure LSP server initialization options via the Lua API
+- Block cursor in Normal/OperatorPending mode (software-rendered, inverted colors)
+- Animated cursor with exponential smoothing (`appearance.cursor_speed`)
+- Annotation framework for document-level inline metadata (used by LSP diagnostics)
 - `f`/`F`/`t`/`T` character-find motions with `N`/`n` repeat
 - `D` to delete to end of line
 - `{N}G` to jump to line N
@@ -98,7 +104,6 @@ I use this daily and primarily.
 - debug mode toggle
 
 Todo:
-- LSP
 - registers + unified yank/paste/delete
 - visual selection (v, V, Ctrl+V)
 - macros (q{reg} / @{reg})
