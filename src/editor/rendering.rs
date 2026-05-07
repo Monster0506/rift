@@ -444,6 +444,7 @@ impl<T: TerminalBackend> Editor<T> {
         content_layer.clear();
 
         let focused_id = split_tree.focused_window_id();
+        let focused_doc_id = split_tree.focused_window().document_id;
 
         for layout in &layouts {
             let window = match split_tree.get_window(layout.window_id) {
@@ -547,6 +548,11 @@ impl<T: TerminalBackend> Editor<T> {
                 show_line_numbers: doc.options.show_line_numbers,
                 display_map: display_map.as_ref(),
                 gutter_width_override: Some(gutter_width),
+                search_matches_override: if window.document_id == focused_doc_id {
+                    None
+                } else {
+                    Some(&[])
+                },
             };
 
             let content_layer = render_system

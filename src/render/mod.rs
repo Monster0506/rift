@@ -186,6 +186,16 @@ pub struct DrawContext<'a> {
     pub display_map: Option<&'a DisplayMap>,
     /// Overrides state.gutter_width for content rendering (per-window in multi-pane mode).
     pub gutter_width_override: Option<usize>,
+    /// When set, use these matches instead of state.search_matches for this pane.
+    /// Pass `Some(&[])` for non-active panes to suppress cross-pane highlights.
+    pub search_matches_override: Option<&'a [crate::search::SearchMatch]>,
+}
+
+impl<'a> DrawContext<'a> {
+    pub fn search_matches(&self) -> &'a [crate::search::SearchMatch] {
+        self.search_matches_override
+            .unwrap_or_else(|| &self.state.search_matches)
+    }
 }
 
 /// Cursor position information returned from layer-based rendering
@@ -224,7 +234,7 @@ pub(crate) fn render_content_to_layer_offset(
 
     if let Some(dm) = ctx.display_map {
         let top_visual_row = viewport.top_visual_row();
-        let search_matches = &ctx.state.search_matches;
+        let search_matches = ctx.search_matches();
 
         let mut highlight_idx: usize = 0;
         let mut search_match_idx: usize = 0;
@@ -318,7 +328,7 @@ pub(crate) fn render_content_to_layer_offset(
         }
     } else {
         let top_line = viewport.top_line();
-        let search_matches = &ctx.state.search_matches;
+        let search_matches = ctx.search_matches();
         let first_visible_char = buf.line_index.get_start(top_line).unwrap_or(0);
 
         let mut search_match_idx =
@@ -452,7 +462,7 @@ fn render_line(
     let custom_highlights = ctx.custom_highlights.unwrap_or(&[]);
     let plugin_highlights = ctx.plugin_highlights.unwrap_or(&[]);
     let terminal_cell_colors = ctx.terminal_cell_colors.unwrap_or(&[]);
-    let search_matches = &ctx.state.search_matches;
+    let search_matches = ctx.search_matches();
 
     let syntax = SyntaxDecorator::new(
         source,

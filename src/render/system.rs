@@ -353,6 +353,7 @@ impl RenderSystem {
             show_line_numbers: state.show_line_numbers,
             display_map: state.display_map,
             gutter_width_override: None,
+            search_matches_override: None,
         };
 
         // Update the ECS world

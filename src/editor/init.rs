@@ -279,6 +279,8 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             self.state.gutter_width = 0;
         }
+
+        self.update_search_highlights();
     }
 
     /// Force a full redraw of the editor
