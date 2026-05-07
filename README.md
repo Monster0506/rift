@@ -161,3 +161,11 @@ With syntax highlighting:
 ```sh
 cargo install -F treesitter monster-rift
 ```
+
+or install from source
+
+```sh
+git clone https://github.com/monster0506/rift
+cd rift
+cargo install -F treesitter --path .
+```
