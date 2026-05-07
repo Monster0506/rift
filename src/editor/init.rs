@@ -1,5 +1,5 @@
-use super::plugin_dirs;
 use super::Editor;
+use super::{plugin_dirs, user_config_dir};
 use crate::command_line::commands::CommandParser;
 use crate::command_line::settings::create_settings_registry;
 use crate::document::{Document, DocumentId};
@@ -296,26 +296,40 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn load_plugins(&mut self) -> Result<(), RiftError> {
-        // Initialize Lua VM
         if let Some(err) = self.plugin_host.init_lua() {
             return Err(RiftError::new(
                 ErrorType::Internal,
                 crate::constants::errors::PLUGIN_LOAD_FAILED,
-                err.to_string(),
+                err,
             ));
-        } else {
-            for dir in plugin_dirs() {
-                if let Some(err) = self.plugin_host.lua_load_dir(&dir).into_iter().next() {
-                    return Err(RiftError::new(
-                        ErrorType::Internal,
-                        crate::constants::errors::PLUGIN_LOAD_FAILED,
-                        err.to_string(),
-                    ));
-                }
-            }
-            // Apply any mutations queued by top-level plugin code (e.g. rift.map()).
-            self.apply_plugin_mutations();
         }
+
+        // Execute ~/.config/rift/init.lua if it exists.
+        let init_lua = user_config_dir().join("init.lua");
+        if init_lua.is_file() {
+            if let Some(err) = self.plugin_host.lua_load_file(&init_lua) {
+                return Err(RiftError::new(
+                    ErrorType::Internal,
+                    crate::constants::errors::PLUGIN_LOAD_FAILED,
+                    err,
+                ));
+            }
+        }
+
+        // Execute all top-level *.lua files in each plugins directory,
+        // in lexicographic order. Subdirectories are not traversed.
+        for dir in plugin_dirs() {
+            if let Some(err) = self.plugin_host.lua_load_dir(&dir).into_iter().next() {
+                return Err(RiftError::new(
+                    ErrorType::Internal,
+                    crate::constants::errors::PLUGIN_LOAD_FAILED,
+                    err,
+                ));
+            }
+        }
+
+        // Apply any mutations queued by top-level plugin code (e.g. rift.map()).
+        self.apply_plugin_mutations();
         Ok(())
     }
 }

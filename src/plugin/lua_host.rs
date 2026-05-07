@@ -36,7 +36,7 @@ fn lua_to_json(v: LuaValue) -> Result<serde_json::Value, String> {
                 Ok(serde_json::Value::Object(map))
             }
         }
-        _ => Err(format!("unsupported Lua type")),
+        _ => Err("unsupported Lua type".to_string()),
     }
 }
 
@@ -104,6 +104,9 @@ struct LuaSharedState {
     /// Snapshot of LSP diagnostics: normalized_uri → [(line, col, severity, message)].
     /// severity: 1=error, 2=warning, 3=info, 4=hint
     lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>>,
+    /// The plugin file currently being loaded, used to tag registrations with their owner.
+    /// Set to the file path before executing each plugin file; cleared after.
+    current_plugin: Option<String>,
 }
 
 /// A lightweight entry for the `rift.windows.list()` snapshot.
@@ -144,6 +147,7 @@ impl Default for LuaSharedState {
             focused_win_id: 0,
             previous_win_id: None,
             lsp_diagnostics: std::collections::HashMap::new(),
+            current_plugin: None,
         }
     }
 }
@@ -162,9 +166,18 @@ impl LuaHost {
 
         // Internal handler registry table: _rift_handlers[event_name] = { {slot=n,fn=f}, ... }
         // _rift_slot_events[slot_id] = event_name  (for rift.off lookup)
+        // _rift_slot_plugin[slot_id] = plugin_name (ownership tracking)
+        // _rift_plugin_slots[plugin_name] = [slot_ids]  (reverse index for unload)
+        // _rift_plugin_keymaps[plugin_name] = [{mode, keys}] (keymap ownership)
         lua.globals().set("_rift_handlers", lua.create_table()?)?;
         lua.globals()
             .set("_rift_slot_events", lua.create_table()?)?;
+        lua.globals()
+            .set("_rift_slot_plugin", lua.create_table()?)?;
+        lua.globals()
+            .set("_rift_plugin_slots", lua.create_table()?)?;
+        lua.globals()
+            .set("_rift_plugin_keymaps", lua.create_table()?)?;
 
         let api = lua.create_table()?;
 
@@ -174,11 +187,11 @@ impl LuaHost {
             let sh = Arc::clone(&shared);
             let on_fn =
                 lua.create_function(move |lua, (event_name, callback): (String, LuaFunction)| {
-                    let slot_id = {
+                    let (slot_id, plugin_name) = {
                         let mut s = sh.lock().unwrap_or_else(|e| e.into_inner());
                         let id = s.next_slot;
                         s.next_slot += 1;
-                        id
+                        (id, s.current_plugin.clone())
                     };
                     let handlers: LuaTable = lua.globals().get("_rift_handlers")?;
                     let list: Option<LuaTable> = handlers.get(event_name.as_str())?;
@@ -193,10 +206,27 @@ impl LuaHost {
                     let entry = lua.create_table()?;
                     entry.set("slot", slot_id)?;
                     entry.set("fn", callback)?;
+                    if let Some(ref name) = plugin_name {
+                        entry.set("plugin", name.as_str())?;
+                    }
                     list.push(entry)?;
-                    // Record slot → event_name for off() lookup
                     let slot_events: LuaTable = lua.globals().get("_rift_slot_events")?;
-                    slot_events.set(slot_id as i64, event_name)?;
+                    slot_events.set(slot_id as i64, event_name.clone())?;
+                    if let Some(ref name) = plugin_name {
+                        let slot_plugin: LuaTable = lua.globals().get("_rift_slot_plugin")?;
+                        slot_plugin.set(slot_id as i64, name.as_str())?;
+                        let plugin_slots: LuaTable = lua.globals().get("_rift_plugin_slots")?;
+                        let slots_list: Option<LuaTable> = plugin_slots.get(name.as_str())?;
+                        let slots_list = match slots_list {
+                            Some(t) => t,
+                            None => {
+                                let t = lua.create_table()?;
+                                plugin_slots.set(name.as_str(), t.clone())?;
+                                t
+                            }
+                        };
+                        slots_list.push(slot_id as i64)?;
+                    }
                     Ok(slot_id as i64)
                 })?;
             api.set("on", on_fn)?;
@@ -342,20 +372,29 @@ impl LuaHost {
         // description — shown in tab completion dropdown
         // arg_type    — drives argument completion: "file", "dir"
         {
+            let sh = Arc::clone(&shared);
             let f = lua.create_function(
-                |lua,
-                 (name, callback, desc, arg_type): (
+                move |lua,
+                      (name, callback, desc, arg_type): (
                     String,
                     LuaFunction,
                     Option<String>,
                     Option<String>,
                 )| {
+                    let plugin_name = sh
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .current_plugin
+                        .clone();
                     let cmds: LuaTable = lua.globals().get("_rift_commands")?;
                     let entry = lua.create_table()?;
                     entry.set("fn", callback)?;
                     entry.set("description", desc.unwrap_or_default())?;
                     if let Some(at) = arg_type {
                         entry.set("arg_type", at)?;
+                    }
+                    if let Some(name_str) = plugin_name {
+                        entry.set("plugin", name_str)?;
                     }
                     cmds.set(name, entry)?;
                     Ok(())
@@ -367,9 +406,20 @@ impl LuaHost {
 
         // rift.register_action(id, fn)  — register a keymap action handler
         {
-            let f = lua.create_function(|lua, (id, callback): (String, LuaFunction)| {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |lua, (id, callback): (String, LuaFunction)| {
+                let plugin_name = sh
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .current_plugin
+                    .clone();
                 let actions: LuaTable = lua.globals().get("_rift_actions")?;
-                actions.set(id, callback)?;
+                let entry = lua.create_table()?;
+                entry.set("fn", callback)?;
+                if let Some(name) = plugin_name {
+                    entry.set("plugin", name)?;
+                }
+                actions.set(id, entry)?;
                 Ok(())
             })?;
             api.set("register_action", f)?;
@@ -903,11 +953,35 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f =
-                lua.create_function(move |_, (mode, keys, action): (String, String, String)| {
-                    sh.lock()
+                lua.create_function(move |lua, (mode, keys, action): (String, String, String)| {
+                    let plugin_name = sh
+                        .lock()
                         .unwrap_or_else(|e| e.into_inner())
-                        .mutations
-                        .push(PluginMutation::MapKey { mode, keys, action });
+                        .current_plugin
+                        .clone();
+                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
+                        PluginMutation::MapKey {
+                            mode: mode.clone(),
+                            keys: keys.clone(),
+                            action,
+                        },
+                    );
+                    if let Some(ref name) = plugin_name {
+                        let plugin_keymaps: LuaTable = lua.globals().get("_rift_plugin_keymaps")?;
+                        let list: Option<LuaTable> = plugin_keymaps.get(name.as_str())?;
+                        let list = match list {
+                            Some(t) => t,
+                            None => {
+                                let t = lua.create_table()?;
+                                plugin_keymaps.set(name.as_str(), t.clone())?;
+                                t
+                            }
+                        };
+                        let entry = lua.create_table()?;
+                        entry.set("mode", mode)?;
+                        entry.set("keys", keys)?;
+                        list.push(entry)?;
+                    }
                     Ok(())
                 })?;
             api.set("map", f)?;
@@ -1355,6 +1429,16 @@ impl LuaHost {
             api.set("lsp", lsp)?;
         }
 
+        {
+            let f = lua.create_function(|lua, path: String| {
+                let path = path.replace('\\', "/");
+                let code = format!("package.path = package.path .. ';{}/?.lua'", path);
+                lua.load(code.as_str()).exec()?;
+                Ok(())
+            })?;
+            api.set("add_package_path", f)?;
+        }
+
         lua.globals().set("rift", api)?;
 
         // Embedded Lua prelude — convenience wrappers that don't need Rust bindings.
@@ -1582,6 +1666,90 @@ function rift.debounce(fn, polls)
         end
     end
 end
+
+-- rift.plugins — plugin ownership and lifecycle management
+rift.plugins = {}
+
+-- rift.plugins.list() → string[]
+-- Returns all plugin names that have registered anything, sorted lexicographically.
+function rift.plugins.list()
+    local seen = {}
+    for _, name in pairs(_rift_slot_plugin) do seen[name] = true end
+    for _, entry in pairs(_rift_commands) do
+        if entry.plugin then seen[entry.plugin] = true end
+    end
+    for _, entry in pairs(_rift_actions) do
+        if type(entry) == "table" and entry.plugin then seen[entry.plugin] = true end
+    end
+    for name in pairs(_rift_plugin_keymaps) do seen[name] = true end
+    local result = {}
+    for name in pairs(seen) do result[#result+1] = name end
+    table.sort(result)
+    return result
+end
+
+-- rift.plugins.info(name) → {handlers, commands, actions, keys}
+-- Returns a description of everything registered by the named plugin.
+-- handlers: array of {slot, event}
+-- commands: array of command name strings
+-- actions:  array of action id strings
+-- keys:     array of {mode, keys}
+function rift.plugins.info(name)
+    local handlers = {}
+    if _rift_plugin_slots[name] then
+        for _, slot_id in ipairs(_rift_plugin_slots[name]) do
+            local event = _rift_slot_events[slot_id]
+            if event then handlers[#handlers+1] = {slot=slot_id, event=event} end
+        end
+    end
+    local commands = {}
+    for cmd_name, entry in pairs(_rift_commands) do
+        if entry.plugin == name then commands[#commands+1] = cmd_name end
+    end
+    local actions = {}
+    for action_id, entry in pairs(_rift_actions) do
+        if type(entry) == "table" and entry.plugin == name then
+            actions[#actions+1] = action_id
+        end
+    end
+    local keys = {}
+    if _rift_plugin_keymaps[name] then
+        for _, k in ipairs(_rift_plugin_keymaps[name]) do
+            keys[#keys+1] = {mode=k.mode, keys=k.keys}
+        end
+    end
+    return {handlers=handlers, commands=commands, actions=actions, keys=keys}
+end
+
+-- rift.plugins.unload(name)
+-- Remove all handlers, commands, actions, and keymaps registered by this plugin.
+-- Handlers are unregistered immediately; keymaps queue UnmapKey mutations.
+function rift.plugins.unload(name)
+    if _rift_plugin_slots[name] then
+        for _, slot_id in ipairs(_rift_plugin_slots[name]) do
+            rift.off(slot_id)
+        end
+        _rift_plugin_slots[name] = nil
+    end
+    local to_remove = {}
+    for cmd_name, entry in pairs(_rift_commands) do
+        if entry.plugin == name then to_remove[#to_remove+1] = cmd_name end
+    end
+    for _, cmd_name in ipairs(to_remove) do _rift_commands[cmd_name] = nil end
+    to_remove = {}
+    for action_id, entry in pairs(_rift_actions) do
+        if type(entry) == "table" and entry.plugin == name then
+            to_remove[#to_remove+1] = action_id
+        end
+    end
+    for _, action_id in ipairs(to_remove) do _rift_actions[action_id] = nil end
+    if _rift_plugin_keymaps[name] then
+        for _, k in ipairs(_rift_plugin_keymaps[name]) do
+            rift.unmap(k.mode, k.keys)
+        end
+        _rift_plugin_keymaps[name] = nil
+    end
+end
 "#).set_name("rift:prelude").exec()?;
 
         Ok(Self { lua, shared })
@@ -1755,13 +1923,17 @@ end
             Ok(t) => t,
             Err(_) => return false,
         };
-        let handler: Option<LuaFunction> = match actions.get(id) {
+        let entry: Option<LuaTable> = match actions.get(id) {
             Ok(v) => v,
             Err(_) => return false,
         };
-        let handler = match handler {
-            Some(f) => f,
+        let entry = match entry {
+            Some(e) => e,
             None => return false,
+        };
+        let handler: LuaFunction = match entry.get("fn") {
+            Ok(f) => f,
+            Err(_) => return false,
         };
         if let Err(e) = handler.call::<()>(()) {
             self.shared
@@ -1778,42 +1950,56 @@ end
 
     /// Load all `.lua` files in `dir`, and set `package.path` to include it.
     /// Returns a list of error strings (empty means all loaded OK).
+    /// Load all top-level `.lua` files in `dir`, in lexicographic order.
+    /// Does not recurse into subdirectories. Does not modify `package.path`.
     pub fn load_dir(&self, dir: &std::path::Path) -> Vec<String> {
         let mut errors = Vec::new();
 
-        // Extend package.path so require() can find modules in this directory.
-        let dir_str = dir.to_string_lossy().replace('\\', "/");
-        let set_path = format!(
-            "package.path = package.path .. ';{d}/?.lua;{d}/?/init.lua'",
-            d = dir_str
-        );
-        if let Err(e) = self.lua.load(set_path.as_str()).exec() {
-            errors.push(format!("lua: failed to set package.path: {}", e));
-        }
-
         let rd = match std::fs::read_dir(dir) {
             Ok(rd) => rd,
-            Err(_) => return errors, // directory doesn't exist — silently skip
+            Err(_) => return errors,
         };
 
-        for entry in rd.flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "lua") {
-                let src = match std::fs::read_to_string(&path) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        errors.push(format!("lua: failed to read {}: {}", path.display(), e));
-                        continue;
-                    }
-                };
-                let name = path.to_string_lossy().replace('\\', "/");
-                if let Err(e) = self.lua.load(src.as_str()).set_name(name.as_str()).exec() {
-                    errors.push(format!("lua: {}: {}", path.display(), e));
-                }
+        let mut entries: Vec<std::path::PathBuf> = rd
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "lua"))
+            .collect();
+
+        entries.sort();
+
+        for path in entries {
+            if let Some(err) = self.load_file(&path) {
+                errors.push(err);
             }
         }
 
         errors
+    }
+
+    /// Execute a single `.lua` file. Returns an error string on failure.
+    pub fn load_file(&self, path: &std::path::Path) -> Option<String> {
+        let src = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => return Some(format!("lua: failed to read {}: {}", path.display(), e)),
+        };
+        let name = path.to_string_lossy().replace('\\', "/");
+        self.shared
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .current_plugin = Some(name.clone());
+        let result = self
+            .lua
+            .load(src.as_str())
+            .set_name(name.as_str())
+            .exec()
+            .err()
+            .map(|e| format!("lua: {}: {}", path.display(), e));
+        self.shared
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .current_plugin = None;
+        result
     }
 
     /// Drain all mutations queued by Lua API calls.

@@ -44,6 +44,23 @@ use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
 use std::sync::Arc;
 
+fn user_config_dir() -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::env::var("APPDATA")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .join("rift")
+    } else {
+        let base = std::env::var("XDG_CONFIG_HOME")
+            .ok()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config")
+            });
+        base.join("rift")
+    }
+}
+
 fn plugin_dirs() -> Vec<std::path::PathBuf> {
     let mut dirs = Vec::new();
     if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
@@ -53,22 +70,7 @@ fn plugin_dirs() -> Vec<std::path::PathBuf> {
                 .join("plugins"),
         );
     }
-    let user_dir = if cfg!(windows) {
-        std::env::var("APPDATA")
-            .ok()
-            .map(|d| std::path::PathBuf::from(d).join("rift").join("plugins"))
-    } else {
-        let base = std::env::var("XDG_CONFIG_HOME")
-            .ok()
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| {
-                std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config")
-            });
-        Some(base.join("rift").join("plugins"))
-    };
-    if let Some(d) = user_dir {
-        dirs.push(d);
-    }
+    dirs.push(user_config_dir().join("plugins"));
     dirs
 }
 

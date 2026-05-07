@@ -531,12 +531,17 @@ impl PluginHost {
         }
     }
 
-    /// Load all `.lua` files in the given directory. Returns error strings.
+    /// Load all top-level `.lua` files in `dir`, sorted lexicographically. Returns error strings.
     pub fn lua_load_dir(&self, dir: &std::path::Path) -> Vec<String> {
         match &self.lua {
             Some(lua) => lua.load_dir(dir),
             None => vec![],
         }
+    }
+
+    /// Execute a single `.lua` file. Returns an error string on failure.
+    pub fn lua_load_file(&self, path: &std::path::Path) -> Option<String> {
+        self.lua.as_ref()?.load_file(path)
     }
 
     /// Execute a Lua snippet directly (for `:lua` command).
