@@ -110,34 +110,58 @@ impl Document {
             return;
         }
 
+        let id_to_orig: std::collections::HashMap<u16, String> = match &self.kind {
+            BufferKind::Directory { entries, .. } => entries
+                .iter()
+                .filter(|e| e.id != 0)
+                .map(|e| {
+                    let name = e
+                        .path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("")
+                        .to_string();
+                    (e.id, name)
+                })
+                .collect(),
+            _ => std::collections::HashMap::new(),
+        };
+
         let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
         let mut byte_pos = 0usize;
+        let mut line_idx = 0usize;
         let mut line_start = 0usize;
         let mut line_has_content = false;
         let mut last_visible_char = '\0';
+        let mut line_text = String::new();
 
         for ch in self.buffer.iter_at(0) {
             let char_len = ch.len_utf8();
             match ch {
                 Character::Newline => {
                     if line_has_content {
-                        let color = if last_visible_char == '/' {
-                            Color::Blue
-                        } else {
-                            Color::White
-                        };
+                        let color = dir_entry_color(
+                            &id_to_orig,
+                            self.annotations.directory_entry_id_at_line(line_idx),
+                            &line_text,
+                            last_visible_char,
+                        );
                         highlights.push((line_start..byte_pos, color));
                     }
                     line_start = byte_pos + 1;
                     line_has_content = false;
                     last_visible_char = '\0';
+                    line_text.clear();
+                    line_idx += 1;
                 }
                 c => {
                     if !line_has_content {
                         line_start = byte_pos;
                         line_has_content = true;
                     }
-                    last_visible_char = c.to_char_lossy();
+                    let ch = c.to_char_lossy();
+                    last_visible_char = ch;
+                    line_text.push(ch);
                 }
             }
             byte_pos += char_len;
@@ -145,11 +169,12 @@ impl Document {
 
         // Last line (no trailing newline)
         if line_has_content {
-            let color = if last_visible_char == '/' {
-                Color::Blue
-            } else {
-                Color::White
-            };
+            let color = dir_entry_color(
+                &id_to_orig,
+                self.annotations.directory_entry_id_at_line(line_idx),
+                &line_text,
+                last_visible_char,
+            );
             highlights.push((line_start..byte_pos, color));
         }
 
@@ -478,6 +503,38 @@ impl Document {
             self.terminal_cursor = Some((cursor_line, cursor_col));
             self.terminal_cell_colors = cell_colors;
             self.mark_dirty();
+        }
+    }
+}
+
+/// Determine the highlight color for one directory buffer line.
+fn dir_entry_color(
+    id_to_orig: &std::collections::HashMap<u16, String>,
+    annotation_entry_id: Option<u16>,
+    line_text: &str,
+    last_visible_char: char,
+) -> crate::color::Color {
+    use crate::color::Color;
+
+    let trimmed = line_text.trim_end_matches('/').trim();
+
+    if trimmed == ".." {
+        return Color::Blue;
+    }
+
+    match annotation_entry_id {
+        None => Color::Green,
+        Some(eid) => {
+            let orig = id_to_orig.get(&eid).map(|s| s.as_str()).unwrap_or("");
+            if trimmed == orig {
+                if last_visible_char == '/' {
+                    Color::Blue
+                } else {
+                    Color::White
+                }
+            } else {
+                Color::Yellow
+            }
         }
     }
 }
