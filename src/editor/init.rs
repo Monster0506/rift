@@ -304,10 +304,11 @@ impl<T: TerminalBackend> Editor<T> {
             ));
         }
 
-        // Execute ~/.config/rift/init.lua if it exists.
-        let init_lua = user_config_dir().join("init.lua");
-        if init_lua.is_file() {
-            if let Some(err) = self.plugin_host.lua_load_file(&init_lua) {
+        // Load bundled runtime plugins first so they are available to user
+        // config.  riftpm.lua in particular must be loaded before init.lua so
+        // that `require("riftpm")` works from the user's config.
+        for dir in plugin_dirs() {
+            if let Some(err) = self.plugin_host.lua_load_dir(&dir).into_iter().next() {
                 return Err(RiftError::new(
                     ErrorType::Internal,
                     crate::constants::errors::PLUGIN_LOAD_FAILED,
@@ -316,10 +317,10 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        // Execute all top-level *.lua files in each plugins directory,
-        // in lexicographic order. Subdirectories are not traversed.
-        for dir in plugin_dirs() {
-            if let Some(err) = self.plugin_host.lua_load_dir(&dir).into_iter().next() {
+        // Execute ~/.config/rift/init.lua after bundled plugins.
+        let init_lua = user_config_dir().join("init.lua");
+        if init_lua.is_file() {
+            if let Some(err) = self.plugin_host.lua_load_file(&init_lua) {
                 return Err(RiftError::new(
                     ErrorType::Internal,
                     crate::constants::errors::PLUGIN_LOAD_FAILED,

@@ -107,6 +107,9 @@ struct LuaSharedState {
     /// The plugin file currently being loaded, used to tag registrations with their owner.
     /// Set to the file path before executing each plugin file; cleared after.
     current_plugin: Option<String>,
+    /// Completed shell commands waiting to be fired as Lua UserEvents.
+    /// Each entry is (tag, success, output). Drained in `drain_mutations`.
+    pending_shell_events: Vec<(String, bool, String)>,
 }
 
 /// A lightweight entry for the `rift.windows.list()` snapshot.
@@ -148,6 +151,7 @@ impl Default for LuaSharedState {
             previous_win_id: None,
             lsp_diagnostics: std::collections::HashMap::new(),
             current_plugin: None,
+            pending_shell_events: Vec::new(),
         }
     }
 }
@@ -161,7 +165,8 @@ pub struct LuaHost {
 impl LuaHost {
     /// Create a new Lua VM and register the full `rift` API table.
     pub fn new() -> LuaResult<Self> {
-        let lua = Lua::new();
+        // plugins are fully trusted user code loaded from the local filesystem, but this unsafe block annoys me greatly
+        let lua = unsafe { Lua::unsafe_new() };
         let shared = Arc::new(Mutex::new(LuaSharedState::default()));
 
         // Internal handler registry table: _rift_handlers[event_name] = { {slot=n,fn=f}, ... }
@@ -450,6 +455,40 @@ impl LuaHost {
                 Ok(())
             })?;
             api.set("emit", f)?;
+        }
+
+        // rift.spawn_shell(cmd, tag)
+        // Run a shell command asynchronously. When it completes, a UserEvent
+        // with name="ShellDone", tag=<tag>, success=<bool>, output=<string>
+        // is fired on all registered UserEvent handlers.
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, (cmd, tag): (String, String)| {
+                let sh = Arc::clone(&sh);
+                std::thread::spawn(move || {
+                    let result = if cfg!(windows) {
+                        std::process::Command::new("cmd")
+                            .args(["/C", &cmd])
+                            .output()
+                    } else {
+                        std::process::Command::new("sh").args(["-c", &cmd]).output()
+                    };
+                    let (success, out_text) = match result {
+                        Ok(o) => {
+                            let text = String::from_utf8_lossy(&o.stdout).to_string()
+                                + &String::from_utf8_lossy(&o.stderr);
+                            (o.status.success(), text.trim_end().to_string())
+                        }
+                        Err(e) => (false, e.to_string()),
+                    };
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .pending_shell_events
+                        .push((tag, success, out_text));
+                });
+                Ok(())
+            })?;
+            api.set("spawn_shell", f)?;
         }
 
         // rift.insert(text) — insert text at the current cursor position
@@ -1988,6 +2027,10 @@ end
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .current_plugin = Some(name.clone());
+        let _ = self
+            .lua
+            .globals()
+            .set("_rift_current_plugin_file", name.as_str());
         let result = self
             .lua
             .load(src.as_str())
@@ -1999,11 +2042,40 @@ end
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .current_plugin = None;
+        let _ = self
+            .lua
+            .globals()
+            .set("_rift_current_plugin_file", mlua::Value::Nil);
         result
     }
 
     /// Drain all mutations queued by Lua API calls.
+    /// Also fires any pending shell-completion events as Lua UserEvents
+    /// before draining, so their handlers can queue further mutations.
     pub fn drain_mutations(&self) -> Vec<PluginMutation> {
+        let pending = {
+            let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+            std::mem::take(&mut s.pending_shell_events)
+        };
+        for (tag, success, output) in pending {
+            let _ = (|| -> LuaResult<()> {
+                let handlers: LuaTable = self.lua.globals().get("_rift_handlers")?;
+                let list: Option<LuaTable> = handlers.get("UserEvent")?;
+                if let Some(list) = list {
+                    let ev = self.lua.create_table()?;
+                    ev.set("name", "ShellDone")?;
+                    ev.set("tag", tag.as_str())?;
+                    ev.set("success", success)?;
+                    ev.set("output", output.as_str())?;
+                    for entry in list.sequence_values::<LuaTable>() {
+                        let entry = entry?;
+                        let f: LuaFunction = entry.get("fn")?;
+                        let _ = f.call::<()>(ev.clone());
+                    }
+                }
+                Ok(())
+            })();
+        }
         std::mem::take(
             &mut self
                 .shared
