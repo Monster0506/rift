@@ -5,25 +5,35 @@ use crate::buffer::TextBuffer;
 use crate::history::{EditOperation, EditTransaction, ReplayPath};
 
 impl Document {
-    /// Start a transaction for grouping multiple edits
+    /// Start a transaction for grouping multiple edits.
     pub fn begin_transaction(&mut self, description: impl Into<String>) {
-        self.current_transaction = Some(EditTransaction::new(description));
-        if self.is_directory() {
-            self.pending_annotation_snapshot = Some(self.annotations.directory_entries_by_line());
+        self.transaction_depth += 1;
+        if self.transaction_depth == 1 {
+            self.current_transaction = Some(EditTransaction::new(description));
+            if self.is_directory() {
+                self.pending_annotation_snapshot =
+                    Some(self.annotations.directory_entries_by_line());
+            }
         }
     }
 
-    /// Commit the current transaction to undo history
+    /// Commit the current transaction to undo history.
     pub fn commit_transaction(&mut self) {
-        if let Some(tx) = self.current_transaction.take() {
-            if !tx.is_empty() {
-                self.history.push(tx, None);
-                if let Some(snapshot) = self.pending_annotation_snapshot.take() {
-                    self.dir_annotation_undo_stack.push(snapshot);
-                    self.dir_annotation_redo_stack.clear();
+        if self.transaction_depth == 0 {
+            return;
+        }
+        self.transaction_depth -= 1;
+        if self.transaction_depth == 0 {
+            if let Some(tx) = self.current_transaction.take() {
+                if !tx.is_empty() {
+                    self.history.push(tx, None);
+                    if let Some(snapshot) = self.pending_annotation_snapshot.take() {
+                        self.dir_annotation_undo_stack.push(snapshot);
+                        self.dir_annotation_redo_stack.clear();
+                    }
+                } else {
+                    self.pending_annotation_snapshot = None;
                 }
-            } else {
-                self.pending_annotation_snapshot = None;
             }
         }
     }

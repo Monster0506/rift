@@ -317,8 +317,9 @@ impl<T: TerminalBackend> Editor<T> {
                                         continue;
                                     }
                                     _ => {
-                                        // Prefix wasn't executable. Drop everything?
                                         self.pending_keys.clear();
+                                        self.pending_keys.push(last);
+                                        continue;
                                     }
                                 }
                             } else {

@@ -144,6 +144,7 @@ pub struct Document {
     pub syntax: Option<Syntax>,
     pub history: UndoTree,
     current_transaction: Option<EditTransaction>,
+    transaction_depth: usize,
     pub view_state: ViewState,
     pub terminal: Option<Terminal>,
     pub terminal_cursor: Option<(usize, usize)>,
