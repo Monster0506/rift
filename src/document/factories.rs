@@ -128,7 +128,7 @@ impl Document {
                 syntax: None,
                 history: UndoTree::new(),
                 current_transaction: None,
-            transaction_depth: 0,
+                transaction_depth: 0,
                 view_state: ViewState::default(),
                 terminal: Some(terminal),
                 terminal_cursor: None,

@@ -9,6 +9,7 @@ fn create_dummy_node(seq: EditSeq, parent: Option<EditSeq>, desc: &str) -> EditN
         transaction: EditTransaction {
             ops: Vec::new(),
             description: desc.to_string(),
+            cursor_before: None,
         },
         snapshot: None,
         timestamp: std::time::SystemTime::UNIX_EPOCH,

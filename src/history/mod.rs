@@ -110,6 +110,16 @@ impl std::fmt::Display for ApplyError {
 impl std::error::Error for ApplyError {}
 
 impl EditOperation {
+    /// Return the document position where this operation begins.
+    pub fn start_position(&self) -> Position {
+        match self {
+            EditOperation::Insert { position, .. } => *position,
+            EditOperation::Delete { range, .. } => range.start,
+            EditOperation::Replace { range, .. } => range.start,
+            EditOperation::BlockChange { range, .. } => range.start,
+        }
+    }
+
     /// Get the inverse operation (for undo)
     #[must_use]
     pub fn inverse(&self) -> EditOperation {
@@ -270,6 +280,9 @@ impl EditOperation {
 pub struct EditTransaction {
     pub ops: Vec<EditOperation>,
     pub description: String,
+    /// Cursor offset (char index) at the moment the transaction was opened.
+    /// Used to restore cursor on undo regardless of operation range direction.
+    pub cursor_before: Option<usize>,
 }
 
 impl EditTransaction {
@@ -277,6 +290,7 @@ impl EditTransaction {
         Self {
             ops: Vec::new(),
             description: description.into(),
+            cursor_before: None,
         }
     }
 

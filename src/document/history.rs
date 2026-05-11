@@ -9,7 +9,9 @@ impl Document {
     pub fn begin_transaction(&mut self, description: impl Into<String>) {
         self.transaction_depth += 1;
         if self.transaction_depth == 1 {
-            self.current_transaction = Some(EditTransaction::new(description));
+            let mut tx = EditTransaction::new(description);
+            tx.cursor_before = Some(self.buffer.cursor());
+            self.current_transaction = Some(tx);
             if self.is_directory() {
                 self.pending_annotation_snapshot =
                     Some(self.annotations.directory_entries_by_line());
@@ -43,14 +45,20 @@ impl Document {
         if !self.history.can_undo() {
             return false;
         }
-        let inverse_ops = if let Some(tx) = self.history.current_transaction() {
-            tx.inverse()
+        let (inverse_ops, cursor_before) = if let Some(tx) = self.history.current_transaction() {
+            (tx.inverse(), tx.cursor_before)
         } else {
             return false;
         };
 
         for op in inverse_ops {
             self.apply_operation(&op);
+        }
+
+        // Restore cursor to where it was before the command, not wherever
+        // the last inverse op left it (insert_chars advances past inserted text).
+        if let Some(offset) = cursor_before {
+            let _ = self.buffer.set_cursor(offset.min(self.buffer.len()));
         }
 
         self.history.undo();

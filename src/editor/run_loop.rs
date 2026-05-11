@@ -308,13 +308,26 @@ impl<T: TerminalBackend> Editor<T> {
                                     MatchResult::Ambiguous(action) | MatchResult::Exact(action) => {
                                         let action = action.clone();
                                         self.pending_keys.clear();
-                                        // Execute prefix action
+                                        let mode_before = self.current_mode;
                                         self.handle_action(&action);
                                         self.pending_count = 0;
 
-                                        // Re-process last key
                                         self.pending_keys.push(last);
-                                        continue;
+                                        if self.current_mode == mode_before {
+                                            // Mode unchanged: normal re-dispatch.
+                                            continue;
+                                        }
+                                        match self.keymap.lookup(context, &[last]) {
+                                            MatchResult::Exact(a) | MatchResult::Ambiguous(a) => {
+                                                let a = a.clone();
+                                                self.pending_keys.clear();
+                                                self.handle_action(&a);
+                                                self.pending_count = 0;
+                                            }
+                                            _ => {
+                                                continue;
+                                            }
+                                        }
                                     }
                                     _ => {
                                         self.pending_keys.clear();
@@ -322,47 +335,43 @@ impl<T: TerminalBackend> Editor<T> {
                                         continue;
                                     }
                                 }
-                            } else {
-                                // Single key mismatch.
-                                // Fallback for Insert Mode typing
-                                if self.current_mode == Mode::Insert {
-                                    let k = self.pending_keys[0];
-                                    self.pending_keys.clear();
-                                    if let Key::Char(ch) = k {
+                            } else if self.current_mode == Mode::Insert {
+                                let k = self.pending_keys[0];
+                                self.pending_keys.clear();
+                                if let Key::Char(ch) = k {
+                                    self.handle_action(&Action::Editor(EditorAction::InsertChar(
+                                        ch,
+                                    )));
+                                }
+                                // Else ignore?
+                            } else if self.current_mode == Mode::Command
+                                || self.current_mode == Mode::Search
+                                || self.current_mode == Mode::Rename
+                            {
+                                // Command Line typing handling (fallback)
+                                // Since KeyMap might not have all chars registered
+                                let k = self.pending_keys[0];
+                                self.pending_keys.clear();
+                                match k {
+                                    Key::Tab => {
+                                        self.handle_mode_management(Command::TabComplete);
+                                    }
+                                    Key::ShiftTab => {
+                                        self.handle_mode_management(Command::TabCompletePrev);
+                                    }
+                                    Key::Char(ch) => {
                                         self.handle_action(&Action::Editor(
                                             EditorAction::InsertChar(ch),
                                         ));
                                     }
-                                    // Else ignore?
-                                } else if self.current_mode == Mode::Command
-                                    || self.current_mode == Mode::Search
-                                    || self.current_mode == Mode::Rename
-                                {
-                                    // Command Line typing handling (fallback)
-                                    // Since KeyMap might not have all chars registered
-                                    let k = self.pending_keys[0];
-                                    self.pending_keys.clear();
-                                    match k {
-                                        Key::Tab => {
-                                            self.handle_mode_management(Command::TabComplete);
-                                        }
-                                        Key::ShiftTab => {
-                                            self.handle_mode_management(Command::TabCompletePrev);
-                                        }
-                                        Key::Char(ch) => {
-                                            self.handle_action(&Action::Editor(
-                                                EditorAction::InsertChar(ch),
-                                            ));
-                                        }
-                                        _ => {}
-                                    }
-                                } else {
-                                    self.pending_keys.clear();
-                                    // Unrecognized key cancels any pending operator.
-                                    if self.current_mode == Mode::OperatorPending {
-                                        self.set_mode(Mode::Normal);
-                                        self.pending_count = 0;
-                                    }
+                                    _ => {}
+                                }
+                            } else {
+                                self.pending_keys.clear();
+                                // Unrecognized key cancels any pending operator.
+                                if self.current_mode == Mode::OperatorPending {
+                                    self.set_mode(Mode::Normal);
+                                    self.pending_count = 0;
                                 }
                             }
 
