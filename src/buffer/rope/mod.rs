@@ -103,22 +103,34 @@ impl PieceTable {
             return;
         }
 
+        let (newlines, byte_len) = count_stats(text);
+
+        if pos == self.len() {
+            let add_end = self.add.len();
+            if let Some(ref mut root) = self.root {
+                if extend_last_piece(root, add_end, text.len(), newlines, byte_len) {
+                    self.add.extend_from_slice(text);
+                    #[cfg(debug_assertions)]
+                    assert_tree_metadata(self.root.as_deref());
+                    return;
+                }
+            }
+        }
+
         let add_start = self.add.len();
         self.add.extend_from_slice(text);
-        let add_len = text.len();
 
         let new_piece = Piece {
             source: BufferSource::Add,
             start: add_start,
-            len: add_len,
+            len: text.len(),
         };
 
-        let (newlines, byte_len) = count_stats(text);
         let new_node = Box::new(Node {
             left: None,
             right: None,
             piece: new_piece,
-            len: add_len,
+            len: text.len(),
             byte_len,
             newlines,
             piece_newlines: newlines,
@@ -539,6 +551,45 @@ impl std::fmt::Display for PieceTable {
             ch.render(f)?;
         }
         Ok(())
+    }
+}
+
+/// Attempt to extend the rightmost piece in-place.
+///
+/// Checks whether the rightmost node's piece is an Add-buffer piece that ends
+/// exactly at `add_end` (the current tail of the add buffer). If so, increments
+/// its length and propagates the metadata change up the path to root.
+///
+/// Must be called BEFORE the new chars are appended to the add buffer.
+/// Returns true if the extension succeeded; false if a new piece is needed.
+fn extend_last_piece(
+    node: &mut Box<Node>,
+    add_end: usize,
+    added_len: usize,
+    added_nl: usize,
+    added_bytes: usize,
+) -> bool {
+    if let Some(ref mut right) = node.right {
+        if extend_last_piece(right, add_end, added_len, added_nl, added_bytes) {
+            node.len += added_len;
+            node.byte_len += added_bytes;
+            node.newlines += added_nl;
+            return true;
+        }
+        return false;
+    }
+
+    // This is the rightmost node.
+    if node.piece.source == BufferSource::Add && node.piece.start + node.piece.len == add_end {
+        node.piece.len += added_len;
+        node.piece_newlines += added_nl;
+        node.piece_byte_len += added_bytes;
+        node.len += added_len;
+        node.byte_len += added_bytes;
+        node.newlines += added_nl;
+        true
+    } else {
+        false
     }
 }
 
