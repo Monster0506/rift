@@ -151,7 +151,17 @@ impl PieceTable {
             return;
         }
 
-        // Delete logic: Split at start, split the right part at (end - start), drop the middle.
+        if end == self.len() {
+            let count = end - start;
+            if let Some(ref mut root) = self.root {
+                if trim_last_piece(root, count, &self.original, &self.add).is_some() {
+                    #[cfg(debug_assertions)]
+                    assert_tree_metadata(self.root.as_deref());
+                    return;
+                }
+            }
+        }
+
         let (left, right_part) = split(self.root.take(), start, &self.original, &self.add);
         let (_, right) = split(right_part, end - start, &self.original, &self.add);
 
@@ -590,6 +600,39 @@ fn extend_last_piece(
         true
     } else {
         false
+    }
+}
+
+/// Attempt to shrink the rightmost piece by `count` chars from its tail.
+fn trim_last_piece(
+    node: &mut Box<Node>,
+    count: usize,
+    original: &[Character],
+    add: &[Character],
+) -> Option<(usize, usize)> {
+    if let Some(ref mut right) = node.right {
+        if let Some((removed_nl, removed_bytes)) = trim_last_piece(right, count, original, add) {
+            node.len -= count;
+            node.byte_len -= removed_bytes;
+            node.newlines -= removed_nl;
+            return Some((removed_nl, removed_bytes));
+        }
+        return None;
+    }
+
+    if node.piece.len > count {
+        let slice = get_piece_slice(&node.piece, original, add);
+        let (removed_nl, removed_bytes) = count_stats(&slice[node.piece.len - count..]);
+
+        node.piece.len -= count;
+        node.piece_newlines -= removed_nl;
+        node.piece_byte_len -= removed_bytes;
+        node.len -= count;
+        node.byte_len -= removed_bytes;
+        node.newlines -= removed_nl;
+        Some((removed_nl, removed_bytes))
+    } else {
+        None
     }
 }
 
