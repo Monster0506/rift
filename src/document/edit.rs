@@ -260,6 +260,72 @@ impl Document {
         false
     }
 
+    /// Replace `count` chars at `pos` with `new_chars`
+    pub fn replace_chars(
+        &mut self,
+        pos: usize,
+        count: usize,
+        new_chars: &[Character],
+    ) -> Result<(), RiftError> {
+        let end = pos + count;
+        if end > self.buffer.len() {
+            return Err(RiftError::new(
+                crate::error::ErrorType::Internal,
+                "INVALID_RANGE",
+                format!(
+                    "End position {} out of bounds (len: {})",
+                    end,
+                    self.buffer.len()
+                ),
+            ));
+        }
+
+        use crate::buffer::api::BufferView;
+        let old_chars: Vec<Character> = self.buffer.chars(pos..end).collect();
+
+        let history_start = self.byte_to_position(pos);
+        let history_end = self.byte_to_position(end);
+        let start_byte = self.buffer.char_to_byte(pos);
+        let old_end_byte = self.buffer.char_to_byte(end);
+        let start_position = self.get_point(start_byte);
+        let old_end_position = self.get_point(old_end_byte);
+
+        self.buffer.replace_range(pos, count, new_chars);
+        self.mark_dirty();
+
+        self.record_edit(
+            EditOperation::Replace {
+                range: Range::new(history_start, history_end),
+                old_text: old_chars,
+                new_text: new_chars.to_vec(),
+            },
+            "Replace",
+        );
+
+        let new_end_byte = self.buffer.char_to_byte(pos + new_chars.len());
+        let new_end_position = self.get_point(new_end_byte);
+        let edit = tree_sitter::InputEdit {
+            start_byte,
+            old_end_byte,
+            new_end_byte,
+            start_position,
+            old_end_position,
+            new_end_position,
+        };
+        if let Some(syntax) = &mut self.syntax {
+            syntax.update_tree(&edit);
+        }
+
+        Ok(())
+    }
+
+    /// Replace `count` chars at `pos` with `count` copies of `ch`.
+    /// Allocates once, creates one add-buffer piece, and one undo record.
+    pub fn replace_repeat(&mut self, pos: usize, count: usize, ch: char) -> Result<(), RiftError> {
+        let fill: Vec<Character> = vec![Character::from(ch); count];
+        self.replace_chars(pos, count, &fill)
+    }
+
     /// Delete a range of characters, integrating with the undo system.
     pub fn delete_range(&mut self, start: usize, end: usize) -> Result<(), RiftError> {
         if start >= end {

@@ -166,11 +166,8 @@ impl Document {
                     .get_start(range.end.line as usize)
                     .unwrap_or(0);
                 let end_offset = end_line_start + range.end.col as usize;
-
                 let count = end_offset.saturating_sub(start_offset);
-                buffer.delete_range(start_offset, count);
-                let _ = buffer.set_cursor(start_offset.min(buffer.len()));
-                let _ = buffer.insert_chars(new_text);
+                buffer.replace_range(start_offset, count, new_text);
             }
             EditOperation::BlockChange {
                 range, new_content, ..
