@@ -128,6 +128,16 @@ pub struct Editor<T: TerminalBackend> {
     pending_operator: Option<crate::action::OperatorType>,
     pending_find_char_dir: Option<(bool, bool)>,
     pending_replace_char: bool,
+    /// Cached display map keyed by (doc_id, buffer_revision, content_width).
+    /// Avoids rebuilding the soft-wrap map on every command when the buffer hasn't changed.
+    display_map_cache: Option<(
+        crate::document::DocumentId,
+        u64,
+        usize,
+        Option<crate::wrap::DisplayMap>,
+    )>,
+    /// Doc whose TextChangedCoarse event is pending dispatch at the next render.
+    pending_text_changed: Option<crate::document::DocumentId>,
     dot_repeat: DotRepeat,
     pub panel_layout: Option<PanelLayout>,
     /// Last seen notification generation; used to detect when to refresh open messages buffers.

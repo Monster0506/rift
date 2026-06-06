@@ -17,11 +17,19 @@ impl Document {
         }
     }
 
-    pub(super) fn byte_to_position(&self, char_idx: usize) -> Position {
-        let line = self.buffer.line_index.get_line_at(char_idx);
+    /// Return both the tree-sitter `Point` and history `Position` for the same
+    /// byte offset in a single line-index traversal instead of two.
+    pub(crate) fn get_edit_points(&self, byte_offset: usize) -> (Point, Position) {
+        let line = self.buffer.line_index.get_line_at(byte_offset);
         let line_start = self.buffer.line_index.get_start(line).unwrap_or(0);
-        let col = char_idx.saturating_sub(line_start);
-        Position::new(line as u32, col as u32)
+        let col = byte_offset.saturating_sub(line_start);
+        (
+            Point {
+                row: line,
+                column: col,
+            },
+            Position::new(line as u32, col as u32),
+        )
     }
 
     pub(super) fn record_edit(&mut self, op: EditOperation, description: &str) {
@@ -49,8 +57,7 @@ impl Document {
         };
 
         let start_byte = self.buffer.cursor();
-        let start_position = self.get_point(start_byte);
-        let history_pos = self.byte_to_position(start_byte);
+        let (start_position, history_pos) = self.get_edit_points(start_byte);
 
         self.buffer.insert_char(ch)?;
         self.mark_dirty();
@@ -104,8 +111,7 @@ impl Document {
         };
 
         let start_byte = self.buffer.cursor();
-        let start_position = self.get_point(start_byte);
-        let history_pos = self.byte_to_position(start_byte);
+        let (start_position, history_pos) = self.get_edit_points(start_byte);
 
         self.buffer.insert_str(s)?;
         self.mark_dirty();
@@ -165,10 +171,8 @@ impl Document {
         }
 
         let deleted_text = deleted_char.to_string();
-        let history_start = self.byte_to_position(cursor - 1);
-        let history_end = self.byte_to_position(cursor);
-        let old_end_position = self.get_point(cursor);
-        let start_position = self.get_point(cursor - 1);
+        let (start_position, history_start) = self.get_edit_points(cursor - 1);
+        let (old_end_position, history_end) = self.get_edit_points(cursor);
 
         if self.buffer.delete_backward() {
             self.mark_dirty();
@@ -221,10 +225,8 @@ impl Document {
         }
 
         let deleted_text = deleted_char.to_string();
-        let history_start = self.byte_to_position(cursor);
-        let history_end = self.byte_to_position(cursor + 1);
-        let start_position = self.get_point(cursor);
-        let old_end_position = self.get_point(cursor + 1);
+        let (start_position, history_start) = self.get_edit_points(cursor);
+        let (old_end_position, history_end) = self.get_edit_points(cursor + 1);
 
         if self.buffer.delete_forward() {
             self.mark_dirty();
@@ -283,12 +285,10 @@ impl Document {
         use crate::buffer::api::BufferView;
         let old_chars: Vec<Character> = self.buffer.chars(pos..end).collect();
 
-        let history_start = self.byte_to_position(pos);
-        let history_end = self.byte_to_position(end);
         let start_byte = self.buffer.char_to_byte(pos);
         let old_end_byte = self.buffer.char_to_byte(end);
-        let start_position = self.get_point(start_byte);
-        let old_end_position = self.get_point(old_end_byte);
+        let (start_position, history_start) = self.get_edit_points(start_byte);
+        let (old_end_position, history_end) = self.get_edit_points(old_end_byte);
 
         self.buffer.replace_range(pos, count, new_chars);
         self.mark_dirty();
@@ -362,12 +362,10 @@ impl Document {
             None
         };
 
-        let history_start = self.byte_to_position(start);
-        let history_end = self.byte_to_position(end);
-        let start_position = self.get_point(start);
-        let old_end_position = self.get_point(end);
         let start_byte = self.buffer.char_to_byte(start);
         let old_end_byte = self.buffer.char_to_byte(end);
+        let (start_position, history_start) = self.get_edit_points(start_byte);
+        let (old_end_position, history_end) = self.get_edit_points(old_end_byte);
 
         let count = end - start;
         self.buffer.delete_range(start, count);

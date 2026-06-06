@@ -14,7 +14,8 @@ impl<T: TerminalBackend> Editor<T> {
         {
             let viewport_height = self.render_system.viewport.visible_rows();
 
-            let display_map = {
+            // Compute cache key before borrowing doc mutably.
+            let (doc_id, revision, content_width) = {
                 let doc = self.document_manager.active_document().unwrap();
                 let gutter_width = if self.state.settings.show_line_numbers {
                     self.state.gutter_width
@@ -28,12 +29,33 @@ impl<T: TerminalBackend> Editor<T> {
                     .visible_cols()
                     .saturating_sub(gutter_width)
                     .max(1);
-                resolve_display_map(
+                (doc.id, doc.buffer.revision, content_width)
+            };
+
+            // Return a clone of the cached map if key matches; otherwise rebuild.
+            let cache_hit = self
+                .display_map_cache
+                .as_ref()
+                .and_then(|(cid, crev, cw, map)| {
+                    if *cid == doc_id && *crev == revision && *cw == content_width {
+                        Some(map.clone())
+                    } else {
+                        None
+                    }
+                });
+
+            let display_map = if let Some(hit) = cache_hit {
+                hit
+            } else {
+                let doc = self.document_manager.active_document().unwrap();
+                let map = resolve_display_map(
                     doc,
                     content_width,
                     self.state.settings.soft_wrap,
                     self.state.settings.wrap_width,
-                )
+                );
+                self.display_map_cache = Some((doc_id, revision, content_width, map.clone()));
+                map
             };
 
             let cursor_before = self
@@ -65,6 +87,32 @@ impl<T: TerminalBackend> Editor<T> {
             // Tree-sitter incremental parsing is fast (~1ms for small edits)
             if is_mutating {
                 self.do_incremental_syntax_parse();
+
+                // Refresh the display-map cache with the post-mutation revision so
+                // subsequent non-mutating commands in the same frame get cache hits.
+                if let Some(doc) = self.document_manager.active_document() {
+                    let gutter_width = if self.state.settings.show_line_numbers {
+                        self.state.gutter_width
+                    } else {
+                        0
+                    };
+                    let new_width = self
+                        .split_tree
+                        .focused_window()
+                        .viewport
+                        .visible_cols()
+                        .saturating_sub(gutter_width)
+                        .max(1);
+                    let new_rev = doc.buffer.revision;
+                    let new_id = doc.id;
+                    let map = resolve_display_map(
+                        doc,
+                        new_width,
+                        self.state.settings.soft_wrap,
+                        self.state.settings.wrap_width,
+                    );
+                    self.display_map_cache = Some((new_id, new_rev, new_width, map));
+                }
             }
 
             // Collect event info from doc before taking mutable borrows.
@@ -87,10 +135,9 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some((buf, mutating, cursor_event)) = plugin_events {
                 if mutating {
                     self.adjust_plugin_highlights_for_edits();
-                    self.update_lua_state();
-                    self.plugin_host
-                        .dispatch(&crate::plugin::EditorEvent::TextChangedCoarse { buf });
-                    self.apply_plugin_mutations();
+                    // Defer TextChangedCoarse to the next render cycle so multiple
+                    // mutations within a single frame produce only one event.
+                    self.pending_text_changed = Some(buf);
                     self.lsp_notify_change();
                 }
 
@@ -104,6 +151,17 @@ impl<T: TerminalBackend> Editor<T> {
             return true;
         }
         false
+    }
+
+    /// Dispatch a pending `TextChangedCoarse` event if one was queued since the last render.
+    /// Called once per render cycle so multiple mutations within a frame fire a single event.
+    pub(super) fn flush_pending_text_changed(&mut self) {
+        if let Some(buf) = self.pending_text_changed.take() {
+            self.update_lua_state();
+            self.plugin_host
+                .dispatch(&crate::plugin::EditorEvent::TextChangedCoarse { buf });
+            self.apply_plugin_mutations();
+        }
     }
 
     /// Perform synchronous incremental syntax parse for the document.

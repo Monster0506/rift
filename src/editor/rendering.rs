@@ -24,6 +24,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
+        self.flush_pending_text_changed();
         if self.split_tree.window_count() == 1 {
             let rows = self.render_system.viewport.visible_rows();
             let cols = self.render_system.viewport.visible_cols();

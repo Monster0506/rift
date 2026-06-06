@@ -1173,3 +1173,122 @@ fn test_shift_n_keybinding_maps_to_repeat_find_backward() {
         "'N' should map to RepeatFindBackward"
     );
 }
+
+#[test]
+fn test_display_map_cache_populated_after_command() {
+    let mut editor = create_editor_sized(24, 80);
+    set_content(&mut editor, "hello world\n");
+
+    // Cache must be absent before any command.
+    assert!(
+        editor.display_map_cache.is_none(),
+        "cache should start empty"
+    );
+
+    editor.execute_buffer_command(crate::command::Command::Move(
+        crate::action::Motion::Right,
+        1,
+    ));
+
+    // Cache must be populated with the buffer's current revision.
+    let rev = editor.active_document().buffer.revision;
+    match &editor.display_map_cache {
+        Some((_, cached_rev, _, _)) => assert_eq!(*cached_rev, rev),
+        None => panic!("display_map_cache should be populated after a command"),
+    }
+}
+
+#[test]
+fn test_display_map_cache_revision_stable_across_moves() {
+    let mut editor = create_editor_sized(24, 80);
+    set_content(&mut editor, "hello world\n");
+
+    editor.execute_buffer_command(crate::command::Command::Move(
+        crate::action::Motion::Right,
+        1,
+    ));
+    let rev_after_first = editor.display_map_cache.as_ref().map(|(_, rev, _, _)| *rev);
+
+    editor.execute_buffer_command(crate::command::Command::Move(
+        crate::action::Motion::Right,
+        1,
+    ));
+    let rev_after_second = editor.display_map_cache.as_ref().map(|(_, rev, _, _)| *rev);
+
+    // Buffer revision unchanged (no mutations), so cached revision should be the same.
+    assert_eq!(
+        rev_after_first, rev_after_second,
+        "cache revision should not change between non-mutating commands"
+    );
+}
+
+#[test]
+fn test_display_map_cache_invalidated_after_mutation() {
+    let mut editor = create_editor_sized(24, 80);
+    set_content(&mut editor, "hello world\n");
+
+    editor.execute_buffer_command(crate::command::Command::Move(
+        crate::action::Motion::Right,
+        1,
+    ));
+    let rev_before = editor
+        .display_map_cache
+        .as_ref()
+        .map(|(_, rev, _, _)| *rev)
+        .unwrap();
+
+    // A mutation increments the buffer revision.
+    editor.current_mode = Mode::Insert;
+    editor.execute_buffer_command(crate::command::Command::InsertChar('x'));
+
+    let rev_after = editor
+        .display_map_cache
+        .as_ref()
+        .map(|(_, rev, _, _)| *rev)
+        .unwrap();
+
+    assert_ne!(
+        rev_before, rev_after,
+        "mutation must invalidate the display-map cache"
+    );
+}
+
+#[test]
+fn test_text_changed_coarse_fires_once_per_render() {
+    use std::sync::{Arc, Mutex};
+
+    let mut editor = create_editor();
+
+    let count = Arc::new(Mutex::new(0usize));
+    let c = count.clone();
+    editor
+        .plugin_host
+        .on("TextChangedCoarse", move |_| *c.lock().unwrap() += 1);
+
+    editor.current_mode = Mode::Insert;
+    for _ in 0..5 {
+        editor.execute_buffer_command(crate::command::Command::InsertChar('a'));
+    }
+
+    assert_eq!(
+        *count.lock().unwrap(),
+        0,
+        "TextChangedCoarse must not fire inside execute_buffer_command"
+    );
+
+    // Single render cycle flushes exactly one event.
+    editor.update_and_render().unwrap();
+    assert_eq!(
+        *count.lock().unwrap(),
+        1,
+        "TextChangedCoarse must fire exactly once per render cycle"
+    );
+
+    // A second render with no further mutations must not fire again.
+    editor.update_and_render().unwrap();
+    assert_eq!(
+        *count.lock().unwrap(),
+        1,
+        "TextChangedCoarse must not fire on a render with no pending changes"
+    );
+}

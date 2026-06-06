@@ -1564,3 +1564,47 @@ fn test_parse_diff_many_entries_ids_are_stable() {
     assert!(diff.deletes.is_empty());
     assert!(diff.creates.is_empty());
 }
+
+#[test]
+fn test_get_edit_points_matches_individual_calls_col0() {
+    let mut doc = Document::new(1).unwrap();
+    doc.buffer.insert_str("hello\nworld\n").unwrap();
+
+    let offset = 0;
+    let (ts_pt, hist_pos) = doc.get_edit_points(offset);
+
+    assert_eq!(ts_pt.row, 0);
+    assert_eq!(ts_pt.column, 0);
+    assert_eq!(hist_pos.line, 0);
+    assert_eq!(hist_pos.col, 0);
+}
+
+#[test]
+fn test_get_edit_points_matches_individual_calls_midline() {
+    let mut doc = Document::new(1).unwrap();
+    doc.buffer.insert_str("hello\nworld\n").unwrap();
+
+    // offset 3 = 'l' inside "hello"
+    let offset = 3;
+    let (ts_pt, hist_pos) = doc.get_edit_points(offset);
+
+    assert_eq!(ts_pt.row, 0);
+    assert_eq!(ts_pt.column, 3);
+    assert_eq!(hist_pos.line, 0);
+    assert_eq!(hist_pos.col, 3);
+}
+
+#[test]
+fn test_get_edit_points_matches_individual_calls_second_line() {
+    let mut doc = Document::new(1).unwrap();
+    doc.buffer.insert_str("hello\nworld\n").unwrap();
+
+    // offset 6 = start of "world"
+    let offset = 6;
+    let (ts_pt, hist_pos) = doc.get_edit_points(offset);
+
+    assert_eq!(ts_pt.row, 1);
+    assert_eq!(ts_pt.column, 0);
+    assert_eq!(hist_pos.line, 1);
+    assert_eq!(hist_pos.col, 0);
+}
