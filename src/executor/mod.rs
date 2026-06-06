@@ -267,6 +267,19 @@ pub fn execute_command(
                 doc.insert_char(ch)?;
             }
         }
+        Command::ReplaceChar(ch, count) => {
+            let pos = doc.buffer.cursor();
+            let avail = doc.buffer.len().saturating_sub(pos);
+            let replace_count = count.min(avail);
+            if replace_count > 0 {
+                doc.begin_transaction("Replace");
+                doc.replace_repeat(pos, replace_count, ch)?;
+                doc.commit_transaction();
+            }
+        }
+        Command::EnterReplaceMode => {
+            // Mode change handled by editor
+        }
         Command::EnterInsertMode
         | Command::EnterInsertModeAfter
         | Command::EnterInsertModeAtLineStart

@@ -150,6 +150,7 @@ impl StatusBar {
             Mode::Search => crate::constants::modes::SEARCH,
             Mode::Rename => crate::constants::modes::RENAME,
             Mode::OperatorPending => crate::constants::modes::OPERATOR_PENDING,
+            Mode::Replace => crate::constants::modes::REPLACE,
         }
     }
 

@@ -133,6 +133,29 @@ impl<T: TerminalBackend> Editor<T> {
                     continue;
                 }
 
+                if self.pending_replace_char {
+                    self.pending_replace_char = false;
+                    if let crate::key::Key::Char(ch) = key_press {
+                        let count = if self.pending_count > 0 {
+                            self.pending_count
+                        } else {
+                            1
+                        };
+                        let command = Command::ReplaceChar(ch, count);
+                        let result = self.execute_buffer_command(command);
+                        if result && !self.dot_repeat.is_replaying() {
+                            self.dot_repeat.record_single(command);
+                        }
+                        self.pending_count = 0;
+                    }
+                    self.update_state_and_render(
+                        key_press,
+                        crate::key_handler::KeyAction::Continue,
+                        crate::command::Command::Noop,
+                    )?;
+                    continue;
+                }
+
                 if let Some((forward, till)) = self.pending_find_char_dir.take() {
                     if let crate::key::Key::Char(ch) = key_press {
                         use crate::action::{Action, EditorAction, Motion};
@@ -158,6 +181,7 @@ impl<T: TerminalBackend> Editor<T> {
                 // AND we are not in Insert mode (typing numbers)
                 if self.pending_keys.is_empty()
                     && self.current_mode != Mode::Insert
+                    && self.current_mode != Mode::Replace
                     && self.current_mode != Mode::Command
                     && self.current_mode != Mode::Search
                     && self.current_mode != Mode::Rename
@@ -235,7 +259,7 @@ impl<T: TerminalBackend> Editor<T> {
                                     KeyContext::Normal
                                 }
                             }
-                            Mode::Insert => KeyContext::Insert,
+                            Mode::Insert | Mode::Replace => KeyContext::Insert,
                             Mode::Command => KeyContext::Command,
                             Mode::Search => KeyContext::Search,
                             Mode::Rename => KeyContext::Command,
@@ -253,9 +277,11 @@ impl<T: TerminalBackend> Editor<T> {
                             // 3. Dispatch Action
                             let _handled = self.handle_action(&action);
 
-                            // Don't clear count if we just entered OperatorPending mode
-                            // (count may be used with the subsequent motion)
-                            if self.current_mode != Mode::OperatorPending {
+                            // Don't clear count if we just entered OperatorPending mode or
+                            // set pending_replace_char (count is consumed on the next keypress).
+                            if self.current_mode != Mode::OperatorPending
+                                && !self.pending_replace_char
+                            {
                                 self.pending_count = 0;
                             }
 
@@ -344,6 +370,26 @@ impl<T: TerminalBackend> Editor<T> {
                                     )));
                                 }
                                 // Else ignore?
+                            } else if self.current_mode == Mode::Replace {
+                                let k = self.pending_keys[0];
+                                self.pending_keys.clear();
+                                if let Key::Char(ch) = k {
+                                    if let Some(doc) = self.document_manager.active_document_mut() {
+                                        let pos = doc.buffer.cursor();
+                                        if pos < doc.buffer.len()
+                                            && doc.buffer.char_at(pos)
+                                                != Some(crate::character::Character::Newline)
+                                        {
+                                            let _ = doc.replace_chars(
+                                                pos,
+                                                1,
+                                                &[crate::character::Character::from(ch)],
+                                            );
+                                        } else {
+                                            let _ = doc.insert_char(ch);
+                                        }
+                                    }
+                                }
                             } else if self.current_mode == Mode::Command
                                 || self.current_mode == Mode::Search
                                 || self.current_mode == Mode::Rename

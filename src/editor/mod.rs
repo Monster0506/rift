@@ -127,6 +127,7 @@ pub struct Editor<T: TerminalBackend> {
     pending_count: usize,
     pending_operator: Option<crate::action::OperatorType>,
     pending_find_char_dir: Option<(bool, bool)>,
+    pending_replace_char: bool,
     dot_repeat: DotRepeat,
     pub panel_layout: Option<PanelLayout>,
     /// Last seen notification generation; used to detect when to refresh open messages buffers.

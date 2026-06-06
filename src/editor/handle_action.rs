@@ -140,7 +140,7 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::EnterNormalMode => {
-                if self.current_mode == Mode::Insert {
+                if self.current_mode == Mode::Insert || self.current_mode == Mode::Replace {
                     // Finalize insert recording for dot-repeat
                     if !self.dot_repeat.is_replaying() {
                         self.dot_repeat.finish_insert_recording();
@@ -589,6 +589,16 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::FindCharPending { forward, till } => {
                 self.pending_find_char_dir = Some((*forward, *till));
+                true
+            }
+
+            EditorAction::ReplaceCharPending => {
+                self.pending_replace_char = true;
+                true
+            }
+
+            EditorAction::EnterReplaceMode => {
+                self.handle_mode_management(crate::command::Command::EnterReplaceMode);
                 true
             }
 

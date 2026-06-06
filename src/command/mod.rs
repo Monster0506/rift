@@ -31,6 +31,10 @@ pub enum Command {
     DeleteLine,
     ChangeLine,
     InsertChar(char),
+    /// Replace `count` chars at cursor with `ch` (r<ch> with optional count).
+    ReplaceChar(char, usize),
+    /// Enter Replace mode (R: each char overwrites instead of inserting).
+    EnterReplaceMode,
 
     // Mode transitions
     EnterCommandMode,
@@ -81,6 +85,7 @@ impl Command {
                 | Command::OpenLineBelow
                 | Command::OpenLineAbove
                 | Command::InsertChar(_)
+                | Command::ReplaceChar(_, _)
                 | Command::Undo
                 | Command::Redo
         )

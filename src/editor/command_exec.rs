@@ -8,7 +8,10 @@ use crate::term::TerminalBackend;
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn execute_buffer_command(&mut self, command: crate::command::Command) -> bool {
         let current_mode = self.current_mode;
-        if current_mode == Mode::Normal || current_mode == Mode::Insert {
+        if current_mode == Mode::Normal
+            || current_mode == Mode::Insert
+            || current_mode == Mode::Replace
+        {
             let viewport_height = self.render_system.viewport.visible_rows();
 
             let display_map = {

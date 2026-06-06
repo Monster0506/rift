@@ -357,6 +357,10 @@ pub enum EditorAction {
         forward: bool,
         till: bool,
     },
+    /// Enter char-pending state for r (next keypress replaces count chars at cursor)
+    ReplaceCharPending,
+    /// Enter Replace mode (R:  each char overwrites instead of inserting)
+    EnterReplaceMode,
     /// LSP: go to definition under cursor (gd)
     LspGotoDefinition,
     /// LSP: go to references under cursor (gr)

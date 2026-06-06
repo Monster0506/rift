@@ -111,6 +111,11 @@ impl<T: TerminalBackend> Editor<T> {
                 );
                 self.set_mode(Mode::Insert);
             }
+            Command::EnterReplaceMode => {
+                let doc = self.document_manager.active_document_mut().unwrap();
+                doc.begin_transaction("Replace");
+                self.set_mode(Mode::Replace);
+            }
             Command::EnterCommandMode => {
                 self.state.completion_session = None;
                 self.state.clear_command_line();

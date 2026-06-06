@@ -15,6 +15,8 @@ pub enum Mode {
     OperatorPending,
     /// LSP rename dialog (entered with <Space>rn, prompt char @)
     Rename,
+    /// Replace mode (entered with R): each char overwrites instead of inserting
+    Replace,
 }
 
 impl Mode {
@@ -27,6 +29,7 @@ impl Mode {
             Mode::Command => "command",
             Mode::Search => "search",
             Mode::Rename => "rename",
+            Mode::Replace => "replace",
         }
     }
 }

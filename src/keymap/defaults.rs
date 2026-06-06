@@ -188,6 +188,17 @@ pub fn register_defaults(keymap: &mut KeyMap) {
             till: true,
         }),
     );
+    // Replace (r = single char pending, R = stream replace mode)
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('r'),
+        Action::Editor(EditorAction::ReplaceCharPending),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('R'),
+        Action::Editor(EditorAction::EnterReplaceMode),
+    );
     // Word Motion
     keymap.register(
         KeyContext::Normal,

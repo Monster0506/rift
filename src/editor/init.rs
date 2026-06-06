@@ -97,6 +97,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_count: 0,
             pending_operator: None,
             pending_find_char_dir: None,
+            pending_replace_char: false,
             dot_repeat: DotRepeat::new(),
             panel_layout: None,
             last_notification_generation: 0,

@@ -84,6 +84,7 @@ pub mod modes {
     pub const SEARCH: &str = "SEARCH";
     pub const RENAME: &str = "RENAME";
     pub const OPERATOR_PENDING: &str = "OPERATOR_PENDING";
+    pub const REPLACE: &str = "REPLACE";
     pub const OVERLAY: &str = "OVERLAY";
 }
 
