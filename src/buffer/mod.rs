@@ -223,6 +223,27 @@ impl TextBuffer {
         true
     }
 
+    /// Replace `count` characters at `start` with `chars` in a single rope pass.
+    /// Cursor is moved to `start + chars.len()` after the replace.
+    pub fn replace_range(&mut self, start: usize, count: usize, chars: &[Character]) -> bool {
+        let end = start + count;
+        if end > self.len() {
+            return false;
+        }
+        let byte_pos = self.char_to_byte(start);
+        let del_bytes = self.char_to_byte(end) - byte_pos;
+        let ins_bytes: usize = chars.iter().map(|c| c.len_utf8()).sum();
+        self.line_index.replace(start, count, chars);
+        self.cursor = start + chars.len();
+        self.revision += 1;
+        self.edit_log.push(ByteEdit {
+            byte_pos,
+            del_bytes,
+            ins_bytes,
+        });
+        true
+    }
+
     /// Delete the Character before the cursor.
     pub fn delete_backward(&mut self) -> bool {
         if self.cursor == 0 {
@@ -282,7 +303,6 @@ impl TextBuffer {
     }
 
     /// Get bytes for a specific line (excluding trailing newline)
-    /// Note: This reconstructs bytes from Characters.
     #[must_use]
     pub fn get_line_bytes(&self, line_idx: usize) -> Vec<u8> {
         let start = match self.line_index.get_start(line_idx) {
@@ -302,9 +322,7 @@ impl TextBuffer {
     }
 
     /// Get a chunk of text starting at the given byte offset.
-    /// Used for Tree-sitter integration.
     pub fn get_chunk_at_byte(&self, _pos: usize) -> &[u8] {
-        // Returned empty as stub; Tree-sitter integration uses `to_logical_bytes` + `parse_with` callback now.
         &[]
     }
 
@@ -383,8 +401,6 @@ impl TextBuffer {
             self.cursor = end;
         }
     }
-
-    // Movement methods - delegated to movement module
 
     pub fn move_word_right(&mut self) -> bool {
         crate::movement::buffer::move_word_right(self)

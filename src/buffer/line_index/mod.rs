@@ -61,7 +61,10 @@ impl LineIndex {
         self.table.delete(pos..pos + len);
     }
 
-    // New methods to expose text access
+    pub fn replace(&mut self, pos: usize, count: usize, chars: &[Character]) {
+        self.table.replace(pos, count, chars);
+    }
+
     pub fn len(&self) -> usize {
         self.table.len()
     }

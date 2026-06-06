@@ -144,6 +144,45 @@ impl PieceTable {
         assert_tree_metadata(self.root.as_deref());
     }
 
+    /// Replace `count` characters starting at `pos` with `text` in one pass.
+    pub fn replace(&mut self, pos: usize, count: usize, text: &[Character]) {
+        if count == 0 {
+            self.insert(pos, text);
+            return;
+        }
+        if text.is_empty() {
+            self.delete(pos..pos + count);
+            return;
+        }
+
+        let add_start = self.add.len();
+        self.add.extend_from_slice(text);
+        let (new_nl, new_bytes) = count_stats(text);
+
+        let new_node = Box::new(Node {
+            left: None,
+            right: None,
+            piece: Piece {
+                source: BufferSource::Add,
+                start: add_start,
+                len: text.len(),
+            },
+            len: text.len(),
+            byte_len: new_bytes,
+            newlines: new_nl,
+            piece_newlines: new_nl,
+            piece_byte_len: new_bytes,
+            height: 1,
+        });
+
+        let (left, right_part) = split(self.root.take(), pos, &self.original, &self.add);
+        let (_, right) = split(right_part, count, &self.original, &self.add);
+        self.root = Some(join_with_root(left, new_node, right));
+
+        #[cfg(debug_assertions)]
+        assert_tree_metadata(self.root.as_deref());
+    }
+
     pub fn delete(&mut self, range: std::ops::Range<usize>) {
         let start = range.start;
         let end = range.end;
