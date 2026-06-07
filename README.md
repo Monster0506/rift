@@ -57,7 +57,7 @@ I use this daily and primarily.
 - threaded job manager for async operations
 - smartcase search
 - search index warming (background cache)
-- streaming search with multiple engines
+- fast search: sub-15ms on a 1MB buffer (zooooom)
 - granular movement (word, sentence, paragraph, big word)
 - Character abstraction for proper unicode handling (not just u8/char)
 - O(log N) byte/char length synchronization
