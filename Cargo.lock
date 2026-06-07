@@ -730,9 +730,9 @@ dependencies = [
 
 [[package]]
 name = "monster-regex"
-version = "0.2.2"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcdff04dd7b95a74e3c570a671e0711a60ad3e5ea30afe565c1ef1add964c550"
+checksum = "4ea3d339887120008d154419f0355b8e3f5eb50b7a36b81469dc7d9d68f648cb"
 dependencies = [
  "memchr",
 ]

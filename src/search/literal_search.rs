@@ -1,10 +1,7 @@
 use crate::buffer::api::BufferView;
 use crate::search::SearchMatch;
 
-/// Tier 1: Literal Search
-///
-/// Fast scan for simple string literals without regex compilation overhead.
-/// Uses the BufferView iterator directly to find matches.
+/// Fast literal scan over the buffer, no regex compilation.
 pub fn find_literal<V>(view: &V, pattern: &str, start_pos: usize) -> Option<SearchMatch>
 where
     V: BufferView,
@@ -15,10 +12,7 @@ where
         });
     }
 
-    // Smart Case Logic:
-    // If pattern contains any uppercase char, it's case-sensitive.
-    // If pattern is all lowercase, it's case-insensitive.
-    // Note: We check the original pattern string for uppercase.
+    // Smartcase: case-sensitive iff the pattern contains an uppercase char.
     let case_sensitive = pattern.chars().any(char::is_uppercase);
 
     if case_sensitive {
@@ -36,23 +30,15 @@ where
     let pattern_len = pattern_chars.len();
     let first_char = pattern_chars[0];
 
-    // Chunk boundary handling
-    // ───────────────────────
-    // The buffer may deliver its content in multiple contiguous chunks (e.g. the two
-    // halves of a piece-table entry). When a potential match starts near the *end* of a
-    // chunk there may not be enough characters remaining in that chunk to verify the full
-    // pattern inline (the "fast path" below). In that case we fall back to
-    // `check_match_slow`, which calls `view.iter_at` — an iterator that transparently
-    // crosses chunk boundaries. This means **no cross-chunk match is ever missed**.
-    //
-    // The fast path is only taken when `remaining_in_chunk >= pattern_len`, guaranteeing
-    // every character of the candidate slice is already in memory.
+    // A candidate near a chunk end may not have the full pattern in this chunk;
+    // those fall back to `check_match_slow` (via `iter_at`), which crosses chunk
+    // boundaries so no match is missed. The inline fast path is taken only when
+    // `remaining_in_chunk >= pattern_len`.
     let chunk_iter = view.iter_chunks_at(start_pos);
     let mut current_pos = start_pos;
 
     for chunk in chunk_iter {
         for (idx, &c) in chunk.iter().enumerate() {
-            // to_char_lossy is cheap for Unicode/Byte chars
             let ch = c.to_char_lossy();
             if ch == first_char {
                 let match_start = current_pos + idx;

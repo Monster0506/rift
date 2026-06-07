@@ -1,12 +1,5 @@
-//! Search functionality for Rift
-//!
-//! Implements efficient regex search over the buffer using a streaming `Haystack` implementation.
-//! This avoids allocating a contiguous string for the entire buffer.
-//!
-//! Supports:
-//! - Streaming search (zero-copy from buffer)
-//! - Rift-style pattern/flags parsing (via monster-regex)
-//! - Forward and Backward search
+//! Search over the buffer: a literal fast-path plus regex (via monster-regex),
+//! with forward/backward `find_next` and `find_all`.
 
 use crate::buffer::api::BufferView;
 use crate::error::{ErrorType, RiftError};
@@ -45,10 +38,6 @@ pub fn find_all(
 ) -> Result<(Vec<SearchMatch>, SearchStats), RiftError> {
     let t0 = std::time::Instant::now();
 
-    // Classification
-    // Tier 1: Literal Search
-
-    // We need a robust Classifier.
     let tier = classify_query(query);
 
     match tier {
@@ -60,7 +49,7 @@ pub fn find_all(
                 } else {
                     (pattern_orig, false)
                 };
-            // Unescape backslash sequences (e.g. `\.` → `.`) so the literal search
+            // Unescape backslash sequences (e.g. `\.` -> `.`) so the literal search
             // compares against the actual characters the user intends to match.
             let pattern = unescape_literal(&pattern_raw);
 
@@ -101,156 +90,50 @@ pub fn find_all(
                 },
             ))
         }
-        SearchTier::LineScoped => {
-            // ... existing line scoped implementation ...
-
-            let (re, pattern) = compile_regex(query)?;
-            let is_anchored = pattern.starts_with('^');
-
-            // Optimization: Inspect filter char for anchored search
-            let filter_char = if is_anchored {
-                // Skip ^
-                let mut chars = pattern.chars().skip(1);
-                chars.next().filter(|&c| c.is_alphanumeric())
-            } else {
-                None
-            };
-            // Smart case detection (same as Tier 1)
-            let case_sensitive = is_anchored && pattern.chars().any(char::is_uppercase);
-
-            let t1 = std::time::Instant::now();
-            let t2 = std::time::Instant::now(); // Index start (access cache)
-
-            let mut matches = Vec::new();
-
-            // Try to get cache lock
-            if let Some(cache_cell) = buffer.line_cache() {
-                let mut cache = cache_cell.borrow_mut();
-                let current_rev = buffer.revision();
-
-                'line_loop: for line_idx in 0..buffer.line_count() {
-                    let line_start_offset_char = buffer.line_start(line_idx);
-
-                    // Pre-filter for anchored search
-                    if let Some(fc) = filter_char {
-                        if let Some(c) = buffer.iter_at(line_start_offset_char).next() {
-                            let ch = c.to_char_lossy();
-                            if case_sensitive {
-                                if ch != fc {
-                                    continue 'line_loop;
-                                }
-                            } else {
-                                // Simple case-insensitive check
-                                if ch.to_lowercase().next() != fc.to_lowercase().next() {
-                                    continue 'line_loop;
-                                }
-                            }
-                        }
-                    }
-
-                    let line_text = cache.get_or_insert(line_idx, current_rev, || {
-                        // Materialize line
-                        let start = buffer.line_start(line_idx);
-                        let end = if line_idx + 1 < buffer.line_count() {
-                            buffer.line_start(line_idx + 1)
-                        } else {
-                            buffer.len()
-                        };
-                        // We need string.
-                        buffer
-                            .chars(start..end)
-                            .map(|c| c.to_char_lossy())
-                            .collect()
-                    });
-
-                    let haystack = line_text;
-
-                    if is_anchored {
-                        // Use find_all(...).next() to stop after first match/attempt
-                        if let Some(m) = re.find_all(haystack).next() {
-                            let match_len_chars = haystack[m.start..m.end].chars().count();
-                            let abs_start = line_start_offset_char; // relative start is 0
-                            let abs_end = abs_start + match_len_chars;
-
-                            matches.push(SearchMatch {
-                                range: abs_start..abs_end,
-                            });
-                        }
-                    } else {
-                        // Standard line search
-                        for m in re.find_all(haystack) {
-                            let relative_char_start = haystack[..m.start].chars().count();
-                            let match_len_chars = haystack[m.start..m.end].chars().count();
-
-                            let abs_start = line_start_offset_char + relative_char_start;
-                            let abs_end = abs_start + match_len_chars;
-
-                            matches.push(SearchMatch {
-                                range: abs_start..abs_end,
-                            });
-                        }
-                    }
-                }
-            } else {
-                return find_all_full_tier(buffer, query);
-            }
-
-            let t3 = std::time::Instant::now();
-            Ok((
-                matches,
-                SearchStats {
-                    compilation_time: t1 - t0,
-                    index_time: t2 - t1,
-                    search_time: t3 - t2,
-                },
-            ))
+        // All non-literal tiers share one O(N) path: materialize once and run the
+        // regex engine over a contiguous `&str`.
+        SearchTier::LineScoped | SearchTier::Full | SearchTier::Incremental => {
+            find_all_materialized(buffer, query, t0)
         }
-        SearchTier::Incremental => {
-            let t0 = std::time::Instant::now();
-            let (re, _) = compile_regex(query)?;
-            let t1 = std::time::Instant::now();
-
-            let context = BufferHaystackContext::new(buffer);
-            let haystack = context.make_haystack();
-            let t2 = std::time::Instant::now();
-
-            let mut matches = Vec::new();
-            let search_iter = IncrementalSearch::new(re, haystack);
-
-            for m in search_iter {
-                matches.push(m);
-            }
-
-            let t3 = std::time::Instant::now();
-            Ok((
-                matches,
-                SearchStats {
-                    compilation_time: t1 - t0,
-                    index_time: t2 - t1,
-                    search_time: t3 - t2,
-                },
-            ))
-        }
-
-        SearchTier::Full => find_all_full_tier(buffer, query),
     }
 }
 
-fn find_all_full_tier(
+/// Find all matches by materializing the buffer into one contiguous `&str` and
+/// running the regex over it. Multiline mode (forced in `compile_regex`) keeps
+/// `^`/`$` line-scoped. O(N), unlike the old per-line scan whose per-line
+/// `line_start` was O(N) on a single-piece buffer (overall O(N^2)).
+fn find_all_materialized(
     buffer: &impl BufferView,
     query: &str,
+    t0: std::time::Instant,
 ) -> Result<(Vec<SearchMatch>, SearchStats), RiftError> {
-    let t0 = std::time::Instant::now();
+    if let Some(lit) = required_literal(query) {
+        if find_literal(buffer, &lit, 0).is_none() {
+            return Ok((Vec::new(), SearchStats::default()));
+        }
+    }
+
     let (re, _) = compile_regex(query)?;
     let t1 = std::time::Instant::now();
 
-    let context = BufferHaystackContext::new(buffer);
-    let haystack = context.make_haystack();
+    let mut text = String::with_capacity(buffer.len());
+    for c in buffer.iter_at(0) {
+        text.push(c.to_char_lossy());
+    }
     let t2 = std::time::Instant::now();
 
+    // Engine byte offsets -> absolute char offsets; matches are ascending and
+    // non-overlapping, so one forward cursor keeps the conversion O(N).
     let mut matches = Vec::new();
-    for m in re.find_all_from(haystack) {
-        matches.push(convert_match(&haystack, m));
+    let mut base_byte = 0usize;
+    let mut base_char = 0usize;
+    for m in re.find_all(&text) {
+        base_char += text[base_byte..m.start].chars().count();
+        base_byte = m.start;
+        let end_char = base_char + text[m.start..m.end].chars().count();
+        matches.push(SearchMatch {
+            range: base_char..end_char,
+        });
     }
     let t3 = std::time::Instant::now();
 
@@ -348,41 +231,30 @@ fn extract_pattern(query: &str) -> String {
     query.to_string()
 }
 
-/// Returns true if `pattern` is a plain literal string with no unescaped regex metacharacters.
+/// Returns true if `pattern` is a plain literal with no unescaped regex metacharacters.
 ///
-/// Backslash-escaped metacharacters (e.g. `\.`, `\[`, `\\`) are treated as literal characters
-/// for classification purposes, since a regex engine will also match them literally.
-/// True regex constructs — character classes `[abc]`, quantifiers `*+?`, anchors `^$`,
-/// alternation `|`, groups `()`, and word boundaries `\b` — cause this to return false.
-///
-/// Examples:
-/// - `"hello"` → true   (no metacharacters)
-/// - `"hel.o"` → false  (unescaped `.`)
-/// - `"\.rs"`  → true   (escaped dot — matches literal ".rs")
-/// - `"^foo"`  → false  (unescaped anchor — caller handles anchored-literal as a special case)
-/// - `"[abc]"` → false  (character class)
-/// - `"\b"`    → false  (word-boundary assertion)
+/// Backslash-escaped metacharacters (`\.`, `\[`, `\\`) count as literal; real regex
+/// constructs (classes, quantifiers, anchors, alternation, groups, `\b`) do not.
 fn is_literal(pattern: &str) -> bool {
-    // Metacharacters that, when *unescaped*, make a pattern non-literal.
+    // Metacharacters that, when unescaped, make a pattern non-literal.
     const UNESCAPED_SPECIALS: &str = ".^$*+?()[]{}|";
 
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\\' {
             match chars.next() {
-                // Regex assertions / character-class shorthands — not literal.
+                // Assertions / class shorthands -> not literal.
                 Some('b') | Some('B') | Some('d') | Some('D') | Some('w') | Some('W')
                 | Some('s') | Some('S') | Some('A') | Some('Z') | Some('z') | Some('G') => {
                     return false;
                 }
-                // Control-character escapes — let the regex engine handle these.
+                // Control-character escapes -> let the regex engine handle these.
                 Some('n') | Some('t') | Some('r') => {
                     return false;
                 }
-                // \X where X is any other char (including metacharacters like \. \[ \\)
-                // → the pair matches that character literally; continue scanning.
+                // \X (incl. \. \[ \\): the pair is a literal char; keep scanning.
                 Some(_) => {}
-                // Trailing backslash → invalid, treat as non-literal.
+                // Trailing backslash: invalid, treat as non-literal.
                 None => return false,
             }
         } else if UNESCAPED_SPECIALS.contains(c) {
@@ -396,20 +268,15 @@ fn is_line_scoped(pattern: &str) -> bool {
     !pattern.contains("\\n") && !pattern.contains("(?s)")
 }
 
-/// Unescape a pattern that `is_literal` has approved.
-///
-/// Converts escape sequences like `\.` → `.`, `\\` → `\`, etc. back to the literal
-/// characters they represent, so the string can be fed to `find_literal` for a
-/// plain-text comparison rather than a regex match.
-///
-/// Only call this on patterns that `is_literal` returns `true` for.
+/// Unescape a literal pattern (`\.` -> `.`, `\\` -> `\`) for plain-text comparison.
+/// Only valid for patterns that `is_literal` approved.
 fn unescape_literal(pattern: &str) -> String {
     let mut out = String::with_capacity(pattern.len());
     let mut chars = pattern.chars();
     while let Some(c) = chars.next() {
         if c == '\\' {
             if let Some(next) = chars.next() {
-                // Push the escaped character literally (e.g. '\' + '.' → '.')
+                // Push the escaped character literally (e.g. \. -> .)
                 out.push(next);
             }
             // Trailing backslash: is_literal already rejects this, but be safe.
@@ -420,6 +287,39 @@ fn unescape_literal(pattern: &str) -> String {
     out
 }
 
+/// Longest mandatory ASCII literal run in a pattern: top-level unquantified
+/// `Literal` nodes only (excludes groups, alternation, optionals, repetition), so
+/// it must appear verbatim in every match. Lowercased for case-insensitive
+/// comparison (the most permissive check, so it never rejects a real match).
+///
+/// Used as a rejection gate: if this literal is absent from the buffer, the
+/// pattern cannot match and the engine is skipped. `None` if no run >= 2 chars.
+fn required_literal(query: &str) -> Option<String> {
+    let pattern = extract_pattern(query);
+    let ast = Parser::new(&pattern, monster_regex::Flags::default())
+        .parse()
+        .ok()?;
+
+    let mut best = String::new();
+    let mut current = String::new();
+    for node in &ast {
+        match node {
+            AstNode::Literal(c) if c.is_ascii() => current.push(c.to_ascii_lowercase()),
+            _ => {
+                if current.len() > best.len() {
+                    std::mem::swap(&mut best, &mut current);
+                }
+                current.clear();
+            }
+        }
+    }
+    if current.len() > best.len() {
+        best = current;
+    }
+
+    (best.len() >= 2).then_some(best)
+}
+
 /// Find the next occurrence of the pattern in the buffer.
 pub fn find_next(
     buffer: &impl BufferView,
@@ -427,52 +327,67 @@ pub fn find_next(
     query: &str,
     direction: SearchDirection,
 ) -> Result<(Option<SearchMatch>, SearchStats), RiftError> {
+    // Fast path: plain literals skip the engine entirely (chunk scan).
+    if let SearchTier::Literal = classify_query(query) {
+        return find_next_literal(buffer, start_pos, query, direction);
+    }
+
+    // Rejection gate: if a mandatory literal is absent, the pattern can't match.
+    if let Some(lit) = required_literal(query) {
+        if find_literal(buffer, &lit, 0).is_none() {
+            return Ok((None, SearchStats::default()));
+        }
+    }
+
     let t0 = std::time::Instant::now();
     let (re, _) = compile_regex(query)?;
     let t1 = std::time::Instant::now();
 
-    let context = BufferHaystackContext::new(buffer);
-    let haystack = context.make_haystack();
+    // Run the regex over a contiguous `&str`, far faster than the streaming
+    // `BufferHaystack` (whose per-char probes are O(log N) tree descents). Lossy
+    // chars match the haystack byte model, so offsets are identical.
+    let mut text = String::with_capacity(buffer.len());
+    let mut start_byte = None;
+    for (i, c) in buffer.iter_at(0).enumerate() {
+        if i == start_pos {
+            start_byte = Some(text.len());
+        }
+        text.push(c.to_char_lossy());
+    }
+    let start_byte = start_byte.unwrap_or(text.len());
     let t2 = std::time::Instant::now();
 
     let result = match direction {
         SearchDirection::Forward => {
-            // We need to map `start_pos` (code-point offset) to a byte offset for the regex engine.
-            let start_byte = char_to_byte_offset(buffer, start_pos);
-
-            // Search from start_byte
-            if let Some(m) = re.find_from_at(haystack, start_byte) {
-                Some(convert_match(&haystack, m))
-            } else {
-                // Wrap around: Search from 0
-                re.find_from(haystack).map(|m| convert_match(&haystack, m))
-            }
-        }
-        SearchDirection::Backward => {
-            // Backward search by iterating all matches (monster-regex doesn't support native reverse search yet)
-            let mut last_valid_match = None;
-            let start_byte = char_to_byte_offset(buffer, start_pos);
-
-            for m in re.find_all_from(haystack) {
-                if m.start < start_byte {
-                    last_valid_match = Some(m);
-                } else {
+            // First match at/after the cursor; otherwise wrap to the first match overall.
+            let mut first_overall: Option<(usize, usize)> = None;
+            let mut after: Option<(usize, usize)> = None;
+            for m in re.find_all(&text) {
+                if first_overall.is_none() {
+                    first_overall = Some((m.start, m.end));
+                }
+                if m.start >= start_byte {
+                    after = Some((m.start, m.end));
                     break;
                 }
             }
-
-            if let Some(m) = last_valid_match {
-                Some(convert_match(&haystack, m))
-            } else {
-                // Wrap around: Find the very last match in the file
-                re.find_all_from(haystack).last().and_then(|m| {
-                    if m.start >= start_byte {
-                        Some(convert_match(&haystack, m))
-                    } else {
-                        None
-                    }
-                })
+            after
+                .or(if start_pos > 0 { first_overall } else { None })
+                .map(|m| byte_range_to_char_match(&text, m))
+        }
+        SearchDirection::Backward => {
+            // Last match before the cursor; otherwise wrap to the last match overall.
+            let mut last_before: Option<(usize, usize)> = None;
+            let mut last_overall: Option<(usize, usize)> = None;
+            for m in re.find_all(&text) {
+                if m.start < start_byte {
+                    last_before = Some((m.start, m.end));
+                }
+                last_overall = Some((m.start, m.end));
             }
+            last_before
+                .or(last_overall)
+                .map(|m| byte_range_to_char_match(&text, m))
         }
     };
 
@@ -484,6 +399,107 @@ pub fn find_next(
             compilation_time: t1 - t0,
             index_time: t2 - t1,
             search_time: t3 - t2,
+        },
+    ))
+}
+
+/// Convert a byte range within a materialized string into a `SearchMatch` whose
+/// range is expressed in absolute code-point (char) offsets.
+fn byte_range_to_char_match(text: &str, (byte_start, byte_end): (usize, usize)) -> SearchMatch {
+    let char_start = text[..byte_start].chars().count();
+    let char_end = char_start + text[byte_start..byte_end].chars().count();
+    SearchMatch {
+        range: char_start..char_end,
+    }
+}
+
+/// Extract the literal pattern (and anchor flag) from a query already classified
+/// as `SearchTier::Literal`, mirroring the logic in `find_all`'s literal branch.
+fn literal_pattern(query: &str) -> (String, bool) {
+    let pattern_orig = extract_pattern(query);
+    let (pattern_raw, check_anchor) =
+        if pattern_orig.starts_with('^') && is_literal(&pattern_orig[1..]) {
+            (pattern_orig[1..].to_string(), true)
+        } else {
+            (pattern_orig, false)
+        };
+    (unescape_literal(&pattern_raw), check_anchor)
+}
+
+/// Find the first literal match at or after `from`, honoring an optional `^`
+/// line-start anchor.
+fn next_literal_match(
+    buffer: &impl BufferView,
+    pattern: &str,
+    check_anchor: bool,
+    from: usize,
+) -> Option<SearchMatch> {
+    let mut start_pos = from;
+    while let Some(m) = find_literal(buffer, pattern, start_pos) {
+        if check_anchor {
+            let is_start = m.range.start == 0
+                || buffer
+                    .iter_at(m.range.start - 1)
+                    .next()
+                    .map(|c| c.to_char_lossy() == '\n')
+                    .unwrap_or(false);
+            if !is_start {
+                start_pos = m.range.start + 1;
+                continue;
+            }
+        }
+        return Some(m);
+    }
+    None
+}
+
+/// Literal fast path for `find_next`. Avoids regex compilation and the streaming
+/// haystack entirely, scanning the buffer's chunk iterator directly.
+fn find_next_literal(
+    buffer: &impl BufferView,
+    start_pos: usize,
+    query: &str,
+    direction: SearchDirection,
+) -> Result<(Option<SearchMatch>, SearchStats), RiftError> {
+    let t0 = std::time::Instant::now();
+    let (pattern, check_anchor) = literal_pattern(query);
+    let t1 = std::time::Instant::now();
+
+    let result = match direction {
+        SearchDirection::Forward => {
+            // Search forward from the cursor; wrap to the start if nothing found.
+            next_literal_match(buffer, &pattern, check_anchor, start_pos).or_else(|| {
+                if start_pos > 0 {
+                    next_literal_match(buffer, &pattern, check_anchor, 0)
+                } else {
+                    None
+                }
+            })
+        }
+        SearchDirection::Backward => {
+            // Walk all matches, tracking the last one before the cursor (and the
+            // last one overall, for wrap-around behavior matching the regex path).
+            let mut last_before = None;
+            let mut last_overall = None;
+            let mut scan = 0;
+            while let Some(m) = next_literal_match(buffer, &pattern, check_anchor, scan) {
+                if m.range.start < start_pos {
+                    last_before = Some(m.clone());
+                }
+                scan = m.range.end.max(m.range.start + 1);
+                last_overall = Some(m);
+            }
+            last_before.or(last_overall)
+        }
+    };
+
+    let t2 = std::time::Instant::now();
+    Ok((
+        result,
+        SearchStats {
+            compilation_time: t1 - t0,
+            index_time: std::time::Duration::from_nanos(0),
+            search_time: t2 - t1,
         },
     ))
 }
@@ -630,10 +646,7 @@ impl<'a, B: BufferView + ?Sized> Iterator for IncrementalSearch<'a, B> {
     }
 }
 
-/// Create an incremental search iterator.
-///
-/// Requires a pre-built `BufferHaystackContext`. This allows the context (which may be expensive to build)
-/// to be reused or cached by the caller.
+/// Create an incremental search iterator over a pre-built `BufferHaystackContext`.
 pub fn find_iter<'a, 'c, B: BufferView + ?Sized>(
     context: &'c BufferHaystackContext<'a, B>,
     query: &str,
@@ -662,11 +675,9 @@ pub fn compile_regex(query: &str) -> Result<(RiftRegex, String), RiftError> {
         (query.to_string(), monster_regex::Flags::default())
     };
 
-    // Force multiline mode
     flags.multiline = true;
 
-    // 1. Try Linear Engine (purer, O(n))
-    // heuristic: if it has anchors, fallback to backtracking for now (debugging)
+    // Anchors go to the backtracking engine; otherwise prefer the linear engine.
     if pattern.contains('^') || pattern.contains('$') {
         let re = Regex::new(&pattern, flags).map_err(|e| {
             RiftError::new(
@@ -691,99 +702,6 @@ pub fn compile_regex(query: &str) -> Result<(RiftRegex, String), RiftError> {
             })?;
             Ok((RiftRegex::Backtracking(Arc::new(re)), pattern))
         }
-    }
-}
-
-/// Helper to convert a code-point offset to a byte offset using the buffer's structure.
-/// This matches the logic of `BufferHaystack`'s virtual buffer (byte counting).
-fn char_to_byte_offset(buffer: &impl BufferView, char_pos: usize) -> usize {
-    let line_idx = find_line_index(buffer, char_pos);
-    let line_start_char = buffer.line_start(line_idx);
-    let offset_in_line_chars = char_pos.saturating_sub(line_start_char);
-
-    let mut byte_offset = 0;
-    let mut found_start = false;
-
-    // Fast path: use cached byte map
-    if let Some(cell) = buffer.byte_line_map() {
-        if let Some(map) = cell.borrow().as_ref() {
-            if map.revision == buffer.revision() && line_idx < map.line_starts.len() {
-                byte_offset = map.line_starts[line_idx];
-                found_start = true;
-            }
-        }
-    }
-
-    if !found_start {
-        // Slow path: Sum previous lines manually (O(N))
-        for i in 0..line_idx {
-            let start = buffer.line_start(i);
-            let end = if i + 1 < buffer.line_count() {
-                buffer.line_start(i + 1)
-            } else {
-                buffer.len()
-            };
-            for c in buffer.chars(start..end) {
-                byte_offset += c.len_utf8();
-            }
-        }
-    }
-
-    // Add byte offset within the current line
-    // We only need to iterate "offset_in_line_chars" characters
-    let start = line_start_char;
-    let end = if line_idx + 1 < buffer.line_count() {
-        buffer.line_start(line_idx + 1)
-    } else {
-        buffer.len()
-    };
-
-    for (chars_counted, c) in buffer.chars(start..end).enumerate() {
-        if chars_counted == offset_in_line_chars {
-            break;
-        }
-        byte_offset += c.len_utf8();
-    }
-
-    byte_offset
-}
-
-/// Helper to find which line index a code-point offset belongs to.
-fn find_line_index(buffer: &impl BufferView, pos: usize) -> usize {
-    let line_count = buffer.line_count();
-    if line_count == 0 {
-        return 0;
-    }
-
-    let mut low = 0;
-    let mut high = line_count;
-
-    while low < high {
-        let mid = low + (high - low) / 2;
-        let start = buffer.line_start(mid);
-
-        if start == pos {
-            return mid;
-        } else if start < pos {
-            let next_start = if mid + 1 < line_count {
-                buffer.line_start(mid + 1)
-            } else {
-                buffer.len()
-            };
-
-            if pos < next_start {
-                return mid;
-            }
-            low = mid + 1;
-        } else {
-            high = mid;
-        }
-    }
-
-    if low > 0 {
-        low - 1
-    } else {
-        0
     }
 }
 

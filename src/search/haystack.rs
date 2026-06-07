@@ -78,10 +78,6 @@ impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
 
         line_byte_starts.push(0);
         line_char_starts.push(0);
-        // Note: In fallback without cache, we might not have efficient way to get char starts without scanning.
-        // But this path is for "BufferView without byte_line_map support" (e.g. MockBuffer).
-        // MockBuffer is small, so we can iterate.
-        // Or we can rely on `buffer.line_start` if available.
 
         for i in 0..line_count {
             let next_line_start_char = if i + 1 < line_count {
@@ -112,7 +108,6 @@ impl<'a, B: BufferView + ?Sized> BufferHaystackContext<'a, B> {
     }
 }
 
-// ... Copy/Clone impls ...
 impl<'a, B: BufferView + ?Sized> Clone for BufferHaystack<'a, B> {
     fn clone(&self) -> Self {
         *self
@@ -235,7 +230,7 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
             let mut debug_byte = 0usize;
             for c in self.buffer.iter_at(debug_line_char_start) {
                 if debug_byte == debug_offset {
-                    // We landed on a char boundary — assertion passes.
+                    // We landed on a char boundary - assertion passes.
                     break;
                 }
                 debug_byte += c.len_utf8();
@@ -271,13 +266,6 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
             if current_byte > offset_in_line {
                 return None; // Mid-character
             }
-            // Check if we passed newline (end of line scope for this haystack logic)
-            // Actually, haystack treats the whole file as contiguous bytes,
-            // but `find_line_for_byte` segments it.
-            // We just need to ensure we don't go forever.
-            // The loop naturally terminates if we overshoot offset_in_line.
-            // But for safety/correctness if multiple lines involved?
-            // find_line_for_byte guarantees pos is within line boundary bytes.
         }
 
         None

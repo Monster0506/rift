@@ -189,6 +189,35 @@ fn test_unicode_offsets() {
 }
 
 #[test]
+fn test_unicode_word_search_no_panic() {
+    // Regression: searching `\w` over non-ASCII content used to panic in the
+    // engine's byte start-filter (out of bounds) and miss non-ASCII word chars.
+    let buffer = MockBuffer::new(&["héllo wörld café"]);
+
+    let (m, _) = find_next(&buffer, 0, r"\w+", SearchDirection::Forward).unwrap();
+    assert_eq!(m.expect("\\w+ should match").range, 0..5); // "héllo"
+
+    let (all, _) = find_all(&buffer, r"\w+").unwrap();
+    let words: Vec<_> = all.iter().map(|m| m.range.clone()).collect();
+    assert_eq!(words, vec![0..5, 6..11, 12..16]); // héllo / wörld / café
+}
+
+#[test]
+fn test_lookbehind_non_ascii_no_panic() {
+    // Regression: lookbehind search over non-ASCII content used to panic in the
+    // engine (stepping through raw byte offsets, slicing mid-UTF-8).
+    let buffer = MockBuffer::new(&["äbc"]);
+
+    // (?<!x)b should match the 'b' at code-point 1.
+    let (m, _) = find_next(&buffer, 0, r"(?<!x)b", SearchDirection::Forward).unwrap();
+    assert_eq!(m.expect("(?<!x)b should match").range, 1..2);
+
+    // find_all of a lookbehind over multibyte text must not panic.
+    let (all, _) = find_all(&buffer, r"(?<!q).").unwrap();
+    assert_eq!(all.len(), 3); // ä, b, c
+}
+
+#[test]
 fn test_multiline_search() {
     let buffer = MockBuffer::new(&["line one", "line two"]);
 
@@ -307,7 +336,6 @@ fn test_find_all_incremental_integration() {
 #[test]
 fn test_large_file_search_performance_with_cache() {
     // This test uses actual `Document` to verify performance using the cache.
-    // Unlike MockBuffer, Document+TextBuffer has the `byte_map_cache` field.
     use crate::buffer::byte_map::ByteLineMap;
     use crate::document::Document;
 
@@ -324,7 +352,6 @@ fn test_large_file_search_performance_with_cache() {
     // Manually warm the cache (simulating CacheWarmingJob)
     {
         let buffer = &doc.buffer;
-        // Efficient O(N) cache warming (simulating CacheWarmingJob behavior)
         let mut current_byte_offset = 0;
         let mut current_char_offset = 0;
         let mut line_starts = vec![0];
@@ -352,8 +379,9 @@ fn test_large_file_search_performance_with_cache() {
     // Use perform_search directly from Document to mimic end-user action
     let result = doc.perform_search("nonexistent_string_12345", SearchDirection::Forward, false);
     let duration = start.elapsed();
+    eprintln!("[perf] warm-cache literal search took {:?}", duration);
 
-    let max_duration = if cfg!(debug_assertions) { 2500 } else { 200 };
+    let max_duration = if cfg!(debug_assertions) { 250 } else { 15 };
 
     assert!(
         duration.as_millis() < max_duration,
@@ -362,6 +390,112 @@ fn test_large_file_search_performance_with_cache() {
         max_duration
     );
     assert!(result.unwrap().0.is_none());
+}
+
+/// Complex searches over a ~1 MB buffer must each finish under 1 s (debug and
+/// release). Guards against blowups like the O(N^2) lookbehind that used to hang.
+/// Runs on a worker thread so a true hang fails at the budget instead of blocking.
+#[test]
+fn test_complex_query_search_within_time_budget() {
+    use std::sync::mpsc;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    // ~1 MB buffer: 20,000 identical lines (same size as the literal perf test).
+    let line = "This is a line of text to simulate a file content.";
+    let lines = vec![line; 20_000];
+    let buffer = Arc::new(MockBuffer::new(&lines));
+
+    // None of these patterns occur in the buffer, so every search is a full
+    // no-match scan - the worst case.
+    let queries: &[(&str, &str)] = &[
+        ("regex digit class", r"nonexistent_\d+"),
+        ("regex char class", r"zzz[a-z0-9]+qqq"),
+        ("regex alternation", r"(foo|bar|baz)_nonexistent"),
+        ("regex dot-star", r"simulate.*nonexistent"),
+        ("anchored regex", r"^nonexistent.*content$"),
+        ("negative lookahead", r"content(?>!\.)nonexistent"),
+        ("negative lookbehind", r"(?<!x)nonexistent_zzz"),
+        ("backreference", r"(\w+)_\1_nonexistent"),
+    ];
+
+    // Must hold in both debug and release builds.
+    let budget = Duration::from_secs(1);
+
+    for (label, query) in queries {
+        let buf = Arc::clone(&buffer);
+        let q = (*query).to_string();
+        let (tx, rx) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let matched = find_next(&*buf, 0, &q, SearchDirection::Forward)
+                .expect("search should not error")
+                .0
+                .is_some();
+            let _ = tx.send(matched);
+        });
+
+        match rx.recv_timeout(budget) {
+            Ok(matched) => {
+                assert!(
+                    !matched,
+                    "{label} ({query}) unexpectedly matched in the buffer"
+                );
+                handle.join().unwrap();
+            }
+            Err(_) => panic!(
+                "{label} ({query}) did not finish within {budget:?} \
+                 (catastrophic backtracking / O(N^2) regression?)"
+            ),
+        }
+    }
+}
+
+/// `find_all` (used by `:s` substitution and search highlight/count) must also
+/// stay fast on a freshly-loaded ~1 MB file with a *cold* cache.
+#[test]
+fn test_complex_find_all_within_time_budget() {
+    use crate::document::Document;
+    use std::time::Duration;
+
+    let mut doc = Document::new(1).unwrap();
+    let line = "This is a line of text to simulate a file content.\n";
+    let mut text = String::with_capacity(1_000_000);
+    for _ in 0..20_000 {
+        text.push_str(line);
+    }
+    doc.insert_str(&text).unwrap();
+    // Note: cache is left cold on purpose (no CacheWarmingJob / byte_line_map warm-up).
+
+    let queries: &[(&str, &str)] = &[
+        ("regex digit class", r"nonexistent_\d+"),
+        ("regex char class", r"zzz[a-z0-9]+qqq"),
+        ("regex alternation", r"(foo|bar|baz)_nonexistent"),
+        ("regex dot-star", r"simulate.*nonexistent"),
+        ("anchored regex", r"^nonexistent.*content$"),
+        ("negative lookahead", r"content(?>!\.)nonexistent"),
+        ("negative lookbehind", r"(?<!x)nonexistent_zzz"),
+        ("backreference", r"(\w+)_\1_nonexistent"),
+    ];
+
+    // Must hold in both debug and release builds.
+    let budget = Duration::from_secs(1);
+
+    for (label, query) in queries {
+        let start = std::time::Instant::now();
+        let (matches, _) = doc
+            .find_all_matches(query)
+            .expect("find_all should not error");
+        let elapsed = start.elapsed();
+        assert!(
+            matches.is_empty(),
+            "{label} ({query}) unexpectedly matched in the buffer"
+        );
+        assert!(
+            elapsed < budget,
+            "find_all for {label} ({query}) took {elapsed:?}, exceeds {budget:?} \
+             (O(N^2) line_start / streaming-haystack regression?)"
+        );
+    }
 }
 
 #[test]
@@ -377,8 +511,7 @@ fn test_smartcase_uppercase_no_hang_find_next() {
         tx.send(result).unwrap();
     });
 
-    // Wait at most 2 seconds — if it hangs, this will time out
-    match rx.recv_timeout(Duration::from_secs(2)) {
+    match rx.recv_timeout(Duration::from_secs(1)) {
         Ok(result) => {
             let (m, _stats) = result.unwrap();
             assert!(
@@ -407,7 +540,7 @@ fn test_smartcase_uppercase_no_hang_find_all() {
         tx.send(result).unwrap();
     });
 
-    match rx.recv_timeout(Duration::from_secs(2)) {
+    match rx.recv_timeout(Duration::from_secs(1)) {
         Ok(result) => {
             let (matches, _stats) = result.unwrap();
             assert!(
@@ -440,7 +573,7 @@ fn test_smartcase_uppercase_no_hang_with_document() {
         tx.send(result).unwrap();
     });
 
-    match rx.recv_timeout(Duration::from_secs(2)) {
+    match rx.recv_timeout(Duration::from_secs(1)) {
         Ok(result) => {
             let (m, _stats) = result.unwrap();
             assert!(
@@ -472,7 +605,7 @@ fn test_smartcase_coding_no_hang_with_document() {
         tx.send(result).unwrap();
     });
 
-    match rx.recv_timeout(Duration::from_secs(2)) {
+    match rx.recv_timeout(Duration::from_secs(1)) {
         Ok(result) => {
             let (m, _stats) = result.unwrap();
             assert!(
@@ -514,7 +647,7 @@ fn test_smartcase_various_letters_no_hang() {
             tx.send(result).unwrap();
         });
 
-        match rx.recv_timeout(Duration::from_secs(2)) {
+        match rx.recv_timeout(Duration::from_secs(1)) {
             Ok(result) => {
                 // Should not error
                 assert!(
