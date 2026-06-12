@@ -6,6 +6,22 @@ use crate::search::SearchDirection;
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
+/// Rebase a relative target onto `base_dir` only when it does not already resolve
+/// against the cwd; absolute paths and unresolved targets are returned unchanged.
+fn resolve_link_path_in(path_str: String, base_dir: Option<&std::path::Path>) -> String {
+    let p = std::path::Path::new(&path_str);
+    if p.is_absolute() || p.exists() {
+        return path_str;
+    }
+    if let Some(dir) = base_dir {
+        let candidate = dir.join(p);
+        if candidate.exists() {
+            return candidate.to_string_lossy().into_owned();
+        }
+    }
+    path_str
+}
+
 impl<T: TerminalBackend> Editor<T> {
     pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         self.document_manager.remove_document(id)?;
@@ -14,6 +30,17 @@ impl<T: TerminalBackend> Editor<T> {
         }
         self.sync_state_with_active_document();
         Ok(())
+    }
+
+    /// Resolve a relative target against the active document's directory when it
+    /// does not already resolve against the cwd, so links open next to their file.
+    fn resolve_link_path(&self, path_str: String) -> String {
+        let base = self
+            .document_manager
+            .active_document()
+            .and_then(|d| d.path())
+            .and_then(|p| p.parent().map(|x| x.to_path_buf()));
+        resolve_link_path_in(path_str, base.as_deref())
     }
 
     /// Open a file in a new document or reload the current one
@@ -27,6 +54,7 @@ impl<T: TerminalBackend> Editor<T> {
         // If no path, reload active (async).
 
         if let Some(path_str) = file_path {
+            let path_str = self.resolve_link_path(path_str);
             let path = std::path::PathBuf::from(&path_str);
             if self
                 .document_manager
@@ -183,5 +211,37 @@ impl<T: TerminalBackend> Editor<T> {
     /// Search for a pattern and jump to the first match.
     pub fn jump_to_pattern(&mut self, pattern: &str) {
         self.handle_action(&Action::Editor(EditorAction::Search(pattern.to_string())));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_link_path_in;
+
+    #[test]
+    fn resolve_link_rebases_onto_document_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("sibling_note_xyz.md");
+        std::fs::write(&target, "x").unwrap();
+
+        // A relative target that does not exist in the cwd resolves against the dir.
+        let got = resolve_link_path_in("sibling_note_xyz.md".to_string(), Some(dir.path()));
+        assert_eq!(got, target.to_string_lossy());
+
+        // A target that resolves against neither is returned unchanged.
+        assert_eq!(
+            resolve_link_path_in("missing_zzz.md".to_string(), Some(dir.path())),
+            "missing_zzz.md"
+        );
+
+        // An absolute path is never rebased.
+        let abs = target.to_string_lossy().into_owned();
+        assert_eq!(resolve_link_path_in(abs.clone(), Some(dir.path())), abs);
+
+        // With no document directory, the target is left as-is.
+        assert_eq!(
+            resolve_link_path_in("sibling_note_xyz.md".to_string(), None),
+            "sibling_note_xyz.md"
+        );
     }
 }

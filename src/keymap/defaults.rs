@@ -745,7 +745,6 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::PutSystemClipboard { before: true }),
     );
 
-    // LSP keybindings — also registered by runtime/plugins/lsp.lua (plugin overrides these)
     keymap.register_sequence(
         KeyContext::Normal,
         vec![Key::Char('g'), Key::Char('d')],

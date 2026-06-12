@@ -59,6 +59,119 @@ fn test_annotations_add_queues_mutation() {
 }
 
 #[test]
+fn test_annotations_add_returns_preclaimed_id() {
+    let host = make_host();
+    // Seed the next id the snapshot reports; add{} claims from there.
+    host.set_annotations(vec![], 7);
+    assert!(host
+        .exec(
+            r#"
+            _G.id1 = rift.annotations.add{ kind = "md.x", point = 0 }
+            _G.id2 = rift.annotations.add{ kind = "md.y", point = 1 }
+        "#
+        )
+        .is_none());
+    assert!(host.exec("assert(_G.id1 == 7, 'first id')").is_none());
+    assert!(host.exec("assert(_G.id2 == 8, 'second id')").is_none());
+    let muts = host.drain_mutations();
+    assert!(matches!(
+        &muts[0],
+        PluginMutation::AddAnnotation { id: 7, .. }
+    ));
+    assert!(matches!(
+        &muts[1],
+        PluginMutation::AddAnnotation { id: 8, .. }
+    ));
+}
+
+#[test]
+fn test_annotations_query_reads_snapshot() {
+    let host = make_host();
+    let mut payload = crate::annotations::Value::map();
+    payload.set("checked", crate::annotations::Value::Bool(true));
+    host.set_annotations(
+        vec![
+            AnnotationView {
+                id: 1,
+                kind: "ui.checkbox".into(),
+                owner: "plugin".into(),
+                anchor: "range",
+                start: 2,
+                end: 5,
+                payload,
+                visible: true,
+                interactive: true,
+            },
+            AnnotationView {
+                id: 2,
+                kind: "md.link".into(),
+                owner: "plugin".into(),
+                anchor: "point",
+                start: 10,
+                end: 10,
+                payload: crate::annotations::Value::Null,
+                visible: true,
+                interactive: false,
+            },
+        ],
+        3,
+    );
+    assert!(host
+        .exec(
+            r#"
+            local a = rift.annotations.get(1)
+            assert(a and a.kind == "ui.checkbox", "get by id")
+            assert(a.payload.checked == true, "payload round-trips")
+            assert(a.start == 2 and a["end"] == 5, "range offsets")
+            assert(rift.annotations.get(99) == nil, "missing id -> nil")
+            assert(#rift.annotations.at(3) == 1, "covered by range")
+            assert(#rift.annotations.at(7) == 0, "uncovered offset")
+            assert(#rift.annotations.at(10) == 1, "point at offset")
+            assert(#rift.annotations.in_range(0, 6) == 1, "range overlap")
+            assert(#rift.annotations.in_range(0, 20) == 2, "both in range")
+            assert(#rift.annotations.by_kind("md.") == 1, "by kind prefix")
+            assert(#rift.annotations.by_kind("ui.") == 1, "other prefix")
+        "#
+        )
+        .is_none());
+}
+
+#[test]
+fn test_annotations_update_queues_mutation() {
+    let host = make_host();
+    assert!(host
+        .exec(r#"rift.annotations.update(5, { visible = false, payload = { n = 1 } })"#)
+        .is_none());
+    let muts = host.drain_mutations();
+    assert_eq!(muts.len(), 1);
+    match &muts[0] {
+        PluginMutation::UpdateAnnotation {
+            id,
+            payload,
+            visible,
+            ..
+        } => {
+            assert_eq!(*id, 5);
+            assert_eq!(*visible, Some(false));
+            assert!(payload.is_some());
+        }
+        _ => panic!("expected UpdateAnnotation"),
+    }
+}
+
+#[test]
+fn test_annotations_clear_queues_mutation() {
+    let host = make_host();
+    assert!(host.exec(r#"rift.annotations.clear("md.")"#).is_none());
+    let mutations = host.drain_mutations();
+    assert_eq!(mutations.len(), 1);
+    match &mutations[0] {
+        PluginMutation::ClearAnnotations { kind_prefix } => assert_eq!(kind_prefix, "md."),
+        _ => panic!("expected ClearAnnotations"),
+    }
+}
+
+#[test]
 fn test_annotations_on_action_registers_and_invokes() {
     let host = make_host();
     assert!(host

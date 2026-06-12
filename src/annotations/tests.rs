@@ -11,6 +11,32 @@ fn test_create_directory_entry_assigns_unique_ids() {
 }
 
 #[test]
+fn test_add_with_id_keeps_next_id_ahead() {
+    let mut store = AnnotationStore::new();
+    let a = store.add(Annotation::new(
+        Kind::new("a.x"),
+        Anchor::point(0),
+        AnnotationOwner::User,
+    ));
+    assert_eq!(a, 1);
+    assert_eq!(store.peek_next_id(), 2);
+    // Insert under a pre-claimed higher id; next_id jumps past it.
+    store.add_with_id(
+        7,
+        Annotation::new(Kind::new("a.y"), Anchor::point(1), AnnotationOwner::User),
+    );
+    assert_eq!(store.peek_next_id(), 8);
+    assert!(store.get(7).is_some());
+    // A later auto-allocated id does not collide with the pre-claimed one.
+    let c = store.add(Annotation::new(
+        Kind::new("a.z"),
+        Anchor::point(2),
+        AnnotationOwner::User,
+    ));
+    assert_eq!(c, 8);
+}
+
+#[test]
 fn test_directory_entry_id_at_line_hit() {
     let mut store = AnnotationStore::new();
     store.create_directory_entry(3, 42);

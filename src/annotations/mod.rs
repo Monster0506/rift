@@ -47,6 +47,17 @@ impl AnnotationOwner {
             AnnotationOwner::Remote(_) => 4,
         }
     }
+
+    /// Stable string tag for the owner (provenance), e.g. for the Lua snapshot.
+    pub fn as_str(&self) -> &str {
+        match self {
+            AnnotationOwner::System => "system",
+            AnnotationOwner::Lsp => "lsp",
+            AnnotationOwner::Plugin(_) => "plugin",
+            AnnotationOwner::User => "user",
+            AnnotationOwner::Remote(_) => "remote",
+        }
+    }
 }
 
 /// Where an annotation lives in the buffer (design.md sec 7.3).
@@ -299,6 +310,22 @@ impl AnnotationStore {
         id
     }
 
+    /// The id the next `add` will assign. Lets a deferred producer (the Lua host)
+    /// pre-claim ids so `add` can report one synchronously.
+    pub fn peek_next_id(&self) -> AnnotationId {
+        self.next_id
+    }
+
+    /// Add an annotation under a caller-chosen id (e.g. one pre-claimed via
+    /// `peek_next_id`), keeping `next_id` ahead so later allocations never collide.
+    pub fn add_with_id(&mut self, id: AnnotationId, mut annotation: Annotation) -> AnnotationId {
+        annotation.id = id;
+        self.annotations.push(annotation);
+        self.next_id = self.next_id.max(id + 1);
+        self.invalidate_index();
+        id
+    }
+
     /// Mutate the annotation with the given id in place. Returns `false` if no
     /// such annotation exists.
     pub fn update(&mut self, id: AnnotationId, f: impl FnOnce(&mut Annotation)) -> bool {
@@ -417,7 +444,7 @@ impl AnnotationStore {
             let is_leading = match adornment.placement {
                 presentation::Placement::Overlay => false,
                 presentation::Placement::Leading => true,
-                presentation::Placement::Trailing => continue,
+                presentation::Placement::Trailing | presentation::Placement::Conceal => continue,
             };
             let (start, end) = match a.anchor {
                 Anchor::Point(p) => (p.offset, p.offset),
@@ -435,6 +462,25 @@ impl AnnotationStore {
         }
         out.sort_by_key(|(s, _, _, _, _)| *s);
         out
+    }
+
+    /// Byte ranges hidden by Conceal adornments (zero display width). The renderer
+    /// skips these cells except on the cursor's own line (design.md sec 8).
+    pub fn concealed_ranges(&self) -> Vec<(usize, usize)> {
+        self.annotations
+            .iter()
+            .filter(|a| a.visible)
+            .filter_map(|a| {
+                let ad = a.presentation.as_ref()?.adornment.as_ref()?;
+                if ad.placement != presentation::Placement::Conceal {
+                    return None;
+                }
+                match a.anchor {
+                    Anchor::Range(s, e) if s.offset < e.offset => Some((s.offset, e.offset)),
+                    _ => None,
+                }
+            })
+            .collect()
     }
 
     /// Total display width of Leading adornments anchored in `[start, end)`, used

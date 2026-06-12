@@ -27,6 +27,9 @@ pub enum Placement {
     Trailing,
     /// Over the anchor (e.g. button chrome).
     Overlay,
+    /// Hide the anchored range: zero display width, following text reflows left
+    /// (e.g. markdown emphasis markers). Revealed on the cursor's own line.
+    Conceal,
 }
 
 /// Inline style overrides; an escape hatch when a named face is not enough.

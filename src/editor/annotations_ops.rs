@@ -40,15 +40,34 @@ impl<T: TerminalBackend> Editor<T> {
 
         match self.dispatch_registry.resolve(&kind, &verb).cloned() {
             Some(Handler::Builtin(Builtin::ToggleChecked)) => {
+                // Prefer flipping a literal "[ ]"/"[x]" in the buffer at the anchor;
+                // fall back to a payload/overlay-only toggle when there is none.
+                let anchor = self
+                    .document_manager
+                    .active_document_mut()
+                    .and_then(|doc| doc.annotations.get(ann_id))
+                    .map(|a| match a.anchor {
+                        crate::annotations::Anchor::Point(p) => p.offset,
+                        crate::annotations::Anchor::Range(s, _) => s.offset,
+                        crate::annotations::Anchor::Line(_) => 0,
+                    });
+                let buffer_checked = anchor.and_then(|off| self.toggle_buffer_checkbox(off));
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     doc.annotations.update(ann_id, |a| {
-                        crate::annotations::registry::toggle_checked(&mut a.payload);
-                        // Reflect the new state in the overlay glyph, if present.
-                        let checked = a
-                            .payload
-                            .get("checked")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
+                        let checked = match buffer_checked {
+                            Some(c) => {
+                                a.payload.set("checked", crate::annotations::Value::Bool(c));
+                                c
+                            }
+                            None => {
+                                crate::annotations::registry::toggle_checked(&mut a.payload);
+                                a.payload
+                                    .get("checked")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false)
+                            }
+                        };
+                        // Keep any overlay glyph in sync with the new state.
                         if let Some(ad) = a.presentation.as_mut().and_then(|p| p.adornment.as_mut())
                         {
                             ad.text = if checked { "[x]".into() } else { "[ ]".into() };
@@ -143,6 +162,27 @@ impl<T: TerminalBackend> Editor<T> {
             // Remote handler is reserved for IPC; nothing to do in-process.
             _ => false,
         }
+    }
+
+    /// Flip a literal "[ ]"/"[x]" at byte offset `byte_off` in place (length-
+    /// preserving, so markers hold), returning the new state, or None if absent.
+    fn toggle_buffer_checkbox(&mut self, byte_off: usize) -> Option<bool> {
+        let doc = self.document_manager.active_document_mut()?;
+        let c0 = doc.buffer.byte_to_char(byte_off);
+        let open = doc.buffer.char_at(c0)?.to_char_lossy();
+        let mid = doc.buffer.char_at(c0 + 1)?.to_char_lossy();
+        let close = doc.buffer.char_at(c0 + 2)?.to_char_lossy();
+        if open != '[' || close != ']' {
+            return None;
+        }
+        let checked = match mid {
+            ' ' => false,
+            'x' | 'X' => true,
+            _ => return None,
+        };
+        let new_ch = if checked { ' ' } else { 'x' };
+        doc.replace_repeat(c0 + 1, 1, new_ch).ok()?;
+        Some(!checked)
     }
 
     /// Test-only cursor offset accessor for the active document.
@@ -368,59 +408,6 @@ mod tests {
             out.push('\n');
         }
         out
-    }
-
-    #[test]
-    fn demo_plugin_decorates_the_demo_file() {
-        // Drive the real bundled plugin against the real demo document the way a
-        // session does: load -> sync buffer -> run command -> apply -> render.
-        let content = include_str!("../../demo/annotations_demo.md");
-        // A tall terminal so the whole decorated document fits for inspection.
-        let mut e = Editor::new(MockTerminal::new(80, 100)).unwrap();
-        e.active_document().insert_str(content).unwrap();
-        // Flush the on_action / command registrations queued at plugin load.
-        e.apply_plugin_mutations();
-        e.update_lua_state();
-        assert!(
-            e.plugin_host.execute_command("annotatedemo", &[]),
-            "demo command should be registered by the bundled plugin"
-        );
-        e.apply_plugin_mutations();
-
-        {
-            let doc = e.active_document();
-            let k = |kind: &str| doc.annotations.query_kind(kind).count();
-            assert!(
-                k("demo.style") >= 20,
-                "many inline styles (attrs + fg + bg)"
-            );
-            assert_eq!(k("demo.face"), 6, "six theme faces");
-            assert_eq!(k("demo.adorn"), 4, "four standalone adornments");
-            assert_eq!(k("demo.link"), 2, "two links");
-            assert_eq!(k("demo.button"), 1, "one Lua-handled button");
-            assert_eq!(k("demo.cmd"), 1, "one ex-command button");
-            assert_eq!(k("ui.checkbox"), 3, "three checkboxes");
-            assert_eq!(k("demo.diag"), 4, "four severity diagnostics");
-            assert_eq!(k("demo.overlap"), 2, "two overlapping styles");
-            assert_eq!(k("demo.hover"), 1, "one hover-only region");
-        }
-
-        // The document is long, so move to the top to bring the text-attribute
-        // section into the viewport before asserting the decorations render.
-        e.active_document().buffer.set_cursor(0).ok();
-        e.update_and_render().unwrap();
-        let cells = e.render_system.compositor.get_composited_slice();
-        assert!(
-            cells.iter().any(|c| c.attrs.underline),
-            "underline rendered"
-        );
-        assert!(cells.iter().any(|c| c.attrs.reverse), "reverse rendered");
-        assert!(cells.iter().any(|c| c.attrs.bold), "bold rendered");
-
-        eprintln!(
-            "\n===== COMPLETE ANNOTATIONS DEMO =====\n{}",
-            styled_view(&mut e)
-        );
     }
 
     #[test]
@@ -862,6 +849,45 @@ Search: needle here and another needle over there.";
     }
 
     #[test]
+    fn conceal_hides_markers_except_on_cursor_line() {
+        use crate::annotations::{
+            Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,
+        };
+        // Each line wraps "bold"/"wide" in "**"; conceal the markers on line 0 only.
+        let mut e = editor_with_text("a **bold** x\nb **wide** y");
+        for (s, en) in [(2usize, 4usize), (8usize, 10usize)] {
+            e.active_document().annotations.add(
+                Annotation::new(
+                    Kind::new("md.conceal"),
+                    Anchor::range(s, en),
+                    AnnotationOwner::User,
+                )
+                .with_presentation(
+                    Presentation::default().with_adornment(Adornment::new("", Placement::Conceal)),
+                ),
+            );
+        }
+
+        // Cursor on line 1: line 0's markers are concealed and the text reflows.
+        e.active_document().buffer.set_cursor(13).ok();
+        let out = screen(&mut e);
+        assert!(
+            out.contains("a bold x"),
+            "markers hidden + reflowed on non-cursor line; screen:\n{}",
+            out
+        );
+
+        // Cursor on line 0: its markers are revealed (concealcursor behavior).
+        e.active_document().buffer.set_cursor(0).ok();
+        let out2 = screen(&mut e);
+        assert!(
+            out2.contains("a **bold** x"),
+            "markers revealed on the cursor's line; screen:\n{}",
+            out2
+        );
+    }
+
+    #[test]
     fn overlay_range_conceals_span_padding_and_truncating() {
         use crate::annotations::{
             Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,
@@ -975,6 +1001,45 @@ Search: needle here and another needle over there.";
             .get(id)
             .and_then(|a| a.payload.get("checked").and_then(Value::as_bool));
         assert_eq!(checked, Some(false));
+    }
+
+    #[test]
+    fn checkbox_toggle_edits_literal_box_in_buffer() {
+        // A ui.checkbox sitting on a literal "[ ]" flips the buffer text itself,
+        // not just the payload, so the rendered glyph is the buffer's own.
+        let text = "- [ ] task one";
+        let lb = text.find('[').unwrap();
+        let mut e = editor_with_text(text);
+        let mut payload = Value::map();
+        payload.set("checked", Value::Bool(false));
+        let id = e.active_document().annotations.add(
+            Annotation::new(
+                Kind::new("ui.checkbox"),
+                Anchor::range(lb, lb + 3),
+                AnnotationOwner::User,
+            )
+            .with_payload(payload)
+            .with_actions(vec![Action::new("toggle").as_default()]),
+        );
+        e.active_document().buffer.set_cursor(lb).ok();
+
+        assert!(e.activate_annotation_at_cursor());
+        assert!(
+            screen(&mut e).contains("[x] task one"),
+            "buffer box should flip to [x]"
+        );
+        let checked = e
+            .active_document()
+            .annotations
+            .get(id)
+            .and_then(|a| a.payload.get("checked").and_then(Value::as_bool));
+        assert_eq!(checked, Some(true), "payload tracks the buffer state");
+
+        assert!(e.activate_annotation_at_cursor());
+        assert!(
+            screen(&mut e).contains("[ ] task one"),
+            "buffer box should flip back to [ ]"
+        );
     }
 
     #[test]

@@ -251,6 +251,14 @@ impl<T: TerminalBackend> Editor<T> {
         let annotation_inline = doc
             .annotations
             .inline_adornments(state.settings.syntax_colors.as_ref());
+        // Conceal ranges, minus those on the cursor's line (reveal-on-cursor-line).
+        let cursor_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+        let annotation_concealed: Vec<(usize, usize)> = doc
+            .annotations
+            .concealed_ranges()
+            .into_iter()
+            .filter(|(s, _)| doc.buffer.line_index.get_line_at(*s) != cursor_line)
+            .collect();
 
         let state = render::RenderState {
             buf: &doc.buffer,
@@ -292,6 +300,11 @@ impl<T: TerminalBackend> Editor<T> {
                 None
             } else {
                 Some(&annotation_inline)
+            },
+            annotation_concealed: if annotation_concealed.is_empty() {
+                None
+            } else {
+                Some(&annotation_concealed)
             },
             terminal_cell_colors: if doc.terminal_cell_colors.is_empty() {
                 None
@@ -564,6 +577,13 @@ impl<T: TerminalBackend> Editor<T> {
             let annotation_inline = doc
                 .annotations
                 .inline_adornments(state.settings.syntax_colors.as_ref());
+            let cursor_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+            let annotation_concealed: Vec<(usize, usize)> = doc
+                .annotations
+                .concealed_ranges()
+                .into_iter()
+                .filter(|(s, _)| doc.buffer.line_index.get_line_at(*s) != cursor_line)
+                .collect();
 
             let ctx = render::DrawContext {
                 buf: &doc.buffer,
@@ -601,6 +621,11 @@ impl<T: TerminalBackend> Editor<T> {
                     None
                 } else {
                     Some(&annotation_inline)
+                },
+                annotation_concealed: if annotation_concealed.is_empty() {
+                    None
+                } else {
+                    Some(&annotation_concealed)
                 },
                 terminal_cell_colors: if doc.terminal_cell_colors.is_empty() {
                     None
@@ -733,6 +758,7 @@ impl<T: TerminalBackend> Editor<T> {
             annotation_styles: None,
             annotation_adornments: None,
             annotation_inline: None,
+            annotation_concealed: None,
             terminal_cell_colors: if focused_doc.terminal_cell_colors.is_empty() {
                 None
             } else {

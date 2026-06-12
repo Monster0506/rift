@@ -43,10 +43,11 @@ fn build_presentation(opts: &LuaTable) -> LuaResult<Option<crate::annotations::P
         });
     }
     if let Some(ad) = adorn_tbl {
-        let text: String = ad.get("text")?;
+        let text: String = ad.get::<Option<String>>("text")?.unwrap_or_default();
         let placement = match ad.get::<Option<String>>("placement")?.as_deref() {
             Some("leading") => Placement::Leading,
             Some("overlay") => Placement::Overlay,
+            Some("conceal") => Placement::Conceal,
             _ => Placement::Trailing,
         };
         let mut adornment = Adornment::new(text, placement);
@@ -108,11 +109,49 @@ pub struct BufEntry {
     pub is_read_only: bool,
 }
 
+/// A read-only view of one annotation for the `rift.annotations` query snapshot.
+#[derive(Debug, Clone)]
+pub struct AnnotationView {
+    pub id: u64,
+    pub kind: String,
+    pub owner: String,
+    /// "point", "range", or "line".
+    pub anchor: &'static str,
+    /// Byte offset (point/range start) or line number (line anchor).
+    pub start: usize,
+    /// Range end byte offset; equals `start` for point/line anchors.
+    pub end: usize,
+    pub payload: crate::annotations::Value,
+    pub visible: bool,
+    pub interactive: bool,
+}
+
+/// Build the Lua table a query function hands back for one annotation.
+fn annotation_view_to_table(lua: &Lua, v: &AnnotationView) -> LuaResult<LuaTable> {
+    let t = lua.create_table()?;
+    t.set("id", v.id)?;
+    t.set("kind", v.kind.as_str())?;
+    t.set("owner", v.owner.as_str())?;
+    t.set("anchor", v.anchor)?;
+    t.set("start", v.start as i64)?;
+    t.set("end", v.end as i64)?;
+    t.set("visible", v.visible)?;
+    t.set("interactive", v.interactive)?;
+    if let Ok(p) = v.payload.clone().into_lua(lua) {
+        t.set("payload", p)?;
+    }
+    Ok(t)
+}
+
 /// State shared between Lua API closures and the host.
 /// Stored behind `Arc<Mutex>` so closures can be `'static`.
 struct LuaSharedState {
     /// Mutations queued by Lua plugin calls; drained by `PluginHost`.
     mutations: Vec<PluginMutation>,
+    /// Snapshot of the active document's annotations, refreshed before dispatch.
+    annotations: Arc<Vec<AnnotationView>>,
+    /// The store's next id at snapshot time; `add{}` pre-claims ids from here.
+    next_annotation_id: u64,
     /// Snapshot of the active buffer's text lines, updated before each dispatch.
     buf_lines: Arc<Vec<String>>,
     /// Active buffer ID.
@@ -179,6 +218,8 @@ impl Default for LuaSharedState {
     fn default() -> Self {
         Self {
             mutations: Vec::new(),
+            annotations: Arc::new(vec![]),
+            next_annotation_id: 1,
             buf_lines: Arc::new(vec![]),
             buf_id: 0,
             buf_kind: "file".to_string(),
@@ -435,16 +476,28 @@ impl LuaHost {
                             actions.push((verb, default));
                         }
                     }
-                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                        PluginMutation::AddAnnotation {
+                    let visible: bool = opts.get::<Option<bool>>("visible")?.unwrap_or(true);
+                    let stickiness: Option<String> = opts.get("stickiness")?;
+                    let owner: Option<String> = opts.get("owner")?;
+                    // Pre-claim the id so add{} can return it synchronously.
+                    let id = {
+                        let mut s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                        let id = s.next_annotation_id;
+                        s.next_annotation_id += 1;
+                        s.mutations.push(PluginMutation::AddAnnotation {
+                            id,
                             kind,
                             anchor,
                             payload,
                             presentation,
                             actions,
-                        },
-                    );
-                    Ok(())
+                            visible,
+                            stickiness,
+                            owner,
+                        });
+                        id
+                    };
+                    Ok(id)
                 })?;
                 annotations.set("add", f)?;
             }
@@ -460,6 +513,126 @@ impl LuaHost {
                     Ok(())
                 })?;
                 annotations.set("remove", f)?;
+            }
+
+            // rift.annotations.update(id, { payload=, visible=, style/face/... }):
+            // unset fields are left as-is; presentation rebuilds only if any given.
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, (id, opts): (u64, LuaTable)| {
+                    let payload = match opts.get::<LuaValue>("payload")? {
+                        LuaValue::Table(t) => Some(crate::annotations::Value::from_lua_table(&t)?),
+                        _ => None,
+                    };
+                    let visible: Option<bool> = opts.get("visible")?;
+                    let presentation = build_presentation(&opts)?;
+                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
+                        PluginMutation::UpdateAnnotation {
+                            id,
+                            payload,
+                            visible,
+                            presentation,
+                        },
+                    );
+                    Ok(())
+                })?;
+                annotations.set("update", f)?;
+            }
+
+            // Queries read the pre-dispatch snapshot (like rift.get_lines), so they
+            // do not reflect adds queued earlier in the same handler.
+
+            // rift.annotations.get(id) -> table | nil
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |lua, id: u64| {
+                    let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                    match s.annotations.iter().find(|v| v.id == id) {
+                        Some(v) => Ok(Some(annotation_view_to_table(lua, v)?)),
+                        None => Ok(None),
+                    }
+                })?;
+                annotations.set("get", f)?;
+            }
+
+            // rift.annotations.at(byte_offset) -> array of tables
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |lua, offset: i64| {
+                    let off = offset.max(0) as usize;
+                    let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                    let out = lua.create_table()?;
+                    let mut i = 1;
+                    for v in s.annotations.iter() {
+                        let hit = match v.anchor {
+                            "point" => v.start == off,
+                            "range" => v.start <= off && off < v.end,
+                            _ => false,
+                        };
+                        if hit {
+                            out.set(i, annotation_view_to_table(lua, v)?)?;
+                            i += 1;
+                        }
+                    }
+                    Ok(out)
+                })?;
+                annotations.set("at", f)?;
+            }
+
+            // rift.annotations.in_range(start, end) -> array of tables
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |lua, (start, end_): (i64, i64)| {
+                    let s0 = start.max(0) as usize;
+                    let e0 = (end_.max(start)) as usize;
+                    let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                    let out = lua.create_table()?;
+                    let mut i = 1;
+                    for v in s.annotations.iter() {
+                        let hit = match v.anchor {
+                            "point" => v.start >= s0 && v.start < e0,
+                            "range" => v.start < e0 && v.end > s0,
+                            _ => false,
+                        };
+                        if hit {
+                            out.set(i, annotation_view_to_table(lua, v)?)?;
+                            i += 1;
+                        }
+                    }
+                    Ok(out)
+                })?;
+                annotations.set("in_range", f)?;
+            }
+
+            // rift.annotations.by_kind(prefix) -> array of tables (kind starts_with)
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |lua, prefix: String| {
+                    let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                    let out = lua.create_table()?;
+                    let mut i = 1;
+                    for v in s.annotations.iter().filter(|v| v.kind.starts_with(&prefix)) {
+                        out.set(i, annotation_view_to_table(lua, v)?)?;
+                        i += 1;
+                    }
+                    Ok(out)
+                })?;
+                annotations.set("by_kind", f)?;
+            }
+
+            // rift.annotations.clear(kind_prefix) - drop every annotation whose
+            // kind starts with the prefix (e.g. a plugin clearing its own "md.").
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, prefix: String| {
+                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
+                        PluginMutation::ClearAnnotations {
+                            kind_prefix: prefix,
+                        },
+                    );
+                    Ok(())
+                })?;
+                annotations.set("clear", f)?;
             }
 
             // rift.annotations.on_action(kind, verb, fn(ctx))
@@ -1998,6 +2171,14 @@ end
 "#).set_name("rift:prelude").exec()?;
 
         Ok(Self { lua, shared })
+    }
+
+    /// Refresh the annotation query snapshot and the id the next `add{}` claims.
+    /// Call alongside `update_state` before dispatching.
+    pub fn set_annotations(&self, views: Vec<AnnotationView>, next_id: u64) {
+        let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+        s.annotations = Arc::new(views);
+        s.next_annotation_id = next_id;
     }
 
     /// Update the buffer snapshot that `rift.get_lines()` and friends read.

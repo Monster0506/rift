@@ -127,6 +127,7 @@ fn render_loop(c: &mut Criterion) {
                     annotation_styles: None,
                     annotation_adornments: None,
                     annotation_inline: None,
+                    annotation_concealed: None,
                     terminal_cell_colors: None,
                     show_line_numbers: true,
                     display_map: None,

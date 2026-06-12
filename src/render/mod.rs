@@ -55,6 +55,9 @@ pub struct ContentDrawState {
     pub search_matches_count: usize,
     /// Number of plugin custom highlights (to trigger redraw when highlights change)
     pub plugin_highlights_len: usize,
+    /// Hash of the active conceal ranges (which depend on the cursor line), so
+    /// moving onto/off a concealed line redraws. Zero when nothing is concealed.
+    pub conceal_hash: u64,
     /// Theme/Color context
     pub editor_bg: Option<crate::color::Color>,
     pub editor_fg: Option<crate::color::Color>,
@@ -166,6 +169,8 @@ pub struct RenderState<'a> {
     pub annotation_adornments: Option<&'a [(usize, String, Color)]>,
     /// Inline (Overlay/Leading) adornments (byte_offset, text, color, is_leading).
     pub annotation_inline: Option<&'a [InlineAdornment]>,
+    /// Byte ranges hidden by Conceal adornments (already excluding the cursor line).
+    pub annotation_concealed: Option<&'a [(usize, usize)]>,
     /// Per-character fg+bg colors from the terminal emulator (terminal documents only).
     pub terminal_cell_colors: Option<&'a [crate::color::CellColorSpan]>,
     /// Per-document line number override (AND-ed with global setting).
@@ -184,6 +189,7 @@ pub struct DrawContext<'a> {
     pub annotation_styles: Option<&'a [(std::ops::Range<usize>, crate::layer::CellStyle)]>,
     pub annotation_adornments: Option<&'a [(usize, String, Color)]>,
     pub annotation_inline: Option<&'a [InlineAdornment]>,
+    pub annotation_concealed: Option<&'a [(usize, usize)]>,
     pub terminal_cell_colors: Option<&'a [crate::color::CellColorSpan]>,
     pub pending_count: usize,
     pub state: &'a State,
@@ -538,6 +544,7 @@ fn render_line(
     let inline = ctx.annotation_inline.unwrap_or(&[]);
     let mut inline_cols: Vec<(Option<usize>, Option<usize>)> = vec![(None, None); inline.len()];
 
+    let concealed = ctx.annotation_concealed.unwrap_or(&[]);
     for item in layout {
         if rendered_col >= content_cols {
             reached_line_end = false;
@@ -546,6 +553,15 @@ fn render_line(
 
         if item.char == Character::Newline {
             break;
+        }
+
+        // Zero-width conceal: drop this char's cell and width so following text
+        // reflows left. Cursor-line ranges are pre-excluded (revealed).
+        if concealed
+            .iter()
+            .any(|(s, e)| item.byte_offset >= *s && item.byte_offset < *e)
+        {
+            continue;
         }
 
         let width = item.width;

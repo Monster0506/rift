@@ -113,6 +113,16 @@ impl RenderSystem {
             },
             search_matches_count: ctx.state.search_matches.len(),
             plugin_highlights_len: ctx.plugin_highlights.map(|h| h.len()).unwrap_or(0),
+            conceal_hash: {
+                let mut h: u64 = 0;
+                for (s, e) in ctx.annotation_concealed.unwrap_or(&[]) {
+                    h = h.wrapping_mul(6364136223846793005).wrapping_add(*s as u64);
+                    h = h
+                        .wrapping_mul(6364136223846793005)
+                        .wrapping_add(*e as u64 + 1);
+                }
+                h
+            },
             editor_bg: ctx.state.settings.editor_bg,
             editor_fg: ctx.state.settings.editor_fg,
             theme: ctx.state.settings.theme.clone(),
@@ -357,6 +367,7 @@ impl RenderSystem {
             annotation_styles: state.annotation_styles,
             annotation_adornments: state.annotation_adornments,
             annotation_inline: state.annotation_inline,
+            annotation_concealed: state.annotation_concealed,
             terminal_cell_colors: state.terminal_cell_colors,
             show_line_numbers: state.show_line_numbers,
             display_map: state.display_map,

@@ -172,6 +172,38 @@ impl<T: TerminalBackend> Editor<T> {
             previous_win_id,
             lsp_diagnostics,
         );
+
+        // Refresh the annotation query snapshot + the next id add{} will claim.
+        use crate::annotations::Anchor;
+        use crate::plugin::lua_host::AnnotationView;
+        let (annotations, next_id) = if let Some(doc) = self.document_manager.active_document() {
+            let views = doc
+                .annotations
+                .iter()
+                .map(|a| {
+                    let (anchor, start, end) = match a.anchor {
+                        Anchor::Point(p) => ("point", p.offset, p.offset),
+                        Anchor::Range(s, e) => ("range", s.offset, e.offset),
+                        Anchor::Line(l) => ("line", l, l),
+                    };
+                    AnnotationView {
+                        id: a.id,
+                        kind: a.kind.as_str().to_string(),
+                        owner: a.owner.as_str().to_string(),
+                        anchor,
+                        start,
+                        end,
+                        payload: a.payload.clone(),
+                        visible: a.visible,
+                        interactive: a.is_interactive(),
+                    }
+                })
+                .collect();
+            (views, doc.annotations.peek_next_id())
+        } else {
+            (Vec::new(), 1)
+        };
+        self.plugin_host.lua_set_annotations(annotations, next_id);
     }
 
     pub(super) fn adjust_plugin_highlights_for_edits(&mut self) {
@@ -289,48 +321,85 @@ impl<T: TerminalBackend> Editor<T> {
                     self.state.notify(level, message);
                 }
                 PluginMutation::AddAnnotation {
+                    id,
                     kind,
                     anchor,
                     payload,
                     presentation,
                     actions,
+                    visible,
+                    stickiness,
+                    owner,
                 } => {
-                    use crate::annotations::{Action, Anchor, Annotation, AnnotationOwner, Kind};
+                    use crate::annotations::{
+                        Action, Anchor, Annotation, AnnotationOwner, Kind, Stickiness,
+                    };
                     use crate::plugin::AnnotationAnchorSpec;
                     let anchor = match anchor {
                         AnnotationAnchorSpec::Line(l) => Anchor::Line(l),
                         AnnotationAnchorSpec::Point(p) => Anchor::point(p),
                         AnnotationAnchorSpec::Range(s, e) => Anchor::range(s, e),
                     };
-                    let mut ann = Annotation::new(
-                        Kind::new(kind),
-                        anchor,
-                        AnnotationOwner::Plugin(String::new()),
-                    )
-                    .with_payload(payload)
-                    .with_actions(
-                        actions
-                            .into_iter()
-                            .map(|(verb, default)| {
-                                let a = Action::new(verb);
-                                if default {
-                                    a.as_default()
-                                } else {
-                                    a
-                                }
-                            })
-                            .collect(),
-                    );
+                    let owner = match owner.as_deref() {
+                        Some("system") => AnnotationOwner::System,
+                        Some("lsp") => AnnotationOwner::Lsp,
+                        Some("user") => AnnotationOwner::User,
+                        _ => AnnotationOwner::Plugin(String::new()),
+                    };
+                    let mut ann = Annotation::new(Kind::new(kind), anchor, owner)
+                        .with_payload(payload)
+                        .with_visible(visible)
+                        .with_actions(
+                            actions
+                                .into_iter()
+                                .map(|(verb, default)| {
+                                    let a = Action::new(verb);
+                                    if default {
+                                        a.as_default()
+                                    } else {
+                                        a
+                                    }
+                                })
+                                .collect(),
+                        );
+                    if matches!(stickiness.as_deref(), Some("persist")) {
+                        ann = ann.with_stickiness(Stickiness::Persist);
+                    }
                     if let Some(pres) = presentation {
                         ann = ann.with_presentation(pres);
                     }
                     if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.annotations.add(ann);
+                        doc.annotations.add_with_id(id, ann);
+                    }
+                }
+                PluginMutation::UpdateAnnotation {
+                    id,
+                    payload,
+                    visible,
+                    presentation,
+                } => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        doc.annotations.update(id, |a| {
+                            if let Some(p) = payload {
+                                a.payload = p;
+                            }
+                            if let Some(v) = visible {
+                                a.visible = v;
+                            }
+                            if let Some(pres) = presentation {
+                                a.presentation = Some(pres);
+                            }
+                        });
                     }
                 }
                 PluginMutation::RemoveAnnotation(id) => {
                     if let Some(doc) = self.document_manager.active_document_mut() {
                         doc.annotations.remove(id);
+                    }
+                }
+                PluginMutation::ClearAnnotations { kind_prefix } => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        doc.annotations.clear_by_kind_prefix(&kind_prefix);
                     }
                 }
                 PluginMutation::RegisterAnnotationAction {

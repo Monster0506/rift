@@ -161,16 +161,30 @@ pub enum PluginMutation {
     LspDiagnosticPrev,
     /// Open the diagnostics panel.
     LspDiagnosticsPanel,
-    /// Add an annotation to the active document (plugin-authored).
+    /// Add an annotation to the active document (plugin-authored). `id` is the
+    /// caller pre-claimed id (so `add{}` can return it synchronously).
     AddAnnotation {
+        id: u64,
         kind: String,
         anchor: AnnotationAnchorSpec,
         payload: crate::annotations::Value,
         presentation: Option<crate::annotations::Presentation>,
         actions: Vec<(String, bool)>,
+        visible: bool,
+        stickiness: Option<String>,
+        owner: Option<String>,
+    },
+    /// Mutate an existing annotation in place; `None` fields are left unchanged.
+    UpdateAnnotation {
+        id: u64,
+        payload: Option<crate::annotations::Value>,
+        visible: Option<bool>,
+        presentation: Option<crate::annotations::Presentation>,
     },
     /// Remove an annotation from the active document by id.
     RemoveAnnotation(u64),
+    /// Remove every annotation in the active document whose kind starts with this prefix.
+    ClearAnnotations { kind_prefix: String },
     /// Register a handler for an annotation (kind, verb). With `command` set, the
     /// verb runs that ex command; otherwise it routes back to the Lua host.
     RegisterAnnotationAction {
@@ -582,6 +596,17 @@ impl PluginHost {
                 previous_win_id,
                 lsp_diagnostics,
             );
+        }
+    }
+
+    /// Refresh the `rift.annotations` query snapshot and the next `add{}` id.
+    pub fn lua_set_annotations(
+        &self,
+        views: Vec<crate::plugin::lua_host::AnnotationView>,
+        next_id: u64,
+    ) {
+        if let Some(lua) = &self.lua {
+            lua.set_annotations(views, next_id);
         }
     }
 
