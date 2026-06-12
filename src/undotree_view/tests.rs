@@ -289,7 +289,7 @@ fn test_render_tree_to_text_connector_lines_have_max_seq() {
 
     let (_text, seqs, _hl) = render_tree_to_text(&tree);
     // With 2 branches from root, there should be at least one connector line (MAX sentinel)
-    let has_connector = seqs.iter().any(|&s| s == EditSeq::MAX);
+    let has_connector = seqs.contains(&EditSeq::MAX);
     assert!(
         has_connector,
         "branching tree must produce connector lines with MAX sentinel"

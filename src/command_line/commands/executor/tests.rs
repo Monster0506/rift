@@ -46,13 +46,13 @@ fn test_execute_set_number_true() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.show_line_numbers, true);
+    assert!(state.settings.show_line_numbers);
 }
 
 #[test]
 fn test_execute_set_number_false() {
     let mut state = State::new();
-    assert_eq!(state.settings.show_line_numbers, true); // Default
+    assert!(state.settings.show_line_numbers); // Default
 
     let command = ParsedCommand::Set {
         option: "number".to_string(),
@@ -71,7 +71,7 @@ fn test_execute_set_number_false() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.show_line_numbers, false);
+    assert!(!state.settings.show_line_numbers);
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn test_execute_set_number_boolean_variants() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.show_line_numbers, true);
+    assert!(state.settings.show_line_numbers);
 
     // Test "off"
     let command = ParsedCommand::Set {
@@ -138,7 +138,7 @@ fn test_execute_set_number_boolean_variants() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.show_line_numbers, false);
+    assert!(!state.settings.show_line_numbers);
 
     // Test "yes"
     let command = ParsedCommand::Set {
@@ -157,7 +157,7 @@ fn test_execute_set_number_boolean_variants() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.show_line_numbers, true);
+    assert!(state.settings.show_line_numbers);
 
     // Test "no"
     let command = ParsedCommand::Set {
@@ -176,7 +176,7 @@ fn test_execute_set_number_boolean_variants() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.show_line_numbers, false);
+    assert!(!state.settings.show_line_numbers);
 
     // Test "1"
     let command = ParsedCommand::Set {
@@ -195,7 +195,7 @@ fn test_execute_set_number_boolean_variants() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.show_line_numbers, true);
+    assert!(state.settings.show_line_numbers);
 
     // Test "0"
     let command = ParsedCommand::Set {
@@ -214,7 +214,7 @@ fn test_execute_set_number_boolean_variants() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.show_line_numbers, false);
+    assert!(!state.settings.show_line_numbers);
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn test_execute_set_number_case_insensitive() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.show_line_numbers, false);
+    assert!(!state.settings.show_line_numbers);
 }
 
 #[test]
@@ -563,7 +563,7 @@ fn test_execute_set_multiple_options() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.show_line_numbers, false);
+    assert!(!state.settings.show_line_numbers);
 
     // Set command_line.min_width to 50
     let command = ParsedCommand::Set {
@@ -601,10 +601,10 @@ fn test_execute_set_multiple_options() {
         &document_settings_registry,
     );
     assert_eq!(result, ExecutionResult::Redraw);
-    assert_eq!(state.settings.show_line_numbers, true);
+    assert!(state.settings.show_line_numbers);
 
     // Verify both settings are correct
-    assert_eq!(state.settings.show_line_numbers, true);
+    assert!(state.settings.show_line_numbers);
     assert_eq!(state.settings.command_line_window.min_width, 50);
 }
 
@@ -757,7 +757,7 @@ fn test_execute_set_case_insensitive_option_names() {
     }
 
     // Final state
-    assert_eq!(state.settings.show_line_numbers, false);
+    assert!(!state.settings.show_line_numbers);
     assert_eq!(state.settings.command_line_window.min_width, 8);
 }
 

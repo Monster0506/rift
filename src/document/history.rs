@@ -1,4 +1,4 @@
-//! Document undo/redo — transactions, history navigation, replay.
+//! Document undo/redo: transactions, history navigation, replay.
 
 use super::Document;
 use crate::buffer::TextBuffer;
@@ -12,10 +12,8 @@ impl Document {
             let mut tx = EditTransaction::new(description);
             tx.cursor_before = Some(self.buffer.cursor());
             self.current_transaction = Some(tx);
-            if self.is_directory() {
-                self.pending_annotation_snapshot =
-                    Some(self.annotations.directory_entries_by_line());
-            }
+            // Capture the full annotation state before the transaction's edits.
+            self.pending_annotation_snapshot = Some(self.annotations.snapshot());
         }
     }
 
@@ -30,8 +28,8 @@ impl Document {
                 if !tx.is_empty() {
                     self.history.push(tx, None);
                     if let Some(snapshot) = self.pending_annotation_snapshot.take() {
-                        self.dir_annotation_undo_stack.push(snapshot);
-                        self.dir_annotation_redo_stack.clear();
+                        self.annotation_undo_stack.push(snapshot);
+                        self.annotation_redo_stack.clear();
                     }
                 } else {
                     self.pending_annotation_snapshot = None;
@@ -64,12 +62,11 @@ impl Document {
         self.history.undo();
         self.mark_dirty();
 
-        if self.is_directory() {
-            if let Some(snapshot) = self.dir_annotation_undo_stack.pop() {
-                let current = self.annotations.directory_entries_by_line();
-                self.dir_annotation_redo_stack.push(current);
-                self.restore_annotation_snapshot(snapshot);
-            }
+        // Restore the pre-edit annotation positions; stash the current (post-edit)
+        // state for redo. The buffer was reverted above, so these now align.
+        if let Some(snapshot) = self.annotation_undo_stack.pop() {
+            self.annotation_redo_stack.push(self.annotations.snapshot());
+            self.annotations.restore(snapshot);
         }
 
         if let Some(syntax) = &mut self.syntax {
@@ -97,12 +94,11 @@ impl Document {
             self.apply_operation(&op);
         }
 
-        if self.is_directory() {
-            if let Some(snapshot) = self.dir_annotation_redo_stack.pop() {
-                let current = self.annotations.directory_entries_by_line();
-                self.dir_annotation_undo_stack.push(current);
-                self.restore_annotation_snapshot(snapshot);
-            }
+        // Restore the post-edit annotation positions; stash the current (pre-edit)
+        // state back onto the undo stack.
+        if let Some(snapshot) = self.annotation_redo_stack.pop() {
+            self.annotation_undo_stack.push(self.annotations.snapshot());
+            self.annotations.restore(snapshot);
         }
 
         self.mark_dirty();
@@ -111,13 +107,6 @@ impl Document {
             syntax.invalidate_trees();
         }
         true
-    }
-
-    fn restore_annotation_snapshot(&mut self, snapshot: Vec<(usize, u16)>) {
-        self.annotations.clear();
-        for (line, entry_id) in snapshot {
-            self.annotations.create_directory_entry(line, entry_id);
-        }
     }
 
     /// Apply an edit operation to this document's buffer (used by undo/redo).

@@ -1,4 +1,4 @@
-use crate::annotations::{Anchor, AnnotationKind, AnnotationOwner, AnnotationStore};
+use crate::annotations::{payload, Anchor, AnnotationOwner, AnnotationStore};
 
 #[test]
 fn create_lsp_diagnostic_stores_annotation() {
@@ -9,8 +9,11 @@ fn create_lsp_diagnostic_stores_annotation() {
     let diags: Vec<_> = store.lsp_diagnostics().collect();
     assert_eq!(diags.len(), 1);
     assert_eq!(diags[0].anchor, Anchor::Line(5));
-    assert_eq!(diags[0].tooltip.as_deref(), Some("[error] type mismatch"));
-    assert_eq!(diags[0].kind, AnnotationKind::LspDiagnostic);
+    assert_eq!(
+        payload::tooltip(&diags[0].payload),
+        Some("[error] type mismatch")
+    );
+    assert_eq!(diags[0].kind.as_str(), "lsp.diagnostic");
     assert_eq!(diags[0].owner, AnnotationOwner::Lsp);
 }
 

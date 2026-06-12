@@ -28,6 +28,159 @@ fn test_notify_queues_mutation() {
 }
 
 #[test]
+fn test_annotations_add_queues_mutation() {
+    let host = make_host();
+    assert!(host
+        .exec(
+            r#"rift.annotations.add{ kind="ui.checkbox", line=3, payload={checked=false},
+                actions={ {verb="toggle", default=true} } }"#
+        )
+        .is_none());
+    let mutations = host.drain_mutations();
+    assert_eq!(mutations.len(), 1);
+    match &mutations[0] {
+        PluginMutation::AddAnnotation {
+            kind,
+            anchor,
+            payload,
+            actions,
+            ..
+        } => {
+            assert_eq!(kind, "ui.checkbox");
+            assert_eq!(*anchor, crate::plugin::AnnotationAnchorSpec::Line(3));
+            assert_eq!(
+                payload.get("checked"),
+                Some(&crate::annotations::Value::Bool(false))
+            );
+            assert_eq!(actions, &vec![("toggle".to_string(), true)]);
+        }
+        _ => panic!("expected AddAnnotation"),
+    }
+}
+
+#[test]
+fn test_annotations_on_action_registers_and_invokes() {
+    let host = make_host();
+    assert!(host
+        .exec(
+            r#"
+            _G.ran_verb = nil
+            rift.annotations.on_action("test.runnable", "run", function(ctx)
+                _G.ran_verb = ctx.verb
+                _G.ran_cmd = ctx.payload.cmd
+                _G.ran_param = ctx.params.scope
+            end)
+        "#
+        )
+        .is_none());
+    let mutations = host.drain_mutations();
+    assert!(mutations.iter().any(|m| matches!(
+        m,
+        PluginMutation::RegisterAnnotationAction { kind, verb, .. }
+            if kind == "test.runnable" && verb == "run"
+    )));
+
+    let mut payload = crate::annotations::Value::map();
+    payload.set(
+        "cmd",
+        crate::annotations::Value::Str("cargo test foo".into()),
+    );
+    let mut params = crate::annotations::Value::map();
+    params.set("scope", crate::annotations::Value::Str("file".into()));
+    let ctx = crate::plugin::AnnotationActionCtx {
+        annotation_id: 7,
+        kind: "test.runnable".into(),
+        verb: "run".into(),
+        payload,
+        params,
+        position: 0,
+        buffer: 1,
+    };
+    assert!(host.invoke_annotation_action(&ctx));
+    assert!(host.exec("assert(_G.ran_verb == 'run')").is_none());
+    assert!(host
+        .exec("assert(_G.ran_cmd == 'cargo test foo')")
+        .is_none());
+    // The action's serializable params reach the handler (design.md sec 9.1).
+    assert!(host.exec("assert(_G.ran_param == 'file')").is_none());
+}
+
+#[test]
+fn test_annotations_register_kind_queues_mutation() {
+    let host = make_host();
+    assert!(host
+        .exec(
+            r#"rift.annotations.register_kind("vcs.hunk", {
+                face = "diff.added",
+                style = { underline = true },
+                description = "a staged hunk",
+            })"#
+        )
+        .is_none());
+    let mutations = host.drain_mutations();
+    assert_eq!(mutations.len(), 1);
+    match &mutations[0] {
+        PluginMutation::RegisterKindDefaults {
+            kind,
+            presentation,
+            description,
+        } => {
+            assert_eq!(kind, "vcs.hunk");
+            assert_eq!(description.as_deref(), Some("a staged hunk"));
+            let pres = presentation.as_ref().expect("presentation built");
+            assert_eq!(pres.face.as_ref().map(|f| f.0.as_str()), Some("diff.added"));
+            assert!(pres.style.as_ref().map(|s| s.underline).unwrap_or(false));
+        }
+        _ => panic!("expected RegisterKindDefaults"),
+    }
+}
+
+#[test]
+fn test_annotations_enter_leave_hooks_invoke() {
+    let host = make_host();
+    assert!(host
+        .exec(
+            r#"
+            _G.entered = nil
+            _G.left = nil
+            rift.annotations.on_enter("ui.link", function(ctx)
+                _G.entered = ctx.annotation_id
+                _G.entered_href = ctx.payload.href
+            end)
+            rift.annotations.on_leave("ui.link", function(ctx)
+                _G.left = ctx.annotation_id
+            end)
+        "#
+        )
+        .is_none());
+
+    let mut payload = crate::annotations::Value::map();
+    payload.set("href", crate::annotations::Value::Str("docs.md".into()));
+    let ctx = crate::plugin::AnnotationHoverCtx {
+        annotation_id: 42,
+        kind: "ui.link".into(),
+        payload,
+        position: 3,
+        buffer: 1,
+    };
+    assert!(host.invoke_annotation_hook(true, &ctx));
+    assert!(host.exec("assert(_G.entered == 42)").is_none());
+    assert!(host.exec("assert(_G.entered_href == 'docs.md')").is_none());
+    assert!(host.invoke_annotation_hook(false, &ctx));
+    assert!(host.exec("assert(_G.left == 42)").is_none());
+
+    // A kind with no registered hook does nothing.
+    let other = crate::plugin::AnnotationHoverCtx {
+        annotation_id: 1,
+        kind: "ui.button".into(),
+        payload: crate::annotations::Value::Null,
+        position: 0,
+        buffer: 1,
+    };
+    assert!(!host.invoke_annotation_hook(true, &other));
+}
+
+#[test]
 fn test_append_lines_queues_mutation() {
     let host = make_host();
     assert!(host.exec("rift.append_lines({'line1', 'line2'})").is_none());

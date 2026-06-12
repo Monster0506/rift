@@ -421,9 +421,10 @@ impl DoubleBuffer {
         // Hide cursor during rendering
         term.hide_cursor()?;
 
-        // Track current colors to minimize escape sequences
+        // Track current colors/attrs to minimize escape sequences
         let mut current_fg: Option<Color> = None;
         let mut current_bg: Option<Color> = None;
+        let mut current_attrs = crate::layer::CellAttrs::default();
         let mut last_cursor_pos: Option<(usize, usize)> = None;
 
         for batch in batches {
@@ -432,13 +433,19 @@ impl DoubleBuffer {
                 &batch,
                 &mut current_fg,
                 &mut current_bg,
+                &mut current_attrs,
                 &mut last_cursor_pos,
             )?;
         }
 
-        // Reset colors at end
+        // Reset colors and attributes at end
         let mut reset_buf = Vec::new();
         queue!(reset_buf, ResetColor).map_err(|e| format!("Failed to reset colors: {e}"))?;
+        if !current_attrs.is_empty() {
+            use crossterm::style::{Attribute, SetAttribute};
+            queue!(reset_buf, SetAttribute(Attribute::Reset))
+                .map_err(|e| format!("Failed to reset attrs: {e}"))?;
+        }
         term.write(&reset_buf)?;
 
         term.flush().map_err(|e| format!("Failed to flush: {e}"))?;
@@ -456,10 +463,13 @@ impl DoubleBuffer {
         batch: &CellBatch,
         current_fg: &mut Option<Color>,
         current_bg: &mut Option<Color>,
+        current_attrs: &mut crate::layer::CellAttrs,
         last_cursor_pos: &mut Option<(usize, usize)>,
     ) -> Result<(), String> {
         use crossterm::queue;
-        use crossterm::style::{ResetColor, SetBackgroundColor, SetForegroundColor};
+        use crossterm::style::{
+            Attribute, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
+        };
 
         if batch.cells.is_empty() {
             return Ok(());
@@ -483,9 +493,9 @@ impl DoubleBuffer {
         let mut cmd_buf = Vec::new();
 
         for cell in batch.cells.iter() {
-            // Check if we need to change colors
-            if cell.fg != *current_fg || cell.bg != *current_bg {
-                // Flush current text output before color change
+            // Check if we need to change colors or attributes
+            if cell.fg != *current_fg || cell.bg != *current_bg || cell.attrs != *current_attrs {
+                // Flush current text output before the style change
                 if !output.is_empty() {
                     term.write(output.as_bytes())?;
                     output.clear();
@@ -517,6 +527,39 @@ impl DoubleBuffer {
                             .map_err(|e| format!("Failed to set bg: {e}"))?;
                         *current_bg = Some(bg);
                     }
+                }
+
+                // Emit attribute deltas with per-attribute on/off so colors are
+                // unaffected (avoids a full SGR reset).
+                if cell.attrs != *current_attrs {
+                    let a = cell.attrs;
+                    let c = *current_attrs;
+                    let mut set = |on: bool, was: bool, yes: Attribute, no: Attribute| {
+                        if on != was {
+                            let _ = queue!(cmd_buf, SetAttribute(if on { yes } else { no }));
+                        }
+                    };
+                    set(a.bold, c.bold, Attribute::Bold, Attribute::NormalIntensity);
+                    set(a.italic, c.italic, Attribute::Italic, Attribute::NoItalic);
+                    set(
+                        a.underline,
+                        c.underline,
+                        Attribute::Underlined,
+                        Attribute::NoUnderline,
+                    );
+                    set(
+                        a.strike,
+                        c.strike,
+                        Attribute::CrossedOut,
+                        Attribute::NotCrossedOut,
+                    );
+                    set(
+                        a.reverse,
+                        c.reverse,
+                        Attribute::Reverse,
+                        Attribute::NoReverse,
+                    );
+                    *current_attrs = cell.attrs;
                 }
 
                 term.write(&cmd_buf)?;

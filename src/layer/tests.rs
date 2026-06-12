@@ -433,7 +433,7 @@ fn test_layer_dirty_rects_capping() {
         union = union.union(r);
     }
 
-    assert!(union.start_row <= 0);
+    assert_eq!(union.start_row, 0);
     assert!(union.end_row >= 20); // 10*2 = 20
 }
 

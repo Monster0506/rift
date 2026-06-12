@@ -12,13 +12,19 @@ impl<T: TerminalBackend> Editor<T> {
             let doc = self.document_manager.active_document_mut().unwrap();
             match doc.find_all_matches(&query) {
                 Ok((matches, _)) => {
+                    // Render highlights through ui.search annotations, not a decorator.
+                    doc.sync_search_annotations(&matches, None);
                     self.state.search_matches = matches;
                 }
                 Err(_) => {
+                    doc.clear_search_annotations();
                     self.state.search_matches.clear();
                 }
             }
         } else {
+            if let Some(doc) = self.document_manager.active_document_mut() {
+                doc.clear_search_annotations();
+            }
             self.state.search_matches.clear();
         }
     }

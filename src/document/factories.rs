@@ -1,4 +1,4 @@
-//! Document factory constructors — `Document::new`, `from_file`, `new_terminal`, etc.
+//! Document factory constructors: `Document::new`, `from_file`, `new_terminal`, etc.
 
 use super::definitions;
 use super::{BufferKind, Document, LineEnding, ViewState};
@@ -22,6 +22,7 @@ impl Document {
             options: DocumentOptions::default(),
             file_path: None,
             is_read_only: false,
+            interface_mode: false,
             syntax: None,
             history: UndoTree::new(),
             current_transaction: None,
@@ -36,8 +37,9 @@ impl Document {
             highlight_slots: std::collections::HashMap::new(),
             annotations: AnnotationStore::new(),
             pending_annotation_snapshot: None,
-            dir_annotation_undo_stack: Vec::new(),
-            dir_annotation_redo_stack: Vec::new(),
+            annotation_undo_stack: Vec::new(),
+            annotation_redo_stack: Vec::new(),
+            document_version: 0,
         })
     }
 
@@ -85,6 +87,7 @@ impl Document {
             },
             file_path: Some(Self::normalize_path(path)),
             is_read_only: false,
+            interface_mode: false,
             syntax: None,
             history: UndoTree::new(),
             current_transaction: None,
@@ -99,8 +102,9 @@ impl Document {
             highlight_slots: std::collections::HashMap::new(),
             annotations: AnnotationStore::new(),
             pending_annotation_snapshot: None,
-            dir_annotation_undo_stack: Vec::new(),
-            dir_annotation_redo_stack: Vec::new(),
+            annotation_undo_stack: Vec::new(),
+            annotation_redo_stack: Vec::new(),
+            document_version: 0,
         })
     }
 
@@ -125,6 +129,7 @@ impl Document {
                 },
                 file_path: None,
                 is_read_only: false,
+                interface_mode: false,
                 syntax: None,
                 history: UndoTree::new(),
                 current_transaction: None,
@@ -139,8 +144,9 @@ impl Document {
                 highlight_slots: std::collections::HashMap::new(),
                 annotations: AnnotationStore::new(),
                 pending_annotation_snapshot: None,
-                dir_annotation_undo_stack: Vec::new(),
-                dir_annotation_redo_stack: Vec::new(),
+                annotation_undo_stack: Vec::new(),
+                annotation_redo_stack: Vec::new(),
+                document_version: 0,
             },
             rx,
         ))
@@ -157,7 +163,10 @@ impl Document {
                 ..DocumentOptions::default()
             },
             file_path: None,
+            // The explorer is the canonical interface-mode buffer: its rows are
+            // fs.entry annotations activated through the dispatch registry.
             is_read_only: false,
+            interface_mode: true,
             syntax: None,
             history: UndoTree::new(),
             current_transaction: None,
@@ -176,8 +185,9 @@ impl Document {
             highlight_slots: std::collections::HashMap::new(),
             annotations: AnnotationStore::new(),
             pending_annotation_snapshot: None,
-            dir_annotation_undo_stack: Vec::new(),
-            dir_annotation_redo_stack: Vec::new(),
+            annotation_undo_stack: Vec::new(),
+            annotation_redo_stack: Vec::new(),
+            document_version: 0,
         })
     }
 
@@ -196,6 +206,7 @@ impl Document {
             },
             file_path: None,
             is_read_only: true,
+            interface_mode: true,
             syntax: None,
             history: UndoTree::new(),
             current_transaction: None,
@@ -213,8 +224,9 @@ impl Document {
             highlight_slots: std::collections::HashMap::new(),
             annotations: AnnotationStore::new(),
             pending_annotation_snapshot: None,
-            dir_annotation_undo_stack: Vec::new(),
-            dir_annotation_redo_stack: Vec::new(),
+            annotation_undo_stack: Vec::new(),
+            annotation_redo_stack: Vec::new(),
+            document_version: 0,
         })
     }
 
@@ -231,7 +243,10 @@ impl Document {
                 ..linked.options.clone()
             },
             file_path: linked.file_path.clone(),
+            // A read-only mirror of the linked file's content, not an actionable
+            // interface buffer, so navigation stays line-by-line.
             is_read_only: true,
+            interface_mode: false,
             syntax: None,
             history: linked.history.clone(),
             current_transaction: None,
@@ -246,8 +261,9 @@ impl Document {
             highlight_slots: std::collections::HashMap::new(),
             annotations: AnnotationStore::new(),
             pending_annotation_snapshot: None,
-            dir_annotation_undo_stack: Vec::new(),
-            dir_annotation_redo_stack: Vec::new(),
+            annotation_undo_stack: Vec::new(),
+            annotation_redo_stack: Vec::new(),
+            document_version: 0,
         })
     }
 
@@ -263,6 +279,7 @@ impl Document {
             },
             file_path: None,
             is_read_only: false,
+            interface_mode: false,
             syntax: None,
             history: UndoTree::new(),
             current_transaction: None,
@@ -277,8 +294,9 @@ impl Document {
             highlight_slots: std::collections::HashMap::new(),
             annotations: AnnotationStore::new(),
             pending_annotation_snapshot: None,
-            dir_annotation_undo_stack: Vec::new(),
-            dir_annotation_redo_stack: Vec::new(),
+            annotation_undo_stack: Vec::new(),
+            annotation_redo_stack: Vec::new(),
+            document_version: 0,
         })
     }
 
@@ -293,6 +311,7 @@ impl Document {
             },
             file_path: None,
             is_read_only: false,
+            interface_mode: false,
             syntax: None,
             history: UndoTree::new(),
             current_transaction: None,
@@ -307,8 +326,9 @@ impl Document {
             highlight_slots: std::collections::HashMap::new(),
             annotations: AnnotationStore::new(),
             pending_annotation_snapshot: None,
-            dir_annotation_undo_stack: Vec::new(),
-            dir_annotation_redo_stack: Vec::new(),
+            annotation_undo_stack: Vec::new(),
+            annotation_redo_stack: Vec::new(),
+            document_version: 0,
         })
     }
 }

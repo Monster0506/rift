@@ -67,6 +67,10 @@ impl TerminalBackend for MockTerminal {
     fn clear_to_end_of_line(&mut self) -> Result<(), String> {
         Ok(())
     }
+
+    fn set_cursor_shape(&mut self, _shape: monster_rift::term::CursorShape) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 fn render_loop(c: &mut Criterion) {
@@ -112,7 +116,20 @@ fn render_loop(c: &mut Criterion) {
                     tab_width: 4,
                     highlights: None,
                     capture_map: None,
-                    modal: None,
+                    injection_highlights: None,
+                    skip_content: false,
+                    cursor_row_offset: 0,
+                    cursor_col_offset: 0,
+                    cursor_viewport: None,
+                    terminal_cursor: None,
+                    custom_highlights: None,
+                    plugin_highlights: None,
+                    annotation_styles: None,
+                    annotation_adornments: None,
+                    annotation_inline: None,
+                    terminal_cell_colors: None,
+                    show_line_numbers: true,
+                    display_map: None,
                 };
 
                 // Measure the full render pass

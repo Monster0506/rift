@@ -927,7 +927,7 @@ fn test_tf_move_still_stops_one_before_target() {
 }
 
 #[test]
-fn test_dG_deletes_from_cursor_to_end_of_file() {
+fn test_dg_deletes_from_cursor_to_end_of_file() {
     use crate::action::{Action, EditorAction, OperatorType};
 
     let mut editor = create_editor();
@@ -942,9 +942,8 @@ fn test_dG_deletes_from_cursor_to_end_of_file() {
 }
 
 #[test]
-fn test_dG_with_count_deletes_to_specific_line() {
+fn test_dg_with_count_deletes_to_specific_line() {
     use crate::action::{Action, EditorAction, OperatorType};
-    use crate::buffer::api::BufferView;
 
     let mut editor = create_editor();
     load_text(&mut editor, "line1\nline2\nline3\nline4\n");
@@ -956,13 +955,13 @@ fn test_dG_with_count_deletes_to_specific_line() {
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
     let doc = editor.active_document();
-    assert!(doc.buffer.len() > 0);
+    assert!(!doc.buffer.is_empty());
     let remaining = doc.buffer.get_total_lines();
     assert!(remaining <= 3);
 }
 
 #[test]
-fn test_G_outside_operator_pending_just_moves_cursor() {
+fn test_g_outside_operator_pending_just_moves_cursor() {
     use crate::action::{Action, EditorAction};
     use crate::buffer::api::BufferView;
 

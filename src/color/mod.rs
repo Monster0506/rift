@@ -20,7 +20,7 @@ pub type CellColorSpans = Vec<CellColorSpan>;
 
 /// Color representation wrapping crossterm's Color enum
 /// Supports 16 colors, 256 colors, and RGB colors
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Color {
     /// Reset to default color
     Reset,
@@ -76,6 +76,36 @@ impl Color {
             Color::Ansi256(n) => CrosstermColor::AnsiValue(n),
             Color::Rgb { r, g, b } => CrosstermColor::Rgb { r, g, b },
         }
+    }
+
+    /// Parse a named color ("red", "darkblue", ...) or a `#rrggbb` hex string.
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Color> {
+        Some(match s.to_lowercase().as_str() {
+            "red" => Color::Red,
+            "darkred" => Color::DarkRed,
+            "green" => Color::Green,
+            "darkgreen" => Color::DarkGreen,
+            "blue" => Color::Blue,
+            "darkblue" => Color::DarkBlue,
+            "yellow" => Color::Yellow,
+            "darkyellow" => Color::DarkYellow,
+            "cyan" => Color::Cyan,
+            "darkcyan" => Color::DarkCyan,
+            "magenta" => Color::Magenta,
+            "darkmagenta" => Color::DarkMagenta,
+            "white" => Color::White,
+            "black" => Color::Black,
+            "grey" | "gray" => Color::Grey,
+            "darkgrey" | "darkgray" => Color::DarkGrey,
+            hex if hex.starts_with('#') && hex.len() == 7 => {
+                let r = u8::from_str_radix(&hex[1..3], 16).ok()?;
+                let g = u8::from_str_radix(&hex[3..5], 16).ok()?;
+                let b = u8::from_str_radix(&hex[5..7], 16).ok()?;
+                Color::Rgb { r, g, b }
+            }
+            _ => return None,
+        })
     }
 
     /// Create from crossterm Color

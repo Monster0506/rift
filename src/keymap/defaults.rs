@@ -771,6 +771,24 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         vec![Key::Char('['), Key::Char('d')],
         Action::Editor(EditorAction::LspDiagnosticPrev),
     );
+    // Interactive annotation navigation + activation (design.md sec 9.4).
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char(']'), Key::Char('a')],
+        Action::Editor(EditorAction::NextInteractiveAnnotation),
+    );
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char('['), Key::Char('a')],
+        Action::Editor(EditorAction::PrevInteractiveAnnotation),
+    );
+    // Enter activates the interactive annotation under the cursor (rebindable
+    // via `annotation:activate`; it is otherwise unbound in Normal mode).
+    keymap.register(
+        KeyContext::Normal,
+        Key::Enter,
+        Action::Editor(EditorAction::ActivateAnnotation),
+    );
     keymap.register_sequence(
         KeyContext::Normal,
         vec![Key::Char(' '), Key::Char('f')],

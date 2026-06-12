@@ -9,17 +9,12 @@ use crate::test_utils::MockTerminal;
 
 fn process_jobs(editor: &mut Editor<MockTerminal>) {
     use std::time::Duration;
-    loop {
-        match editor
-            .job_manager
-            .receiver()
-            .recv_timeout(Duration::from_millis(100))
-        {
-            Ok(msg) => {
-                editor.handle_job_message(msg).unwrap();
-            }
-            Err(_) => break,
-        }
+    while let Ok(msg) = editor
+        .job_manager
+        .receiver()
+        .recv_timeout(Duration::from_millis(100))
+    {
+        editor.handle_job_message(msg).unwrap();
     }
 }
 
@@ -551,7 +546,7 @@ fn single_window_no_border_highlight() {
 
     editor.update_and_render().unwrap();
 
-    let cols = editor.render_system.compositor.cols();
+    let _cols = editor.render_system.compositor.cols();
     let cells = editor.render_system.compositor.get_composited_slice();
     let divider_chars: Vec<_> = cells
         .iter()

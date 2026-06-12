@@ -41,7 +41,7 @@ fn set_tab_width(settings: &mut UserSettings, value: SettingValue) -> Result<(),
 fn set_width_ratio(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
     match value {
         SettingValue::Float(f) => {
-            if f < 0.0 || f > 1.0 {
+            if !(0.0..=1.0).contains(&f) {
                 return Err(SettingError::ValidationError(
                     "width_ratio must be between 0.0 and 1.0".to_string(),
                 ));
@@ -126,7 +126,7 @@ fn create_test_registry() -> SettingsRegistry<UserSettings> {
 fn test_setting_value_debug() {
     assert_eq!(format!("{:?}", SettingValue::Bool(true)), "Bool(true)");
     assert_eq!(format!("{:?}", SettingValue::Integer(42)), "Integer(42)");
-    assert_eq!(format!("{:?}", SettingValue::Float(3.14)), "Float(3.14)");
+    assert_eq!(format!("{:?}", SettingValue::Float(2.5)), "Float(2.5)");
     assert_eq!(
         format!("{:?}", SettingValue::Enum("test".to_string())),
         "Enum(\"test\")"
@@ -405,7 +405,7 @@ fn test_execute_setting_boolean() {
         crate::command_line::commands::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    assert_eq!(settings.expand_tabs, false);
+    assert!(!settings.expand_tabs);
 
     let result = registry.execute_setting(
         "expandtabs",
@@ -418,7 +418,7 @@ fn test_execute_setting_boolean() {
         crate::command_line::commands::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    assert_eq!(settings.expand_tabs, true);
+    assert!(settings.expand_tabs);
 
     let result = registry.execute_setting(
         "et",
@@ -431,7 +431,7 @@ fn test_execute_setting_boolean() {
         crate::command_line::commands::ExecutionResult::Success
     ));
     settings = state.settings.clone();
-    assert_eq!(settings.expand_tabs, false);
+    assert!(!settings.expand_tabs);
 }
 
 #[test]

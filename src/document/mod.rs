@@ -141,6 +141,9 @@ pub struct Document {
     pub options: DocumentOptions,
     file_path: Option<PathBuf>,
     pub is_read_only: bool,
+    /// Interface-mode buffer (design.md sec 9.4): read-only, vertical navigation
+    /// snaps between actionable lines (magit/explorer/undotree as buffers).
+    pub interface_mode: bool,
     pub syntax: Option<Syntax>,
     pub history: UndoTree,
     current_transaction: Option<EditTransaction>,
@@ -156,15 +159,23 @@ pub struct Document {
         std::collections::HashMap<u32, Vec<(std::ops::Range<usize>, crate::color::Color)>>,
     /// Structured metadata sidecar — replaces `Character::Annotation` byte embedding.
     pub annotations: AnnotationStore,
-    /// Per-transaction annotation snapshot for directory buffers (captured at begin_transaction).
-    pending_annotation_snapshot: Option<Vec<(usize, u16)>>,
-    /// Undo stack of annotation snapshots for directory buffers, parallel to undo history.
-    dir_annotation_undo_stack: Vec<Vec<(usize, u16)>>,
-    /// Redo stack of annotation snapshots for directory buffers.
-    dir_annotation_redo_stack: Vec<Vec<(usize, u16)>>,
+    /// Full annotation snapshot captured before a transaction, restored on undo.
+    pending_annotation_snapshot: Option<Vec<crate::annotations::Annotation>>,
+    /// Undo stack of full annotation snapshots, parallel to the edit history.
+    annotation_undo_stack: Vec<Vec<crate::annotations::Annotation>>,
+    /// Redo stack of full annotation snapshots.
+    annotation_redo_stack: Vec<Vec<crate::annotations::Annotation>>,
+    /// Monotonic edit sequence number, incremented once per applied edit.
+    /// Lets producers reconcile stale annotation positions (design.md sec 11).
+    document_version: u64,
 }
 
 impl Document {
+    /// Monotonic edit sequence number for this document.
+    pub fn version(&self) -> u64 {
+        self.document_version
+    }
+
     pub fn set_syntax(&mut self, syntax: Syntax) {
         self.syntax = Some(syntax);
     }
@@ -210,6 +221,20 @@ impl Document {
     /// Returns true for any non-file buffer.
     pub fn is_special(&self) -> bool {
         !matches!(self.kind, BufferKind::File)
+    }
+
+    /// Whether this buffer is in interface mode (read-only + snapping
+    /// navigation between actionable regions, design.md sec 9.4).
+    pub fn is_interface_mode(&self) -> bool {
+        self.interface_mode
+    }
+
+    /// Flag this buffer as an interface-mode buffer. Also marks it read-only.
+    pub fn set_interface_mode(&mut self, on: bool) {
+        self.interface_mode = on;
+        if on {
+            self.is_read_only = true;
+        }
     }
 }
 

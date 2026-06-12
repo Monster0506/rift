@@ -141,18 +141,12 @@ impl<T: TerminalBackend> Editor<T> {
         // Clear old LSP diagnostics
         doc.annotations.clear_lsp_diagnostics();
 
-        // Add new ones
+        // Add new ones with severity-driven presentation (face + EOL adornment).
         for diag in &diagnostics {
             let line = diag.range.start.line as usize;
-            let severity_str = match diag.severity {
-                Some(1) => "error",
-                Some(2) => "warning",
-                Some(3) => "info",
-                Some(4) => "hint",
-                _ => "error",
-            };
-            let tooltip = format!("[{}] {}", severity_str, diag.message.trim());
-            doc.annotations.create_lsp_diagnostic(line, tooltip);
+            let severity = diag.severity.unwrap_or(1) as i64;
+            doc.annotations
+                .create_diagnostic(line, severity, diag.message.trim());
         }
 
         let lang = self

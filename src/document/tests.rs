@@ -1255,6 +1255,119 @@ fn test_from_file_normalizes_crlf() {
     assert_eq!(doc.options.line_ending, LineEnding::CRLF);
 }
 
+#[test]
+fn test_undo_redo_restores_annotation_marker_positions() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("hello world").unwrap();
+    let id = doc.annotations.add(Annotation::new(
+        Kind::new("ui.link"),
+        Anchor::range(6, 11),
+        AnnotationOwner::User,
+    ));
+    let span = |doc: &Document| match doc.annotations.get(id).unwrap().anchor {
+        Anchor::Range(s, e) => (s.offset, e.offset),
+        other => panic!("expected range, got {:?}", other),
+    };
+
+    // Insert "XY" at the start: the marker shifts right by 2.
+    doc.buffer.set_cursor(0).ok();
+    doc.insert_str("XY").unwrap();
+    assert_eq!(span(&doc), (8, 13));
+
+    // Undo restores the original span; redo re-applies the shift.
+    doc.undo();
+    assert_eq!(span(&doc), (6, 11));
+    doc.redo();
+    assert_eq!(span(&doc), (8, 13));
+}
+
+#[test]
+fn test_line_anchor_tracks_newline_edits_in_normal_buffer() {
+    use crate::annotations::Anchor;
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("line0\nline1\nline2").unwrap();
+    doc.annotations.create_diagnostic(2, 1, "err");
+
+    // Insert a newline at the very start: line-anchored diagnostic shifts down.
+    doc.buffer.set_cursor(0).ok();
+    doc.insert_char('\n').unwrap();
+    assert_eq!(
+        doc.annotations.lsp_diagnostics().next().unwrap().anchor,
+        Anchor::Line(3)
+    );
+
+    // Delete that newline (line merge): the diagnostic shifts back up.
+    doc.buffer.set_cursor(1).ok();
+    doc.delete_backward();
+    assert_eq!(
+        doc.annotations.lsp_diagnostics().next().unwrap().anchor,
+        Anchor::Line(2)
+    );
+}
+
+// Marker-backed anchors track real edits through the document pipeline (P2).
+
+#[test]
+fn test_range_anchor_markers_track_edits() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("hello world here").unwrap();
+    let id = doc.annotations.add(Annotation::new(
+        Kind::new("ui.link"),
+        Anchor::range(6, 11),
+        AnnotationOwner::User,
+    ));
+
+    // Insert two chars at the start: the whole range shifts right by 2.
+    doc.buffer.set_cursor(0).ok();
+    doc.insert_str("XY").unwrap();
+    match doc.annotations.get(id).unwrap().anchor {
+        Anchor::Range(s, e) => {
+            assert_eq!(s.offset, 8);
+            assert_eq!(e.offset, 13);
+        }
+        other => panic!("expected range, got {:?}", other),
+    }
+
+    // Type one char inside the range: left-gravity start holds, right-gravity end extends.
+    doc.buffer.set_cursor(10).ok();
+    doc.insert_str("Z").unwrap();
+    match doc.annotations.get(id).unwrap().anchor {
+        Anchor::Range(s, e) => {
+            assert_eq!(s.offset, 8);
+            assert_eq!(e.offset, 14);
+        }
+        other => panic!("expected range, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_range_anchor_delete_stickiness_removes_annotation() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("abcdefgh").unwrap();
+    let id = doc.annotations.add(Annotation::new(
+        Kind::new("ui.link"),
+        Anchor::range(2, 5),
+        AnnotationOwner::User,
+    ));
+    // Delete bytes [1, 6), fully covering the [2,5) span -> Delete stickiness removes it.
+    doc.delete_range(1, 6).unwrap();
+    assert!(doc.annotations.get(id).is_none());
+}
+
+#[test]
+fn test_document_version_increments_per_edit() {
+    let mut doc = Document::new(1).unwrap();
+    assert_eq!(doc.version(), 0);
+    doc.insert_str("a").unwrap();
+    let v1 = doc.version();
+    assert!(v1 > 0);
+    doc.insert_str("b").unwrap();
+    assert!(doc.version() > v1);
+}
+
 // Annotation store integration — directory entry tracking
 
 #[test]
@@ -1266,6 +1379,37 @@ fn test_populate_directory_creates_annotations_in_store() {
     assert_eq!(doc.annotations.directory_entry_id_at_line(0), None);
     assert_eq!(doc.annotations.directory_entry_id_at_line(1), Some(1));
     assert_eq!(doc.annotations.directory_entry_id_at_line(2), Some(2));
+}
+
+#[test]
+fn test_populate_directory_entries_are_interactive_at_their_line() {
+    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    doc.populate_directory_buffer(make_dir_entries(&[("a.txt", false), ("sub", true)], "/tmp"));
+    // Each fs.entry row is interactive (carries an activate action) at its line,
+    // so the explorer's Enter can dispatch it through the registry.
+    let a = doc.annotations.interactive_at_line(1).unwrap();
+    assert_eq!(a.kind.as_str(), "fs.entry");
+    assert_eq!(a.default_action().unwrap().verb, "activate");
+    assert!(doc.annotations.interactive_at_line(2).is_some());
+    // The "../" line (0) is not an interactive entry.
+    assert!(doc.annotations.interactive_at_line(0).is_none());
+}
+
+#[test]
+fn test_populate_directory_stores_name_and_is_dir_in_payload() {
+    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let entries = make_dir_entries(&[("a.txt", false), ("sub", true)], "/tmp");
+    doc.populate_directory_buffer(entries);
+    assert_eq!(
+        doc.annotations.directory_entry_info_at_line(1),
+        Some(("a.txt".to_string(), false))
+    );
+    assert_eq!(
+        doc.annotations.directory_entry_info_at_line(2),
+        Some(("sub".to_string(), true))
+    );
+    // The "../" line carries no fs.entry payload.
+    assert_eq!(doc.annotations.directory_entry_info_at_line(0), None);
 }
 
 #[test]

@@ -64,9 +64,7 @@ fn create_default_statusdrawstate() -> StatusDrawState {
         lsp_warn_color: None,
     }
 }
-// ============================================================================
 // Key formatting tests
-// ============================================================================
 
 #[test]
 fn test_format_key_char() {
@@ -111,9 +109,7 @@ fn test_format_key_special() {
     assert_eq!(StatusBar::format_key(Key::PageDown), "PageDown");
 }
 
-// ============================================================================
 // Cursor column calculation tests
-// ============================================================================
 
 #[test]
 fn test_calculate_cursor_column_single_line() {
@@ -191,9 +187,7 @@ fn test_calculate_cursor_column_multiline_complex() {
     assert_eq!(calculate_cursor_column(&buf, 1, 8), 3);
 }
 
-// ============================================================================
 // Status bar layer rendering tests
-// ============================================================================
 
 #[test]
 fn test_render_status_bar_normal_mode_layer() {
@@ -237,9 +231,7 @@ fn test_render_status_bar_pending_key_layer() {
     assert!(cell.is_some());
 }
 
-// ============================================================================
 // Full render tests with compositor
-// ============================================================================
 
 #[test]
 fn test_render_does_not_clear_screen() {
@@ -269,6 +261,9 @@ fn test_render_does_not_clear_screen() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -309,6 +304,9 @@ fn test_render_cursor_positioning() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -348,6 +346,9 @@ fn test_render_empty_buffer() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -390,6 +391,9 @@ fn test_render_multiline_buffer() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -435,6 +439,9 @@ fn test_render_file_loaded_at_start() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -491,6 +498,9 @@ fn test_render_viewport_scrolling() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -532,6 +542,9 @@ fn test_render_viewport_edge_cases() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -572,6 +585,9 @@ fn test_render_large_buffer() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -620,6 +636,9 @@ fn test_render_cursor_at_viewport_boundaries() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -668,6 +687,9 @@ fn test_render_cursor_at_viewport_boundaries() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -679,9 +701,7 @@ fn test_render_cursor_at_viewport_boundaries() {
     assert!(system.viewport.top_line() > 0);
 }
 
-// ============================================================================
 // Layer content tests
-// ============================================================================
 
 #[test]
 fn test_compositor_content_layer() {
@@ -715,9 +735,7 @@ fn test_compositor_floating_window_layer() {
     assert_eq!(floating_layer.cols(), 80);
 }
 
-// ============================================================================
 // Line number rendering tests
-// ============================================================================
 
 #[test]
 fn test_render_line_numbers_enabled() {
@@ -751,6 +769,9 @@ fn test_render_line_numbers_enabled() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -807,6 +828,9 @@ fn test_render_line_numbers_disabled() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -853,6 +877,9 @@ fn test_render_line_numbers_gutter_width() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -914,6 +941,9 @@ fn test_render_cursor_position_with_line_numbers() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -953,6 +983,9 @@ fn test_no_redraw_on_noop() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -997,6 +1030,9 @@ fn test_no_redraw_on_noop() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
@@ -1004,10 +1040,8 @@ fn test_no_redraw_on_noop() {
         )
         .unwrap();
 
-    // Verify layer was NOT redrawn (cleared); should still show removal
-    // Wait, RenderSystem::render uses self.render_cache.
-    // If state is identical, it does nothing.
-    // So 'X' should remain.
+    // Identical state means render does nothing (render_cache), so the layer
+    // is not redrawn and 'X' should remain.
     let content_layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
     assert_eq!(
         content_layer.get_cell(0, 0).unwrap().content,
@@ -1015,9 +1049,7 @@ fn test_no_redraw_on_noop() {
     );
 }
 
-// ============================================================================
 // Unicode cursor column tests
-// ============================================================================
 
 #[test]
 fn test_cursor_column_wide_chars() {
@@ -1051,15 +1083,12 @@ fn test_cursor_column_truncated_utf8() {
     assert_eq!(calculate_cursor_column(&buf, 0, 4), 8);
 }
 
-// ============================================================================
 // Tab rendering tests
-// ============================================================================
 
 #[test]
 fn test_tab_rendered_as_space_not_raw_tab() {
-    // A tab character must be stored as a space Cell in the layer so that the
-    // screen buffer never writes a raw '\t' to the terminal (which would jump
-    // to the terminal's own tab stop instead of the editor's tab_width).
+    // A tab is stored as space Cells so the screen buffer never writes a raw
+    // tab byte (which would jump to the terminal's tab stop, not the editor's).
     let mut term = MockTerminal::new(5, 40);
     let mut buf = TextBuffer::new(64).unwrap();
     buf.insert_str("\thello").unwrap();
@@ -1087,6 +1116,9 @@ fn test_tab_rendered_as_space_not_raw_tab() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: false,
                 display_map: None,
@@ -1115,13 +1147,8 @@ fn test_tab_rendered_as_space_not_raw_tab() {
 
 #[test]
 fn test_tab_straddling_left_col_does_not_shift_text() {
-    // A tab that straddles the left_col boundary must not push subsequent
-    // characters rightward by its full width.
-    //
-    // Buffer: "\thello"
-    // tab_width = 4, so tab spans cols 0-3 (width 4).
-    // With left_col = 2 the tab is partially scrolled off; only 2 of its
-    // 4 columns are visible. 'h' should appear at rendered_col 2, not 4.
+    // A tab straddling the left_col boundary must not push following chars right
+    // by its full width: with tab_width=4 and left_col=2, 'h' sits at col 2, not 4.
     let mut term = MockTerminal::new(5, 40);
     let mut buf = TextBuffer::new(64).unwrap();
     buf.insert_str("\thello").unwrap();
@@ -1153,6 +1180,9 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
                 terminal_cell_colors: None,
                 show_line_numbers: false,
                 display_map: None,
@@ -1161,8 +1191,7 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
         .unwrap();
 
     let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
-    // With left_col=2 the visible portion of the tab is 2 cells (cols 2-3 of
-    // the logical line), so they map to screen cols 0-1 → spaces.
+    // With left_col=2 the tab's visible portion is 2 cells (screen cols 0-1);
     // 'h' (first char of "hello") must appear at screen col 2, not col 4.
     assert_eq!(
         layer.get_cell(0, 2).unwrap().content,
@@ -1171,17 +1200,14 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
     );
 }
 
-// ============================================================================
 // wrap_text unicode display-width tests
-// ============================================================================
 
 #[test]
 fn test_wrap_text_cjk_counts_as_two_columns() {
     use crate::render::wrap_text;
 
-    // "你好" is 2 CJK chars, each 2 columns wide → display width 4.
-    // With wrap_width=4 it should fit on one line; with wrap_width=3 it must
-    // wrap (the word itself is 4 columns wide, so it stays on a line alone).
+    // The 2 CJK chars are each 2 columns wide (display width 4): they fit at
+    // wrap_width=4 but at wrap_width=3 the 4-wide word wraps to its own line.
     let lines = wrap_text("你好", 4);
     assert_eq!(
         lines.len(),
@@ -1190,9 +1216,8 @@ fn test_wrap_text_cjk_counts_as_two_columns() {
     );
     assert_eq!(lines[0], "你好");
 
-    // If we follow a word that would push total display-width past limit,
-    // it should wrap to a new line.
-    // "AB 你好": "AB" is 2 cols, space is 1, "你好" is 4 → total 7 > width 5.
+    // A word pushing total display width past the limit wraps: "AB" + space +
+    // the 4-wide CJK word is 7 columns, exceeding width 5.
     let lines = wrap_text("AB 你好", 5);
     assert_eq!(
         lines.len(),
@@ -1203,9 +1228,7 @@ fn test_wrap_text_cjk_counts_as_two_columns() {
     assert_eq!(lines[1], "你好");
 }
 
-// ============================================================================
-// calculate_cursor_column_at — cursor column calculation
-// ============================================================================
+// calculate_cursor_column_at: cursor column calculation
 
 #[test]
 fn test_cursor_column_at_matches_plain() {

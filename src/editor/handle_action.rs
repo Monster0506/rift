@@ -44,6 +44,20 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::Move(motion) => {
                 use crate::action::Motion;
 
+                // Interface-mode buffers snap vertical motion between actionable
+                // lines, else fall through to ordinary motion (design.md sec 9.4).
+                if self.current_mode == Mode::Normal
+                    && matches!(motion, Motion::Up | Motion::Down)
+                    && self
+                        .document_manager
+                        .active_document()
+                        .map(|d| d.is_interface_mode())
+                        .unwrap_or(false)
+                    && self.snap_to_actionable_line(matches!(motion, Motion::Down))
+                {
+                    return true;
+                }
+
                 let resolved = match motion {
                     Motion::RepeatFindForward => {
                         if let Some((ch, forward, is_till)) = self.state.last_find_char {
@@ -780,6 +794,26 @@ impl<T: TerminalBackend> Editor<T> {
 
             EditorAction::LspDiagnosticsPanel => {
                 self.open_diagnostics_panel();
+                true
+            }
+
+            EditorAction::ActivateAnnotation => {
+                self.activate_annotation_at_cursor();
+                true
+            }
+
+            EditorAction::ActivateAnnotationVerb(verb) => {
+                self.activate_annotation_verb(Some(verb));
+                true
+            }
+
+            EditorAction::NextInteractiveAnnotation => {
+                self.goto_next_interactive_annotation();
+                true
+            }
+
+            EditorAction::PrevInteractiveAnnotation => {
+                self.goto_prev_interactive_annotation();
                 true
             }
         }

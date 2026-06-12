@@ -68,7 +68,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        let (doc_id, line_text, dir_path) = {
+        let (doc_id, line_text, dir_path, entry_info) = {
             let doc = match self.document_manager.active_document() {
                 Some(d) if d.is_directory() => d,
                 _ => return,
@@ -89,7 +89,10 @@ impl<T: TerminalBackend> Editor<T> {
                 BufferKind::Directory { path, .. } => path.clone(),
                 _ => return,
             };
-            (doc.id, line_text, dir_path)
+            // Prefer the entry's name/is_dir from its fs.entry payload (dynamic),
+            // falling back to line-text parsing below when absent.
+            let entry_info = doc.annotations.directory_entry_info_at_line(line_num);
+            (doc.id, line_text, dir_path, entry_info)
         };
 
         if line_text == "../" {
@@ -99,13 +102,18 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
+        // Route through the annotation dispatch: the fs.entry's `activate` action
+        // resolves to the OpenEntry builtin, which descends/opens from the payload.
+        if entry_info.is_some() && self.activate_annotation_at_cursor() {
+            return;
+        }
+
+        // Fallback for lines without an fs.entry annotation (e.g. after an undo).
         let entry_name = line_text.trim_end_matches('/').to_string();
         if entry_name.is_empty() {
             return;
         }
-
         let target_path = dir_path.join(&entry_name);
-
         if target_path.is_dir() {
             self.reload_directory_buffer(doc_id, target_path);
         } else if let Err(e) = self.open_file(Some(target_path.display().to_string()), false) {
@@ -693,7 +701,7 @@ impl<T: TerminalBackend> Editor<T> {
             None => return,
         };
 
-        let (line_text, dir_path) = {
+        let (line_text, dir_path, entry_info) = {
             let doc = match self.document_manager.get_document(layout.dir_doc_id) {
                 Some(d) => d,
                 None => return,
@@ -714,18 +722,26 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::document::BufferKind::Directory { path, .. } => path.clone(),
                 _ => return,
             };
-            (line_text, dir_path)
+            let entry_info = doc.annotations.directory_entry_info_at_line(line_num);
+            (line_text, dir_path, entry_info)
         };
 
-        let entry_name = line_text.trim_end_matches('/');
+        let (entry_name, is_dir) = match entry_info {
+            Some((name, is_dir)) => (name, is_dir),
+            None => {
+                let name = line_text.trim_end_matches('/').to_string();
+                let is_dir = dir_path.join(&name).is_dir();
+                (name, is_dir)
+            }
+        };
         if entry_name.is_empty() || entry_name == ".." {
             self.handle_explorer_split_parent();
             return;
         }
 
-        let target_path = dir_path.join(entry_name);
+        let target_path = dir_path.join(&entry_name);
 
-        if target_path.is_dir() {
+        if is_dir {
             self.reload_directory_buffer(layout.dir_doc_id, target_path);
             self.update_explorer_preview();
         } else {

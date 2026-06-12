@@ -114,6 +114,9 @@ impl<T: TerminalBackend> Editor<T> {
             pending_code_actions: Vec::new(),
             rename_context: None,
             pending_goto_target: None,
+            dispatch_registry: crate::annotations::registry::DispatchRegistry::with_builtins(),
+            kind_registry: crate::annotations::registry::KindRegistry::with_core(),
+            hovered_annotation: None,
         };
 
         // Register default keymaps
@@ -299,6 +302,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn load_plugins(&mut self) -> Result<(), RiftError> {
+        // Drop stale Lua annotation-action handlers; the fresh VM re-registers
+        // them as plugins run, and any that don't simply fall back to a no-op.
+        self.dispatch_registry.clear_lua_handlers();
         if let Some(err) = self.plugin_host.init_lua() {
             return Err(RiftError::new(
                 ErrorType::Internal,

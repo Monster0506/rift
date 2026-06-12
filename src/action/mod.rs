@@ -379,6 +379,15 @@ pub enum EditorAction {
     LspDiagnosticPrev,
     /// LSP: open diagnostics panel (<space>e)
     LspDiagnosticsPanel,
+    /// Activate the interactive annotation under the cursor (default action).
+    ActivateAnnotation,
+    /// Activate a specific verb on the annotation under the cursor, letting
+    /// distinct keybinds drive distinct actions on one annotation.
+    ActivateAnnotationVerb(String),
+    /// Move to the next interactive annotation.
+    NextInteractiveAnnotation,
+    /// Move to the previous interactive annotation.
+    PrevInteractiveAnnotation,
 }
 
 /// Represents an action in the editor
@@ -520,6 +529,12 @@ impl FromStr for Action {
             "lsp:format" => Ok(Action::Editor(EditorAction::LspFormat)),
             "lsp:diagnostic:next" => Ok(Action::Editor(EditorAction::LspDiagnosticNext)),
             "lsp:diagnostic:prev" => Ok(Action::Editor(EditorAction::LspDiagnosticPrev)),
+            "annotation:activate" => Ok(Action::Editor(EditorAction::ActivateAnnotation)),
+            s if s.starts_with("annotation:activate:") => Ok(Action::Editor(
+                EditorAction::ActivateAnnotationVerb(s["annotation:activate:".len()..].to_string()),
+            )),
+            "annotation:next" => Ok(Action::Editor(EditorAction::NextInteractiveAnnotation)),
+            "annotation:prev" => Ok(Action::Editor(EditorAction::PrevInteractiveAnnotation)),
             "lsp:diagnostics_panel" => Ok(Action::Editor(EditorAction::LspDiagnosticsPanel)),
 
             s if s.contains(':') && !s.starts_with("editor:") => Ok(Action::Buffer(s.to_string())),

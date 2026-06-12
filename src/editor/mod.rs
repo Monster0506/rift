@@ -2,6 +2,7 @@
 //! Main editor logic that ties everything together
 
 pub mod actions;
+mod annotations_ops;
 
 #[cfg(test)]
 mod terminal_tests;
@@ -167,6 +168,14 @@ pub struct Editor<T: TerminalBackend> {
     /// yet and had to be loaded asynchronously. The FileLoadResult handler applies
     /// it once the buffer is populated. Tuple is (doc_id, line, col), 0-indexed.
     pending_goto_target: Option<(crate::document::DocumentId, usize, usize)>,
+    /// Resolves annotation (kind, verb) activations to handlers (design.md sec 9.2).
+    pub dispatch_registry: crate::annotations::registry::DispatchRegistry,
+    /// Per-kind presentation/description defaults applied at render and hover time
+    /// when an annotation supplies none (design.md sec 4).
+    pub kind_registry: crate::annotations::registry::KindRegistry,
+    /// Id of the annotation the cursor currently rests on, tracked so cursor
+    /// enter/leave hooks fire once per transition (design.md sec 12).
+    hovered_annotation: Option<crate::annotations::AnnotationId>,
 }
 
 /// State retained between a `Put` and a `CyclePaste` action.

@@ -33,15 +33,15 @@ impl Document {
     }
 
     pub(super) fn record_edit(&mut self, op: EditOperation, description: &str) {
+        // Bump the monotonic edit sequence number once per applied edit.
+        self.document_version = self.document_version.wrapping_add(1);
         if let Some(ref mut tx) = self.current_transaction {
             tx.record(op);
         } else {
-            // Standalone edit: snapshot annotation state before pushing so undo can restore it.
-            if self.is_directory() {
-                let snapshot = self.annotations.directory_entries_by_line();
-                self.dir_annotation_undo_stack.push(snapshot);
-                self.dir_annotation_redo_stack.clear();
-            }
+            // Standalone edit: snapshot the full annotation state so undo can
+            // restore exact positions. Always pushed to stay 1:1 with the history.
+            self.annotation_undo_stack.push(self.annotations.snapshot());
+            self.annotation_redo_stack.clear();
             let mut tx = EditTransaction::new(description);
             tx.record(op);
             self.history.push(tx, None);
@@ -50,7 +50,9 @@ impl Document {
 
     pub fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
         let inserting_newline = ch == '\n';
-        let line_before_insert = if inserting_newline && self.is_directory() {
+        // Track line shifts for line-anchored annotations in every buffer (not
+        // just directories): diagnostics and line adornments must move with edits.
+        let line_before_insert = if inserting_newline {
             Some(self.buffer.get_line())
         } else {
             None
@@ -89,6 +91,10 @@ impl Document {
             syntax.update_tree(&edit);
         }
 
+        // Maintain byte-offset annotation markers for this edit.
+        self.annotations
+            .on_edit(start_byte, start_byte, new_end_byte);
+
         // Update directory annotation line numbers when a newline was inserted.
         if let Some(before_line) = line_before_insert {
             self.annotations.on_line_inserted(before_line + 1);
@@ -98,13 +104,10 @@ impl Document {
     }
 
     pub fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
-        // Count newlines before inserting so we can update annotation line numbers.
-        let newline_count = if self.is_directory() {
-            s.chars().filter(|&c| c == '\n').count()
-        } else {
-            0
-        };
-        let line_before_insert = if newline_count > 0 && self.is_directory() {
+        // Count newlines before inserting so we can update annotation line numbers
+        // (all buffers, so line-anchored annotations track multi-line inserts).
+        let newline_count = s.chars().filter(|&c| c == '\n').count();
+        let line_before_insert = if newline_count > 0 {
             Some(self.buffer.get_line())
         } else {
             None
@@ -143,6 +146,10 @@ impl Document {
         if let Some(syntax) = &mut self.syntax {
             syntax.update_tree(&edit);
         }
+
+        // Maintain byte-offset annotation markers for this edit.
+        self.annotations
+            .on_edit(start_byte, start_byte, new_end_byte);
 
         // Update annotation line numbers for each newline inserted.
         if let Some(before_line) = line_before_insert {
@@ -206,6 +213,12 @@ impl Document {
             if let Some(syntax) = &mut self.syntax {
                 syntax.update_tree(&edit);
             }
+            self.annotations
+                .on_edit(start_byte, old_end_byte, start_byte);
+            // Deleting a newline merges the next line up: renumber line anchors.
+            if deleted_char == Character::Newline {
+                self.annotations.on_lines_deleted(start_position.row + 1, 1);
+            }
             return true;
         }
         false
@@ -256,6 +269,11 @@ impl Document {
             };
             if let Some(syntax) = &mut self.syntax {
                 syntax.update_tree(&edit);
+            }
+            self.annotations.on_edit(cursor, cursor + 1, cursor);
+            // Deleting a newline merges the next line up: renumber line anchors.
+            if deleted_char == Character::Newline {
+                self.annotations.on_lines_deleted(start_position.row + 1, 1);
             }
             return true;
         }
@@ -315,6 +333,8 @@ impl Document {
         if let Some(syntax) = &mut self.syntax {
             syntax.update_tree(&edit);
         }
+        self.annotations
+            .on_edit(start_byte, old_end_byte, new_end_byte);
 
         Ok(())
     }
@@ -347,7 +367,8 @@ impl Document {
         use crate::buffer::api::BufferView;
         let deleted_chars: Vec<Character> = self.buffer.chars(start..end).collect();
 
-        let deleted_line_info: Option<(usize, usize)> = if self.is_directory() {
+        // Track deleted lines for line-anchored annotations in every buffer.
+        let deleted_line_info: Option<(usize, usize)> = {
             let newline_count = deleted_chars
                 .iter()
                 .filter(|&&c| c == Character::Newline)
@@ -358,8 +379,6 @@ impl Document {
             } else {
                 None
             }
-        } else {
-            None
         };
 
         let start_byte = self.buffer.char_to_byte(start);
@@ -393,6 +412,8 @@ impl Document {
         if let Some(syntax) = &mut self.syntax {
             syntax.update_tree(&edit);
         }
+        self.annotations
+            .on_edit(start_byte, old_end_byte, start_byte);
 
         // Update directory annotation line numbers after the buffer mutation.
         if let Some((first_line, newline_count)) = deleted_line_info {

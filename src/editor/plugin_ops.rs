@@ -288,6 +288,75 @@ impl<T: TerminalBackend> Editor<T> {
                 PluginMutation::Notify { message, level } => {
                     self.state.notify(level, message);
                 }
+                PluginMutation::AddAnnotation {
+                    kind,
+                    anchor,
+                    payload,
+                    presentation,
+                    actions,
+                } => {
+                    use crate::annotations::{Action, Anchor, Annotation, AnnotationOwner, Kind};
+                    use crate::plugin::AnnotationAnchorSpec;
+                    let anchor = match anchor {
+                        AnnotationAnchorSpec::Line(l) => Anchor::Line(l),
+                        AnnotationAnchorSpec::Point(p) => Anchor::point(p),
+                        AnnotationAnchorSpec::Range(s, e) => Anchor::range(s, e),
+                    };
+                    let mut ann = Annotation::new(
+                        Kind::new(kind),
+                        anchor,
+                        AnnotationOwner::Plugin(String::new()),
+                    )
+                    .with_payload(payload)
+                    .with_actions(
+                        actions
+                            .into_iter()
+                            .map(|(verb, default)| {
+                                let a = Action::new(verb);
+                                if default {
+                                    a.as_default()
+                                } else {
+                                    a
+                                }
+                            })
+                            .collect(),
+                    );
+                    if let Some(pres) = presentation {
+                        ann = ann.with_presentation(pres);
+                    }
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        doc.annotations.add(ann);
+                    }
+                }
+                PluginMutation::RemoveAnnotation(id) => {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        doc.annotations.remove(id);
+                    }
+                }
+                PluginMutation::RegisterAnnotationAction {
+                    kind,
+                    verb,
+                    command,
+                } => {
+                    use crate::annotations::registry::Handler;
+                    let handler = match command {
+                        Some(cmd) => Handler::Command(cmd),
+                        None => Handler::Lua,
+                    };
+                    self.dispatch_registry.register(kind, verb, handler);
+                }
+                PluginMutation::RegisterKindDefaults {
+                    kind,
+                    presentation,
+                    description,
+                } => {
+                    if let Some(pres) = presentation {
+                        self.kind_registry.set_presentation(kind.clone(), pres);
+                    }
+                    if let Some(desc) = description {
+                        self.kind_registry.set_description(kind, desc);
+                    }
+                }
                 PluginMutation::AppendLines(ref lines) => {
                     if let Some(doc) = self.document_manager.active_document_mut() {
                         let end = doc.buffer.len();

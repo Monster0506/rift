@@ -49,7 +49,7 @@ fn test_all_motions_debug_and_clone() {
     ];
 
     for motion in motions {
-        let cloned = motion.clone();
+        let cloned = motion;
         assert_eq!(motion, cloned);
         assert_eq!(format!("{:?}", motion), format!("{:?}", cloned));
     }
@@ -156,6 +156,29 @@ fn test_action_from_str_namespaced() {
     assert_eq!(
         Action::from_str("mode:search").unwrap(),
         Action::Editor(EditorAction::EnterSearchMode)
+    );
+
+    // Annotation interactivity
+    assert_eq!(
+        Action::from_str("annotation:activate").unwrap(),
+        Action::Editor(EditorAction::ActivateAnnotation)
+    );
+    assert_eq!(
+        Action::from_str("annotation:next").unwrap(),
+        Action::Editor(EditorAction::NextInteractiveAnnotation)
+    );
+    assert_eq!(
+        Action::from_str("annotation:prev").unwrap(),
+        Action::Editor(EditorAction::PrevInteractiveAnnotation)
+    );
+    // A verb suffix selects a specific action rather than the default one.
+    assert_eq!(
+        Action::from_str("annotation:activate:toggle").unwrap(),
+        Action::Editor(EditorAction::ActivateAnnotationVerb("toggle".to_string()))
+    );
+    assert_eq!(
+        Action::from_str("annotation:activate:stage").unwrap(),
+        Action::Editor(EditorAction::ActivateAnnotationVerb("stage".to_string()))
     );
 
     // Buffer management

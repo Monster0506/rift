@@ -161,6 +161,60 @@ pub enum PluginMutation {
     LspDiagnosticPrev,
     /// Open the diagnostics panel.
     LspDiagnosticsPanel,
+    /// Add an annotation to the active document (plugin-authored).
+    AddAnnotation {
+        kind: String,
+        anchor: AnnotationAnchorSpec,
+        payload: crate::annotations::Value,
+        presentation: Option<crate::annotations::Presentation>,
+        actions: Vec<(String, bool)>,
+    },
+    /// Remove an annotation from the active document by id.
+    RemoveAnnotation(u64),
+    /// Register a handler for an annotation (kind, verb). With `command` set, the
+    /// verb runs that ex command; otherwise it routes back to the Lua host.
+    RegisterAnnotationAction {
+        kind: String,
+        verb: String,
+        command: Option<String>,
+    },
+    /// Register per-kind render/hover defaults into the kind registry (sec 4).
+    RegisterKindDefaults {
+        kind: String,
+        presentation: Option<crate::annotations::Presentation>,
+        description: Option<String>,
+    },
+}
+
+/// Where a plugin-authored annotation is anchored.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnnotationAnchorSpec {
+    Line(usize),
+    Point(usize),
+    Range(usize, usize),
+}
+
+/// Context passed to a Lua annotation action handler on activation.
+#[derive(Debug, Clone)]
+pub struct AnnotationActionCtx {
+    pub annotation_id: u64,
+    pub kind: String,
+    pub verb: String,
+    pub payload: crate::annotations::Value,
+    /// The activated action's serializable args (design.md sec 9.1).
+    pub params: crate::annotations::Value,
+    pub position: usize,
+    pub buffer: u64,
+}
+
+/// Context passed to a Lua cursor enter/leave hook (design.md sec 12).
+#[derive(Debug, Clone)]
+pub struct AnnotationHoverCtx {
+    pub annotation_id: u64,
+    pub kind: String,
+    pub payload: crate::annotations::Value,
+    pub position: usize,
+    pub buffer: u64,
 }
 
 /// A floating window owned by a plugin. Stored in `PluginHost` and rendered
@@ -553,6 +607,22 @@ impl PluginHost {
     ///
     /// Handlers run synchronously on the calling thread (the main loop).
     /// Any mutations they return are applied via [`apply_mutation`].
+    /// Invoke a Lua annotation action handler. Returns `true` if one ran.
+    pub fn invoke_annotation_action(&self, ctx: &AnnotationActionCtx) -> bool {
+        match &self.lua {
+            Some(lua) => lua.invoke_annotation_action(ctx),
+            None => false,
+        }
+    }
+
+    /// Invoke a Lua cursor enter/leave hook. Returns `true` if one ran.
+    pub fn invoke_annotation_hook(&self, enter: bool, ctx: &AnnotationHoverCtx) -> bool {
+        match &self.lua {
+            Some(lua) => lua.invoke_annotation_hook(enter, ctx),
+            None => false,
+        }
+    }
+
     pub fn dispatch(&mut self, event: &EditorEvent) {
         if let EditorEvent::CursorMoved { buf, row, col } = event {
             self.cursor_hold.on_cursor_move(*buf, *row, *col);

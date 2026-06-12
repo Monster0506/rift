@@ -134,6 +134,9 @@ pub struct NotificationDrawState {
     pub count: usize,
 }
 
+/// Inline (Overlay/Leading) annotation adornment: (start, end, text, color, is_leading).
+pub type InlineAdornment = (usize, usize, String, Color, bool);
+
 /// External state passed to RenderSystem::render
 pub struct RenderState<'a> {
     pub buf: &'a TextBuffer,
@@ -157,6 +160,12 @@ pub struct RenderState<'a> {
     pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     /// Plugin highlights: rendered as bg color with contrasting fg.
     pub plugin_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
+    /// Generic annotation presentation styles (fg, bg) composed over base color.
+    pub annotation_styles: Option<&'a [(std::ops::Range<usize>, crate::layer::CellStyle)]>,
+    /// Trailing end-of-line annotation adornments (line, text, color).
+    pub annotation_adornments: Option<&'a [(usize, String, Color)]>,
+    /// Inline (Overlay/Leading) adornments (byte_offset, text, color, is_leading).
+    pub annotation_inline: Option<&'a [InlineAdornment]>,
     /// Per-character fg+bg colors from the terminal emulator (terminal documents only).
     pub terminal_cell_colors: Option<&'a [crate::color::CellColorSpan]>,
     /// Per-document line number override (AND-ed with global setting).
@@ -172,6 +181,9 @@ pub struct DrawContext<'a> {
     pub pending_key: Option<Key>,
     pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     pub plugin_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
+    pub annotation_styles: Option<&'a [(std::ops::Range<usize>, crate::layer::CellStyle)]>,
+    pub annotation_adornments: Option<&'a [(usize, String, Color)]>,
+    pub annotation_inline: Option<&'a [InlineAdornment]>,
     pub terminal_cell_colors: Option<&'a [crate::color::CellColorSpan]>,
     pub pending_count: usize,
     pub state: &'a State,
@@ -442,7 +454,9 @@ fn render_line(
     ctx: &DrawContext,
     config: RenderLineConfig,
     highlight_idx: &mut usize,
-    search_match_idx: &mut usize,
+    // Search highlighting now flows through ui.search annotations; kept for the
+    // call-site's wrapped-line bookkeeping but no longer consumed here.
+    _search_match_idx: &mut usize,
 ) {
     let buf = ctx.buf;
     if config.line_num >= buf.get_total_lines() {
@@ -462,7 +476,6 @@ fn render_line(
     let custom_highlights = ctx.custom_highlights.unwrap_or(&[]);
     let plugin_highlights = ctx.plugin_highlights.unwrap_or(&[]);
     let terminal_cell_colors = ctx.terminal_cell_colors.unwrap_or(&[]);
-    let search_matches = ctx.search_matches();
 
     let syntax = SyntaxDecorator::new(
         source,
@@ -480,15 +493,33 @@ fn render_line(
     let colored = pipeline::ColorDecorator::new(injected, custom_highlights);
     let term_colored = pipeline::TerminalColorDecorator::new(colored, terminal_cell_colors);
     let plugin = pipeline::PluginHighlightDecorator::new(term_colored, plugin_highlights);
-
-    let search = SearchDecorator::new(plugin, search_matches, search_match_idx);
+    let annotation_styles = ctx.annotation_styles.unwrap_or(&[]);
+    // Search highlights now render via ui.search annotations (PresentationDecorator),
+    // so there is no dedicated search decorator in the chain.
+    let presented = pipeline::PresentationDecorator::new(plugin, annotation_styles);
 
     // Layout
-    let layout = TabLayout::new(search, ctx.tab_width);
+    let layout = TabLayout::new(presented, ctx.tab_width);
 
-    let content_cols = config
+    let base_content_cols = config
         .segment_content_cols
         .unwrap_or_else(|| config.visible_cols.saturating_sub(config.gutter_width));
+    // Leading adornments insert virtual columns, so widen the draw budget by their
+    // total width on this line (the segment is sized to buffer content only).
+    let line_start_b = buf.line_index.get_start(config.line_num).unwrap_or(0);
+    let line_end_b = buf
+        .line_index
+        .get_end(config.line_num, buf.len())
+        .unwrap_or(buf.len());
+    let leading_extra: usize = ctx
+        .annotation_inline
+        .unwrap_or(&[])
+        .iter()
+        .filter(|(s, _e, _t, _c, lead)| *lead && *s >= line_start_b && *s < line_end_b)
+        .map(|(_s, _e, text, _c, _l)| text.chars().count())
+        .sum();
+    let content_cols = (base_content_cols + leading_extra)
+        .min(config.visible_cols.saturating_sub(config.gutter_width));
     let mut rendered_col = 0;
 
     let left_col = config
@@ -498,8 +529,18 @@ fn render_line(
     // Internal tracker for absolute visual column (including horizontal scroll)
     let mut current_visual_col = 0;
 
+    // Whether this render reached the logical line's end rather than running out
+    // of horizontal space. Trailing adornments only draw on that final segment.
+    let mut reached_line_end = true;
+
+    // Inline (Overlay/Leading) adornments: record each adornment's display columns
+    // as content is laid out, then draw them once the line is done.
+    let inline = ctx.annotation_inline.unwrap_or(&[]);
+    let mut inline_cols: Vec<(Option<usize>, Option<usize>)> = vec![(None, None); inline.len()];
+
     for item in layout {
         if rendered_col >= content_cols {
+            reached_line_end = false;
             break;
         }
 
@@ -518,7 +559,37 @@ fn render_line(
             let visible_width = next_visual_col - left_col.max(current_visual_col);
 
             // Calculate where to draw in the layer (relative to gutter)
-            let display_col = rendered_col + config.gutter_width;
+            let mut display_col = rendered_col + config.gutter_width;
+
+            // Leading adornments insert virtual text before this item, pushing real
+            // content right. Only the display column advances, not the visual column.
+            for (start, _end, text, color, is_leading) in inline {
+                if *is_leading && *start == item.byte_offset {
+                    for ch in text.chars() {
+                        if display_col >= config.visible_cols {
+                            break;
+                        }
+                        layer.set_cell(
+                            config.row_idx,
+                            display_col,
+                            Cell::new(Character::from(ch))
+                                .with_colors(Some(*color), config.default_bg),
+                        );
+                        display_col += 1;
+                        rendered_col += 1;
+                    }
+                }
+            }
+
+            // Record the display columns of overlay span endpoints (post-leading).
+            for (i, (start, end, _t, _c, _l)) in inline.iter().enumerate() {
+                if *start == item.byte_offset {
+                    inline_cols[i].0 = Some(display_col);
+                }
+                if *end != *start && *end == item.byte_offset {
+                    inline_cols[i].1 = Some(display_col);
+                }
+            }
 
             if display_col < config.visible_cols {
                 let fg = item.fg.or(config.default_fg);
@@ -537,7 +608,9 @@ fn render_line(
                 layer.set_cell(
                     config.row_idx,
                     display_col,
-                    Cell::new(display_char).with_colors(fg, bg),
+                    Cell::new(display_char)
+                        .with_colors(fg, bg)
+                        .with_attrs(item.attrs),
                 );
 
                 // Fill the rest of the visible span with spaces.
@@ -546,6 +619,7 @@ fn render_line(
                         content: Character::from(' '),
                         fg,
                         bg,
+                        attrs: item.attrs,
                     };
                     for k in 1..visible_width {
                         if display_col + k < config.visible_cols {
@@ -560,8 +634,68 @@ fn render_line(
         current_visual_col = next_visual_col;
     }
 
+    // Render a trailing adornment (display-only virtual text with its own color),
+    // then fill with background. Drawn only on the line's last visual segment.
+    let mut tail_col = rendered_col + config.gutter_width;
+    if let Some(adornments) = ctx.annotation_adornments.filter(|_| reached_line_end) {
+        if let Some((_, text, color)) = adornments.iter().find(|(l, _, _)| *l == config.line_num) {
+            if tail_col < config.visible_cols {
+                layer.set_cell(
+                    config.row_idx,
+                    tail_col,
+                    Cell::from_char(' ').with_colors(config.default_fg, config.default_bg),
+                );
+                tail_col += 1;
+            }
+            for ch in text.chars() {
+                if tail_col >= config.visible_cols {
+                    break;
+                }
+                layer.set_cell(
+                    config.row_idx,
+                    tail_col,
+                    Cell::new(Character::from(ch)).with_colors(Some(*color), config.default_bg),
+                );
+                tail_col += 1;
+            }
+        }
+    }
+
+    // Draw overlay adornments over the laid-out content (leading was drawn inline
+    // during the loop, shifting content right).
+    let content_end_col = rendered_col + config.gutter_width;
+    for (i, (start, end, text, color, is_leading)) in inline.iter().enumerate() {
+        if *is_leading {
+            continue;
+        }
+        let Some(start_col) = inline_cols[i].0 else {
+            continue; // anchor not in this visible segment
+        };
+        let chars: Vec<char> = text.chars().collect();
+        {
+            // Overlay conceals [start_col, end_col): a range covers its span, a point
+            // its own width. Short pads with blanks, long truncates within the span.
+            let end_col = if *end > *start {
+                inline_cols[i].1.unwrap_or(content_end_col)
+            } else {
+                start_col + chars.len()
+            };
+            for (k, col) in (start_col..end_col).enumerate() {
+                if col >= config.visible_cols {
+                    break;
+                }
+                let ch = chars.get(k).copied().unwrap_or(' ');
+                layer.set_cell(
+                    config.row_idx,
+                    col,
+                    Cell::new(Character::from(ch)).with_colors(Some(*color), config.default_bg),
+                );
+            }
+        }
+    }
+
     // Fill remaining line with background
-    for col in (rendered_col + config.gutter_width)..config.visible_cols {
+    for col in tail_col..config.visible_cols {
         layer.set_cell(
             config.row_idx,
             col,
@@ -703,6 +837,7 @@ pub(crate) fn render_notifications(
                         content: Character::from(' '),
                         fg: Some(fg_color),
                         bg: Some(bg_color),
+                        attrs: crate::layer::CellAttrs::default(),
                     };
                     for k in 1..ch_width {
                         layer.set_cell(current_row, current_col + k, empty_cell.clone());

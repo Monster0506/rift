@@ -6,6 +6,58 @@ use crate::plugin::{PluginFloat, PluginMutation};
 use mlua::prelude::*;
 use std::sync::{Arc, Mutex};
 
+/// Build an optional `Presentation` from an annotation options table's
+/// `face` / `style` / `adornment` / `priority` keys (rift.annotations.add).
+fn build_presentation(opts: &LuaTable) -> LuaResult<Option<crate::annotations::Presentation>> {
+    use crate::annotations::{Adornment, FaceRef, Placement, Presentation, StyleOverride};
+
+    let face: Option<String> = opts.get("face")?;
+    let style_tbl: Option<LuaTable> = opts.get("style")?;
+    let adorn_tbl: Option<LuaTable> = opts.get("adornment")?;
+    let priority = opts.get::<Option<i64>>("priority")?.unwrap_or(0) as i32;
+
+    if face.is_none() && style_tbl.is_none() && adorn_tbl.is_none() && priority == 0 {
+        return Ok(None);
+    }
+
+    let mut pres = Presentation {
+        priority,
+        ..Default::default()
+    };
+    if let Some(f) = face {
+        pres.face = Some(FaceRef::new(f));
+    }
+    if let Some(st) = style_tbl {
+        let color = |key: &str| -> LuaResult<Option<crate::color::Color>> {
+            let s: Option<String> = st.get(key)?;
+            Ok(s.and_then(|s| crate::color::Color::parse(&s)))
+        };
+        pres.style = Some(StyleOverride {
+            fg: color("fg")?,
+            bg: color("bg")?,
+            bold: st.get("bold").unwrap_or(false),
+            italic: st.get("italic").unwrap_or(false),
+            underline: st.get("underline").unwrap_or(false),
+            strike: st.get("strike").unwrap_or(false),
+            reverse: st.get("reverse").unwrap_or(false),
+        });
+    }
+    if let Some(ad) = adorn_tbl {
+        let text: String = ad.get("text")?;
+        let placement = match ad.get::<Option<String>>("placement")?.as_deref() {
+            Some("leading") => Placement::Leading,
+            Some("overlay") => Placement::Overlay,
+            _ => Placement::Trailing,
+        };
+        let mut adornment = Adornment::new(text, placement);
+        if let Some(af) = ad.get::<Option<String>>("face")? {
+            adornment = adornment.with_face(FaceRef::new(af));
+        }
+        pres.adornment = Some(adornment);
+    }
+    Ok(Some(pres))
+}
+
 fn lua_to_json(v: LuaValue) -> Result<serde_json::Value, String> {
     match v {
         LuaValue::Nil => Ok(serde_json::Value::Null),
@@ -183,6 +235,15 @@ impl LuaHost {
             .set("_rift_plugin_slots", lua.create_table()?)?;
         lua.globals()
             .set("_rift_plugin_keymaps", lua.create_table()?)?;
+        // _rift_action_handlers["<kind>\0<verb>"] = fn(ctx)  (annotation actions)
+        lua.globals()
+            .set("_rift_action_handlers", lua.create_table()?)?;
+        // _rift_enter_handlers[kind] / _rift_leave_handlers[kind] = fn(ctx)
+        // (cursor enters/leaves an annotation of that kind, design.md sec 12).
+        lua.globals()
+            .set("_rift_enter_handlers", lua.create_table()?)?;
+        lua.globals()
+            .set("_rift_leave_handlers", lua.create_table()?)?;
 
         let api = lua.create_table()?;
 
@@ -330,6 +391,151 @@ impl LuaHost {
                 Ok(())
             })?;
             api.set("close_float", f)?;
+        }
+
+        // rift.annotations.* - author and handle interactive annotations
+        {
+            let annotations = lua.create_table()?;
+
+            // rift.annotations.add{ kind, line|point|range, payload, face, actions }
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, opts: LuaTable| {
+                    let kind: String = opts.get("kind")?;
+                    let line: Option<i64> = opts.get("line")?;
+                    let point: Option<i64> = opts.get("point")?;
+                    let range: Option<LuaTable> = opts.get("range")?;
+                    let anchor = if let Some(l) = line {
+                        crate::plugin::AnnotationAnchorSpec::Line(l.max(0) as usize)
+                    } else if let Some(p) = point {
+                        crate::plugin::AnnotationAnchorSpec::Point(p.max(0) as usize)
+                    } else if let Some(r) = range {
+                        let s: i64 = r.get(1)?;
+                        let e: i64 = r.get(2)?;
+                        crate::plugin::AnnotationAnchorSpec::Range(
+                            s.max(0) as usize,
+                            e.max(0) as usize,
+                        )
+                    } else {
+                        return Err(mlua::Error::RuntimeError(
+                            "annotation needs line, point, or range".into(),
+                        ));
+                    };
+                    let payload = match opts.get::<LuaValue>("payload")? {
+                        LuaValue::Table(t) => crate::annotations::Value::from_lua_table(&t)?,
+                        _ => crate::annotations::Value::Null,
+                    };
+                    let presentation = build_presentation(&opts)?;
+                    let mut actions = Vec::new();
+                    if let Some(acts) = opts.get::<Option<LuaTable>>("actions")? {
+                        for a in acts.sequence_values::<LuaTable>() {
+                            let a = a?;
+                            let verb: String = a.get("verb")?;
+                            let default: bool = a.get("default").unwrap_or(false);
+                            actions.push((verb, default));
+                        }
+                    }
+                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
+                        PluginMutation::AddAnnotation {
+                            kind,
+                            anchor,
+                            payload,
+                            presentation,
+                            actions,
+                        },
+                    );
+                    Ok(())
+                })?;
+                annotations.set("add", f)?;
+            }
+
+            // rift.annotations.remove(id)
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, id: u64| {
+                    sh.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .mutations
+                        .push(PluginMutation::RemoveAnnotation(id));
+                    Ok(())
+                })?;
+                annotations.set("remove", f)?;
+            }
+
+            // rift.annotations.on_action(kind, verb, fn(ctx))
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(
+                    move |lua, (kind, verb, handler): (String, String, mlua::Function)| {
+                        let key = format!("{}\u{0}{}", kind, verb);
+                        let handlers: LuaTable = lua.globals().get("_rift_action_handlers")?;
+                        handlers.set(key, handler)?;
+                        sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
+                            PluginMutation::RegisterAnnotationAction {
+                                kind,
+                                verb,
+                                command: None,
+                            },
+                        );
+                        Ok(())
+                    },
+                )?;
+                annotations.set("on_action", f)?;
+            }
+
+            // rift.annotations.bind_command(kind, verb, ex_command)
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(
+                    move |_, (kind, verb, command): (String, String, String)| {
+                        sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
+                            PluginMutation::RegisterAnnotationAction {
+                                kind,
+                                verb,
+                                command: Some(command),
+                            },
+                        );
+                        Ok(())
+                    },
+                )?;
+                annotations.set("bind_command", f)?;
+            }
+
+            // rift.annotations.register_kind(kind, { face/style/adornment,
+            // description }) - per-kind render/hover defaults (sec 4).
+            {
+                let sh = Arc::clone(&shared);
+                let f = lua.create_function(move |_, (kind, opts): (String, LuaTable)| {
+                    let presentation = build_presentation(&opts)?;
+                    let description: Option<String> = opts.get("description").ok().flatten();
+                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
+                        PluginMutation::RegisterKindDefaults {
+                            kind,
+                            presentation,
+                            description,
+                        },
+                    );
+                    Ok(())
+                })?;
+                annotations.set("register_kind", f)?;
+            }
+
+            // rift.annotations.on_enter(kind, fn(ctx)) / on_leave(kind, fn(ctx)):
+            // fire when the cursor enters/leaves an annotation of `kind` (sec 12).
+            for (method, table_name) in [
+                ("on_enter", "_rift_enter_handlers"),
+                ("on_leave", "_rift_leave_handlers"),
+            ] {
+                let f =
+                    lua.create_function(move |lua, (kind, handler): (String, mlua::Function)| {
+                        let handlers: LuaTable = lua.globals().get(table_name)?;
+                        handlers.set(kind, handler)?;
+                        Ok(())
+                    })?;
+                annotations.set(method, f)?;
+            }
+
+            api.set("annotations", annotations)?;
         }
 
         // rift.current_buf() → integer buffer id
@@ -1899,6 +2105,70 @@ end
             }
         }
         errors
+    }
+
+    /// Invoke the Lua handler registered for an annotation (kind, verb) with a
+    /// context table. Returns `true` if a handler was found and called.
+    pub fn invoke_annotation_action(&self, ctx: &crate::plugin::AnnotationActionCtx) -> bool {
+        let handlers: LuaTable = match self.lua.globals().get("_rift_action_handlers") {
+            Ok(t) => t,
+            Err(_) => return false,
+        };
+        let key = format!("{}\u{0}{}", ctx.kind, ctx.verb);
+        let f: LuaFunction = match handlers.get::<Option<LuaFunction>>(key.as_str()) {
+            Ok(Some(f)) => f,
+            _ => return false,
+        };
+        let t = match self.lua.create_table() {
+            Ok(t) => t,
+            Err(_) => return false,
+        };
+        let _ = t.set("annotation_id", ctx.annotation_id);
+        let _ = t.set("kind", ctx.kind.as_str());
+        let _ = t.set("verb", ctx.verb.as_str());
+        let _ = t.set("position", ctx.position as i64);
+        let _ = t.set("buffer", ctx.buffer as i64);
+        if let Ok(p) = ctx.payload.clone().into_lua(&self.lua) {
+            let _ = t.set("payload", p);
+        }
+        if let Ok(p) = ctx.params.clone().into_lua(&self.lua) {
+            let _ = t.set("params", p);
+        }
+        f.call::<()>(t).is_ok()
+    }
+
+    /// Invoke the Lua cursor enter/leave hook for an annotation kind, if registered.
+    /// `enter` selects the handler table; true if a handler ran (design.md sec 12).
+    pub fn invoke_annotation_hook(
+        &self,
+        enter: bool,
+        ctx: &crate::plugin::AnnotationHoverCtx,
+    ) -> bool {
+        let table_name = if enter {
+            "_rift_enter_handlers"
+        } else {
+            "_rift_leave_handlers"
+        };
+        let handlers: LuaTable = match self.lua.globals().get(table_name) {
+            Ok(t) => t,
+            Err(_) => return false,
+        };
+        let f: LuaFunction = match handlers.get::<Option<LuaFunction>>(ctx.kind.as_str()) {
+            Ok(Some(f)) => f,
+            _ => return false,
+        };
+        let t = match self.lua.create_table() {
+            Ok(t) => t,
+            Err(_) => return false,
+        };
+        let _ = t.set("annotation_id", ctx.annotation_id);
+        let _ = t.set("kind", ctx.kind.as_str());
+        let _ = t.set("position", ctx.position as i64);
+        let _ = t.set("buffer", ctx.buffer as i64);
+        if let Ok(p) = ctx.payload.clone().into_lua(&self.lua) {
+            let _ = t.set("payload", p);
+        }
+        f.call::<()>(t).is_ok()
     }
 
     /// Execute a plugin command registered via `rift.register_command`.

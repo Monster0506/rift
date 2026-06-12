@@ -50,15 +50,15 @@ fn test_search_decorator() {
     let items: Vec<RenderItem> = decorator.collect();
 
     // Check "hello "
-    for i in 0..6 {
-        assert!(items[i].fg.is_none());
-        assert!(items[i].bg.is_none());
+    for item in &items[0..6] {
+        assert!(item.fg.is_none());
+        assert!(item.bg.is_none());
     }
 
     // Check "world"
-    for i in 6..11 {
-        assert_eq!(items[i].fg, Some(Color::Black));
-        assert_eq!(items[i].bg, Some(Color::Yellow));
+    for item in &items[6..11] {
+        assert_eq!(item.fg, Some(Color::Black));
+        assert_eq!(item.bg, Some(Color::Yellow));
     }
 }
 
@@ -96,6 +96,52 @@ fn test_syntax_decorator() {
     assert_eq!(items.len(), 9);
     assert_eq!(items[0].char, Character::from('f'));
 }
+// PresentationDecorator tests
+
+#[test]
+fn test_presentation_decorator_applies_fg_bg_attrs() {
+    use crate::layer::{CellAttrs, CellStyle};
+    let input = chars("abcde").into_iter();
+    let styles: Vec<(std::ops::Range<usize>, CellStyle)> = vec![(
+        1..3,
+        CellStyle {
+            fg: Some(Color::Blue),
+            bg: Some(Color::Black),
+            attrs: CellAttrs {
+                underline: true,
+                ..Default::default()
+            },
+        },
+    )];
+    let items: Vec<RenderItem> = PresentationDecorator::new(input, &styles).collect();
+    assert!(items[0].fg.is_none() && items[0].bg.is_none(), "'a' before");
+    assert_eq!(items[1].fg, Some(Color::Blue));
+    assert_eq!(items[1].bg, Some(Color::Black));
+    assert!(items[1].attrs.underline, "underline attr applied");
+    assert_eq!(items[2].fg, Some(Color::Blue));
+    assert!(
+        items[3].fg.is_none() && !items[3].attrs.underline,
+        "'d' after"
+    );
+}
+
+#[test]
+fn test_presentation_decorator_fg_only_leaves_bg() {
+    use crate::layer::CellStyle;
+    let input = chars("ab").into_iter();
+    let styles: Vec<(std::ops::Range<usize>, CellStyle)> = vec![(
+        0..2,
+        CellStyle {
+            fg: Some(Color::Red),
+            bg: None,
+            attrs: Default::default(),
+        },
+    )];
+    let items: Vec<RenderItem> = PresentationDecorator::new(input, &styles).collect();
+    assert_eq!(items[0].fg, Some(Color::Red));
+    assert!(items[0].bg.is_none(), "bg untouched when style bg is None");
+}
+
 // ColorDecorator tests
 
 #[test]

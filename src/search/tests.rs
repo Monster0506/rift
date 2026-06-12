@@ -17,7 +17,7 @@ impl MockBuffer {
         let mut line_starts = Vec::new();
         let mut offset = 0;
 
-        for (_, line) in lines.iter().enumerate() {
+        for line in lines.iter() {
             line_starts.push(offset);
             for c in line.chars() {
                 chars.push(Character::from(c));

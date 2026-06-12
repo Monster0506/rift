@@ -29,8 +29,8 @@ fn test_command_line_render_to_layer() {
     // Check window position is centered
     // Default width ratio is 0.5, so width = 40, centered at (80-40)/2 = 20
     // Default height is 3, so centered at (24-3)/2 = 10 (or close)
-    assert!(window_col >= 15 && window_col <= 25);
-    assert!(window_row >= 8 && window_row <= 12);
+    assert!((15..=25).contains(&window_col));
+    assert!((8..=12).contains(&window_row));
     assert!(cmd_width >= 30);
 
     // Check content was rendered to layer

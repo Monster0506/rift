@@ -81,6 +81,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 [dev-dependencies]
 criterion = { version = "0.8.1", features = ["html_reports"] }
 tempfile = "3.24.0"
+proptest = "1"
 
 [[bench]]
 name = "buffer_bench"
@@ -120,5 +121,9 @@ harness = false
 
 [[bench]]
 name = "wrap_bench"
+harness = false
+
+[[bench]]
+name = "annotations_bench"
 harness = false
 

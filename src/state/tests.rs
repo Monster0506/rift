@@ -6,7 +6,7 @@ use crate::state::{State, UserSettings};
 #[test]
 fn test_state_new() {
     let state = State::new();
-    assert_eq!(state.debug_mode, false);
+    assert!(!state.debug_mode);
     assert_eq!(state.last_keypress, None);
     assert_eq!(state.cursor_pos, (0, 0));
     assert_eq!(state.total_lines, 1);
@@ -16,7 +16,7 @@ fn test_state_new() {
 #[test]
 fn test_state_default() {
     let state = State::default();
-    assert_eq!(state.debug_mode, false);
+    assert!(!state.debug_mode);
     assert_eq!(state.last_keypress, None);
     assert_eq!(state.cursor_pos, (0, 0));
     assert_eq!(state.total_lines, 1);
@@ -26,19 +26,19 @@ fn test_state_default() {
 #[test]
 fn test_toggle_debug() {
     let mut state = State::new();
-    assert_eq!(state.debug_mode, false);
+    assert!(!state.debug_mode);
 
     // Toggle on
     state.toggle_debug();
-    assert_eq!(state.debug_mode, true);
+    assert!(state.debug_mode);
 
     // Toggle off
     state.toggle_debug();
-    assert_eq!(state.debug_mode, false);
+    assert!(!state.debug_mode);
 
     // Toggle on again
     state.toggle_debug();
-    assert_eq!(state.debug_mode, true);
+    assert!(state.debug_mode);
 }
 
 #[test]
@@ -100,20 +100,20 @@ fn test_state_operations_together() {
     state.update_keypress(Key::Char('h'));
     state.update_cursor(2, 5);
     state.update_buffer_stats(3, 100, crate::document::LineEnding::LF);
-    assert_eq!(state.debug_mode, false);
+    assert!(!state.debug_mode);
     assert_eq!(state.last_keypress, Some(Key::Char('h')));
     assert_eq!(state.cursor_pos, (2, 5));
     assert_eq!(state.total_lines, 3);
     assert_eq!(state.buffer_size, 100);
 
     state.toggle_debug();
-    assert_eq!(state.debug_mode, true);
+    assert!(state.debug_mode);
 
     state.update_keypress(Key::ArrowDown);
     state.update_cursor(10, 20);
     state.update_buffer_stats(15, 200, crate::document::LineEnding::LF);
 
-    assert_eq!(state.debug_mode, true);
+    assert!(state.debug_mode);
     assert_eq!(state.last_keypress, Some(Key::ArrowDown));
     assert_eq!(state.cursor_pos, (10, 20));
     assert_eq!(state.total_lines, 15);
@@ -185,14 +185,14 @@ fn test_buffer_stats_updates() {
 #[test]
 fn test_user_settings_default() {
     let settings = UserSettings::default();
-    assert_eq!(settings.expand_tabs, true);
+    assert!(settings.expand_tabs);
     assert_eq!(settings.tab_width, 4);
     assert_eq!(settings.default_border_chars, None);
     assert_eq!(settings.command_line_window.width_ratio, 0.6);
     assert_eq!(settings.command_line_window.min_width, 40);
     assert_eq!(settings.command_line_window.height, 3);
-    assert_eq!(settings.command_line_window.border, true);
-    assert_eq!(settings.command_line_window.reverse_video, false);
+    assert!(settings.command_line_window.border);
+    assert!(!settings.command_line_window.reverse_video);
 }
 
 #[test]
@@ -202,21 +202,21 @@ fn test_state_with_custom_settings() {
     custom_settings.tab_width = 4;
 
     let state = State::with_settings(custom_settings);
-    assert_eq!(state.settings.expand_tabs, false);
+    assert!(!state.settings.expand_tabs);
     assert_eq!(state.settings.tab_width, 4);
-    assert_eq!(state.debug_mode, false); // Runtime state should still be default
+    assert!(!state.debug_mode); // Runtime state should still be default
 }
 
 #[test]
 fn test_set_expand_tabs() {
     let mut state = State::new();
-    assert_eq!(state.settings.expand_tabs, true);
+    assert!(state.settings.expand_tabs);
 
     state.set_expand_tabs(false);
-    assert_eq!(state.settings.expand_tabs, false);
+    assert!(!state.settings.expand_tabs);
 
     state.set_expand_tabs(true);
-    assert_eq!(state.settings.expand_tabs, true);
+    assert!(state.settings.expand_tabs);
 }
 
 #[test]

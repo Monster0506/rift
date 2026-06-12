@@ -84,7 +84,8 @@ impl Document {
             chars.push(Character::Newline);
             byte_offset += 1;
 
-            self.annotations.create_directory_entry(i + 1, entry.id);
+            self.annotations
+                .create_fs_entry(i + 1, entry.id, name, entry.is_dir);
         }
         if chars.last() == Some(&Character::Newline) {
             chars.pop();

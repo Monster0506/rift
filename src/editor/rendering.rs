@@ -25,6 +25,8 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
         self.flush_pending_text_changed();
+        // Fire cursor enter/leave annotation hooks for any transition this frame.
+        self.update_annotation_hover();
         if self.split_tree.window_count() == 1 {
             let rows = self.render_system.viewport.visible_rows();
             let cols = self.render_system.viewport.visible_cols();
@@ -49,8 +51,12 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(doc) = self.document_manager.get_document(doc_id) {
                 let tw = doc.options.tab_width;
                 let line = doc.buffer.get_line();
-                let col =
-                    render::calculate_cursor_column_at(&doc.buffer, line, tw, doc.buffer.cursor());
+                let cursor = doc.buffer.cursor();
+                let line_start = doc.buffer.line_index.get_start(line).unwrap_or(0);
+                // Offset the cursor by leading virtual text before it; `cursor + 1`
+                // because a marker on the cursor's own char renders before it.
+                let col = render::calculate_cursor_column_at(&doc.buffer, line, tw, cursor)
+                    + doc.annotations.leading_width_in(line_start, cursor + 1);
                 let total = doc.buffer.get_total_lines();
                 (line, col, total, doc.is_terminal())
             } else {
@@ -103,9 +109,7 @@ impl<T: TerminalBackend> Editor<T> {
         if self.post_paste_state.is_some() {
             self.render_clipboard_tooltip();
         } else {
-            self.render_system
-                .compositor
-                .clear_layer(crate::layer::LayerPriority::TOOLTIP);
+            self.render_annotation_tooltip();
         }
 
         self.render_explorer_diff_tooltip();
@@ -176,6 +180,7 @@ impl<T: TerminalBackend> Editor<T> {
             term,
             pending_keys,
             pending_count,
+            kind_registry,
             ..
         } = self;
 
@@ -234,6 +239,19 @@ impl<T: TerminalBackend> Editor<T> {
             .as_ref()
             .map(|s| s.injection_highlights_named(Some(start_byte..end_byte)));
 
+        // Generic annotation presentation overlay (design.md sec 8).
+        let annotation_styles = doc
+            .annotations
+            .presentation_spans(state.settings.syntax_colors.as_ref(), Some(kind_registry));
+        let annotation_adornments = doc
+            .annotations
+            .line_adornments(state.settings.syntax_colors.as_ref(), |b| {
+                doc.buffer.line_index.get_line_at(b)
+            });
+        let annotation_inline = doc
+            .annotations
+            .inline_adornments(state.settings.syntax_colors.as_ref());
+
         let state = render::RenderState {
             buf: &doc.buffer,
             state,
@@ -259,6 +277,21 @@ impl<T: TerminalBackend> Editor<T> {
                 None
             } else {
                 Some(&doc.plugin_highlights)
+            },
+            annotation_styles: if annotation_styles.is_empty() {
+                None
+            } else {
+                Some(&annotation_styles)
+            },
+            annotation_adornments: if annotation_adornments.is_empty() {
+                None
+            } else {
+                Some(&annotation_adornments)
+            },
+            annotation_inline: if annotation_inline.is_empty() {
+                None
+            } else {
+                Some(&annotation_inline)
             },
             terminal_cell_colors: if doc.terminal_cell_colors.is_empty() {
                 None
@@ -331,12 +364,13 @@ impl<T: TerminalBackend> Editor<T> {
                 };
                 let tab_width = doc.options.tab_width;
                 let cursor_line = doc.buffer.line_index.get_line_at(cursor_pos);
+                let line_start = doc.buffer.line_index.get_start(cursor_line).unwrap_or(0);
                 let cursor_col = render::calculate_cursor_column_at(
                     &doc.buffer,
                     cursor_line,
                     tab_width,
                     cursor_pos,
-                );
+                ) + doc.annotations.leading_width_in(line_start, cursor_pos + 1);
                 let total_lines = doc.buffer.get_total_lines();
                 let viewport_col = if doc.is_terminal() { 0 } else { cursor_col };
                 let doc_show_line_numbers =
@@ -422,6 +456,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_keys,
             pending_count,
             split_tree,
+            kind_registry,
             ..
         } = self;
 
@@ -518,6 +553,17 @@ impl<T: TerminalBackend> Editor<T> {
                 .syntax
                 .as_ref()
                 .map(|s| s.injection_highlights_named(Some(start_byte..end_byte)));
+            let annotation_styles = doc
+                .annotations
+                .presentation_spans(state.settings.syntax_colors.as_ref(), Some(kind_registry));
+            let annotation_adornments = doc
+                .annotations
+                .line_adornments(state.settings.syntax_colors.as_ref(), |b| {
+                    doc.buffer.line_index.get_line_at(b)
+                });
+            let annotation_inline = doc
+                .annotations
+                .inline_adornments(state.settings.syntax_colors.as_ref());
 
             let ctx = render::DrawContext {
                 buf: &doc.buffer,
@@ -540,6 +586,21 @@ impl<T: TerminalBackend> Editor<T> {
                     None
                 } else {
                     Some(&doc.plugin_highlights)
+                },
+                annotation_styles: if annotation_styles.is_empty() {
+                    None
+                } else {
+                    Some(&annotation_styles)
+                },
+                annotation_adornments: if annotation_adornments.is_empty() {
+                    None
+                } else {
+                    Some(&annotation_adornments)
+                },
+                annotation_inline: if annotation_inline.is_empty() {
+                    None
+                } else {
+                    Some(&annotation_inline)
                 },
                 terminal_cell_colors: if doc.terminal_cell_colors.is_empty() {
                     None
@@ -668,6 +729,10 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 Some(&focused_doc.plugin_highlights)
             },
+            // Cursor-only overlay (skip_content); no content styling needed.
+            annotation_styles: None,
+            annotation_adornments: None,
+            annotation_inline: None,
             terminal_cell_colors: if focused_doc.terminal_cell_colors.is_empty() {
                 None
             } else {
@@ -680,6 +745,82 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = render_system.render(term, render_state)?;
 
         Ok(())
+    }
+
+    /// Render a hover tooltip for the annotation under the cursor (e.g. an LSP
+    /// diagnostic message) into the TOOLTIP layer. Clears it when there is none.
+    pub(super) fn render_annotation_tooltip(&mut self) {
+        use crate::color::Color;
+        use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
+        use crate::layer::{Cell, LayerPriority};
+
+        let kind_registry = &self.kind_registry;
+        let (tip, affordance) =
+            self.document_manager
+                .active_document_mut()
+                .map_or((None, None), |doc| {
+                    let cursor = doc.buffer.cursor();
+                    let line = doc.buffer.line_index.get_line_at(cursor);
+                    let tip = doc
+                        .annotations
+                        .tooltip_at(cursor, Some(kind_registry))
+                        .or_else(|| doc.annotations.tooltip_at_line(line, Some(kind_registry)))
+                        .map(|s| s.to_string());
+                    // Affordance hint for the interactive annotation under the
+                    // cursor, so its actions + key bindings are discoverable.
+                    let affordance = doc
+                        .annotations
+                        .interactive_at(cursor)
+                        .or_else(|| doc.annotations.interactive_at_line(line))
+                        .and_then(|a| a.affordance_line("Enter"));
+                    (tip, affordance)
+                });
+
+        self.render_system
+            .compositor
+            .clear_layer(LayerPriority::TOOLTIP);
+        if tip.is_none() && affordance.is_none() {
+            return;
+        }
+
+        const MAX_WIDTH: usize = 80;
+        let mut rows: Vec<Vec<Cell>> = Vec::new();
+        if let Some(tip) = &tip {
+            rows.push(
+                tip.chars()
+                    .take(MAX_WIDTH)
+                    .map(|c| Cell::from_char(c).with_colors(Some(Color::White), None))
+                    .collect(),
+            );
+        }
+        if let Some(affordance) = &affordance {
+            rows.push(
+                affordance
+                    .chars()
+                    .take(MAX_WIDTH)
+                    .map(|c| Cell::from_char(c).with_colors(Some(Color::Cyan), None))
+                    .collect(),
+            );
+        }
+        let width = rows.iter().map(|r| r.len()).max().unwrap_or(0) + 2;
+        let height = rows.len() + 2;
+        let editor_fg = self.state.settings.editor_fg;
+        let editor_bg = self.state.settings.editor_bg;
+        let window = FloatingWindow::with_style(
+            WindowPosition::Bottom,
+            width,
+            height,
+            WindowStyle::new()
+                .with_border(true)
+                .with_reverse_video(false)
+                .with_fg(editor_fg.unwrap_or(Color::White))
+                .with_bg(editor_bg.unwrap_or(Color::Black)),
+        );
+        let layer = self
+            .render_system
+            .compositor
+            .get_layer_mut(LayerPriority::TOOLTIP);
+        window.render_cells(layer, &rows);
     }
 
     /// Render a pending-changes tooltip at the top of the screen when a directory

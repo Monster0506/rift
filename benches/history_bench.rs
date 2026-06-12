@@ -19,7 +19,7 @@ fn history_operations(c: &mut Criterion) {
 
     group.bench_function("push_edit", |b| {
         b.iter_batched(
-            || UndoTree::new(),
+            UndoTree::new,
             |mut history| {
                 // Push 100 edits
                 for i in 0..100 {

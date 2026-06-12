@@ -11,6 +11,8 @@ pub struct RenderItem {
     pub char: Character,
     pub fg: Option<Color>,
     pub bg: Option<Color>,
+    /// Text attributes (bold/italic/underline/strike/reverse).
+    pub attrs: crate::layer::CellAttrs,
     /// Original byte offset in the buffer (for syntax highlighting)
     pub byte_offset: usize,
     /// Length of the character in bytes
@@ -25,6 +27,7 @@ impl RenderItem {
             char,
             fg: None,
             bg: None,
+            attrs: crate::layer::CellAttrs::default(),
             byte_offset,
             len_bytes,
             char_offset,
@@ -244,6 +247,50 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for ColorDecorator<'a, I> {
     }
 }
 
+/// Decorator applying generic annotation presentation styles (fg and/or bg).
+/// Spans are sorted and non-overlapping (flattened by precedence upstream).
+pub struct PresentationDecorator<'a, I: Iterator<Item = RenderItem>> {
+    input: I,
+    styles: &'a [(std::ops::Range<usize>, crate::layer::CellStyle)],
+    idx: usize,
+}
+
+impl<'a, I: Iterator<Item = RenderItem>> PresentationDecorator<'a, I> {
+    pub fn new(input: I, styles: &'a [(std::ops::Range<usize>, crate::layer::CellStyle)]) -> Self {
+        Self {
+            input,
+            styles,
+            idx: 0,
+        }
+    }
+}
+
+impl<'a, I: Iterator<Item = RenderItem>> Iterator for PresentationDecorator<'a, I> {
+    type Item = RenderItem;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut item = self.input.next()?;
+        while self.idx < self.styles.len() && self.styles[self.idx].0.end <= item.byte_offset {
+            self.idx += 1;
+        }
+        if self.idx < self.styles.len() {
+            let (range, style) = &self.styles[self.idx];
+            if range.start <= item.byte_offset {
+                if let Some(fg) = style.fg {
+                    item.fg = Some(fg);
+                }
+                if let Some(bg) = style.bg {
+                    item.bg = Some(bg);
+                }
+                if !style.attrs.is_empty() {
+                    item.attrs = style.attrs;
+                }
+            }
+        }
+        Some(item)
+    }
+}
+
 /// Pick a contrasting foreground color (black or white) for a given background.
 pub fn contrasting_color(bg: Color) -> Color {
     match bg {
@@ -436,6 +483,8 @@ pub struct LayoutItem {
     pub char: Character,
     pub fg: Option<Color>,
     pub bg: Option<Color>,
+    pub attrs: crate::layer::CellAttrs,
+    pub byte_offset: usize,
     pub width: usize,
 }
 
@@ -465,6 +514,8 @@ impl<I: Iterator<Item = RenderItem>> Iterator for TabLayout<I> {
             char: item.char,
             fg: item.fg,
             bg: item.bg,
+            attrs: item.attrs,
+            byte_offset: item.byte_offset,
             width: effective_width,
         })
     }

@@ -61,6 +61,11 @@ impl RenderSystem {
         self.cursor_animator.is_animating()
     }
 
+    /// Last rendered soft-cursor screen position (row, col), for tests.
+    pub fn last_soft_cursor(&self) -> Option<(usize, usize)> {
+        self.last_soft_cursor
+    }
+
     /// Resize the render system
     pub fn resize(&mut self, rows: usize, cols: usize) {
         self.viewport.set_size(rows, cols);
@@ -349,6 +354,9 @@ impl RenderSystem {
             injection_highlights: state.injection_highlights,
             custom_highlights: state.custom_highlights,
             plugin_highlights: state.plugin_highlights,
+            annotation_styles: state.annotation_styles,
+            annotation_adornments: state.annotation_adornments,
+            annotation_inline: state.annotation_inline,
             terminal_cell_colors: state.terminal_cell_colors,
             show_line_numbers: state.show_line_numbers,
             display_map: state.display_map,
@@ -513,7 +521,19 @@ impl RenderSystem {
                     0
                 };
 
-                let cursor_visual_col = dm.char_to_visual_col(ctx.buf.cursor(), ctx.buf);
+                // Offset by any leading virtual text inserted before the cursor on
+                // its line (the display map measures buffer content only).
+                let cursor_off = ctx.buf.cursor();
+                let cline = ctx.buf.line_index.get_line_at(cursor_off);
+                let line_start = ctx.buf.line_index.get_start(cline).unwrap_or(0);
+                let leading: usize = ctx
+                    .annotation_inline
+                    .unwrap_or(&[])
+                    .iter()
+                    .filter(|(s, _e, _t, _c, lead)| *lead && *s >= line_start && *s <= cursor_off)
+                    .map(|(_s, _e, text, _c, _l)| text.chars().count())
+                    .sum();
+                let cursor_visual_col = dm.char_to_visual_col(cursor_off, ctx.buf) + leading;
 
                 let display_col =
                     (cursor_visual_col + gutter_width).min(vp.visible_cols().saturating_sub(1));
@@ -532,12 +552,19 @@ impl RenderSystem {
                     0
                 };
 
-                let cursor_col = calculate_cursor_column_at(
-                    ctx.buf,
-                    cursor_line,
-                    ctx.tab_width,
-                    ctx.buf.cursor(),
-                );
+                // Offset the cursor by any leading virtual text inserted before it.
+                let line_start = ctx.buf.line_index.get_start(cursor_line).unwrap_or(0);
+                let cursor_off = ctx.buf.cursor();
+                let leading: usize = ctx
+                    .annotation_inline
+                    .unwrap_or(&[])
+                    .iter()
+                    .filter(|(s, _e, _t, _c, lead)| *lead && *s >= line_start && *s <= cursor_off)
+                    .map(|(_s, _e, text, _c, _l)| text.chars().count())
+                    .sum();
+                let cursor_col =
+                    calculate_cursor_column_at(ctx.buf, cursor_line, ctx.tab_width, cursor_off)
+                        + leading;
                 let visual_cursor_col = cursor_col.saturating_sub(vp.left_col());
                 let display_col =
                     (visual_cursor_col + gutter_width).min(vp.visible_cols().saturating_sub(1));

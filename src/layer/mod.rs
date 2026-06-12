@@ -92,6 +92,30 @@ impl LayerPriority {
     pub const CURSOR: LayerPriority = LayerPriority(100);
 }
 
+/// Text rendering attributes that compose on top of fg/bg color.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CellAttrs {
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strike: bool,
+    pub reverse: bool,
+}
+
+impl CellAttrs {
+    pub fn is_empty(&self) -> bool {
+        *self == CellAttrs::default()
+    }
+}
+
+/// A fully-resolved cell style: optional fg/bg plus text attributes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CellStyle {
+    pub fg: Option<Color>,
+    pub bg: Option<Color>,
+    pub attrs: CellAttrs,
+}
+
 /// A cell in the terminal buffer
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
@@ -101,6 +125,8 @@ pub struct Cell {
     pub fg: Option<Color>,
     /// Background color (None = default)
     pub bg: Option<Color>,
+    /// Text attributes (bold/italic/underline/strike/reverse).
+    pub attrs: CellAttrs,
 }
 
 impl Cell {
@@ -110,6 +136,7 @@ impl Cell {
             content: ch,
             fg: None,
             bg: None,
+            attrs: CellAttrs::default(),
         }
     }
 
@@ -159,6 +186,12 @@ impl Cell {
     pub fn with_colors(mut self, fg: Option<Color>, bg: Option<Color>) -> Self {
         self.fg = fg;
         self.bg = bg;
+        self
+    }
+
+    /// Set text attributes.
+    pub fn with_attrs(mut self, attrs: CellAttrs) -> Self {
+        self.attrs = attrs;
         self
     }
 }
