@@ -870,6 +870,33 @@ impl LuaHost {
             api.set("spawn_shell", f)?;
         }
 
+        // rift.spawn(prog, args, tag): run a program directly (no shell), one
+        // OS arg per list element. Fires the same ShellDone UserEvent as spawn_shell.
+        {
+            let sh = Arc::clone(&shared);
+            let f =
+                lua.create_function(move |_, (prog, args, tag): (String, Vec<String>, String)| {
+                    let sh = Arc::clone(&sh);
+                    std::thread::spawn(move || {
+                        let result = std::process::Command::new(&prog).args(&args).output();
+                        let (success, out_text) = match result {
+                            Ok(o) => {
+                                let text = String::from_utf8_lossy(&o.stdout).to_string()
+                                    + &String::from_utf8_lossy(&o.stderr);
+                                (o.status.success(), text.trim_end().to_string())
+                            }
+                            Err(e) => (false, e.to_string()),
+                        };
+                        sh.lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .pending_shell_events
+                            .push((tag, success, out_text));
+                    });
+                    Ok(())
+                })?;
+            api.set("spawn", f)?;
+        }
+
         // rift.insert(text) — insert text at the current cursor position
         {
             let sh = Arc::clone(&shared);
