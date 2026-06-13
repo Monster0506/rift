@@ -6,10 +6,27 @@ use crate::plugin::{PluginFloat, PluginMutation};
 use mlua::prelude::*;
 use std::sync::{Arc, Mutex};
 
+/// Parse a `{ fg, bg, bold, italic, underline, strike, reverse }` style subtable.
+fn parse_style(st: &LuaTable) -> LuaResult<crate::annotations::StyleOverride> {
+    let color = |key: &str| -> LuaResult<Option<crate::color::Color>> {
+        let s: Option<String> = st.get(key)?;
+        Ok(s.and_then(|s| crate::color::Color::parse(&s)))
+    };
+    Ok(crate::annotations::StyleOverride {
+        fg: color("fg")?,
+        bg: color("bg")?,
+        bold: st.get("bold").unwrap_or(false),
+        italic: st.get("italic").unwrap_or(false),
+        underline: st.get("underline").unwrap_or(false),
+        strike: st.get("strike").unwrap_or(false),
+        reverse: st.get("reverse").unwrap_or(false),
+    })
+}
+
 /// Build an optional `Presentation` from an annotation options table's
 /// `face` / `style` / `adornment` / `priority` keys (rift.annotations.add).
 fn build_presentation(opts: &LuaTable) -> LuaResult<Option<crate::annotations::Presentation>> {
-    use crate::annotations::{Adornment, FaceRef, Placement, Presentation, StyleOverride};
+    use crate::annotations::{Adornment, FaceRef, Placement, Presentation};
 
     let face: Option<String> = opts.get("face")?;
     let style_tbl: Option<LuaTable> = opts.get("style")?;
@@ -28,19 +45,7 @@ fn build_presentation(opts: &LuaTable) -> LuaResult<Option<crate::annotations::P
         pres.face = Some(FaceRef::new(f));
     }
     if let Some(st) = style_tbl {
-        let color = |key: &str| -> LuaResult<Option<crate::color::Color>> {
-            let s: Option<String> = st.get(key)?;
-            Ok(s.and_then(|s| crate::color::Color::parse(&s)))
-        };
-        pres.style = Some(StyleOverride {
-            fg: color("fg")?,
-            bg: color("bg")?,
-            bold: st.get("bold").unwrap_or(false),
-            italic: st.get("italic").unwrap_or(false),
-            underline: st.get("underline").unwrap_or(false),
-            strike: st.get("strike").unwrap_or(false),
-            reverse: st.get("reverse").unwrap_or(false),
-        });
+        pres.style = Some(parse_style(&st)?);
     }
     if let Some(ad) = adorn_tbl {
         let text: String = ad.get::<Option<String>>("text")?.unwrap_or_default();
@@ -53,6 +58,9 @@ fn build_presentation(opts: &LuaTable) -> LuaResult<Option<crate::annotations::P
         let mut adornment = Adornment::new(text, placement);
         if let Some(af) = ad.get::<Option<String>>("face")? {
             adornment = adornment.with_face(FaceRef::new(af));
+        }
+        if let Some(ast) = ad.get::<Option<LuaTable>>("style")? {
+            adornment = adornment.with_style(parse_style(&ast)?);
         }
         pres.adornment = Some(adornment);
     }

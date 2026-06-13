@@ -243,14 +243,14 @@ impl<T: TerminalBackend> Editor<T> {
         let annotation_styles = doc
             .annotations
             .presentation_spans(state.settings.syntax_colors.as_ref(), Some(kind_registry));
-        let annotation_adornments = doc
-            .annotations
-            .line_adornments(state.settings.syntax_colors.as_ref(), |b| {
-                doc.buffer.line_index.get_line_at(b)
-            });
+        let annotation_adornments = doc.annotations.line_adornments(
+            state.settings.syntax_colors.as_ref(),
+            Some(kind_registry),
+            |b| doc.buffer.line_index.get_line_at(b),
+        );
         let annotation_inline = doc
             .annotations
-            .inline_adornments(state.settings.syntax_colors.as_ref());
+            .inline_adornments(state.settings.syntax_colors.as_ref(), Some(kind_registry));
         // Conceal ranges, minus those on the cursor's line (reveal-on-cursor-line).
         let cursor_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
         let annotation_concealed: Vec<(usize, usize)> = doc
@@ -569,14 +569,14 @@ impl<T: TerminalBackend> Editor<T> {
             let annotation_styles = doc
                 .annotations
                 .presentation_spans(state.settings.syntax_colors.as_ref(), Some(kind_registry));
-            let annotation_adornments = doc
-                .annotations
-                .line_adornments(state.settings.syntax_colors.as_ref(), |b| {
-                    doc.buffer.line_index.get_line_at(b)
-                });
+            let annotation_adornments = doc.annotations.line_adornments(
+                state.settings.syntax_colors.as_ref(),
+                Some(kind_registry),
+                |b| doc.buffer.line_index.get_line_at(b),
+            );
             let annotation_inline = doc
                 .annotations
-                .inline_adornments(state.settings.syntax_colors.as_ref());
+                .inline_adornments(state.settings.syntax_colors.as_ref(), Some(kind_registry));
             let cursor_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
             let annotation_concealed: Vec<(usize, usize)> = doc
                 .annotations

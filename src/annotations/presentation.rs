@@ -63,6 +63,8 @@ pub struct Adornment {
     pub text: String,
     pub placement: Placement,
     pub face: Option<FaceRef>,
+    /// Inline color override, preferred over `face` and any kind default.
+    pub style: Option<StyleOverride>,
 }
 
 impl Adornment {
@@ -71,11 +73,17 @@ impl Adornment {
             text: text.into(),
             placement,
             face: None,
+            style: None,
         }
     }
 
     pub fn with_face(mut self, face: FaceRef) -> Self {
         self.face = Some(face);
+        self
+    }
+
+    pub fn with_style(mut self, style: StyleOverride) -> Self {
+        self.style = Some(style);
         self
     }
 }

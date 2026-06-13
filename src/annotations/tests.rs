@@ -426,3 +426,100 @@ fn test_presentation_spans_skips_invisible_and_unstyled() {
     ));
     assert!(store.presentation_spans(None, None).is_empty());
 }
+
+fn trailing_adornment(store: &mut AnnotationStore, kind: &str, text: &str, pres: Presentation) {
+    store.add(
+        Annotation::new(Kind::new(kind), Anchor::point(0), AnnotationOwner::User)
+            .with_presentation(pres.with_adornment(Adornment::new(text, Placement::Trailing))),
+    );
+}
+
+#[test]
+fn test_adornment_uses_kind_default_style() {
+    use crate::annotations::registry::KindRegistry;
+    use crate::color::Color;
+    let mut store = AnnotationStore::new();
+    trailing_adornment(&mut store, "md.rule", "---", Presentation::default());
+    let mut defaults = KindRegistry::new();
+    defaults.set_presentation(
+        "md.rule",
+        Presentation::with_style(StyleOverride {
+            fg: Some(Color::Grey),
+            ..Default::default()
+        }),
+    );
+    // Without defaults: DarkGrey fallback. With defaults: the kind style fg.
+    assert_eq!(
+        store.line_adornments(None, None, |_| 0),
+        vec![(0, "---".to_string(), Color::DarkGrey)]
+    );
+    assert_eq!(
+        store.line_adornments(None, Some(&defaults), |_| 0),
+        vec![(0, "---".to_string(), Color::Grey)]
+    );
+}
+
+#[test]
+fn test_adornment_inline_style_wins_over_kind_default() {
+    use crate::annotations::registry::KindRegistry;
+    use crate::color::Color;
+    let mut store = AnnotationStore::new();
+    store.add(
+        Annotation::new(
+            Kind::new("md.rule"),
+            Anchor::point(0),
+            AnnotationOwner::User,
+        )
+        .with_presentation(Presentation::default().with_adornment(
+            Adornment::new("---", Placement::Trailing).with_style(StyleOverride {
+                fg: Some(Color::Cyan),
+                ..Default::default()
+            }),
+        )),
+    );
+    let mut defaults = KindRegistry::new();
+    defaults.set_presentation(
+        "md.rule",
+        Presentation::with_style(StyleOverride {
+            fg: Some(Color::Grey),
+            ..Default::default()
+        }),
+    );
+    assert_eq!(
+        store.line_adornments(None, Some(&defaults), |_| 0),
+        vec![(0, "---".to_string(), Color::Cyan)]
+    );
+}
+
+#[test]
+fn test_adornment_resolves_named_face() {
+    use crate::color::Color;
+    let mut store = AnnotationStore::new();
+    store.add(
+        Annotation::new(
+            Kind::new("ui.link"),
+            Anchor::point(0),
+            AnnotationOwner::User,
+        )
+        .with_presentation(Presentation::default().with_adornment(
+            Adornment::new("->", Placement::Trailing).with_face(FaceRef::new("link")),
+        )),
+    );
+    // "link" resolves to Blue via the built-in fallback (no syntax colors).
+    assert_eq!(
+        store.line_adornments(None, None, |_| 0),
+        vec![(0, "->".to_string(), Color::Blue)]
+    );
+}
+
+#[test]
+fn test_adornment_falls_back_to_dark_grey() {
+    use crate::color::Color;
+    let mut store = AnnotationStore::new();
+    trailing_adornment(&mut store, "md.rule", "---", Presentation::default());
+    // No style, no face, no kind default: the unchanged DarkGrey fallback.
+    assert_eq!(
+        store.line_adornments(None, None, |_| 0),
+        vec![(0, "---".to_string(), Color::DarkGrey)]
+    );
+}

@@ -17,6 +17,35 @@ pub use value::Value;
 
 use serde::{Deserialize, Serialize};
 
+/// Resolve an adornment's foreground color, mirroring the range path's precedence:
+/// inline adornment style, annotation style, kind-default style, then face/kind face.
+fn adornment_color(
+    a: &Annotation,
+    adornment: &Adornment,
+    colors: Option<&crate::color::theme::SyntaxColors>,
+    defaults: Option<&registry::KindRegistry>,
+) -> crate::color::Color {
+    let own = a.presentation.as_ref();
+    let kd = defaults.and_then(|r| r.default_presentation(&a.kind));
+    let style_fg = adornment
+        .style
+        .as_ref()
+        .and_then(|s| s.fg)
+        .or_else(|| own.and_then(|p| p.style.as_ref()).and_then(|s| s.fg))
+        .or_else(|| kd.and_then(|p| p.style.as_ref()).and_then(|s| s.fg));
+    let face_fg = adornment
+        .face
+        .as_ref()
+        .and_then(|f| presentation::resolve_face(f, colors))
+        .or_else(|| {
+            kd.and_then(|p| p.face.as_ref())
+                .and_then(|f| presentation::resolve_face(f, colors))
+        });
+    style_fg
+        .or(face_fg)
+        .unwrap_or(crate::color::Color::DarkGrey)
+}
+
 /// Stable, unique identifier for an annotation. Does not change across edits.
 pub type AnnotationId = u64;
 
@@ -399,6 +428,7 @@ impl AnnotationStore {
     pub fn line_adornments(
         &self,
         colors: Option<&crate::color::theme::SyntaxColors>,
+        defaults: Option<&registry::KindRegistry>,
         line_of: impl Fn(usize) -> usize,
     ) -> Vec<(usize, String, crate::color::Color)> {
         let mut out = Vec::new();
@@ -417,11 +447,7 @@ impl AnnotationStore {
                 Anchor::Point(p) => line_of(p.offset),
                 Anchor::Range(s, _) => line_of(s.offset),
             };
-            let color = adornment
-                .face
-                .as_ref()
-                .and_then(|f| presentation::resolve_face(f, colors))
-                .unwrap_or(crate::color::Color::DarkGrey);
+            let color = adornment_color(a, adornment, colors, defaults);
             out.push((line, adornment.text.clone(), color));
         }
         out
@@ -432,6 +458,7 @@ impl AnnotationStore {
     pub fn inline_adornments(
         &self,
         colors: Option<&crate::color::theme::SyntaxColors>,
+        defaults: Option<&registry::KindRegistry>,
     ) -> Vec<(usize, usize, String, crate::color::Color, bool)> {
         let mut out = Vec::new();
         for a in &self.annotations {
@@ -453,11 +480,7 @@ impl AnnotationStore {
                 Anchor::Range(s, e) => (s.offset, e.offset),
                 Anchor::Line(_) => continue,
             };
-            let color = adornment
-                .face
-                .as_ref()
-                .and_then(|f| presentation::resolve_face(f, colors))
-                .unwrap_or(crate::color::Color::DarkGrey);
+            let color = adornment_color(a, adornment, colors, defaults);
             out.push((start, end, adornment.text.clone(), color, is_leading));
         }
         out.sort_by_key(|(s, _, _, _, _)| *s);
