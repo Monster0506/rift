@@ -773,7 +773,7 @@ dependencies = [
 
 [[package]]
 name = "monster-rift"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
