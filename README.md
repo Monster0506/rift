@@ -6,12 +6,19 @@ I use this daily and primarily.
 
 ## Implemented:
 - Quite a lot more than the below items, I just haven't updated this in a while due to actually working on it.
+- Remote daemon mode (`rift --daemon`): editor runs as a headless TCP server; clients attach via `rift --connect [user@]host` over an SSH tunnel, with token auth and JSON+RPC framing
+- Annotation presentation layer: faces/styles plus adornments rendered as leading, trailing (end-of-line), overlay, or conceal (hidden) virtual text, composed over base syntax by priority
 - LSP client: diagnostics with inline annotations, go to definition, find references, hover documentation, rename, document formatting, code actions (with resolve)
 - LSP status bar integration: error/warning counts with color coding per language server
 - Plugins can configure LSP server initialization options via the Lua API
 - Block cursor in Normal/OperatorPending mode (software-rendered, inverted colors)
 - Animated cursor with exponential smoothing (`appearance.cursor_speed`)
 - Annotation framework for document-level inline metadata (used by LSP diagnostics)
+- Annotations carry a generic JSON-like payload, namespaced kinds (`lsp.diagnostic`, `fs.entry`, ...), and an owner (system/lsp/plugin/user) that governs authority
+- Interactive annotations with action verbs, default-action activation, and `next`/`prev` interactive navigation, all backed by an interval-tree index for O(log n) queries
+- Markers with per-endpoint gravity and stickiness (delete vs. persist) so annotations track edits and survive (or vanish with) the text they anchor to
+- Lua annotation API (`rift.annotations.add/remove/update/get/at/in_range`) with enter/leave cursor events and action handlers, so plugins can author and respond to annotations
+- Annotation state is snapshotted into undo/redo, so undoing restores annotations alongside text
 - `f`/`F`/`t`/`T` character-find motions with `N`/`n` repeat
 - `D` to delete to end of line
 - `{N}G` to jump to line N
