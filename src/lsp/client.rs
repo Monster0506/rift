@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::BufReader;
 use std::process::{Child, ChildStdin, ChildStdout, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -117,12 +117,7 @@ impl LspClient {
     }
 
     fn write_message<T: serde::Serialize>(&mut self, msg: &T) {
-        if let Ok(body) = serde_json::to_vec(msg) {
-            let header = format!("Content-Length: {}\r\n\r\n", body.len());
-            let _ = self.stdin.write_all(header.as_bytes());
-            let _ = self.stdin.write_all(&body);
-            let _ = self.stdin.flush();
-        }
+        let _ = crate::transport::write_framed(&mut self.stdin, msg);
     }
 
     /// Drain all pending raw messages from the reader thread.
@@ -139,39 +134,10 @@ fn spawn_reader_thread(stdout: ChildStdout, tx: Sender<RawLspMessage>) -> thread
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
         loop {
-            // Read headers
-            let mut content_length: Option<usize> = None;
-            loop {
-                let mut line = String::new();
-                match reader.read_line(&mut line) {
-                    Ok(0) | Err(_) => {
-                        return;
-                    }
-                    Ok(_) => {}
-                }
-                let line = line.trim();
-                if line.is_empty() {
-                    break; // End of headers
-                }
-                if let Some(rest) = line.strip_prefix("Content-Length:") {
-                    if let Ok(n) = rest.trim().parse::<usize>() {
-                        content_length = Some(n);
-                    }
-                }
-            }
-
-            let n = match content_length {
-                Some(n) => n,
-                None => {
-                    continue;
-                }
+            let body = match crate::transport::read_framed(&mut reader) {
+                Ok(b) => b,
+                Err(_) => return,
             };
-
-            // Read body
-            let mut body = vec![0u8; n];
-            if read_exact(&mut reader, &mut body).is_err() {
-                return;
-            }
 
             let msg: JsonRpcMessage = match serde_json::from_slice(&body) {
                 Ok(m) => m,
@@ -191,23 +157,6 @@ fn spawn_reader_thread(stdout: ChildStdout, tx: Sender<RawLspMessage>) -> thread
             }
         }
     })
-}
-
-fn read_exact<R: std::io::Read>(reader: &mut R, buf: &mut [u8]) -> std::io::Result<()> {
-    let mut offset = 0;
-    while offset < buf.len() {
-        match reader.read(&mut buf[offset..]) {
-            Ok(0) => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::UnexpectedEof,
-                    "EOF",
-                ))
-            }
-            Ok(n) => offset += n,
-            Err(e) => return Err(e),
-        }
-    }
-    Ok(())
 }
 
 fn parse_rpc_message(msg: JsonRpcMessage) -> Option<RawLspMessage> {

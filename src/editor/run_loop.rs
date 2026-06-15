@@ -454,6 +454,12 @@ impl<T: TerminalBackend> Editor<T> {
             if notif_changed {
                 self.last_notification_generation = current_gen;
             }
+
+            // In remote mode, :q detaches the client instead of exiting.
+            if self.should_quit && self.state.is_remote {
+                self.term.request_detach();
+                self.should_quit = false;
+            }
         }
 
         self.plugin_host

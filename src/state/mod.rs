@@ -291,6 +291,8 @@ pub struct State {
     /// LSP status indicator for the status bar (e.g. "LSP: 2/5 indexing").
     /// None when no LSP activity is in progress.
     pub lsp_status: Option<String>,
+    /// True when running inside an IPC daemon (remote session).
+    pub is_remote: bool,
 }
 
 impl State {
@@ -322,6 +324,7 @@ impl State {
             search_history: crate::history::command::CommandHistory::default(),
             completion_session: None,
             lsp_status: None,
+            is_remote: false,
         }
     }
 
@@ -353,6 +356,7 @@ impl State {
             search_history: crate::history::command::CommandHistory::default(),
             completion_session: None,
             lsp_status: None,
+            is_remote: false,
         }
     }
 

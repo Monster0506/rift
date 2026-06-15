@@ -90,6 +90,8 @@ pub struct StatusDrawState {
     pub lsp_ok_color: Option<crate::color::Color>,
     pub lsp_error_color: Option<crate::color::Color>,
     pub lsp_warn_color: Option<crate::color::Color>,
+    /// True when running in an IPC daemon (remote session).
+    pub is_remote: bool,
 }
 
 /// Minimal state required to trigger a re-render of the command line
@@ -460,8 +462,6 @@ fn render_line(
     ctx: &DrawContext,
     config: RenderLineConfig,
     highlight_idx: &mut usize,
-    // Search highlighting now flows through ui.search annotations; kept for the
-    // call-site's wrapped-line bookkeeping but no longer consumed here.
     _search_match_idx: &mut usize,
 ) {
     let buf = ctx.buf;
@@ -822,7 +822,11 @@ pub(crate) fn render_notifications(
         };
 
         let lines = wrap_text(message, max_width);
-        let content_width = lines.iter().map(|l| l.width()).max().unwrap_or(0);
+        let content_width = lines
+            .iter()
+            .map(|l| UnicodeWidthStr::width(l.as_str()))
+            .max()
+            .unwrap_or(0);
         let box_width = content_width + 3;
         let start_col = viewport_cols.saturating_sub(box_width);
 

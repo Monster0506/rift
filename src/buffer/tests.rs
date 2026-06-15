@@ -97,7 +97,6 @@ fn test_lines() {
     assert_eq!(buffer.get_total_lines(), 3);
 
     // Check line contents
-    // get_line_bytes is removed. We verify via full buffer content or manually iterating if needed.
     assert_eq!(buffer.to_string(), "Line 1\nLine 2\nLine 3");
 
     // Check cursor line tracking

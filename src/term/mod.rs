@@ -65,6 +65,10 @@ pub trait TerminalBackend {
 
     /// Change the terminal cursor shape (DECSCUSR).
     fn set_cursor_shape(&mut self, shape: CursorShape) -> Result<(), String>;
+
+    /// Signal that the client should detach without killing the editor.
+    /// Only meaningful for IPC backends; default is a no-op.
+    fn request_detach(&mut self) {}
 }
 
 /// Extension trait for color support

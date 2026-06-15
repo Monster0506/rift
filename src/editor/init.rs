@@ -342,4 +342,9 @@ impl<T: TerminalBackend> Editor<T> {
         self.apply_plugin_mutations();
         Ok(())
     }
+
+    /// Mark this editor as running in a remote IPC daemon session.
+    pub fn set_remote(&mut self, remote: bool) {
+        self.state.is_remote = remote;
+    }
 }

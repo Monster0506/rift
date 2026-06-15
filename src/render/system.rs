@@ -220,6 +220,7 @@ impl RenderSystem {
                 .syntax_colors
                 .as_ref()
                 .and_then(|c| c.get_color("ui.lsp.warn")),
+            is_remote: ctx.state.is_remote,
         };
 
         self.world

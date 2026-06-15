@@ -62,6 +62,7 @@ fn create_default_statusdrawstate() -> StatusDrawState {
         lsp_ok_color: None,
         lsp_error_color: None,
         lsp_warn_color: None,
+        is_remote: false,
     }
 }
 // Key formatting tests

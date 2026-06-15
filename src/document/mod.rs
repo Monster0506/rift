@@ -157,7 +157,7 @@ pub struct Document {
     pub terminal_cell_colors: crate::color::CellColorSpans,
     pub highlight_slots:
         std::collections::HashMap<u32, Vec<(std::ops::Range<usize>, crate::color::Color)>>,
-    /// Structured metadata sidecar — replaces `Character::Annotation` byte embedding.
+    /// Structured metadata sidecar.
     pub annotations: AnnotationStore,
     /// Full annotation snapshot captured before a transaction, restored on undo.
     pending_annotation_snapshot: Option<Vec<crate::annotations::Annotation>>,

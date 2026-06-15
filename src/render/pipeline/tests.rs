@@ -309,10 +309,6 @@ fn visible_chars(items: &[RenderItem]) -> String {
         .collect()
 }
 
-// Note: AnnotationFilter was removed because Character::Annotation no longer exists.
-// Directory entry IDs are now stored in the AnnotationStore sidecar (src/annotations/mod.rs),
-// so the buffer character stream is always clean and needs no annotation filtering.
-
 #[test]
 fn test_line_source_renders_plain_directory_line() {
     // After migration, directory buffer lines contain only visible chars — no annotation prefix.

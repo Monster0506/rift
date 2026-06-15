@@ -686,8 +686,6 @@ fn set_buffer_text(doc: &mut Document, text: &str) {
 /// - Lines with a `/NNN ` prefix record an annotation entry at that line in the store.
 /// - The buffer is populated with the plain text (no prefix bytes).
 ///
-/// This replaces the old `Character::Annotation`-based approach and exercises
-/// `parse_directory_diff` with the new annotation store path.
 fn set_annotated_buffer(doc: &mut Document, text: &str) {
     let lines: Vec<&str> = text.split('\n').collect();
     let mut plain_lines: Vec<&str> = Vec::new();

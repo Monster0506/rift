@@ -132,7 +132,7 @@ pub struct Annotation {
     pub kind: Kind,
     /// Provenance and authority.
     pub owner: AnnotationOwner,
-    /// Generic payload; replaces the old entry_id/tooltip fields.
+    /// Generic payload.
     pub payload: Value,
     /// Optional styling/adornment composed over base color/syntax.
     pub presentation: Option<Presentation>,

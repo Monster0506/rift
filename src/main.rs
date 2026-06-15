@@ -37,7 +37,31 @@ fn main() {
 
     let args = cli::parse();
 
-    // Create terminal backend
+    if args.list_sessions {
+        monster_rift::ipc::session::print_newest();
+    }
+
+    // daemon mode
+    if args.daemon {
+        if args.detach {
+            if let Err(e) = monster_rift::ipc::daemon::detach() {
+                eprintln!("detach error: {e}");
+                std::process::exit(1);
+            }
+            return;
+        }
+        let cfg = monster_rift::ipc::daemon::DaemonConfig {
+            bind: args.bind,
+            port: args.port,
+        };
+        if let Err(e) = monster_rift::ipc::daemon::run(cfg, args.file) {
+            eprintln!("daemon error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    // All interactive paths share one terminal backend.
     let backend = match CrosstermBackend::new() {
         Ok(b) => b,
         Err(e) => {
@@ -46,7 +70,42 @@ fn main() {
         }
     };
 
-    // Create editor with optional file
+    // --connect [user@]host: SSH to find newest session, then attach.
+    if let Some(target) = args.connect {
+        if let Err(e) = monster_rift::ipc::client::connect_remote(
+            &target, args.start, args.file, args.port, backend,
+        ) {
+            eprintln!("connect error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    // --attach [file]: attach to a local daemon session.
+    if let Some(session_arg) = args.attach {
+        let session_path = if session_arg.is_empty() {
+            match monster_rift::ipc::session::find_local() {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("attach error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            std::path::PathBuf::from(session_arg)
+        };
+        let cfg = monster_rift::ipc::client::AttachConfig {
+            session_file: session_path,
+            skip_liveness: false,
+        };
+        if let Err(e) = monster_rift::ipc::client::attach(cfg, backend) {
+            eprintln!("attach error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    // local editor
     let mut editor = match Editor::with_file(backend, args.file) {
         Ok(e) => e,
         Err(e) => {
@@ -55,25 +114,19 @@ fn main() {
         }
     };
 
-    // Apply startup commands before first render
     for cmd in args.commands {
         editor.run_command(cmd);
     }
-
-    // Apply cursor position
     if let Some(goto) = args.goto {
         match goto {
             cli::Goto::LastLine => editor.goto_line(0),
             cli::Goto::Line(n) => editor.goto_line(n),
         }
     }
-
-    // Apply search
     if let Some(pattern) = args.search {
         editor.jump_to_pattern(&pattern);
     }
 
-    // Run editor
     if let Err(e) = editor.run() {
         eprintln!("Editor Error [{}]: {}", e.code, e.message);
         std::process::exit(1);

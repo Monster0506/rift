@@ -1,5 +1,6 @@
 use crate::error::{ErrorType, RiftError};
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
 use tree_sitter::Language;
@@ -36,7 +37,7 @@ pub struct LanguageLoader {
     _grammar_dir: PathBuf,
     pub dynamic: RwLock<DynamicRegistry>,
     /// Shared libraries loaded at runtime — must outlive every Language derived from them.
-    loaded_libs: Mutex<Vec<libloading::Library>>,
+    loaded_libs: Mutex<Vec<RawLib>>,
     /// Grammars registered via `register_grammar()`, keyed by language name.
     dynamic_languages: RwLock<HashMap<String, Language>>,
 }
@@ -128,16 +129,16 @@ impl LanguageLoader {
         so_path: &str,
         fn_name: &str,
     ) -> Result<(), String> {
-        let lib = unsafe {
-            libloading::Library::new(so_path).map_err(|e| format!("dlopen '{}': {}", so_path, e))?
-        };
+        let lib =
+            unsafe { RawLib::open(so_path).map_err(|e| format!("dlopen '{}': {}", so_path, e))? };
 
         let language: Language = unsafe {
             type LangFn = unsafe extern "C" fn() -> *const tree_sitter::ffi::TSLanguage;
-            let sym: libloading::Symbol<LangFn> = lib
-                .get(fn_name.as_bytes())
+            let sym = lib
+                .sym(fn_name.as_bytes())
                 .map_err(|e| format!("symbol '{}' in '{}': {}", fn_name, so_path, e))?;
-            let ptr = sym();
+            let f: LangFn = std::mem::transmute(sym);
+            let ptr = f();
             if ptr.is_null() {
                 return Err(format!("'{}' returned a null TSLanguage pointer", fn_name));
             }
@@ -422,4 +423,86 @@ fn get_bundled_injections_query(lang_name: &str) -> Option<&'static str> {
         "markdown" => Some(tree_sitter_md::INJECTION_QUERY_BLOCK),
         _ => None,
     }
+}
+
+// Raw dynamic library handle
+
+struct RawLib(*mut std::ffi::c_void);
+
+unsafe impl Send for RawLib {}
+unsafe impl Sync for RawLib {}
+
+impl RawLib {
+    unsafe fn open(path: &str) -> Result<Self, String> {
+        let c = CString::new(path).map_err(|e| e.to_string())?;
+        let h = sys::open(c.as_ptr());
+        if h.is_null() {
+            Err(format!("could not open '{}'", path))
+        } else {
+            Ok(Self(h))
+        }
+    }
+
+    unsafe fn sym(&self, name: &[u8]) -> Result<*mut std::ffi::c_void, String> {
+        let c = CString::new(name).map_err(|e| e.to_string())?;
+        let s = sys::sym(self.0, c.as_ptr());
+        if s.is_null() {
+            Err("symbol not found".to_string())
+        } else {
+            Ok(s)
+        }
+    }
+}
+
+impl Drop for RawLib {
+    fn drop(&mut self) {
+        unsafe { sys::close(self.0) };
+    }
+}
+
+#[cfg(unix)]
+mod sys {
+    extern "C" {
+        fn dlopen(path: *const i8, flags: i32) -> *mut std::ffi::c_void;
+        fn dlsym(h: *mut std::ffi::c_void, sym: *const i8) -> *mut std::ffi::c_void;
+        fn dlclose(h: *mut std::ffi::c_void) -> i32;
+    }
+    pub unsafe fn open(path: *const i8) -> *mut std::ffi::c_void {
+        dlopen(path, 2)
+    } // RTLD_NOW
+    pub unsafe fn sym(h: *mut std::ffi::c_void, s: *const i8) -> *mut std::ffi::c_void {
+        dlsym(h, s)
+    }
+    pub unsafe fn close(h: *mut std::ffi::c_void) {
+        dlclose(h);
+    }
+}
+
+#[cfg(windows)]
+mod sys {
+    extern "system" {
+        fn LoadLibraryA(path: *const i8) -> *mut std::ffi::c_void;
+        fn GetProcAddress(h: *mut std::ffi::c_void, sym: *const i8) -> *mut std::ffi::c_void;
+        fn FreeLibrary(h: *mut std::ffi::c_void) -> i32;
+    }
+    pub unsafe fn open(path: *const i8) -> *mut std::ffi::c_void {
+        LoadLibraryA(path)
+    }
+    pub unsafe fn sym(h: *mut std::ffi::c_void, s: *const i8) -> *mut std::ffi::c_void {
+        GetProcAddress(h, s)
+    }
+    pub unsafe fn close(h: *mut std::ffi::c_void) {
+        FreeLibrary(h);
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+mod sys {
+    pub unsafe fn open(_: *const i8) -> *mut std::ffi::c_void {
+        std::ptr::null_mut()
+    }
+    pub unsafe fn sym(_: *mut std::ffi::c_void, _: *const i8) -> *mut std::ffi::c_void {
+        std::ptr::null_mut()
+    }
+    pub unsafe fn close(_: *mut std::ffi::c_void) {}
 }

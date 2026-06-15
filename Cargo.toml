@@ -1,6 +1,6 @@
 [package]
 name = "monster-rift"
-version = "0.5.4-patch.1"
+version = "0.5.3"
 edition = "2021"
 default-run = "rift"
 description = "A vim-like text editor"
@@ -42,11 +42,10 @@ treesitter = [
 
 [dependencies]
 mlua = { version = "0.10", features = ["lua54", "vendored"] }
-libloading = "0.8"
 crossterm = "0.28.1"
 monster-regex = "0.2.5"
-unicode-width = "0.2.2"
 streaming-iterator = "0.1.9"
+unicode-width = "0.2.2"
 
 tree-sitter = { version = "0.26.3" }
 
@@ -73,6 +72,7 @@ tree-sitter-sequel = { version = "0.3.11", optional = true }
 tree-sitter-svelte-next = { version = "0.1.1", optional = true }
 alacritty_terminal = "0.25.1"
 anyhow = "1.0.101"
+getrandom = "0.2"
 arboard = { version = "3.6.1", features = ["wayland-data-control"] }
 serde_json = "1.0.149"
 serde = { version = "1.0.228", features = ["derive"] }

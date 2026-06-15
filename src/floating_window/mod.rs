@@ -761,27 +761,6 @@ impl FloatingWindow {
         line.extend(content.chars());
         self.render(layer, &[line]);
     }
-
-    // ========================================================================
-    // Legacy compatibility methods (for direct terminal rendering)
-    // These methods are for backward compatibility during transition
-    // ========================================================================
-
-    /// Render the floating window to a layer (legacy compatibility method)
-    ///
-    /// This method signature matches the previous `render_to_layer` for compatibility.
-    /// Prefer using `render()` for new code.
-    #[deprecated(note = "Use render() instead - this is for backward compatibility")]
-    pub fn render_to_layer(
-        &self,
-        layer: &mut Layer,
-        content: &[Vec<char>],
-        _term_rows: u16,
-        _term_cols: u16,
-        border_chars_override: Option<BorderChars>,
-    ) {
-        self.render_with_border_chars(layer, content, border_chars_override);
-    }
 }
 
 #[cfg(test)]

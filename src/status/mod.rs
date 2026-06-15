@@ -211,7 +211,7 @@ impl StatusBar {
         parts.join(" | ")
     }
 
-    /// Format debug information string (legacy)
+    /// Format debug information string.
     fn format_debug_info(state: &State, _current_mode: Mode) -> String {
         let mut parts = Vec::new();
 
@@ -256,6 +256,12 @@ impl StatusBar {
 
         layer.write_str_colored(status_row, col, mode_str, fg, bg);
         col += mode_str.len();
+
+        if state.is_remote {
+            let remote_str = " [R]";
+            layer.write_str_colored(status_row, col, remote_str, fg, bg);
+            col += remote_str.len();
+        }
 
         if state.pending_count > 0 {
             let count_str = format!(" {}", state.pending_count);

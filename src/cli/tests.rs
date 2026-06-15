@@ -31,7 +31,7 @@ fn version_before_file() {
 
 #[test]
 fn empty_args() {
-    assert_eq!(ok(&[]), Args::default());
+    assert_eq!(ok(&[]), Args::new());
 }
 
 // ── file ──────────────────────────────────────────────────────────────────────
@@ -179,4 +179,69 @@ fn file_goto_search_cmd() {
     assert_eq!(a.goto, Some(Goto::Line(42)));
     assert_eq!(a.search.as_deref(), Some("TODO"));
     assert_eq!(a.commands, vec!["set wrap"]);
+}
+
+// IPC flags
+
+#[test]
+fn daemon_flag() {
+    let args = parse_args(&["--daemon"]).unwrap().unwrap();
+    assert!(args.daemon);
+    assert_eq!(args.port, 7619);
+    assert_eq!(args.bind, "127.0.0.1");
+}
+
+#[test]
+fn daemon_with_port() {
+    let args = parse_args(&["--daemon", "--port", "9000"])
+        .unwrap()
+        .unwrap();
+    assert!(args.daemon);
+    assert_eq!(args.port, 9000);
+}
+
+#[test]
+fn daemon_with_bind() {
+    let args = parse_args(&["--daemon", "--bind", "0.0.0.0"])
+        .unwrap()
+        .unwrap();
+    assert_eq!(args.bind, "0.0.0.0");
+}
+
+#[test]
+fn attach_flag() {
+    let args = parse_args(&["--attach", "/tmp/sess.json"])
+        .unwrap()
+        .unwrap();
+    assert_eq!(args.attach, Some("/tmp/sess.json".to_string()));
+}
+
+#[test]
+fn attach_no_arg_autodiscovers() {
+    let args = parse_args(&["--attach"]).unwrap().unwrap();
+    assert_eq!(args.attach, Some(String::new()));
+}
+
+#[test]
+fn list_sessions_flag() {
+    let args = parse_args(&["--list-sessions"]).unwrap().unwrap();
+    assert!(args.list_sessions);
+}
+
+#[test]
+fn start_flag_with_connect() {
+    let args = parse_args(&["--connect", "user@host", "--start"])
+        .unwrap()
+        .unwrap();
+    assert_eq!(args.connect.as_deref(), Some("user@host"));
+    assert!(args.start);
+}
+
+#[test]
+fn start_flag_with_file() {
+    let args = parse_args(&["--connect", "host", "--start", "main.rs"])
+        .unwrap()
+        .unwrap();
+    assert!(args.start);
+    assert_eq!(args.file.as_deref(), Some("main.rs"));
 }
