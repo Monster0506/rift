@@ -825,4 +825,45 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::Char(' '),
         Action::Buffer("location_list:code_action".to_string()),
     );
+
+    register_text_objects(keymap);
+}
+
+fn register_text_objects(keymap: &mut KeyMap) {
+    use crate::text_objects::{Modifier, ObjectKind, TextObjectSpec};
+
+    // (object key char, ObjectKind)
+    let objects: &[(char, ObjectKind)] = &[
+        ('w', ObjectKind::Word),
+        ('W', ObjectKind::BigWord),
+        ('"', ObjectKind::DoubleQuote),
+        ('\'', ObjectKind::SingleQuote),
+        ('`', ObjectKind::Backtick),
+        ('(', ObjectKind::Paren),
+        (')', ObjectKind::Paren),
+        ('b', ObjectKind::Paren),
+        ('{', ObjectKind::CurlyBrace),
+        ('}', ObjectKind::CurlyBrace),
+        ('B', ObjectKind::CurlyBrace),
+        ('[', ObjectKind::SquareBracket),
+        (']', ObjectKind::SquareBracket),
+        ('<', ObjectKind::AngleBracket),
+        ('>', ObjectKind::AngleBracket),
+        ('p', ObjectKind::Paragraph),
+        ('s', ObjectKind::Sentence),
+        ('l', ObjectKind::Line),
+        ('g', ObjectKind::Buffer),
+    ];
+
+    for &(obj_key, kind) in objects {
+        for (mod_key, modifier) in [('i', Modifier::Inner), ('a', Modifier::Around)] {
+            let spec = TextObjectSpec { modifier, kind };
+            let action = Action::Editor(EditorAction::Move(Motion::TextObject(spec)));
+            keymap.register_sequence(
+                KeyContext::OperatorPending,
+                vec![Key::Char(mod_key), Key::Char(obj_key)],
+                action,
+            );
+        }
+    }
 }

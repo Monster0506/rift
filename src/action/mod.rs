@@ -1,6 +1,7 @@
 //! Editor actions, including movements and operations
 use crate::command::Command;
 use crate::search::{find_next, SearchDirection};
+use crate::text_objects::TextObjectSpec;
 
 /// Represents a count for a command or motion
 pub type Count = usize;
@@ -62,6 +63,8 @@ pub enum Motion {
     RepeatFindBackward,
     /// Move to the start of a specific 0-based line (linewise, used by G/nG operators)
     ToLine(usize),
+    /// Text object (used in operator-pending mode only)
+    TextObject(TextObjectSpec),
 }
 
 impl Motion {
@@ -225,6 +228,9 @@ impl Motion {
                 buf.clear_desired_col();
                 let start = buf.line_index.get_start(line_idx).unwrap_or(0);
                 let _ = buf.set_cursor(start);
+            }
+            Motion::TextObject(_) => {
+                // Resolved at operator level; no cursor movement in normal mode.
             }
             Motion::FindCharForward(ch) => {
                 buf.clear_desired_col();

@@ -255,6 +255,8 @@ impl<T: TerminalBackend> Editor<T> {
                                     KeyContext::TerminalNormal
                                 } else if is_location_list {
                                     KeyContext::LocationList
+                                } else if self.current_mode == Mode::OperatorPending {
+                                    KeyContext::OperatorPending
                                 } else {
                                     KeyContext::Normal
                                 }

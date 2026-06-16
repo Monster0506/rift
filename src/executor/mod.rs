@@ -53,6 +53,12 @@ pub fn compute_motion_range(
 ) -> Option<crate::wrap::MotionRange> {
     use crate::wrap::{MotionRange, OperatorContext};
 
+    // Text objects resolve directly without cursor simulation.
+    if let Motion::TextObject(spec) = motion {
+        let _ = count;
+        return crate::text_objects::resolve(spec, &doc.buffer);
+    }
+
     let is_linewise = matches!(
         motion,
         Motion::Up | Motion::Down | Motion::PageUp | Motion::PageDown | Motion::ToLine(_)

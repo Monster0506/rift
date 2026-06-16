@@ -341,3 +341,53 @@ fn test_default_explorer_toggle_hidden_keybind() {
         "FileExplorer 'H' should be bound to ExplorerToggleHidden by default"
     );
 }
+
+#[test]
+fn test_operator_pending_text_objects() {
+    use crate::keymap::trie::MatchResult;
+    use crate::text_objects::{Modifier, ObjectKind, TextObjectSpec};
+
+    let mut map = KeyMap::new();
+    register_defaults(&mut map);
+
+    // ['i'] in OperatorPending must be Prefix (waits for object key).
+    assert!(
+        matches!(
+            map.lookup(KeyContext::OperatorPending, &[Key::Char('i')]),
+            MatchResult::Prefix
+        ),
+        "'i' in OperatorPending should be Prefix"
+    );
+
+    // ['i','w'] must resolve to Move(TextObject(Inner, Word)).
+    let expected = Action::Editor(EditorAction::Move(Motion::TextObject(TextObjectSpec {
+        modifier: Modifier::Inner,
+        kind: ObjectKind::Word,
+    })));
+    assert_eq!(
+        map.lookup(
+            KeyContext::OperatorPending,
+            &[Key::Char('i'), Key::Char('w')]
+        ),
+        MatchResult::Exact(&expected),
+        "['i','w'] in OperatorPending should be Inner Word text object"
+    );
+
+    // 'i' in Normal context must remain Exact(EnterInsertMode), not ambiguous.
+    assert!(
+        matches!(
+            map.lookup(KeyContext::Normal, &[Key::Char('i')]),
+            MatchResult::Exact(_)
+        ),
+        "'i' in Normal should still be Exact (EnterInsertMode)"
+    );
+
+    // OperatorPending falls through to Normal for regular motions.
+    assert!(
+        matches!(
+            map.lookup(KeyContext::OperatorPending, &[Key::Char('h')]),
+            MatchResult::Exact(_)
+        ),
+        "'h' should be reachable in OperatorPending via Normal fallthrough"
+    );
+}

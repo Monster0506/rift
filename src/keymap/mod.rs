@@ -13,6 +13,10 @@ pub enum KeyContext {
     Global,
     UndoTree,
     Normal,
+    /// Operator-pending mode: used after d/c/y. Falls through to Normal so all
+    /// motions remain available; text-object sequences are registered here only,
+    /// keeping `i`/`a` unambiguous in Normal mode.
+    OperatorPending,
     Insert,
     Command,
     Search,
@@ -80,6 +84,7 @@ impl KeyMap {
     /// `Terminal` falls through to `Insert` since it is always in input mode.
     fn parent_context(context: KeyContext) -> Option<KeyContext> {
         match context {
+            KeyContext::OperatorPending => Some(KeyContext::Normal),
             KeyContext::FileExplorer
             | KeyContext::UndoTree
             | KeyContext::Clipboard
