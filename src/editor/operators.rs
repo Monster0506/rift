@@ -39,6 +39,24 @@ impl<T: TerminalBackend> Editor<T> {
             .map(|range| crate::clipboard::capture_text(&doc.buffer, &range))
         });
         let has_range = captured.is_some();
+        if !has_range {
+            if let Motion::TextObject(spec) = motion {
+                if crate::text_objects::requires_treesitter(spec.kind) {
+                    let has_tree = self
+                        .document_manager
+                        .active_document()
+                        .and_then(|d| d.syntax.as_ref())
+                        .and_then(|s| s.tree.as_ref())
+                        .is_some();
+                    if !has_tree {
+                        self.state
+                            .error_manager
+                            .notifications_mut()
+                            .info("no tree-sitter grammar for this filetype");
+                    }
+                }
+            }
+        }
         let in_clipboard = self
             .document_manager
             .active_document()

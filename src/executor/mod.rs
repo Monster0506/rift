@@ -55,7 +55,23 @@ pub fn compute_motion_range(
 
     // Text objects resolve directly without cursor simulation.
     if let Motion::TextObject(spec) = motion {
-        return crate::text_objects::resolve(spec, &doc.buffer, count);
+        let needs_tree = crate::text_objects::requires_treesitter(spec.kind);
+        let ts_bytes: Option<Vec<u8>> =
+            if needs_tree && doc.syntax.as_ref().and_then(|s| s.tree.as_ref()).is_some() {
+                Some(doc.buffer.to_logical_bytes())
+            } else {
+                None
+            };
+        let syntax_ctx = ts_bytes.as_ref().and_then(|bytes| {
+            doc.syntax
+                .as_ref()
+                .and_then(|s| s.tree.as_ref())
+                .map(|tree| crate::text_objects::SyntaxContext {
+                    tree,
+                    source: bytes.as_slice(),
+                })
+        });
+        return crate::text_objects::resolve(spec, &doc.buffer, count, syntax_ctx);
     }
 
     let is_linewise = matches!(

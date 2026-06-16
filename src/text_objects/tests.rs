@@ -39,7 +39,7 @@ fn res_count(
 ) -> Option<(usize, usize, bool)> {
     let mut buf = buf_from(s);
     buf.set_cursor(cursor).unwrap();
-    resolve(spec, &buf, count).map(|r| (r.anchor, r.new_cursor, r.inclusive))
+    resolve(spec, &buf, count, None).map(|r| (r.anchor, r.new_cursor, r.inclusive))
 }
 
 #[test]
@@ -300,4 +300,160 @@ fn leading_count_extends_paragraph_across_n_groups() {
     let second_line_start = buf.line_index.get_start(2).unwrap();
     assert_eq!(r.0, 0);
     assert!(r.1 >= second_line_start);
+}
+
+// Phase 3: tree-sitter backed objects.
+
+#[cfg(feature = "treesitter")]
+mod treesitter_tests {
+    use super::*;
+    use crate::text_objects::SyntaxContext;
+
+    fn rust_tree(src: &str) -> tree_sitter::Tree {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .unwrap();
+        parser.parse(src, None).unwrap()
+    }
+
+    fn html_tree(src: &str) -> tree_sitter::Tree {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_html::LANGUAGE.into())
+            .unwrap();
+        parser.parse(src, None).unwrap()
+    }
+
+    fn res_ts(
+        spec: TextObjectSpec,
+        tree: &tree_sitter::Tree,
+        src: &str,
+        cursor: usize,
+    ) -> Option<(usize, usize, bool)> {
+        let mut buf = buf_from(src);
+        buf.set_cursor(cursor).unwrap();
+        let ctx = SyntaxContext {
+            tree,
+            source: src.as_bytes(),
+        };
+        resolve(spec, &buf, 1, Some(ctx)).map(|r| (r.anchor, r.new_cursor, r.inclusive))
+    }
+
+    #[test]
+    fn no_syntax_context_is_none() {
+        let r = res(inner(ObjectKind::FunctionCall), "foo(a, b)", 0);
+        assert!(r.is_none());
+    }
+
+    #[test]
+    fn inner_function_call_selects_args_without_parens() {
+        let src = "foo(a, b)";
+        let tree = rust_tree(src);
+        let r = res_ts(inner(ObjectKind::FunctionCall), &tree, src, 0).unwrap();
+        assert_eq!(r, (4, 7, true)); // "a, b"
+    }
+
+    #[test]
+    fn around_function_call_selects_args_with_parens() {
+        let src = "foo(a, b)";
+        let tree = rust_tree(src);
+        let r = res_ts(around(ObjectKind::FunctionCall), &tree, src, 0).unwrap();
+        assert_eq!(r, (3, 8, true)); // "(a, b)"
+    }
+
+    #[test]
+    fn inner_argument_selects_single_arg() {
+        let src = "foo(a, b)";
+        let tree = rust_tree(src);
+        let r = res_ts(inner(ObjectKind::Argument), &tree, src, 7).unwrap();
+        assert_eq!(r, (7, 7, true)); // "b"
+    }
+
+    #[test]
+    fn around_first_argument_eats_trailing_comma() {
+        let src = "foo(a, b)";
+        let tree = rust_tree(src);
+        let r = res_ts(around(ObjectKind::Argument), &tree, src, 4).unwrap();
+        assert_eq!(r, (4, 6, true)); // "a, "
+    }
+
+    #[test]
+    fn around_last_argument_eats_leading_comma() {
+        let src = "foo(a, b)";
+        let tree = rust_tree(src);
+        let r = res_ts(around(ObjectKind::Argument), &tree, src, 7).unwrap();
+        assert_eq!(r, (5, 7, true)); // ", b"
+    }
+
+    #[test]
+    fn inner_function_def_selects_body_without_braces() {
+        let src = "fn outer() {\n    foo();\n}\n";
+        let tree = rust_tree(src);
+        let r = res_ts(inner(ObjectKind::FunctionDef), &tree, src, 18).unwrap();
+        assert_eq!(&src[r.0..=r.1], "\n    foo();\n");
+    }
+
+    #[test]
+    fn around_function_def_selects_whole_item() {
+        let src = "fn outer() {\n    foo();\n}\n";
+        let tree = rust_tree(src);
+        let r = res_ts(around(ObjectKind::FunctionDef), &tree, src, 18).unwrap();
+        assert_eq!(&src[r.0..=r.1], "fn outer() {\n    foo();\n}");
+    }
+
+    #[test]
+    fn inner_class_selects_struct_body() {
+        let src = "struct Point { x: i32 }\n";
+        let tree = rust_tree(src);
+        let r = res_ts(inner(ObjectKind::Class), &tree, src, 16).unwrap();
+        assert_eq!(&src[r.0..=r.1], " x: i32 ");
+    }
+
+    #[test]
+    fn inner_block_selects_nearest_enclosing_block() {
+        let src = "fn outer() {\n    let n = 1;\n}\n";
+        let tree = rust_tree(src);
+        let r = res_ts(inner(ObjectKind::Block), &tree, src, 18).unwrap();
+        assert_eq!(&src[r.0..=r.1], "\n    let n = 1;\n");
+    }
+
+    #[test]
+    fn nest_count_walks_to_outer_block() {
+        let src = "fn outer() {\n    if true {\n        foo();\n    }\n}\n";
+        let tree = rust_tree(src);
+        let spec = TextObjectSpec {
+            modifier: Modifier::Inner,
+            direction: Direction::Current,
+            nesting: 2,
+            kind: ObjectKind::Block,
+        };
+        let inner_cursor = src.find("foo()").unwrap();
+        let r = res_ts(spec, &tree, src, inner_cursor).unwrap();
+        assert_eq!(&src[r.0..=r.1], "\n    if true {\n        foo();\n    }\n");
+    }
+
+    #[test]
+    fn inner_number_selects_integer_literal() {
+        let src = "let n = 42;";
+        let tree = rust_tree(src);
+        let r = res_ts(inner(ObjectKind::Number), &tree, src, 9).unwrap();
+        assert_eq!(&src[r.0..=r.1], "42");
+    }
+
+    #[test]
+    fn inner_tag_selects_content_between_start_and_end() {
+        let src = "<div><p>hello</p></div>";
+        let tree = html_tree(src);
+        let r = res_ts(inner(ObjectKind::Tag), &tree, src, 9).unwrap();
+        assert_eq!(&src[r.0..=r.1], "hello");
+    }
+
+    #[test]
+    fn around_tag_selects_whole_element() {
+        let src = "<div><p>hello</p></div>";
+        let tree = html_tree(src);
+        let r = res_ts(around(ObjectKind::Tag), &tree, src, 9).unwrap();
+        assert_eq!(&src[r.0..=r.1], "<p>hello</p>");
+    }
 }

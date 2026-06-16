@@ -1336,3 +1336,26 @@ fn leading_count_composes_with_nest_count_through_full_key_path() {
     // Composed nesting (leading 2 * typed 2 = 4) reaches the outermost pair.
     assert_eq!(editor.active_document().buffer.to_string(), "()");
 }
+
+#[test]
+fn tier3_object_without_parse_tree_no_ops_and_notifies() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::key::Key;
+    use crate::text_objects::Modifier;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo(a, b)");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.pending_grammar = Some(pending_grammar::PendingGrammar::TextObject(
+        text_object_input::PendingTextObject::new(Modifier::Inner),
+    ));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('f'));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "foo(a, b)");
+    assert!(!editor.state.error_manager.notifications().is_empty());
+}

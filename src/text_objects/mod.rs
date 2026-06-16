@@ -2,6 +2,9 @@ use crate::buffer::TextBuffer;
 use crate::character::Character;
 use crate::wrap::{MotionRange, RangeKind};
 
+mod treesitter;
+pub use treesitter::SyntaxContext;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Modifier {
     Inner,
@@ -35,6 +38,13 @@ pub enum ObjectKind {
     Sentence,
     Line,
     Buffer,
+    FunctionCall,
+    Argument,
+    FunctionDef,
+    Class,
+    Block,
+    Tag,
+    Number,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,7 +80,28 @@ pub const OBJECT_KEY_TABLE: &[(char, ObjectKind)] = &[
     ('s', ObjectKind::Sentence),
     ('l', ObjectKind::Line),
     ('g', ObjectKind::Buffer),
+    ('f', ObjectKind::FunctionCall),
+    ('a', ObjectKind::Argument),
+    ('F', ObjectKind::FunctionDef),
+    ('c', ObjectKind::Class),
+    ('o', ObjectKind::Block),
+    ('t', ObjectKind::Tag),
+    ('d', ObjectKind::Number),
 ];
+
+/// True for objects that require a tree-sitter parse tree to resolve.
+pub fn requires_treesitter(kind: ObjectKind) -> bool {
+    matches!(
+        kind,
+        ObjectKind::FunctionCall
+            | ObjectKind::Argument
+            | ObjectKind::FunctionDef
+            | ObjectKind::Class
+            | ObjectKind::Block
+            | ObjectKind::Tag
+            | ObjectKind::Number
+    )
+}
 
 pub fn object_kind_for_key(ch: char) -> Option<ObjectKind> {
     OBJECT_KEY_TABLE
@@ -97,7 +128,12 @@ fn compose_nesting(spec_nesting: u8, count: usize) -> u8 {
     (n * c).min(u8::MAX as u32) as u8
 }
 
-pub fn resolve(spec: TextObjectSpec, buf: &TextBuffer, count: usize) -> Option<MotionRange> {
+pub fn resolve(
+    spec: TextObjectSpec,
+    buf: &TextBuffer,
+    count: usize,
+    syntax: Option<SyntaxContext>,
+) -> Option<MotionRange> {
     let cursor = buf.cursor();
     let nesting = compose_nesting(spec.nesting, count);
     let repeat = count.max(1);
@@ -161,6 +197,16 @@ pub fn resolve(spec: TextObjectSpec, buf: &TextBuffer, count: usize) -> Option<M
         ObjectKind::Sentence => resolve_sentence(cursor, base_modifier, buf, repeat),
         ObjectKind::Line => resolve_line(cursor, base_modifier, buf),
         ObjectKind::Buffer => resolve_buffer(buf),
+        ObjectKind::FunctionCall
+        | ObjectKind::Argument
+        | ObjectKind::FunctionDef
+        | ObjectKind::Class
+        | ObjectKind::Block
+        | ObjectKind::Tag
+        | ObjectKind::Number => {
+            let ctx = syntax.as_ref()?;
+            treesitter::resolve(spec.kind, base_modifier, nesting, cursor, buf, ctx)
+        }
     }?;
 
     Some(apply_modifier_post(spec.modifier, resolved, buf))
