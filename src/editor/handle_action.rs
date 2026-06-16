@@ -603,12 +603,15 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::FindCharPending { forward, till } => {
-                self.pending_find_char_dir = Some((*forward, *till));
+                self.pending_grammar = Some(super::pending_grammar::PendingGrammar::FindChar {
+                    forward: *forward,
+                    till: *till,
+                });
                 true
             }
 
             EditorAction::ReplaceCharPending => {
-                self.pending_replace_char = true;
+                self.pending_grammar = Some(super::pending_grammar::PendingGrammar::ReplaceChar);
                 true
             }
 

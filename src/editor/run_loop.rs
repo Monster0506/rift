@@ -1,4 +1,4 @@
-use super::Editor;
+use super::{pending_grammar, text_object_input, Editor};
 use crate::action::{Action, EditorAction};
 use crate::command::Command;
 use crate::error::{ErrorType, RiftError};
@@ -133,21 +133,8 @@ impl<T: TerminalBackend> Editor<T> {
                     continue;
                 }
 
-                if self.pending_replace_char {
-                    self.pending_replace_char = false;
-                    if let crate::key::Key::Char(ch) = key_press {
-                        let count = if self.pending_count > 0 {
-                            self.pending_count
-                        } else {
-                            1
-                        };
-                        let command = Command::ReplaceChar(ch, count);
-                        let result = self.execute_buffer_command(command);
-                        if result && !self.dot_repeat.is_replaying() {
-                            self.dot_repeat.record_single(command);
-                        }
-                        self.pending_count = 0;
-                    }
+                if let Some(grammar) = self.pending_grammar.take() {
+                    self.advance_pending_grammar(grammar, key_press);
                     self.update_state_and_render(
                         key_press,
                         crate::key_handler::KeyAction::Continue,
@@ -156,24 +143,22 @@ impl<T: TerminalBackend> Editor<T> {
                     continue;
                 }
 
-                if let Some((forward, till)) = self.pending_find_char_dir.take() {
-                    if let crate::key::Key::Char(ch) = key_press {
-                        use crate::action::{Action, EditorAction, Motion};
-                        let motion = match (forward, till) {
-                            (true, false) => Motion::FindCharForward(ch),
-                            (true, true) => Motion::TillCharForward(ch),
-                            (false, false) => Motion::FindCharBackward(ch),
-                            (false, true) => Motion::TillCharBackward(ch),
-                        };
-                        self.handle_action(&Action::Editor(EditorAction::Move(motion)));
-                        self.pending_count = 0;
+                // 'i'/'a'/'I'/'A' in OperatorPending start the text-object grammar.
+                if self.current_mode == Mode::OperatorPending && self.pending_keys.is_empty() {
+                    if let Key::Char(ch) = key_press {
+                        if let Some(modifier) = crate::text_objects::modifier_for_key(ch) {
+                            self.pending_grammar =
+                                Some(pending_grammar::PendingGrammar::TextObject(
+                                    text_object_input::PendingTextObject::new(modifier),
+                                ));
+                            self.update_state_and_render(
+                                key_press,
+                                crate::key_handler::KeyAction::Continue,
+                                crate::command::Command::Noop,
+                            )?;
+                            continue;
+                        }
                     }
-                    self.update_state_and_render(
-                        key_press,
-                        crate::key_handler::KeyAction::Continue,
-                        crate::command::Command::Noop,
-                    )?;
-                    continue;
                 }
 
                 // Handle digits for count
@@ -282,7 +267,10 @@ impl<T: TerminalBackend> Editor<T> {
                             // Don't clear count if we just entered OperatorPending mode or
                             // set pending_replace_char (count is consumed on the next keypress).
                             if self.current_mode != Mode::OperatorPending
-                                && !self.pending_replace_char
+                                && !matches!(
+                                    self.pending_grammar,
+                                    Some(pending_grammar::PendingGrammar::ReplaceChar)
+                                )
                             {
                                 self.pending_count = 0;
                             }

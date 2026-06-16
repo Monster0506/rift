@@ -686,7 +686,13 @@ fn test_find_char_pending_sets_state() {
         till: false,
     }));
 
-    assert_eq!(editor.pending_find_char_dir, Some((true, false)));
+    assert!(matches!(
+        editor.pending_grammar,
+        Some(super::pending_grammar::PendingGrammar::FindChar {
+            forward: true,
+            till: false
+        })
+    ));
 }
 
 #[test]
@@ -700,7 +706,13 @@ fn test_find_char_pending_backward_sets_state() {
         till: false,
     }));
 
-    assert_eq!(editor.pending_find_char_dir, Some((false, false)));
+    assert!(matches!(
+        editor.pending_grammar,
+        Some(super::pending_grammar::PendingGrammar::FindChar {
+            forward: false,
+            till: false
+        })
+    ));
 }
 
 #[test]
@@ -1290,4 +1302,37 @@ fn test_text_changed_coarse_fires_once_per_render() {
         1,
         "TextChangedCoarse must not fire on a render with no pending changes"
     );
+}
+
+#[test]
+fn leading_count_composes_with_nest_count_through_full_key_path() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::key::Key;
+    use crate::text_objects::Modifier;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "((((ab))))");
+    editor.active_document().buffer.set_cursor(4).unwrap();
+
+    // Replay "2di2(" key by key, exactly as run_loop would dispatch it.
+    editor.pending_count = 2;
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    assert_eq!(editor.current_mode, Mode::OperatorPending);
+    assert_eq!(editor.pending_count, 2);
+
+    editor.pending_grammar = Some(pending_grammar::PendingGrammar::TextObject(
+        text_object_input::PendingTextObject::new(Modifier::Inner),
+    ));
+
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('2'));
+    assert!(editor.pending_grammar.is_some());
+
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('('));
+
+    // Composed nesting (leading 2 * typed 2 = 4) reaches the outermost pair.
+    assert_eq!(editor.active_document().buffer.to_string(), "()");
 }

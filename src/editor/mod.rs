@@ -22,9 +22,11 @@ mod lsp_ops;
 mod mode_mgmt;
 mod operators;
 mod panel_handlers;
+mod pending_grammar;
 mod plugin_ops;
 mod rendering;
 mod run_loop;
+mod text_object_input;
 
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -127,8 +129,7 @@ pub struct Editor<T: TerminalBackend> {
     pending_keys: Vec<crate::key::Key>,
     pending_count: usize,
     pending_operator: Option<crate::action::OperatorType>,
-    pending_find_char_dir: Option<(bool, bool)>,
-    pending_replace_char: bool,
+    pending_grammar: Option<pending_grammar::PendingGrammar>,
     /// Cached display map keyed by (doc_id, buffer_revision, content_width).
     /// Avoids rebuilding the soft-wrap map on every command when the buffer hasn't changed.
     display_map_cache: Option<(

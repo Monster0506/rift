@@ -55,8 +55,7 @@ pub fn compute_motion_range(
 
     // Text objects resolve directly without cursor simulation.
     if let Motion::TextObject(spec) = motion {
-        let _ = count;
-        return crate::text_objects::resolve(spec, &doc.buffer);
+        return crate::text_objects::resolve(spec, &doc.buffer, count);
     }
 
     let is_linewise = matches!(

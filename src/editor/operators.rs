@@ -64,25 +64,23 @@ impl<T: TerminalBackend> Editor<T> {
             crate::action::OperatorType::Change => {
                 if !has_range {
                     if let Motion::TextObject(spec) = motion {
-                        if spec.modifier == crate::text_objects::Modifier::Inner {
-                            let insert_pos =
-                                self.document_manager.active_document_mut().and_then(|doc| {
-                                    crate::text_objects::resolve_insert_cursor(spec, &doc.buffer)
-                                });
-                            if let Some(pos) = insert_pos {
-                                if let Some(doc) = self.document_manager.active_document_mut() {
-                                    let _ = doc.buffer.set_cursor(pos);
-                                }
-                                if !self.dot_repeat.is_replaying() {
-                                    let cmd = crate::command::Command::Change(motion, 1);
-                                    self.dot_repeat.start_insert_recording(cmd);
-                                }
-                                self.set_mode(Mode::Insert);
-                                return true;
+                        let insert_pos =
+                            self.document_manager.active_document_mut().and_then(|doc| {
+                                crate::text_objects::resolve_insert_cursor(spec, &doc.buffer, count)
+                            });
+                        if let Some(pos) = insert_pos {
+                            if let Some(doc) = self.document_manager.active_document_mut() {
+                                let _ = doc.buffer.set_cursor(pos);
                             }
-                            self.set_mode(Mode::Normal);
-                            return false;
+                            if !self.dot_repeat.is_replaying() {
+                                let cmd = crate::command::Command::Change(motion, 1);
+                                self.dot_repeat.start_insert_recording(cmd);
+                            }
+                            self.set_mode(Mode::Insert);
+                            return true;
                         }
+                        self.set_mode(Mode::Normal);
+                        return false;
                     }
                 }
                 let command = crate::command::Command::Change(motion, count);

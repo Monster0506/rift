@@ -13,9 +13,8 @@ pub enum KeyContext {
     Global,
     UndoTree,
     Normal,
-    /// Operator-pending mode: used after d/c/y. Falls through to Normal so all
-    /// motions remain available; text-object sequences are registered here only,
-    /// keeping `i`/`a` unambiguous in Normal mode.
+    /// Operator-pending mode: used after d/c/y. Falls through to Normal so
+    /// all motions remain available.
     OperatorPending,
     Insert,
     Command,

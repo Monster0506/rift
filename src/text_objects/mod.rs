@@ -6,6 +6,16 @@ use crate::wrap::{MotionRange, RangeKind};
 pub enum Modifier {
     Inner,
     Around,
+    InnerStrict,
+    AroundLoose,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Direction {
+    #[default]
+    Current,
+    Next,
+    Last,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +29,8 @@ pub enum ObjectKind {
     CurlyBrace,
     SquareBracket,
     AngleBracket,
+    AnyBracket,
+    AnyQuote,
     Paragraph,
     Sentence,
     Line,
@@ -28,25 +40,212 @@ pub enum ObjectKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextObjectSpec {
     pub modifier: Modifier,
+    pub direction: Direction,
+    pub nesting: u8,
     pub kind: ObjectKind,
 }
 
-pub fn resolve(spec: TextObjectSpec, buf: &TextBuffer) -> Option<MotionRange> {
+const BRACKET_PAIRS: [(char, char); 4] = [('(', ')'), ('{', '}'), ('[', ']'), ('<', '>')];
+const QUOTE_CHARS: [char; 3] = ['"', '\'', '`'];
+
+/// Object key char -> kind. `n`/`p` are reserved for the direction prefix
+/// and never appear here.
+pub const OBJECT_KEY_TABLE: &[(char, ObjectKind)] = &[
+    ('w', ObjectKind::Word),
+    ('W', ObjectKind::BigWord),
+    ('"', ObjectKind::DoubleQuote),
+    ('\'', ObjectKind::SingleQuote),
+    ('`', ObjectKind::Backtick),
+    ('(', ObjectKind::Paren),
+    (')', ObjectKind::Paren),
+    ('B', ObjectKind::CurlyBrace),
+    ('[', ObjectKind::SquareBracket),
+    (']', ObjectKind::SquareBracket),
+    ('<', ObjectKind::AngleBracket),
+    ('>', ObjectKind::AngleBracket),
+    ('b', ObjectKind::AnyBracket),
+    ('q', ObjectKind::AnyQuote),
+    ('{', ObjectKind::Paragraph),
+    ('}', ObjectKind::Paragraph),
+    ('s', ObjectKind::Sentence),
+    ('l', ObjectKind::Line),
+    ('g', ObjectKind::Buffer),
+];
+
+pub fn object_kind_for_key(ch: char) -> Option<ObjectKind> {
+    OBJECT_KEY_TABLE
+        .iter()
+        .find(|&&(c, _)| c == ch)
+        .map(|&(_, kind)| kind)
+}
+
+pub fn modifier_for_key(ch: char) -> Option<Modifier> {
+    match ch {
+        'i' => Some(Modifier::Inner),
+        'a' => Some(Modifier::Around),
+        'I' => Some(Modifier::InnerStrict),
+        'A' => Some(Modifier::AroundLoose),
+        _ => None,
+    }
+}
+
+/// Composes a leading operator count with an in-grammar nest-count
+/// (e.g. `2di2(` => nesting 4), matching vim's general count rule.
+fn compose_nesting(spec_nesting: u8, count: usize) -> u8 {
+    let n = spec_nesting.max(1) as u32;
+    let c = (count.max(1) as u32).min(u8::MAX as u32);
+    (n * c).min(u8::MAX as u32) as u8
+}
+
+pub fn resolve(spec: TextObjectSpec, buf: &TextBuffer, count: usize) -> Option<MotionRange> {
     let cursor = buf.cursor();
-    match spec.kind {
-        ObjectKind::Word => resolve_word(cursor, spec.modifier, buf, false),
-        ObjectKind::BigWord => resolve_word(cursor, spec.modifier, buf, true),
-        ObjectKind::DoubleQuote => resolve_quote(cursor, spec.modifier, buf, '"'),
-        ObjectKind::SingleQuote => resolve_quote(cursor, spec.modifier, buf, '\''),
-        ObjectKind::Backtick => resolve_quote(cursor, spec.modifier, buf, '`'),
-        ObjectKind::Paren => resolve_bracket(cursor, spec.modifier, buf, '(', ')'),
-        ObjectKind::CurlyBrace => resolve_bracket(cursor, spec.modifier, buf, '{', '}'),
-        ObjectKind::SquareBracket => resolve_bracket(cursor, spec.modifier, buf, '[', ']'),
-        ObjectKind::AngleBracket => resolve_bracket(cursor, spec.modifier, buf, '<', '>'),
-        ObjectKind::Paragraph => resolve_paragraph(cursor, spec.modifier, buf),
-        ObjectKind::Sentence => resolve_sentence(cursor, spec.modifier, buf),
-        ObjectKind::Line => resolve_line(cursor, spec.modifier, buf),
+    let nesting = compose_nesting(spec.nesting, count);
+    let repeat = count.max(1);
+    let base_modifier = base_modifier(spec.modifier);
+
+    let resolved = match spec.kind {
+        ObjectKind::Word => resolve_word(cursor, base_modifier, buf, false, repeat),
+        ObjectKind::BigWord => resolve_word(cursor, base_modifier, buf, true, repeat),
+        ObjectKind::DoubleQuote => {
+            resolve_quote_nested(cursor, base_modifier, spec.direction, nesting, buf, '"')
+        }
+        ObjectKind::SingleQuote => {
+            resolve_quote_nested(cursor, base_modifier, spec.direction, nesting, buf, '\'')
+        }
+        ObjectKind::Backtick => {
+            resolve_quote_nested(cursor, base_modifier, spec.direction, nesting, buf, '`')
+        }
+        ObjectKind::Paren => resolve_bracket_nested(
+            cursor,
+            base_modifier,
+            spec.direction,
+            nesting,
+            buf,
+            '(',
+            ')',
+        ),
+        ObjectKind::CurlyBrace => resolve_bracket_nested(
+            cursor,
+            base_modifier,
+            spec.direction,
+            nesting,
+            buf,
+            '{',
+            '}',
+        ),
+        ObjectKind::SquareBracket => resolve_bracket_nested(
+            cursor,
+            base_modifier,
+            spec.direction,
+            nesting,
+            buf,
+            '[',
+            ']',
+        ),
+        ObjectKind::AngleBracket => resolve_bracket_nested(
+            cursor,
+            base_modifier,
+            spec.direction,
+            nesting,
+            buf,
+            '<',
+            '>',
+        ),
+        ObjectKind::AnyBracket => {
+            resolve_any_bracket(cursor, base_modifier, spec.direction, nesting, buf)
+        }
+        ObjectKind::AnyQuote => {
+            resolve_any_quote(cursor, base_modifier, spec.direction, nesting, buf)
+        }
+        ObjectKind::Paragraph => resolve_paragraph(cursor, base_modifier, buf, repeat),
+        ObjectKind::Sentence => resolve_sentence(cursor, base_modifier, buf, repeat),
+        ObjectKind::Line => resolve_line(cursor, base_modifier, buf),
         ObjectKind::Buffer => resolve_buffer(buf),
+    }?;
+
+    Some(apply_modifier_post(spec.modifier, resolved, buf))
+}
+
+/// The two structural resolution passes; `InnerStrict`/`AroundLoose` run one
+/// of these first and then post-process the result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BaseModifier {
+    Inner,
+    Around,
+}
+
+fn base_modifier(modifier: Modifier) -> BaseModifier {
+    match modifier {
+        Modifier::Inner | Modifier::InnerStrict => BaseModifier::Inner,
+        Modifier::Around | Modifier::AroundLoose => BaseModifier::Around,
+    }
+}
+
+fn apply_modifier_post(modifier: Modifier, range: MotionRange, buf: &TextBuffer) -> MotionRange {
+    match modifier {
+        Modifier::Inner | Modifier::Around => range,
+        Modifier::InnerStrict => strip_whitespace_ends(range, buf),
+        Modifier::AroundLoose => eat_trailing_whitespace(range, buf),
+    }
+}
+
+fn is_space_or_tab(ch: Character) -> bool {
+    matches!(ch, Character::Tab)
+        || matches!(ch, Character::Unicode(c) if c.is_whitespace() && c != '\n')
+}
+
+fn strip_whitespace_ends(range: MotionRange, buf: &TextBuffer) -> MotionRange {
+    if range.kind != RangeKind::Charwise {
+        return range;
+    }
+    let mut start = range.anchor;
+    let mut end = range.new_cursor;
+    while start <= end {
+        match buf.char_at(start) {
+            Some(ch) if is_space_or_tab(ch) => start += 1,
+            _ => break,
+        }
+    }
+    while end >= start {
+        match buf.char_at(end) {
+            Some(ch) if is_space_or_tab(ch) => {
+                if end == start {
+                    break;
+                }
+                end -= 1;
+            }
+            _ => break,
+        }
+    }
+    if start > end || (start == end && buf.char_at(start).is_some_and(is_space_or_tab)) {
+        return MotionRange {
+            anchor: range.anchor,
+            new_cursor: range.anchor,
+            ..range
+        };
+    }
+    MotionRange {
+        anchor: start,
+        new_cursor: end,
+        ..range
+    }
+}
+
+fn eat_trailing_whitespace(range: MotionRange, buf: &TextBuffer) -> MotionRange {
+    if range.kind != RangeKind::Charwise {
+        return range;
+    }
+    let len = buf.len();
+    let mut end = range.new_cursor;
+    while end + 1 < len {
+        match buf.char_at(end + 1) {
+            Some(ch) if is_space_or_tab(ch) => end += 1,
+            _ => break,
+        }
+    }
+    MotionRange {
+        new_cursor: end,
+        ..range
     }
 }
 
@@ -80,9 +279,10 @@ fn char_class_big(ch: Character) -> u8 {
 
 fn resolve_word(
     cursor: usize,
-    modifier: Modifier,
+    modifier: BaseModifier,
     buf: &TextBuffer,
     big: bool,
+    count: usize,
 ) -> Option<MotionRange> {
     let len = buf.len();
     if len == 0 {
@@ -113,9 +313,34 @@ fn resolve_word(
         }
     }
 
+    // Extend forward through (count - 1) more word spans, swallowing the
+    // whitespace gap (if any) between each, matching vim's counted objects.
+    for _ in 1..count.max(1) {
+        if end + 1 >= len {
+            break;
+        }
+        let mut next = end + 1;
+        while next < len && matches!(buf.char_at(next), Some(ch) if class_fn(ch) == 1) {
+            next += 1;
+        }
+        let Some(next_ch) = buf.char_at(next) else {
+            end = len.saturating_sub(1);
+            break;
+        };
+        let next_class = class_fn(next_ch);
+        let mut nend = next;
+        while nend + 1 < len {
+            match buf.char_at(nend + 1) {
+                Some(ch) if class_fn(ch) == next_class => nend += 1,
+                _ => break,
+            }
+        }
+        end = nend;
+    }
+
     match modifier {
-        Modifier::Inner => Some(charwise_inclusive(start, end)),
-        Modifier::Around => {
+        BaseModifier::Inner => Some(charwise_inclusive(start, end)),
+        BaseModifier::Around => {
             // Prefer eating trailing whitespace; fall back to leading.
             let mut aend = end;
             while aend + 1 < len {
@@ -195,6 +420,102 @@ fn find_bracket_open(
     None
 }
 
+/// Pure backward depth-tracked scan for an enclosing open bracket, starting
+/// at (and including) `start_pos`. Used to expand outward for nest-count.
+fn find_enclosing_open_strict(
+    start_pos: usize,
+    buf: &TextBuffer,
+    open_ch: Character,
+    close_ch: Character,
+) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut pos = start_pos;
+    loop {
+        match buf.char_at(pos) {
+            Some(ch) if ch == close_ch => depth += 1,
+            Some(ch) if ch == open_ch => {
+                if depth == 0 {
+                    return Some(pos);
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+        if pos == 0 {
+            break;
+        }
+        pos -= 1;
+    }
+    None
+}
+
+/// Finds the open bracket matching a known close-bracket position, scanning
+/// backward with depth tracking.
+fn match_open_for_close(
+    close_pos: usize,
+    buf: &TextBuffer,
+    open_ch: Character,
+    close_ch: Character,
+) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut pos = close_pos;
+    loop {
+        if pos == 0 {
+            return None;
+        }
+        pos -= 1;
+        match buf.char_at(pos) {
+            Some(ch) if ch == close_ch => depth += 1,
+            Some(ch) if ch == open_ch => {
+                if depth == 0 {
+                    return Some(pos);
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn find_bracket_open_dir(
+    cursor: usize,
+    buf: &TextBuffer,
+    open_ch: Character,
+    close_ch: Character,
+    direction: Direction,
+) -> Option<usize> {
+    match direction {
+        Direction::Current => find_bracket_open(cursor, buf, open_ch, close_ch),
+        Direction::Next => {
+            let len = buf.len();
+            let mut fwd = cursor + 1;
+            while fwd < len {
+                if buf.char_at(fwd) == Some(open_ch) {
+                    return Some(fwd);
+                }
+                fwd += 1;
+            }
+            None
+        }
+        Direction::Last => {
+            // Nearest complete bracket pair entirely before the cursor.
+            let mut pos = cursor.checked_sub(1)?;
+            loop {
+                if buf.char_at(pos) == Some(close_ch) {
+                    if let Some(open) = match_open_for_close(pos, buf, open_ch, close_ch) {
+                        return Some(open);
+                    }
+                }
+                if pos == 0 {
+                    break;
+                }
+                pos -= 1;
+            }
+            None
+        }
+    }
+}
+
 fn find_bracket_close(
     open_pos: usize,
     buf: &TextBuffer,
@@ -220,85 +541,294 @@ fn find_bracket_close(
     None
 }
 
-fn resolve_bracket(
+/// Walks outward from an already-resolved (open, close) pair to the nesting
+/// level requested. `nesting == 1` is a no-op (returns the input unchanged).
+fn expand_bracket_nesting(
+    open_pos: usize,
+    close_pos: usize,
+    nesting: u8,
+    buf: &TextBuffer,
+    open_ch: Character,
+    close_ch: Character,
+) -> Option<(usize, usize)> {
+    let mut open_pos = open_pos;
+    let mut close_pos = close_pos;
+    for _ in 1..nesting {
+        let search_from = open_pos.checked_sub(1)?;
+        open_pos = find_enclosing_open_strict(search_from, buf, open_ch, close_ch)?;
+        close_pos = find_bracket_close(open_pos, buf, open_ch, close_ch)?;
+    }
+    Some((open_pos, close_pos))
+}
+
+fn bracket_pair_with_nesting(
     cursor: usize,
-    modifier: Modifier,
+    direction: Direction,
+    nesting: u8,
+    buf: &TextBuffer,
+    open: char,
+    close: char,
+) -> Option<(usize, usize)> {
+    let open_ch = Character::from(open);
+    let close_ch = Character::from(close);
+    let open_pos = find_bracket_open_dir(cursor, buf, open_ch, close_ch, direction)?;
+    let close_pos = find_bracket_close(open_pos, buf, open_ch, close_ch)?;
+    expand_bracket_nesting(open_pos, close_pos, nesting, buf, open_ch, close_ch)
+}
+
+fn bracket_range(modifier: BaseModifier, open_pos: usize, close_pos: usize) -> Option<MotionRange> {
+    match modifier {
+        BaseModifier::Inner => {
+            if open_pos + 1 >= close_pos {
+                return None;
+            }
+            Some(charwise_inclusive(open_pos + 1, close_pos - 1))
+        }
+        BaseModifier::Around => Some(charwise_inclusive(open_pos, close_pos)),
+    }
+}
+
+fn resolve_bracket_nested(
+    cursor: usize,
+    modifier: BaseModifier,
+    direction: Direction,
+    nesting: u8,
     buf: &TextBuffer,
     open: char,
     close: char,
 ) -> Option<MotionRange> {
-    let open_ch = Character::from(open);
-    let close_ch = Character::from(close);
+    let (open_pos, close_pos) =
+        bracket_pair_with_nesting(cursor, direction, nesting, buf, open, close)?;
+    bracket_range(modifier, open_pos, close_pos)
+}
 
-    let open_pos = find_bracket_open(cursor, buf, open_ch, close_ch)?;
-    let close_pos = find_bracket_close(open_pos, buf, open_ch, close_ch)?;
-
-    match modifier {
-        Modifier::Inner => {
-            if open_pos + 1 >= close_pos {
-                return None;
-            }
-            Some(charwise_inclusive(open_pos + 1, close_pos - 1))
-        }
-        Modifier::Around => Some(charwise_inclusive(open_pos, close_pos)),
+/// True if `(open, close)` is a "nearer" match than `(best_open, best_close)`:
+/// enclosing pairs win over forward-found, tightest enclosure wins among those.
+fn is_closer_pair(
+    cursor: usize,
+    open: usize,
+    close: usize,
+    best_open: usize,
+    best_close: usize,
+) -> bool {
+    let _ = (close, best_close);
+    let encloses = open <= cursor;
+    let best_encloses = best_open <= cursor;
+    match (encloses, best_encloses) {
+        (true, false) => true,
+        (false, true) => false,
+        (true, true) => open > best_open,
+        (false, false) => open < best_open,
     }
 }
 
-fn resolve_quote(
+fn resolve_any_bracket(
     cursor: usize,
-    modifier: Modifier,
+    modifier: BaseModifier,
+    direction: Direction,
+    nesting: u8,
     buf: &TextBuffer,
-    q: char,
 ) -> Option<MotionRange> {
-    let quote = Character::from(q);
-    let len = buf.len();
-    let current_line = buf.line_index.get_line_at(cursor);
-    let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
-    let line_end = buf.line_index.get_end(current_line, len).unwrap_or(len);
+    let mut best: Option<(usize, usize)> = None;
+    for &(open, close) in BRACKET_PAIRS.iter() {
+        let Some((open_pos, close_pos)) =
+            bracket_pair_with_nesting(cursor, direction, nesting, buf, open, close)
+        else {
+            continue;
+        };
+        let better = match best {
+            None => true,
+            Some((bo, bc)) => is_closer_pair(cursor, open_pos, close_pos, bo, bc),
+        };
+        if better {
+            best = Some((open_pos, close_pos));
+        }
+    }
+    let (open_pos, close_pos) = best?;
+    bracket_range(modifier, open_pos, close_pos)
+}
 
+fn find_quote_pair_dir(
+    cursor: usize,
+    buf: &TextBuffer,
+    quote: Character,
+    direction: Direction,
+) -> Option<(usize, usize)> {
     let is_escaped =
         |pos: usize| -> bool { pos > 0 && buf.char_at(pos - 1) == Some(Character::Unicode('\\')) };
 
-    // Scan backward on the current line for the opening quote.
-    let open_pos = {
-        let mut pos = cursor;
-        let mut found = None;
-        loop {
-            if buf.char_at(pos) == Some(quote) && !is_escaped(pos) {
-                found = Some(pos);
-                break;
-            }
-            if pos == line_start {
-                break;
-            }
-            pos -= 1;
-        }
-        found?
-    };
+    match direction {
+        Direction::Current => {
+            let len = buf.len();
+            let current_line = buf.line_index.get_line_at(cursor);
+            let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
+            let line_end = buf.line_index.get_end(current_line, len).unwrap_or(len);
 
-    // Scan forward for the closing quote.
-    let close_pos = {
-        let mut pos = open_pos + 1;
-        let mut found = None;
-        while pos < line_end {
-            if buf.char_at(pos) == Some(quote) && !is_escaped(pos) {
-                found = Some(pos);
-                break;
-            }
-            pos += 1;
-        }
-        found?
-    };
+            let open_pos = {
+                let mut pos = cursor;
+                let mut found = None;
+                loop {
+                    if buf.char_at(pos) == Some(quote) && !is_escaped(pos) {
+                        found = Some(pos);
+                        break;
+                    }
+                    if pos == line_start {
+                        break;
+                    }
+                    pos -= 1;
+                }
+                found?
+            };
 
-    match modifier {
-        Modifier::Inner => {
-            if open_pos + 1 >= close_pos {
+            let close_pos = {
+                let mut pos = open_pos + 1;
+                let mut found = None;
+                while pos < line_end {
+                    if buf.char_at(pos) == Some(quote) && !is_escaped(pos) {
+                        found = Some(pos);
+                        break;
+                    }
+                    pos += 1;
+                }
+                found?
+            };
+            Some((open_pos, close_pos))
+        }
+        Direction::Next => {
+            let len = buf.len();
+            let mut pos = cursor + 1;
+            let open_pos = loop {
+                if pos >= len {
+                    return None;
+                }
+                if buf.char_at(pos) == Some(quote) && !is_escaped(pos) {
+                    break pos;
+                }
+                pos += 1;
+            };
+            let mut pos2 = open_pos + 1;
+            let close_pos = loop {
+                if pos2 >= len {
+                    return None;
+                }
+                if buf.char_at(pos2) == Some(quote) && !is_escaped(pos2) {
+                    break pos2;
+                }
+                pos2 += 1;
+            };
+            Some((open_pos, close_pos))
+        }
+        Direction::Last => {
+            // Nearest complete quote pair entirely before the cursor.
+            let mut close_pos = cursor.checked_sub(1)?;
+            loop {
+                if buf.char_at(close_pos) == Some(quote) && !is_escaped(close_pos) && close_pos > 0
+                {
+                    let mut p = close_pos - 1;
+                    loop {
+                        if buf.char_at(p) == Some(quote) && !is_escaped(p) {
+                            return Some((p, close_pos));
+                        }
+                        if p == 0 {
+                            break;
+                        }
+                        p -= 1;
+                    }
+                }
+                if close_pos == 0 {
+                    return None;
+                }
+                close_pos -= 1;
+            }
+        }
+    }
+}
+
+/// Walks leftward on the line to the requested nest-count of quote pairs
+/// (quotes don't nest, so this picks successively earlier sibling pairs).
+fn quote_pair_with_nesting(
+    cursor: usize,
+    direction: Direction,
+    nesting: u8,
+    buf: &TextBuffer,
+    q: char,
+) -> Option<(usize, usize)> {
+    let quote = Character::from(q);
+    let is_escaped =
+        |pos: usize| -> bool { pos > 0 && buf.char_at(pos - 1) == Some(Character::Unicode('\\')) };
+    let (mut open_pos, mut close_pos) = find_quote_pair_dir(cursor, buf, quote, direction)?;
+
+    for _ in 1..nesting {
+        let current_line = buf.line_index.get_line_at(open_pos);
+        let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
+        if open_pos == line_start {
+            return None;
+        }
+        let mut p = open_pos - 1;
+        let prev_close = loop {
+            if buf.char_at(p) == Some(quote) && !is_escaped(p) {
+                break p;
+            }
+            if p == line_start {
                 return None;
             }
-            Some(charwise_inclusive(open_pos + 1, close_pos - 1))
+            p -= 1;
+        };
+        if prev_close == line_start {
+            return None;
         }
-        Modifier::Around => Some(charwise_inclusive(open_pos, close_pos)),
+        let mut p2 = prev_close - 1;
+        let prev_open = loop {
+            if buf.char_at(p2) == Some(quote) && !is_escaped(p2) {
+                break p2;
+            }
+            if p2 == line_start {
+                return None;
+            }
+            p2 -= 1;
+        };
+        open_pos = prev_open;
+        close_pos = prev_close;
     }
+    Some((open_pos, close_pos))
+}
+
+fn resolve_quote_nested(
+    cursor: usize,
+    modifier: BaseModifier,
+    direction: Direction,
+    nesting: u8,
+    buf: &TextBuffer,
+    q: char,
+) -> Option<MotionRange> {
+    let (open_pos, close_pos) = quote_pair_with_nesting(cursor, direction, nesting, buf, q)?;
+    bracket_range(modifier, open_pos, close_pos)
+}
+
+fn resolve_any_quote(
+    cursor: usize,
+    modifier: BaseModifier,
+    direction: Direction,
+    nesting: u8,
+    buf: &TextBuffer,
+) -> Option<MotionRange> {
+    let mut best: Option<(usize, usize)> = None;
+    for &q in QUOTE_CHARS.iter() {
+        let Some((open_pos, close_pos)) =
+            quote_pair_with_nesting(cursor, direction, nesting, buf, q)
+        else {
+            continue;
+        };
+        let better = match best {
+            None => true,
+            Some((bo, bc)) => is_closer_pair(cursor, open_pos, close_pos, bo, bc),
+        };
+        if better {
+            best = Some((open_pos, close_pos));
+        }
+    }
+    let (open_pos, close_pos) = best?;
+    bracket_range(modifier, open_pos, close_pos)
 }
 
 fn is_blank_line(line: usize, buf: &TextBuffer) -> bool {
@@ -315,7 +845,12 @@ fn is_blank_line(line: usize, buf: &TextBuffer) -> bool {
     true
 }
 
-fn resolve_paragraph(cursor: usize, modifier: Modifier, buf: &TextBuffer) -> Option<MotionRange> {
+fn resolve_paragraph(
+    cursor: usize,
+    modifier: BaseModifier,
+    buf: &TextBuffer,
+    count: usize,
+) -> Option<MotionRange> {
     let len = buf.len();
     if len == 0 {
         return None;
@@ -335,6 +870,21 @@ fn resolve_paragraph(cursor: usize, modifier: Modifier, buf: &TextBuffer) -> Opt
         end_line += 1;
     }
 
+    // Extend through (count - 1) more contiguous groups, alternating kind.
+    let mut group_is_blank = cur_is_blank;
+    for _ in 1..count.max(1) {
+        if end_line + 1 >= total_lines {
+            break;
+        }
+        group_is_blank = !group_is_blank;
+        let group_start = end_line + 1;
+        let mut g_end = group_start;
+        while g_end + 1 < total_lines && is_blank_line(g_end + 1, buf) == group_is_blank {
+            g_end += 1;
+        }
+        end_line = g_end;
+    }
+
     let start = buf.line_index.get_start(start_line).unwrap_or(0);
     // Include the newline of end_line by using start of the following line.
     let end = if end_line + 1 < total_lines {
@@ -347,16 +897,16 @@ fn resolve_paragraph(cursor: usize, modifier: Modifier, buf: &TextBuffer) -> Opt
     };
 
     match modifier {
-        Modifier::Inner => Some(MotionRange {
+        BaseModifier::Inner => Some(MotionRange {
             anchor: start,
             new_cursor: end,
             kind: RangeKind::Linewise,
             inclusive: true,
         }),
-        Modifier::Around => {
+        BaseModifier::Around => {
             // For non-blank paragraph: also eat the following blank lines.
             // For blank run: also eat the preceding non-blank paragraph.
-            if !cur_is_blank {
+            if !group_is_blank {
                 let mut around_end_line = end_line;
                 while around_end_line + 1 < total_lines && is_blank_line(around_end_line + 1, buf) {
                     around_end_line += 1;
@@ -399,7 +949,12 @@ fn resolve_paragraph(cursor: usize, modifier: Modifier, buf: &TextBuffer) -> Opt
     }
 }
 
-fn resolve_sentence(cursor: usize, modifier: Modifier, buf: &TextBuffer) -> Option<MotionRange> {
+fn resolve_sentence(
+    cursor: usize,
+    modifier: BaseModifier,
+    buf: &TextBuffer,
+    count: usize,
+) -> Option<MotionRange> {
     let len = buf.len();
     if len == 0 {
         return None;
@@ -437,16 +992,39 @@ fn resolve_sentence(cursor: usize, modifier: Modifier, buf: &TextBuffer) -> Opti
         }
     }
 
-    // Find sentence end: scan forward to next terminator.
+    // Find sentence end: scan forward to next terminator, repeated `count`
+    // times to extend across that many consecutive sentences.
     let mut end = cursor;
-    while end < len {
-        if is_sentence_end(buf.char_at(end).unwrap_or(Character::Newline)) {
+    for step in 0..count.max(1) {
+        if step > 0 {
+            if end >= len {
+                break;
+            }
+            end += 1;
+            while end < len {
+                match buf.char_at(end) {
+                    Some(Character::Unicode(c)) if c.is_whitespace() => end += 1,
+                    _ => break,
+                }
+            }
+            if end >= len {
+                break;
+            }
+        }
+        let mut found = false;
+        while end < len {
+            if is_sentence_end(buf.char_at(end).unwrap_or(Character::Newline)) {
+                found = true;
+                break;
+            }
+            if matches!(buf.char_at(end), Some(Character::Newline)) {
+                break;
+            }
+            end += 1;
+        }
+        if !found {
             break;
         }
-        if matches!(buf.char_at(end), Some(Character::Newline)) {
-            break;
-        }
-        end += 1;
     }
 
     if start > end {
@@ -454,8 +1032,8 @@ fn resolve_sentence(cursor: usize, modifier: Modifier, buf: &TextBuffer) -> Opti
     }
 
     match modifier {
-        Modifier::Inner => Some(charwise_inclusive(start, end.saturating_sub(1).max(start))),
-        Modifier::Around => {
+        BaseModifier::Inner => Some(charwise_inclusive(start, end.saturating_sub(1).max(start))),
+        BaseModifier::Around => {
             // Include the terminator and trailing whitespace.
             let mut aend = end;
             while aend < len {
@@ -469,7 +1047,7 @@ fn resolve_sentence(cursor: usize, modifier: Modifier, buf: &TextBuffer) -> Opti
     }
 }
 
-fn resolve_line(cursor: usize, modifier: Modifier, buf: &TextBuffer) -> Option<MotionRange> {
+fn resolve_line(cursor: usize, modifier: BaseModifier, buf: &TextBuffer) -> Option<MotionRange> {
     let len = buf.len();
     let current_line = buf.line_index.get_line_at(cursor);
     let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
@@ -481,11 +1059,11 @@ fn resolve_line(cursor: usize, modifier: Modifier, buf: &TextBuffer) -> Option<M
     }
 
     match modifier {
-        Modifier::Inner => {
+        BaseModifier::Inner => {
             // Content without the newline character.
             Some(charwise_inclusive(line_start, line_end.saturating_sub(1)))
         }
-        Modifier::Around => {
+        BaseModifier::Around => {
             // Content including the newline (or the last char if no newline).
             Some(charwise_inclusive(line_start, line_end))
         }
@@ -500,51 +1078,93 @@ fn resolve_buffer(buf: &TextBuffer) -> Option<MotionRange> {
     Some(charwise_inclusive(0, len - 1))
 }
 
-/// For `ci<delim>` on an empty delimiter pair (e.g. cursor inside `()`):
-/// returns the byte position to place the insert cursor, or `None` if no
-/// matching delimiter pair was found at or ahead of the cursor.
-///
-/// Only meaningful when `resolve` returned `None` for `Modifier::Inner`.
-pub fn resolve_insert_cursor(spec: TextObjectSpec, buf: &TextBuffer) -> Option<usize> {
-    if spec.modifier != Modifier::Inner {
+/// For `ci<delim>` on an empty delimiter pair (e.g. cursor inside `()`),
+/// returns the byte position to place the insert cursor, or `None` if none.
+pub fn resolve_insert_cursor(
+    spec: TextObjectSpec,
+    buf: &TextBuffer,
+    count: usize,
+) -> Option<usize> {
+    if base_modifier(spec.modifier) != BaseModifier::Inner {
         return None;
     }
     let cursor = buf.cursor();
+    let nesting = compose_nesting(spec.nesting, count);
     match spec.kind {
         ObjectKind::Paren => {
-            Some(find_bracket_open(cursor, buf, Character::from('('), Character::from(')'))? + 1)
+            Some(bracket_pair_with_nesting(cursor, spec.direction, nesting, buf, '(', ')')?.0 + 1)
         }
         ObjectKind::CurlyBrace => {
-            Some(find_bracket_open(cursor, buf, Character::from('{'), Character::from('}'))? + 1)
+            Some(bracket_pair_with_nesting(cursor, spec.direction, nesting, buf, '{', '}')?.0 + 1)
         }
         ObjectKind::SquareBracket => {
-            Some(find_bracket_open(cursor, buf, Character::from('['), Character::from(']'))? + 1)
+            Some(bracket_pair_with_nesting(cursor, spec.direction, nesting, buf, '[', ']')?.0 + 1)
         }
         ObjectKind::AngleBracket => {
-            Some(find_bracket_open(cursor, buf, Character::from('<'), Character::from('>'))? + 1)
+            Some(bracket_pair_with_nesting(cursor, spec.direction, nesting, buf, '<', '>')?.0 + 1)
         }
-        ObjectKind::DoubleQuote => quote_insert_cursor(cursor, buf, '"'),
-        ObjectKind::SingleQuote => quote_insert_cursor(cursor, buf, '\''),
-        ObjectKind::Backtick => quote_insert_cursor(cursor, buf, '`'),
+        ObjectKind::AnyBracket => {
+            Some(any_bracket_insert_pair(cursor, spec.direction, nesting, buf)?.0 + 1)
+        }
+        ObjectKind::DoubleQuote => {
+            Some(quote_pair_with_nesting(cursor, spec.direction, nesting, buf, '"')?.0 + 1)
+        }
+        ObjectKind::SingleQuote => {
+            Some(quote_pair_with_nesting(cursor, spec.direction, nesting, buf, '\'')?.0 + 1)
+        }
+        ObjectKind::Backtick => {
+            Some(quote_pair_with_nesting(cursor, spec.direction, nesting, buf, '`')?.0 + 1)
+        }
+        ObjectKind::AnyQuote => {
+            Some(any_quote_insert_pair(cursor, spec.direction, nesting, buf)?.0 + 1)
+        }
         _ => None,
     }
 }
 
-fn quote_insert_cursor(cursor: usize, buf: &TextBuffer, q: char) -> Option<usize> {
-    let quote = Character::from(q);
-    let current_line = buf.line_index.get_line_at(cursor);
-    let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
-    let is_escaped = |p: usize| p > 0 && buf.char_at(p - 1) == Some(Character::Unicode('\\'));
-    let mut pos = cursor;
-    loop {
-        if buf.char_at(pos) == Some(quote) && !is_escaped(pos) {
-            return Some(pos + 1);
+fn any_bracket_insert_pair(
+    cursor: usize,
+    direction: Direction,
+    nesting: u8,
+    buf: &TextBuffer,
+) -> Option<(usize, usize)> {
+    let mut best: Option<(usize, usize)> = None;
+    for &(open, close) in BRACKET_PAIRS.iter() {
+        let Some(pair) = bracket_pair_with_nesting(cursor, direction, nesting, buf, open, close)
+        else {
+            continue;
+        };
+        let better = match best {
+            None => true,
+            Some((bo, bc)) => is_closer_pair(cursor, pair.0, pair.1, bo, bc),
+        };
+        if better {
+            best = Some(pair);
         }
-        if pos == line_start {
-            return None;
-        }
-        pos -= 1;
     }
+    best
+}
+
+fn any_quote_insert_pair(
+    cursor: usize,
+    direction: Direction,
+    nesting: u8,
+    buf: &TextBuffer,
+) -> Option<(usize, usize)> {
+    let mut best: Option<(usize, usize)> = None;
+    for &q in QUOTE_CHARS.iter() {
+        let Some(pair) = quote_pair_with_nesting(cursor, direction, nesting, buf, q) else {
+            continue;
+        };
+        let better = match best {
+            None => true,
+            Some((bo, bc)) => is_closer_pair(cursor, pair.0, pair.1, bo, bc),
+        };
+        if better {
+            best = Some(pair);
+        }
+    }
+    best
 }
 
 #[cfg(test)]
