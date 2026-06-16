@@ -547,7 +547,9 @@ mod tests {
         let (input_tx, input_rx) = sync_channel::<Key>(64);
         let (output_tx, output_rx) = channel::<Vec<u8>>();
         let (detach_tx, detach_rx) = sync_channel::<()>(1);
-        (input_tx, input_rx, output_tx, output_rx, detach_tx, detach_rx)
+        (
+            input_tx, input_rx, output_tx, output_rx, detach_tx, detach_rx,
+        )
     }
 
     // --- do_handshake tests ---
@@ -668,6 +670,7 @@ mod tests {
         assert_eq!(resp["method"], "session.ending");
         assert_eq!(resp["params"]["reason"], "detached");
         drop(input_rx);
+        drop(client);
         assert!(matches!(handle.join().unwrap(), ServeResult::Detach));
     }
 
@@ -694,6 +697,7 @@ mod tests {
         let resp: serde_json::Value = serde_json::from_slice(&resp_bytes).unwrap();
         assert_eq!(resp["params"]["reason"], "editor-quit");
         drop(input_rx);
+        drop(client);
         assert!(matches!(handle.join().unwrap(), ServeResult::EditorExited));
     }
 
@@ -731,6 +735,7 @@ mod tests {
             &serde_json::json!({"jsonrpc":"2.0","method":"session.detach","params":{}}),
         )
         .unwrap();
+        drop(client);
         handle.join().unwrap();
     }
 
@@ -768,6 +773,7 @@ mod tests {
             &serde_json::json!({"jsonrpc":"2.0","method":"session.detach","params":{}}),
         )
         .unwrap();
+        drop(client);
         handle.join().unwrap();
     }
 
@@ -799,6 +805,7 @@ mod tests {
         assert_eq!(decoded, b"SCREEN_DATA");
         drop(output_tx);
         drop(input_rx);
+        drop(client);
         handle.join().unwrap();
     }
 
@@ -827,6 +834,7 @@ mod tests {
         let resp: serde_json::Value = serde_json::from_slice(&resp_bytes).unwrap();
         assert_eq!(resp["params"]["reason"], "detached");
         drop(input_rx);
+        drop(client);
         assert!(matches!(handle.join().unwrap(), ServeResult::Detach));
     }
 
@@ -859,6 +867,7 @@ mod tests {
         assert_eq!(resp["params"]["last_seq"], 42);
         drop(output_tx);
         drop(input_rx);
+        drop(client);
         handle.join().unwrap();
     }
 
@@ -890,6 +899,7 @@ mod tests {
         assert_eq!(decoded, b"fresh");
         drop(output_tx);
         drop(input_rx);
+        drop(client);
         handle.join().unwrap();
     }
 
@@ -947,8 +957,10 @@ mod tests {
         assert_eq!(frames[0], b"one");
         assert_eq!(frames[1], b"two");
         assert_eq!(frames[2], b"three");
+        drop(buf_client);
         drop(output_tx);
         drop(input_rx);
+        drop(client);
         handle.join().unwrap();
     }
 
@@ -1007,6 +1019,7 @@ mod tests {
         let resp: serde_json::Value = serde_json::from_slice(&resp_bytes).unwrap();
         assert_eq!(resp["method"], "session.ending");
         drop(input_rx);
+        drop(client);
         handle.join().unwrap();
     }
 }
