@@ -178,111 +178,98 @@ impl Terminal {
     }
 
     pub fn read_screen(&self) -> (String, usize, usize, crate::color::CellColorSpans) {
-        use alacritty_terminal::grid::Dimensions as _;
+        read_term_screen(&self.term)
+    }
+}
 
-        let term = self.term.lock();
-        let grid = term.grid();
+fn read_term_screen(
+    term_arc: &Arc<FairMutex<Term<TerminalListener>>>,
+) -> (String, usize, usize, crate::color::CellColorSpans) {
+    use alacritty_terminal::grid::Dimensions as _;
 
-        let num_cols = grid.columns();
-        let num_lines = grid.screen_lines();
-        let display_offset = grid.display_offset() as i32;
+    let term = term_arc.lock();
+    let grid = term.grid();
 
-        let cursor_point = grid.cursor.point;
-        // Cursor line relative to the currently visible window (may be off-screen when scrolled).
-        let cursor_abs = cursor_point.line.0;
-        let cursor_line_in_view = cursor_abs + display_offset;
-        let cursor_line = if cursor_line_in_view >= 0 && (cursor_line_in_view as usize) < num_lines
-        {
-            cursor_line_in_view as usize
-        } else {
-            num_lines // sentinel: cursor not visible in current scroll position
-        };
-        let cursor_col = cursor_point.column.0.min(num_cols.saturating_sub(1));
+    let num_cols = grid.columns();
+    let num_lines = grid.screen_lines();
+    let display_offset = grid.display_offset() as i32;
 
-        let mut lines: Vec<String> = Vec::with_capacity(num_lines);
-        let mut color_spans: crate::color::CellColorSpans = Vec::new();
+    let cursor_point = grid.cursor.point;
+    let cursor_abs = cursor_point.line.0;
+    let cursor_line_in_view = cursor_abs + display_offset;
+    let cursor_line = if cursor_line_in_view >= 0 && (cursor_line_in_view as usize) < num_lines {
+        cursor_line_in_view as usize
+    } else {
+        num_lines
+    };
+    let cursor_col = cursor_point.column.0.min(num_cols.saturating_sub(1));
 
-        let mut byte_offset: usize = 0;
-        let mut span_start: usize = 0;
-        let mut span_fg: Option<crate::color::Color> = None;
-        let mut span_bg: Option<crate::color::Color> = None;
+    let mut lines: Vec<String> = Vec::with_capacity(num_lines);
+    let mut color_spans: crate::color::CellColorSpans = Vec::new();
+    let mut byte_offset: usize = 0;
+    let mut span_start: usize = 0;
+    let mut span_fg: Option<crate::color::Color> = None;
+    let mut span_bg: Option<crate::color::Color> = None;
 
-        for line_idx in 0..num_lines {
-            // When scrolled back, visible line 0 is at Line(-display_offset).
-            let line = alacritty_terminal::index::Line(line_idx as i32 - display_offset);
-
-            // Collect this line as chars so all trimming is char-indexed, not
-            // byte-indexed. Using byte indices on a string containing multi-byte
-            // Unicode (box-drawing chars, cargo's ✓/█, vim status-line glyphs)
-            // causes truncate() to panic at a non-char-boundary.
-            let mut line_chars: Vec<char> = Vec::with_capacity(num_cols);
-            let mut line_cell_colors: Vec<(
-                Option<crate::color::Color>,
-                Option<crate::color::Color>,
-            )> = Vec::with_capacity(num_cols);
-            for col_idx in 0..num_cols {
-                let col = alacritty_terminal::index::Column(col_idx);
-                let cell = &grid[line][col];
-                line_chars.push(cell.c);
-                line_cell_colors.push((
-                    alacritty_color_to_rift(cell.fg),
-                    alacritty_color_to_rift(cell.bg),
-                ));
-            }
-
-            // Find last non-space char index (char position, not byte).
-            let last_non_space = line_chars.iter().rposition(|&c| c != ' ');
-
-            // On the cursor line preserve trailing spaces up to the cursor so
-            // cursor positioning in handle_terminal_data() lands correctly.
-            let trim_to = if line_idx == cursor_line {
-                let cursor_end = (cursor_col + 1).min(num_cols);
-                match last_non_space {
-                    Some(idx) => (idx + 1).max(cursor_end),
-                    None => cursor_end,
-                }
-            } else {
-                match last_non_space {
-                    Some(idx) => idx + 1,
-                    None => 0,
-                }
-            };
-
-            lines.push(line_chars[..trim_to].iter().collect());
-
-            for col_idx in 0..trim_to {
-                let (fg, bg) = line_cell_colors[col_idx];
-                let ch_bytes = line_chars[col_idx].len_utf8();
-
-                if (fg, bg) != (span_fg, span_bg) {
-                    if (span_fg.is_some() || span_bg.is_some()) && byte_offset > span_start {
-                        color_spans.push((span_start..byte_offset, (span_fg, span_bg)));
-                    }
-                    span_start = byte_offset;
-                    span_fg = fg;
-                    span_bg = bg;
-                }
-
-                byte_offset += ch_bytes;
-            }
-
-            // Don't let spans bleed across the '\n' separator.
-            if (span_fg.is_some() || span_bg.is_some()) && byte_offset > span_start {
-                color_spans.push((span_start..byte_offset, (span_fg, span_bg)));
-            }
-            span_fg = None;
-            span_bg = None;
-
-            // Account for the '\n' joining character (except after the last line).
-            if line_idx + 1 < num_lines {
-                byte_offset += 1;
-            }
-            span_start = byte_offset;
+    for line_idx in 0..num_lines {
+        let line = alacritty_terminal::index::Line(line_idx as i32 - display_offset);
+        let mut line_chars: Vec<char> = Vec::with_capacity(num_cols);
+        let mut line_cell_colors: Vec<(Option<crate::color::Color>, Option<crate::color::Color>)> =
+            Vec::with_capacity(num_cols);
+        for col_idx in 0..num_cols {
+            let col = alacritty_terminal::index::Column(col_idx);
+            let cell = &grid[line][col];
+            line_chars.push(cell.c);
+            line_cell_colors.push((
+                alacritty_color_to_rift(cell.fg),
+                alacritty_color_to_rift(cell.bg),
+            ));
         }
 
-        let content = lines.join("\n");
-        (content, cursor_line, cursor_col, color_spans)
+        let last_non_space = line_chars.iter().rposition(|&c| c != ' ');
+        let trim_to = if line_idx == cursor_line {
+            let cursor_end = (cursor_col + 1).min(num_cols);
+            match last_non_space {
+                Some(idx) => (idx + 1).max(cursor_end),
+                None => cursor_end,
+            }
+        } else {
+            match last_non_space {
+                Some(idx) => idx + 1,
+                None => 0,
+            }
+        };
+
+        lines.push(line_chars[..trim_to].iter().collect());
+
+        for col_idx in 0..trim_to {
+            let (fg, bg) = line_cell_colors[col_idx];
+            let ch_bytes = line_chars[col_idx].len_utf8();
+            if (fg, bg) != (span_fg, span_bg) {
+                if (span_fg.is_some() || span_bg.is_some()) && byte_offset > span_start {
+                    color_spans.push((span_start..byte_offset, (span_fg, span_bg)));
+                }
+                span_start = byte_offset;
+                span_fg = fg;
+                span_bg = bg;
+            }
+            byte_offset += ch_bytes;
+        }
+
+        if (span_fg.is_some() || span_bg.is_some()) && byte_offset > span_start {
+            color_spans.push((span_start..byte_offset, (span_fg, span_bg)));
+        }
+        span_fg = None;
+        span_bg = None;
+
+        if line_idx + 1 < num_lines {
+            byte_offset += 1;
+        }
+        span_start = byte_offset;
     }
+
+    let content = lines.join("\n");
+    (content, cursor_line, cursor_col, color_spans)
 }
 
 fn alacritty_color_to_rift(c: alacritty_terminal::vte::ansi::Color) -> Option<crate::color::Color> {
@@ -333,43 +320,57 @@ fn alacritty_color_to_rift(c: alacritty_terminal::vte::ansi::Color) -> Option<cr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alacritty_terminal::grid::Dimensions as _;
+    use alacritty_terminal::grid::{Dimensions as _, Scroll};
+    use alacritty_terminal::term::Config;
+    use std::sync::mpsc;
 
-    fn make_terminal(rows: u16, cols: u16) -> Terminal {
-        let (term, _rx) = Terminal::new(rows, cols, None).expect("failed to spawn terminal");
-        term
+    fn make_term(rows: u16, cols: u16) -> Arc<FairMutex<Term<TerminalListener>>> {
+        let (tx, _rx) = mpsc::channel();
+        let listener = TerminalListener(tx);
+        let dims = TermDims {
+            rows: rows as usize,
+            cols: cols as usize,
+        };
+        Arc::new(FairMutex::new(Term::new(
+            Config::default(),
+            &dims,
+            listener,
+        )))
     }
 
-    fn write_and_wait(term: &mut Terminal, data: &[u8]) {
-        term.write(data).unwrap();
-        // Give the PTY time to process the bytes.
-        std::thread::sleep(std::time::Duration::from_millis(100));
+    fn feed(term: &Arc<FairMutex<Term<TerminalListener>>>, data: &[u8]) {
+        let mut parser = alacritty_terminal::vte::ansi::Processor::<
+            alacritty_terminal::vte::ansi::StdSyncHandler,
+        >::new();
+        parser.advance(&mut *term.lock(), data);
+    }
+
+    fn scroll(term: &Arc<FairMutex<Term<TerminalListener>>>, delta: i32) {
+        term.lock().scroll_display(Scroll::Delta(delta));
+    }
+
+    fn scroll_bottom(term: &Arc<FairMutex<Term<TerminalListener>>>) {
+        term.lock().scroll_display(Scroll::Bottom);
     }
 
     #[test]
     fn test_display_offset_changes_after_scroll() {
-        let mut term = make_terminal(5, 40);
+        let term = make_term(5, 40);
 
-        // Write enough to create scrollback.
         for i in 0..20u32 {
-            write_and_wait(&mut term, format!("echo LINE{i}\r\n").as_bytes());
+            feed(&term, format!("LINE{i}\r\n").as_bytes());
         }
-        std::thread::sleep(std::time::Duration::from_millis(400));
 
-        let offset_before = term.term.lock().grid().display_offset();
-        let history_before = term.term.lock().grid().history_size();
-        eprintln!("display_offset before scroll: {offset_before}, history_size: {history_before}");
-
-        // Positive delta = scroll UP (toward older content, increases display_offset).
-        term.scroll_display(3);
-
-        let offset_after = term.term.lock().grid().display_offset();
-        eprintln!("display_offset after scroll(+3): {offset_after}");
-
+        let history_before = term.lock().grid().history_size();
+        let offset_before = term.lock().grid().display_offset();
         assert!(
             history_before > 0,
-            "expected scrollback history to be non-empty, got {history_before}"
+            "expected scrollback, got 0 (offset={offset_before})"
         );
+
+        scroll(&term, 3);
+
+        let offset_after = term.lock().grid().display_offset();
         assert_eq!(
             offset_after,
             3.min(history_before),
@@ -379,37 +380,31 @@ mod tests {
 
     #[test]
     fn test_scrollback_changes_visible_content() {
-        let mut term = make_terminal(5, 40);
+        let term = make_term(5, 40);
 
         for i in 0..20u32 {
-            write_and_wait(&mut term, format!("echo LINE{i}\r\n").as_bytes());
+            feed(&term, format!("LINE{i}\r\n").as_bytes());
         }
-        std::thread::sleep(std::time::Duration::from_millis(400));
 
-        let history = term.term.lock().grid().history_size();
-        assert!(history > 0, "need scrollback history for this test, got 0");
+        let history = term.lock().grid().history_size();
+        assert!(history > 0, "need scrollback history, got 0");
 
-        let (bottom_screen, _, _, _) = term.read_screen();
-        eprintln!("bottom_screen:\n{bottom_screen}");
+        let (bottom_screen, _, _, _) = read_term_screen(&term);
 
-        // Positive delta = scroll UP (toward older content).
-        term.scroll_display(3);
-        let offset = term.term.lock().grid().display_offset();
-        eprintln!("display_offset after scroll(+3): {offset}");
-
-        let (scrolled_screen, _, _, _) = term.read_screen();
-        eprintln!("scrolled_screen:\n{scrolled_screen}");
+        scroll(&term, 3);
+        let offset = term.lock().grid().display_offset();
+        let (scrolled_screen, _, _, _) = read_term_screen(&term);
 
         assert_ne!(
             bottom_screen, scrolled_screen,
             "screen content should differ after scrolling up (display_offset={offset})"
         );
 
-        term.scroll_to_bottom();
-        let (restored_screen, _, _, _) = term.read_screen();
+        scroll_bottom(&term);
+        let (restored_screen, _, _, _) = read_term_screen(&term);
         assert_eq!(
             bottom_screen, restored_screen,
-            "screen content should match original after scrolling back to bottom"
+            "screen should match original after scrolling back"
         );
     }
 }
