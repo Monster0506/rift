@@ -12,13 +12,12 @@ use crate::key::Key;
 use crate::term::TerminalBackend;
 use crate::transport::{read_framed, write_framed};
 
-pub struct AttachConfig {
-    pub session_file: std::path::PathBuf,
-    /// Skip the local is_alive check (used for remote sessions where the pid is foreign).
-    pub skip_liveness: bool,
+struct AttachConfig {
+    session_file: std::path::PathBuf,
+    skip_liveness: bool,
 }
 
-pub fn attach<T: TerminalBackend>(config: AttachConfig, mut terminal: T) -> anyhow::Result<()> {
+fn attach<T: TerminalBackend>(config: AttachConfig, mut terminal: T) -> anyhow::Result<()> {
     let info = crate::ipc::session::read(&config.session_file)?;
 
     if !config.skip_liveness && !crate::ipc::session::is_alive(info.pid) {
@@ -76,83 +75,47 @@ pub fn attach<T: TerminalBackend>(config: AttachConfig, mut terminal: T) -> anyh
     result
 }
 
-/// SSH to [user@]host, run `rift --list-sessions`, parse the result, then attach.
-/// If `start` is true, connects to an existing session or starts a daemon if none found.
-/// A single SSH connection handles both the port forward and the session query.
+/// SSH to [user@]host, find or start a daemon, then attach via a port-forwarding tunnel.
 pub fn connect_remote<T: TerminalBackend>(
     target: &str,
-    start: bool,
     file: Option<String>,
-    port: u16,
     terminal: T,
 ) -> anyhow::Result<()> {
-    let user_host = target.to_string();
-    let local_port = free_port()?;
-    let forward = format!("{}:localhost:{}", local_port, port);
-
-    // One SSH connection: sets up the port forward, optionally starts the daemon,
-    // runs --list-sessions (prints JSON to stdout), then sleeps to keep the tunnel alive.
-    // sleep doesn't read stdin, so there is no contention with the editor's input loop.
-    let remote_cmd = if start {
-        let start_part = match &file {
-            Some(f) => format!("rift --daemon --detach {}", shell_escape(f)),
-            None => "rift --daemon --detach".to_string(),
-        };
-        // Use existing session if one is running; only start daemon if none found.
-        // Poll up to 5 s for the session file, then sleep to hold the tunnel.
-        format!(
-            "bash -lc 'rift --list-sessions 2>/dev/null || {}; \
-             for _i in 1 2 3 4 5 6 7 8 9 10; do \
-             rift --list-sessions 2>/dev/null && sleep 99999; sleep 0.5; done'",
-            start_part.replace('\'', "'\\''"),
-        )
-    } else {
-        "bash -lc 'rift --list-sessions && sleep 99999'".to_string()
+    let start_part = match &file {
+        Some(f) => format!("rift --daemon --detach {}", shell_escape(f)),
+        None => "rift --daemon --detach".to_string(),
     };
-
-    let mut ssh = std::process::Command::new("ssh")
-        .args(["-L", &forward, &user_host, &remote_cmd])
-        // Piped (not inherited) so the SSH process does not compete with the editor's
-        // crossterm event loop for terminal input. SSH reads password prompts via
-        // /dev/tty directly, so interactive auth still works.
-        .stdin(std::process::Stdio::piped())
+    let discover_cmd = format!(
+        "bash -lc 'if rift --list-sessions 2>/dev/null; then exit 0; fi; \
+         {}; \
+         for _i in 1 2 3 4 5 6 7 8 9 10; do \
+         if rift --list-sessions 2>/dev/null; then exit 0; fi; \
+         sleep 0.5; done; exit 1'",
+        start_part.replace('\'', "'\\''"),
+    );
+    let output = std::process::Command::new("ssh")
+        .args([target, &discover_cmd])
         .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .output()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout.trim();
+    if line.is_empty() {
+        anyhow::bail!("no rift session found on {target} and could not start one");
+    }
+    let info: crate::ipc::session::SessionInfo = serde_json::from_str(line)
+        .map_err(|e| anyhow::anyhow!("could not parse session info: {e}"))?;
+
+    let local_port = free_port()?;
+    let forward = format!("{}:localhost:{}", local_port, info.port);
+    let mut ssh = std::process::Command::new("ssh")
+        .args(["-L", &forward, "-N", target])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::inherit())
         .spawn()?;
     drop(ssh.stdin.take());
-
-    // Read the one JSON line --list-sessions writes before sleeping.
-    let ssh_stdout = ssh.stdout.take().unwrap();
-    let mut reader = std::io::BufReader::new(ssh_stdout);
-    let mut line = String::new();
-    use std::io::BufRead;
-    reader.read_line(&mut line)?;
-    drop(reader);
-    let line = line.trim().to_string();
-
-    if line.is_empty() {
-        ssh.kill().ok();
-        if start {
-            anyhow::bail!("failed to start rift daemon on {target}");
-        } else {
-            anyhow::bail!("no rift session found on {target}");
-        }
-    }
-
-    let info: crate::ipc::session::SessionInfo = serde_json::from_str(&line).map_err(|e| {
-        ssh.kill().ok();
-        anyhow::anyhow!("could not parse session info: {e}")
-    })?;
-
-    if info.port != port {
-        ssh.kill().ok();
-        anyhow::bail!(
-            "remote daemon is on port {} but forwarding port {}; pass --port {}",
-            info.port,
-            port,
-            info.port
-        );
-    }
 
     eprintln!(
         "rift: attaching via tunnel (pid {}, port {})",
@@ -178,7 +141,6 @@ pub fn connect_remote<T: TerminalBackend>(
 
 fn free_port() -> anyhow::Result<u16> {
     // Binds port 0 to get an OS-assigned port, then releases it for SSH to bind.
-    // There is an inherent TOCTOU race here; the window is small in practice.
     let l = std::net::TcpListener::bind("127.0.0.1:0")?;
     Ok(l.local_addr()?.port())
 }
@@ -218,8 +180,6 @@ fn read_one_frame(stream: &mut impl Read) -> anyhow::Result<Vec<u8>> {
 }
 
 fn event_loop<T: TerminalBackend>(local_term: &mut T, stream: TcpStream) -> anyhow::Result<()> {
-    // Network reads run on a dedicated thread with no timeout, so a slow or large
-    // frame never causes partial-header corruption.
     let mut write_stream = stream.try_clone()?;
     let (frame_tx, frame_rx) = std::sync::mpsc::channel::<std::io::Result<Vec<u8>>>();
     let reader_thread = std::thread::spawn(move || {
@@ -301,7 +261,6 @@ fn event_loop<T: TerminalBackend>(local_term: &mut T, stream: TcpStream) -> anyh
         }
     }
 
-    // Shut down the socket to unblock the reader thread, then wait for it to exit.
     let _ = write_stream.shutdown(std::net::Shutdown::Both);
     reader_thread.join().ok();
     Ok(())

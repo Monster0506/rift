@@ -17,27 +17,9 @@ pub struct Args {
     pub search: Option<String>,
     pub commands: Vec<String>,
     pub daemon: bool,
-    /// Run daemon in background (detach from terminal).
     pub detach: bool,
-    pub attach: Option<String>,
-    /// SSH connect: [user@]host -- find newest remote session and attach.
     pub connect: Option<String>,
-    pub bind: String,
-    pub port: u16,
-    /// Print newest live session as JSON and exit (used by --connect over SSH).
     pub list_sessions: bool,
-    /// Start a daemon on the remote before attaching (used with --connect).
-    pub start: bool,
-}
-
-impl Args {
-    pub fn new() -> Self {
-        Self {
-            bind: "127.0.0.1".into(),
-            port: 7619,
-            ..Default::default()
-        }
-    }
 }
 
 /// Parse `std::env::args()`. Prints version and exits 0 for `-v`/`--version`.
@@ -54,7 +36,7 @@ pub fn parse() -> Args {
         Err(e) => {
             eprintln!("rift: {e}");
             eprintln!(
-                "Usage: rift [+] [+N] [+/pattern] [-c cmd] [--cmd cmd] [-v|--version] [--daemon] [-d|--detach] [--attach <file>] [--connect [user@]host] [--bind <addr>] [--port <n>] [file]"
+                "Usage: rift [+] [+N] [+/pattern] [-c cmd] [--cmd cmd] [-v|--version] [--daemon] [-d|--detach] [--connect [user@]host] [--list-sessions] [file]"
             );
             std::process::exit(1);
         }
@@ -66,7 +48,7 @@ pub fn parse() -> Args {
 ///   `Ok(Some(args))` → success
 ///   `Err(msg)`       → bad input, caller should print error + exit
 pub fn parse_args(args: &[&str]) -> Result<Option<Args>, String> {
-    let mut result = Args::new();
+    let mut result = Args::default();
     let mut i = 0;
 
     while i < args.len() {
@@ -99,38 +81,8 @@ pub fn parse_args(args: &[&str]) -> Result<Option<Args>, String> {
                 Some(target) => result.connect = Some(target.to_string()),
                 None => return Err("'--connect' requires a [user@]host argument".into()),
             }
-        } else if arg == "--attach" {
-            // Optional path: --attach [file]
-            // If next token is absent or looks like a flag, auto-discover.
-            let next = args.get(i + 1);
-            let is_path = next
-                .map(|s| !s.starts_with('-') && !s.is_empty())
-                .unwrap_or(false);
-            if is_path {
-                i += 1;
-                result.attach = Some(args[i].to_string());
-            } else {
-                result.attach = Some(String::new()); // empty sentinel = auto-discover
-            }
-        } else if arg == "--bind" {
-            i += 1;
-            match args.get(i) {
-                Some(addr) => result.bind = addr.to_string(),
-                None => return Err("'--bind' requires an address".into()),
-            }
-        } else if arg == "--port" {
-            i += 1;
-            match args.get(i) {
-                Some(p) => match p.parse::<u16>() {
-                    Ok(n) => result.port = n,
-                    Err(_) => return Err(format!("invalid port number: '{p}'")),
-                },
-                None => return Err("'--port' requires a port number".into()),
-            }
         } else if arg == "--list-sessions" {
             result.list_sessions = true;
-        } else if arg == "--start" {
-            result.start = true;
         } else if arg.starts_with('-') {
             return Err(format!("unknown flag: '{arg}'"));
         } else {

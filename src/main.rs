@@ -50,11 +50,7 @@ fn main() {
             }
             return;
         }
-        let cfg = monster_rift::ipc::daemon::DaemonConfig {
-            bind: args.bind,
-            port: args.port,
-        };
-        if let Err(e) = monster_rift::ipc::daemon::run(cfg, args.file) {
+        if let Err(e) = monster_rift::ipc::daemon::run(args.file) {
             eprintln!("daemon error: {e}");
             std::process::exit(1);
         }
@@ -70,36 +66,10 @@ fn main() {
         }
     };
 
-    // --connect [user@]host: SSH to find newest session, then attach.
+    // --connect [user@]host: SSH to find or start a session, then attach via tunnel.
     if let Some(target) = args.connect {
-        if let Err(e) = monster_rift::ipc::client::connect_remote(
-            &target, args.start, args.file, args.port, backend,
-        ) {
+        if let Err(e) = monster_rift::ipc::client::connect_remote(&target, args.file, backend) {
             eprintln!("connect error: {e}");
-            std::process::exit(1);
-        }
-        return;
-    }
-
-    // --attach [file]: attach to a local daemon session.
-    if let Some(session_arg) = args.attach {
-        let session_path = if session_arg.is_empty() {
-            match monster_rift::ipc::session::find_local() {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("attach error: {e}");
-                    std::process::exit(1);
-                }
-            }
-        } else {
-            std::path::PathBuf::from(session_arg)
-        };
-        let cfg = monster_rift::ipc::client::AttachConfig {
-            session_file: session_path,
-            skip_liveness: false,
-        };
-        if let Err(e) = monster_rift::ipc::client::attach(cfg, backend) {
-            eprintln!("attach error: {e}");
             std::process::exit(1);
         }
         return;

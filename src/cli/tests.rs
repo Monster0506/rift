@@ -31,7 +31,7 @@ fn version_before_file() {
 
 #[test]
 fn empty_args() {
-    assert_eq!(ok(&[]), Args::new());
+    assert_eq!(ok(&[]), Args::default());
 }
 
 // ── file ──────────────────────────────────────────────────────────────────────
@@ -187,39 +187,6 @@ fn file_goto_search_cmd() {
 fn daemon_flag() {
     let args = parse_args(&["--daemon"]).unwrap().unwrap();
     assert!(args.daemon);
-    assert_eq!(args.port, 7619);
-    assert_eq!(args.bind, "127.0.0.1");
-}
-
-#[test]
-fn daemon_with_port() {
-    let args = parse_args(&["--daemon", "--port", "9000"])
-        .unwrap()
-        .unwrap();
-    assert!(args.daemon);
-    assert_eq!(args.port, 9000);
-}
-
-#[test]
-fn daemon_with_bind() {
-    let args = parse_args(&["--daemon", "--bind", "0.0.0.0"])
-        .unwrap()
-        .unwrap();
-    assert_eq!(args.bind, "0.0.0.0");
-}
-
-#[test]
-fn attach_flag() {
-    let args = parse_args(&["--attach", "/tmp/sess.json"])
-        .unwrap()
-        .unwrap();
-    assert_eq!(args.attach, Some("/tmp/sess.json".to_string()));
-}
-
-#[test]
-fn attach_no_arg_autodiscovers() {
-    let args = parse_args(&["--attach"]).unwrap().unwrap();
-    assert_eq!(args.attach, Some(String::new()));
 }
 
 #[test]
@@ -229,19 +196,23 @@ fn list_sessions_flag() {
 }
 
 #[test]
-fn start_flag_with_connect() {
-    let args = parse_args(&["--connect", "user@host", "--start"])
-        .unwrap()
-        .unwrap();
+fn connect_flag() {
+    let args = parse_args(&["--connect", "user@host"]).unwrap().unwrap();
     assert_eq!(args.connect.as_deref(), Some("user@host"));
-    assert!(args.start);
 }
 
 #[test]
-fn start_flag_with_file() {
-    let args = parse_args(&["--connect", "host", "--start", "main.rs"])
+fn connect_with_file() {
+    let args = parse_args(&["--connect", "host", "main.rs"])
         .unwrap()
         .unwrap();
-    assert!(args.start);
+    assert_eq!(args.connect.as_deref(), Some("host"));
     assert_eq!(args.file.as_deref(), Some("main.rs"));
+}
+
+#[test]
+fn detach_flag() {
+    let args = parse_args(&["--daemon", "-d"]).unwrap().unwrap();
+    assert!(args.daemon);
+    assert!(args.detach);
 }

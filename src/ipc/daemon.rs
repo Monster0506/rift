@@ -16,20 +16,6 @@ use crate::key::Key;
 use crate::term::Size;
 use crate::transport::{read_framed, write_framed};
 
-pub struct DaemonConfig {
-    pub bind: String,
-    pub port: u16,
-}
-
-impl Default for DaemonConfig {
-    fn default() -> Self {
-        Self {
-            bind: "127.0.0.1".into(),
-            port: 7619,
-        }
-    }
-}
-
 enum ServeResult {
     /// Client sent session.detach -- editor still running, wait for next connection.
     Detach,
@@ -78,26 +64,23 @@ fn spawn_editor(file: Option<String>) -> EditorInstance {
     }
 }
 
-pub fn run(config: DaemonConfig, file: Option<String>) -> anyhow::Result<()> {
-    let addr = format!("{}:{}", config.bind, config.port);
-    let listener = TcpListener::bind(&addr)?;
+pub fn run(file: Option<String>) -> anyhow::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let port = listener.local_addr()?.port();
 
     let token = generate_token();
     let pid = std::process::id();
     let sess_path = session_path(pid);
     let info = SessionInfo {
         pid,
-        host: config.bind.clone(),
-        port: config.port,
+        host: "127.0.0.1".into(),
+        port,
         token: token.clone(),
     };
     crate::ipc::session::write(&info, &sess_path)?;
     let _guard = SessionGuard(sess_path.clone());
 
-    eprintln!(
-        "rift daemon  pid={pid}  port={}  token={token}",
-        config.port
-    );
+    eprintln!("rift daemon  pid={pid}  port={port}  token={token}");
     eprintln!("session: {}", sess_path.display());
 
     let shutdown = Arc::new(AtomicBool::new(false));
