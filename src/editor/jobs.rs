@@ -409,6 +409,7 @@ impl<T: TerminalBackend> Editor<T> {
                                 {
                                     let line_offset = doc.buffer.line_start(goto_line);
                                     let target = (line_offset + goto_col).min(doc.buffer.len());
+                                    doc.buffer.clear_desired_col();
                                     let _ = doc.buffer.set_cursor(target);
                                 }
                             } else {

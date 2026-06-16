@@ -179,6 +179,7 @@ impl<T: TerminalBackend> Editor<T> {
         match doc.perform_search(query, direction, skip_current) {
             Ok((Some(m), _stats)) => {
                 // Move cursor to start of match
+                doc.buffer.clear_desired_col();
                 let _ = doc.buffer.set_cursor(m.range.start);
                 true
             }

@@ -84,7 +84,8 @@ impl Motion {
             Motion::Up => {
                 if op_ctx == crate::wrap::OperatorContext::Move {
                     if let Some(dm) = display_map {
-                        let new_pos = dm.visual_up(buf.cursor(), buf);
+                        let col = buf.latch_desired_col(dm.char_to_visual_col(buf.cursor(), buf));
+                        let new_pos = dm.visual_up_to_col(buf.cursor(), col, buf);
                         let _ = buf.set_cursor(new_pos);
                         return;
                     }
@@ -94,7 +95,8 @@ impl Motion {
             Motion::Down => {
                 if op_ctx == crate::wrap::OperatorContext::Move {
                     if let Some(dm) = display_map {
-                        let new_pos = dm.visual_down(buf.cursor(), buf);
+                        let col = buf.latch_desired_col(dm.char_to_visual_col(buf.cursor(), buf));
+                        let new_pos = dm.visual_down_to_col(buf.cursor(), col, buf);
                         let _ = buf.set_cursor(new_pos);
                         return;
                     }
@@ -144,6 +146,7 @@ impl Motion {
                 buf.move_sentence_backward();
             }
             Motion::NextMatch => {
+                buf.clear_desired_col();
                 if let Some(query) = last_search_query {
                     let start = buf.cursor().saturating_add(1);
                     if let Ok((Some(m), _stats)) =
@@ -154,6 +157,7 @@ impl Motion {
                 }
             }
             Motion::PreviousMatch => {
+                buf.clear_desired_col();
                 if let Some(query) = last_search_query {
                     if let Ok((Some(m), _stats)) =
                         find_next(buf, buf.cursor(), query, SearchDirection::Backward)
@@ -163,6 +167,7 @@ impl Motion {
                 }
             }
             Motion::TillCharForward(ch) => {
+                buf.clear_desired_col();
                 let target = crate::character::Character::from(ch);
                 let current_line = buf.get_line();
                 let total_len = buf.len();
@@ -189,6 +194,7 @@ impl Motion {
                 }
             }
             Motion::TillCharBackward(ch) => {
+                buf.clear_desired_col();
                 let target = crate::character::Character::from(ch);
                 let current_line = buf.get_line();
                 let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
@@ -216,10 +222,12 @@ impl Motion {
             }
             Motion::RepeatFindForward | Motion::RepeatFindBackward => {}
             Motion::ToLine(line_idx) => {
+                buf.clear_desired_col();
                 let start = buf.line_index.get_start(line_idx).unwrap_or(0);
                 let _ = buf.set_cursor(start);
             }
             Motion::FindCharForward(ch) => {
+                buf.clear_desired_col();
                 let target = crate::character::Character::from(ch);
                 let current_line = buf.get_line();
                 let total_len = buf.len();
@@ -236,6 +244,7 @@ impl Motion {
                 }
             }
             Motion::FindCharBackward(ch) => {
+                buf.clear_desired_col();
                 let target = crate::character::Character::from(ch);
                 let current_line = buf.get_line();
                 let line_start = buf.line_index.get_start(current_line).unwrap_or(0);

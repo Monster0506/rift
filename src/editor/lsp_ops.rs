@@ -214,6 +214,7 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(doc) = self.document_manager.active_document_mut() {
                 let line_offset = doc.buffer.line_start(target_line);
                 let target = line_offset + target_col;
+                doc.buffer.clear_desired_col();
                 let _ = doc.buffer.set_cursor(target.min(doc.buffer.len()));
             }
             let _ = self.force_full_redraw();
@@ -614,6 +615,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         if let Some(doc) = self.document_manager.active_document_mut() {
             let offset = doc.buffer.line_start(line as usize);
+            doc.buffer.clear_desired_col();
             let _ = doc.buffer.set_cursor(offset);
         }
 

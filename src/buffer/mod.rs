@@ -33,6 +33,9 @@ pub struct TextBuffer {
     pub line_index: LineIndex,
     /// Cursor position (Character index)
     cursor: usize,
+    /// Target column for vertical motion. None = use real col, MAX = always EOL.
+    /// Latched on the first j/k, cleared by h/l/w/0/$ and jumps.
+    desired_col: Option<usize>,
     /// Monotonic revision counter for change detection
     pub revision: u64,
     /// Cache for regex matching lines
@@ -49,6 +52,7 @@ impl TextBuffer {
         Ok(TextBuffer {
             line_index: LineIndex::new(),
             cursor: 0,
+            desired_col: None,
             revision: 0,
             line_cache: RefCell::new(LineCache::new()),
             byte_map_cache: RefCell::new(None),
@@ -94,18 +98,45 @@ impl TextBuffer {
         self.cursor.saturating_sub(line_start)
     }
 
-    /// Find the char position on `line` at column `col`, clamped to line bounds.
+    /// Column offset of the cursor from the start of its current line.
+    pub fn get_col(&self) -> usize {
+        self.col_on_line(self.get_line())
+    }
+
+    /// Returns the current desired column (None means "use real col").
+    pub fn desired_col(&self) -> Option<usize> {
+        self.desired_col
+    }
+
+    /// If desired_col is unset, sets it to `col` and returns `col`.
+    /// If already set, returns the existing value unchanged.
+    pub fn latch_desired_col(&mut self, col: usize) -> usize {
+        *self.desired_col.get_or_insert(col)
+    }
+
+    /// Clears desired_col; called by horizontal motions and jumps.
+    pub fn clear_desired_col(&mut self) {
+        self.desired_col = None;
+    }
+
+    /// Char position on `line` at logical `col`, clamped to the last visible char.
+    /// Handles col == usize::MAX (from $) safely; never lands on a trailing newline.
     fn char_pos_for_col(&self, line: usize, col: usize) -> usize {
         let line_start = self.line_index.get_start(line).unwrap_or(0);
         let line_end = self
             .line_index
             .get_end(line, self.len())
             .unwrap_or(self.len());
-        (line_start + col).min(line_end)
+        // line_end for non-last lines points to the '\n'; exclude it so the
+        // cursor never lands on a newline character during vertical motion.
+        let line_len = line_end.saturating_sub(line_start);
+        let clamped = col.min(line_len.saturating_sub(1));
+        line_start + clamped
     }
 
     /// Move cursor left by one Character.
     pub fn move_left(&mut self) -> bool {
+        self.desired_col = None;
         if self.cursor > 0 {
             self.cursor -= 1;
             true
@@ -116,6 +147,7 @@ impl TextBuffer {
 
     /// Move cursor right by one Character.
     pub fn move_right(&mut self) -> bool {
+        self.desired_col = None;
         let len = self.len();
         if self.cursor < len {
             self.cursor += 1;
@@ -349,53 +381,54 @@ impl TextBuffer {
         }
     }
 
-    /// Move cursor up one line, preserving column.
+    /// Move cursor up one line, preserving desired_col across short lines.
     pub fn move_up(&mut self) -> bool {
         let current_line = self.get_line();
         if current_line == 0 {
             return false;
         }
-
-        let prev_line = current_line - 1;
-        let col = self.col_on_line(current_line);
-        self.cursor = self.char_pos_for_col(prev_line, col);
+        let col = self.latch_desired_col(self.col_on_line(current_line));
+        self.cursor = self.char_pos_for_col(current_line - 1, col);
         true
     }
 
-    /// Move cursor down one line, preserving column.
+    /// Move cursor down one line, preserving desired_col across short lines.
     pub fn move_down(&mut self) -> bool {
         let current_line = self.get_line();
         let total_lines = self.get_total_lines();
         if current_line + 1 >= total_lines {
             return false;
         }
-
-        let next_line = current_line + 1;
-        let col = self.col_on_line(current_line);
-        self.cursor = self.char_pos_for_col(next_line, col);
+        let col = self.latch_desired_col(self.col_on_line(current_line));
+        self.cursor = self.char_pos_for_col(current_line + 1, col);
         true
     }
 
     /// Move to start of buffer.
     pub fn move_to_start(&mut self) {
+        self.desired_col = None;
         self.cursor = 0;
     }
 
     /// Move to end of buffer.
     pub fn move_to_end(&mut self) {
+        self.desired_col = None;
         self.cursor = self.len();
     }
 
-    /// Move to start of current line.
+    /// Move to start of current line (0 / ^).
     pub fn move_to_line_start(&mut self) {
+        self.desired_col = None;
         let line = self.get_line();
         if let Some(start) = self.line_index.get_start(line) {
             self.cursor = start;
         }
     }
 
-    /// Move to end of current line
+    /// Move to end of current line ($). Sets desired_col = MAX so subsequent
+    /// vertical moves always land at EOL regardless of line length.
     pub fn move_to_line_end(&mut self) {
+        self.desired_col = Some(usize::MAX);
         let line = self.get_line();
         if let Some(end) = self.line_index.get_end(line, self.len()) {
             self.cursor = end;
@@ -403,30 +436,37 @@ impl TextBuffer {
     }
 
     pub fn move_word_right(&mut self) -> bool {
+        self.desired_col = None;
         crate::movement::buffer::move_word_right(self)
     }
 
     pub fn move_word_end(&mut self) -> bool {
+        self.desired_col = None;
         crate::movement::buffer::move_word_end(self)
     }
 
     pub fn move_word_left(&mut self) -> bool {
+        self.desired_col = None;
         crate::movement::buffer::move_word_left(self)
     }
 
     pub fn move_paragraph_forward(&mut self) -> bool {
+        self.desired_col = None;
         crate::movement::buffer::move_paragraph_forward(self)
     }
 
     pub fn move_paragraph_backward(&mut self) -> bool {
+        self.desired_col = None;
         crate::movement::buffer::move_paragraph_backward(self)
     }
 
     pub fn move_sentence_forward(&mut self) -> bool {
+        self.desired_col = None;
         crate::movement::buffer::move_sentence_forward(self)
     }
 
     pub fn move_sentence_backward(&mut self) -> bool {
+        self.desired_col = None;
         crate::movement::buffer::move_sentence_backward(self)
     }
 }

@@ -208,6 +208,22 @@ impl DisplayMap {
         self.find_char_at_col(next_row, cur_col, buf)
     }
 
+    /// Like `visual_down` but uses `target_col` instead of the cursor's current column.
+    /// Pass `usize::MAX` to always land at end-of-visual-row (the `$` case).
+    pub fn visual_down_to_col(
+        &self,
+        char_offset: usize,
+        target_col: usize,
+        buf: &TextBuffer,
+    ) -> usize {
+        let cur_row = self.char_to_visual_row(char_offset);
+        let next_row = cur_row + 1;
+        if next_row >= self.rows.len() {
+            return char_offset;
+        }
+        self.find_char_at_col(next_row, target_col, buf)
+    }
+
     pub fn visual_up(&self, char_offset: usize, buf: &TextBuffer) -> usize {
         let cur_row = self.char_to_visual_row(char_offset);
         if cur_row == 0 {
@@ -215,6 +231,21 @@ impl DisplayMap {
         }
         let cur_col = self.char_to_visual_col(char_offset, buf);
         self.find_char_at_col(cur_row - 1, cur_col, buf)
+    }
+
+    /// Like `visual_up` but uses `target_col` instead of the cursor's current column.
+    /// Pass `usize::MAX` to always land at end-of-visual-row (the `$` case).
+    pub fn visual_up_to_col(
+        &self,
+        char_offset: usize,
+        target_col: usize,
+        buf: &TextBuffer,
+    ) -> usize {
+        let cur_row = self.char_to_visual_row(char_offset);
+        if cur_row == 0 {
+            return char_offset;
+        }
+        self.find_char_at_col(cur_row - 1, target_col, buf)
     }
 
     fn find_char_at_col(&self, visual_row: usize, target_col: usize, buf: &TextBuffer) -> usize {

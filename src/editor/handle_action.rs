@@ -400,6 +400,7 @@ impl<T: TerminalBackend> Editor<T> {
                         target_n - 1
                     };
                     let offset = doc.buffer.line_start(idx);
+                    doc.buffer.clear_desired_col();
                     let _ = doc.buffer.set_cursor(offset);
                 }
                 true
