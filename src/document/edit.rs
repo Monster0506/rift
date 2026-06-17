@@ -7,28 +7,28 @@ use crate::history::{EditOperation, EditTransaction, Position, Range};
 use tree_sitter::{InputEdit, Point};
 
 impl Document {
+    /// Tree-sitter `Point` for a byte offset; `line_index` is char-indexed, so
+    /// the row lookup and column both need a char/byte conversion.
     pub(super) fn get_point(&self, byte_offset: usize) -> Point {
-        let line = self.buffer.line_index.get_line_at(byte_offset);
-        let line_start = self.buffer.line_index.get_start(line).unwrap_or(0);
-        let col = byte_offset.saturating_sub(line_start);
-        Point {
-            row: line,
-            column: col,
-        }
+        let (point, _) = self.get_edit_points(byte_offset);
+        point
     }
 
-    /// Return both the tree-sitter `Point` and history `Position` for the same
-    /// byte offset in a single line-index traversal instead of two.
+    /// Return both the tree-sitter `Point` (byte column) and history `Position`
+    /// (char column) for the same byte offset.
     pub(crate) fn get_edit_points(&self, byte_offset: usize) -> (Point, Position) {
-        let line = self.buffer.line_index.get_line_at(byte_offset);
-        let line_start = self.buffer.line_index.get_start(line).unwrap_or(0);
-        let col = byte_offset.saturating_sub(line_start);
+        let char_offset = self.buffer.byte_to_char(byte_offset);
+        let line = self.buffer.line_index.get_line_at(char_offset);
+        let line_start_char = self.buffer.line_index.get_start(line).unwrap_or(0);
+        let line_start_byte = self.buffer.char_to_byte(line_start_char);
+        let byte_col = byte_offset.saturating_sub(line_start_byte);
+        let char_col = char_offset.saturating_sub(line_start_char);
         (
             Point {
                 row: line,
-                column: col,
+                column: byte_col,
             },
-            Position::new(line as u32, col as u32),
+            Position::new(line as u32, char_col as u32),
         )
     }
 
@@ -77,7 +77,7 @@ impl Document {
             None
         };
 
-        let start_byte = self.buffer.cursor();
+        let start_byte = self.buffer.char_to_byte(self.buffer.cursor());
         let (start_position, history_pos) = self.get_edit_points(start_byte);
 
         self.buffer.insert_char(ch)?;
@@ -145,7 +145,7 @@ impl Document {
             None
         };
 
-        let start_byte = self.buffer.cursor();
+        let start_byte = self.buffer.char_to_byte(self.buffer.cursor());
         let (start_position, history_pos) = self.get_edit_points(start_byte);
 
         self.buffer.insert_str(s)?;
@@ -223,8 +223,10 @@ impl Document {
         }
 
         let deleted_text = deleted_char.to_string();
-        let (start_position, history_start) = self.get_edit_points(cursor - 1);
-        let (old_end_position, history_end) = self.get_edit_points(cursor);
+        let start_byte = self.buffer.char_to_byte(cursor - 1);
+        let old_end_byte = self.buffer.char_to_byte(cursor);
+        let (start_position, history_start) = self.get_edit_points(start_byte);
+        let (old_end_position, history_end) = self.get_edit_points(old_end_byte);
 
         if self.buffer.delete_backward() {
             self.mark_dirty();
@@ -244,9 +246,6 @@ impl Document {
                 ),
                 AnnotationUndoHint::Snapshot,
             );
-
-            let start_byte = self.buffer.char_to_byte(cursor - 1);
-            let old_end_byte = self.buffer.char_to_byte(cursor);
 
             let edit = InputEdit {
                 start_byte,
@@ -284,8 +283,10 @@ impl Document {
         }
 
         let deleted_text = deleted_char.to_string();
-        let (start_position, history_start) = self.get_edit_points(cursor);
-        let (old_end_position, history_end) = self.get_edit_points(cursor + 1);
+        let start_byte = self.buffer.char_to_byte(cursor);
+        let old_end_byte = self.buffer.char_to_byte(cursor + 1);
+        let (start_position, history_start) = self.get_edit_points(start_byte);
+        let (old_end_position, history_end) = self.get_edit_points(old_end_byte);
 
         if self.buffer.delete_forward() {
             self.mark_dirty();
@@ -307,9 +308,9 @@ impl Document {
             );
 
             let edit = InputEdit {
-                start_byte: cursor,
-                old_end_byte: cursor + 1,
-                new_end_byte: cursor,
+                start_byte,
+                old_end_byte,
+                new_end_byte: start_byte,
                 start_position,
                 old_end_position,
                 new_end_position: start_position,
@@ -317,7 +318,8 @@ impl Document {
             if let Some(syntax) = &mut self.syntax {
                 syntax.update_tree(&edit);
             }
-            self.annotations.on_edit(cursor, cursor + 1, cursor);
+            self.annotations
+                .on_edit(start_byte, old_end_byte, start_byte);
             // Deleting a newline merges the next line up: renumber line anchors.
             if deleted_char == Character::Newline {
                 self.annotations.on_lines_deleted(start_position.row + 1, 1);

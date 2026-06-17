@@ -1377,6 +1377,48 @@ fn test_text_changed_coarse_fires_once_per_render() {
 }
 
 #[test]
+fn test_cursor_moved_fires_once_per_render_with_latest_position() {
+    use std::sync::{Arc, Mutex};
+
+    let mut editor = create_editor_sized(24, 80);
+    set_content(&mut editor, "hello world\n");
+
+    let cols: Arc<Mutex<Vec<usize>>> = Arc::new(Mutex::new(Vec::new()));
+    let c = cols.clone();
+    editor.plugin_host.on("CursorMoved", move |event| {
+        if let crate::plugin::EditorEvent::CursorMoved { col, .. } = event {
+            c.lock().unwrap().push(*col);
+        }
+    });
+
+    for _ in 0..5 {
+        editor.execute_buffer_command(crate::command::Command::Move(
+            crate::action::Motion::Right,
+            1,
+        ));
+    }
+    assert!(
+        cols.lock().unwrap().is_empty(),
+        "CursorMoved must not fire inside execute_buffer_command"
+    );
+
+    editor.update_and_render().unwrap();
+    assert_eq!(
+        *cols.lock().unwrap(),
+        vec![5],
+        "CursorMoved must fire exactly once per render cycle, with the latest position"
+    );
+
+    // A second render with no further moves must not fire again.
+    editor.update_and_render().unwrap();
+    assert_eq!(
+        cols.lock().unwrap().len(),
+        1,
+        "CursorMoved must not fire on a render with no pending moves"
+    );
+}
+
+#[test]
 fn leading_count_composes_with_nest_count_through_full_key_path() {
     use crate::action::{Action, EditorAction, OperatorType};
     use crate::key::Key;

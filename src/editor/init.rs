@@ -100,6 +100,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_surround_add: None,
             display_map_cache: None,
             pending_text_changed: None,
+            pending_cursor_moved: None,
             dot_repeat: DotRepeat::new(),
             panel_layout: None,
             last_notification_generation: 0,

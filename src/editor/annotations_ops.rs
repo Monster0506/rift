@@ -888,6 +888,60 @@ Search: needle here and another needle over there.";
     }
 
     #[test]
+    fn conceal_reveal_unaffected_by_multibyte_chars_on_earlier_lines() {
+        use crate::annotations::{
+            Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,
+        };
+        // Many 2-byte chars on line 0 push line 1's byte offsets past its char
+        // offsets, regressing the cursor-line reveal check (byte vs char-indexed).
+        let line0 = "e\u{301}".repeat(20);
+        let line1 = "**x**";
+        let line2 = "tail";
+        let text = format!("{line0}\n{line1}\n{line2}");
+        let mut e = editor_with_text(&text);
+
+        let line1_char_start = line0.chars().count() + 1;
+        let line1_byte_start = line0.len() + 1;
+        for (s, en) in [(0usize, 2usize), (3usize, 5usize)] {
+            let byte_s = line1_byte_start + s;
+            let byte_e = line1_byte_start + en;
+            e.active_document().annotations.add(
+                Annotation::new(
+                    Kind::new("md.conceal"),
+                    Anchor::range(byte_s, byte_e),
+                    AnnotationOwner::User,
+                )
+                .with_presentation(
+                    Presentation::default().with_adornment(Adornment::new("", Placement::Conceal)),
+                ),
+            );
+        }
+
+        // Cursor on line 1 (the markers' own line): they must be revealed.
+        e.active_document().buffer.set_cursor(line1_char_start).ok();
+        let out = screen(&mut e);
+        assert!(
+            out.contains("**x**"),
+            "markers must be revealed on the cursor's own line despite multibyte \
+             drift earlier in the document; screen:\n{}",
+            out
+        );
+
+        // Cursor on line 2: line 1's markers are concealed again.
+        e.active_document()
+            .buffer
+            .set_cursor(line1_char_start + line1.chars().count() + 1)
+            .ok();
+        let out2 = screen(&mut e);
+        let line1_row = out2.lines().nth(1).unwrap_or("");
+        assert!(
+            line1_row.trim_end().ends_with('x') && !line1_row.contains('*'),
+            "markers stay concealed off the cursor's line; screen:\n{}",
+            out2
+        );
+    }
+
+    #[test]
     fn overlay_range_conceals_span_padding_and_truncating() {
         use crate::annotations::{
             Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,

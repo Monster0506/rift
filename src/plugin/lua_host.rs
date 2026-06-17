@@ -270,6 +270,19 @@ impl LuaHost {
         let lua = unsafe { Lua::unsafe_new() };
         let shared = Arc::new(Mutex::new(LuaSharedState::default()));
 
+        // os.execute() blocks the calling thread on a subprocess; route through
+        // rift.spawn_shell instead, which runs off-thread and reports via a UserEvent.
+        {
+            let os_table: LuaTable = lua.globals().get("os")?;
+            let err_fn = lua.create_function(|_, _: LuaMultiValue| -> LuaResult<()> {
+                Err(LuaError::RuntimeError(
+                    "os.execute() is disabled; use rift.spawn_shell(cmd, tag) or rift.spawn(prog, args, tag) instead"
+                        .to_string(),
+                ))
+            })?;
+            os_table.set("execute", err_fn)?;
+        }
+
         // Internal handler registry table: _rift_handlers[event_name] = { {slot=n,fn=f}, ... }
         // _rift_slot_events[slot_id] = event_name  (for rift.off lookup)
         // _rift_slot_plugin[slot_id] = plugin_name (ownership tracking)

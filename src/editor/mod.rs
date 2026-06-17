@@ -152,6 +152,8 @@ pub struct Editor<T: TerminalBackend> {
     )>,
     /// Doc whose TextChangedCoarse event is pending dispatch at the next render.
     pending_text_changed: Option<crate::document::DocumentId>,
+    /// Latest CursorMoved event pending dispatch at the next render.
+    pending_cursor_moved: Option<(crate::document::DocumentId, usize, usize)>,
     dot_repeat: DotRepeat,
     pub panel_layout: Option<PanelLayout>,
     /// Last seen notification generation; used to detect when to refresh open messages buffers.

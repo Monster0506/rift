@@ -28,6 +28,14 @@ fn test_notify_queues_mutation() {
 }
 
 #[test]
+fn test_os_execute_is_disabled() {
+    let host = make_host();
+    let err = host.exec("os.execute('echo hi')");
+    assert!(err.is_some(), "os.execute() must raise a Lua error");
+    assert!(err.unwrap().contains("spawn_shell"));
+}
+
+#[test]
 fn test_annotations_add_queues_mutation() {
     let host = make_host();
     assert!(host

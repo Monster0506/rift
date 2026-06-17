@@ -25,6 +25,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
         self.flush_pending_text_changed();
+        self.flush_pending_cursor_moved();
         // Fire cursor enter/leave annotation hooks for any transition this frame.
         self.update_annotation_hover();
         if self.split_tree.window_count() == 1 {
@@ -284,12 +285,18 @@ impl<T: TerminalBackend> Editor<T> {
             start_byte..end_byte,
         );
         // Conceal ranges, minus those on the cursor's line (reveal-on-cursor-line).
+        // `s` is a byte offset but line_index is char-indexed, so convert first.
         let cursor_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
         let annotation_concealed: Vec<(usize, usize)> = doc
             .annotations
             .concealed_ranges(start_byte..end_byte)
             .into_iter()
-            .filter(|(s, _)| doc.buffer.line_index.get_line_at(*s) != cursor_line)
+            .filter(|(s, _)| {
+                doc.buffer
+                    .line_index
+                    .get_line_at(doc.buffer.byte_to_char(*s))
+                    != cursor_line
+            })
             .collect();
 
         let state = render::RenderState {

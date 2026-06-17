@@ -709,42 +709,6 @@ fn test_line_bucket_shift_ignores_point_range_annotations() {
     }
 }
 
-// Temporary demonstration, not a regression test (wall-clock asserts are
-// flaky in CI). Run: `cargo test -- --ignored --nocapture line_bucket_timing_demo`.
-#[test]
-#[ignore]
-fn line_bucket_timing_demo() {
-    for &n in &[100usize, 1_000, 10_000, 100_000] {
-        let mut store = AnnotationStore::new();
-        for i in 0..n {
-            let start = i * 20;
-            store.add(Annotation::new(
-                Kind::new("bench.span"),
-                Anchor::range(start, start + 5),
-                AnnotationOwner::User,
-            ));
-        }
-        for line in (0..200).step_by(20) {
-            store.add(Annotation::new(
-                Kind::new("lsp.diagnostic"),
-                Anchor::Line(line),
-                AnnotationOwner::Lsp,
-            ));
-        }
-
-        let start = std::time::Instant::now();
-        for _ in 0..50 {
-            store.on_lines_deleted(1, 1);
-            store.on_line_inserted(1);
-        }
-        let elapsed = start.elapsed();
-        println!(
-            "n={n}: 50x(on_lines_deleted+on_line_inserted) = {:?}",
-            elapsed
-        );
-    }
-}
-
 /// Viewport-restricted queries must exclude annotations entirely outside the
 /// queried range and include ones overlapping it, for both anchor kinds.
 #[test]

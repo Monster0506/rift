@@ -1875,3 +1875,111 @@ fn test_get_edit_points_matches_individual_calls_second_line() {
     assert_eq!(hist_pos.line, 1);
     assert_eq!(hist_pos.col, 0);
 }
+
+#[test]
+fn test_get_edit_points_multibyte_prefix_diverges_byte_and_char_columns() {
+    let mut doc = Document::new(1).unwrap();
+    // 'e' has a 2-byte combining accent, so "world" starts at char offset 6
+    // but byte offset 7 -- the byte and char columns must differ here.
+    doc.buffer.insert_str("e\u{301}llo\nworld\n").unwrap();
+
+    let world_char_start = 6;
+    let byte_offset = doc.buffer.char_to_byte(world_char_start);
+    let (ts_pt, hist_pos) = doc.get_edit_points(byte_offset);
+
+    assert_eq!(ts_pt.row, 1);
+    assert_eq!(ts_pt.column, 0);
+    assert_eq!(hist_pos.line, 1);
+    assert_eq!(hist_pos.col, 0);
+}
+
+#[test]
+fn test_insert_char_after_multibyte_prefix_shifts_annotation_by_bytes() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Marker};
+
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("e\u{301}llo world").unwrap();
+
+    // Cursor lands at char 6 / byte 7. Plant a right-gravity marker at byte 6
+    // -- the char value an unconverted boundary would mistake for a byte one.
+    let id = doc.annotations.add(Annotation::new(
+        Kind::new("test.marker"),
+        Anchor::Point(Marker::right(6)),
+        AnnotationOwner::User,
+    ));
+
+    doc.buffer.set_cursor(6).ok();
+    doc.insert_char('X').unwrap();
+
+    // The real edit starts at byte 7, strictly after the marker, so a
+    // correct implementation leaves it at 6 untouched.
+    let shifted = doc
+        .annotations
+        .query_range(0, doc.buffer.to_string().len())
+        .find(|a| a.id == id)
+        .expect("annotation must still exist");
+    match shifted.anchor {
+        Anchor::Point(marker) => assert_eq!(marker.offset, 6),
+        _ => panic!("expected point anchor"),
+    }
+}
+
+#[test]
+fn test_delete_backward_after_multibyte_prefix_shifts_annotation_by_bytes() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("e\u{301}llo world").unwrap();
+
+    let world_byte_start = doc.buffer.char_to_byte(6);
+    let id = doc.annotations.add(Annotation::new(
+        Kind::new("test.marker"),
+        Anchor::point(world_byte_start),
+        AnnotationOwner::User,
+    ));
+
+    // Delete the space right before "world"; the annotation must shift back
+    // by exactly one byte.
+    doc.buffer.set_cursor(6).ok();
+    doc.delete_backward();
+
+    let shifted = doc
+        .annotations
+        .query_range(0, doc.buffer.to_string().len())
+        .find(|a| a.id == id)
+        .expect("annotation must still exist");
+    match shifted.anchor {
+        Anchor::Point(marker) => assert_eq!(marker.offset, world_byte_start - 1),
+        _ => panic!("expected point anchor"),
+    }
+}
+
+#[test]
+fn test_delete_forward_after_multibyte_prefix_shifts_annotation_by_bytes() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("e\u{301}llo world").unwrap();
+
+    let world_byte_start = doc.buffer.char_to_byte(6);
+    let id = doc.annotations.add(Annotation::new(
+        Kind::new("test.marker"),
+        Anchor::point(world_byte_start),
+        AnnotationOwner::User,
+    ));
+
+    // Delete the space right before "world" via delete_forward; the
+    // annotation must shift back by exactly one byte.
+    doc.buffer.set_cursor(5).ok();
+    doc.delete_forward();
+
+    let shifted = doc
+        .annotations
+        .query_range(0, doc.buffer.to_string().len())
+        .find(|a| a.id == id)
+        .expect("annotation must still exist");
+    match shifted.anchor {
+        Anchor::Point(marker) => assert_eq!(marker.offset, world_byte_start - 1),
+        _ => panic!("expected point anchor"),
+    }
+}

@@ -141,10 +141,10 @@ impl<T: TerminalBackend> Editor<T> {
                     self.lsp_notify_change();
                 }
 
-                if let Some((buf, row, col)) = cursor_event {
-                    self.plugin_host
-                        .dispatch(&crate::plugin::EditorEvent::CursorMoved { buf, row, col });
-                    self.apply_plugin_mutations();
+                // Defer CursorMoved to the next render cycle, same as
+                // TextChangedCoarse, so several moves within a frame fire once.
+                if let Some(event) = cursor_event {
+                    self.pending_cursor_moved = Some(event);
                 }
             }
 
@@ -160,6 +160,16 @@ impl<T: TerminalBackend> Editor<T> {
             self.update_lua_state();
             self.plugin_host
                 .dispatch(&crate::plugin::EditorEvent::TextChangedCoarse { buf });
+            self.apply_plugin_mutations();
+        }
+    }
+
+    /// Dispatch the latest pending `CursorMoved` event, so several moves within
+    /// a frame (e.g. a multi-line motion) fire a single event.
+    pub(super) fn flush_pending_cursor_moved(&mut self) {
+        if let Some((buf, row, col)) = self.pending_cursor_moved.take() {
+            self.plugin_host
+                .dispatch(&crate::plugin::EditorEvent::CursorMoved { buf, row, col });
             self.apply_plugin_mutations();
         }
     }
