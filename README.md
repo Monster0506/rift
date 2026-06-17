@@ -6,6 +6,7 @@ I use this daily and primarily.
 
 ## Implemented:
 - Quite a lot more than the below items, I just haven't updated this in a while due to actually working on it.
+- Optimistic-sync incremental syntax parsing: typing tries a time-budgeted synchronous tree-sitter parse first, falling back to a debounced background job (with cancel-and-respawn of any stale in-flight parse) only when the budget is exceeded
 - Remote daemon mode (`rift --daemon`): editor runs as a headless TCP server; clients attach via `rift --connect [user@]host` over an SSH tunnel, with token auth and JSON+RPC framing
 - Annotation presentation layer: faces/styles plus adornments rendered as leading, trailing (end-of-line), overlay, or conceal (hidden) virtual text, composed over base syntax by priority
 - LSP client: diagnostics with inline annotations, go to definition, find references, hover documentation, rename, document formatting, code actions (with resolve)
@@ -160,6 +161,7 @@ Known issues:
 - operator pending mode blocking on certain key sequences
 - file explorer entry duplication on recursive directory traversal
 - terminal keybinding actions not bindable to other keys
+- annotation line adornments (e.g. markdown horizontal rules) misrendering on the wrong line when multibyte characters appeared earlier in the buffer (byte offset used where a char offset was required)
 
 
 ## Install

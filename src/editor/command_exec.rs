@@ -174,20 +174,34 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Perform synchronous incremental syntax parse for the document.
-    /// This is fast because tree-sitter reuses unchanged subtrees from the old tree.
+    /// Time-budgeted incremental syntax parse for the active document.
+    ///
+    /// Tries a synchronous parse first (tree-sitter reuses unchanged subtrees,
+    /// so this is normally well under a millisecond). If it exceeds its time
+    /// budget, the attempt is aborted and a background `SyntaxParseJob` is
+    /// debounced instead, so a slow parse never stalls a keystroke.
     pub(super) fn do_incremental_syntax_parse(&mut self) {
-        if let Some(doc) = self.document_manager.active_document_mut() {
-            if doc.syntax.is_none() {
-                return;
-            }
+        use crate::syntax::ParseOutcome;
 
-            // Get source bytes for parsing
-            let source = doc.buffer.to_logical_bytes();
+        const SYNC_PARSE_BUDGET: std::time::Duration = std::time::Duration::from_micros(1500);
 
-            if let Some(syntax) = &mut doc.syntax {
-                syntax.incremental_parse(&source);
-            }
+        let Some(doc) = self.document_manager.active_document_mut() else {
+            return;
+        };
+        if doc.syntax.is_none() {
+            return;
+        }
+        let doc_id = doc.id;
+        let source = doc.buffer.to_logical_bytes();
+        let outcome = doc
+            .syntax
+            .as_mut()
+            .map(|syntax| syntax.try_incremental_parse(&source, SYNC_PARSE_BUDGET));
+
+        match outcome {
+            Some(ParseOutcome::Completed) => self.cancel_pending_syntax_reparse(doc_id),
+            Some(ParseOutcome::Aborted) => self.debounce_syntax_reparse(doc_id),
+            Some(ParseOutcome::NoLanguage) | None => {}
         }
     }
 }

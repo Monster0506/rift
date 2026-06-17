@@ -119,6 +119,7 @@ impl<T: TerminalBackend> Editor<T> {
             dispatch_registry: crate::annotations::registry::DispatchRegistry::with_builtins(),
             kind_registry: crate::annotations::registry::KindRegistry::with_core(),
             hovered_annotation: None,
+            pending_syntax_reparse: std::collections::HashMap::new(),
         };
 
         // Register default keymaps

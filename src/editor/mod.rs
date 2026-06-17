@@ -193,6 +193,10 @@ pub struct Editor<T: TerminalBackend> {
     /// Id of the annotation the cursor currently rests on, tracked so cursor
     /// enter/leave hooks fire once per transition (design.md sec 12).
     hovered_annotation: Option<crate::annotations::AnnotationId>,
+    /// Debounced background syntax reparse state per document, keyed off a
+    /// sync `try_incremental_parse` exceeding its time budget (design.md #1).
+    pending_syntax_reparse:
+        std::collections::HashMap<crate::document::DocumentId, jobs::PendingSyntaxReparse>,
 }
 
 /// State retained between a `Put` and a `CyclePaste` action.

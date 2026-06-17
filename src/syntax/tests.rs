@@ -117,6 +117,30 @@ mod svelte_tests {
 "#;
 
     #[test]
+    fn test_try_incremental_parse_completes_within_generous_budget() {
+        let loader = make_loader();
+        let mut syntax = svelte_syntax(&loader);
+        let src = SVELTE_SRC.as_bytes();
+        let outcome = syntax.try_incremental_parse(src, std::time::Duration::from_secs(5));
+        assert_eq!(outcome, crate::syntax::ParseOutcome::Completed);
+        assert!(syntax.tree.is_some());
+        assert!(!syntax.highlights(None).is_empty());
+    }
+
+    #[test]
+    fn test_try_incremental_parse_aborts_on_zero_budget_leaves_tree_untouched() {
+        let loader = make_loader();
+        let mut syntax = svelte_syntax(&loader);
+        let src = SVELTE_SRC.as_bytes();
+        let outcome = syntax.try_incremental_parse(src, std::time::Duration::ZERO);
+        assert_eq!(outcome, crate::syntax::ParseOutcome::Aborted);
+        assert!(
+            syntax.tree.is_none(),
+            "aborted parse must not commit a tree"
+        );
+    }
+
+    #[test]
     fn test_svelte_host_parse_succeeds() {
         let loader = make_loader();
         let mut syntax = svelte_syntax(&loader);

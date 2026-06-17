@@ -17,6 +17,17 @@ pub enum SyntaxNotification {
     Error(String),
 }
 
+/// Result of a budgeted synchronous parse attempt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParseOutcome {
+    /// Parsed and re-highlighted within the budget; state is up to date.
+    Completed,
+    /// Exceeded the time budget; state is unchanged, caller should background it.
+    Aborted,
+    /// No language configured for this document.
+    NoLanguage,
+}
+
 // ---------------------------------------------------------------------------
 // Injection layer
 // ---------------------------------------------------------------------------
@@ -137,6 +148,82 @@ impl Syntax {
     // -----------------------------------------------------------------------
     // Parsing
     // -----------------------------------------------------------------------
+
+    /// Time-budgeted incremental parse: tries to parse and re-highlight the
+    /// host grammar synchronously, aborting if it exceeds `budget`.
+    ///
+    /// On `Aborted`, `self.tree`/`self.cached_highlights` are left untouched
+    /// (the caller should fall back to a background `SyntaxParseJob`).
+    pub fn try_incremental_parse(
+        &mut self,
+        source: &[u8],
+        budget: std::time::Duration,
+    ) -> ParseOutcome {
+        use std::ops::ControlFlow;
+        use std::time::Instant;
+
+        let mut parser = Parser::new();
+        if parser.set_language(&self.language).is_err() {
+            return ParseOutcome::NoLanguage;
+        }
+
+        let deadline = Instant::now() + budget;
+        let mut parse_timed_out = false;
+        let mut parse_progress = |_state: &tree_sitter::ParseState| {
+            if Instant::now() >= deadline {
+                parse_timed_out = true;
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        };
+        let new_tree = parser.parse_with_options(
+            &mut |i, _| source.get(i..).unwrap_or(&[]),
+            self.tree.as_ref(),
+            Some(tree_sitter::ParseOptions::new().progress_callback(&mut parse_progress)),
+        );
+
+        let Some(tree) = new_tree else {
+            return ParseOutcome::Aborted;
+        };
+        if parse_timed_out {
+            return ParseOutcome::Aborted;
+        }
+
+        if let Some(query) = &self.highlights_query {
+            let root_node = tree.root_node();
+            let mut cursor = QueryCursor::new();
+            let mut highlights = Vec::new();
+            let mut query_timed_out = false;
+            let mut query_progress = |_state: &tree_sitter::QueryCursorState| {
+                if Instant::now() >= deadline {
+                    query_timed_out = true;
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            };
+            let mut matches = cursor.matches_with_options(
+                query,
+                root_node,
+                source,
+                tree_sitter::QueryCursorOptions::new().progress_callback(&mut query_progress),
+            );
+            while let Some(m) = matches.next() {
+                for capture in m.captures {
+                    highlights.push((capture.node.byte_range(), capture.index));
+                }
+            }
+            if query_timed_out {
+                return ParseOutcome::Aborted;
+            }
+            self.cached_highlights = IntervalTree::new(highlights);
+        }
+
+        self.tree = Some(tree);
+        self.parse_injections(source);
+        ParseOutcome::Completed
+    }
 
     /// Incremental parse of the host grammar, then injection layers.
     /// Returns `true` if host parsing succeeded.

@@ -1,37 +1,115 @@
 use super::Editor;
 use crate::buffer::api::BufferView;
+use crate::document::DocumentId;
 use crate::error::RiftError;
 use crate::mode::Mode;
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
 use std::sync::Arc;
 
+/// Debounce window for backgrounding a syntax parse after a sync attempt
+/// exceeds its time budget — coalesces rapid keystrokes into one job.
+const SYNTAX_REPARSE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(40);
+
+/// Tracks a document's outstanding background syntax reparse, so a burst of
+/// edits debounces into one job and a stale in-flight job gets cancelled
+/// before a fresh one is spawned.
+#[derive(Default)]
+pub(super) struct PendingSyntaxReparse {
+    /// When set, the debounce timer is running; fires once `Instant::now() >= deadline`.
+    debounce_deadline: Option<std::time::Instant>,
+    in_flight_job: Option<usize>,
+}
+
 impl<T: TerminalBackend> Editor<T> {
-    pub(super) fn spawn_syntax_parse_job(&mut self, doc_id: crate::document::DocumentId) {
+    pub(super) fn spawn_syntax_parse_job(
+        &mut self,
+        doc_id: crate::document::DocumentId,
+    ) -> Option<usize> {
         use crate::job_manager::jobs::syntax::SyntaxParseJob;
         use tree_sitter::Parser;
 
-        if let Some(doc) = self.document_manager.get_document(doc_id) {
-            if let Some(syntax) = &doc.syntax {
-                // Create parser
-                let mut parser = Parser::new();
-                if parser.set_language(&syntax.language).is_err() {
-                    return;
+        let doc = self.document_manager.get_document(doc_id)?;
+        let syntax = doc.syntax.as_ref()?;
+
+        let mut parser = Parser::new();
+        if parser.set_language(&syntax.language).is_err() {
+            return None;
+        }
+
+        let job = SyntaxParseJob::new(
+            doc.buffer.clone(),
+            parser,
+            syntax.tree.clone(),
+            syntax.highlights_query.clone(),
+            syntax.language_name.clone(),
+            doc_id,
+        );
+
+        Some(self.job_manager.spawn(job))
+    }
+
+    /// Schedule a background reparse for `doc_id`, debounced so a burst of
+    /// edits within [`SYNTAX_REPARSE_DEBOUNCE`] coalesces into one job.
+    /// Called when a sync `try_incremental_parse` aborts on its time budget.
+    pub(super) fn debounce_syntax_reparse(&mut self, doc_id: DocumentId) {
+        let entry = self.pending_syntax_reparse.entry(doc_id).or_default();
+        entry.debounce_deadline = Some(std::time::Instant::now() + SYNTAX_REPARSE_DEBOUNCE);
+    }
+
+    /// Cancel any pending/in-flight background reparse for `doc_id` because a
+    /// sync parse just brought it fully up to date.
+    pub(super) fn cancel_pending_syntax_reparse(&mut self, doc_id: DocumentId) {
+        if let Some(entry) = self.pending_syntax_reparse.remove(&doc_id) {
+            if let Some(job_id) = entry.in_flight_job {
+                self.job_manager.cancel_job(job_id);
+            }
+        }
+    }
+
+    /// Spawn a background reparse immediately (bypassing the debounce timer),
+    /// cancelling any job already in flight for this doc first. Used for
+    /// discrete one-shot triggers like undo/redo, not routine typing.
+    pub(super) fn spawn_syntax_parse_job_immediate(&mut self, doc_id: DocumentId) {
+        if let Some(entry) = self.pending_syntax_reparse.get(&doc_id) {
+            if let Some(old_job) = entry.in_flight_job {
+                self.job_manager.cancel_job(old_job);
+            }
+        }
+        if let Some(job_id) = self.spawn_syntax_parse_job(doc_id) {
+            let entry = self.pending_syntax_reparse.entry(doc_id).or_default();
+            entry.in_flight_job = Some(job_id);
+            entry.debounce_deadline = None;
+        } else {
+            self.pending_syntax_reparse.remove(&doc_id);
+        }
+    }
+
+    /// Fire any debounce timers that have elapsed: cancel a stale in-flight
+    /// job (if any) and spawn a fresh one for the document's latest content.
+    /// Called once per frame from the run loop.
+    pub(super) fn poll_pending_syntax_reparse(&mut self) {
+        let now = std::time::Instant::now();
+        let due: Vec<DocumentId> = self
+            .pending_syntax_reparse
+            .iter()
+            .filter(|(_, p)| p.debounce_deadline.is_some_and(|d| now >= d))
+            .map(|(doc_id, _)| *doc_id)
+            .collect();
+
+        for doc_id in due {
+            if let Some(entry) = self.pending_syntax_reparse.get_mut(&doc_id) {
+                entry.debounce_deadline = None;
+                if let Some(old_job) = entry.in_flight_job.take() {
+                    self.job_manager.cancel_job(old_job);
                 }
-
-                let job = SyntaxParseJob::new(
-                    doc.buffer.clone(),
-                    parser,
-                    doc.syntax.as_ref().and_then(|s| s.tree.clone()),
-                    doc.syntax.as_ref().and_then(|s| s.highlights_query.clone()),
-                    doc.syntax
-                        .as_ref()
-                        .map(|s| s.language_name.clone())
-                        .unwrap_or_default(),
-                    doc_id,
-                );
-
-                self.job_manager.spawn(job);
+            }
+            if let Some(job_id) = self.spawn_syntax_parse_job(doc_id) {
+                if let Some(entry) = self.pending_syntax_reparse.get_mut(&doc_id) {
+                    entry.in_flight_job = Some(job_id);
+                }
+            } else {
+                self.pending_syntax_reparse.remove(&doc_id);
             }
         }
     }
@@ -441,6 +519,16 @@ impl<T: TerminalBackend> Editor<T> {
                                 syntax.parse_injections_pub(&source);
                             }
                         }
+
+                        if let Some(entry) = self.pending_syntax_reparse.get_mut(&doc_id) {
+                            if entry.in_flight_job == Some(id) {
+                                entry.in_flight_job = None;
+                            }
+                            if entry.debounce_deadline.is_none() && entry.in_flight_job.is_none() {
+                                self.pending_syntax_reparse.remove(&doc_id);
+                            }
+                        }
+
                         // Re-render after syntax update; always use update_and_render so that
                         // the display map (soft-wrap) is rebuilt correctly.
                         self.update_and_render()?;

@@ -27,6 +27,8 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
 
+            self.poll_pending_syntax_reparse();
+
             // Poll LSP messages
             let lsp_msgs = self.lsp_manager.poll();
             let had_lsp = !lsp_msgs.is_empty();
