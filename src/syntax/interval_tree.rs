@@ -120,6 +120,27 @@ impl<T: Clone> IntervalTree<T> {
         self.nodes.iter().map(|n| (&n.range, &n.val))
     }
 
+    /// Update every node's range from `get_range` in place, preserving tree topology, then recompute `max` bottom-up.
+    pub fn resync(&mut self, mut get_range: impl FnMut(&T) -> Option<Range<usize>>) {
+        for node in &mut self.nodes {
+            if let Some(r) = get_range(&node.val) {
+                node.range = r;
+            }
+        }
+        // Children always have a higher index than their parent, so a reverse
+        // pass finalizes both children before their parent.
+        for idx in (0..self.nodes.len()).rev() {
+            let mut max_end = self.nodes[idx].range.end;
+            if let Some(l) = self.nodes[idx].left {
+                max_end = max_end.max(self.nodes[l].max);
+            }
+            if let Some(r) = self.nodes[idx].right {
+                max_end = max_end.max(self.nodes[r].max);
+            }
+            self.nodes[idx].max = max_end;
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }

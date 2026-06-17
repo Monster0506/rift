@@ -69,6 +69,50 @@ fn lsp_diagnostics_survive_line_deletion_outside_range() {
 }
 
 #[test]
+fn replace_lsp_diagnostics_swaps_the_whole_set() {
+    let mut store = AnnotationStore::new();
+    store.create_directory_entry(0, 1); // non-LSP, must survive
+    store.create_diagnostic(2, 1, "old error");
+    store.create_diagnostic(5, 2, "old warning");
+    assert_eq!(store.lsp_diagnostics().count(), 2);
+
+    store.replace_lsp_diagnostics(vec![(3, 1, "new error"), (8, 4, "new hint")]);
+
+    let diags: Vec<_> = store.lsp_diagnostics().collect();
+    assert_eq!(diags.len(), 2);
+    let lines: Vec<_> = diags
+        .iter()
+        .map(|a| match a.anchor {
+            Anchor::Line(l) => l,
+            _ => panic!("expected line anchor"),
+        })
+        .collect();
+    assert!(lines.contains(&3) && lines.contains(&8));
+    // Non-LSP annotation untouched.
+    assert_eq!(store.directory_entries_by_line().len(), 1);
+}
+
+/// Clearing diagnostics with no replacement must not leave the `by_id`/line
+/// index dangling; a query afterward must reflect the removal.
+#[test]
+fn replace_lsp_diagnostics_with_empty_clears_stale_index() {
+    let mut store = AnnotationStore::new();
+    store.create_diagnostic(2, 1, "err");
+    store.create_diagnostic(4, 1, "err2");
+
+    // Force the index (incl. by_id / line bucket) to build and go clean.
+    let _ = store.next_interactive(0);
+
+    // Empty replacement: clears all, must invalidate so the index rebuilds.
+    store.replace_lsp_diagnostics(Vec::<(usize, i64, &str)>::new());
+
+    assert_eq!(store.lsp_diagnostics().count(), 0);
+    // A line-anchor edit consults the (now-rebuilt) index without stale ids.
+    store.on_line_inserted(0);
+    assert_eq!(store.lsp_diagnostics().count(), 0);
+}
+
+#[test]
 fn lsp_diagnostics_persist_when_their_line_is_deleted() {
     // LspDiagnostics use Stickiness::Persist, so deleting their line keeps them
     let mut store = AnnotationStore::new();

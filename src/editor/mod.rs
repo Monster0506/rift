@@ -77,12 +77,14 @@ fn plugin_dirs() -> Vec<std::path::PathBuf> {
     dirs
 }
 
-fn resolve_display_map(
+/// Resolve the wrap/tab width a display map would use, or `None` for no
+/// soft-wrap. Cheap, so it can validate a cached display map before reuse.
+fn resolve_wrap_params(
     doc: &Document,
     content_width: usize,
     global_soft_wrap: bool,
     global_wrap_width: Option<usize>,
-) -> Option<crate::wrap::DisplayMap> {
+) -> Option<(usize, usize)> {
     use crate::document::definitions::WrapMode;
     // Terminal and directory buffers never use soft-wrap: terminals manage their own
     // cursor, and directory buffers have invisible ID prefixes the display map doesn't know about.
@@ -99,11 +101,18 @@ fn resolve_display_map(
             global_wrap_width.unwrap_or(content_width)
         }
     };
-    Some(crate::wrap::DisplayMap::build(
-        &doc.buffer,
-        w,
-        doc.options.tab_width,
-    ))
+    Some((w, doc.options.tab_width))
+}
+
+fn resolve_display_map(
+    doc: &Document,
+    content_width: usize,
+    global_soft_wrap: bool,
+    global_wrap_width: Option<usize>,
+) -> Option<crate::wrap::DisplayMap> {
+    let (w, tab_width) =
+        resolve_wrap_params(doc, content_width, global_soft_wrap, global_wrap_width)?;
+    Some(crate::wrap::DisplayMap::build(&doc.buffer, w, tab_width))
 }
 
 /// Main editor struct

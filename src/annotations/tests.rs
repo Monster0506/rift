@@ -325,9 +325,11 @@ fn test_presentation_spans_uses_kind_default_when_unset() {
     ));
     let defaults = KindRegistry::with_core();
     // Without defaults: nothing. With defaults: the diag.error face (Red).
-    assert!(store.presentation_spans(None, None).is_empty());
+    assert!(store
+        .presentation_spans(None, None, 0..usize::MAX)
+        .is_empty());
     assert_eq!(
-        store.presentation_spans(None, Some(&defaults)),
+        store.presentation_spans(None, Some(&defaults), 0..usize::MAX),
         vec![(0..3, fg_style(Color::Red))]
     );
 }
@@ -351,7 +353,7 @@ fn test_presentation_spans_annotation_overrides_kind_default() {
     );
     let defaults = KindRegistry::with_core();
     assert_eq!(
-        store.presentation_spans(None, Some(&defaults)),
+        store.presentation_spans(None, Some(&defaults), 0..usize::MAX),
         vec![(0..3, fg_style(Color::Green))]
     );
 }
@@ -370,7 +372,7 @@ fn test_presentation_spans_resolves_named_face() {
     );
     // "link" resolves to Blue via the built-in fallback (no syntax colors).
     assert_eq!(
-        store.presentation_spans(None, None),
+        store.presentation_spans(None, None, 0..usize::MAX),
         vec![(2..5, fg_style(Color::Blue))]
     );
 }
@@ -400,7 +402,7 @@ fn test_presentation_spans_higher_priority_wins_overlap() {
             .with_presentation(Presentation::with_style(high).with_priority(5)),
     );
     assert_eq!(
-        store.presentation_spans(None, None),
+        store.presentation_spans(None, None, 0..usize::MAX),
         vec![
             (0..3, fg_style(Color::Red)),
             (3..6, fg_style(Color::Green)),
@@ -424,7 +426,9 @@ fn test_presentation_spans_skips_invisible_and_unstyled() {
         Anchor::range(4, 6),
         AnnotationOwner::User,
     ));
-    assert!(store.presentation_spans(None, None).is_empty());
+    assert!(store
+        .presentation_spans(None, None, 0..usize::MAX)
+        .is_empty());
 }
 
 fn trailing_adornment(store: &mut AnnotationStore, kind: &str, text: &str, pres: Presentation) {
@@ -450,11 +454,11 @@ fn test_adornment_uses_kind_default_style() {
     );
     // Without defaults: DarkGrey fallback. With defaults: the kind style fg.
     assert_eq!(
-        store.line_adornments(None, None, |_| 0),
+        store.line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, |_| 0),
         vec![(0, "---".to_string(), Color::DarkGrey)]
     );
     assert_eq!(
-        store.line_adornments(None, Some(&defaults), |_| 0),
+        store.line_adornments(None, Some(&defaults), 0..usize::MAX, 0..usize::MAX, |_| 0),
         vec![(0, "---".to_string(), Color::Grey)]
     );
 }
@@ -486,7 +490,7 @@ fn test_adornment_inline_style_wins_over_kind_default() {
         }),
     );
     assert_eq!(
-        store.line_adornments(None, Some(&defaults), |_| 0),
+        store.line_adornments(None, Some(&defaults), 0..usize::MAX, 0..usize::MAX, |_| 0),
         vec![(0, "---".to_string(), Color::Cyan)]
     );
 }
@@ -507,7 +511,7 @@ fn test_adornment_resolves_named_face() {
     );
     // "link" resolves to Blue via the built-in fallback (no syntax colors).
     assert_eq!(
-        store.line_adornments(None, None, |_| 0),
+        store.line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, |_| 0),
         vec![(0, "->".to_string(), Color::Blue)]
     );
 }
@@ -519,7 +523,334 @@ fn test_adornment_falls_back_to_dark_grey() {
     trailing_adornment(&mut store, "md.rule", "---", Presentation::default());
     // No style, no face, no kind default: the unchanged DarkGrey fallback.
     assert_eq!(
-        store.line_adornments(None, None, |_| 0),
+        store.line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, |_| 0),
         vec![(0, "---".to_string(), Color::DarkGrey)]
     );
+}
+
+/// Resyncing the cached index in place after a non-removing edit must match
+/// a from-scratch rebuild, checked against a hand-computed expectation.
+#[test]
+fn test_resync_index_matches_full_rebuild_after_shift_edits() {
+    let mut store = AnnotationStore::new();
+    let mut ids = Vec::new();
+    // Start well past the edit point so every marker offset strictly exceeds
+    // it, giving a uniform shift with no left-gravity boundary case.
+    const BASE: usize = 100;
+    for i in 0..20 {
+        let start = BASE + i * 10;
+        let mut a = Annotation::new(
+            Kind::new("bench.span"),
+            Anchor::range(start, start + 5),
+            AnnotationOwner::User,
+        );
+        if i % 3 == 0 {
+            a = a.with_actions(vec![Action::activate()]);
+        }
+        ids.push(store.add(a));
+    }
+    // Force the index to build once.
+    assert_eq!(store.query_at(BASE).count(), 1);
+
+    // A run of pure shift edits (inserts before every annotation) exercises
+    // the resync fast path instead of a full rebuild.
+    for _ in 0..5 {
+        store.on_edit(1, 1, 2);
+    }
+
+    let shift = 5;
+    for (i, id) in ids.iter().enumerate() {
+        let a = store.get(*id).unwrap();
+        let Anchor::Range(s, e) = a.anchor else {
+            panic!("expected range anchor");
+        };
+        let start = BASE + i * 10;
+        assert_eq!(s.offset, start + shift);
+        assert_eq!(e.offset, start + 5 + shift);
+    }
+
+    // query_range over the whole shifted span finds every annotation.
+    let found = store.query_range(BASE, BASE + 20 * 10 + shift).count();
+    assert_eq!(found, 20);
+
+    // next_interactive still walks every third annotation correctly in order.
+    let mut off = 0usize;
+    let mut walked = Vec::new();
+    while let Some(a) = store.next_interactive(off) {
+        let Anchor::Range(s, _) = a.anchor else {
+            panic!("expected range anchor");
+        };
+        walked.push(a.id);
+        off = s.offset + 1;
+    }
+    let expected: Vec<AnnotationId> = ids
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| i % 3 == 0)
+        .map(|(_, id)| *id)
+        .collect();
+    assert_eq!(walked, expected);
+}
+
+/// A fully-deleted annotation forces the slow rebuild path rather than
+/// resync; confirms removal still happens and queries stay correct.
+#[test]
+fn test_on_edit_removal_falls_back_to_full_rebuild() {
+    let mut store = AnnotationStore::new();
+    let a1 = store.add(Annotation::new(
+        Kind::new("bench.span"),
+        Anchor::range(0, 5),
+        AnnotationOwner::User,
+    ));
+    let a2 = store.add(Annotation::new(
+        Kind::new("bench.span"),
+        Anchor::range(10, 15),
+        AnnotationOwner::User,
+    ));
+    assert_eq!(store.query_at(0).count(), 1);
+
+    // Deletes [0,5) entirely, removing a1 (default Delete stickiness).
+    store.on_edit(0, 5, 0);
+
+    assert!(store.get(a1).is_none());
+    assert!(store.get(a2).is_some());
+    assert_eq!(store.query_at(0).count(), 0);
+    // a2 shifted left by 5.
+    assert_eq!(store.query_at(5).count(), 1);
+}
+
+/// `on_lines_deleted`/`on_line_inserted` use the line bucket to touch only
+/// Line annotations; Point/Range ones mixed in must never be touched.
+#[test]
+fn test_line_bucket_shift_ignores_point_range_annotations() {
+    let mut store = AnnotationStore::new();
+
+    // Many unrelated Point/Range annotations spread across the byte space;
+    // these must be completely unaffected by line-anchor edit tracking.
+    let mut point_range_ids = Vec::new();
+    for i in 0..50 {
+        let start = i * 20;
+        point_range_ids.push(store.add(Annotation::new(
+            Kind::new("bench.span"),
+            Anchor::range(start, start + 5),
+            AnnotationOwner::User,
+        )));
+    }
+
+    let delete_sticky = store.create_directory_entry(2, 100); // default Delete stickiness
+    let persist_in_range = store.add(
+        Annotation::new(
+            Kind::new("a.persist"),
+            Anchor::Line(3),
+            AnnotationOwner::User,
+        )
+        .with_stickiness(Stickiness::Persist),
+    );
+    let before_range = store.create_directory_entry(0, 200);
+    let after_range = store.create_directory_entry(5, 300);
+
+    // Force the index (and line bucket) to build once.
+    assert_eq!(store.query_at(0).count(), 1);
+
+    // Delete lines [2, 4): removes delete_sticky, keeps persist_in_range at
+    // its old line number (3), shifts after_range down by 2 (5 -> 3).
+    store.on_lines_deleted(2, 2);
+
+    assert!(store.get(delete_sticky).is_none());
+    let Anchor::Line(persist_line) = store.get(persist_in_range).unwrap().anchor else {
+        panic!("expected line anchor");
+    };
+    assert_eq!(persist_line, 3, "Persist-in-range keeps its old line");
+    let Anchor::Line(before_line) = store.get(before_range).unwrap().anchor else {
+        panic!("expected line anchor");
+    };
+    assert_eq!(
+        before_line, 0,
+        "lines before the deleted range are untouched"
+    );
+    let Anchor::Line(after_line) = store.get(after_range).unwrap().anchor else {
+        panic!("expected line anchor");
+    };
+    assert_eq!(
+        after_line, 3,
+        "lines after the deleted range shift down by count"
+    );
+
+    // None of the Point/Range annotations moved or were removed.
+    for (i, id) in point_range_ids.iter().enumerate() {
+        let a = store.get(*id).unwrap();
+        let Anchor::Range(s, e) = a.anchor else {
+            panic!("expected range anchor");
+        };
+        let start = i * 20;
+        assert_eq!(s.offset, start);
+        assert_eq!(e.offset, start + 5);
+    }
+
+    // Inserting a line at 1 leaves before_range (line 0, before the insertion
+    // point) alone, and shifts after_range (now at line 3) up by 1.
+    store.on_line_inserted(1);
+    let Anchor::Line(before_line) = store.get(before_range).unwrap().anchor else {
+        panic!("expected line anchor");
+    };
+    assert_eq!(before_line, 0);
+    let Anchor::Line(after_line) = store.get(after_range).unwrap().anchor else {
+        panic!("expected line anchor");
+    };
+    assert_eq!(after_line, 4);
+
+    // Point/Range annotations still untouched after the insert too.
+    for (i, id) in point_range_ids.iter().enumerate() {
+        let a = store.get(*id).unwrap();
+        let Anchor::Range(s, _) = a.anchor else {
+            panic!("expected range anchor");
+        };
+        assert_eq!(s.offset, i * 20);
+    }
+}
+
+// Temporary demonstration, not a regression test (wall-clock asserts are
+// flaky in CI). Run: `cargo test -- --ignored --nocapture line_bucket_timing_demo`.
+#[test]
+#[ignore]
+fn line_bucket_timing_demo() {
+    for &n in &[100usize, 1_000, 10_000, 100_000] {
+        let mut store = AnnotationStore::new();
+        for i in 0..n {
+            let start = i * 20;
+            store.add(Annotation::new(
+                Kind::new("bench.span"),
+                Anchor::range(start, start + 5),
+                AnnotationOwner::User,
+            ));
+        }
+        for line in (0..200).step_by(20) {
+            store.add(Annotation::new(
+                Kind::new("lsp.diagnostic"),
+                Anchor::Line(line),
+                AnnotationOwner::Lsp,
+            ));
+        }
+
+        let start = std::time::Instant::now();
+        for _ in 0..50 {
+            store.on_lines_deleted(1, 1);
+            store.on_line_inserted(1);
+        }
+        let elapsed = start.elapsed();
+        println!(
+            "n={n}: 50x(on_lines_deleted+on_line_inserted) = {:?}",
+            elapsed
+        );
+    }
+}
+
+/// Viewport-restricted queries must exclude annotations entirely outside the
+/// queried range and include ones overlapping it, for both anchor kinds.
+#[test]
+fn test_viewport_restricted_queries_exclude_offscreen_annotations() {
+    use crate::color::Color;
+
+    let mut store = AnnotationStore::new();
+
+    // Trailing adornment far off-screen (line 1000) vs. one in the viewport
+    // (line 5).
+    store.add(
+        Annotation::new(
+            Kind::new("a.offscreen"),
+            Anchor::Line(1000),
+            AnnotationOwner::User,
+        )
+        .with_presentation(
+            Presentation::default().with_adornment(Adornment::new("off", Placement::Trailing)),
+        ),
+    );
+    store.add(
+        Annotation::new(
+            Kind::new("a.onscreen"),
+            Anchor::Line(5),
+            AnnotationOwner::User,
+        )
+        .with_presentation(
+            Presentation::default().with_adornment(Adornment::new("on", Placement::Trailing)),
+        ),
+    );
+    let on_screen = store.line_adornments(None, None, 0..1_000_000, 0..10, |_| 0);
+    assert_eq!(on_screen, vec![(5, "on".to_string(), Color::DarkGrey)]);
+
+    // Inline (overlay) adornment far off-screen (byte 100000) vs. on-screen
+    // (byte 10).
+    let mut store = AnnotationStore::new();
+    store.add(
+        Annotation::new(
+            Kind::new("a.x"),
+            Anchor::point(100_000),
+            AnnotationOwner::User,
+        )
+        .with_presentation(
+            Presentation::default().with_adornment(Adornment::new("far", Placement::Overlay)),
+        ),
+    );
+    store.add(
+        Annotation::new(Kind::new("a.x"), Anchor::point(10), AnnotationOwner::User)
+            .with_presentation(
+                Presentation::default().with_adornment(Adornment::new("near", Placement::Overlay)),
+            ),
+    );
+    let inline = store.inline_adornments(None, None, 0..100);
+    assert_eq!(inline.len(), 1);
+    assert_eq!(inline[0].2, "near");
+
+    // Styled presentation span off-screen vs. on-screen.
+    let mut store = AnnotationStore::new();
+    store.add(
+        Annotation::new(
+            Kind::new("a.x"),
+            Anchor::range(100_000, 100_005),
+            AnnotationOwner::User,
+        )
+        .with_presentation(Presentation::with_style(StyleOverride {
+            underline: true,
+            ..Default::default()
+        })),
+    );
+    store.add(
+        Annotation::new(
+            Kind::new("a.x"),
+            Anchor::range(10, 15),
+            AnnotationOwner::User,
+        )
+        .with_presentation(Presentation::with_style(StyleOverride {
+            bold: true,
+            ..Default::default()
+        })),
+    );
+    let spans = store.presentation_spans(None, None, 0..100);
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].0, 10..15);
+
+    // Concealed range off-screen vs. on-screen.
+    let mut store = AnnotationStore::new();
+    store.add(
+        Annotation::new(
+            Kind::new("a.x"),
+            Anchor::range(100_000, 100_005),
+            AnnotationOwner::User,
+        )
+        .with_presentation(
+            Presentation::default().with_adornment(Adornment::new("", Placement::Conceal)),
+        ),
+    );
+    store.add(
+        Annotation::new(
+            Kind::new("a.x"),
+            Anchor::range(10, 15),
+            AnnotationOwner::User,
+        )
+        .with_presentation(
+            Presentation::default().with_adornment(Adornment::new("", Placement::Conceal)),
+        ),
+    );
+    let concealed = store.concealed_ranges(0..100);
+    assert_eq!(concealed, vec![(10, 15)]);
 }

@@ -73,19 +73,13 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let display_map = {
-            let doc = self.document_manager.get_document(doc_id).unwrap();
             let content_width = self
                 .render_system
                 .viewport
                 .visible_cols()
                 .saturating_sub(gutter_width)
                 .max(1);
-            resolve_display_map(
-                doc,
-                content_width,
-                self.state.settings.soft_wrap,
-                self.state.settings.wrap_width,
-            )
+            self.resolve_display_map_cached(doc_id, content_width)
         };
 
         let needs_clear = if let Some(ref dm) = display_map {
@@ -120,6 +114,37 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             self.render(needs_clear, display_map.as_ref())
         }
+    }
+
+    /// Resolve the display map, reusing `display_map_cache` when revision,
+    /// width, and wrap/tab params match (since `:set wrap` doesn't bump revision).
+    pub(super) fn resolve_display_map_cached(
+        &mut self,
+        doc_id: crate::document::DocumentId,
+        content_width: usize,
+    ) -> Option<crate::wrap::DisplayMap> {
+        let soft_wrap = self.state.settings.soft_wrap;
+        let wrap_width = self.state.settings.wrap_width;
+        let doc = self.document_manager.get_document(doc_id)?;
+        let revision = doc.buffer.revision;
+        let params = super::resolve_wrap_params(doc, content_width, soft_wrap, wrap_width);
+
+        if let Some((cid, crev, cw, cached)) = &self.display_map_cache {
+            if *cid == doc_id && *crev == revision && *cw == content_width {
+                let valid = match (&params, cached) {
+                    (None, None) => true,
+                    (Some((w, tw)), Some(m)) => m.wrap_width == *w && m.tab_width == *tw,
+                    _ => false,
+                };
+                if valid {
+                    return cached.clone();
+                }
+            }
+        }
+
+        let map = params.map(|(w, tw)| crate::wrap::DisplayMap::build(&doc.buffer, w, tw));
+        self.display_map_cache = Some((doc_id, revision, content_width, map.clone()));
+        map
     }
 
     /// Render the clipboard ring tooltip to the TOOLTIP layer.
@@ -239,23 +264,30 @@ impl<T: TerminalBackend> Editor<T> {
             .as_ref()
             .map(|s| s.injection_highlights_named(Some(start_byte..end_byte)));
 
-        // Generic annotation presentation overlay (design.md sec 8).
-        let annotation_styles = doc
-            .annotations
-            .presentation_spans(state.settings.syntax_colors.as_ref(), Some(kind_registry));
+        // Generic annotation presentation overlay (design.md sec 8), restricted
+        // to the visible viewport rather than a full-document scan.
+        let annotation_styles = doc.annotations.presentation_spans(
+            state.settings.syntax_colors.as_ref(),
+            Some(kind_registry),
+            start_byte..end_byte,
+        );
         let annotation_adornments = doc.annotations.line_adornments(
             state.settings.syntax_colors.as_ref(),
             Some(kind_registry),
+            start_byte..end_byte,
+            start_logical..end_logical,
             |b| doc.buffer.line_index.get_line_at(b),
         );
-        let annotation_inline = doc
-            .annotations
-            .inline_adornments(state.settings.syntax_colors.as_ref(), Some(kind_registry));
+        let annotation_inline = doc.annotations.inline_adornments(
+            state.settings.syntax_colors.as_ref(),
+            Some(kind_registry),
+            start_byte..end_byte,
+        );
         // Conceal ranges, minus those on the cursor's line (reveal-on-cursor-line).
         let cursor_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
         let annotation_concealed: Vec<(usize, usize)> = doc
             .annotations
-            .concealed_ranges()
+            .concealed_ranges(start_byte..end_byte)
             .into_iter()
             .filter(|(s, _)| doc.buffer.line_index.get_line_at(*s) != cursor_line)
             .collect();
@@ -566,21 +598,27 @@ impl<T: TerminalBackend> Editor<T> {
                 .syntax
                 .as_ref()
                 .map(|s| s.injection_highlights_named(Some(start_byte..end_byte)));
-            let annotation_styles = doc
-                .annotations
-                .presentation_spans(state.settings.syntax_colors.as_ref(), Some(kind_registry));
+            let annotation_styles = doc.annotations.presentation_spans(
+                state.settings.syntax_colors.as_ref(),
+                Some(kind_registry),
+                start_byte..end_byte,
+            );
             let annotation_adornments = doc.annotations.line_adornments(
                 state.settings.syntax_colors.as_ref(),
                 Some(kind_registry),
+                start_byte..end_byte,
+                start_line..end_line,
                 |b| doc.buffer.line_index.get_line_at(b),
             );
-            let annotation_inline = doc
-                .annotations
-                .inline_adornments(state.settings.syntax_colors.as_ref(), Some(kind_registry));
+            let annotation_inline = doc.annotations.inline_adornments(
+                state.settings.syntax_colors.as_ref(),
+                Some(kind_registry),
+                start_byte..end_byte,
+            );
             let cursor_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
             let annotation_concealed: Vec<(usize, usize)> = doc
                 .annotations
-                .concealed_ranges()
+                .concealed_ranges(start_byte..end_byte)
                 .into_iter()
                 .filter(|(s, _)| doc.buffer.line_index.get_line_at(*s) != cursor_line)
                 .collect();

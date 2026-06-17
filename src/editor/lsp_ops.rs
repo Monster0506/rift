@@ -138,16 +138,14 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        // Clear old LSP diagnostics
-        doc.annotations.clear_lsp_diagnostics();
-
-        // Add new ones with severity-driven presentation (face + EOL adornment).
-        for diag in &diagnostics {
-            let line = diag.range.start.line as usize;
-            let severity = diag.severity.unwrap_or(1) as i64;
-            doc.annotations
-                .create_diagnostic(line, severity, diag.message.trim());
-        }
+        // Replace the whole LSP diagnostic set in one pass (single index
+        // invalidation, and a correct clear even when `diagnostics` is empty).
+        doc.annotations
+            .replace_lsp_diagnostics(diagnostics.iter().map(|diag| {
+                let line = diag.range.start.line as usize;
+                let severity = diag.severity.unwrap_or(1) as i64;
+                (line, severity, diag.message.trim())
+            }));
 
         let lang = self
             .lsp_manager

@@ -22,6 +22,31 @@ use std::path::PathBuf;
 /// Unique identifier for documents
 pub type DocumentId = u64;
 
+/// One entry on the annotation undo/redo stacks. A pure insertion replays
+/// its exact inverse shift; deletes/replaces (which can collapse markers) snapshot.
+enum AnnotationUndo {
+    /// Pure insertion: bytes [start, new_end) inserted, lines inserted at
+    /// `line_inserts` in order. Undo/redo replay the inverse/forward edit.
+    Insertion {
+        start: usize,
+        new_end: usize,
+        line_inserts: Vec<usize>,
+    },
+    /// Full pre-edit annotation snapshot (correct for any edit).
+    Snapshot(Vec<crate::annotations::Annotation>),
+}
+
+/// Hint passed to `record_edit` for the annotation undo entry. Kept separate
+/// from [`AnnotationUndo`] so the snapshot is only taken when needed.
+pub(crate) enum AnnotationUndoHint {
+    Insertion {
+        start: usize,
+        new_end: usize,
+        line_inserts: Vec<usize>,
+    },
+    Snapshot,
+}
+
 /// A single entry in a directory buffer
 #[derive(Debug, Clone)]
 pub struct DirEntry {
@@ -161,10 +186,11 @@ pub struct Document {
     pub annotations: AnnotationStore,
     /// Full annotation snapshot captured before a transaction, restored on undo.
     pending_annotation_snapshot: Option<Vec<crate::annotations::Annotation>>,
-    /// Undo stack of full annotation snapshots, parallel to the edit history.
-    annotation_undo_stack: Vec<Vec<crate::annotations::Annotation>>,
-    /// Redo stack of full annotation snapshots.
-    annotation_redo_stack: Vec<Vec<crate::annotations::Annotation>>,
+    /// Undo stack parallel to the edit history; one entry per standalone edit
+    /// or committed transaction (see [`AnnotationUndo`]).
+    annotation_undo_stack: Vec<AnnotationUndo>,
+    /// Redo stack, mirror of the undo stack.
+    annotation_redo_stack: Vec<AnnotationUndo>,
     /// Monotonic edit sequence number, incremented once per applied edit.
     /// Lets producers reconcile stale annotation positions (design.md sec 11).
     document_version: u64,

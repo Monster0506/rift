@@ -281,7 +281,7 @@ impl Job for FileLoadJob {
 
             // We should use PieceTable::new with normalized_chars
             let piece_table = PieceTable::new(normalized_chars);
-            let line_index = LineIndex { table: piece_table };
+            let line_index = LineIndex::from_table(piece_table);
 
             Ok(FileLoadResult {
                 document_id: self.document_id,

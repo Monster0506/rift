@@ -6,16 +6,86 @@
 
 use super::rope::PieceTable;
 use crate::character::Character;
+use std::cell::RefCell;
 
 #[derive(Clone)]
 pub struct LineIndex {
     pub table: PieceTable,
+    /// Char offset of the start of each line; built lazily, then maintained
+    /// incrementally on insert/delete. `None` means "not built".
+    line_starts: RefCell<Option<Vec<usize>>>,
 }
 
 impl LineIndex {
     pub fn new() -> Self {
         Self {
             table: PieceTable::new(Vec::new()),
+            line_starts: RefCell::new(None),
+        }
+    }
+
+    /// Wrap an existing piece table (e.g. content loaded by a background job).
+    /// The line-start cache builds lazily on first query.
+    pub fn from_table(table: PieceTable) -> Self {
+        Self {
+            table,
+            line_starts: RefCell::new(None),
+        }
+    }
+
+    /// Build the line-start offset vector if it has not been built yet (one
+    /// O(n) pass over the buffer). All line queries go through this first.
+    fn ensure_built(&self) {
+        let mut cache = self.line_starts.borrow_mut();
+        if cache.is_some() {
+            return;
+        }
+        let mut starts = Vec::with_capacity(self.table.get_line_count());
+        starts.push(0);
+        let mut pos = 0usize;
+        for ch in self.table.iter() {
+            pos += 1;
+            if ch == Character::Newline {
+                starts.push(pos);
+            }
+        }
+        *cache = Some(starts);
+    }
+
+    /// Shift entries after `pos` right by `chars.len()`; insert a new line
+    /// start for each newline in `chars`.
+    fn apply_insert(starts: &mut Vec<usize>, pos: usize, chars: &[Character]) {
+        let added = chars.len();
+        if added == 0 {
+            return;
+        }
+        let split = starts.partition_point(|&s| s <= pos);
+        for s in starts[split..].iter_mut() {
+            *s += added;
+        }
+        let new_starts: Vec<usize> = chars
+            .iter()
+            .enumerate()
+            .filter(|(_, ch)| **ch == Character::Newline)
+            .map(|(k, _)| pos + k + 1)
+            .collect();
+        if !new_starts.is_empty() {
+            starts.splice(split..split, new_starts);
+        }
+    }
+
+    /// Drop line starts inside `(pos, pos+len]`; shift remaining entries
+    /// after the deletion left by `len`.
+    fn apply_delete(starts: &mut Vec<usize>, pos: usize, len: usize) {
+        if len == 0 {
+            return;
+        }
+        let end = pos + len;
+        let first_removed = starts.partition_point(|&s| s <= pos);
+        let first_kept = starts.partition_point(|&s| s <= end);
+        starts.drain(first_removed..first_kept);
+        for s in starts[first_removed..].iter_mut() {
+            *s -= len;
         }
     }
 
@@ -27,11 +97,18 @@ impl LineIndex {
         if line_idx >= self.table.get_line_count() {
             return None;
         }
-        Some(self.table.line_start_offset(line_idx))
+        self.ensure_built();
+        Some(self.line_starts.borrow().as_ref().unwrap()[line_idx])
     }
 
     pub fn get_line_start(&self, line_idx: usize) -> usize {
-        self.table.line_start_offset(line_idx)
+        self.ensure_built();
+        let cache = self.line_starts.borrow();
+        let starts = cache.as_ref().unwrap();
+        starts
+            .get(line_idx)
+            .copied()
+            .unwrap_or_else(|| self.table.len())
     }
 
     pub fn get_end(&self, line_idx: usize, total_len: usize) -> Option<usize> {
@@ -45,24 +122,39 @@ impl LineIndex {
         }
 
         // Otherwise, it's the start of next line - 1 (newline)
-        let next_start = self.table.line_start_offset(line_idx + 1);
+        let next_start = self.get_line_start(line_idx + 1);
         Some(next_start.saturating_sub(1))
     }
 
     pub fn get_line_at(&self, pos: usize) -> usize {
-        self.table.line_at_char(pos)
+        self.ensure_built();
+        let cache = self.line_starts.borrow();
+        let starts = cache.as_ref().unwrap();
+        // Line of `pos` = index of the last line start <= pos.
+        starts.partition_point(|&s| s <= pos).saturating_sub(1)
     }
 
     pub fn insert(&mut self, pos: usize, chars: &[Character]) {
         self.table.insert(pos, chars);
+        if let Some(starts) = self.line_starts.get_mut().as_mut() {
+            Self::apply_insert(starts, pos, chars);
+            debug_assert_eq!(starts.len(), self.table.get_line_count());
+        }
     }
 
     pub fn delete(&mut self, pos: usize, len: usize) {
         self.table.delete(pos..pos + len);
+        if let Some(starts) = self.line_starts.get_mut().as_mut() {
+            Self::apply_delete(starts, pos, len);
+            debug_assert_eq!(starts.len(), self.table.get_line_count());
+        }
     }
 
     pub fn replace(&mut self, pos: usize, count: usize, chars: &[Character]) {
         self.table.replace(pos, count, chars);
+        // Replace can both delete and insert; rebuild lazily rather than
+        // tracking both edits' line effects here.
+        *self.line_starts.get_mut() = None;
     }
 
     pub fn len(&self) -> usize {

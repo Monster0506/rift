@@ -1280,6 +1280,131 @@ fn test_undo_redo_restores_annotation_marker_positions() {
     assert_eq!(span(&doc), (8, 13));
 }
 
+/// Diff-based undo for pure insertions must restore exactly what a full
+/// pre-edit snapshot would have, across anchor kinds and undo/redo steps.
+#[test]
+fn test_diff_undo_matches_snapshot_for_insertions() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Stickiness};
+
+    fn seed(doc: &mut Document) {
+        doc.insert_str("line0\nline1\nline2\nline3").unwrap();
+        doc.annotations.add(Annotation::new(
+            Kind::new("ui.point"),
+            Anchor::point(3),
+            AnnotationOwner::User,
+        ));
+        doc.annotations.add(Annotation::new(
+            Kind::new("ui.range"),
+            Anchor::range(7, 11),
+            AnnotationOwner::User,
+        ));
+        doc.annotations.add(
+            Annotation::new(
+                Kind::new("ui.persist"),
+                Anchor::range(13, 17),
+                AnnotationOwner::User,
+            )
+            .with_stickiness(Stickiness::Persist),
+        );
+        doc.annotations.create_diagnostic(2, 1, "err");
+        doc.annotations.create_diagnostic(3, 2, "warn");
+    }
+
+    // Each case positions the cursor then performs one pure-insertion edit.
+    type EditFn = fn(&mut Document);
+    let cases: Vec<EditFn> = vec![
+        // Single char near the front (shifts every later byte marker).
+        |d| {
+            d.buffer.set_cursor(1).ok();
+            d.insert_char('X').unwrap();
+        },
+        // Newline at the front (shifts byte markers AND all line anchors).
+        |d| {
+            d.buffer.set_cursor(0).ok();
+            d.insert_char('\n').unwrap();
+        },
+        // Multi-line string in the middle (several line-anchor shifts at once).
+        |d| {
+            d.buffer.set_cursor(9).ok();
+            d.insert_str("a\nb\nc").unwrap();
+        },
+        // Char exactly at a range start (left-gravity boundary case).
+        |d| {
+            d.buffer.set_cursor(7).ok();
+            d.insert_char('Z').unwrap();
+        },
+    ];
+
+    for case in cases {
+        let mut doc = Document::new(1).unwrap();
+        seed(&mut doc);
+        let before = doc.annotations.snapshot();
+        case(&mut doc);
+        let after = doc.annotations.snapshot();
+        // Sanity: the edit actually changed annotation positions.
+        assert_ne!(before, after, "edit should move annotations");
+
+        doc.undo();
+        assert_eq!(
+            doc.annotations.snapshot(),
+            before,
+            "undo must restore the exact pre-edit annotation state"
+        );
+
+        doc.redo();
+        assert_eq!(
+            doc.annotations.snapshot(),
+            after,
+            "redo must restore the exact post-edit annotation state"
+        );
+    }
+}
+
+/// Interleaving a fast-path insertion with a snapshot-path deletion, then
+/// undoing/redoing across both, must keep the two parallel stacks in lockstep.
+#[test]
+fn test_diff_undo_interleaves_with_delete_snapshot_path() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("hello world").unwrap();
+    let id = doc.annotations.add(Annotation::new(
+        Kind::new("ui.range"),
+        Anchor::range(6, 11),
+        AnnotationOwner::User,
+    ));
+    let span = |doc: &Document| match doc.annotations.get(id).map(|a| a.anchor) {
+        Some(Anchor::Range(s, e)) => Some((s.offset, e.offset)),
+        _ => None,
+    };
+    assert_eq!(span(&doc), Some((6, 11)));
+
+    // Insertion (fast path): shift right by 2.
+    doc.buffer.set_cursor(0).ok();
+    doc.insert_str("XY").unwrap();
+    assert_eq!(span(&doc), Some((8, 13)));
+
+    // Deletion (snapshot path): delete the 2 chars we just added.
+    doc.buffer.set_cursor(0).ok();
+    doc.delete_forward();
+    doc.delete_forward();
+    assert_eq!(span(&doc), Some((6, 11)));
+
+    // Undo the two deletes (snapshot restores), then the insertion (diff inverse).
+    doc.undo();
+    doc.undo();
+    assert_eq!(span(&doc), Some((8, 13)));
+    doc.undo();
+    assert_eq!(span(&doc), Some((6, 11)));
+
+    // Redo all the way forward again.
+    doc.redo();
+    assert_eq!(span(&doc), Some((8, 13)));
+    doc.redo();
+    doc.redo();
+    assert_eq!(span(&doc), Some((6, 11)));
+}
+
 #[test]
 fn test_line_anchor_tracks_newline_edits_in_normal_buffer() {
     use crate::annotations::Anchor;

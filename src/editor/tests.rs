@@ -1265,6 +1265,78 @@ fn test_display_map_cache_invalidated_after_mutation() {
 }
 
 #[test]
+fn test_resolve_display_map_cached_reuses_across_moves() {
+    let mut editor = create_editor_sized(24, 20);
+    // Long lines force multi-row wrapping at width ~20.
+    set_content(
+        &mut editor,
+        "this is a fairly long first line that wraps\nsecond long line also wraps here\n",
+    );
+    let doc_id = editor.document_manager.active_document_id().unwrap();
+
+    let first = editor.resolve_display_map_cached(doc_id, 20);
+    let rows_first = first.as_ref().map(|m| m.total_visual_rows());
+    assert!(rows_first.unwrap() > 2, "long lines should wrap to >2 rows");
+
+    // A second call with no mutation must hit the cache and return an identical map.
+    let cached_rev = editor.display_map_cache.as_ref().map(|(_, r, _, _)| *r);
+    let second = editor.resolve_display_map_cached(doc_id, 20);
+    assert_eq!(second.map(|m| m.total_visual_rows()), rows_first);
+    assert_eq!(
+        editor.display_map_cache.as_ref().map(|(_, r, _, _)| *r),
+        cached_rev,
+        "revision must be unchanged (cache hit, no rebuild)"
+    );
+
+    // Equivalence: cached result matches a fresh uncached build.
+    let doc = editor.document_manager.get_document(doc_id).unwrap();
+    let fresh = super::resolve_display_map(
+        doc,
+        20,
+        editor.state.settings.soft_wrap,
+        editor.state.settings.wrap_width,
+    );
+    assert_eq!(
+        editor
+            .resolve_display_map_cached(doc_id, 20)
+            .map(|m| m.total_visual_rows()),
+        fresh.map(|m| m.total_visual_rows()),
+    );
+}
+
+#[test]
+fn test_resolve_display_map_cached_rebuilds_on_tab_width_change() {
+    let mut editor = create_editor_sized(24, 20);
+    set_content(
+        &mut editor,
+        "\tindented line that is quite long and wraps\n",
+    );
+    let doc_id = editor.document_manager.active_document_id().unwrap();
+
+    let before = editor
+        .resolve_display_map_cached(doc_id, 20)
+        .map(|m| m.tab_width);
+    assert_eq!(before, Some(4), "default tab width");
+
+    // Change tab width WITHOUT mutating the buffer (no revision bump). The
+    // cached map's stored tab_width no longer matches, so it must rebuild.
+    editor
+        .document_manager
+        .get_document_mut(doc_id)
+        .unwrap()
+        .options
+        .tab_width = 8;
+    let after = editor
+        .resolve_display_map_cached(doc_id, 20)
+        .map(|m| m.tab_width);
+    assert_eq!(
+        after,
+        Some(8),
+        "tab-width change must invalidate the cached map"
+    );
+}
+
+#[test]
 fn test_text_changed_coarse_fires_once_per_render() {
     use std::sync::{Arc, Mutex};
 

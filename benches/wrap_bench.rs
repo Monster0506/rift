@@ -24,9 +24,7 @@ fn make_buf_single_piece(lines: usize, line_len: usize) -> TextBuffer {
         .take(lines * (line_len + 1))
         .collect();
     let mut buf = TextBuffer::new(0).unwrap();
-    buf.line_index = LineIndex {
-        table: PieceTable::new(content),
-    };
+    buf.line_index = LineIndex::from_table(PieceTable::new(content));
     buf
 }
 
@@ -146,11 +144,28 @@ fn bench_nav(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_scroll_frame_cost(c: &mut Criterion) {
+    let mut group = c.benchmark_group("displaymap_scroll_frame");
+    let buf = make_buf_long_lines(1_080, 70);
+
+    group.bench_function("rebuild_per_frame", |b| {
+        b.iter(|| black_box(DisplayMap::build(&buf, 80, 4)));
+    });
+
+    let cached = DisplayMap::build(&buf, 80, 4);
+    group.bench_function("cache_hit_clone", |b| {
+        b.iter(|| black_box(cached.clone()));
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_build,
     bench_build_single_piece,
     bench_redundant_builds,
-    bench_nav
+    bench_nav,
+    bench_scroll_frame_cost
 );
 criterion_main!(benches);

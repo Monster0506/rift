@@ -28,7 +28,8 @@ impl Document {
                 if !tx.is_empty() {
                     self.history.push(tx, None);
                     if let Some(snapshot) = self.pending_annotation_snapshot.take() {
-                        self.annotation_undo_stack.push(snapshot);
+                        self.annotation_undo_stack
+                            .push(super::AnnotationUndo::Snapshot(snapshot));
                         self.annotation_redo_stack.clear();
                     }
                 } else {
@@ -62,11 +63,10 @@ impl Document {
         self.history.undo();
         self.mark_dirty();
 
-        // Restore the pre-edit annotation positions; stash the current (post-edit)
-        // state for redo. The buffer was reverted above, so these now align.
-        if let Some(snapshot) = self.annotation_undo_stack.pop() {
-            self.annotation_redo_stack.push(self.annotations.snapshot());
-            self.annotations.restore(snapshot);
+        // Restore the pre-edit annotation positions; record how to re-apply
+        // (redo) the edit. The buffer was reverted above, so these now align.
+        if let Some(entry) = self.annotation_undo_stack.pop() {
+            self.restore_annotations_for_undo(entry);
         }
 
         if let Some(syntax) = &mut self.syntax {
@@ -94,11 +94,10 @@ impl Document {
             self.apply_operation(&op);
         }
 
-        // Restore the post-edit annotation positions; stash the current (pre-edit)
-        // state back onto the undo stack.
-        if let Some(snapshot) = self.annotation_redo_stack.pop() {
-            self.annotation_undo_stack.push(self.annotations.snapshot());
-            self.annotations.restore(snapshot);
+        // Re-apply the post-edit annotation positions; record how to undo
+        // again. The buffer was re-applied above, so these now align.
+        if let Some(entry) = self.annotation_redo_stack.pop() {
+            self.restore_annotations_for_redo(entry);
         }
 
         self.mark_dirty();
@@ -112,6 +111,66 @@ impl Document {
     /// Apply an edit operation to this document's buffer (used by undo/redo).
     pub(crate) fn apply_operation(&mut self, op: &EditOperation) {
         Self::apply_operation_to_buffer(&mut self.buffer, op);
+    }
+
+    /// Restore the pre-edit annotation state for an undo, pushing the matching
+    /// redo entry. The buffer has already been reverted by the caller.
+    fn restore_annotations_for_undo(&mut self, entry: super::AnnotationUndo) {
+        use super::AnnotationUndo;
+        match entry {
+            AnnotationUndo::Snapshot(snapshot) => {
+                self.annotation_redo_stack
+                    .push(AnnotationUndo::Snapshot(self.annotations.snapshot()));
+                self.annotations.restore(snapshot);
+            }
+            AnnotationUndo::Insertion {
+                start,
+                new_end,
+                line_inserts,
+            } => {
+                // Redo will re-apply this exact forward insertion.
+                self.annotation_redo_stack.push(AnnotationUndo::Insertion {
+                    start,
+                    new_end,
+                    line_inserts: line_inserts.clone(),
+                });
+                // Invert the byte shift, then each line insert in reverse order
+                // (the inverse of a composition is the reversed inverses).
+                self.annotations.on_edit(start, new_end, start);
+                for at in line_inserts.iter().rev() {
+                    self.annotations.undo_line_inserted(*at);
+                }
+            }
+        }
+    }
+
+    /// Re-apply the post-edit annotation state for a redo, pushing the matching
+    /// undo entry. The buffer has already been re-applied by the caller.
+    fn restore_annotations_for_redo(&mut self, entry: super::AnnotationUndo) {
+        use super::AnnotationUndo;
+        match entry {
+            AnnotationUndo::Snapshot(snapshot) => {
+                self.annotation_undo_stack
+                    .push(AnnotationUndo::Snapshot(self.annotations.snapshot()));
+                self.annotations.restore(snapshot);
+            }
+            AnnotationUndo::Insertion {
+                start,
+                new_end,
+                line_inserts,
+            } => {
+                self.annotation_undo_stack.push(AnnotationUndo::Insertion {
+                    start,
+                    new_end,
+                    line_inserts: line_inserts.clone(),
+                });
+                // Re-apply the forward insertion exactly as the edit did.
+                self.annotations.on_edit(start, start, new_end);
+                for at in &line_inserts {
+                    self.annotations.on_line_inserted(*at);
+                }
+            }
+        }
     }
 
     /// Apply an edit operation to a given buffer.

@@ -1,6 +1,6 @@
 //! Document editing operations — insert, delete, and Tree-sitter incremental updates.
 
-use super::Document;
+use super::{AnnotationUndo, AnnotationUndoHint, Document};
 use crate::character::Character;
 use crate::error::RiftError;
 use crate::history::{EditOperation, EditTransaction, Position, Range};
@@ -32,15 +32,34 @@ impl Document {
         )
     }
 
-    pub(super) fn record_edit(&mut self, op: EditOperation, description: &str) {
+    pub(super) fn record_edit(
+        &mut self,
+        op: EditOperation,
+        description: &str,
+        annotation_undo: AnnotationUndoHint,
+    ) {
         // Bump the monotonic edit sequence number once per applied edit.
         self.document_version = self.document_version.wrapping_add(1);
         if let Some(ref mut tx) = self.current_transaction {
             tx.record(op);
         } else {
-            // Standalone edit: snapshot the full annotation state so undo can
-            // restore exact positions. Always pushed to stay 1:1 with the history.
-            self.annotation_undo_stack.push(self.annotations.snapshot());
+            // A pure insertion stores just its parameters (exactly invertible);
+            // everything else takes a full pre-edit snapshot.
+            let entry = match annotation_undo {
+                AnnotationUndoHint::Insertion {
+                    start,
+                    new_end,
+                    line_inserts,
+                } => AnnotationUndo::Insertion {
+                    start,
+                    new_end,
+                    line_inserts,
+                },
+                AnnotationUndoHint::Snapshot => {
+                    AnnotationUndo::Snapshot(self.annotations.snapshot())
+                }
+            };
+            self.annotation_undo_stack.push(entry);
             self.annotation_redo_stack.clear();
             let mut tx = EditTransaction::new(description);
             tx.record(op);
@@ -64,6 +83,16 @@ impl Document {
         self.buffer.insert_char(ch)?;
         self.mark_dirty();
 
+        let added_bytes = ch.len_utf8();
+        let new_end_byte = start_byte + added_bytes;
+
+        // Pure insertion: undo replays the exact inverse shift. A newline also
+        // shifts line anchors at `before_line + 1`, undone in lockstep.
+        let line_inserts = match line_before_insert {
+            Some(before_line) => vec![before_line + 1],
+            None => Vec::new(),
+        };
+
         let text = vec![Character::from(ch)];
         let ch_str = ch.to_string();
         self.record_edit(
@@ -73,10 +102,13 @@ impl Document {
                 len: ch.len_utf8(),
             },
             &format!("Insert '{}'", if ch == '\n' { "\\n" } else { &ch_str }),
+            AnnotationUndoHint::Insertion {
+                start: start_byte,
+                new_end: new_end_byte,
+                line_inserts,
+            },
         );
 
-        let added_bytes = ch.len_utf8();
-        let new_end_byte = start_byte + added_bytes;
         let new_end_position = self.get_point(new_end_byte);
 
         let edit = InputEdit {
@@ -119,6 +151,16 @@ impl Document {
         self.buffer.insert_str(s)?;
         self.mark_dirty();
 
+        let added_bytes = s.len();
+        let new_end_byte = start_byte + added_bytes;
+
+        // Pure insertion: one line-anchor shift per inserted newline, applied
+        // (and later inverted) at before_line+1, +2, ... in order.
+        let line_inserts: Vec<usize> = match line_before_insert {
+            Some(before_line) => (0..newline_count).map(|i| before_line + 1 + i).collect(),
+            None => Vec::new(),
+        };
+
         if !s.is_empty() {
             let text: Vec<Character> = s.chars().map(Character::from).collect();
             self.record_edit(
@@ -128,11 +170,14 @@ impl Document {
                     len: s.len(),
                 },
                 &format!("Insert {} chars", s.len()),
+                AnnotationUndoHint::Insertion {
+                    start: start_byte,
+                    new_end: new_end_byte,
+                    line_inserts,
+                },
             );
         }
 
-        let added_bytes = s.len();
-        let new_end_byte = start_byte + added_bytes;
         let new_end_position = self.get_point(new_end_byte);
 
         let edit = InputEdit {
@@ -197,6 +242,7 @@ impl Document {
                         &deleted_text
                     }
                 ),
+                AnnotationUndoHint::Snapshot,
             );
 
             let start_byte = self.buffer.char_to_byte(cursor - 1);
@@ -257,6 +303,7 @@ impl Document {
                         &deleted_text
                     }
                 ),
+                AnnotationUndoHint::Snapshot,
             );
 
             let edit = InputEdit {
@@ -318,6 +365,7 @@ impl Document {
                 new_text: new_chars.to_vec(),
             },
             "Replace",
+            AnnotationUndoHint::Snapshot,
         );
 
         let new_end_byte = self.buffer.char_to_byte(pos + new_chars.len());
@@ -399,6 +447,7 @@ impl Document {
                 deleted_text: deleted_chars,
             },
             &format!("Delete {} chars", count),
+            AnnotationUndoHint::Snapshot,
         );
 
         let edit = InputEdit {
