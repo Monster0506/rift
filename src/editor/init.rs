@@ -107,6 +107,7 @@ impl<T: TerminalBackend> Editor<T> {
             // 25 idle polls × 16 ms ≈ 400 ms before CursorHold fires.
             plugin_host: crate::plugin::PluginHost::new(25),
             clipboard_ring: crate::clipboard::ClipboardRing::new(),
+            system_clipboard_cache: crate::clipboard::SystemClipboardCache::new(),
             post_paste_state: None,
             pending_cursor_entry: None,
             lsp_manager: crate::lsp::LspManager::new(std::env::current_dir().ok()),

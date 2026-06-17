@@ -127,6 +127,38 @@ pub fn capture_current_line(buf: &TextBuffer) -> String {
     buf.chars(start..end).map(|c| c.to_char_lossy()).collect()
 }
 
+const SYSTEM_CLIPBOARD_REFRESH_INTERVAL: std::time::Duration =
+    std::time::Duration::from_millis(250);
+
+#[derive(Default)]
+pub struct SystemClipboardCache {
+    text: Option<String>,
+    last_refreshed: Option<std::time::Instant>,
+}
+
+impl SystemClipboardCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn refresh_if_stale(&mut self) {
+        let stale = self
+            .last_refreshed
+            .is_none_or(|t| t.elapsed() >= SYSTEM_CLIPBOARD_REFRESH_INTERVAL);
+        if !stale {
+            return;
+        }
+        self.text = arboard::Clipboard::new()
+            .ok()
+            .and_then(|mut cb| cb.get_text().ok());
+        self.last_refreshed = Some(std::time::Instant::now());
+    }
+
+    pub fn text(&self) -> Option<&str> {
+        self.text.as_deref()
+    }
+}
+
 // ─── Tooltip ──────────────────────────────────────────────────────────────────
 
 pub struct ClipboardTooltip;
@@ -134,11 +166,12 @@ pub struct ClipboardTooltip;
 impl ClipboardTooltip {
     /// Render the clipboard ring tooltip near the cursor.
     ///
-    /// `selected` is the ring index currently staged for paste.
-    /// Pass `cursor_row` / `cursor_col` as terminal screen coordinates (0-indexed).
+    /// `selected` is the ring index currently staged for paste. `sys_clip` is
+    /// the last [`SystemClipboardCache`] read, not read live here.
     pub fn render(
         ring: &ClipboardRing,
         selected: usize,
+        sys_clip: Option<&str>,
         layer: &mut Layer,
         editor_fg: Option<crate::color::Color>,
         editor_bg: Option<crate::color::Color>,
@@ -146,11 +179,6 @@ impl ClipboardTooltip {
         if ring.is_empty() {
             return;
         }
-
-        // Live read of system clipboard — failure is silently ignored.
-        let sys_clip = arboard::Clipboard::new()
-            .ok()
-            .and_then(|mut cb| cb.get_text().ok());
 
         let content_width = TOOLTIP_MAX_WIDTH;
         let window_width = content_width + 2; // +2 for border
@@ -239,5 +267,33 @@ fn truncate(s: &str, max_width: usize) -> String {
     } else {
         let truncated: String = s.chars().take(max_width.saturating_sub(1)).collect();
         format!("{}…", truncated)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_clipboard_cache_starts_empty() {
+        let cache = SystemClipboardCache::new();
+        assert!(cache.text().is_none());
+        assert!(cache.last_refreshed.is_none());
+    }
+
+    #[test]
+    fn system_clipboard_cache_skips_rereading_within_interval() {
+        let mut cache = SystemClipboardCache::new();
+        cache.refresh_if_stale();
+        let first = cache.last_refreshed;
+        assert!(first.is_some(), "first call must record a refresh time");
+
+        // Calling again immediately must not touch the OS clipboard or the
+        // timestamp -- that's the whole point of the cache.
+        cache.refresh_if_stale();
+        assert_eq!(
+            cache.last_refreshed, first,
+            "second call within the refresh interval must not re-read"
+        );
     }
 }

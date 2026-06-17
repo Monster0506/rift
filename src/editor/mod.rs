@@ -162,6 +162,8 @@ pub struct Editor<T: TerminalBackend> {
     pub plugin_host: crate::plugin::PluginHost,
     /// Clipboard ring buffer — stores yanked/deleted text, capacity 10.
     pub clipboard_ring: crate::clipboard::ClipboardRing,
+    /// Cached system-clipboard read for the tooltip, refreshed out-of-band.
+    system_clipboard_cache: crate::clipboard::SystemClipboardCache,
     /// Tracks the active paste so <C-n> can cycle to the next ring entry.
     post_paste_state: Option<PostPasteState>,
     /// After navigating to a parent directory, the name of the child entry to

@@ -23,7 +23,15 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_and_render()
     }
 
-    pub fn update_and_render(&mut self) -> Result<(), RiftError> {
+    /// State-update phase: syncs viewport/cursor/document-derived state ahead of
+    /// rendering. No cell composition or layer writes happen here.
+    fn update_state(
+        &mut self,
+    ) -> Option<(
+        crate::document::DocumentId,
+        bool,
+        Option<crate::wrap::DisplayMap>,
+    )> {
         self.flush_pending_text_changed();
         self.flush_pending_cursor_moved();
         // Fire cursor enter/leave annotation hooks for any transition this frame.
@@ -61,7 +69,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let total = doc.buffer.get_total_lines();
                 (line, col, total, doc.is_terminal())
             } else {
-                return Ok(());
+                return None;
             };
         self.state.update_cursor(cursor_line, cursor_col);
 
@@ -95,6 +103,14 @@ impl<T: TerminalBackend> Editor<T> {
             self.render_system
                 .viewport
                 .update(cursor_line, viewport_col, total_lines, gutter_width)
+        };
+
+        Some((doc_id, needs_clear, display_map))
+    }
+
+    pub fn update_and_render(&mut self) -> Result<(), RiftError> {
+        let Some((_doc_id, needs_clear, display_map)) = self.update_state() else {
+            return Ok(());
         };
 
         self.render_plugin_float();
@@ -157,6 +173,7 @@ impl<T: TerminalBackend> Editor<T> {
             .unwrap_or(0);
         let editor_fg = self.state.settings.editor_fg;
         let editor_bg = self.state.settings.editor_bg;
+        self.system_clipboard_cache.refresh_if_stale();
         let layer = self
             .render_system
             .compositor
@@ -165,6 +182,7 @@ impl<T: TerminalBackend> Editor<T> {
         crate::clipboard::ClipboardTooltip::render(
             &self.clipboard_ring,
             selected,
+            self.system_clipboard_cache.text(),
             layer,
             editor_fg,
             editor_bg,
