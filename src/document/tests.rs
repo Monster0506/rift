@@ -1983,3 +1983,44 @@ fn test_delete_forward_after_multibyte_prefix_shifts_annotation_by_bytes() {
         _ => panic!("expected point anchor"),
     }
 }
+
+#[test]
+fn test_line_adornment_resolves_correct_line_past_multibyte_prefix() {
+    use crate::annotations::presentation::{Adornment, Placement, Presentation};
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+
+    let mut doc = Document::new(1).unwrap();
+    // Each "ab-\n" line's em dash is 3 bytes/1 char, so by line 3 the raw byte
+    // offset has drifted 6 bytes ahead of char offset -- enough to misresolve.
+    doc.insert_str("ab\u{2014}\nab\u{2014}\nab\u{2014}\n---\nzzzzz\n")
+        .unwrap();
+
+    let rule_line = 3;
+    let rule_char_start = doc.buffer.line_index.get_start(rule_line).unwrap();
+    let rule_byte_start = doc.buffer.char_to_byte(rule_char_start);
+    doc.annotations.add(
+        Annotation::new(
+            Kind::new("test.rule"),
+            Anchor::point(rule_byte_start),
+            AnnotationOwner::User,
+        )
+        .with_presentation(
+            Presentation::default().with_adornment(Adornment::new("-", Placement::Trailing)),
+        ),
+    );
+
+    let adornments = doc.annotations.line_adornments(
+        None,
+        None,
+        0..doc.buffer.to_string().len(),
+        0..doc.buffer.get_total_lines(),
+        |b| {
+            doc.buffer
+                .line_index
+                .get_line_at(doc.buffer.byte_to_char(b))
+        },
+    );
+
+    assert_eq!(adornments.len(), 1);
+    assert_eq!(adornments[0].0, rule_line);
+}

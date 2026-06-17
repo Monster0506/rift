@@ -295,7 +295,11 @@ impl<T: TerminalBackend> Editor<T> {
             Some(kind_registry),
             start_byte..end_byte,
             start_logical..end_logical,
-            |b| doc.buffer.line_index.get_line_at(b),
+            |b| {
+                doc.buffer
+                    .line_index
+                    .get_line_at(doc.buffer.byte_to_char(b))
+            },
         );
         let annotation_inline = doc.annotations.inline_adornments(
             state.settings.syntax_colors.as_ref(),
@@ -633,7 +637,11 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(kind_registry),
                 start_byte..end_byte,
                 start_line..end_line,
-                |b| doc.buffer.line_index.get_line_at(b),
+                |b| {
+                    doc.buffer
+                        .line_index
+                        .get_line_at(doc.buffer.byte_to_char(b))
+                },
             );
             let annotation_inline = doc.annotations.inline_adornments(
                 state.settings.syntax_colors.as_ref(),
@@ -645,7 +653,12 @@ impl<T: TerminalBackend> Editor<T> {
                 .annotations
                 .concealed_ranges(start_byte..end_byte)
                 .into_iter()
-                .filter(|(s, _)| doc.buffer.line_index.get_line_at(*s) != cursor_line)
+                .filter(|(s, _)| {
+                    doc.buffer
+                        .line_index
+                        .get_line_at(doc.buffer.byte_to_char(*s))
+                        != cursor_line
+                })
                 .collect();
 
             let ctx = render::DrawContext {

@@ -268,9 +268,11 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let cursor = doc.buffer.cursor();
         let cur_line = doc.buffer.line_index.get_line_at(cursor);
-        let lines = doc
-            .annotations
-            .interactive_lines(|b| doc.buffer.line_index.get_line_at(b));
+        let lines = doc.annotations.interactive_lines(|b| {
+            doc.buffer
+                .line_index
+                .get_line_at(doc.buffer.byte_to_char(b))
+        });
         let target = if forward {
             lines.into_iter().find(|&l| l > cur_line)
         } else {
