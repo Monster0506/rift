@@ -15,6 +15,27 @@ impl<T: TerminalBackend> Editor<T> {
         op: crate::action::OperatorType,
         motion: Motion,
     ) -> bool {
+        // .take() unconditionally so a stale flag from an interrupted `ys`
+        // (e.g. a different operator key fired before the motion arrived)
+        // never leaks into an unrelated operator below.
+        if let Some(delim_count) = self.pending_surround_add.take() {
+            if op == crate::action::OperatorType::Yank {
+                let count = if self.pending_count > 0 {
+                    self.pending_count
+                } else {
+                    1
+                };
+                self.pending_operator = None;
+                self.pending_count = 0;
+                self.pending_grammar =
+                    Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
+                        motion,
+                        count,
+                        delim_count,
+                    });
+                return true;
+            }
+        }
         let count = if self.pending_count > 0 {
             self.pending_count
         } else {
@@ -39,24 +60,6 @@ impl<T: TerminalBackend> Editor<T> {
             .map(|range| crate::clipboard::capture_text(&doc.buffer, &range))
         });
         let has_range = captured.is_some();
-        if !has_range {
-            if let Motion::TextObject(spec) = motion {
-                if crate::text_objects::requires_treesitter(spec.kind) {
-                    let has_tree = self
-                        .document_manager
-                        .active_document()
-                        .and_then(|d| d.syntax.as_ref())
-                        .and_then(|s| s.tree.as_ref())
-                        .is_some();
-                    if !has_tree {
-                        self.state
-                            .error_manager
-                            .notifications_mut()
-                            .info("no tree-sitter grammar for this filetype");
-                    }
-                }
-            }
-        }
         let in_clipboard = self
             .document_manager
             .active_document()
@@ -124,6 +127,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn execute_operator_linewise(&mut self, op: crate::action::OperatorType) -> bool {
         self.pending_operator = None;
+        self.pending_surround_add = None;
 
         // Capture current line text for all operators.
         let captured = self

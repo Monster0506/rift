@@ -87,6 +87,8 @@ impl<T: TerminalBackend> Editor<T> {
                     self.set_mode(Mode::Normal);
                     self.pending_keys.clear();
                     self.pending_count = 0;
+                    self.pending_grammar = None;
+                    self.pending_surround_add = None;
                     self.update_and_render()?;
                     continue;
                 }

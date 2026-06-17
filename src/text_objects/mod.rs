@@ -195,7 +195,7 @@ pub fn resolve(
         }
         ObjectKind::Paragraph => resolve_paragraph(cursor, base_modifier, buf, repeat),
         ObjectKind::Sentence => resolve_sentence(cursor, base_modifier, buf, repeat),
-        ObjectKind::Line => resolve_line(cursor, base_modifier, buf),
+        ObjectKind::Line => resolve_line(cursor, base_modifier, buf, repeat),
         ObjectKind::Buffer => resolve_buffer(buf),
         ObjectKind::FunctionCall
         | ObjectKind::Argument
@@ -1093,12 +1093,19 @@ fn resolve_sentence(
     }
 }
 
-fn resolve_line(cursor: usize, modifier: BaseModifier, buf: &TextBuffer) -> Option<MotionRange> {
+fn resolve_line(
+    cursor: usize,
+    modifier: BaseModifier,
+    buf: &TextBuffer,
+    count: usize,
+) -> Option<MotionRange> {
     let len = buf.len();
+    let total_lines = buf.get_total_lines();
     let current_line = buf.line_index.get_line_at(cursor);
+    let last_line = (current_line + count.max(1) - 1).min(total_lines.saturating_sub(1));
     let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
     // get_end points to the '\n' for non-last lines, or total_len for the last.
-    let line_end = buf.line_index.get_end(current_line, len).unwrap_or(len);
+    let line_end = buf.line_index.get_end(last_line, len).unwrap_or(len);
 
     if line_start >= line_end {
         return None;
@@ -1106,11 +1113,11 @@ fn resolve_line(cursor: usize, modifier: BaseModifier, buf: &TextBuffer) -> Opti
 
     match modifier {
         BaseModifier::Inner => {
-            // Content without the newline character.
+            // Content without the final line's newline character.
             Some(charwise_inclusive(line_start, line_end.saturating_sub(1)))
         }
         BaseModifier::Around => {
-            // Content including the newline (or the last char if no newline).
+            // Content including the final line's newline (or its last char if none).
             Some(charwise_inclusive(line_start, line_end))
         }
     }
@@ -1211,6 +1218,91 @@ fn any_quote_insert_pair(
         }
     }
     best
+}
+
+/// Maps a surround key to its `(open, close)` delimiter strings, per
+/// design.md's pairing table, each repeated `count` times. Opening bracket
+/// chars get an inner space pad; closing chars, letter aliases, and quotes
+/// never pad.
+pub fn surround_strings(ch: char, count: usize) -> Option<(String, String)> {
+    let (open, close) = match ch {
+        '(' | ')' | 'b' => ('(', ')'),
+        '{' | '}' | 'B' => ('{', '}'),
+        '[' | ']' | 'r' => ('[', ']'),
+        '<' | '>' => ('<', '>'),
+        '"' | '\'' | '`' => (ch, ch),
+        _ => return None,
+    };
+    let count = count.max(1);
+    if matches!(ch, '(' | '{' | '[' | '<') {
+        Some((
+            format!("{open} ").repeat(count),
+            format!(" {close}").repeat(count),
+        ))
+    } else {
+        Some((
+            open.to_string().repeat(count),
+            close.to_string().repeat(count),
+        ))
+    }
+}
+
+/// Locates an existing surround pair enclosing the cursor for `ds`/`cs`,
+/// returning the half-open delete ranges for the opening and closing
+/// delimiters. `count` expands each boundary outward over up to `count - 1`
+/// further consecutive occurrences of the same delimiter char (so `2ds"` on
+/// `""text""` removes both quotes on each side), clamping gracefully when
+/// fewer repeats are actually present.
+pub fn resolve_surround_pair(
+    ch: char,
+    buf: &TextBuffer,
+    count: usize,
+) -> Option<(std::ops::Range<usize>, std::ops::Range<usize>)> {
+    let cursor = buf.cursor();
+    let (open_pos, close_pos, open_ch, close_ch) = match ch {
+        '(' | ')' | 'b' => {
+            let (o, c) = bracket_pair_with_nesting(cursor, Direction::Current, 1, buf, '(', ')')?;
+            (o, c, '(', ')')
+        }
+        '{' | '}' | 'B' => {
+            let (o, c) = bracket_pair_with_nesting(cursor, Direction::Current, 1, buf, '{', '}')?;
+            (o, c, '{', '}')
+        }
+        '[' | ']' | 'r' => {
+            let (o, c) = bracket_pair_with_nesting(cursor, Direction::Current, 1, buf, '[', ']')?;
+            (o, c, '[', ']')
+        }
+        '<' | '>' => {
+            let (o, c) = bracket_pair_with_nesting(cursor, Direction::Current, 1, buf, '<', '>')?;
+            (o, c, '<', '>')
+        }
+        '"' | '\'' | '`' => {
+            let (o, c) = quote_pair_with_nesting(cursor, Direction::Current, 1, buf, ch)?;
+            (o, c, ch, ch)
+        }
+        _ => return None,
+    };
+
+    let extra = count.max(1) - 1;
+    let mut open_start = open_pos;
+    for _ in 0..extra {
+        let Some(prev) = open_start.checked_sub(1) else {
+            break;
+        };
+        if buf.char_at(prev) != Some(Character::from(open_ch)) {
+            break;
+        }
+        open_start = prev;
+    }
+    let mut close_end = close_pos;
+    for _ in 0..extra {
+        let next = close_end + 1;
+        if buf.char_at(next) != Some(Character::from(close_ch)) {
+            break;
+        }
+        close_end = next;
+    }
+    Some((open_start..open_pos + 1, close_pos..close_end + 1))
 }
 
 #[cfg(test)]

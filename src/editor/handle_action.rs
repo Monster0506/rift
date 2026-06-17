@@ -418,6 +418,8 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                     }
                 }
+                // A fresh operator key always supersedes any in-progress `ys`.
+                self.pending_surround_add = None;
                 self.pending_operator = Some(*op);
                 self.set_mode(Mode::OperatorPending);
                 true
@@ -819,6 +821,79 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::PrevInteractiveAnnotation => {
                 self.goto_prev_interactive_annotation();
                 true
+            }
+
+            EditorAction::SurroundStart => {
+                use crate::action::OperatorType;
+                use crate::text_objects::{Direction, Modifier, ObjectKind, TextObjectSpec};
+                if self.current_mode != Mode::OperatorPending {
+                    return false;
+                }
+                let Some(op) = self.pending_operator else {
+                    return false;
+                };
+                match op {
+                    OperatorType::Delete => {
+                        let count = if self.pending_count > 0 {
+                            self.pending_count
+                        } else {
+                            1
+                        };
+                        self.pending_count = 0;
+                        self.pending_operator = None;
+                        self.pending_grammar =
+                            Some(super::pending_grammar::PendingGrammar::DeleteSurround { count });
+                        true
+                    }
+                    OperatorType::Change => {
+                        let count = if self.pending_count > 0 {
+                            self.pending_count
+                        } else {
+                            1
+                        };
+                        self.pending_count = 0;
+                        self.pending_operator = None;
+                        self.pending_grammar =
+                            Some(super::pending_grammar::PendingGrammar::ChangeSurroundFrom {
+                                count,
+                            });
+                        true
+                    }
+                    OperatorType::Yank => {
+                        if let Some(delim_count) = self.pending_surround_add.take() {
+                            // yss: wrap `line_span` lines (count typed between the two
+                            // s's, like 2yy) in the current line's inner content.
+                            let line_span = if self.pending_count > 0 {
+                                self.pending_count
+                            } else {
+                                1
+                            };
+                            self.pending_count = 0;
+                            self.pending_operator = None;
+                            let spec = TextObjectSpec {
+                                modifier: Modifier::Inner,
+                                direction: Direction::Current,
+                                nesting: 1,
+                                kind: ObjectKind::Line,
+                            };
+                            self.pending_grammar =
+                                Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
+                                    motion: crate::action::Motion::TextObject(spec),
+                                    count: line_span,
+                                    delim_count,
+                                });
+                        } else {
+                            let delim_count = if self.pending_count > 0 {
+                                self.pending_count
+                            } else {
+                                1
+                            };
+                            self.pending_count = 0;
+                            self.pending_surround_add = Some(delim_count);
+                        }
+                        true
+                    }
+                }
             }
         }
     }

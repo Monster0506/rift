@@ -130,6 +130,9 @@ pub struct Editor<T: TerminalBackend> {
     pending_count: usize,
     pending_operator: Option<crate::action::OperatorType>,
     pending_grammar: Option<pending_grammar::PendingGrammar>,
+    /// Set while `ys` is waiting for its motion/text-object before the delimiter
+    /// char. Carries the delimiter-repeat count captured when the first `s` fired.
+    pending_surround_add: Option<usize>,
     /// Cached display map keyed by (doc_id, buffer_revision, content_width).
     /// Avoids rebuilding the soft-wrap map on every command when the buffer hasn't changed.
     display_map_cache: Option<(

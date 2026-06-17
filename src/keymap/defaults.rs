@@ -638,6 +638,11 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
     );
     keymap.register(
+        KeyContext::OperatorPending,
+        Key::Char('s'),
+        Action::Editor(EditorAction::SurroundStart),
+    );
+    keymap.register(
         KeyContext::Normal,
         Key::Char('C'),
         Action::Editor(EditorAction::Command(Box::new(Command::Change(

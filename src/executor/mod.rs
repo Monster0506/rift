@@ -112,6 +112,61 @@ pub fn compute_motion_range(
     }
 }
 
+/// Converts a resolved `MotionRange` into a half-open `(start, end)` char
+/// offset pair. Shared by `Delete`, `Change`, and `AddSurround`.
+///
+/// `consume_trailing_newline` controls the Linewise end boundary: deletion
+/// wants to remove the line terminator too (so the line itself disappears),
+/// while surround-insertion wants to stop before it (so the delimiter lands
+/// inside the line, not on the line that follows).
+fn range_to_offsets(
+    range: &crate::wrap::MotionRange,
+    doc: &Document,
+    consume_trailing_newline: bool,
+) -> (usize, usize) {
+    use crate::wrap::RangeKind;
+    match range.kind {
+        RangeKind::Linewise => {
+            let start_line = doc.buffer.line_index.get_line_at(range.anchor);
+            let end_line = doc.buffer.line_index.get_line_at(range.new_cursor);
+            let (first_line, last_line) = if start_line <= end_line {
+                (start_line, end_line)
+            } else {
+                (end_line, start_line)
+            };
+            let start = doc.buffer.line_index.get_start(first_line).unwrap_or(0);
+            let len = doc.buffer.len();
+            let end = if consume_trailing_newline {
+                if last_line + 1 < doc.buffer.get_total_lines() {
+                    doc.buffer
+                        .line_index
+                        .get_start(last_line + 1)
+                        .unwrap_or(len)
+                } else {
+                    len
+                }
+            } else {
+                doc.buffer.line_index.get_end(last_line, len).unwrap_or(len)
+            };
+            (start, end)
+        }
+        RangeKind::Charwise => {
+            let end_offset = if range.inclusive { 1 } else { 0 };
+            if range.new_cursor > range.anchor {
+                (
+                    range.anchor,
+                    (range.new_cursor + end_offset).min(doc.buffer.len()),
+                )
+            } else {
+                (
+                    range.new_cursor,
+                    (range.anchor + end_offset).min(doc.buffer.len()),
+                )
+            }
+        }
+    }
+}
+
 /// Execute a command on the editor buffer
 pub fn execute_command(
     cmd: Command,
@@ -147,47 +202,11 @@ pub fn execute_command(
             ) else {
                 return Ok(());
             };
-
-            match range.kind {
-                crate::wrap::RangeKind::Linewise => {
-                    let start_line = doc.buffer.line_index.get_line_at(range.anchor);
-                    let end_line = doc.buffer.line_index.get_line_at(range.new_cursor);
-                    let (first_line, last_line) = if start_line <= end_line {
-                        (start_line, end_line)
-                    } else {
-                        (end_line, start_line)
-                    };
-
-                    let delete_start = doc.buffer.line_index.get_start(first_line).unwrap_or(0);
-                    let delete_end = if last_line + 1 < doc.buffer.get_total_lines() {
-                        doc.buffer
-                            .line_index
-                            .get_start(last_line + 1)
-                            .unwrap_or(doc.buffer.len())
-                    } else {
-                        doc.buffer.len()
-                    };
-
-                    if delete_end > delete_start {
-                        doc.begin_transaction("Delete");
-                        let _ = doc.delete_range(delete_start, delete_end);
-                        doc.commit_transaction();
-                    }
-                }
-                crate::wrap::RangeKind::Charwise => {
-                    let end_offset = if range.inclusive { 1 } else { 0 };
-                    if range.new_cursor > range.anchor {
-                        let del_end = (range.new_cursor + end_offset).min(doc.buffer.len());
-                        doc.begin_transaction("Delete");
-                        let _ = doc.delete_range(range.anchor, del_end);
-                        doc.commit_transaction();
-                    } else {
-                        let del_end = (range.anchor + end_offset).min(doc.buffer.len());
-                        doc.begin_transaction("Delete");
-                        let _ = doc.delete_range(range.new_cursor, del_end);
-                        doc.commit_transaction();
-                    }
-                }
+            let (delete_start, delete_end) = range_to_offsets(&range, doc, true);
+            if delete_end > delete_start {
+                doc.begin_transaction("Delete");
+                let _ = doc.delete_range(delete_start, delete_end);
+                doc.commit_transaction();
             }
         }
         Command::Change(motion, count) => {
@@ -201,41 +220,9 @@ pub fn execute_command(
             ) else {
                 return Ok(());
             };
-
-            match range.kind {
-                crate::wrap::RangeKind::Linewise => {
-                    let start_line = doc.buffer.line_index.get_line_at(range.anchor);
-                    let end_line = doc.buffer.line_index.get_line_at(range.new_cursor);
-                    let (first_line, last_line) = if start_line <= end_line {
-                        (start_line, end_line)
-                    } else {
-                        (end_line, start_line)
-                    };
-
-                    let delete_start = doc.buffer.line_index.get_start(first_line).unwrap_or(0);
-                    let delete_end = if last_line + 1 < doc.buffer.get_total_lines() {
-                        doc.buffer
-                            .line_index
-                            .get_start(last_line + 1)
-                            .unwrap_or(doc.buffer.len())
-                    } else {
-                        doc.buffer.len()
-                    };
-
-                    if delete_end > delete_start {
-                        let _ = doc.delete_range(delete_start, delete_end);
-                    }
-                }
-                crate::wrap::RangeKind::Charwise => {
-                    let end_offset = if range.inclusive { 1 } else { 0 };
-                    if range.new_cursor > range.anchor {
-                        let del_end = (range.new_cursor + end_offset).min(doc.buffer.len());
-                        let _ = doc.delete_range(range.anchor, del_end);
-                    } else {
-                        let del_end = (range.anchor + end_offset).min(doc.buffer.len());
-                        let _ = doc.delete_range(range.new_cursor, del_end);
-                    }
-                }
+            let (delete_start, delete_end) = range_to_offsets(&range, doc, true);
+            if delete_end > delete_start {
+                let _ = doc.delete_range(delete_start, delete_end);
             }
         }
         Command::ChangeLine => {
@@ -246,6 +233,53 @@ pub fn execute_command(
             if end > start {
                 let _ = doc.delete_range(start, end);
             }
+        }
+        Command::DeleteSurround(ch, count) => {
+            if let Some((open_range, close_range)) =
+                crate::text_objects::resolve_surround_pair(ch, &doc.buffer, count)
+            {
+                doc.begin_transaction("DeleteSurround");
+                let _ = doc.delete_range(close_range.start, close_range.end);
+                let _ = doc.delete_range(open_range.start, open_range.end);
+                doc.commit_transaction();
+            }
+        }
+        Command::ChangeSurround(from, to, count) => {
+            if let (Some((open_range, close_range)), Some((new_open, new_close))) = (
+                crate::text_objects::resolve_surround_pair(from, &doc.buffer, count),
+                crate::text_objects::surround_strings(to, count),
+            ) {
+                doc.begin_transaction("ChangeSurround");
+                let _ = doc.delete_range(close_range.start, close_range.end);
+                let _ = doc.buffer.set_cursor(close_range.start);
+                let _ = doc.insert_str(&new_close);
+                let _ = doc.delete_range(open_range.start, open_range.end);
+                let _ = doc.buffer.set_cursor(open_range.start);
+                let _ = doc.insert_str(&new_open);
+                doc.commit_transaction();
+            }
+        }
+        Command::AddSurround(motion, motion_count, ch, delim_count) => {
+            let Some((open, close)) = crate::text_objects::surround_strings(ch, delim_count) else {
+                return Ok(());
+            };
+            let Some(range) = compute_motion_range(
+                motion,
+                motion_count,
+                doc,
+                viewport_height,
+                last_search_query,
+                tab_width,
+            ) else {
+                return Ok(());
+            };
+            let (start, end) = range_to_offsets(&range, doc, false);
+            doc.begin_transaction("AddSurround");
+            let _ = doc.buffer.set_cursor(end);
+            let _ = doc.insert_str(&close);
+            let _ = doc.buffer.set_cursor(start);
+            let _ = doc.insert_str(&open);
+            doc.commit_transaction();
         }
         Command::DeleteForward => {
             doc.delete_forward();

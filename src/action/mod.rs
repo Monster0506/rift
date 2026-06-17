@@ -403,6 +403,8 @@ pub enum EditorAction {
     NextInteractiveAnnotation,
     /// Move to the previous interactive annotation.
     PrevInteractiveAnnotation,
+    /// Begin surround grammar (ds/cs/ys) under OperatorPending.
+    SurroundStart,
 }
 
 /// Represents an action in the editor

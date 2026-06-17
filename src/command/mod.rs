@@ -35,6 +35,15 @@ pub enum Command {
     ReplaceChar(char, usize),
     /// Enter Replace mode (R: each char overwrites instead of inserting).
     EnterReplaceMode,
+    /// Delete an existing surround pair, keeping its contents (ds<ch>).
+    /// The trailing count repeats the delimiter char on each side.
+    DeleteSurround(char, usize),
+    /// Replace an existing surround pair's delimiters (cs<from><to>).
+    /// The trailing count repeats the delimiter char on each side.
+    ChangeSurround(char, char, usize),
+    /// Wrap a motion/text-object range in delimiters (ys<motion><ch>).
+    /// The motion count resolves the range; the trailing count repeats the delimiter.
+    AddSurround(Motion, usize, char, usize),
 
     // Mode transitions
     EnterCommandMode,
@@ -86,6 +95,9 @@ impl Command {
                 | Command::OpenLineAbove
                 | Command::InsertChar(_)
                 | Command::ReplaceChar(_, _)
+                | Command::DeleteSurround(_, _)
+                | Command::ChangeSurround(_, _, _)
+                | Command::AddSurround(_, _, _, _)
                 | Command::Undo
                 | Command::Redo
         )
