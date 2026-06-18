@@ -2,7 +2,8 @@
 
 use super::Document;
 use crate::buffer::TextBuffer;
-use crate::history::{EditOperation, EditTransaction, ReplayPath};
+use crate::history::{EditOperation, EditTransaction, Position, ReplayPath};
+use tree_sitter::InputEdit;
 
 impl Document {
     /// Start a transaction for grouping multiple edits.
@@ -51,7 +52,7 @@ impl Document {
         };
 
         for op in inverse_ops {
-            self.apply_operation(&op);
+            self.apply_operation_with_tree_update(&op);
         }
 
         // Restore cursor to where it was before the command, not wherever
@@ -69,9 +70,6 @@ impl Document {
             self.restore_annotations_for_undo(entry);
         }
 
-        if let Some(syntax) = &mut self.syntax {
-            syntax.invalidate_trees();
-        }
         true
     }
 
@@ -91,7 +89,7 @@ impl Document {
         };
 
         for op in ops {
-            self.apply_operation(&op);
+            self.apply_operation_with_tree_update(&op);
         }
 
         // Re-apply the post-edit annotation positions; record how to undo
@@ -102,15 +100,64 @@ impl Document {
 
         self.mark_dirty();
 
-        if let Some(syntax) = &mut self.syntax {
-            syntax.invalidate_trees();
-        }
         true
     }
 
-    /// Apply an edit operation to this document's buffer (used by undo/redo).
-    pub(crate) fn apply_operation(&mut self, op: &EditOperation) {
+    /// Apply an edit operation (used by undo/redo), informing the syntax tree
+    /// via `InputEdit` so it stays valid for incremental reuse.
+    fn apply_operation_with_tree_update(&mut self, op: &EditOperation) {
+        let (start_char, old_end_char) = match op {
+            EditOperation::Insert { position, .. } => {
+                let c = self.position_to_char_offset(*position);
+                (c, c)
+            }
+            EditOperation::Delete { range, .. }
+            | EditOperation::Replace { range, .. }
+            | EditOperation::BlockChange { range, .. } => (
+                self.position_to_char_offset(range.start),
+                self.position_to_char_offset(range.end),
+            ),
+        };
+        let start_byte = self.buffer.char_to_byte(start_char);
+        let old_end_byte = self.buffer.char_to_byte(old_end_char);
+        let start_position = self.get_point(start_byte);
+        let old_end_position = self.get_point(old_end_byte);
+
         Self::apply_operation_to_buffer(&mut self.buffer, op);
+
+        let inserted_chars = match op {
+            EditOperation::Insert { text, .. } => text.len(),
+            EditOperation::Delete { .. } => 0,
+            EditOperation::Replace { new_text, .. } => new_text.len(),
+            EditOperation::BlockChange { new_content, .. } => {
+                new_content.iter().map(|line| line.len()).sum::<usize>()
+                    + new_content.len().saturating_sub(1)
+            }
+        };
+        let new_end_byte = self.buffer.char_to_byte(start_char + inserted_chars);
+        let new_end_position = self.get_point(new_end_byte);
+
+        let edit = InputEdit {
+            start_byte,
+            old_end_byte,
+            new_end_byte,
+            start_position,
+            old_end_position,
+            new_end_position,
+        };
+        if let Some(syntax) = &mut self.syntax {
+            syntax.update_tree(&edit);
+        }
+    }
+
+    /// Char offset of a `Position` (line, char-column) in the current buffer.
+    fn position_to_char_offset(&self, pos: Position) -> usize {
+        let line_start = self
+            .buffer
+            .line_index
+            .get_start(pos.line as usize)
+            .unwrap_or(0);
+        line_start + pos.col as usize
     }
 
     /// Restore the pre-edit annotation state for an undo, pushing the matching
@@ -281,12 +328,17 @@ impl Document {
     /// Navigate to a specific edit sequence in the undo tree
     pub fn goto_seq(&mut self, target: u64) -> Result<(), crate::history::UndoError> {
         let replay_path = self.history.goto_seq(target)?;
-        Self::apply_replay_path_to_buffer(&mut self.buffer, &replay_path);
-        self.mark_dirty();
-
-        if let Some(syntax) = &mut self.syntax {
-            syntax.tree = None;
+        for tx in &replay_path.undo_ops {
+            for op in tx.inverse() {
+                self.apply_operation_with_tree_update(&op);
+            }
         }
+        for tx in &replay_path.redo_ops {
+            for op in &tx.ops {
+                self.apply_operation_with_tree_update(op);
+            }
+        }
+        self.mark_dirty();
         Ok(())
     }
 

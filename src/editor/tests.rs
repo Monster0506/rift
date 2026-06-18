@@ -1476,17 +1476,16 @@ fn treesitter_object_without_parse_tree_silently_no_ops() {
 
 #[test]
 fn surround_delete_strips_enclosing_parens() {
-    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::action::{Action, EditorAction};
     use crate::key::Key;
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo(bar)baz");
     editor.active_document().buffer.set_cursor(5).unwrap();
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(
-        OperatorType::Delete,
-    )));
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('d'));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('('));
 
@@ -1496,17 +1495,16 @@ fn surround_delete_strips_enclosing_parens() {
 
 #[test]
 fn surround_delete_via_bracket_alias() {
-    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::action::{Action, EditorAction};
     use crate::key::Key;
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo(bar)baz");
     editor.active_document().buffer.set_cursor(5).unwrap();
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(
-        OperatorType::Delete,
-    )));
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('d'));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('b'));
 
@@ -1515,17 +1513,16 @@ fn surround_delete_via_bracket_alias() {
 
 #[test]
 fn surround_change_swaps_parens_for_quotes() {
-    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::action::{Action, EditorAction};
     use crate::key::Key;
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo(bar)baz");
     editor.active_document().buffer.set_cursor(5).unwrap();
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(
-        OperatorType::Change,
-    )));
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('c'));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('('));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -1537,17 +1534,16 @@ fn surround_change_swaps_parens_for_quotes() {
 
 #[test]
 fn surround_change_pads_opening_bracket_char() {
-    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::action::{Action, EditorAction};
     use crate::key::Key;
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo(bar)baz");
     editor.active_document().buffer.set_cursor(5).unwrap();
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(
-        OperatorType::Change,
-    )));
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('c'));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('('));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -1558,7 +1554,7 @@ fn surround_change_pads_opening_bracket_char() {
 
 #[test]
 fn surround_add_wraps_inner_word_with_padding() {
-    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::action::{Action, EditorAction};
     use crate::key::Key;
     use crate::text_objects::Modifier;
 
@@ -1566,8 +1562,9 @@ fn surround_add_wraps_inner_word_with_padding() {
     load_text(&mut editor, "foo bar baz");
     editor.active_document().buffer.set_cursor(4).unwrap();
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('g'));
     assert_eq!(editor.pending_surround_add, Some(1));
 
     editor.pending_grammar = Some(pending_grammar::PendingGrammar::TextObject(
@@ -1588,19 +1585,21 @@ fn surround_add_wraps_inner_word_with_padding() {
 }
 
 #[test]
-fn surround_add_yss_wraps_current_line() {
-    use crate::action::{Action, EditorAction, OperatorType};
+fn surround_add_sgg_wraps_current_line() {
+    use crate::action::{Action, EditorAction};
+    use crate::key::Key;
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world\nfoo");
     editor.active_document().buffer.set_cursor(2).unwrap();
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('g'));
+    editor.handle_action(&Action::Editor(EditorAction::SurroundGiveLine));
 
     let grammar = editor.pending_grammar.take().unwrap();
-    editor.advance_pending_grammar(grammar, crate::key::Key::Char('"'));
+    editor.advance_pending_grammar(grammar, Key::Char('"'));
 
     assert_eq!(
         editor.active_document().buffer.to_string(),
@@ -1610,17 +1609,16 @@ fn surround_add_yss_wraps_current_line() {
 
 #[test]
 fn surround_delete_dot_repeat_reresolves_at_new_cursor() {
-    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::action::{Action, EditorAction};
     use crate::key::Key;
 
     let mut editor = create_editor();
     load_text(&mut editor, "(a) (b)");
     editor.active_document().buffer.set_cursor(1).unwrap();
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(
-        OperatorType::Delete,
-    )));
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('d'));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('('));
     assert_eq!(editor.active_document().buffer.to_string(), "a (b)");
@@ -1633,16 +1631,13 @@ fn surround_delete_dot_repeat_reresolves_at_new_cursor() {
 
 #[test]
 fn surround_escape_cancels_pending_grammar() {
-    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::action::{Action, EditorAction};
     use crate::key::Key;
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo(bar)baz");
     editor.active_document().buffer.set_cursor(5).unwrap();
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(
-        OperatorType::Delete,
-    )));
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     assert!(editor.pending_grammar.is_some());
 
@@ -1662,7 +1657,7 @@ fn surround_escape_cancels_pending_grammar() {
 
 #[test]
 fn surround_delete_count_removes_doubled_delimiter() {
-    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::action::{Action, EditorAction};
     use crate::key::Key;
 
     let mut editor = create_editor();
@@ -1670,10 +1665,9 @@ fn surround_delete_count_removes_doubled_delimiter() {
     editor.active_document().buffer.set_cursor(3).unwrap();
 
     editor.pending_count = 2;
-    editor.handle_action(&Action::Editor(EditorAction::Operator(
-        OperatorType::Delete,
-    )));
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('d'));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('('));
 
@@ -1682,7 +1676,7 @@ fn surround_delete_count_removes_doubled_delimiter() {
 
 #[test]
 fn surround_change_count_doubles_both_sides() {
-    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::action::{Action, EditorAction};
     use crate::key::Key;
 
     let mut editor = create_editor();
@@ -1690,10 +1684,9 @@ fn surround_change_count_doubles_both_sides() {
     editor.active_document().buffer.set_cursor(3).unwrap();
 
     editor.pending_count = 2;
-    editor.handle_action(&Action::Editor(EditorAction::Operator(
-        OperatorType::Change,
-    )));
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('c'));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('"'));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -1703,8 +1696,8 @@ fn surround_change_count_doubles_both_sides() {
 }
 
 #[test]
-fn surround_add_count_doubles_delimiter_for_yss() {
-    use crate::action::{Action, EditorAction, OperatorType};
+fn surround_add_count_doubles_delimiter_for_sgg() {
+    use crate::action::{Action, EditorAction};
     use crate::key::Key;
 
     let mut editor = create_editor();
@@ -1712,9 +1705,10 @@ fn surround_add_count_doubles_delimiter_for_yss() {
     editor.active_document().buffer.set_cursor(0).unwrap();
 
     editor.pending_count = 2;
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
-    editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('g'));
+    editor.handle_action(&Action::Editor(EditorAction::SurroundGiveLine));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('"'));
 
@@ -1722,21 +1716,22 @@ fn surround_add_count_doubles_delimiter_for_yss() {
 }
 
 #[test]
-fn surround_add_outer_and_inner_counts_compose_for_yss() {
-    use crate::action::{Action, EditorAction, OperatorType};
+fn surround_add_outer_and_inner_counts_compose_for_sgg() {
+    use crate::action::{Action, EditorAction};
     use crate::key::Key;
 
     let mut editor = create_editor();
     load_text(&mut editor, "line\nline");
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    // "2y2ss\"": leading 2 doubles the delimiter, inner 2 (typed between the
-    // two s's) spans 2 lines, like `2yy`.
-    editor.pending_count = 2;
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
-    editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    // "2s2gg\"": leading 2 (before `s`) doubles the delimiter, inner 2 (typed
+    // between the two `g`'s) spans 2 lines, like `2yy`.
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('g'));
+    editor.pending_count = 2;
+    editor.handle_action(&Action::Editor(EditorAction::SurroundGiveLine));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('"'));
 
@@ -1747,7 +1742,7 @@ fn surround_add_outer_and_inner_counts_compose_for_yss() {
 }
 
 #[test]
-fn surround_interrupted_ys_does_not_corrupt_later_yank() {
+fn surround_interrupted_sg_does_not_corrupt_later_yank() {
     use crate::action::{Action, EditorAction, OperatorType};
     use crate::key::Key;
     use crate::text_objects::Modifier;
@@ -1756,10 +1751,11 @@ fn surround_interrupted_ys_does_not_corrupt_later_yank() {
     load_text(&mut editor, "foo bar");
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    // Start `ys` but abandon it by pressing a different operator key before
-    // supplying a motion, mirroring EditorAction::Operator's reassignment path.
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
+    // Start `sg` but abandon it by pressing an operator key before supplying
+    // a motion, mirroring EditorAction::Operator's reassignment path.
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('g'));
     assert!(editor.pending_surround_add.is_some());
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -1784,4 +1780,136 @@ fn surround_interrupted_ys_does_not_corrupt_later_yank() {
     assert_eq!(editor.current_mode, Mode::Normal);
     assert!(editor.pending_grammar.is_none());
     assert_eq!(editor.clipboard_ring.get(0), Some("foo"));
+}
+
+#[test]
+fn surround_give_line_without_pending_add_cancels_like_unrecognized_key() {
+    use crate::action::{Action, EditorAction, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo bar");
+
+    // Plain `yg` (no `sg` in progress): pending_surround_add is None, so
+    // SurroundGiveLine must cancel back to Normal, not start a phantom
+    // surround-add session.
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
+    editor.handle_action(&Action::Editor(EditorAction::SurroundGiveLine));
+
+    assert_eq!(editor.current_mode, Mode::Normal);
+    assert!(editor.pending_operator.is_none());
+    assert!(editor.pending_grammar.is_none());
+}
+
+#[cfg(feature = "treesitter")]
+#[test]
+fn stale_syntax_job_result_does_not_clobber_newer_state() {
+    use crate::syntax::build_syntax;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "fn main() {}\n");
+
+    let loader = editor.language_loader.clone();
+    let loaded = loader.load_language("rust").expect("rust grammar");
+    let highlights = loader
+        .load_query("rust", "highlights")
+        .ok()
+        .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+        .map(Arc::new);
+    let syntax = build_syntax(loaded, highlights, loader.clone()).expect("build_syntax");
+    editor.active_document().set_syntax(syntax);
+    editor.do_incremental_syntax_parse();
+
+    let doc_id = editor.active_document_id();
+
+    // Spawn a background reparse, then keep typing before its result arrives --
+    // exactly the race that produced offset/flickering highlights (dcf9eaa).
+    editor
+        .spawn_syntax_parse_job(doc_id)
+        .expect("job should spawn");
+
+    {
+        let doc = editor.active_document();
+        doc.buffer.move_to_end();
+        doc.buffer.insert_str("\nfn extra() {}\n").unwrap();
+    }
+
+    // Recompute ground truth via a full reparse -- the direct buffer mutation
+    // above bypasses `tree.edit()`, so incremental reuse can't be trusted here.
+    let source = editor.active_document().buffer.to_logical_bytes();
+    let syntax = editor.active_document().syntax.as_mut().unwrap();
+    syntax.invalidate_trees();
+    assert!(syntax.incremental_parse(&source));
+    let fresh_highlights = syntax.highlights(None);
+    assert!(!fresh_highlights.is_empty());
+
+    let mut drained = false;
+    while let Ok(msg) = editor
+        .job_manager
+        .receiver()
+        .recv_timeout(Duration::from_millis(200))
+    {
+        editor.handle_job_message(msg).unwrap();
+        drained = true;
+    }
+    assert!(drained, "expected the background job's result to arrive");
+
+    let after_highlights = editor
+        .active_document()
+        .syntax
+        .as_ref()
+        .unwrap()
+        .highlights(None);
+    assert_eq!(
+        after_highlights, fresh_highlights,
+        "a stale background parse result must not overwrite newer sync-parsed state"
+    );
+}
+
+#[cfg(feature = "treesitter")]
+#[test]
+fn undo_keeps_syntax_tree_for_incremental_reuse() {
+    use crate::syntax::build_syntax;
+    use std::sync::Arc;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "fn main() {}\n");
+
+    let loader = editor.language_loader.clone();
+    let loaded = loader.load_language("rust").expect("rust grammar");
+    let highlights = loader
+        .load_query("rust", "highlights")
+        .ok()
+        .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+        .map(Arc::new);
+    let syntax = build_syntax(loaded, highlights, loader.clone()).expect("build_syntax");
+    editor.active_document().set_syntax(syntax);
+    editor.do_incremental_syntax_parse();
+
+    // A real, recorded edit (through the proper Document API, so it both
+    // informs the tree via `InputEdit` and is undo-able).
+    editor.active_document().insert_str("// comment\n").unwrap();
+    editor.do_incremental_syntax_parse();
+    assert!(editor
+        .active_document()
+        .syntax
+        .as_ref()
+        .unwrap()
+        .tree
+        .is_some());
+
+    // Undo must keep the tree around for incremental reuse, not discard it --
+    // a full reparse forced on every undo is what produced the undo flicker.
+    assert!(editor.active_document().undo());
+    assert!(
+        editor
+            .active_document()
+            .syntax
+            .as_ref()
+            .unwrap()
+            .tree
+            .is_some(),
+        "undo must not invalidate the syntax tree"
+    );
 }

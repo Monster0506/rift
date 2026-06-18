@@ -15,8 +15,7 @@ impl<T: TerminalBackend> Editor<T> {
         op: crate::action::OperatorType,
         motion: Motion,
     ) -> bool {
-        // .take() unconditionally so a stale flag from an interrupted `ys`
-        // (e.g. a different operator key fired before the motion arrived)
+        // .take() unconditionally so a stale flag from an interrupted `sg`
         // never leaks into an unrelated operator below.
         if let Some(delim_count) = self.pending_surround_add.take() {
             if op == crate::action::OperatorType::Yank {

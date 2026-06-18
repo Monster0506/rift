@@ -11,6 +11,9 @@ pub struct SyntaxParseResult {
     pub highlights: IntervalTree<u32>,
     pub language_name: String,
     pub document_id: u64,
+    /// Buffer revision at spawn time; the caller must discard this result if
+    /// the live revision has since moved on, or a stale parse can clobber newer state.
+    pub revision: u64,
 }
 
 impl crate::job_manager::JobPayload for SyntaxParseResult {
@@ -33,6 +36,7 @@ pub struct SyntaxParseJob {
     highlights_query: Option<std::sync::Arc<Query>>,
     language_name: String,
     document_id: u64,
+    revision: u64,
 }
 
 impl std::fmt::Debug for SyntaxParseJob {
@@ -54,6 +58,7 @@ impl SyntaxParseJob {
         highlights_query: Option<std::sync::Arc<Query>>,
         language_name: String,
         document_id: u64,
+        revision: u64,
     ) -> Self {
         Self {
             buffer,
@@ -62,6 +67,7 @@ impl SyntaxParseJob {
             highlights_query,
             language_name,
             document_id,
+            revision,
         }
     }
 }
@@ -84,6 +90,7 @@ impl Job for SyntaxParseJob {
             highlights_query,
             language_name,
             document_id,
+            revision,
         } = *self;
 
         // Parse using logical bytes so tree-sitter node offsets are in the
@@ -130,6 +137,7 @@ impl Job for SyntaxParseJob {
             highlights: IntervalTree::new(highlights),
             language_name,
             document_id,
+            revision,
         };
 
         let _ = sender.send(JobMessage::Custom(id, Box::new(result)));

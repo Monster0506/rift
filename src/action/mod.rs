@@ -403,8 +403,11 @@ pub enum EditorAction {
     NextInteractiveAnnotation,
     /// Move to the previous interactive annotation.
     PrevInteractiveAnnotation,
-    /// Begin surround grammar (ds/cs/ys) under OperatorPending.
+    /// Begin surround grammar (sd/sc/sg) as a top-level Normal-mode leader.
     SurroundStart,
+    /// `g` pressed under OperatorPending while an `sg` add-surround is in
+    /// progress: `sgg<ch>` doubling shorthand for "surround the current line".
+    SurroundGiveLine,
 }
 
 /// Represents an action in the editor

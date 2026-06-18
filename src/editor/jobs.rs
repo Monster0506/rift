@@ -44,6 +44,7 @@ impl<T: TerminalBackend> Editor<T> {
             syntax.highlights_query.clone(),
             syntax.language_name.clone(),
             doc_id,
+            doc.buffer.revision,
         );
 
         Some(self.job_manager.spawn(job))
@@ -509,14 +510,21 @@ impl<T: TerminalBackend> Editor<T> {
                 match any_payload.downcast::<SyntaxParseResult>() {
                     Ok(result) => {
                         let doc_id = result.document_id;
-                        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                            let source = doc.buffer.to_logical_bytes();
-                            if let Some(syntax) = &mut doc.syntax {
-                                syntax.update_from_result(*result);
-                                // Re-run injection parsing against the live source.
-                                // The background job only parses the host grammar, so
-                                // injections must be derived here from the current buffer.
-                                syntax.parse_injections_pub(&source);
+                        let is_current = self
+                            .document_manager
+                            .get_document(doc_id)
+                            .is_some_and(|doc| doc.buffer.revision == result.revision);
+
+                        if is_current {
+                            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                                let source = doc.buffer.to_logical_bytes();
+                                if let Some(syntax) = &mut doc.syntax {
+                                    syntax.update_from_result(*result);
+                                    // Re-run injection parsing against the live source.
+                                    // The background job only parses the host grammar, so
+                                    // injections must be derived here from the current buffer.
+                                    syntax.parse_injections_pub(&source);
+                                }
                             }
                         }
 
@@ -527,6 +535,12 @@ impl<T: TerminalBackend> Editor<T> {
                             if entry.debounce_deadline.is_none() && entry.in_flight_job.is_none() {
                                 self.pending_syntax_reparse.remove(&doc_id);
                             }
+                        }
+
+                        // The buffer moved on while this job ran; reparse the current
+                        // content instead of leaving highlights permanently stale.
+                        if !is_current {
+                            self.debounce_syntax_reparse(doc_id);
                         }
 
                         // Re-render after syntax update; always use update_and_render so that

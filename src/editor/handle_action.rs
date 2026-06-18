@@ -824,76 +824,42 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             EditorAction::SurroundStart => {
-                use crate::action::OperatorType;
+                let count = self.pending_count;
+                self.pending_count = 0;
+                self.pending_grammar =
+                    Some(super::pending_grammar::PendingGrammar::SurroundVerb { count });
+                true
+            }
+            EditorAction::SurroundGiveLine => {
                 use crate::text_objects::{Direction, Modifier, ObjectKind, TextObjectSpec};
-                if self.current_mode != Mode::OperatorPending {
-                    return false;
-                }
-                let Some(op) = self.pending_operator else {
+                // Only meaningful mid-`sg`; otherwise mirrors the old
+                // unrecognized-key-cancels-pending-operator behavior.
+                let Some(delim_count) = self.pending_surround_add.take() else {
+                    self.pending_operator = None;
+                    self.set_mode(Mode::Normal);
+                    self.pending_count = 0;
                     return false;
                 };
-                match op {
-                    OperatorType::Delete => {
-                        let count = if self.pending_count > 0 {
-                            self.pending_count
-                        } else {
-                            1
-                        };
-                        self.pending_count = 0;
-                        self.pending_operator = None;
-                        self.pending_grammar =
-                            Some(super::pending_grammar::PendingGrammar::DeleteSurround { count });
-                        true
-                    }
-                    OperatorType::Change => {
-                        let count = if self.pending_count > 0 {
-                            self.pending_count
-                        } else {
-                            1
-                        };
-                        self.pending_count = 0;
-                        self.pending_operator = None;
-                        self.pending_grammar =
-                            Some(super::pending_grammar::PendingGrammar::ChangeSurroundFrom {
-                                count,
-                            });
-                        true
-                    }
-                    OperatorType::Yank => {
-                        if let Some(delim_count) = self.pending_surround_add.take() {
-                            // yss: wrap `line_span` lines (count typed between the two
-                            // s's, like 2yy) in the current line's inner content.
-                            let line_span = if self.pending_count > 0 {
-                                self.pending_count
-                            } else {
-                                1
-                            };
-                            self.pending_count = 0;
-                            self.pending_operator = None;
-                            let spec = TextObjectSpec {
-                                modifier: Modifier::Inner,
-                                direction: Direction::Current,
-                                nesting: 1,
-                                kind: ObjectKind::Line,
-                            };
-                            self.pending_grammar =
-                                Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
-                                    motion: crate::action::Motion::TextObject(spec),
-                                    count: line_span,
-                                    delim_count,
-                                });
-                        } else {
-                            let delim_count = if self.pending_count > 0 {
-                                self.pending_count
-                            } else {
-                                1
-                            };
-                            self.pending_count = 0;
-                            self.pending_surround_add = Some(delim_count);
-                        }
-                        true
-                    }
-                }
+                let line_span = if self.pending_count > 0 {
+                    self.pending_count
+                } else {
+                    1
+                };
+                self.pending_count = 0;
+                self.pending_operator = None;
+                let spec = TextObjectSpec {
+                    modifier: Modifier::Inner,
+                    direction: Direction::Current,
+                    nesting: 1,
+                    kind: ObjectKind::Line,
+                };
+                self.pending_grammar =
+                    Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
+                        motion: crate::action::Motion::TextObject(spec),
+                        count: line_span,
+                        delim_count,
+                    });
+                true
             }
         }
     }

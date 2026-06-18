@@ -638,9 +638,14 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
     );
     keymap.register(
-        KeyContext::OperatorPending,
+        KeyContext::Normal,
         Key::Char('s'),
         Action::Editor(EditorAction::SurroundStart),
+    );
+    keymap.register(
+        KeyContext::OperatorPending,
+        Key::Char('g'),
+        Action::Editor(EditorAction::SurroundGiveLine),
     );
     keymap.register(
         KeyContext::Normal,
