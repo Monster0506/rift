@@ -151,6 +151,9 @@ impl StatusBar {
             Mode::Rename => crate::constants::modes::RENAME,
             Mode::OperatorPending => crate::constants::modes::OPERATOR_PENDING,
             Mode::Replace => crate::constants::modes::REPLACE,
+            Mode::Visual => crate::constants::modes::VISUAL,
+            Mode::VisualLine => crate::constants::modes::VISUAL_LINE,
+            Mode::VisualBlock => crate::constants::modes::VISUAL_BLOCK,
         }
     }
 

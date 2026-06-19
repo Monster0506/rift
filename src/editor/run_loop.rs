@@ -231,8 +231,11 @@ impl<T: TerminalBackend> Editor<T> {
                             .map(|d| d.is_location_list())
                             .unwrap_or(false);
                         match self.current_mode {
-                            Mode::Normal | Mode::OperatorPending => {
-                                if is_directory {
+                            Mode::Normal | Mode::OperatorPending | Mode::Visual | Mode::VisualLine | Mode::VisualBlock => {
+                                if self.current_mode.is_visual() {
+                                    // TODO(task 6): route to KeyContext::Visual
+                                    KeyContext::Normal
+                                } else if is_directory {
                                     KeyContext::FileExplorer
                                 } else if is_undotree {
                                     KeyContext::UndoTree
