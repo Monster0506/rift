@@ -2163,3 +2163,62 @@ fn region_bank_occurrence_disabled_for_blockwise_last_region() {
     assert!(!handled);
     assert_eq!(editor.active_document().selection_set.regions.len(), 1);
 }
+
+#[test]
+fn apply_to_each_region_runs_f_once_per_region_highest_offset_first() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+
+    let mut seen_starts = Vec::new();
+    let handled = editor.apply_to_each_region(|_editor, region| {
+        seen_starts.push(region.span().0);
+        true
+    });
+
+    assert!(handled);
+    assert_eq!(seen_starts, vec![5, 0], "highest-offset-first");
+    assert!(editor.active_document().selection_set.is_empty(), "batch must clear the set");
+}
+
+#[test]
+fn apply_to_each_region_on_empty_set_returns_false() {
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+
+    let handled = editor.apply_to_each_region(|_editor, _region| true);
+
+    assert!(!handled);
+}
+
+#[test]
+fn apply_to_each_region_deletes_are_one_undo_step() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+
+    editor.apply_to_each_region(|editor, region| {
+        let (start, end) = region.span();
+        if let Some(doc) = editor.document_manager.active_document_mut() {
+            doc.delete_range(start, end).is_ok()
+        } else {
+            false
+        }
+    });
+    assert_eq!(editor.active_document().buffer.to_string(), "234789");
+
+    assert!(editor.active_document().undo());
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "0123456789",
+        "a single undo must restore both deletions at once"
+    );
+}

@@ -29,4 +29,36 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = doc.buffer.set_cursor(start);
         true
     }
+
+    /// Run `f` once per banked region, highest-offset-first, inside one
+    /// transaction so the whole batch undoes as a single step. Returns
+    /// `false` without doing anything if the set is empty.
+    #[allow(dead_code)] // first production caller lands in Task 13
+    pub(super) fn apply_to_each_region<F>(&mut self, mut f: F) -> bool
+    where
+        F: FnMut(&mut Self, crate::selection::Region) -> bool,
+    {
+        let batch = {
+            let Some(doc) = self.document_manager.active_document_mut() else {
+                return false;
+            };
+            doc.selection_set.take_for_batch()
+        };
+        if batch.is_empty() {
+            return false;
+        }
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.begin_transaction("MultiRegion");
+        }
+        let mut any = false;
+        for region in batch {
+            if f(self, region) {
+                any = true;
+            }
+        }
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.commit_transaction();
+        }
+        any
+    }
 }
