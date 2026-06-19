@@ -649,6 +649,21 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     );
     keymap.register(
         KeyContext::Normal,
+        Key::Char('v'),
+        Action::Editor(EditorAction::EnterVisualChar),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('V'),
+        Action::Editor(EditorAction::EnterVisualLine),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Ctrl(b'v'),
+        Action::Editor(EditorAction::EnterVisualBlock),
+    );
+    keymap.register(
+        KeyContext::Normal,
         Key::Char('C'),
         Action::Editor(EditorAction::Command(Box::new(Command::Change(
             Motion::EndOfLine,

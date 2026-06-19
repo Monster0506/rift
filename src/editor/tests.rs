@@ -1913,3 +1913,44 @@ fn undo_keeps_syntax_tree_for_incremental_reuse() {
         "undo must not invalidate the syntax tree"
     );
 }
+
+#[test]
+fn visual_char_enters_mode_and_anchors_at_cursor() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world");
+    editor.active_document().buffer.set_cursor(3).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+
+    assert_eq!(editor.current_mode, Mode::Visual);
+    assert_eq!(editor.visual_anchor, Some(3));
+}
+
+#[test]
+fn visual_resumes_a_banked_region_under_the_cursor() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world");
+    // Bank a region covering "hello" (0..4), drag direction cursor->anchor
+    // reversed (anchor=4, cursor=0) to prove direction is restored exactly.
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(4, 0, RangeKind::Charwise));
+
+    editor.active_document().buffer.set_cursor(2).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+
+    assert_eq!(editor.current_mode, Mode::Visual);
+    assert_eq!(editor.visual_anchor, Some(4), "anchor side must be restored");
+    assert_eq!(editor.active_document().buffer.cursor(), 0, "cursor side must be restored");
+    assert!(
+        editor.active_document().selection_set.regions.is_empty(),
+        "resumed region must be popped out of the banked set"
+    );
+}

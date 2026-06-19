@@ -44,6 +44,17 @@ impl Mode {
     pub fn is_visual(self) -> bool {
         matches!(self, Mode::Visual | Mode::VisualLine | Mode::VisualBlock)
     }
+
+    /// The `RangeKind` a region built from this mode should use, or `None`
+    /// for non-visual modes.
+    pub fn visual_range_kind(self) -> Option<crate::wrap::RangeKind> {
+        match self {
+            Mode::Visual => Some(crate::wrap::RangeKind::Charwise),
+            Mode::VisualLine => Some(crate::wrap::RangeKind::Linewise),
+            Mode::VisualBlock => Some(crate::wrap::RangeKind::Blockwise),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

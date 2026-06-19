@@ -98,6 +98,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_operator: None,
             pending_grammar: None,
             pending_surround_add: None,
+            visual_anchor: None,
             display_map_cache: None,
             pending_text_changed: None,
             pending_cursor_moved: None,

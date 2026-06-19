@@ -861,7 +861,34 @@ impl<T: TerminalBackend> Editor<T> {
                     });
                 true
             }
+
+            EditorAction::EnterVisualChar => self.enter_visual_or_resume(Mode::Visual),
+            EditorAction::EnterVisualLine => self.enter_visual_or_resume(Mode::VisualLine),
+            EditorAction::EnterVisualBlock => self.enter_visual_or_resume(Mode::VisualBlock),
         }
+    }
+
+    /// `v`/`V`/`Ctrl-V`: start a fresh active region anchored at the cursor,
+    /// or -- if the cursor sits inside an already-banked region of the same
+    /// kind -- pop it back out as the active region, restoring its exact
+    /// original anchor/cursor direction (design.md S3).
+    pub(super) fn enter_visual_or_resume(&mut self, mode: Mode) -> bool {
+        let Some(kind) = mode.visual_range_kind() else { return false };
+        let Some(doc) = self.document_manager.active_document_mut() else { return false };
+        let cursor = doc.buffer.cursor();
+        if let Some(idx) = doc.selection_set.region_containing(cursor) {
+            let region = doc.selection_set.regions.remove(idx);
+            if region.kind == kind {
+                self.visual_anchor = Some(region.anchor);
+                let _ = doc.buffer.set_cursor(region.cursor);
+                self.set_mode(mode);
+                return true;
+            }
+            doc.selection_set.regions.insert(idx, region);
+        }
+        self.visual_anchor = Some(cursor);
+        self.set_mode(mode);
+        true
     }
 
     /// Insert `text` at the cursor position.

@@ -408,6 +408,12 @@ pub enum EditorAction {
     /// `g` pressed under OperatorPending while an `sg` add-surround is in
     /// progress: `sgg<ch>` doubling shorthand for "surround the current line".
     SurroundGiveLine,
+    /// `v`: enter/resume charwise Visual selection.
+    EnterVisualChar,
+    /// `V`: enter/resume linewise Visual selection.
+    EnterVisualLine,
+    /// `Ctrl-V`: enter/resume blockwise Visual selection.
+    EnterVisualBlock,
 }
 
 /// Represents an action in the editor
