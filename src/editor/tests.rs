@@ -2026,3 +2026,42 @@ fn escape_in_normal_clears_a_nonempty_banked_set() {
 
     assert!(editor.active_document().selection_set.is_empty());
 }
+
+#[test]
+fn issue_worked_example_bank_two_regions_no_delete_yet() {
+    use crate::action::{Action, EditorAction, Motion};
+    use crate::buffer::api::BufferView;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "Hello\nworld\nfoo\n");
+
+    // goto line 1 (already there) -> v -> select "Ho" -> Esc
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    assert_eq!(editor.active_document().selection_set.regions.len(), 1);
+    assert_eq!(editor.active_document().selection_set.regions[0].span(), (0, 2));
+
+    // goto line 3 (plain motion, set untouched) -> v -> select "f" -> Esc
+    let line3_start = editor.active_document().buffer.line_start(2);
+    let _ = editor.active_document().buffer.set_cursor(line3_start);
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    assert_eq!(
+        editor.active_document().selection_set.regions.len(),
+        2,
+        "first region must survive the plain motion to line 3"
+    );
+    let spans: Vec<(usize, usize)> = editor
+        .active_document()
+        .selection_set
+        .sorted()
+        .iter()
+        .map(|r| r.span())
+        .collect();
+    assert_eq!(spans[0], (0, 2), "\"Ho\" region");
+    assert_eq!(spans[1].1 - spans[1].0, 1, "\"f\" region is one char");
+}
