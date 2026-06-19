@@ -9,6 +9,7 @@ pub mod manager;
 mod persistence;
 mod populate;
 mod search;
+mod selection_render;
 
 use crate::annotations::AnnotationStore;
 use crate::buffer::TextBuffer;

@@ -2056,3 +2056,34 @@ fn redo_clears_selection_set() {
 
     assert!(doc.selection_set.is_empty(), "redo must clear a banked selection set");
 }
+
+#[test]
+fn sync_selection_annotations_creates_one_entry_per_banked_region_plus_active() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut doc = Document::new(1).unwrap();
+    doc.buffer.insert_str("hello world").unwrap();
+
+    let banked = vec![Region::new(0, 2, RangeKind::Charwise)];
+    let active = Some(Region::new(6, 8, RangeKind::Charwise));
+    doc.sync_selection_annotations(active, &banked);
+
+    let count = doc.annotations.query_kind("ui.selection").count();
+    assert_eq!(count, 2, "one banked + one active annotation");
+}
+
+#[test]
+fn sync_selection_annotations_replaces_previous_call() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut doc = Document::new(1).unwrap();
+    doc.buffer.insert_str("hello world").unwrap();
+
+    doc.sync_selection_annotations(None, &[Region::new(0, 2, RangeKind::Charwise)]);
+    doc.sync_selection_annotations(None, &[]);
+
+    let count = doc.annotations.query_kind("ui.selection").count();
+    assert_eq!(count, 0);
+}
