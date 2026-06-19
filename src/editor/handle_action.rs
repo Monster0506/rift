@@ -44,6 +44,18 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::Move(motion) => {
                 use crate::action::Motion;
 
+                if matches!(motion, Motion::RepeatFindForward | Motion::RepeatFindBackward) {
+                    let has_regions = self
+                        .document_manager
+                        .active_document()
+                        .map(|d| !d.selection_set.is_empty())
+                        .unwrap_or(false);
+                    if has_regions {
+                        let forward = matches!(motion, Motion::RepeatFindForward);
+                        return self.cycle_to_region(forward);
+                    }
+                }
+
                 // Interface-mode buffers snap vertical motion between actionable
                 // lines, else fall through to ordinary motion (design.md sec 9.4).
                 if self.current_mode == Mode::Normal

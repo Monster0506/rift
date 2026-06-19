@@ -2065,3 +2065,53 @@ fn issue_worked_example_bank_two_regions_no_delete_yet() {
     assert_eq!(spans[0], (0, 2), "\"Ho\" region");
     assert_eq!(spans[1].1 - spans[1].0, 1, "\"f\" region is one char");
 }
+
+#[test]
+fn n_cycles_banked_regions_when_set_is_nonempty() {
+    use crate::action::{Action, EditorAction, Motion};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789abcdefghij");
+    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(10, 11, RangeKind::Charwise));
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::RepeatFindForward)));
+    assert_eq!(editor.active_document().buffer.cursor(), 10);
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::RepeatFindForward)));
+    assert_eq!(editor.active_document().buffer.cursor(), 0, "wraps to first");
+}
+
+#[test]
+fn shift_n_cycles_backward_when_set_is_nonempty() {
+    use crate::action::{Action, EditorAction, Motion};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789abcdefghij");
+    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(10, 11, RangeKind::Charwise));
+    editor.active_document().buffer.set_cursor(15).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::RepeatFindBackward)));
+    assert_eq!(editor.active_document().buffer.cursor(), 10);
+}
+
+#[test]
+fn n_keeps_repeat_find_behavior_when_set_is_empty() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo bar foo baz");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.state.last_find_char = Some(('o', true, false)); // as if `fo` had just run
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::RepeatFindForward)));
+
+    // Repeat-find-char behavior, completely untouched: lands on the next 'o'.
+    assert_eq!(editor.active_document().buffer.cursor(), 1);
+}

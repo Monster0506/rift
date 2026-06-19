@@ -20,6 +20,7 @@ mod init;
 mod jobs;
 mod lsp_ops;
 mod mode_mgmt;
+mod multi_region;
 mod operators;
 mod panel_handlers;
 mod pending_grammar;
