@@ -154,6 +154,20 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::EnterNormalMode => {
+                if self.current_mode.is_visual() {
+                    if let (Some(anchor), Some(kind)) =
+                        (self.visual_anchor, self.current_mode.visual_range_kind())
+                    {
+                        if let Some(doc) = self.document_manager.active_document_mut() {
+                            let cursor = doc.buffer.cursor();
+                            doc.selection_set
+                                .bank(crate::selection::Region::new(anchor, cursor, kind));
+                        }
+                    }
+                    self.visual_anchor = None;
+                } else if let Some(doc) = self.document_manager.active_document_mut() {
+                    doc.selection_set.clear();
+                }
                 if self.current_mode == Mode::Insert || self.current_mode == Mode::Replace {
                     // Finalize insert recording for dot-repeat
                     if !self.dot_repeat.is_replaying() {
@@ -865,6 +879,14 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::EnterVisualChar => self.enter_visual_or_resume(Mode::Visual),
             EditorAction::EnterVisualLine => self.enter_visual_or_resume(Mode::VisualLine),
             EditorAction::EnterVisualBlock => self.enter_visual_or_resume(Mode::VisualBlock),
+            EditorAction::VisualSwapEnds => {
+                let Some(anchor) = self.visual_anchor else { return false };
+                let Some(doc) = self.document_manager.active_document_mut() else { return false };
+                let cursor = doc.buffer.cursor();
+                self.visual_anchor = Some(cursor);
+                let _ = doc.buffer.set_cursor(anchor);
+                true
+            }
         }
     }
 

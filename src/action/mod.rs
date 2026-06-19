@@ -414,6 +414,8 @@ pub enum EditorAction {
     EnterVisualLine,
     /// `Ctrl-V`: enter/resume blockwise Visual selection.
     EnterVisualBlock,
+    /// `o`/`O` in Visual: swap which end (anchor vs cursor) is active.
+    VisualSwapEnds,
 }
 
 /// Represents an action in the editor

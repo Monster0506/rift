@@ -1954,3 +1954,75 @@ fn visual_resumes_a_banked_region_under_the_cursor() {
         "resumed region must be popped out of the banked set"
     );
 }
+
+#[test]
+fn visual_motion_extends_through_normal_fallthrough() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+
+    assert_eq!(editor.current_mode, Mode::Visual, "motion must not exit Visual");
+    assert_eq!(editor.active_document().buffer.cursor(), 2);
+    assert_eq!(editor.visual_anchor, Some(0), "anchor stays fixed while cursor moves");
+}
+
+#[test]
+fn visual_swap_ends_exchanges_anchor_and_cursor() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
+    // anchor=0, cursor=2
+
+    editor.handle_action(&Action::Editor(EditorAction::VisualSwapEnds));
+
+    assert_eq!(editor.visual_anchor, Some(2));
+    assert_eq!(editor.active_document().buffer.cursor(), 0);
+}
+
+#[test]
+fn escape_in_visual_commits_active_region() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    assert_eq!(editor.current_mode, Mode::Normal);
+    assert!(editor.visual_anchor.is_none());
+    assert_eq!(editor.active_document().selection_set.regions.len(), 1);
+    assert_eq!(editor.active_document().selection_set.regions[0].span(), (0, 3));
+}
+
+#[test]
+fn escape_in_normal_clears_a_nonempty_banked_set() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world");
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 2, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    assert!(editor.active_document().selection_set.is_empty());
+}

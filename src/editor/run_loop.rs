@@ -233,8 +233,7 @@ impl<T: TerminalBackend> Editor<T> {
                         match self.current_mode {
                             Mode::Normal | Mode::OperatorPending | Mode::Visual | Mode::VisualLine | Mode::VisualBlock => {
                                 if self.current_mode.is_visual() {
-                                    // TODO(task 6): route to KeyContext::Visual
-                                    KeyContext::Normal
+                                    KeyContext::Visual
                                 } else if is_directory {
                                     KeyContext::FileExplorer
                                 } else if is_undotree {

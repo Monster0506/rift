@@ -663,6 +663,31 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::EnterVisualBlock),
     );
     keymap.register(
+        KeyContext::Visual,
+        Key::Char('o'),
+        Action::Editor(EditorAction::VisualSwapEnds),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::Char('O'),
+        Action::Editor(EditorAction::VisualSwapEnds),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::Char('d'),
+        Action::Editor(EditorAction::Operator(crate::action::OperatorType::Delete)),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::Char('c'),
+        Action::Editor(EditorAction::Operator(crate::action::OperatorType::Change)),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::Char('y'),
+        Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
+    );
+    keymap.register(
         KeyContext::Normal,
         Key::Char('C'),
         Action::Editor(EditorAction::Command(Box::new(Command::Change(
