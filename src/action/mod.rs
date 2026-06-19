@@ -416,6 +416,10 @@ pub enum EditorAction {
     EnterVisualBlock,
     /// `o`/`O` in Visual: swap which end (anchor vs cursor) is active.
     VisualSwapEnds,
+    /// `m` (Normal): bank the next occurrence of the last-banked region's text.
+    RegionBankOccurrenceNext,
+    /// `M` (Normal): bank the previous occurrence of the last-banked region's text.
+    RegionBankOccurrencePrev,
 }
 
 /// Represents an action in the editor

@@ -899,6 +899,38 @@ impl<T: TerminalBackend> Editor<T> {
                 let _ = doc.buffer.set_cursor(anchor);
                 true
             }
+            EditorAction::RegionBankOccurrenceNext | EditorAction::RegionBankOccurrencePrev => {
+                let forward = matches!(editor_action, EditorAction::RegionBankOccurrenceNext);
+                let Some(doc) = self.document_manager.active_document_mut() else {
+                    return false;
+                };
+                if doc.selection_set.regions.is_empty() {
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        "Bank a region first (v + Esc)".to_string(),
+                    );
+                    return false;
+                }
+                let buf_snapshot = doc.buffer.clone();
+                match doc.selection_set.bank_occurrence(&buf_snapshot, forward) {
+                    Some((region, needle)) => {
+                        let (start, _) = region.span();
+                        let _ = doc.buffer.set_cursor(start);
+                        self.state.notify(
+                            crate::notification::NotificationType::Info,
+                            format!("Banked occurrence of \"{}\"", needle),
+                        );
+                        true
+                    }
+                    None => {
+                        self.state.notify(
+                            crate::notification::NotificationType::Info,
+                            "No further occurrence to bank".to_string(),
+                        );
+                        false
+                    }
+                }
+            }
         }
     }
 

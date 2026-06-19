@@ -689,6 +689,16 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     );
     keymap.register(
         KeyContext::Normal,
+        Key::Char('m'),
+        Action::Editor(EditorAction::RegionBankOccurrenceNext),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('M'),
+        Action::Editor(EditorAction::RegionBankOccurrencePrev),
+    );
+    keymap.register(
+        KeyContext::Normal,
         Key::Char('C'),
         Action::Editor(EditorAction::Command(Box::new(Command::Change(
             Motion::EndOfLine,

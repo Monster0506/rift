@@ -2115,3 +2115,51 @@ fn n_keeps_repeat_find_behavior_when_set_is_empty() {
     // Repeat-find-char behavior, completely untouched: lands on the next 'o'.
     assert_eq!(editor.active_document().buffer.cursor(), 1);
 }
+
+#[test]
+fn region_bank_occurrence_next_finds_and_moves_cursor() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo bar foo baz foo");
+    editor.active_document().selection_set.bank(Region::new(0, 2, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext));
+
+    assert_eq!(editor.active_document().selection_set.regions.len(), 2);
+    assert_eq!(editor.active_document().buffer.cursor(), 8);
+}
+
+#[test]
+fn region_bank_occurrence_on_empty_set_is_a_noop() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo bar foo");
+
+    let handled = editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext));
+
+    assert!(!handled);
+    assert!(editor.active_document().selection_set.is_empty());
+}
+
+#[test]
+fn region_bank_occurrence_disabled_for_blockwise_last_region() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo bar foo");
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 2, RangeKind::Blockwise));
+
+    let handled = editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext));
+
+    assert!(!handled);
+    assert_eq!(editor.active_document().selection_set.regions.len(), 1);
+}
