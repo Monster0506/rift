@@ -184,6 +184,8 @@ pub struct Document {
         std::collections::HashMap<u32, Vec<(std::ops::Range<usize>, crate::color::Color)>>,
     /// Structured metadata sidecar.
     pub annotations: AnnotationStore,
+    /// Non-contiguous multi-region selection set (visual-mode-design.md).
+    pub selection_set: crate::selection::SelectionSet,
     /// Full annotation snapshot captured before a transaction, restored on undo.
     pending_annotation_snapshot: Option<Vec<crate::annotations::Annotation>>,
     /// Undo stack parallel to the edit history; one entry per standalone edit

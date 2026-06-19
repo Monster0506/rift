@@ -2024,3 +2024,35 @@ fn test_line_adornment_resolves_correct_line_past_multibyte_prefix() {
     assert_eq!(adornments.len(), 1);
     assert_eq!(adornments[0].0, rule_line);
 }
+
+#[test]
+fn undo_clears_selection_set() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut doc = Document::new(1).unwrap();
+    doc.buffer.insert_str("hello world").unwrap();
+    doc.selection_set.bank(Region::new(0, 4, RangeKind::Charwise));
+    assert!(!doc.selection_set.is_empty());
+
+    doc.insert_char('!').unwrap();
+    doc.undo();
+
+    assert!(doc.selection_set.is_empty(), "undo must clear a banked selection set");
+}
+
+#[test]
+fn redo_clears_selection_set() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("hello world").unwrap();
+    assert!(doc.undo());
+    doc.selection_set.bank(Region::new(0, 4, RangeKind::Charwise));
+    assert!(!doc.selection_set.is_empty());
+
+    assert!(doc.redo());
+
+    assert!(doc.selection_set.is_empty(), "redo must clear a banked selection set");
+}

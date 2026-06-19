@@ -70,6 +70,7 @@ impl Document {
             self.restore_annotations_for_undo(entry);
         }
 
+        self.selection_set.clear();
         true
     }
 
@@ -100,6 +101,7 @@ impl Document {
 
         self.mark_dirty();
 
+        self.selection_set.clear();
         true
     }
 
@@ -339,6 +341,7 @@ impl Document {
             }
         }
         self.mark_dirty();
+        self.selection_set.clear();
         Ok(())
     }
 
