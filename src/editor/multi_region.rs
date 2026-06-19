@@ -33,7 +33,6 @@ impl<T: TerminalBackend> Editor<T> {
     /// Run `f` once per banked region, highest-offset-first, inside one
     /// transaction so the whole batch undoes as a single step. Returns
     /// `false` without doing anything if the set is empty.
-    #[allow(dead_code)] // first production caller lands in Task 13
     pub(super) fn apply_to_each_region<F>(&mut self, mut f: F) -> bool
     where
         F: FnMut(&mut Self, crate::selection::Region) -> bool,
@@ -60,5 +59,126 @@ impl<T: TerminalBackend> Editor<T> {
             doc.commit_transaction();
         }
         any
+    }
+
+    /// Enter Insert mode at the highest-offset anchor (`anchor_for` may mutate
+    /// the doc, e.g. deleting the region for `c`); records via dot-repeat so exit replays at remaining anchors.
+    pub(super) fn enter_multi_insert<F>(
+        &mut self,
+        entry: crate::command::Command,
+        mut anchor_for: F,
+    ) -> bool
+    where
+        F: FnMut(&mut crate::document::Document, crate::selection::Region) -> usize,
+    {
+        let anchors: Vec<usize> = {
+            let Some(doc) = self.document_manager.active_document_mut() else {
+                return false;
+            };
+            let batch = doc.selection_set.take_for_batch();
+            if batch.is_empty() {
+                return false;
+            }
+            doc.begin_transaction("MultiInsert");
+            let mut anchors: Vec<usize> = Vec::with_capacity(batch.len());
+            for region in batch {
+                let len_before = doc.buffer.len();
+                let new_anchor = anchor_for(doc, region);
+                let delta = len_before as i64 - doc.buffer.len() as i64;
+                if delta != 0 {
+                    for a in anchors.iter_mut() {
+                        *a = (*a as i64 - delta) as usize;
+                    }
+                }
+                anchors.push(new_anchor);
+            }
+            anchors
+        };
+        let mut anchors = anchors;
+        let first = anchors.remove(0);
+        self.pending_multi_insert_anchors = anchors;
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            let _ = doc.buffer.set_cursor(first);
+        }
+        if !self.dot_repeat.is_replaying() {
+            self.dot_repeat.start_insert_recording(entry);
+        }
+        self.set_mode(crate::mode::Mode::Insert);
+        true
+    }
+
+    /// `d`/`y` (and `c`, Task 14) against a non-empty `SelectionSet`: run the
+    /// whole banked set as one batch instead of entering `OperatorPending`
+    /// for a single motion. Returns `false` if the set is empty so the
+    /// caller falls through to today's single-cursor behavior unchanged.
+    pub(super) fn try_run_set_aware_operator(&mut self, op: crate::action::OperatorType) -> bool {
+        use crate::action::OperatorType;
+        use crate::buffer::api::BufferView;
+
+        let is_empty = self
+            .document_manager
+            .active_document()
+            .map(|d| d.selection_set.is_empty())
+            .unwrap_or(true);
+        if is_empty {
+            return false;
+        }
+
+        match op {
+            OperatorType::Delete => self.apply_to_each_region(|editor, region| {
+                let Some(doc) = editor.document_manager.active_document_mut() else {
+                    return false;
+                };
+                let (start, end) = region.buffer_span(&doc.buffer);
+                let text: String = doc.buffer.chars(start..end).map(|c| c.to_char_lossy()).collect();
+                if doc.delete_range(start, end).is_err() {
+                    return false;
+                }
+                if !text.is_empty() {
+                    editor.clipboard_ring.push(text);
+                }
+                true
+            }),
+            OperatorType::Yank => self.apply_to_each_region(|editor, region| {
+                let Some(doc) = editor.document_manager.active_document() else {
+                    return false;
+                };
+                let (start, end) = region.buffer_span(&doc.buffer);
+                let text: String = doc.buffer.chars(start..end).map(|c| c.to_char_lossy()).collect();
+                if !text.is_empty() {
+                    editor.clipboard_ring.push(text);
+                }
+                true
+            }),
+            OperatorType::Change => {
+                use crate::command::Command;
+                self.enter_multi_insert(Command::EnterInsertMode, |doc, region| {
+                    let (start, end) = region.buffer_span(&doc.buffer);
+                    let _ = doc.delete_range(start, end);
+                    start
+                })
+            }
+        }
+    }
+
+    /// Replay the just-finished Insert session at every pending anchor; must run
+    /// before the outer `MultiInsert` transaction commits so all anchors share the live-typed undo step (S5.8).
+    pub(super) fn replay_multi_insert_at_remaining_anchors(&mut self) {
+        let anchors = std::mem::take(&mut self.pending_multi_insert_anchors);
+        let Some(crate::dot_repeat::DotRegister::InsertSession { commands, .. }) =
+            self.dot_repeat.register().cloned()
+        else {
+            return;
+        };
+        self.dot_repeat.set_replaying(true);
+        for anchor in anchors {
+            if let Some(doc) = self.document_manager.active_document_mut() {
+                let _ = doc.buffer.set_cursor(anchor);
+            }
+            for &cmd in &commands {
+                self.execute_buffer_command(cmd);
+            }
+        }
+        self.dot_repeat.set_replaying(false);
     }
 }

@@ -185,6 +185,9 @@ impl<T: TerminalBackend> Editor<T> {
                     if !self.dot_repeat.is_replaying() {
                         self.dot_repeat.finish_insert_recording();
                     }
+                    if !self.pending_multi_insert_anchors.is_empty() {
+                        self.replay_multi_insert_at_remaining_anchors();
+                    }
                     if let Some(doc) = self.document_manager.active_document_mut() {
                         doc.commit_transaction();
                     }
@@ -437,6 +440,22 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::Operator(op) => {
+                if self.current_mode.is_visual() {
+                    if let (Some(anchor), Some(kind)) =
+                        (self.visual_anchor, self.current_mode.visual_range_kind())
+                    {
+                        if let Some(doc) = self.document_manager.active_document_mut() {
+                            let cursor = doc.buffer.cursor();
+                            doc.selection_set
+                                .bank(crate::selection::Region::new(anchor, cursor, kind));
+                        }
+                    }
+                    self.visual_anchor = None;
+                    self.set_mode(Mode::Normal);
+                }
+                if self.try_run_set_aware_operator(*op) {
+                    return true;
+                }
                 if self.current_mode == Mode::OperatorPending {
                     if let Some(pending) = self.pending_operator {
                         if pending == *op {

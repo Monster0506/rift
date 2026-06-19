@@ -146,6 +146,9 @@ pub struct Editor<T: TerminalBackend> {
     /// Char offset of the in-progress Visual region's anchor; `None` outside
     /// Visual/VisualLine/VisualBlock. The cursor side is `buffer.cursor()`.
     pub(super) visual_anchor: Option<usize>,
+    /// Insert anchors still waiting for the recorded session to replay at,
+    /// once the live-typed Insert session at the first anchor finishes.
+    pub(super) pending_multi_insert_anchors: Vec<usize>,
     /// Cached display map keyed by (doc_id, buffer_revision, content_width).
     /// Avoids rebuilding the soft-wrap map on every command when the buffer hasn't changed.
     display_map_cache: Option<(

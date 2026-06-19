@@ -2222,3 +2222,180 @@ fn apply_to_each_region_deletes_are_one_undo_step() {
         "a single undo must restore both deletions at once"
     );
 }
+
+#[test]
+fn enter_multi_insert_replays_typed_session_at_every_remaining_anchor() {
+    use crate::action::{Action, EditorAction};
+    use crate::command::Command;
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+
+    let handled = editor.enter_multi_insert(Command::EnterInsertMode, |_doc, region| region.span().0);
+    assert!(handled);
+    assert_eq!(editor.current_mode, Mode::Insert);
+    assert_eq!(editor.active_document().buffer.cursor(), 5, "starts at the highest-offset anchor");
+
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "X01234X56789",
+        "X inserted at both original anchors: live at 5, replayed at 0"
+    );
+    assert!(editor.pending_multi_insert_anchors.is_empty());
+}
+
+#[test]
+fn enter_multi_insert_on_empty_set_returns_false() {
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+
+    let handled = editor.enter_multi_insert(crate::command::Command::EnterInsertMode, |_doc, region| {
+        region.span().0
+    });
+
+    assert!(!handled);
+    assert_eq!(editor.current_mode, Mode::Normal);
+}
+
+#[test]
+fn set_aware_delete_removes_every_banked_region_as_one_op() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo\n\nfoofoo\n");
+    // Bank "foo" (0..2) and the two touching "foo"s inside "foofoo" (5..7, 8..10).
+    editor.active_document().selection_set.bank(Region::new(0, 2, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 7, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(8, 10, RangeKind::Charwise));
+    assert_eq!(editor.active_document().selection_set.regions.len(), 3, "touching must not have merged");
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "\n\n\n");
+    assert!(editor.active_document().selection_set.is_empty(), "set clears after the batch");
+}
+
+#[test]
+fn set_aware_delete_is_one_undo_step() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    assert_eq!(editor.active_document().buffer.to_string(), "234789");
+
+    assert!(editor.active_document().undo());
+    assert_eq!(editor.active_document().buffer.to_string(), "0123456789");
+}
+
+#[test]
+fn set_aware_yank_captures_each_region_without_mutating() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo bar baz");
+    editor.active_document().selection_set.bank(Region::new(0, 2, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(8, 10, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "foo bar baz", "yank must not mutate");
+    assert!(editor.active_document().selection_set.is_empty());
+    assert_eq!(editor.clipboard_ring.get(0), Some("foo"), "lowest-offset region pushed last = ring[0] (front-insert)");
+    assert_eq!(editor.clipboard_ring.get(1), Some("baz"));
+}
+
+#[test]
+fn visual_d_commits_active_region_then_runs_the_batch() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
+    // active region now 0..1 (chars "0","1"), banked set still has 5..6 ("5")
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "234789", "both the just-committed and pre-banked region deleted as one batch");
+    assert_eq!(editor.current_mode, Mode::Normal);
+}
+
+#[test]
+fn plain_d_with_empty_set_is_unaffected() {
+    use crate::action::{Action, EditorAction, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    assert_eq!(editor.current_mode, Mode::OperatorPending, "falls through to today's single-cursor flow");
+}
+
+#[test]
+fn canonical_change_across_touching_regions_does_not_merge_them() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo\n\nfoofoo\n");
+    editor.active_document().selection_set.bank(Region::new(0, 2, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 7, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(8, 10, RangeKind::Charwise));
+    assert_eq!(editor.active_document().selection_set.regions.len(), 3);
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Change)));
+    assert_eq!(editor.current_mode, Mode::Insert);
+
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('b')));
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('a')));
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('r')));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "barbar\n\nbar\n",
+        "each touching region gets its own independent 'bar', not one merged replacement"
+    );
+    assert_eq!(editor.current_mode, Mode::Normal);
+}
+
+#[test]
+fn single_region_change_unaffected_by_the_new_batching_branch() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo bar");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Change)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::NextWord)));
+    assert_eq!(editor.current_mode, Mode::Insert, "ordinary single-cursor cw must still work");
+
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "Xbar");
+}
