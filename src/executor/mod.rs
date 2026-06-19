@@ -150,7 +150,7 @@ fn range_to_offsets(
             };
             (start, end)
         }
-        RangeKind::Charwise => {
+        RangeKind::Charwise | RangeKind::Blockwise => {
             let end_offset = if range.inclusive { 1 } else { 0 };
             if range.new_cursor > range.anchor {
                 (
