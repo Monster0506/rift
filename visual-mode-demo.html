@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Rift Visual Mode - Converged Candidate</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --fg: #cdd6f4;
+    --muted: #6c7086;
+    --accent: #89b4fa;
+    --cursor: #f5e0dc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+    margin: 0;
+    padding: 24px;
+    line-height: 1.5;
+    max-width: 900px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 15px; color: var(--accent); margin: 0 0 8px; }
+  p.sub { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+  .note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  .demo {
+    background: #181825;
+    border: 1px solid #313244;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+  }
+  .demo-desc { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+  .stack { display: flex; flex-direction: column; gap: 0; }
+  .win {
+    border-radius: 6px;
+    border: 1px solid transparent;
+    transition: border-color 0.1s;
+  }
+  .win.focused { border-color: var(--accent); }
+  .buffer {
+    background: #11111b;
+    border-radius: 6px;
+    padding: 14px 18px;
+    font-size: 16px;
+    line-height: 0.9;
+    white-space: pre;
+    user-select: none;
+    outline: none;
+    position: relative;
+  }
+  .line { line-height: 0.9; }
+  .winlabel {
+    font-size: 11px; color: var(--muted); padding: 2px 6px;
+  }
+  .line { display: block; }
+  .ch { position: relative; }
+  .ch.cursor-normal { background: var(--cursor); color: #11111b; }
+  .ch.sel-active { background: rgba(137,180,250,0.45); }
+  .ch.sel-0 { background: rgba(249,226,175,0.5); }
+  .ch.sel-1 { background: rgba(166,227,161,0.5); }
+  .ch.sel-2 { background: rgba(243,139,168,0.5); }
+  .ch.sel-3 { background: rgba(203,166,247,0.5); }
+  .ch.sel-navcurrent { outline: 2px solid #f5e0dc; outline-offset: -2px; }
+  .regions-window {
+    background: #11111b;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 13px;
+    margin-top: 0;
+  }
+  .regions-window .entry { padding: 2px 6px; border-radius: 3px; }
+  .regions-window .entry.active { background: rgba(137,180,250,0.35); }
+  .regions-window .entry .loc { color: var(--muted); }
+  .status {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--accent);
+    min-height: 18px;
+  }
+  .keys { margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .keys table { border-collapse: collapse; }
+  .keys td { padding: 2px 10px 2px 0; vertical-align: top; }
+  .keys kbd {
+    background: #313244; color: var(--fg); border-radius: 3px;
+    padding: 1px 6px; font-family: inherit; font-size: 11px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Rift — Visual Mode, Converged Candidate</h1>
+<p class="sub">
+  Base accumulation is Model A (v / Esc to bank disjoint regions). Region navigation is split into three
+  distinct, non-overlapping keys: <b>n</b>/<b>N</b> cycle the cursor between regions you already have,
+  <b>m</b>/<b>M</b> bank the next/previous occurrence of the last region's text (opt-in, not default),
+  and <b>gv</b> opens the region set as a real, navigable split window. <b>o</b>/<b>O</b> swap which end of
+  the active region the cursor is on, for adjusting the other side. Regions merge only on true overlap —
+  touching regions stay independent (see the demo-desc below for why that matters).
+</p>
+
+<div class="demo">
+  <h2>Try it</h2>
+  <div class="demo-desc">
+    <b>v</b> + motion selects, <b>Esc</b> commits the region and returns to Normal (regions stay highlighted,
+    set persists). <b>v</b> again starts a new disjoint region — <b>unless</b> the cursor is already sitting
+    inside a banked region, in which case <b>v</b> instead <i>resumes</i> that region (pops it back out,
+    restores its original anchor/cursor direction) so you can extend or shrink it; <b>Esc</b> re-commits it.
+    Two regions only merge into one if they truly overlap (share a character) — merely touching regions
+    (like the two "foo"s inside "foofoo" below) stay independent, so a batch Change replaces each one on its
+    own. <b>d</b>/<b>y</b> act on every banked region as one operation. Selections span multiple lines now —
+    <b>j</b>/<b>k</b> while in visual extends across rows, and a multi-line selection banks as a single atomic
+    region (one entry in the regions list, however many lines it touches).
+  </div>
+  <div class="stack">
+    <div class="win focused" id="winBuf">
+      <div class="winlabel">buffer</div>
+      <div class="buffer" id="bufFinal" tabindex="0">foo
+
+foofoo
+
+function calculateTotal(items) {
+  let total = 0;
+  let count = 0;
+  for (const item of items) {
+    total = total + item.price;
+    count = count + 1;
+  }
+  // TODO: apply a discount before returning total
+  let average = total / count;
+  return { total, count, average };
+}
+
+function calculateTax(total, rate) {
+  let tax = total * rate;
+  return total + tax;
+}
+
+const items = [
+  { price: 10, qty: 2 },
+  { price: 5, qty: 4 },
+  { price: 20, qty: 1 },
+];
+
+// TODO: validate items before calculateTotal runs
+// TODO: round average to two decimal places</div>
+    </div>
+    <div class="win" id="winRegions" style="display:none">
+      <div class="winlabel">*regions* (gv) — split window, same nav as any other split</div>
+      <div class="regions-window" id="regionsListFinal"></div>
+    </div>
+  </div>
+  <div class="status" id="statusFinal">NORMAL — 0 regions banked</div>
+  <div class="keys">
+    <table>
+      <tr><td><kbd>v</kbd></td><td>enter visual, start/extend active region; resumes a banked region instead if the cursor is already inside one</td></tr>
+      <tr><td><kbd>h j k l</kbd></td><td>move (extends active region while in visual)</td></tr>
+      <tr><td><kbd>o</kbd> / <kbd>O</kbd></td><td>(in visual) swap anchor and cursor ends of the active region — adjust the other side without restarting</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>commit active region to the set (merges only on true overlap); with nothing active, clears the set</td></tr>
+      <tr><td><kbd>n</kbd> / <kbd>N</kbd></td><td>move cursor to next/previous already-banked region (default navigation)</td></tr>
+      <tr><td><kbd>m</kbd> / <kbd>M</kbd></td><td>bank the next/previous occurrence of the last region's text (opt-in pattern growth)</td></tr>
+      <tr><td><kbd>gv</kbd></td><td>open/close the regions list as a real split window</td></tr>
+      <tr><td><kbd>Tab</kbd></td><td>(demo stand-in) switch focus between buffer and regions window — real build uses <kbd>Ctrl+w</kbd> <kbd>h j k l</kbd>, identical to Rift's existing split navigation, since browsers intercept Ctrl+W globally</td></tr>
+      <tr><td colspan="2" style="padding-top:6px; color:#6c7086">— inside the regions window —</td></tr>
+      <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>move the list cursor between region entries</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>jump the buffer cursor to that region, focus returns to buffer</td></tr>
+      <tr><td><kbd>x</kbd></td><td>drop that region from the set</td></tr>
+      <tr><td><kbd>q</kbd></td><td>close the regions window</td></tr>
+      <tr><td><kbd>d</kbd> / <kbd>y</kbd></td><td>(buffer focus) act on every banked region as one operation, clears the set</td></tr>
+    </table>
+  </div>
+  <p class="note">
+    Try: <kbd>v3l</kbd><kbd>Esc</kbd> on the first "foo" line, then <kbd>2m</kbd> to bank both "foo"s inside
+    "foofoo" — three independent regions, none merged despite two being adjacent. Then try <kbd>v</kbd> while
+    the cursor sits inside one of them to resume and adjust it instead of starting a new one, and <kbd>o</kbd>
+    mid-selection to swap which end you're dragging.
+  </p>
+  <p class="note">
+    The rest of the buffer is for broader exploration: "total" appears 9 times across two functions — bank one
+    with <kbd>v</kbd> + motion + <kbd>Esc</kbd>, then mash <kbd>m</kbd> to pull in the others one at a time and
+    watch the count climb, or use <kbd>n</kbd>/<kbd>N</kbd> to cycle between regions you've already banked
+    without adding more. "count", "items", and the two "TODO" comments give a few more repeated/adjacent
+    candidates to bank a larger, messier set before opening <kbd>gv</kbd> to prune it down in the regions
+    window.
+  </p>
+</div>
+
+<script>
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function makeCandidate(bufId, statusId, winRegionsId, listId, winBufId) {
+  const bufEl = document.getElementById(bufId);
+  const statusEl = document.getElementById(statusId);
+  const winRegionsEl = document.getElementById(winRegionsId);
+  const listEl = document.getElementById(listId);
+  const winBufEl = document.getElementById(winBufId);
+  const lines = bufEl.textContent.replace(/\n$/, '').split('\n');
+
+  let row = 0, col = 0, inVisual = false, anchorRow = 0, anchorCol = 0;
+  // Regions store the original anchor/cursor row+col (not a normalized
+  // start/end) so a resumed region restores its exact original direction.
+  // Regions are atomic multi-line spans: a 3-line selection banks as ONE
+  // region, not three. Merged regions lose their original anchor side
+  // (lowest offset becomes anchor, highest becomes cursor) since "direction"
+  // stops being meaningful once two independently-created regions combine.
+  let regions = []; // {aRow, aCol, cRow, cCol}
+  let focus = 'buffer'; // 'buffer' | 'regionsWin'
+  let regionsWinOpen = false;
+  let paneCursor = 0;
+
+  function flatten() { return lines.join('\n'); }
+  function flatOffset(r, c) { return lines.slice(0, r).reduce((a, l) => a + l.length + 1, 0) + c; }
+  function fromFlat(off) {
+    let r = 0;
+    while (r < lines.length && off > lines[r].length) { off -= lines[r].length + 1; r++; }
+    return { row: r, col: off };
+  }
+  // Ordered (document-order) endpoints of a region or an in-progress
+  // anchor/cursor pair, as flat offsets plus their row:col breakdown.
+  function orderedSpan(aRow, aCol, cRow, cCol) {
+    const aOff = flatOffset(aRow, aCol), cOff = flatOffset(cRow, cCol);
+    const startOff = Math.min(aOff, cOff), endOff = Math.max(aOff, cOff);
+    return { startOff, endOff, start: fromFlat(startOff), end: fromFlat(endOff) };
+  }
+  function regionSpan(reg) { return orderedSpan(reg.aRow, reg.aCol, reg.cRow, reg.cCol); }
+  function regionText(reg) {
+    const span = regionSpan(reg);
+    return flatten().slice(span.startOff, span.endOff + 1);
+  }
+  function sortedRegions() {
+    return regions.slice().sort((a, b) => regionSpan(a).startOff - regionSpan(b).startOff);
+  }
+  // The highlighted [lo, hi] column range for a single line `r` within a
+  // span -- standard charwise multi-line rule: anchor-side line highlights
+  // from its column to end-of-line, cursor-side line from 0 to its column,
+  // lines strictly between are highlighted in full.
+  function spanRowRange(span, r, lineLen) {
+    if (r < span.start.row || r > span.end.row) return null;
+    if (span.start.row === span.end.row) return [span.start.col, span.end.col];
+    if (r === span.start.row) return [span.start.col, Math.max(span.start.col, lineLen - 1, 0)];
+    if (r === span.end.row) return [0, span.end.col];
+    return [0, Math.max(lineLen - 1, 0)];
+  }
+  function previewText(reg) {
+    const text = regionText(reg).replace(/\n/g, '⏎');
+    return text.length > 48 ? text.slice(0, 45) + '...' : text;
+  }
+
+  function render() {
+    const regionSpans = regions.map(reg => regionSpan(reg));
+    const activeSpan = inVisual ? orderedSpan(anchorRow, anchorCol, row, col) : null;
+    bufEl.innerHTML = lines.map((line, r) => {
+      let out = '';
+      for (let c = 0; c <= line.length; c++) {
+        const ch = c < line.length ? escapeHtml(line[c]) : ' ';
+        let cls = [];
+        regionSpans.forEach((span, i) => {
+          const range = spanRowRange(span, r, line.length);
+          if (range && c >= range[0] && c <= range[1]) cls.push('sel-' + (i % 4));
+        });
+        if (activeSpan) {
+          const range = spanRowRange(activeSpan, r, line.length);
+          if (range && c >= range[0] && c <= range[1]) cls.push('sel-active');
+        }
+        if (focus === 'buffer' && r === row && c === col) cls.push('cursor-normal');
+        out += `<span class="ch ${cls.join(' ')}">${ch}</span>`;
+      }
+      return `<span class="line">${out}</span>`;
+    }).join('\n');
+
+    winBufEl.classList.toggle('focused', focus === 'buffer');
+    winRegionsEl.classList.toggle('focused', focus === 'regionsWin');
+    winRegionsEl.style.display = regionsWinOpen ? '' : 'none';
+
+    const sorted = sortedRegions();
+    listEl.innerHTML = sorted.length === 0
+      ? '<div style="color:#6c7086">(empty)</div>'
+      : sorted.map((reg, i) => {
+          const span = regionSpan(reg);
+          const active = focus === 'regionsWin' && i === paneCursor;
+          const loc = span.start.row === span.end.row
+            ? `${span.start.row}:${span.start.col}-${span.end.col}`
+            : `${span.start.row}:${span.start.col} → ${span.end.row}:${span.end.col}`;
+          return `<div class="entry${active ? ' active' : ''}">${i + 1}: <span class="loc">${loc}</span> "${escapeHtml(previewText(reg))}"</div>`;
+        }).join('');
+  }
+
+  function move(dr, dc) {
+    row = Math.max(0, Math.min(lines.length - 1, row + dr));
+    col = Math.max(0, Math.min(lines[row].length - 1, col + dc));
+  }
+
+  // Single entry point for adding a region to the set. Merges only on true
+  // overlap (shared character, by flat offset) with an existing region --
+  // merely touching regions stay independent. Returns the final region
+  // actually present in the set after merging.
+  function bankRegion(newReg) {
+    let cur = newReg;
+    let mergedAny = true;
+    while (mergedAny) {
+      mergedAny = false;
+      for (let i = 0; i < regions.length; i++) {
+        const a = regionSpan(regions[i]), b = regionSpan(cur);
+        const overlaps = a.startOff <= b.endOff && b.startOff <= a.endOff;
+        if (overlaps) {
+          const startOff = Math.min(a.startOff, b.startOff), endOff = Math.max(a.endOff, b.endOff);
+          const s = fromFlat(startOff), e = fromFlat(endOff);
+          cur = { aRow: s.row, aCol: s.col, cRow: e.row, cCol: e.col };
+          regions.splice(i, 1);
+          mergedAny = true;
+          break;
+        }
+      }
+    }
+    regions.push(cur);
+    return cur;
+  }
+
+  function bankActive() {
+    bankRegion({ aRow: anchorRow, aCol: anchorCol, cRow: row, cCol: col });
+  }
+
+  function cycleRegion(forward) {
+    if (!regions.length) { statusEl.textContent = 'NORMAL — no regions to navigate'; return; }
+    const sorted = sortedRegions();
+    const curOff = flatOffset(row, col);
+    if (forward) {
+      let next = sorted.find(r => regionSpan(r).startOff > curOff);
+      if (!next) next = sorted[0];
+      const s = regionSpan(next).start; row = s.row; col = s.col;
+    } else {
+      let prev = [...sorted].reverse().find(r => regionSpan(r).startOff < curOff);
+      if (!prev) prev = sorted[sorted.length - 1];
+      const s = regionSpan(prev).start; row = s.row; col = s.col;
+    }
+    statusEl.textContent = `NORMAL — moved to region (${regions.length} total)`;
+  }
+
+  function bankOccurrence(forward) {
+    if (!regions.length) { statusEl.textContent = 'NORMAL — bank a region first (v + Esc)'; return; }
+    const last = regions[regions.length - 1];
+    const needle = regionText(last);
+    if (!needle) return;
+    const flat = flatten();
+    const lastOff = regionSpan(last).startOff;
+    let idx;
+    if (forward) {
+      idx = flat.indexOf(needle, lastOff + 1);
+      if (idx === -1) idx = flat.indexOf(needle, 0);
+    } else {
+      idx = flat.lastIndexOf(needle, lastOff - 1);
+      if (idx === -1) idx = flat.lastIndexOf(needle);
+    }
+    if (idx === -1) { statusEl.textContent = `No other occurrence of "${needle}"`; return; }
+    const startOff = idx, endOff = idx + needle.length - 1;
+    const s = fromFlat(startOff), e = fromFlat(endOff);
+    const reg = { aRow: s.row, aCol: s.col, cRow: e.row, cCol: e.col };
+    const alreadyContained = regions.some(r => {
+      const span = regionSpan(r);
+      return span.startOff <= startOff && span.endOff >= endOff;
+    });
+    if (alreadyContained) {
+      statusEl.textContent = `Already banked all occurrences of "${needle}"`;
+      return;
+    }
+    bankRegion(reg);
+    row = s.row; col = s.col;
+    statusEl.textContent = `Banked occurrence of "${needle}" — ${regions.length} total`;
+  }
+
+  // v on a cursor already inside a banked region resumes it (pops it back
+  // out, restores its exact original anchor/cursor direction) instead of
+  // starting a new disjoint region.
+  function enterVisualOrResume() {
+    const curOff = flatOffset(row, col);
+    const existing = regions.find(r => {
+      const span = regionSpan(r);
+      return span.startOff <= curOff && curOff <= span.endOff;
+    });
+    if (existing) {
+      regions = regions.filter(r => r !== existing);
+      inVisual = true;
+      anchorRow = existing.aRow; anchorCol = existing.aCol;
+      row = existing.cRow; col = existing.cCol;
+      statusEl.textContent = `VISUAL — resumed region (${regions.length} still banked)`;
+    } else {
+      inVisual = true; anchorRow = row; anchorCol = col;
+      statusEl.textContent = `VISUAL — ${regions.length} banked`;
+    }
+  }
+
+  let pendingG = false;
+
+  document.addEventListener('keydown', (e) => {
+    if (document.activeElement !== bufEl) return;
+    e.preventDefault();
+    const k = e.key;
+
+    if (pendingG) {
+      pendingG = false;
+      if (k === 'v') {
+        // gv toggles the window closed from either focus -- it always means
+        // "stop looking at the region list," not "open a second one."
+        regionsWinOpen = !regionsWinOpen;
+        if (regionsWinOpen) { focus = 'regionsWin'; paneCursor = 0; statusEl.textContent = `Opened *regions* window — ${regions.length} entries`; }
+        else { focus = 'buffer'; statusEl.textContent = 'Closed *regions* window'; }
+        render();
+        return;
+      }
+    }
+    if (k === 'g' && !inVisual) { pendingG = true; statusEl.textContent = 'NORMAL — staging chord: g'; render(); return; }
+
+    if (focus === 'regionsWin') {
+      const sorted = sortedRegions();
+      const jumpTo = (i) => { const reg = sorted[i]; if (reg) { const s = regionSpan(reg).start; row = s.row; col = s.col; } };
+      if (k === 'j') { paneCursor = Math.min(sorted.length - 1, paneCursor + 1); jumpTo(paneCursor); statusEl.textContent = `Previewing region ${paneCursor + 1}/${sorted.length}`; }
+      else if (k === 'k') { paneCursor = Math.max(0, paneCursor - 1); jumpTo(paneCursor); statusEl.textContent = `Previewing region ${paneCursor + 1}/${sorted.length}`; }
+      else if (k === 'Enter' && sorted.length) {
+        jumpTo(paneCursor); focus = 'buffer';
+        statusEl.textContent = `Jumped to region ${paneCursor + 1}`;
+      } else if (k === 'x' && sorted.length) {
+        const target = sorted[paneCursor];
+        regions = regions.filter(r => r !== target);
+        paneCursor = Math.min(paneCursor, Math.max(0, regions.length - 1));
+        statusEl.textContent = `Removed region — ${regions.length} remaining`;
+      } else if (k === 'q') {
+        regionsWinOpen = false; focus = 'buffer';
+        statusEl.textContent = 'Closed *regions* window';
+      } else if (k === 'd' || k === 'y') {
+        // Operators act on the whole set no matter which window has focus --
+        // the regions list is just a view onto the same set, not a separate context.
+        regionsWinOpen = false; focus = 'buffer';
+        statusEl.textContent = `${k === 'd' ? 'Deleted' : 'Yanked'} ${regions.length} region(s) as one operation — set cleared`;
+        regions = [];
+      } else if (k === 'Tab') {
+        focus = 'buffer';
+        statusEl.textContent = `NORMAL (buffer focus) — ${regions.length} regions banked`;
+      }
+      render();
+      return;
+    }
+
+    // focus === 'buffer'
+    if (k === 'Tab' && regionsWinOpen) { focus = 'regionsWin'; statusEl.textContent = 'PANE focus (*regions* window)'; render(); return; }
+    if (k === 'h') move(0, -1);
+    else if (k === 'l') move(0, 1);
+    else if (k === 'j') move(1, 0);
+    else if (k === 'k') move(-1, 0);
+    else if (k === 'v' && !inVisual) enterVisualOrResume();
+    else if ((k === 'o' || k === 'O') && inVisual) {
+      // Swap which end (row+col) of the active region the cursor is on.
+      // Real blockwise O (swap corner on the same line only) isn't modeled
+      // in this charwise-only demo, so both keys behave identically here.
+      [anchorRow, anchorCol, row, col] = [row, col, anchorRow, anchorCol];
+      statusEl.textContent = 'VISUAL — swapped ends';
+    }
+    else if (k === 'Escape') {
+      if (inVisual) { bankActive(); inVisual = false; statusEl.textContent = `NORMAL — ${regions.length} regions banked`; }
+      else if (regions.length) { regions = []; statusEl.textContent = 'NORMAL — cleared all banked regions'; }
+    } else if (k === 'n' && !inVisual) cycleRegion(true);
+    else if (k === 'N' && !inVisual) cycleRegion(false);
+    else if (k === 'm' && !inVisual) bankOccurrence(true);
+    else if (k === 'M' && !inVisual) bankOccurrence(false);
+    else if (k === 'd' || k === 'y') {
+      if (inVisual) bankActive();
+      inVisual = false;
+      statusEl.textContent = `${k === 'd' ? 'Deleted' : 'Yanked'} ${regions.length} region(s) as one operation — set cleared`;
+      regions = [];
+    }
+    render();
+  });
+
+  render();
+}
+
+makeCandidate('bufFinal', 'statusFinal', 'winRegions', 'regionsListFinal', 'winBuf');
+</script>
+</body>
+</html>

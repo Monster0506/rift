@@ -52,15 +52,17 @@ impl<T: TerminalBackend> Editor<T> {
         match grammar {
             PendingGrammar::ReplaceChar => {
                 if let Key::Char(ch) = key {
-                    let count = if self.pending_count > 0 {
-                        self.pending_count
-                    } else {
-                        1
-                    };
-                    let command = Command::ReplaceChar(ch, count);
-                    let result = self.execute_buffer_command(command);
-                    if result && !self.dot_repeat.is_replaying() {
-                        self.dot_repeat.record_single(command);
+                    if !self.try_run_set_aware_replace_char(ch) {
+                        let count = if self.pending_count > 0 {
+                            self.pending_count
+                        } else {
+                            1
+                        };
+                        let command = Command::ReplaceChar(ch, count);
+                        let result = self.execute_buffer_command(command);
+                        if result && !self.dot_repeat.is_replaying() {
+                            self.dot_repeat.record_single(command);
+                        }
                     }
                 }
                 self.pending_count = 0;

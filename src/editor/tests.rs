@@ -2376,7 +2376,7 @@ fn canonical_change_across_touching_regions_does_not_merge_them() {
 
     assert_eq!(
         editor.active_document().buffer.to_string(),
-        "barbar\n\nbar\n",
+        "bar\n\nbarbar\n",
         "each touching region gets its own independent 'bar', not one merged replacement"
     );
     assert_eq!(editor.current_mode, Mode::Normal);
@@ -2398,4 +2398,148 @@ fn single_region_change_unaffected_by_the_new_batching_branch() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     assert_eq!(editor.active_document().buffer.to_string(), "Xbar");
+}
+
+#[test]
+fn multi_i_inserts_at_start_of_every_region() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
+    assert_eq!(editor.current_mode, Mode::Insert);
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "X01234X56789");
+}
+
+#[test]
+fn multi_a_inserts_after_end_of_every_region() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAfter));
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "0X12345X6789");
+}
+
+#[test]
+fn multi_capital_i_inserts_at_line_start_of_each_region_row() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "aaa\nbbb\nccc");
+    // region inside "bbb" (offset 5, the second 'b') and inside "ccc" (offset 9)
+    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(9, 9, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAtLineStart));
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "aaa\nXbbb\nXccc");
+}
+
+#[test]
+fn multi_capital_a_inserts_at_line_end_of_each_region_row() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "aaa\nbbb\nccc");
+    editor.active_document().selection_set.bank(Region::new(4, 4, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(8, 8, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAtLineEnd));
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "aaa\nbbbX\ncccX");
+}
+
+#[test]
+fn multi_o_opens_a_new_line_below_each_region_row() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "aaa\nbbb\nccc");
+    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(4, 4, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::OpenLineBelow));
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "aaa\nX\nbbb\nX\nccc");
+}
+
+#[test]
+fn multi_capital_o_opens_a_new_line_above_each_region_row() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "aaa\nbbb\nccc");
+    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(4, 4, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::OpenLineAbove));
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "X\naaa\nX\nbbb\nccc");
+}
+
+#[test]
+fn plain_i_with_empty_set_is_unaffected() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello");
+    editor.active_document().buffer.set_cursor(2).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
+
+    assert_eq!(editor.current_mode, Mode::Insert);
+    assert_eq!(editor.active_document().buffer.cursor(), 2, "ordinary i must still anchor at the live cursor");
+}
+
+#[test]
+fn set_aware_replace_char_fills_each_region_to_its_own_length() {
+    use crate::action::{Action, EditorAction};
+    use crate::key::Key;
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise)); // len 2
+    editor.active_document().selection_set.bank(Region::new(5, 8, RangeKind::Charwise)); // len 4
+
+    editor.handle_action(&Action::Editor(EditorAction::ReplaceCharPending));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('x'));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "xx234xxxx9");
+    assert!(editor.active_document().selection_set.is_empty());
 }

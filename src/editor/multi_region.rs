@@ -3,6 +3,21 @@
 use super::Editor;
 use crate::term::TerminalBackend;
 
+/// Char offset of the start of `row`.
+fn line_start_offset(buf: &crate::buffer::TextBuffer, row: usize) -> usize {
+    buf.line_index.get_start(row).unwrap_or(0)
+}
+
+/// Char offset of the end of `row` (trailing newline or buffer's end).
+/// Mirrors `clipboard::capture_text`'s Linewise guarded pattern.
+fn line_end_offset(buf: &crate::buffer::TextBuffer, row: usize) -> usize {
+    if row + 1 < buf.get_total_lines() {
+        buf.line_index.get_start(row + 1).unwrap_or(buf.len()).saturating_sub(1)
+    } else {
+        buf.len()
+    }
+}
+
 impl<T: TerminalBackend> Editor<T> {
     /// `n`/`N` when the `SelectionSet` is non-empty: cycle the cursor
     /// between banked regions instead of repeat-find/search (design.md S3,
@@ -107,6 +122,57 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
+    /// `i`/`a`/`I`/`A`/`o`/`O` against non-empty `SelectionSet`: enter
+    /// multi-insert instead of single-cursor path; `false` if empty or unhandled.
+    pub(super) fn try_multi_insert_for_command(&mut self, entry: crate::command::Command) -> bool {
+        use crate::command::Command;
+
+        let is_empty = self
+            .document_manager
+            .active_document()
+            .map(|d| d.selection_set.is_empty())
+            .unwrap_or(true);
+        if is_empty {
+            return false;
+        }
+
+        match entry {
+            Command::EnterInsertMode => {
+                self.enter_multi_insert(entry, |doc, region| region.buffer_span(&doc.buffer).0)
+            }
+            Command::EnterInsertModeAfter => {
+                self.enter_multi_insert(entry, |doc, region| region.buffer_span(&doc.buffer).1)
+            }
+            Command::EnterInsertModeAtLineStart => self.enter_multi_insert(entry, |doc, region| {
+                let (start, _) = region.buffer_span(&doc.buffer);
+                let row = doc.buffer.line_index.get_line_at(start);
+                line_start_offset(&doc.buffer, row)
+            }),
+            Command::EnterInsertModeAtLineEnd => self.enter_multi_insert(entry, |doc, region| {
+                let (_, end) = region.buffer_span(&doc.buffer);
+                let row = doc.buffer.line_index.get_line_at(end.saturating_sub(1));
+                line_end_offset(&doc.buffer, row)
+            }),
+            Command::OpenLineBelow => self.enter_multi_insert(entry, |doc, region| {
+                let (_, end) = region.buffer_span(&doc.buffer);
+                let row = doc.buffer.line_index.get_line_at(end.saturating_sub(1));
+                let target = line_end_offset(&doc.buffer, row);
+                let _ = doc.buffer.set_cursor(target);
+                let _ = doc.insert_char('\n');
+                doc.buffer.cursor()
+            }),
+            Command::OpenLineAbove => self.enter_multi_insert(entry, |doc, region| {
+                let (start, _) = region.buffer_span(&doc.buffer);
+                let row = doc.buffer.line_index.get_line_at(start);
+                let target = line_start_offset(&doc.buffer, row);
+                let _ = doc.buffer.set_cursor(target);
+                let _ = doc.insert_char('\n');
+                target
+            }),
+            _ => false,
+        }
+    }
+
     /// `d`/`y` (and `c`, Task 14) against a non-empty `SelectionSet`: run the
     /// whole banked set as one batch instead of entering `OperatorPending`
     /// for a single motion. Returns `false` if the set is empty so the
@@ -159,6 +225,30 @@ impl<T: TerminalBackend> Editor<T> {
                 })
             }
         }
+    }
+
+    /// `r<ch>` against a non-empty `SelectionSet`: fill each region's exact
+    /// range with `ch`, ignoring any numeric count (design.md S5.3).
+    pub(super) fn try_run_set_aware_replace_char(&mut self, ch: char) -> bool {
+        let is_empty = self
+            .document_manager
+            .active_document()
+            .map(|d| d.selection_set.is_empty())
+            .unwrap_or(true);
+        if is_empty {
+            return false;
+        }
+        self.apply_to_each_region(|editor, region| {
+            let Some(doc) = editor.document_manager.active_document_mut() else {
+                return false;
+            };
+            let (start, end) = region.buffer_span(&doc.buffer);
+            let count = end.saturating_sub(start);
+            if count == 0 {
+                return false;
+            }
+            doc.replace_repeat(start, count, ch).is_ok()
+        })
     }
 
     /// Replay the just-finished Insert session at every pending anchor; must run

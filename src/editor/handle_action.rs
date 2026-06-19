@@ -134,26 +134,44 @@ impl<T: TerminalBackend> Editor<T> {
                 consumed
             }
             EditorAction::EnterInsertMode => {
+                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertMode) {
+                    return true;
+                }
                 self.handle_mode_management(crate::command::Command::EnterInsertMode);
                 true
             }
             EditorAction::EnterInsertModeAfter => {
+                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAfter) {
+                    return true;
+                }
                 self.handle_mode_management(crate::command::Command::EnterInsertModeAfter);
                 true
             }
             EditorAction::EnterInsertModeAtLineStart => {
+                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineStart) {
+                    return true;
+                }
                 self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineStart);
                 true
             }
             EditorAction::EnterInsertModeAtLineEnd => {
+                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineEnd) {
+                    return true;
+                }
                 self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineEnd);
                 true
             }
             EditorAction::OpenLineBelow => {
+                if self.try_multi_insert_for_command(crate::command::Command::OpenLineBelow) {
+                    return true;
+                }
                 self.handle_mode_management(crate::command::Command::OpenLineBelow);
                 true
             }
             EditorAction::OpenLineAbove => {
+                if self.try_multi_insert_for_command(crate::command::Command::OpenLineAbove) {
+                    return true;
+                }
                 self.handle_mode_management(crate::command::Command::OpenLineAbove);
                 true
             }
