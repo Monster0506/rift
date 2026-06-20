@@ -116,6 +116,9 @@ pub enum BufferKind {
         source_doc_id: DocumentId,
         entries: Vec<LocationEntry>,
     },
+    /// `gv` regions window: a read-only list of the active document's
+    /// banked `SelectionSet`, one line per region.
+    Regions { source_doc_id: DocumentId },
 }
 
 impl BufferKind {
@@ -130,6 +133,7 @@ impl BufferKind {
             BufferKind::Clipboard { .. } => "clipboard",
             BufferKind::ClipboardEntry { .. } => "clipboard_entry",
             BufferKind::LocationList { .. } => "location_list",
+            BufferKind::Regions { .. } => "regions",
         }
     }
 }

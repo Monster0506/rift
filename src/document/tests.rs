@@ -2087,3 +2087,36 @@ fn sync_selection_annotations_replaces_previous_call() {
     let count = doc.annotations.query_kind("ui.selection").count();
     assert_eq!(count, 0);
 }
+
+#[test]
+fn populate_regions_buffer_writes_one_line_per_region() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut source = TextBuffer::new(20).unwrap();
+    source.insert_str("hello\nworld").unwrap();
+    let regions = vec![
+        Region::new(0, 4, RangeKind::Charwise), // "hello"
+        Region::new(6, 10, RangeKind::Charwise), // "world"
+    ];
+
+    let mut doc = Document::new(1).unwrap();
+    doc.populate_regions_buffer(&source, &regions);
+
+    let content = doc.buffer.to_string();
+    let lines: Vec<&str> = content.lines().collect();
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].contains("0:0"), "row:col for the first region; got {:?}", lines[0]);
+    assert!(lines[0].contains("hello"));
+    assert!(lines[1].contains("1:0"));
+    assert!(lines[1].contains("world"));
+}
+
+#[test]
+fn populate_regions_buffer_with_no_regions_shows_empty_placeholder() {
+    let source = TextBuffer::new(10).unwrap();
+    let mut doc = Document::new(1).unwrap();
+    doc.populate_regions_buffer(&source, &[]);
+
+    assert_eq!(doc.buffer.to_string(), "(empty)");
+}
