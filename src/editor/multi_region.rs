@@ -369,4 +369,16 @@ impl<T: TerminalBackend> Editor<T> {
         }
         self.dot_repeat.set_replaying(false);
     }
+
+    /// Finalize the accumulated selection-building actions into a
+    /// `DotRegister::RegionBuildSession`, if anything was recorded.
+    pub(super) fn finish_region_build(&mut self, follow_up: Option<crate::action::Action>) {
+        if self.region_build_recording.is_empty() {
+            return;
+        }
+        let actions = std::mem::take(&mut self.region_build_recording);
+        if !self.dot_repeat.is_replaying() {
+            self.dot_repeat.record_region_build_session(actions, follow_up);
+        }
+    }
 }

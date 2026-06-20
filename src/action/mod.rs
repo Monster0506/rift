@@ -420,6 +420,9 @@ pub enum EditorAction {
     RegionBankOccurrenceNext,
     /// `M` (Normal): bank the previous occurrence of the last-banked region's text.
     RegionBankOccurrencePrev,
+    /// Dot-repeat follow-up for `sg`: re-wrap rebuilt regions with `ch`.
+    /// Synthetic action, not reachable from keymap.
+    AddSurroundToSet { ch: char, delim_count: usize },
 }
 
 /// Represents an action in the editor

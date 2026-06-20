@@ -2676,6 +2676,57 @@ fn multi_insert_is_one_undo_step() {
 }
 
 #[test]
+fn region_build_actions_accumulate_while_visual_and_during_bank_occurrence() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo bar foo");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext));
+
+    assert_eq!(
+        editor.region_build_recording,
+        vec![
+            Action::Editor(EditorAction::EnterVisualChar),
+            Action::Editor(EditorAction::Move(crate::action::Motion::Right)),
+            Action::Editor(EditorAction::Move(crate::action::Motion::Right)),
+            Action::Editor(EditorAction::EnterNormalMode),
+            Action::Editor(EditorAction::RegionBankOccurrenceNext),
+        ]
+    );
+}
+
+#[test]
+fn region_build_recording_does_not_capture_plain_normal_mode_navigation() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "line one\nline two\nline three");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    // Plain navigation between bank operations is not part of the
+    // recorded sequence; "." rebuilds relative to the cursor's new position.
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Down)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Down)));
+
+    assert_eq!(
+        editor.region_build_recording,
+        vec![
+            Action::Editor(EditorAction::EnterVisualChar),
+            Action::Editor(EditorAction::EnterNormalMode),
+        ],
+        "plain Normal-mode Move actions must not be recorded"
+    );
+}
+
+#[test]
 fn multi_region_put_is_one_undo_step() {
     use crate::action::{Action, EditorAction};
     use crate::selection::Region;
@@ -2692,4 +2743,98 @@ fn multi_region_put_is_one_undo_step() {
 
     assert!(editor.active_document().undo());
     assert_eq!(editor.active_document().buffer.to_string(), "0123456789");
+}
+
+#[test]
+fn dot_repeat_destructive_group_reselects_without_reexecuting() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "(a) (b)");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    assert_eq!(editor.active_document().buffer.to_string(), " (b)");
+    assert!(editor.active_document().selection_set.is_empty());
+
+    editor.active_document().buffer.set_cursor(1).unwrap(); // land inside "(b)"
+    editor.execute_dot_repeat();
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        " (b)",
+        "destructive group: '.' must NOT re-delete"
+    );
+    assert_eq!(
+        editor.active_document().selection_set.regions.len(),
+        1,
+        "but the equivalent region must be rebanked for manual review"
+    );
+}
+
+#[test]
+fn dot_repeat_non_destructive_group_rebuilds_and_reexecutes() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "aaa\nbbb");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAtLineStart));
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    assert_eq!(editor.active_document().buffer.to_string(), "Xaaa\nbbb");
+
+    let bbb_offset = editor.active_document().buffer.to_string().find('b').unwrap();
+    editor.active_document().buffer.set_cursor(bbb_offset).unwrap();
+    editor.execute_dot_repeat();
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "Xaaa\nXbbb",
+        "non-destructive group: '.' rebuilds AND re-runs the insert"
+    );
+}
+
+#[test]
+fn dot_repeat_sg_fully_replays_using_addsurroundtoset() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo\nbar");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode)); // banks "foo" (0..2)
+
+    editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, crate::key::Key::Char('g'));
+    editor.pending_grammar = Some(pending_grammar::PendingGrammar::AddSurroundChar {
+        motion: Motion::NextWord, // ignored by the set-aware path
+        count: 1,
+        delim_count: 1,
+    });
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, crate::key::Key::Char('"'));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "\"foo\"\nbar");
+
+    let bar_offset = editor.active_document().buffer.to_string().find("bar").unwrap();
+    editor.active_document().buffer.set_cursor(bar_offset).unwrap();
+    editor.execute_dot_repeat();
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "\"foo\"\n\"bar\"",
+        "'.' rebuilds the equivalent region at the new cursor AND re-wraps it -- sg fully replays, unlike d/c/y/sd/sc"
+    );
 }

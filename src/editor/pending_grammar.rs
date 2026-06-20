@@ -63,6 +63,8 @@ impl<T: TerminalBackend> Editor<T> {
                         if result && !self.dot_repeat.is_replaying() {
                             self.dot_repeat.record_single(command);
                         }
+                    } else {
+                        self.finish_region_build(Some(Action::Editor(EditorAction::ReplaceCharPending)));
                     }
                 }
                 self.pending_count = 0;
@@ -120,6 +122,8 @@ impl<T: TerminalBackend> Editor<T> {
                         if result && !self.dot_repeat.is_replaying() {
                             self.dot_repeat.record_single(command);
                         }
+                    } else {
+                        self.finish_region_build(None);
                     }
                 }
                 self.pending_count = 0;
@@ -141,6 +145,8 @@ impl<T: TerminalBackend> Editor<T> {
                         if result && !self.dot_repeat.is_replaying() {
                             self.dot_repeat.record_single(command);
                         }
+                    } else {
+                        self.finish_region_build(None);
                     }
                 }
                 self.pending_count = 0;
@@ -158,6 +164,10 @@ impl<T: TerminalBackend> Editor<T> {
                         if result && !self.dot_repeat.is_replaying() {
                             self.dot_repeat.record_single(command);
                         }
+                    } else {
+                        self.finish_region_build(Some(Action::Editor(
+                            EditorAction::AddSurroundToSet { ch, delim_count },
+                        )));
                     }
                 }
                 self.pending_count = 0;

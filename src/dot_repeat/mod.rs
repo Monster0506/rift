@@ -15,6 +15,13 @@ pub(crate) enum DotRegister {
         entry: Command,
         commands: Vec<Command>,
     },
+    /// The selection-building actions (`v`/motion/`Esc`, `m`/`M`) that
+    /// constructed a `SelectionSet`, plus what to do once it's rebuilt:
+    /// `Some(action)` re-runs that action; `None` stops with the set banked.
+    RegionBuildSession {
+        actions: Vec<crate::action::Action>,
+        follow_up: Option<crate::action::Action>,
+    },
 }
 
 /// Temporary state for recording an insert session in progress
@@ -59,6 +66,16 @@ impl DotRepeat {
     /// Store a single normal-mode command in the register.
     pub fn record_single(&mut self, cmd: Command) {
         self.register = Some(DotRegister::Single(cmd));
+    }
+
+    /// Store a region-build session: the actions that constructed a
+    /// `SelectionSet`, plus what to do once `.` rebuilds it.
+    pub fn record_region_build_session(
+        &mut self,
+        actions: Vec<crate::action::Action>,
+        follow_up: Option<crate::action::Action>,
+    ) {
+        self.register = Some(DotRegister::RegionBuildSession { actions, follow_up });
     }
 
     /// Begin recording an insert session with the given entry command.

@@ -215,6 +215,16 @@ impl<T: TerminalBackend> Editor<T> {
                     self.set_mode(Mode::Normal);
                 }
             }
+            DotRegister::RegionBuildSession { actions, follow_up } => {
+                // Rebuild relative to the current cursor by replaying the
+                // recorded actions; count doesn't apply (would re-bank).
+                for action in &actions {
+                    self.handle_action(action);
+                }
+                if let Some(follow_up) = &follow_up {
+                    self.handle_action(follow_up);
+                }
+            }
         }
 
         self.dot_repeat.set_replaying(false);

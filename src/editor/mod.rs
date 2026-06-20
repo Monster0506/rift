@@ -149,6 +149,10 @@ pub struct Editor<T: TerminalBackend> {
     /// Insert anchors still waiting for the recorded session to replay at,
     /// once the live-typed Insert session at the first anchor finishes.
     pub(super) pending_multi_insert_anchors: Vec<usize>,
+    /// Selection-building actions accumulated since the last time a
+    /// set-aware command consumed the set (finalized by Task 22 into
+    /// `DotRegister::RegionBuildSession`).
+    pub(super) region_build_recording: Vec<crate::action::Action>,
     /// Cached display map keyed by (doc_id, buffer_revision, content_width).
     /// Avoids rebuilding the soft-wrap map on every command when the buffer hasn't changed.
     display_map_cache: Option<(

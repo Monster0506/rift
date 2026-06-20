@@ -40,6 +40,20 @@ impl<T: TerminalBackend> Editor<T> {
             self.post_paste_state = None;
         }
 
+        // Accumulate selection-building actions for dot-repeat (S5.9). A
+        // plain Normal-mode Move is navigation, not selection-building.
+        let is_region_building = matches!(
+            editor_action,
+            EditorAction::EnterVisualChar
+                | EditorAction::EnterVisualLine
+                | EditorAction::EnterVisualBlock
+                | EditorAction::RegionBankOccurrenceNext
+                | EditorAction::RegionBankOccurrencePrev
+        ) || self.current_mode.is_visual();
+        if is_region_building && !self.dot_repeat.is_replaying() {
+            self.region_build_recording.push(action.clone());
+        }
+
         match editor_action {
             EditorAction::Move(motion) => {
                 use crate::action::Motion;
@@ -135,6 +149,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::EnterInsertMode => {
                 if self.try_multi_insert_for_command(crate::command::Command::EnterInsertMode) {
+                    self.finish_region_build(Some(action.clone()));
                     return true;
                 }
                 self.handle_mode_management(crate::command::Command::EnterInsertMode);
@@ -142,6 +157,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::EnterInsertModeAfter => {
                 if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAfter) {
+                    self.finish_region_build(Some(action.clone()));
                     return true;
                 }
                 self.handle_mode_management(crate::command::Command::EnterInsertModeAfter);
@@ -149,6 +165,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::EnterInsertModeAtLineStart => {
                 if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineStart) {
+                    self.finish_region_build(Some(action.clone()));
                     return true;
                 }
                 self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineStart);
@@ -156,6 +173,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::EnterInsertModeAtLineEnd => {
                 if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineEnd) {
+                    self.finish_region_build(Some(action.clone()));
                     return true;
                 }
                 self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineEnd);
@@ -163,6 +181,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::OpenLineBelow => {
                 if self.try_multi_insert_for_command(crate::command::Command::OpenLineBelow) {
+                    self.finish_region_build(Some(action.clone()));
                     return true;
                 }
                 self.handle_mode_management(crate::command::Command::OpenLineBelow);
@@ -170,6 +189,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::OpenLineAbove => {
                 if self.try_multi_insert_for_command(crate::command::Command::OpenLineAbove) {
+                    self.finish_region_build(Some(action.clone()));
                     return true;
                 }
                 self.handle_mode_management(crate::command::Command::OpenLineAbove);
@@ -197,6 +217,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.visual_anchor = None;
                 } else if let Some(doc) = self.document_manager.active_document_mut() {
                     doc.selection_set.clear();
+                    self.region_build_recording.clear();
                 }
                 if self.current_mode == Mode::Insert || self.current_mode == Mode::Replace {
                     // Finalize insert recording for dot-repeat
@@ -472,6 +493,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.set_mode(Mode::Normal);
                 }
                 if self.try_run_set_aware_operator(*op) {
+                    self.finish_region_build(None);
                     return true;
                 }
                 if self.current_mode == Mode::OperatorPending {
@@ -588,6 +610,7 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::Put { before } => {
                 if let Some(text) = self.clipboard_ring.most_recent().map(|s| s.to_owned()) {
                     if self.try_run_set_aware_put(*before, &text) {
+                        self.finish_region_build(Some(action.clone()));
                         return true;
                     }
                     let original_cursor = self
@@ -647,6 +670,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .and_then(|mut cb| cb.get_text().ok());
                 if let Some(text) = text {
                     if self.try_run_set_aware_put(*before, &text) {
+                        self.finish_region_build(Some(action.clone()));
                         return true;
                     }
                     self.insert_text_at_cursor(&text, *before)
@@ -973,6 +997,9 @@ impl<T: TerminalBackend> Editor<T> {
                         false
                     }
                 }
+            }
+            EditorAction::AddSurroundToSet { ch, delim_count } => {
+                self.try_run_set_aware_add_surround(*ch, *delim_count)
             }
         }
     }
