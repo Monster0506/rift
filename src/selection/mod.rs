@@ -148,7 +148,10 @@ impl SelectionSet {
         if last.kind == RangeKind::Blockwise {
             return None;
         }
-        let (last_start, last_end) = last.span();
+        // buffer_span, not span: Linewise must match the whole line's text,
+        // not the raw anchor/cursor range (which collapses to one char when
+        // anchor == cursor, e.g. right after pressing V without moving).
+        let (last_start, last_end) = last.buffer_span(buf);
         let needle: String = buf.chars(last_start..last_end).map(|c| c.to_string()).collect();
         if needle.is_empty() {
             return None;
@@ -163,7 +166,7 @@ impl SelectionSet {
         let new_start = m.range.start;
         let new_end = m.range.end.saturating_sub(1);
         let already_contained = self.regions.iter().any(|r| {
-            let (s, e) = r.span();
+            let (s, e) = r.buffer_span(buf);
             s <= new_start && new_end < e
         });
         if already_contained {

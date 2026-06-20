@@ -66,6 +66,9 @@ impl<T: TerminalBackend> Editor<T> {
             }
             ExecutionResult::Redraw => {
                 self.state.clear_command_line();
+                // :s mutates the doc directly, skipping the sync reparse trigger;
+                // a no-op for non-mutating Redraw commands like :redraw/:nohl.
+                self.do_incremental_syntax_parse();
                 if let Err(e) = self.force_full_redraw() {
                     self.state.handle_error(e);
                 }

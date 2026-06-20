@@ -2074,6 +2074,54 @@ fn sync_selection_annotations_creates_one_entry_per_banked_region_plus_active() 
 }
 
 #[test]
+fn sync_selection_annotations_active_region_uses_a_visible_contrasting_blue() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut doc = Document::new(1).unwrap();
+    doc.buffer.insert_str("hello world").unwrap();
+
+    doc.sync_selection_annotations(Some(Region::new(0, 2, RangeKind::Charwise)), &[]);
+
+    let active = doc.annotations.query_kind("ui.selection.active").next().unwrap();
+    let style = active.presentation.as_ref().unwrap().style.as_ref().unwrap();
+    assert_ne!(
+        style.bg,
+        Some(crate::color::Color::Blue),
+        "ANSI Blue renders as a dark, easily-missed navy in most terminal themes"
+    );
+    assert!(style.fg.is_some(), "active selection must set an explicit contrasting foreground");
+}
+
+#[test]
+fn sync_selection_annotations_banked_regions_all_share_the_same_blue_as_active() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut doc = Document::new(1).unwrap();
+    doc.buffer.insert_str("0123456789").unwrap();
+
+    let banked = vec![
+        Region::new(0, 1, RangeKind::Charwise),
+        Region::new(3, 4, RangeKind::Charwise),
+        Region::new(6, 7, RangeKind::Charwise),
+    ];
+    doc.sync_selection_annotations(None, &banked);
+
+    let styles: Vec<_> = doc
+        .annotations
+        .query_kind("ui.selection.banked")
+        .map(|a| a.presentation.as_ref().unwrap().style.unwrap())
+        .collect();
+    assert_eq!(styles.len(), 3);
+    let first = styles[0];
+    assert!(
+        styles.iter().all(|s| *s == first),
+        "every banked region must share one consistent color, not a rainbow per index"
+    );
+}
+
+#[test]
 fn sync_selection_annotations_replaces_previous_call() {
     use crate::selection::Region;
     use crate::wrap::RangeKind;

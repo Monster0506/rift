@@ -1913,6 +1913,61 @@ fn undo_keeps_syntax_tree_for_incremental_reuse() {
     );
 }
 
+#[cfg(feature = "treesitter")]
+#[test]
+fn set_aware_delete_keeps_syntax_highlights_in_sync() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::buffer::api::BufferView;
+    use crate::syntax::build_syntax;
+    use std::sync::Arc;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "fn main() {}\nfn extra() {}\n");
+
+    let loader = editor.language_loader.clone();
+    let loaded = loader.load_language("rust").expect("rust grammar");
+    let highlights_query = loader
+        .load_query("rust", "highlights")
+        .ok()
+        .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+        .map(Arc::new);
+    let syntax = build_syntax(loaded, highlights_query, loader.clone()).expect("build_syntax");
+    editor.active_document().set_syntax(syntax);
+    editor.do_incremental_syntax_parse();
+
+    // Bank both "fn ... {}" lines via Visual mode (the multi-region path
+    // exercised by d/c/y/r/sg/p, not a direct handle-rolled buffer edit).
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualLine));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    let second_line_start = editor.active_document().buffer.line_start(1);
+    editor.active_document().buffer.set_cursor(second_line_start).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualLine));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    assert_eq!(editor.active_document().buffer.to_string(), "");
+
+    let after_set_aware_delete = editor
+        .active_document()
+        .syntax
+        .as_ref()
+        .unwrap()
+        .highlights(None);
+
+    // Ground truth: force a full reparse of the (now-empty) buffer directly.
+    let source = editor.active_document().buffer.to_logical_bytes();
+    let syntax = editor.active_document().syntax.as_mut().unwrap();
+    syntax.invalidate_trees();
+    assert!(syntax.incremental_parse(&source));
+    let fresh_highlights = syntax.highlights(None);
+
+    assert_eq!(
+        after_set_aware_delete, fresh_highlights,
+        "set-aware delete must trigger a sync reparse, not leave the tree stale"
+    );
+}
+
 #[test]
 fn visual_char_enters_mode_and_anchors_at_cursor() {
     use crate::action::{Action, EditorAction};
@@ -3207,3 +3262,88 @@ fn cycle_paste_after_set_clears_only_touches_the_single_most_recent_position() {
     );
 }
 
+#[test]
+fn real_keymap_v_then_l_renders_a_visible_highlight_in_the_composited_cells() {
+    use crate::key::Key;
+    use crate::keymap::{KeyContext, MatchResult};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    let feed_key = |editor: &mut Editor<MockTerminal>, key: Key| {
+        let context = if editor.current_mode.is_visual() {
+            KeyContext::Visual
+        } else {
+            KeyContext::Normal
+        };
+        match editor.keymap.lookup(context, &[key]) {
+            MatchResult::Exact(action) | MatchResult::Ambiguous(action) => {
+                let action = action.clone();
+                editor.handle_action(&action);
+            }
+            other => panic!("key {key:?} in context {context:?} did not resolve: {other:?}"),
+        }
+    };
+
+    // Drive through the real keymap (not handle_action directly) so this
+    // catches keymap/context wiring gaps, not just annotation logic.
+    feed_key(&mut editor, Key::Char('v'));
+    feed_key(&mut editor, Key::Char('l'));
+
+    editor.update_and_render().unwrap();
+
+    let cols = editor.render_system.compositor.cols();
+    let cells = editor.render_system.compositor.get_composited_slice();
+    let highlighted = cells[..cols]
+        .iter()
+        .filter(|c| matches!(c.bg, Some(crate::color::Color::Rgb { r: 100, g: 160, b: 220 })))
+        .count();
+    assert_eq!(highlighted, 2, "v then l must highlight exactly the 2 selected chars 'h','e'");
+}
+
+#[test]
+fn visual_highlight_redraws_on_a_frame_after_the_initial_one() {
+    use crate::key::Key;
+    use crate::keymap::{KeyContext, MatchResult};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    // Render once first, mirroring the real run loop's initial-open render --
+    // ContentDrawState's redraw check only catches an annotation-only change
+    // (no buffer edit, no scroll) if something hashes the annotation spans.
+    editor.update_and_render().unwrap();
+
+    let feed_key = |editor: &mut Editor<MockTerminal>, key: Key| {
+        let context = if editor.current_mode.is_visual() {
+            KeyContext::Visual
+        } else {
+            KeyContext::Normal
+        };
+        match editor.keymap.lookup(context, &[key]) {
+            MatchResult::Exact(action) | MatchResult::Ambiguous(action) => {
+                let action = action.clone();
+                editor.handle_action(&action);
+            }
+            other => panic!("key {key:?} did not resolve: {other:?}"),
+        }
+    };
+
+    feed_key(&mut editor, Key::Char('v'));
+    feed_key(&mut editor, Key::Char('l'));
+
+    editor.update_and_render().unwrap();
+
+    let cols = editor.render_system.compositor.cols();
+    let cells = editor.render_system.compositor.get_composited_slice();
+    let highlighted = cells[..cols]
+        .iter()
+        .filter(|c| matches!(c.bg, Some(crate::color::Color::Rgb { r: 100, g: 160, b: 220 })))
+        .count();
+    assert_eq!(
+        highlighted, 2,
+        "selection highlight must redraw on a later frame, not just the first ever render"
+    );
+}

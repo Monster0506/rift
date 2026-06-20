@@ -4,12 +4,12 @@
 use super::Document;
 use crate::selection::Region;
 
-const BANKED_COLORS: [crate::color::Color; 4] = [
-    crate::color::Color::Yellow,
-    crate::color::Color::Green,
-    crate::color::Color::Magenta,
-    crate::color::Color::Cyan,
-];
+// 24-bit RGB for the widest color range (confirmed truecolor-capable
+// terminal); not the ANSI named Blue, which renders as a dark, easy-to-miss
+// navy. Banked and active regions share this color so the selection reads
+// as one consistent highlight, not a rainbow.
+const SELECTION_BG: crate::color::Color = crate::color::Color::Rgb { r: 100, g: 160, b: 220 };
+const SELECTION_FG: crate::color::Color = crate::color::Color::Black;
 
 impl Document {
     /// Mirror the active + banked selection regions into `ui.selection.*`
@@ -19,20 +19,21 @@ impl Document {
 
         self.annotations.clear_by_kind_prefix("ui.selection");
 
-        for (i, region) in banked.iter().enumerate() {
+        let banked_style = StyleOverride {
+            fg: Some(SELECTION_FG),
+            bg: Some(SELECTION_BG),
+            ..Default::default()
+        };
+        for region in banked {
             let (start_char, end_char) = region.buffer_span(&self.buffer);
             let start = self.buffer.char_to_byte(start_char);
             let end = self.buffer.char_to_byte(end_char);
             if start >= end {
                 continue;
             }
-            let style = StyleOverride {
-                bg: Some(BANKED_COLORS[i % BANKED_COLORS.len()]),
-                ..Default::default()
-            };
             self.annotations.add(
                 Annotation::new(Kind::new("ui.selection.banked"), Anchor::range(start, end), AnnotationOwner::System)
-                    .with_presentation(Presentation::with_style(style).with_priority(4)),
+                    .with_presentation(Presentation::with_style(banked_style).with_priority(4)),
             );
         }
 
@@ -42,7 +43,8 @@ impl Document {
             let end = self.buffer.char_to_byte(end_char);
             if start < end {
                 let style = StyleOverride {
-                    bg: Some(crate::color::Color::Blue),
+                    fg: Some(SELECTION_FG),
+                    bg: Some(SELECTION_BG),
                     ..Default::default()
                 };
                 self.annotations.add(

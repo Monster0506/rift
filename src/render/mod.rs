@@ -58,6 +58,10 @@ pub struct ContentDrawState {
     /// Hash of the active conceal ranges (which depend on the cursor line), so
     /// moving onto/off a concealed line redraws. Zero when nothing is concealed.
     pub conceal_hash: u64,
+    /// Hash of the generic annotation presentation spans (ui.selection.*,
+    /// ui.link, etc.) so changes to them (e.g. Visual-mode selection) redraw
+    /// even when no buffer edit or scroll occurred.
+    pub annotation_styles_hash: u64,
     /// Theme/Color context
     pub editor_bg: Option<crate::color::Color>,
     pub editor_fg: Option<crate::color::Color>,

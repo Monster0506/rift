@@ -143,6 +143,9 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.active_document_mut() {
             doc.commit_transaction();
         }
+        // Each region edits the doc directly, bypassing execute_buffer_command's
+        // sync reparse trigger -- without this, tree-sitter highlights go stale.
+        self.do_incremental_syntax_parse();
         any
     }
 
@@ -179,6 +182,9 @@ impl<T: TerminalBackend> Editor<T> {
             }
             anchors
         };
+        // anchor_for mutates the doc directly (e.g. Change's deletion, O/o's
+        // newline), bypassing execute_buffer_command's sync reparse trigger.
+        self.do_incremental_syntax_parse();
         let mut anchors = anchors;
         let first = anchors.remove(0);
         self.pending_multi_insert_anchors = anchors;

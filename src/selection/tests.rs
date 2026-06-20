@@ -118,6 +118,19 @@ fn bank_occurrence_disabled_for_blockwise() {
 }
 
 #[test]
+fn bank_occurrence_matches_the_whole_line_for_linewise_not_one_char() {
+    let mut buf = TextBuffer::new(20).unwrap();
+    buf.insert_str("foo\nbar\nfoo\n").unwrap();
+    let mut set = SelectionSet::default();
+    // V at the line start with no movement: anchor == cursor == 0. Using
+    // span() instead of buffer_span() would collapse the needle to "f".
+    set.bank(Region::new(0, 0, RangeKind::Linewise));
+    let (found, needle) = set.bank_occurrence(&buf, true).unwrap();
+    assert_eq!(needle, "foo\n");
+    assert_eq!(found.buffer_span(&buf), (8, 12));
+}
+
+#[test]
 fn blockwise_regions_only_merge_with_other_blockwise_overlap() {
     let mut set = SelectionSet::default();
     set.bank(Region::new(0, 5, RangeKind::Blockwise));
