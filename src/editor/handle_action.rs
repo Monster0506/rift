@@ -958,6 +958,7 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::EnterVisualChar => self.enter_visual_or_resume(Mode::Visual),
             EditorAction::EnterVisualLine => self.enter_visual_or_resume(Mode::VisualLine),
             EditorAction::EnterVisualBlock => self.enter_visual_or_resume(Mode::VisualBlock),
+            EditorAction::ExpandRegion => self.expand_active_region(),
             EditorAction::VisualSwapEnds => {
                 let Some(anchor) = self.visual_anchor else { return false };
                 let Some(doc) = self.document_manager.active_document_mut() else { return false };
@@ -1017,12 +1018,14 @@ impl<T: TerminalBackend> Editor<T> {
             if region.kind == kind {
                 self.visual_anchor = Some(region.anchor);
                 let _ = doc.buffer.set_cursor(region.cursor);
+                self.expand_history.clear();
                 self.set_mode(mode);
                 return true;
             }
             doc.selection_set.regions.insert(idx, region);
         }
         self.visual_anchor = Some(cursor);
+        self.expand_history.clear();
         self.set_mode(mode);
         true
     }

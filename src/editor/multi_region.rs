@@ -18,7 +18,65 @@ fn line_end_offset(buf: &crate::buffer::TextBuffer, row: usize) -> usize {
     }
 }
 
+const EXPAND_CANDIDATES: &[(crate::text_objects::ObjectKind, u8)] = &[
+    (crate::text_objects::ObjectKind::Word, 1),
+    (crate::text_objects::ObjectKind::DoubleQuote, 1),
+    (crate::text_objects::ObjectKind::SingleQuote, 1),
+    (crate::text_objects::ObjectKind::Backtick, 1),
+    (crate::text_objects::ObjectKind::AnyBracket, 1),
+    (crate::text_objects::ObjectKind::AnyBracket, 2),
+    (crate::text_objects::ObjectKind::AnyBracket, 3),
+    (crate::text_objects::ObjectKind::Line, 1),
+    (crate::text_objects::ObjectKind::Sentence, 1),
+    (crate::text_objects::ObjectKind::Paragraph, 1),
+    (crate::text_objects::ObjectKind::Buffer, 1),
+];
+
 impl<T: TerminalBackend> Editor<T> {
+    /// `<Space>`: grow the active Visual region to the smallest enclosing
+    /// candidate that's strictly larger than the current span. Pushes the
+    /// prior extent onto `expand_history` first (Task 24 pops it).
+    pub(super) fn expand_active_region(&mut self) -> bool {
+        let Some(anchor) = self.visual_anchor else { return false };
+        let Some(doc) = self.document_manager.active_document() else { return false };
+        let cursor = doc.buffer.cursor();
+        let current = (anchor.min(cursor), anchor.max(cursor) + 1);
+
+        let mut best: Option<(usize, usize)> = None;
+        for &(kind, nesting) in EXPAND_CANDIDATES {
+            use crate::text_objects::{Direction, Modifier, TextObjectSpec};
+            let spec = TextObjectSpec {
+                modifier: Modifier::Around,
+                direction: Direction::Current,
+                nesting,
+                kind,
+            };
+            let Some(range) = crate::text_objects::resolve(spec, &doc.buffer, 1, None) else {
+                continue;
+            };
+            let end_offset = if range.inclusive { 1 } else { 0 };
+            let s = range.anchor.min(range.new_cursor);
+            // Clamp: a last line with no trailing newline can overshoot by one
+            // (same case clipboard::capture_text already guards).
+            let e = (range.anchor.max(range.new_cursor) + end_offset).min(doc.buffer.len());
+            let strictly_larger = s <= current.0 && e >= current.1 && (s < current.0 || e > current.1);
+            if !strictly_larger {
+                continue;
+            }
+            if best.is_none_or(|(bs, be)| (e - s) < (be - bs)) {
+                best = Some((s, e));
+            }
+        }
+
+        let Some((new_start, new_end)) = best else { return false };
+        self.expand_history.push(current);
+        self.visual_anchor = Some(new_start);
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            let _ = doc.buffer.set_cursor(new_end.saturating_sub(1));
+        }
+        true
+    }
+
     /// `n`/`N` when the `SelectionSet` is non-empty: cycle the cursor
     /// between banked regions instead of repeat-find/search (design.md S3,
     /// resolved as context-sensitive per this codebase's existing n/N bindings).

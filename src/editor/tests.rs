@@ -1991,6 +1991,46 @@ fn visual_swap_ends_exchanges_anchor_and_cursor() {
 }
 
 #[test]
+fn expand_region_grows_word_then_quotes_in_verified_order() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "say \"hello world\" now");
+    let pos = editor.active_document().buffer.to_string().find("hello").unwrap();
+    editor.active_document().buffer.set_cursor(pos).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+
+    editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
+    let anchor = editor.visual_anchor.unwrap();
+    let cursor = editor.active_document().buffer.cursor();
+    assert_eq!((anchor, cursor), (5, 10), "first press: Word around -> \"hello \"");
+
+    editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
+    let anchor = editor.visual_anchor.unwrap();
+    let cursor = editor.active_document().buffer.cursor();
+    assert_eq!((anchor, cursor), (4, 16), "second press: DoubleQuote around -> the full quoted span");
+}
+
+#[test]
+fn expand_region_noop_when_already_at_buffer_extent() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "x");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+
+    // Expand repeatedly until it stops growing (terminates quickly on a
+    // 1-char buffer); the last call must leave anchor/cursor unchanged.
+    editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
+    let before = (editor.visual_anchor, editor.active_document().buffer.cursor());
+    editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
+    let after = (editor.visual_anchor, editor.active_document().buffer.cursor());
+
+    assert_eq!(before, after, "expanding past the whole buffer must be a no-op");
+}
+
+#[test]
 fn escape_in_visual_commits_active_region() {
     use crate::action::{Action, EditorAction};
 

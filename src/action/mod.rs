@@ -423,6 +423,9 @@ pub enum EditorAction {
     /// Dot-repeat follow-up for `sg`: re-wrap rebuilt regions with `ch`.
     /// Synthetic action, not reachable from keymap.
     AddSurroundToSet { ch: char, delim_count: usize },
+    /// `<Space>` in Visual: grow the active region to the next enclosing
+    /// text object.
+    ExpandRegion,
 }
 
 /// Represents an action in the editor

@@ -153,6 +153,9 @@ pub struct Editor<T: TerminalBackend> {
     /// set-aware command consumed the set (finalized by Task 22 into
     /// `DotRegister::RegionBuildSession`).
     pub(super) region_build_recording: Vec<crate::action::Action>,
+    /// Stack of prior selection extents, for `<Shift-Space>` shrink (Task 24).
+    /// Cleared whenever a fresh Visual region starts.
+    pub(super) expand_history: Vec<(usize, usize)>,
     /// Cached display map keyed by (doc_id, buffer_revision, content_width).
     /// Avoids rebuilding the soft-wrap map on every command when the buffer hasn't changed.
     display_map_cache: Option<(

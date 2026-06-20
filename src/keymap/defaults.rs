@@ -688,6 +688,11 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
     );
     keymap.register(
+        KeyContext::Visual,
+        Key::Char(' '),
+        Action::Editor(EditorAction::ExpandRegion),
+    );
+    keymap.register(
         KeyContext::Normal,
         Key::Char('m'),
         Action::Editor(EditorAction::RegionBankOccurrenceNext),
