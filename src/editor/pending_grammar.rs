@@ -114,10 +114,12 @@ impl<T: TerminalBackend> Editor<T> {
             PendingGrammar::DeleteSurround { count } => {
                 self.set_mode(Mode::Normal);
                 if let Key::Char(ch) = key {
-                    let command = Command::DeleteSurround(ch, count);
-                    let result = self.execute_buffer_command(command);
-                    if result && !self.dot_repeat.is_replaying() {
-                        self.dot_repeat.record_single(command);
+                    if !self.try_run_set_aware_delete_surround(ch, count) {
+                        let command = Command::DeleteSurround(ch, count);
+                        let result = self.execute_buffer_command(command);
+                        if result && !self.dot_repeat.is_replaying() {
+                            self.dot_repeat.record_single(command);
+                        }
                     }
                 }
                 self.pending_count = 0;
@@ -133,10 +135,12 @@ impl<T: TerminalBackend> Editor<T> {
             PendingGrammar::ChangeSurroundTo { from, count } => {
                 self.set_mode(Mode::Normal);
                 if let Key::Char(to) = key {
-                    let command = Command::ChangeSurround(from, to, count);
-                    let result = self.execute_buffer_command(command);
-                    if result && !self.dot_repeat.is_replaying() {
-                        self.dot_repeat.record_single(command);
+                    if !self.try_run_set_aware_change_surround(from, to, count) {
+                        let command = Command::ChangeSurround(from, to, count);
+                        let result = self.execute_buffer_command(command);
+                        if result && !self.dot_repeat.is_replaying() {
+                            self.dot_repeat.record_single(command);
+                        }
                     }
                 }
                 self.pending_count = 0;
@@ -148,10 +152,12 @@ impl<T: TerminalBackend> Editor<T> {
             } => {
                 self.set_mode(Mode::Normal);
                 if let Key::Char(ch) = key {
-                    let command = Command::AddSurround(motion, count, ch, delim_count);
-                    let result = self.execute_buffer_command(command);
-                    if result && !self.dot_repeat.is_replaying() {
-                        self.dot_repeat.record_single(command);
+                    if !self.try_run_set_aware_add_surround(ch, delim_count) {
+                        let command = Command::AddSurround(motion, count, ch, delim_count);
+                        let result = self.execute_buffer_command(command);
+                        if result && !self.dot_repeat.is_replaying() {
+                            self.dot_repeat.record_single(command);
+                        }
                     }
                 }
                 self.pending_count = 0;

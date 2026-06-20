@@ -2543,3 +2543,56 @@ fn set_aware_replace_char_fills_each_region_to_its_own_length() {
     assert_eq!(editor.active_document().buffer.to_string(), "xx234xxxx9");
     assert!(editor.active_document().selection_set.is_empty());
 }
+
+#[test]
+fn set_aware_sd_strips_surrounding_parens_from_every_region() {
+    use crate::action::{Action, EditorAction};
+    use crate::key::Key;
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "(a) (b)");
+    editor.active_document().selection_set.bank(Region::new(1, 1, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('d'));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('('));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "a b");
+    assert!(editor.active_document().selection_set.is_empty());
+}
+
+#[test]
+fn set_aware_sg_wraps_each_region_independently() {
+    use crate::action::Motion;
+    use crate::action::{Action, EditorAction};
+    use crate::key::Key;
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo\n\nfoofoo\n");
+    editor.active_document().selection_set.bank(Region::new(0, 2, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 7, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(8, 10, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('g'));
+    editor.pending_grammar = Some(pending_grammar::PendingGrammar::AddSurroundChar {
+        motion: Motion::NextWord,
+        count: 1,
+        delim_count: 1,
+    });
+    let grammar = editor.pending_grammar.take().unwrap();
+    editor.advance_pending_grammar(grammar, Key::Char('"'));
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "\"foo\"\n\n\"foo\"\"foo\"\n"
+    );
+}

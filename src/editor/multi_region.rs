@@ -251,6 +251,81 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
+    /// `sd<ch>` against a non-empty `SelectionSet`: reuse the existing
+    /// single-cursor `Command::DeleteSurround` resolution once per region.
+    pub(super) fn try_run_set_aware_delete_surround(&mut self, ch: char, count: usize) -> bool {
+        let is_empty = self
+            .document_manager
+            .active_document()
+            .map(|d| d.selection_set.is_empty())
+            .unwrap_or(true);
+        if is_empty {
+            return false;
+        }
+        self.apply_to_each_region(|editor, region| {
+            let Some(doc) = editor.document_manager.active_document_mut() else {
+                return false;
+            };
+            let (start, _) = region.buffer_span(&doc.buffer);
+            let _ = doc.buffer.set_cursor(start);
+            editor.execute_buffer_command(crate::command::Command::DeleteSurround(ch, count))
+        })
+    }
+
+    /// `sc<from><to>` against a non-empty `SelectionSet`: same pattern as
+    /// `try_run_set_aware_delete_surround`.
+    pub(super) fn try_run_set_aware_change_surround(
+        &mut self,
+        from: char,
+        to: char,
+        count: usize,
+    ) -> bool {
+        let is_empty = self
+            .document_manager
+            .active_document()
+            .map(|d| d.selection_set.is_empty())
+            .unwrap_or(true);
+        if is_empty {
+            return false;
+        }
+        self.apply_to_each_region(|editor, region| {
+            let Some(doc) = editor.document_manager.active_document_mut() else {
+                return false;
+            };
+            let (start, _) = region.buffer_span(&doc.buffer);
+            let _ = doc.buffer.set_cursor(start);
+            editor.execute_buffer_command(crate::command::Command::ChangeSurround(from, to, count))
+        })
+    }
+
+    /// `sg<ch>` against a non-empty `SelectionSet`: the region supplies the
+    /// range directly, so this mirrors `Command::AddSurround`'s body instead
+    /// of routing through `compute_motion_range`.
+    pub(super) fn try_run_set_aware_add_surround(&mut self, ch: char, delim_count: usize) -> bool {
+        let is_empty = self
+            .document_manager
+            .active_document()
+            .map(|d| d.selection_set.is_empty())
+            .unwrap_or(true);
+        if is_empty {
+            return false;
+        }
+        self.apply_to_each_region(|editor, region| {
+            let Some((open, close)) = crate::text_objects::surround_strings(ch, delim_count) else {
+                return false;
+            };
+            let Some(doc) = editor.document_manager.active_document_mut() else {
+                return false;
+            };
+            let (start, end) = region.buffer_span(&doc.buffer);
+            let _ = doc.buffer.set_cursor(end);
+            let _ = doc.insert_str(&close);
+            let _ = doc.buffer.set_cursor(start);
+            let _ = doc.insert_str(&open);
+            true
+        })
+    }
+
     /// Replay the just-finished Insert session at every pending anchor; must run
     /// before the outer `MultiInsert` transaction commits so all anchors share the live-typed undo step (S5.8).
     pub(super) fn replay_multi_insert_at_remaining_anchors(&mut self) {
