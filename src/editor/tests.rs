@@ -1941,11 +1941,17 @@ fn set_aware_delete_keeps_syntax_highlights_in_sync() {
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualLine));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     let second_line_start = editor.active_document().buffer.line_start(1);
-    editor.active_document().buffer.set_cursor(second_line_start).unwrap();
+    editor
+        .active_document()
+        .buffer
+        .set_cursor(second_line_start)
+        .unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualLine));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
     assert_eq!(editor.active_document().buffer.to_string(), "");
 
     let after_set_aware_delete = editor
@@ -2001,8 +2007,16 @@ fn visual_resumes_a_banked_region_under_the_cursor() {
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     assert_eq!(editor.current_mode, Mode::Visual);
-    assert_eq!(editor.visual_anchor, Some(4), "anchor side must be restored");
-    assert_eq!(editor.active_document().buffer.cursor(), 0, "cursor side must be restored");
+    assert_eq!(
+        editor.visual_anchor,
+        Some(4),
+        "anchor side must be restored"
+    );
+    assert_eq!(
+        editor.active_document().buffer.cursor(),
+        0,
+        "cursor side must be restored"
+    );
     assert!(
         editor.active_document().selection_set.regions.is_empty(),
         "resumed region must be popped out of the banked set"
@@ -2021,9 +2035,17 @@ fn visual_motion_extends_through_normal_fallthrough() {
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
 
-    assert_eq!(editor.current_mode, Mode::Visual, "motion must not exit Visual");
+    assert_eq!(
+        editor.current_mode,
+        Mode::Visual,
+        "motion must not exit Visual"
+    );
     assert_eq!(editor.active_document().buffer.cursor(), 2);
-    assert_eq!(editor.visual_anchor, Some(0), "anchor stays fixed while cursor moves");
+    assert_eq!(
+        editor.visual_anchor,
+        Some(0),
+        "anchor stays fixed while cursor moves"
+    );
 }
 
 #[test]
@@ -2034,8 +2056,12 @@ fn visual_swap_ends_exchanges_anchor_and_cursor() {
     load_text(&mut editor, "hello world");
     editor.active_document().buffer.set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
-    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
-    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        crate::action::Motion::Right,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        crate::action::Motion::Right,
+    )));
     // anchor=0, cursor=2
 
     editor.handle_action(&Action::Editor(EditorAction::VisualSwapEnds));
@@ -2050,19 +2076,32 @@ fn expand_region_grows_word_then_quotes_in_verified_order() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "say \"hello world\" now");
-    let pos = editor.active_document().buffer.to_string().find("hello").unwrap();
+    let pos = editor
+        .active_document()
+        .buffer
+        .to_string()
+        .find("hello")
+        .unwrap();
     editor.active_document().buffer.set_cursor(pos).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
     let anchor = editor.visual_anchor.unwrap();
     let cursor = editor.active_document().buffer.cursor();
-    assert_eq!((anchor, cursor), (5, 10), "first press: Word around -> \"hello \"");
+    assert_eq!(
+        (anchor, cursor),
+        (5, 10),
+        "first press: Word around -> \"hello \""
+    );
 
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
     let anchor = editor.visual_anchor.unwrap();
     let cursor = editor.active_document().buffer.cursor();
-    assert_eq!((anchor, cursor), (4, 16), "second press: DoubleQuote around -> the full quoted span");
+    assert_eq!(
+        (anchor, cursor),
+        (4, 16),
+        "second press: DoubleQuote around -> the full quoted span"
+    );
 }
 
 #[test]
@@ -2077,11 +2116,20 @@ fn expand_region_noop_when_already_at_buffer_extent() {
     // Expand repeatedly until it stops growing (terminates quickly on a
     // 1-char buffer); the last call must leave anchor/cursor unchanged.
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
-    let before = (editor.visual_anchor, editor.active_document().buffer.cursor());
+    let before = (
+        editor.visual_anchor,
+        editor.active_document().buffer.cursor(),
+    );
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
-    let after = (editor.visual_anchor, editor.active_document().buffer.cursor());
+    let after = (
+        editor.visual_anchor,
+        editor.active_document().buffer.cursor(),
+    );
 
-    assert_eq!(before, after, "expanding past the whole buffer must be a no-op");
+    assert_eq!(
+        before, after,
+        "expanding past the whole buffer must be a no-op"
+    );
 }
 
 #[test]
@@ -2090,19 +2138,39 @@ fn shrink_region_pops_the_last_expand_step() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "say \"hello world\" now");
-    let pos = editor.active_document().buffer.to_string().find("hello").unwrap();
+    let pos = editor
+        .active_document()
+        .buffer
+        .to_string()
+        .find("hello")
+        .unwrap();
     editor.active_document().buffer.set_cursor(pos).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
-    let before_expand = (editor.visual_anchor, editor.active_document().buffer.cursor());
+    let before_expand = (
+        editor.visual_anchor,
+        editor.active_document().buffer.cursor(),
+    );
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
-    let after_expand = (editor.visual_anchor, editor.active_document().buffer.cursor());
-    assert_ne!(before_expand, after_expand, "expand must have actually grown the region");
+    let after_expand = (
+        editor.visual_anchor,
+        editor.active_document().buffer.cursor(),
+    );
+    assert_ne!(
+        before_expand, after_expand,
+        "expand must have actually grown the region"
+    );
 
     editor.handle_action(&Action::Editor(EditorAction::ShrinkRegion));
-    let after_shrink = (editor.visual_anchor, editor.active_document().buffer.cursor());
+    let after_shrink = (
+        editor.visual_anchor,
+        editor.active_document().buffer.cursor(),
+    );
 
-    assert_eq!(after_shrink, before_expand, "shrink must restore the exact pre-expand extent");
+    assert_eq!(
+        after_shrink, before_expand,
+        "shrink must restore the exact pre-expand extent"
+    );
 }
 
 #[test]
@@ -2127,15 +2195,22 @@ fn escape_in_visual_commits_active_region() {
     load_text(&mut editor, "hello world");
     editor.active_document().buffer.set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
-    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
-    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        crate::action::Motion::Right,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        crate::action::Motion::Right,
+    )));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     assert_eq!(editor.current_mode, Mode::Normal);
     assert!(editor.visual_anchor.is_none());
     assert_eq!(editor.active_document().selection_set.regions.len(), 1);
-    assert_eq!(editor.active_document().selection_set.regions[0].span(), (0, 3));
+    assert_eq!(
+        editor.active_document().selection_set.regions[0].span(),
+        (0, 3)
+    );
 }
 
 #[test]
@@ -2171,7 +2246,10 @@ fn issue_worked_example_bank_two_regions_no_delete_yet() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     assert_eq!(editor.active_document().selection_set.regions.len(), 1);
-    assert_eq!(editor.active_document().selection_set.regions[0].span(), (0, 2));
+    assert_eq!(
+        editor.active_document().selection_set.regions[0].span(),
+        (0, 2)
+    );
 
     // goto line 3 (plain motion, set untouched) -> v -> select "f" -> Esc
     let line3_start = editor.active_document().buffer.line_start(2);
@@ -2203,15 +2281,29 @@ fn n_cycles_banked_regions_when_set_is_nonempty() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789abcdefghij");
-    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(10, 11, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 1, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(10, 11, RangeKind::Charwise));
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::RepeatFindForward)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindForward,
+    )));
     assert_eq!(editor.active_document().buffer.cursor(), 10);
 
-    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::RepeatFindForward)));
-    assert_eq!(editor.active_document().buffer.cursor(), 0, "wraps to first");
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindForward,
+    )));
+    assert_eq!(
+        editor.active_document().buffer.cursor(),
+        0,
+        "wraps to first"
+    );
 }
 
 #[test]
@@ -2222,11 +2314,19 @@ fn shift_n_cycles_backward_when_set_is_nonempty() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789abcdefghij");
-    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(10, 11, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 1, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(10, 11, RangeKind::Charwise));
     editor.active_document().buffer.set_cursor(15).unwrap();
 
-    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::RepeatFindBackward)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindBackward,
+    )));
     assert_eq!(editor.active_document().buffer.cursor(), 10);
 }
 
@@ -2239,7 +2339,9 @@ fn n_keeps_repeat_find_behavior_when_set_is_empty() {
     editor.active_document().buffer.set_cursor(0).unwrap();
     editor.state.last_find_char = Some(('o', true, false)); // as if `fo` had just run
 
-    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::RepeatFindForward)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        Motion::RepeatFindForward,
+    )));
 
     // Repeat-find-char behavior, completely untouched: lands on the next 'o'.
     assert_eq!(editor.active_document().buffer.cursor(), 1);
@@ -2253,7 +2355,10 @@ fn region_bank_occurrence_next_finds_and_moves_cursor() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar foo baz foo");
-    editor.active_document().selection_set.bank(Region::new(0, 2, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 2, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext));
 
@@ -2300,8 +2405,14 @@ fn apply_to_each_region_runs_f_once_per_region_highest_offset_first() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 1, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 6, RangeKind::Charwise));
 
     let mut seen_starts = Vec::new();
     let handled = editor.apply_to_each_region(|_editor, region| {
@@ -2311,7 +2422,10 @@ fn apply_to_each_region_runs_f_once_per_region_highest_offset_first() {
 
     assert!(handled);
     assert_eq!(seen_starts, vec![5, 0], "highest-offset-first");
-    assert!(editor.active_document().selection_set.is_empty(), "batch must clear the set");
+    assert!(
+        editor.active_document().selection_set.is_empty(),
+        "batch must clear the set"
+    );
 }
 
 #[test]
@@ -2331,8 +2445,14 @@ fn apply_to_each_region_deletes_are_one_undo_step() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 1, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 6, RangeKind::Charwise));
 
     editor.apply_to_each_region(|editor, region| {
         let (start, end) = region.span();
@@ -2361,13 +2481,24 @@ fn enter_multi_insert_replays_typed_session_at_every_remaining_anchor() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 0, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 5, RangeKind::Charwise));
 
-    let handled = editor.enter_multi_insert(Command::EnterInsertMode, |_doc, region| region.span().0);
+    let handled =
+        editor.enter_multi_insert(Command::EnterInsertMode, |_doc, region| region.span().0);
     assert!(handled);
     assert_eq!(editor.current_mode, Mode::Insert);
-    assert_eq!(editor.active_document().buffer.cursor(), 5, "starts at the highest-offset anchor");
+    assert_eq!(
+        editor.active_document().buffer.cursor(),
+        5,
+        "starts at the highest-offset anchor"
+    );
 
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
@@ -2385,9 +2516,10 @@ fn enter_multi_insert_on_empty_set_returns_false() {
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
 
-    let handled = editor.enter_multi_insert(crate::command::Command::EnterInsertMode, |_doc, region| {
-        region.span().0
-    });
+    let handled = editor
+        .enter_multi_insert(crate::command::Command::EnterInsertMode, |_doc, region| {
+            region.span().0
+        });
 
     assert!(!handled);
     assert_eq!(editor.current_mode, Mode::Normal);
@@ -2402,15 +2534,33 @@ fn set_aware_delete_removes_every_banked_region_as_one_op() {
     let mut editor = create_editor();
     load_text(&mut editor, "foo\n\nfoofoo\n");
     // Bank "foo" (0..2) and the two touching "foo"s inside "foofoo" (5..7, 8..10).
-    editor.active_document().selection_set.bank(Region::new(0, 2, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 7, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(8, 10, RangeKind::Charwise));
-    assert_eq!(editor.active_document().selection_set.regions.len(), 3, "touching must not have merged");
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 2, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 7, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(8, 10, RangeKind::Charwise));
+    assert_eq!(
+        editor.active_document().selection_set.regions.len(),
+        3,
+        "touching must not have merged"
+    );
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
 
     assert_eq!(editor.active_document().buffer.to_string(), "\n\n\n");
-    assert!(editor.active_document().selection_set.is_empty(), "set clears after the batch");
+    assert!(
+        editor.active_document().selection_set.is_empty(),
+        "set clears after the batch"
+    );
 }
 
 #[test]
@@ -2421,10 +2571,18 @@ fn set_aware_delete_is_one_undo_step() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 1, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 6, RangeKind::Charwise));
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
     assert_eq!(editor.active_document().buffer.to_string(), "234789");
 
     assert!(editor.active_document().undo());
@@ -2439,14 +2597,28 @@ fn set_aware_yank_captures_each_region_without_mutating() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar baz");
-    editor.active_document().selection_set.bank(Region::new(0, 2, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(8, 10, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 2, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(8, 10, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "foo bar baz", "yank must not mutate");
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "foo bar baz",
+        "yank must not mutate"
+    );
     assert!(editor.active_document().selection_set.is_empty());
-    assert_eq!(editor.clipboard_ring.get(0), Some("foo"), "lowest-offset region pushed last = ring[0] (front-insert)");
+    assert_eq!(
+        editor.clipboard_ring.get(0),
+        Some("foo"),
+        "lowest-offset region pushed last = ring[0] (front-insert)"
+    );
     assert_eq!(editor.clipboard_ring.get(1), Some("baz"));
 }
 
@@ -2458,15 +2630,26 @@ fn visual_d_commits_active_region_then_runs_the_batch() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 6, RangeKind::Charwise));
     editor.active_document().buffer.set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
-    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        crate::action::Motion::Right,
+    )));
     // active region now 0..1 (chars "0","1"), banked set still has 5..6 ("5")
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "234789", "both the just-committed and pre-banked region deleted as one batch");
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "234789",
+        "both the just-committed and pre-banked region deleted as one batch"
+    );
     assert_eq!(editor.current_mode, Mode::Normal);
 }
 
@@ -2478,8 +2661,14 @@ fn plain_d_with_empty_set_is_unaffected() {
     load_text(&mut editor, "hello world");
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
-    assert_eq!(editor.current_mode, Mode::OperatorPending, "falls through to today's single-cursor flow");
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    assert_eq!(
+        editor.current_mode,
+        Mode::OperatorPending,
+        "falls through to today's single-cursor flow"
+    );
 }
 
 #[test]
@@ -2490,12 +2679,23 @@ fn canonical_change_across_touching_regions_does_not_merge_them() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo\n\nfoofoo\n");
-    editor.active_document().selection_set.bank(Region::new(0, 2, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 7, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(8, 10, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 2, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 7, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(8, 10, RangeKind::Charwise));
     assert_eq!(editor.active_document().selection_set.regions.len(), 3);
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Change)));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Change,
+    )));
     assert_eq!(editor.current_mode, Mode::Insert);
 
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('b')));
@@ -2519,9 +2719,15 @@ fn single_region_change_unaffected_by_the_new_batching_branch() {
     load_text(&mut editor, "foo bar");
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Change)));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Change,
+    )));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::NextWord)));
-    assert_eq!(editor.current_mode, Mode::Insert, "ordinary single-cursor cw must still work");
+    assert_eq!(
+        editor.current_mode,
+        Mode::Insert,
+        "ordinary single-cursor cw must still work"
+    );
 
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
@@ -2537,8 +2743,14 @@ fn multi_i_inserts_at_start_of_every_region() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 1, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 6, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
     assert_eq!(editor.current_mode, Mode::Insert);
@@ -2556,8 +2768,14 @@ fn multi_a_inserts_after_end_of_every_region() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 0, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAfter));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
@@ -2575,14 +2793,23 @@ fn multi_capital_i_inserts_at_line_start_of_each_region_row() {
     let mut editor = create_editor();
     load_text(&mut editor, "aaa\nbbb\nccc");
     // region inside "bbb" (offset 5, the second 'b') and inside "ccc" (offset 9)
-    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(9, 9, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 5, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(9, 9, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAtLineStart));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "aaa\nXbbb\nXccc");
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "aaa\nXbbb\nXccc"
+    );
 }
 
 #[test]
@@ -2593,14 +2820,23 @@ fn multi_capital_a_inserts_at_line_end_of_each_region_row() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "aaa\nbbb\nccc");
-    editor.active_document().selection_set.bank(Region::new(4, 4, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(8, 8, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(4, 4, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(8, 8, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAtLineEnd));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "aaa\nbbbX\ncccX");
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "aaa\nbbbX\ncccX"
+    );
 }
 
 #[test]
@@ -2611,14 +2847,23 @@ fn multi_o_opens_a_new_line_below_each_region_row() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "aaa\nbbb\nccc");
-    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(4, 4, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 0, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(4, 4, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::OpenLineBelow));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "aaa\nX\nbbb\nX\nccc");
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "aaa\nX\nbbb\nX\nccc"
+    );
 }
 
 #[test]
@@ -2629,14 +2874,23 @@ fn multi_capital_o_opens_a_new_line_above_each_region_row() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "aaa\nbbb\nccc");
-    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(4, 4, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 0, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(4, 4, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::OpenLineAbove));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "X\naaa\nX\nbbb\nccc");
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "X\naaa\nX\nbbb\nccc"
+    );
 }
 
 #[test]
@@ -2650,7 +2904,11 @@ fn plain_i_with_empty_set_is_unaffected() {
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
 
     assert_eq!(editor.current_mode, Mode::Insert);
-    assert_eq!(editor.active_document().buffer.cursor(), 2, "ordinary i must still anchor at the live cursor");
+    assert_eq!(
+        editor.active_document().buffer.cursor(),
+        2,
+        "ordinary i must still anchor at the live cursor"
+    );
 }
 
 #[test]
@@ -2662,8 +2920,14 @@ fn set_aware_replace_char_fills_each_region_to_its_own_length() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise)); // len 2
-    editor.active_document().selection_set.bank(Region::new(5, 8, RangeKind::Charwise)); // len 4
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 1, RangeKind::Charwise)); // len 2
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 8, RangeKind::Charwise)); // len 4
 
     editor.handle_action(&Action::Editor(EditorAction::ReplaceCharPending));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -2682,8 +2946,14 @@ fn set_aware_sd_strips_surrounding_parens_from_every_region() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "(a) (b)");
-    editor.active_document().selection_set.bank(Region::new(1, 1, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(1, 1, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -2705,9 +2975,18 @@ fn set_aware_sg_wraps_each_region_independently() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo\n\nfoofoo\n");
-    editor.active_document().selection_set.bank(Region::new(0, 2, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 7, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(8, 10, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 2, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 7, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(8, 10, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -2735,12 +3014,22 @@ fn set_aware_put_inserts_same_text_at_every_region() {
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
     editor.clipboard_ring.push("X".to_string());
-    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 0, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "0X12345X6789", "p inserts after each region");
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "0X12345X6789",
+        "p inserts after each region"
+    );
     assert!(editor.active_document().selection_set.is_empty());
 }
 
@@ -2753,12 +3042,22 @@ fn set_aware_put_before_inserts_ahead_of_every_region() {
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
     editor.clipboard_ring.push("X".to_string());
-    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 0, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: true }));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "X01234X56789", "P inserts before each region");
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "X01234X56789",
+        "P inserts before each region"
+    );
 }
 
 #[test]
@@ -2770,14 +3069,28 @@ fn bare_repeated_p_after_set_aware_put_only_affects_single_cursor() {
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
     editor.clipboard_ring.push("X".to_string());
-    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 0, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
 
-    let count_of_x = editor.active_document().buffer.to_string().matches('X').count();
-    assert_eq!(count_of_x, 3, "first put = 2 X's (one per region), second bare put = 1 more, not 2 more");
+    let count_of_x = editor
+        .active_document()
+        .buffer
+        .to_string()
+        .matches('X')
+        .count();
+    assert_eq!(
+        count_of_x, 3,
+        "first put = 2 X's (one per region), second bare put = 1 more, not 2 more"
+    );
 }
 
 #[test]
@@ -2788,8 +3101,14 @@ fn multi_insert_is_one_undo_step() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 0, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
     editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
@@ -2813,8 +3132,12 @@ fn region_build_actions_accumulate_while_visual_and_during_bank_occurrence() {
     editor.active_document().buffer.set_cursor(0).unwrap();
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
-    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
-    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        crate::action::Motion::Right,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        crate::action::Motion::Right,
+    )));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext));
 
@@ -2864,8 +3187,14 @@ fn multi_region_put_is_one_undo_step() {
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
     editor.clipboard_ring.push("X".to_string());
-    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 0, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
     assert_eq!(editor.active_document().buffer.to_string(), "0X12345X6789");
@@ -2886,7 +3215,9 @@ fn dot_repeat_destructive_group_reselects_without_reexecuting() {
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
     assert_eq!(editor.active_document().buffer.to_string(), " (b)");
     assert!(editor.active_document().selection_set.is_empty());
 
@@ -2920,8 +3251,17 @@ fn dot_repeat_non_destructive_group_rebuilds_and_reexecutes() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer.to_string(), "Xaaa\nbbb");
 
-    let bbb_offset = editor.active_document().buffer.to_string().find('b').unwrap();
-    editor.active_document().buffer.set_cursor(bbb_offset).unwrap();
+    let bbb_offset = editor
+        .active_document()
+        .buffer
+        .to_string()
+        .find('b')
+        .unwrap();
+    editor
+        .active_document()
+        .buffer
+        .set_cursor(bbb_offset)
+        .unwrap();
     editor.execute_dot_repeat();
 
     assert_eq!(
@@ -2957,8 +3297,17 @@ fn dot_repeat_sg_fully_replays_using_addsurroundtoset() {
 
     assert_eq!(editor.active_document().buffer.to_string(), "\"foo\"\nbar");
 
-    let bar_offset = editor.active_document().buffer.to_string().find("bar").unwrap();
-    editor.active_document().buffer.set_cursor(bar_offset).unwrap();
+    let bar_offset = editor
+        .active_document()
+        .buffer
+        .to_string()
+        .find("bar")
+        .unwrap();
+    editor
+        .active_document()
+        .buffer
+        .set_cursor(bar_offset)
+        .unwrap();
     editor.execute_dot_repeat();
 
     assert_eq!(
@@ -2976,7 +3325,10 @@ fn gv_toggle_opens_and_closes_regardless_of_focus() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    editor.active_document().selection_set.bank(Region::new(0, 4, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 4, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
     assert!(editor.panel_layout.is_some(), "gv opens the window");
@@ -3010,8 +3362,14 @@ fn regions_window_x_drops_the_selected_entry() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 1, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 6, RangeKind::Charwise));
     editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
 
     editor.handle_action(&Action::Editor(EditorAction::RegionsListDrop));
@@ -3021,7 +3379,13 @@ fn regions_window_x_drops_the_selected_entry() {
         _ => panic!("expected to still be focused in the regions window"),
     };
     assert_eq!(
-        editor.document_manager.get_document(source_id).unwrap().selection_set.regions.len(),
+        editor
+            .document_manager
+            .get_document(source_id)
+            .unwrap()
+            .selection_set
+            .regions
+            .len(),
         1,
         "one entry dropped from the *source* document's set"
     );
@@ -3035,8 +3399,14 @@ fn regions_window_j_moves_the_list_cursor_and_live_jumps_the_preview() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 1, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 6, RangeKind::Charwise));
     let source_id = editor.active_document_id();
     editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
     let list_cursor_before = editor.active_document().buffer.cursor();
@@ -3049,7 +3419,12 @@ fn regions_window_j_moves_the_list_cursor_and_live_jumps_the_preview() {
         "j must move the regions list's own cursor to line 2, not stay on line 1"
     );
     assert_eq!(
-        editor.document_manager.get_document(source_id).unwrap().buffer.cursor(),
+        editor
+            .document_manager
+            .get_document(source_id)
+            .unwrap()
+            .buffer
+            .cursor(),
         5,
         "and live-jump the source buffer to the second region (sorted order: 0..1, then 5..6)"
     );
@@ -3063,16 +3438,32 @@ fn regions_window_operator_redirects_to_the_source_document() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 1, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 6, RangeKind::Charwise));
     let source_id = editor.active_document_id();
     editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
 
-    assert!(editor.panel_layout.is_none(), "firing an operator from the window closes it");
+    assert!(
+        editor.panel_layout.is_none(),
+        "firing an operator from the window closes it"
+    );
     assert_eq!(
-        editor.document_manager.get_document(source_id).unwrap().buffer.to_string(),
+        editor
+            .document_manager
+            .get_document(source_id)
+            .unwrap()
+            .buffer
+            .to_string(),
         "234789"
     );
 }
@@ -3085,8 +3476,12 @@ fn visual_block_renders_and_edits_identically_to_charwise() {
     load_text(&mut editor, "0123456789");
     editor.active_document().buffer.set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualBlock));
-    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        crate::action::Motion::Right,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
 
     assert_eq!(
         editor.active_document().buffer.to_string(),
@@ -3113,9 +3508,14 @@ fn issue_worked_example_full_sequence_including_delete() {
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode)); // banks "f"
 
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "llo\nworld\noo\n");
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "llo\nworld\noo\n"
+    );
     assert!(editor.active_document().selection_set.is_empty());
 }
 
@@ -3127,7 +3527,10 @@ fn undo_of_unrelated_edit_clears_a_banked_set() {
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
     editor.active_document().insert_char('!').unwrap(); // an edit not routed through any driver
-    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 1, RangeKind::Charwise));
     assert!(!editor.active_document().selection_set.is_empty());
 
     assert!(editor.active_document().undo());
@@ -3142,23 +3545,37 @@ fn every_set_aware_command_clears_the_set_after_acting() {
     use crate::wrap::RangeKind;
 
     let fresh_set = |editor: &mut Editor<MockTerminal>| {
-        editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
-        editor.active_document().selection_set.bank(Region::new(4, 4, RangeKind::Charwise));
+        editor
+            .active_document()
+            .selection_set
+            .bank(Region::new(0, 0, RangeKind::Charwise));
+        editor
+            .active_document()
+            .selection_set
+            .bank(Region::new(4, 4, RangeKind::Charwise));
     };
 
     // d
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
     fresh_set(&mut editor);
-    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
-    assert!(editor.active_document().selection_set.is_empty(), "d must clear the set");
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    assert!(
+        editor.active_document().selection_set.is_empty(),
+        "d must clear the set"
+    );
 
     // y
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
     fresh_set(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
-    assert!(editor.active_document().selection_set.is_empty(), "y must clear the set");
+    assert!(
+        editor.active_document().selection_set.is_empty(),
+        "y must clear the set"
+    );
 
     // i (then Esc to finish the insert session)
     let mut editor = create_editor();
@@ -3166,7 +3583,10 @@ fn every_set_aware_command_clears_the_set_after_acting() {
     fresh_set(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert!(editor.active_document().selection_set.is_empty(), "i must clear the set");
+    assert!(
+        editor.active_document().selection_set.is_empty(),
+        "i must clear the set"
+    );
 
     // o
     let mut editor = create_editor();
@@ -3174,7 +3594,10 @@ fn every_set_aware_command_clears_the_set_after_acting() {
     fresh_set(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::OpenLineBelow));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    assert!(editor.active_document().selection_set.is_empty(), "o must clear the set");
+    assert!(
+        editor.active_document().selection_set.is_empty(),
+        "o must clear the set"
+    );
 
     // p
     let mut editor = create_editor();
@@ -3182,7 +3605,10 @@ fn every_set_aware_command_clears_the_set_after_acting() {
     editor.clipboard_ring.push("X".to_string());
     fresh_set(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
-    assert!(editor.active_document().selection_set.is_empty(), "p must clear the set");
+    assert!(
+        editor.active_document().selection_set.is_empty(),
+        "p must clear the set"
+    );
 }
 
 #[test]
@@ -3207,7 +3633,11 @@ fn dot_repeat_yank_reselects_without_reexecuting() {
         buffer_before,
         "yank's dot-repeat must not mutate the buffer"
     );
-    assert_eq!(editor.active_document().selection_set.regions.len(), 1, "but must rebank the equivalent region");
+    assert_eq!(
+        editor.active_document().selection_set.regions.len(),
+        1,
+        "but must rebank the equivalent region"
+    );
 }
 
 // Builds the set via `m` (RegionBankOccurrenceNext) on a repeated
@@ -3233,8 +3663,16 @@ fn dot_repeat_paste_genuinely_differs_from_bare_repeat() {
     let _ = editor.active_document().buffer.set_cursor(0);
     editor.execute_dot_repeat(); // 3rd X at each
 
-    let count_of_x = editor.active_document().buffer.to_string().matches('X').count();
-    assert_eq!(count_of_x, 6, "three dot-repeats x two original anchors = 6, not stacked at one spot");
+    let count_of_x = editor
+        .active_document()
+        .buffer
+        .to_string()
+        .matches('X')
+        .count();
+    assert_eq!(
+        count_of_x, 6,
+        "three dot-repeats x two original anchors = 6, not stacked at one spot"
+    );
 }
 
 // The set-aware multi-region Put path never establishes `post_paste_state`,
@@ -3249,13 +3687,24 @@ fn cycle_paste_after_set_clears_only_touches_the_single_most_recent_position() {
     load_text(&mut editor, "0123456789");
     editor.clipboard_ring.push("Y".to_string());
     editor.clipboard_ring.push("X".to_string());
-    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
-    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 0, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 5, RangeKind::Charwise));
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false })); // set clears here
     editor.handle_action(&Action::Editor(EditorAction::CyclePaste { forward: true }));
 
-    let count_of_y = editor.active_document().buffer.to_string().matches('Y').count();
+    let count_of_y = editor
+        .active_document()
+        .buffer
+        .to_string()
+        .matches('Y')
+        .count();
     assert_eq!(
         count_of_y, 0,
         "multi-region put never sets post_paste_state, so CyclePaste correctly no-ops"
@@ -3297,9 +3746,21 @@ fn real_keymap_v_then_l_renders_a_visible_highlight_in_the_composited_cells() {
     let cells = editor.render_system.compositor.get_composited_slice();
     let highlighted = cells[..cols]
         .iter()
-        .filter(|c| matches!(c.bg, Some(crate::color::Color::Rgb { r: 100, g: 160, b: 220 })))
+        .filter(|c| {
+            matches!(
+                c.bg,
+                Some(crate::color::Color::Rgb {
+                    r: 100,
+                    g: 160,
+                    b: 220
+                })
+            )
+        })
         .count();
-    assert_eq!(highlighted, 2, "v then l must highlight exactly the 2 selected chars 'h','e'");
+    assert_eq!(
+        highlighted, 2,
+        "v then l must highlight exactly the 2 selected chars 'h','e'"
+    );
 }
 
 #[test]
@@ -3340,7 +3801,16 @@ fn visual_highlight_redraws_on_a_frame_after_the_initial_one() {
     let cells = editor.render_system.compositor.get_composited_slice();
     let highlighted = cells[..cols]
         .iter()
-        .filter(|c| matches!(c.bg, Some(crate::color::Color::Rgb { r: 100, g: 160, b: 220 })))
+        .filter(|c| {
+            matches!(
+                c.bg,
+                Some(crate::color::Color::Rgb {
+                    r: 100,
+                    g: 160,
+                    b: 220
+                })
+            )
+        })
         .count();
     assert_eq!(
         highlighted, 2,

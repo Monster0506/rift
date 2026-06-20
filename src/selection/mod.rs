@@ -13,13 +13,20 @@ pub struct Region {
 
 impl Region {
     pub fn new(anchor: usize, cursor: usize, kind: RangeKind) -> Self {
-        Self { anchor, cursor, kind }
+        Self {
+            anchor,
+            cursor,
+            kind,
+        }
     }
 
     /// Ordered (start, end) char-offset span, `end` exclusive; pure anchor/cursor
     /// math for set bookkeeping (see `buffer_span` for the buffer-aware range).
     pub fn span(&self) -> (usize, usize) {
-        (self.anchor.min(self.cursor), self.anchor.max(self.cursor) + 1)
+        (
+            self.anchor.min(self.cursor),
+            self.anchor.max(self.cursor) + 1,
+        )
     }
 
     /// Range this region covers in `buf`: same as `span()` except Linewise is
@@ -152,7 +159,10 @@ impl SelectionSet {
         // not the raw anchor/cursor range (which collapses to one char when
         // anchor == cursor, e.g. right after pressing V without moving).
         let (last_start, last_end) = last.buffer_span(buf);
-        let needle: String = buf.chars(last_start..last_end).map(|c| c.to_string()).collect();
+        let needle: String = buf
+            .chars(last_start..last_end)
+            .map(|c| c.to_string())
+            .collect();
         if needle.is_empty() {
             return None;
         }

@@ -59,7 +59,10 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::Move(motion) => {
                 use crate::action::Motion;
 
-                if matches!(motion, Motion::RepeatFindForward | Motion::RepeatFindBackward) {
+                if matches!(
+                    motion,
+                    Motion::RepeatFindForward | Motion::RepeatFindBackward
+                ) {
                     let has_regions = self
                         .document_manager
                         .active_document()
@@ -157,7 +160,8 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::EnterInsertModeAfter => {
-                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAfter) {
+                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAfter)
+                {
                     self.finish_region_build(Some(action.clone()));
                     return true;
                 }
@@ -165,7 +169,9 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::EnterInsertModeAtLineStart => {
-                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineStart) {
+                if self.try_multi_insert_for_command(
+                    crate::command::Command::EnterInsertModeAtLineStart,
+                ) {
                     self.finish_region_build(Some(action.clone()));
                     return true;
                 }
@@ -173,7 +179,9 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::EnterInsertModeAtLineEnd => {
-                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineEnd) {
+                if self
+                    .try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineEnd)
+                {
                     self.finish_region_build(Some(action.clone()));
                     return true;
                 }
@@ -482,7 +490,9 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::Operator(op) => {
                 if let Some(layout) = self.panel_layout.clone() {
                     if layout.kind == crate::editor::PanelKind::Regions {
-                        let _ = self.document_manager.switch_to_document(layout.preview_doc_id);
+                        let _ = self
+                            .document_manager
+                            .switch_to_document(layout.preview_doc_id);
                         self.close_split_panel();
                     }
                 }
@@ -972,8 +982,12 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::RegionsListDrop => self.drop_regions_window_entry(),
-            EditorAction::RegionsListDown | EditorAction::RegionsListUp | EditorAction::RegionsListSelect => {
-                let Some(layout) = self.panel_layout.clone() else { return false };
+            EditorAction::RegionsListDown
+            | EditorAction::RegionsListUp
+            | EditorAction::RegionsListSelect => {
+                let Some(layout) = self.panel_layout.clone() else {
+                    return false;
+                };
                 if layout.kind != crate::editor::PanelKind::Regions {
                     return false;
                 }
@@ -1001,7 +1015,10 @@ impl<T: TerminalBackend> Editor<T> {
                     .map(|d| d.selection_set.sorted())
                     .and_then(|sorted| sorted.get(line).copied());
                 let Some(region) = region else { return false };
-                if let Some(source) = self.document_manager.get_document_mut(layout.preview_doc_id) {
+                if let Some(source) = self
+                    .document_manager
+                    .get_document_mut(layout.preview_doc_id)
+                {
                     let (start, _) = region.buffer_span(&source.buffer);
                     let _ = source.buffer.set_cursor(start);
                 }
@@ -1011,8 +1028,12 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::VisualSwapEnds => {
-                let Some(anchor) = self.visual_anchor else { return false };
-                let Some(doc) = self.document_manager.active_document_mut() else { return false };
+                let Some(anchor) = self.visual_anchor else {
+                    return false;
+                };
+                let Some(doc) = self.document_manager.active_document_mut() else {
+                    return false;
+                };
                 let cursor = doc.buffer.cursor();
                 self.visual_anchor = Some(cursor);
                 let _ = doc.buffer.set_cursor(anchor);
@@ -1059,8 +1080,12 @@ impl<T: TerminalBackend> Editor<T> {
     /// `v`/`V`/`Ctrl-V`: start a fresh active region at the cursor, or if it sits inside a
     /// banked region of the same kind, pop that back out with its original direction (design.md S3).
     pub(super) fn enter_visual_or_resume(&mut self, mode: Mode) -> bool {
-        let Some(kind) = mode.visual_range_kind() else { return false };
-        let Some(doc) = self.document_manager.active_document_mut() else { return false };
+        let Some(kind) = mode.visual_range_kind() else {
+            return false;
+        };
+        let Some(doc) = self.document_manager.active_document_mut() else {
+            return false;
+        };
         let cursor = doc.buffer.cursor();
         if let Some(idx) = doc.selection_set.region_containing(cursor) {
             let region = doc.selection_set.regions.remove(idx);

@@ -14,7 +14,11 @@ fn touching_regions_do_not_merge() {
     set.bank(region(0, 2));
     set.bank(region(6, 8));
     set.bank(region(9, 11));
-    assert_eq!(set.regions.len(), 3, "touching regions must stay independent");
+    assert_eq!(
+        set.regions.len(),
+        3,
+        "touching regions must stay independent"
+    );
 }
 
 #[test]
@@ -42,13 +46,19 @@ fn merge_never_crosses_kinds() {
     let mut set = SelectionSet::default();
     set.bank(region(0, 5));
     set.bank(Region::new(2, 7, RangeKind::Linewise));
-    assert_eq!(set.regions.len(), 2, "Charwise and Linewise must never merge");
+    assert_eq!(
+        set.regions.len(),
+        2,
+        "Charwise and Linewise must never merge"
+    );
 }
 
 #[test]
 fn commit_active_banks_into_the_set() {
-    let mut set = SelectionSet::default();
-    set.active = Some(region(0, 3));
+    let mut set = SelectionSet {
+        active: Some(region(0, 3)),
+        ..Default::default()
+    };
     set.commit_active();
     assert!(set.active.is_none());
     assert_eq!(set.regions.len(), 1);
@@ -135,8 +145,16 @@ fn blockwise_regions_only_merge_with_other_blockwise_overlap() {
     let mut set = SelectionSet::default();
     set.bank(Region::new(0, 5, RangeKind::Blockwise));
     set.bank(Region::new(3, 8, RangeKind::Charwise)); // overlaps in raw offsets, wrong kind
-    assert_eq!(set.regions.len(), 2, "Blockwise must not merge with an overlapping Charwise region");
+    assert_eq!(
+        set.regions.len(),
+        2,
+        "Blockwise must not merge with an overlapping Charwise region"
+    );
 
     set.bank(Region::new(3, 8, RangeKind::Blockwise)); // overlaps the first Blockwise region
-    assert_eq!(set.regions.len(), 2, "but DOES merge with an overlapping Blockwise region");
+    assert_eq!(
+        set.regions.len(),
+        2,
+        "but DOES merge with an overlapping Blockwise region"
+    );
 }

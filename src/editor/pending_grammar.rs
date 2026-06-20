@@ -63,7 +63,9 @@ impl<T: TerminalBackend> Editor<T> {
                             self.dot_repeat.record_single(command);
                         }
                     } else {
-                        self.finish_region_build(Some(Action::Editor(EditorAction::ReplaceCharPending)));
+                        self.finish_region_build(Some(Action::Editor(
+                            EditorAction::ReplaceCharPending,
+                        )));
                     }
                 }
                 self.pending_count = 0;

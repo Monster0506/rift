@@ -329,7 +329,11 @@ impl Document {
 
     /// Populate (or repopulate) the `gv` regions list from `regions`,
     /// computed against `source_buf` (the document the set belongs to).
-    pub fn populate_regions_buffer(&mut self, source_buf: &TextBuffer, regions: &[crate::selection::Region]) {
+    pub fn populate_regions_buffer(
+        &mut self,
+        source_buf: &TextBuffer,
+        regions: &[crate::selection::Region],
+    ) {
         use crate::buffer::api::BufferView;
 
         let mut content = String::new();
@@ -341,7 +345,10 @@ impl Document {
                 let row = source_buf.line_index.get_line_at(start);
                 let line_start = source_buf.line_index.get_start(row).unwrap_or(0);
                 let col = start.saturating_sub(line_start);
-                let raw: String = source_buf.chars(start..end).map(|c| c.to_char_lossy()).collect();
+                let raw: String = source_buf
+                    .chars(start..end)
+                    .map(|c| c.to_char_lossy())
+                    .collect();
                 let raw = raw.replace('\n', "\u{23ce}");
                 let preview: String = if raw.chars().count() > 48 {
                     raw.chars().take(45).chain("...".chars()).collect()

@@ -236,7 +236,11 @@ impl<T: TerminalBackend> Editor<T> {
                             .map(|d| d.is_regions())
                             .unwrap_or(false);
                         match self.current_mode {
-                            Mode::Normal | Mode::OperatorPending | Mode::Visual | Mode::VisualLine | Mode::VisualBlock => {
+                            Mode::Normal
+                            | Mode::OperatorPending
+                            | Mode::Visual
+                            | Mode::VisualLine
+                            | Mode::VisualBlock => {
                                 if self.current_mode.is_visual() {
                                     KeyContext::Visual
                                 } else if is_directory {
