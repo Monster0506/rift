@@ -1259,6 +1259,50 @@ fn test_substitute_whole_file_undo() {
     assert_eq!(document.buffer.to_string(), "qux\nbar\nqux\nbaz\nqux");
 }
 #[test]
+fn substitute_with_nonempty_set_scopes_to_banked_regions_only() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut state = State::new();
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    document.buffer.insert_str("foo bar foo baz foo").unwrap();
+    // Bank the first and third "foo" (char spans 0..3, 16..19); middle (8..11)
+    // is left out. Region::span() is inclusive of cursor, so end = cursor + 1.
+    document
+        .selection_set
+        .bank(Region::new(0, 2, RangeKind::Charwise));
+    document
+        .selection_set
+        .bank(Region::new(16, 18, RangeKind::Charwise));
+
+    let command = ParsedCommand::Substitute {
+        pattern: "foo".to_string(),
+        replacement: "XXX".to_string(),
+        flags: "g".to_string(),
+        range: Some("%".to_string()),
+        bangs: 0,
+    };
+
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    assert_eq!(result, ExecutionResult::Redraw);
+    assert_eq!(
+        document.buffer.to_string(),
+        "XXX bar foo baz XXX",
+        "middle 'foo' (not banked) must survive"
+    );
+    assert!(document.selection_set.is_empty());
+}
+
+#[test]
 fn test_execute_undotree() {
     let mut state = State::new();
     let command = ParsedCommand::UndoTree { bangs: 0 };

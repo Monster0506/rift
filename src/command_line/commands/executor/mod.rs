@@ -281,9 +281,23 @@ impl CommandExecutor {
                     Ok((mut matches, _stats)) => {
                         let is_global_subst = flags.contains('g');
                         let whole_file = range.as_deref() == Some("%");
+                        let has_selection = !document.selection_set.is_empty();
 
-                        // Filtering matches
-                        if !whole_file {
+                        // A non-empty SelectionSet takes priority over %/current-line;
+                        // each banked region is its own miniature substitution scope.
+                        if has_selection {
+                            let region_spans: Vec<(usize, usize)> = document
+                                .selection_set
+                                .sorted()
+                                .iter()
+                                .map(|r| r.buffer_span(&document.buffer))
+                                .collect();
+                            matches.retain(|m| {
+                                region_spans
+                                    .iter()
+                                    .any(|(s, e)| m.range.start >= *s && m.range.end <= *e)
+                            });
+                        } else if !whole_file {
                             // Filter matches that intersect with current line
                             let current_line_idx = document
                                 .buffer
@@ -362,6 +376,9 @@ impl CommandExecutor {
 
                         // Commit transaction
                         document.commit_transaction();
+                        if has_selection {
+                            document.selection_set.clear();
+                        }
 
                         if changes_made > 0 {
                             state.last_search_query = Some(pattern.clone());
