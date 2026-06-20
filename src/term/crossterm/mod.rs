@@ -169,7 +169,7 @@ impl ColorTerminal for CrosstermBackend {
 pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
     let modifiers = key_event.modifiers;
     let ctrl = modifiers.contains(KeyModifiers::CONTROL);
-    let _shift = modifiers.contains(KeyModifiers::SHIFT);
+    let shift = modifiers.contains(KeyModifiers::SHIFT);
     let alt = modifiers.contains(KeyModifiers::ALT);
 
     match key_event.code {
@@ -193,6 +193,8 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
                 // Normalize implicit control characters (e.g. ^W = 23) to Key::Ctrl('w')
                 // 'a' is 97, ^A is 1. Offset is 96.
                 Key::Ctrl((ch as u8) + 96)
+            } else if shift && ch == ' ' {
+                Key::ShiftSpace
             } else {
                 Key::Char(ch)
             }
@@ -202,7 +204,7 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
         KeyCode::Esc => Key::Escape,
         KeyCode::BackTab => Key::ShiftTab,
         KeyCode::Tab => {
-            if _shift {
+            if shift {
                 Key::ShiftTab
             } else {
                 Key::Tab

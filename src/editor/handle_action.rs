@@ -959,6 +959,7 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::EnterVisualLine => self.enter_visual_or_resume(Mode::VisualLine),
             EditorAction::EnterVisualBlock => self.enter_visual_or_resume(Mode::VisualBlock),
             EditorAction::ExpandRegion => self.expand_active_region(),
+            EditorAction::ShrinkRegion => self.shrink_active_region(),
             EditorAction::VisualSwapEnds => {
                 let Some(anchor) = self.visual_anchor else { return false };
                 let Some(doc) = self.document_manager.active_document_mut() else { return false };

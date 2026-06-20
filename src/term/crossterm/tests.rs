@@ -190,3 +190,12 @@ fn test_translate_key_event() {
     let key = super::translate_key_event(key_event);
     assert_eq!(key, Key::Delete);
 }
+
+#[test]
+fn shift_space_translates_to_key_shift_space() {
+    use crate::term::crossterm::translate_key_event;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let event = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::SHIFT);
+    assert_eq!(translate_key_event(event), crate::key::Key::ShiftSpace);
+}

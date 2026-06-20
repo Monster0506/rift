@@ -693,6 +693,11 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::ExpandRegion),
     );
     keymap.register(
+        KeyContext::Visual,
+        Key::ShiftSpace,
+        Action::Editor(EditorAction::ShrinkRegion),
+    );
+    keymap.register(
         KeyContext::Normal,
         Key::Char('m'),
         Action::Editor(EditorAction::RegionBankOccurrenceNext),

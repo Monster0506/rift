@@ -426,6 +426,8 @@ pub enum EditorAction {
     /// `<Space>` in Visual: grow the active region to the next enclosing
     /// text object.
     ExpandRegion,
+    /// `<Shift-Space>` in Visual: undo the last `<Space>` expand step.
+    ShrinkRegion,
 }
 
 /// Represents an action in the editor

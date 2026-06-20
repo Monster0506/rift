@@ -77,6 +77,21 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
+    /// `<Shift-Space>`: pop the last expand step and restore it.
+    pub(super) fn shrink_active_region(&mut self) -> bool {
+        if self.visual_anchor.is_none() {
+            return false;
+        }
+        let Some((start, end)) = self.expand_history.pop() else {
+            return false;
+        };
+        self.visual_anchor = Some(start);
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            let _ = doc.buffer.set_cursor(end.saturating_sub(1));
+        }
+        true
+    }
+
     /// `n`/`N` when the `SelectionSet` is non-empty: cycle the cursor
     /// between banked regions instead of repeat-find/search (design.md S3,
     /// resolved as context-sensitive per this codebase's existing n/N bindings).

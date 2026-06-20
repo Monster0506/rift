@@ -186,6 +186,7 @@ impl StatusBar {
             Key::Escape => "Esc".to_string(),
             Key::Tab => "Tab".to_string(),
             Key::ShiftTab => "S-Tab".to_string(),
+            Key::ShiftSpace => "S-Space".to_string(),
             Key::Home => "Home".to_string(),
             Key::End => "End".to_string(),
             Key::CtrlHome => "Ctrl+Home".to_string(),

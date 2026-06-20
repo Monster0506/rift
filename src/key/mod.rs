@@ -32,6 +32,10 @@ pub enum Key {
     Escape,
     Tab,
     ShiftTab,
+    /// Space pressed with the Shift modifier (terminal support varies --
+    /// see visual-mode-design.md S3 -- rebind via the keymap if your
+    /// terminal never transmits this).
+    ShiftSpace,
     /// System events
     Resize(u16, u16),
 }
@@ -64,6 +68,7 @@ impl Key {
             Key::Escape => vec![0x1b],
             Key::Tab => vec![b'\t'],
             Key::ShiftTab => vec![0x1b, b'[', b'Z'],
+            Key::ShiftSpace => vec![b' '],
 
             // CSI cursor keys: ESC [ {suffix}
             Key::ArrowUp => csi(b'A', None),
@@ -140,6 +145,8 @@ pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
                 Key::PageDown
             } else if low == "space" {
                 Key::Char(' ')
+            } else if low == "s-space" || low == "shiftspace" {
+                Key::ShiftSpace
             } else if low.starts_with("c-") && low.len() == 3 {
                 let ch = low.chars().nth(2)?;
                 Key::Ctrl(ch as u8)

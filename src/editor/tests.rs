@@ -2031,6 +2031,41 @@ fn expand_region_noop_when_already_at_buffer_extent() {
 }
 
 #[test]
+fn shrink_region_pops_the_last_expand_step() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "say \"hello world\" now");
+    let pos = editor.active_document().buffer.to_string().find("hello").unwrap();
+    editor.active_document().buffer.set_cursor(pos).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+
+    let before_expand = (editor.visual_anchor, editor.active_document().buffer.cursor());
+    editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
+    let after_expand = (editor.visual_anchor, editor.active_document().buffer.cursor());
+    assert_ne!(before_expand, after_expand, "expand must have actually grown the region");
+
+    editor.handle_action(&Action::Editor(EditorAction::ShrinkRegion));
+    let after_shrink = (editor.visual_anchor, editor.active_document().buffer.cursor());
+
+    assert_eq!(after_shrink, before_expand, "shrink must restore the exact pre-expand extent");
+}
+
+#[test]
+fn shrink_region_with_empty_history_is_a_noop() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+
+    let handled = editor.handle_action(&Action::Editor(EditorAction::ShrinkRegion));
+
+    assert!(!handled);
+}
+
+#[test]
 fn escape_in_visual_commits_active_region() {
     use crate::action::{Action, EditorAction};
 
