@@ -126,7 +126,9 @@ impl RenderSystem {
             annotation_styles_hash: {
                 let mut h: u64 = 0;
                 for (range, style) in ctx.annotation_styles.unwrap_or(&[]) {
-                    h = h.wrapping_mul(6364136223846793005).wrapping_add(range.start as u64);
+                    h = h
+                        .wrapping_mul(6364136223846793005)
+                        .wrapping_add(range.start as u64);
                     h = h
                         .wrapping_mul(6364136223846793005)
                         .wrapping_add(range.end as u64 + 1);
@@ -134,7 +136,9 @@ impl RenderSystem {
                         .wrapping_mul(6364136223846793005)
                         .wrapping_add(format!("{style:?}").len() as u64 + 1);
                     for b in format!("{style:?}").bytes() {
-                        h = h.wrapping_mul(6364136223846793005).wrapping_add(b as u64 + 1);
+                        h = h
+                            .wrapping_mul(6364136223846793005)
+                            .wrapping_add(b as u64 + 1);
                     }
                 }
                 h

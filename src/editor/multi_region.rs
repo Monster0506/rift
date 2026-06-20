@@ -12,7 +12,10 @@ fn line_start_offset(buf: &crate::buffer::TextBuffer, row: usize) -> usize {
 /// Mirrors `clipboard::capture_text`'s Linewise guarded pattern.
 fn line_end_offset(buf: &crate::buffer::TextBuffer, row: usize) -> usize {
     if row + 1 < buf.get_total_lines() {
-        buf.line_index.get_start(row + 1).unwrap_or(buf.len()).saturating_sub(1)
+        buf.line_index
+            .get_start(row + 1)
+            .unwrap_or(buf.len())
+            .saturating_sub(1)
     } else {
         buf.len()
     }
@@ -36,8 +39,12 @@ impl<T: TerminalBackend> Editor<T> {
     /// `<Space>`: grow the active Visual region to the smallest enclosing candidate strictly
     /// larger than the current span, pushing the prior extent onto `expand_history` first.
     pub(super) fn expand_active_region(&mut self) -> bool {
-        let Some(anchor) = self.visual_anchor else { return false };
-        let Some(doc) = self.document_manager.active_document() else { return false };
+        let Some(anchor) = self.visual_anchor else {
+            return false;
+        };
+        let Some(doc) = self.document_manager.active_document() else {
+            return false;
+        };
         let cursor = doc.buffer.cursor();
         let current = (anchor.min(cursor), anchor.max(cursor) + 1);
 
@@ -58,7 +65,8 @@ impl<T: TerminalBackend> Editor<T> {
             // Clamp: a last line with no trailing newline can overshoot by one
             // (same case clipboard::capture_text already guards).
             let e = (range.anchor.max(range.new_cursor) + end_offset).min(doc.buffer.len());
-            let strictly_larger = s <= current.0 && e >= current.1 && (s < current.0 || e > current.1);
+            let strictly_larger =
+                s <= current.0 && e >= current.1 && (s < current.0 || e > current.1);
             if !strictly_larger {
                 continue;
             }
@@ -67,7 +75,9 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        let Some((new_start, new_end)) = best else { return false };
+        let Some((new_start, new_end)) = best else {
+            return false;
+        };
         self.expand_history.push(current);
         self.visual_anchor = Some(new_start);
         if let Some(doc) = self.document_manager.active_document_mut() {
@@ -270,7 +280,11 @@ impl<T: TerminalBackend> Editor<T> {
                     return false;
                 };
                 let (start, end) = region.buffer_span(&doc.buffer);
-                let text: String = doc.buffer.chars(start..end).map(|c| c.to_char_lossy()).collect();
+                let text: String = doc
+                    .buffer
+                    .chars(start..end)
+                    .map(|c| c.to_char_lossy())
+                    .collect();
                 if doc.delete_range(start, end).is_err() {
                     return false;
                 }
@@ -284,7 +298,11 @@ impl<T: TerminalBackend> Editor<T> {
                     return false;
                 };
                 let (start, end) = region.buffer_span(&doc.buffer);
-                let text: String = doc.buffer.chars(start..end).map(|c| c.to_char_lossy()).collect();
+                let text: String = doc
+                    .buffer
+                    .chars(start..end)
+                    .map(|c| c.to_char_lossy())
+                    .collect();
                 if !text.is_empty() {
                     editor.clipboard_ring.push(text);
                 }
@@ -451,7 +469,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
         let actions = std::mem::take(&mut self.region_build_recording);
         if !self.dot_repeat.is_replaying() {
-            self.dot_repeat.record_region_build_session(actions, follow_up);
+            self.dot_repeat
+                .record_region_build_session(actions, follow_up);
         }
     }
 
@@ -527,7 +546,9 @@ impl<T: TerminalBackend> Editor<T> {
     /// `x` inside the regions window: drop the entry at the cursor's line
     /// from the *source* document's `SelectionSet`, then refresh the list.
     pub(super) fn drop_regions_window_entry(&mut self) -> bool {
-        let Some(layout) = self.panel_layout.clone() else { return false };
+        let Some(layout) = self.panel_layout.clone() else {
+            return false;
+        };
         if layout.kind != crate::editor::PanelKind::Regions {
             return false;
         }

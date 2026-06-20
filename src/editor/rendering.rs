@@ -118,9 +118,9 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
         let active = if is_visual {
-            visual_anchor
-                .zip(visual_kind)
-                .map(|(anchor, kind)| crate::selection::Region::new(anchor, doc.buffer.cursor(), kind))
+            visual_anchor.zip(visual_kind).map(|(anchor, kind)| {
+                crate::selection::Region::new(anchor, doc.buffer.cursor(), kind)
+            })
         } else {
             None
         };

@@ -2032,13 +2032,17 @@ fn undo_clears_selection_set() {
 
     let mut doc = Document::new(1).unwrap();
     doc.buffer.insert_str("hello world").unwrap();
-    doc.selection_set.bank(Region::new(0, 4, RangeKind::Charwise));
+    doc.selection_set
+        .bank(Region::new(0, 4, RangeKind::Charwise));
     assert!(!doc.selection_set.is_empty());
 
     doc.insert_char('!').unwrap();
     doc.undo();
 
-    assert!(doc.selection_set.is_empty(), "undo must clear a banked selection set");
+    assert!(
+        doc.selection_set.is_empty(),
+        "undo must clear a banked selection set"
+    );
 }
 
 #[test]
@@ -2049,12 +2053,16 @@ fn redo_clears_selection_set() {
     let mut doc = Document::new(1).unwrap();
     doc.insert_str("hello world").unwrap();
     assert!(doc.undo());
-    doc.selection_set.bank(Region::new(0, 4, RangeKind::Charwise));
+    doc.selection_set
+        .bank(Region::new(0, 4, RangeKind::Charwise));
     assert!(!doc.selection_set.is_empty());
 
     assert!(doc.redo());
 
-    assert!(doc.selection_set.is_empty(), "redo must clear a banked selection set");
+    assert!(
+        doc.selection_set.is_empty(),
+        "redo must clear a banked selection set"
+    );
 }
 
 #[test]
@@ -2083,14 +2091,27 @@ fn sync_selection_annotations_active_region_uses_a_visible_contrasting_blue() {
 
     doc.sync_selection_annotations(Some(Region::new(0, 2, RangeKind::Charwise)), &[]);
 
-    let active = doc.annotations.query_kind("ui.selection.active").next().unwrap();
-    let style = active.presentation.as_ref().unwrap().style.as_ref().unwrap();
+    let active = doc
+        .annotations
+        .query_kind("ui.selection.active")
+        .next()
+        .unwrap();
+    let style = active
+        .presentation
+        .as_ref()
+        .unwrap()
+        .style
+        .as_ref()
+        .unwrap();
     assert_ne!(
         style.bg,
         Some(crate::color::Color::Blue),
         "ANSI Blue renders as a dark, easily-missed navy in most terminal themes"
     );
-    assert!(style.fg.is_some(), "active selection must set an explicit contrasting foreground");
+    assert!(
+        style.fg.is_some(),
+        "active selection must set an explicit contrasting foreground"
+    );
 }
 
 #[test]
@@ -2144,7 +2165,7 @@ fn populate_regions_buffer_writes_one_line_per_region() {
     let mut source = TextBuffer::new(20).unwrap();
     source.insert_str("hello\nworld").unwrap();
     let regions = vec![
-        Region::new(0, 4, RangeKind::Charwise), // "hello"
+        Region::new(0, 4, RangeKind::Charwise),  // "hello"
         Region::new(6, 10, RangeKind::Charwise), // "world"
     ];
 
@@ -2154,7 +2175,11 @@ fn populate_regions_buffer_writes_one_line_per_region() {
     let content = doc.buffer.to_string();
     let lines: Vec<&str> = content.lines().collect();
     assert_eq!(lines.len(), 2);
-    assert!(lines[0].contains("0:0"), "row:col for the first region; got {:?}", lines[0]);
+    assert!(
+        lines[0].contains("0:0"),
+        "row:col for the first region; got {:?}",
+        lines[0]
+    );
     assert!(lines[0].contains("hello"));
     assert!(lines[1].contains("1:0"));
     assert!(lines[1].contains("world"));
