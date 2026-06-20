@@ -1,7 +1,5 @@
-//! Multi-region, non-contiguous selection set (visual-mode-design.md).
-//!
-//! Regions are plain char-offset anchor/cursor pairs, not edit-tracked markers --
-//! any edit outside the set-aware drivers clears the set (Document::undo/redo/goto_seq).
+//! Multi-region, non-contiguous selection set (visual-mode-design.md). Regions are plain
+//! char-offset pairs; any edit outside the set-aware drivers clears the set.
 
 use crate::buffer::TextBuffer;
 use crate::wrap::RangeKind;

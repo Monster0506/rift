@@ -243,6 +243,11 @@ impl Document {
         matches!(self.kind, BufferKind::LocationList { .. })
     }
 
+    /// Check if this document is a `gv` regions list buffer.
+    pub fn is_regions(&self) -> bool {
+        matches!(self.kind, BufferKind::Regions { .. })
+    }
+
     /// Check if this document is any clipboard-related buffer
     pub fn is_any_clipboard(&self) -> bool {
         matches!(

@@ -428,6 +428,16 @@ pub enum EditorAction {
     ExpandRegion,
     /// `<Shift-Space>` in Visual: undo the last `<Space>` expand step.
     ShrinkRegion,
+    /// `gv`: toggle the regions list window.
+    ToggleRegionsWindow,
+    /// `j` inside the regions window: move down, live-jump the preview.
+    RegionsListDown,
+    /// `k` inside the regions window: move up, live-jump the preview.
+    RegionsListUp,
+    /// `Enter` inside the regions window: jump and return focus to the buffer.
+    RegionsListSelect,
+    /// `x` inside the regions window: drop that entry from the set.
+    RegionsListDrop,
 }
 
 /// Represents an action in the editor

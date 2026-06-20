@@ -896,5 +896,52 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Buffer("location_list:code_action".to_string()),
     );
 
+    // `gv` regions list window (visual-mode-design.md S4).
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char('g'), Key::Char('v')],
+        Action::Editor(EditorAction::ToggleRegionsWindow),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('j'),
+        Action::Editor(EditorAction::RegionsListDown),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('k'),
+        Action::Editor(EditorAction::RegionsListUp),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Enter,
+        Action::Editor(EditorAction::RegionsListSelect),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('x'),
+        Action::Editor(EditorAction::RegionsListDrop),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('q'),
+        Action::Buffer("regions:close".to_string()),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('d'),
+        Action::Editor(EditorAction::Operator(crate::action::OperatorType::Delete)),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('c'),
+        Action::Editor(EditorAction::Operator(crate::action::OperatorType::Change)),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('y'),
+        Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
+    );
+
     // Text objects are handled by run_loop.rs's pending-grammar state machine, not the trie.
 }

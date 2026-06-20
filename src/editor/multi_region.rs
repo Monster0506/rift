@@ -33,9 +33,8 @@ const EXPAND_CANDIDATES: &[(crate::text_objects::ObjectKind, u8)] = &[
 ];
 
 impl<T: TerminalBackend> Editor<T> {
-    /// `<Space>`: grow the active Visual region to the smallest enclosing
-    /// candidate that's strictly larger than the current span. Pushes the
-    /// prior extent onto `expand_history` first (Task 24 pops it).
+    /// `<Space>`: grow the active Visual region to the smallest enclosing candidate strictly
+    /// larger than the current span, pushing the prior extent onto `expand_history` first.
     pub(super) fn expand_active_region(&mut self) -> bool {
         let Some(anchor) = self.visual_anchor else { return false };
         let Some(doc) = self.document_manager.active_document() else { return false };
@@ -92,9 +91,8 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// `n`/`N` when the `SelectionSet` is non-empty: cycle the cursor
-    /// between banked regions instead of repeat-find/search (design.md S3,
-    /// resolved as context-sensitive per this codebase's existing n/N bindings).
+    /// `n`/`N` when the `SelectionSet` is non-empty: cycle the cursor between banked
+    /// regions instead of repeat-find/search (design.md S3, context-sensitive on n/N).
     pub(super) fn cycle_to_region(&mut self, forward: bool) -> bool {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
@@ -118,9 +116,8 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// Run `f` once per banked region, highest-offset-first, inside one
-    /// transaction so the whole batch undoes as a single step. Returns
-    /// `false` without doing anything if the set is empty.
+    /// Run `f` once per banked region, highest-offset-first, in one transaction so the batch
+    /// undoes as a single step. Returns `false` without acting if the set is empty.
     pub(super) fn apply_to_each_region<F>(&mut self, mut f: F) -> bool
     where
         F: FnMut(&mut Self, crate::selection::Region) -> bool,
@@ -246,10 +243,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// `d`/`y` (and `c`, Task 14) against a non-empty `SelectionSet`: run the
-    /// whole banked set as one batch instead of entering `OperatorPending`
-    /// for a single motion. Returns `false` if the set is empty so the
-    /// caller falls through to today's single-cursor behavior unchanged.
+    /// `d`/`y`/`c` against a non-empty `SelectionSet`: run the whole banked set as one batch
+    /// instead of `OperatorPending`. Returns `false` if empty so the caller falls through.
     pub(super) fn try_run_set_aware_operator(&mut self, op: crate::action::OperatorType) -> bool {
         use crate::action::OperatorType;
         use crate::buffer::api::BufferView;
@@ -371,9 +366,8 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
-    /// `sg<ch>` against a non-empty `SelectionSet`: the region supplies the
-    /// range directly, so this mirrors `Command::AddSurround`'s body instead
-    /// of routing through `compute_motion_range`.
+    /// `sg<ch>` against a non-empty `SelectionSet`: the region supplies the range directly,
+    /// so this mirrors `Command::AddSurround` instead of `compute_motion_range`.
     pub(super) fn try_run_set_aware_add_surround(&mut self, ch: char, delim_count: usize) -> bool {
         let is_empty = self
             .document_manager
@@ -453,5 +447,106 @@ impl<T: TerminalBackend> Editor<T> {
         if !self.dot_repeat.is_replaying() {
             self.dot_repeat.record_region_build_session(actions, follow_up);
         }
+    }
+
+    /// `gv`: toggle the regions list window. Always means "stop looking at
+    /// the list" when one is already open, regardless of current focus.
+    pub(super) fn toggle_regions_window(&mut self) {
+        if let Some(layout) = self.panel_layout.clone() {
+            if layout.kind == crate::editor::PanelKind::Regions {
+                self.close_split_panel();
+                return;
+            }
+        }
+
+        let Some(source_doc_id) = self.document_manager.active_document().map(|d| d.id) else {
+            return;
+        };
+        let regions = self
+            .document_manager
+            .active_document()
+            .map(|d| d.selection_set.sorted())
+            .unwrap_or_default();
+        if regions.is_empty() {
+            self.state.notify(
+                crate::notification::NotificationType::Info,
+                "No regions banked".to_string(),
+            );
+            return;
+        }
+
+        let list_doc_id = self.document_manager.next_id();
+        let mut doc = match crate::document::Document::new(list_doc_id) {
+            Ok(d) => d,
+            Err(e) => {
+                self.state.handle_error(e);
+                return;
+            }
+        };
+        doc.is_read_only = true;
+        if let Some(source) = self.document_manager.active_document() {
+            doc.populate_regions_buffer(&source.buffer, &regions);
+        }
+        doc.kind = crate::document::BufferKind::Regions { source_doc_id };
+        self.document_manager.add_private_document(doc);
+
+        let size = self
+            .term
+            .get_size()
+            .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+        let preview_win_id = self.split_tree.focused_window_id();
+        let original_doc_id = self.split_tree.focused_window().document_id;
+        let dir_win_id = self.split_tree.split(
+            crate::split::tree::SplitDirection::Horizontal,
+            preview_win_id,
+            list_doc_id,
+            size.rows as usize,
+            size.cols as usize,
+        );
+        self.split_tree.set_focus(dir_win_id);
+        let _ = self.document_manager.switch_to_document(list_doc_id);
+
+        self.panel_layout = Some(crate::editor::PanelLayout {
+            kind: crate::editor::PanelKind::Regions,
+            dir_win_id,
+            preview_win_id,
+            dir_doc_id: list_doc_id,
+            preview_doc_id: original_doc_id,
+            original_doc_id,
+        });
+        self.sync_state_with_active_document();
+        let _ = self.force_full_redraw();
+    }
+
+    /// `x` inside the regions window: drop the entry at the cursor's line
+    /// from the *source* document's `SelectionSet`, then refresh the list.
+    pub(super) fn drop_regions_window_entry(&mut self) -> bool {
+        let Some(layout) = self.panel_layout.clone() else { return false };
+        if layout.kind != crate::editor::PanelKind::Regions {
+            return false;
+        }
+        let line = self
+            .document_manager
+            .active_document()
+            .map(|d| d.buffer.line_index.get_line_at(d.buffer.cursor()))
+            .unwrap_or(0);
+        let source_doc_id = match self.document_manager.active_document().map(|d| &d.kind) {
+            Some(crate::document::BufferKind::Regions { source_doc_id }) => *source_doc_id,
+            _ => return false,
+        };
+        let Some(source) = self.document_manager.get_document_mut(source_doc_id) else {
+            return false;
+        };
+        let sorted = source.selection_set.sorted();
+        let Some(target) = sorted.get(line).copied() else {
+            return false;
+        };
+        source.selection_set.regions.retain(|r| *r != target);
+        let remaining = source.selection_set.sorted();
+        let source_buf = source.buffer.clone();
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.populate_regions_buffer(&source_buf, &remaining);
+        }
+        true
     }
 }

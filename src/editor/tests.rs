@@ -1789,9 +1789,8 @@ fn surround_give_line_without_pending_add_cancels_like_unrecognized_key() {
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar");
 
-    // Plain `yg` (no `sg` in progress): pending_surround_add is None, so
-    // SurroundGiveLine must cancel back to Normal, not start a phantom
-    // surround-add session.
+    // Plain `yg` (no `sg` in progress): pending_surround_add is None, so SurroundGiveLine
+    // must cancel back to Normal, not start a phantom surround-add session.
     editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
     editor.handle_action(&Action::Editor(EditorAction::SurroundGiveLine));
 
@@ -2913,3 +2912,298 @@ fn dot_repeat_sg_fully_replays_using_addsurroundtoset() {
         "'.' rebuilds the equivalent region at the new cursor AND re-wraps it -- sg fully replays, unlike d/c/y/sd/sc"
     );
 }
+
+#[test]
+fn gv_toggle_opens_and_closes_regardless_of_focus() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world");
+    editor.active_document().selection_set.bank(Region::new(0, 4, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
+    assert!(editor.panel_layout.is_some(), "gv opens the window");
+    assert_eq!(
+        editor.active_document().kind.kind_str(),
+        "regions",
+        "focus moves into the new regions window"
+    );
+
+    editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
+    assert!(editor.panel_layout.is_none(), "a second gv closes it again");
+}
+
+#[test]
+fn gv_with_empty_set_does_not_open_a_window() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world");
+
+    editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
+
+    assert!(editor.panel_layout.is_none());
+}
+
+#[test]
+fn regions_window_x_drops_the_selected_entry() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+    editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
+
+    editor.handle_action(&Action::Editor(EditorAction::RegionsListDrop));
+
+    let source_id = match editor.active_document().kind {
+        crate::document::BufferKind::Regions { source_doc_id } => source_doc_id,
+        _ => panic!("expected to still be focused in the regions window"),
+    };
+    assert_eq!(
+        editor.document_manager.get_document(source_id).unwrap().selection_set.regions.len(),
+        1,
+        "one entry dropped from the *source* document's set"
+    );
+}
+
+#[test]
+fn regions_window_j_moves_the_list_cursor_and_live_jumps_the_preview() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+    let source_id = editor.active_document_id();
+    editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
+    let list_cursor_before = editor.active_document().buffer.cursor();
+
+    editor.handle_action(&Action::Editor(EditorAction::RegionsListDown));
+
+    assert_ne!(
+        editor.active_document().buffer.cursor(),
+        list_cursor_before,
+        "j must move the regions list's own cursor to line 2, not stay on line 1"
+    );
+    assert_eq!(
+        editor.document_manager.get_document(source_id).unwrap().buffer.cursor(),
+        5,
+        "and live-jump the source buffer to the second region (sorted order: 0..1, then 5..6)"
+    );
+}
+
+#[test]
+fn regions_window_operator_redirects_to_the_source_document() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 6, RangeKind::Charwise));
+    let source_id = editor.active_document_id();
+    editor.handle_action(&Action::Editor(EditorAction::ToggleRegionsWindow));
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+
+    assert!(editor.panel_layout.is_none(), "firing an operator from the window closes it");
+    assert_eq!(
+        editor.document_manager.get_document(source_id).unwrap().buffer.to_string(),
+        "234789"
+    );
+}
+
+#[test]
+fn visual_block_renders_and_edits_identically_to_charwise() {
+    use crate::action::{Action, EditorAction, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualBlock));
+    editor.handle_action(&Action::Editor(EditorAction::Move(crate::action::Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "23456789",
+        "Ctrl-V behaves exactly like v -- no rectangle semantics by design"
+    );
+}
+
+#[test]
+fn issue_worked_example_full_sequence_including_delete() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+    use crate::buffer::api::BufferView;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "Hello\nworld\nfoo\n");
+
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode)); // banks "He"
+
+    let line3_start = editor.active_document().buffer.line_start(2);
+    let _ = editor.active_document().buffer.set_cursor(line3_start);
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode)); // banks "f"
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "llo\nworld\noo\n");
+    assert!(editor.active_document().selection_set.is_empty());
+}
+
+#[test]
+fn undo_of_unrelated_edit_clears_a_banked_set() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().insert_char('!').unwrap(); // an edit not routed through any driver
+    editor.active_document().selection_set.bank(Region::new(0, 1, RangeKind::Charwise));
+    assert!(!editor.active_document().selection_set.is_empty());
+
+    assert!(editor.active_document().undo());
+
+    assert!(editor.active_document().selection_set.is_empty());
+}
+
+#[test]
+fn every_set_aware_command_clears_the_set_after_acting() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let fresh_set = |editor: &mut Editor<MockTerminal>| {
+        editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
+        editor.active_document().selection_set.bank(Region::new(4, 4, RangeKind::Charwise));
+    };
+
+    // d
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    fresh_set(&mut editor);
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Delete)));
+    assert!(editor.active_document().selection_set.is_empty(), "d must clear the set");
+
+    // y
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    fresh_set(&mut editor);
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
+    assert!(editor.active_document().selection_set.is_empty(), "y must clear the set");
+
+    // i (then Esc to finish the insert session)
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    fresh_set(&mut editor);
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    assert!(editor.active_document().selection_set.is_empty(), "i must clear the set");
+
+    // o
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    fresh_set(&mut editor);
+    editor.handle_action(&Action::Editor(EditorAction::OpenLineBelow));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    assert!(editor.active_document().selection_set.is_empty(), "o must clear the set");
+
+    // p
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.clipboard_ring.push("X".to_string());
+    fresh_set(&mut editor);
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
+    assert!(editor.active_document().selection_set.is_empty(), "p must clear the set");
+}
+
+#[test]
+fn dot_repeat_yank_reselects_without_reexecuting() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "(a) (b)");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
+    let buffer_before = editor.active_document().buffer.to_string();
+    assert!(editor.active_document().selection_set.is_empty());
+
+    editor.active_document().buffer.set_cursor(5).unwrap();
+    editor.execute_dot_repeat();
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        buffer_before,
+        "yank's dot-repeat must not mutate the buffer"
+    );
+    assert_eq!(editor.active_document().selection_set.regions.len(), 1, "but must rebank the equivalent region");
+}
+
+// Builds the set via `m` (RegionBankOccurrenceNext) on a repeated
+// substring so the build sequence is recorded and replays at a new cursor.
+#[test]
+fn dot_repeat_paste_genuinely_differs_from_bare_repeat() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "foo bar foo baz foo");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode)); // banks "foo" at 0..2
+    editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext)); // banks "foo" at 8..10
+
+    editor.clipboard_ring.push("X".to_string());
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: false })); // 1st X after each anchor
+
+    let _ = editor.active_document().buffer.set_cursor(0);
+    editor.execute_dot_repeat(); // rebuild relative to cursor 0 + re-run: 2nd X at each
+    let _ = editor.active_document().buffer.set_cursor(0);
+    editor.execute_dot_repeat(); // 3rd X at each
+
+    let count_of_x = editor.active_document().buffer.to_string().matches('X').count();
+    assert_eq!(count_of_x, 6, "three dot-repeats x two original anchors = 6, not stacked at one spot");
+}
+
+// The set-aware multi-region Put path never establishes `post_paste_state`,
+// so CyclePaste has no single position to act on and correctly no-ops.
+#[test]
+fn cycle_paste_after_set_clears_only_touches_the_single_most_recent_position() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.clipboard_ring.push("Y".to_string());
+    editor.clipboard_ring.push("X".to_string());
+    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: false })); // set clears here
+    editor.handle_action(&Action::Editor(EditorAction::CyclePaste { forward: true }));
+
+    let count_of_y = editor.active_document().buffer.to_string().matches('Y').count();
+    assert_eq!(
+        count_of_y, 0,
+        "multi-region put never sets post_paste_state, so CyclePaste correctly no-ops"
+    );
+}
+

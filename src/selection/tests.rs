@@ -116,3 +116,14 @@ fn bank_occurrence_disabled_for_blockwise() {
     set.bank(Region::new(0, 2, RangeKind::Blockwise));
     assert!(set.bank_occurrence(&buf, true).is_none());
 }
+
+#[test]
+fn blockwise_regions_only_merge_with_other_blockwise_overlap() {
+    let mut set = SelectionSet::default();
+    set.bank(Region::new(0, 5, RangeKind::Blockwise));
+    set.bank(Region::new(3, 8, RangeKind::Charwise)); // overlaps in raw offsets, wrong kind
+    assert_eq!(set.regions.len(), 2, "Blockwise must not merge with an overlapping Charwise region");
+
+    set.bank(Region::new(3, 8, RangeKind::Blockwise)); // overlaps the first Blockwise region
+    assert_eq!(set.regions.len(), 2, "but DOES merge with an overlapping Blockwise region");
+}

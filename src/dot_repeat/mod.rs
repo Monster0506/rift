@@ -15,9 +15,8 @@ pub(crate) enum DotRegister {
         entry: Command,
         commands: Vec<Command>,
     },
-    /// The selection-building actions (`v`/motion/`Esc`, `m`/`M`) that
-    /// constructed a `SelectionSet`, plus what to do once it's rebuilt:
-    /// `Some(action)` re-runs that action; `None` stops with the set banked.
+    /// Selection-building actions (`v`/motion/`Esc`, `m`/`M`) that built a `SelectionSet`,
+    /// plus a follow-up: `Some` re-runs that action; `None` stops with the set banked.
     RegionBuildSession {
         actions: Vec<crate::action::Action>,
         follow_up: Option<crate::action::Action>,

@@ -17,9 +17,8 @@ pub(super) enum PendingGrammar {
         till: bool,
     },
     TextObject(PendingTextObject),
-    /// `s<verb>`: next key selects the surround command -- `d` (delete), `c`
-    /// (change), or `g` (add). `count` is the delimiter repeat count typed
-    /// before `s`.
+    /// `s<verb>`: next key selects the surround command -- `d` (delete), `c` (change),
+    /// or `g` (add). `count` is the delimiter repeat count typed before `s`.
     SurroundVerb {
         count: usize,
     },

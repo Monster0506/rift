@@ -149,9 +149,8 @@ pub struct Editor<T: TerminalBackend> {
     /// Insert anchors still waiting for the recorded session to replay at,
     /// once the live-typed Insert session at the first anchor finishes.
     pub(super) pending_multi_insert_anchors: Vec<usize>,
-    /// Selection-building actions accumulated since the last time a
-    /// set-aware command consumed the set (finalized by Task 22 into
-    /// `DotRegister::RegionBuildSession`).
+    /// Selection-building actions accumulated since a set-aware command last consumed
+    /// the set (finalized into `DotRegister::RegionBuildSession`).
     pub(super) region_build_recording: Vec<crate::action::Action>,
     /// Stack of prior selection extents, for `<Shift-Space>` shrink (Task 24).
     /// Cleared whenever a fresh Visual region starts.
@@ -231,6 +230,8 @@ pub enum PanelKind {
     Clipboard,
     /// Diagnostics or references location list.
     LocationList,
+    /// `gv` regions list (visual-mode-design.md S4).
+    Regions,
 }
 
 /// Tracks the two windows and documents that make up a live explorer session.

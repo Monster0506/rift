@@ -520,9 +520,8 @@ impl<T: TerminalBackend> Editor<T> {
                                 let source = doc.buffer.to_logical_bytes();
                                 if let Some(syntax) = &mut doc.syntax {
                                     syntax.update_from_result(*result);
-                                    // Re-run injection parsing against the live source.
                                     // The background job only parses the host grammar, so
-                                    // injections must be derived here from the current buffer.
+                                    // re-derive injections here from the live source.
                                     syntax.parse_injections_pub(&source);
                                 }
                             }

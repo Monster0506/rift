@@ -32,9 +32,8 @@ pub enum Key {
     Escape,
     Tab,
     ShiftTab,
-    /// Space pressed with the Shift modifier (terminal support varies --
-    /// see visual-mode-design.md S3 -- rebind via the keymap if your
-    /// terminal never transmits this).
+    /// Space pressed with the Shift modifier (terminal support varies; see
+    /// visual-mode-design.md S3 -- rebind via the keymap if yours never sends it).
     ShiftSpace,
     /// System events
     Resize(u16, u16),

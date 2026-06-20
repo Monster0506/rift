@@ -34,6 +34,8 @@ pub enum KeyContext {
     /// Visual/VisualLine/VisualBlock selection. Falls through to `Normal` so
     /// every motion remains available without re-registering it.
     Visual,
+    /// `gv` regions list window. Falls through to Normal for j/k/etc.
+    Regions,
 }
 
 /// KeyMap stores mappings from (Context, Key Sequence) -> Action
@@ -92,7 +94,8 @@ impl KeyMap {
             | KeyContext::UndoTree
             | KeyContext::Clipboard
             | KeyContext::ClipboardEntry
-            | KeyContext::LocationList => Some(KeyContext::Normal),
+            | KeyContext::LocationList
+            | KeyContext::Regions => Some(KeyContext::Normal),
             KeyContext::Terminal => Some(KeyContext::Global),
             KeyContext::TerminalNormal => Some(KeyContext::Normal),
             KeyContext::Normal | KeyContext::Insert | KeyContext::Command | KeyContext::Search => {

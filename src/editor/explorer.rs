@@ -300,6 +300,15 @@ impl<T: TerminalBackend> Editor<T> {
                     .document_manager
                     .switch_to_document(layout.original_doc_id);
             }
+            PanelKind::Regions => {
+                self.split_tree.close_window(layout.dir_win_id);
+                self.document_manager
+                    .remove_private_document(layout.dir_doc_id);
+                self.split_tree.set_focus(layout.preview_win_id);
+                let _ = self
+                    .document_manager
+                    .switch_to_document(layout.original_doc_id);
+            }
         }
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();

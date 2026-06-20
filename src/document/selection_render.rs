@@ -13,8 +13,7 @@ const BANKED_COLORS: [crate::color::Color; 4] = [
 
 impl Document {
     /// Mirror the active + banked selection regions into `ui.selection.*`
-    /// annotations so highlighting renders through the presentation
-    /// pipeline, exactly like search highlights.
+    /// annotations so they render through the presentation pipeline, like search highlights.
     pub fn sync_selection_annotations(&mut self, active: Option<Region>, banked: &[Region]) {
         use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Presentation, StyleOverride};
 
