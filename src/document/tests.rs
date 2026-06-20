@@ -2024,3 +2024,147 @@ fn test_line_adornment_resolves_correct_line_past_multibyte_prefix() {
     assert_eq!(adornments.len(), 1);
     assert_eq!(adornments[0].0, rule_line);
 }
+
+#[test]
+fn undo_clears_selection_set() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut doc = Document::new(1).unwrap();
+    doc.buffer.insert_str("hello world").unwrap();
+    doc.selection_set.bank(Region::new(0, 4, RangeKind::Charwise));
+    assert!(!doc.selection_set.is_empty());
+
+    doc.insert_char('!').unwrap();
+    doc.undo();
+
+    assert!(doc.selection_set.is_empty(), "undo must clear a banked selection set");
+}
+
+#[test]
+fn redo_clears_selection_set() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("hello world").unwrap();
+    assert!(doc.undo());
+    doc.selection_set.bank(Region::new(0, 4, RangeKind::Charwise));
+    assert!(!doc.selection_set.is_empty());
+
+    assert!(doc.redo());
+
+    assert!(doc.selection_set.is_empty(), "redo must clear a banked selection set");
+}
+
+#[test]
+fn sync_selection_annotations_creates_one_entry_per_banked_region_plus_active() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut doc = Document::new(1).unwrap();
+    doc.buffer.insert_str("hello world").unwrap();
+
+    let banked = vec![Region::new(0, 2, RangeKind::Charwise)];
+    let active = Some(Region::new(6, 8, RangeKind::Charwise));
+    doc.sync_selection_annotations(active, &banked);
+
+    let count = doc.annotations.query_kind("ui.selection").count();
+    assert_eq!(count, 2, "one banked + one active annotation");
+}
+
+#[test]
+fn sync_selection_annotations_active_region_uses_a_visible_contrasting_blue() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut doc = Document::new(1).unwrap();
+    doc.buffer.insert_str("hello world").unwrap();
+
+    doc.sync_selection_annotations(Some(Region::new(0, 2, RangeKind::Charwise)), &[]);
+
+    let active = doc.annotations.query_kind("ui.selection.active").next().unwrap();
+    let style = active.presentation.as_ref().unwrap().style.as_ref().unwrap();
+    assert_ne!(
+        style.bg,
+        Some(crate::color::Color::Blue),
+        "ANSI Blue renders as a dark, easily-missed navy in most terminal themes"
+    );
+    assert!(style.fg.is_some(), "active selection must set an explicit contrasting foreground");
+}
+
+#[test]
+fn sync_selection_annotations_banked_regions_all_share_the_same_blue_as_active() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut doc = Document::new(1).unwrap();
+    doc.buffer.insert_str("0123456789").unwrap();
+
+    let banked = vec![
+        Region::new(0, 1, RangeKind::Charwise),
+        Region::new(3, 4, RangeKind::Charwise),
+        Region::new(6, 7, RangeKind::Charwise),
+    ];
+    doc.sync_selection_annotations(None, &banked);
+
+    let styles: Vec<_> = doc
+        .annotations
+        .query_kind("ui.selection.banked")
+        .map(|a| a.presentation.as_ref().unwrap().style.unwrap())
+        .collect();
+    assert_eq!(styles.len(), 3);
+    let first = styles[0];
+    assert!(
+        styles.iter().all(|s| *s == first),
+        "every banked region must share one consistent color, not a rainbow per index"
+    );
+}
+
+#[test]
+fn sync_selection_annotations_replaces_previous_call() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut doc = Document::new(1).unwrap();
+    doc.buffer.insert_str("hello world").unwrap();
+
+    doc.sync_selection_annotations(None, &[Region::new(0, 2, RangeKind::Charwise)]);
+    doc.sync_selection_annotations(None, &[]);
+
+    let count = doc.annotations.query_kind("ui.selection").count();
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn populate_regions_buffer_writes_one_line_per_region() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut source = TextBuffer::new(20).unwrap();
+    source.insert_str("hello\nworld").unwrap();
+    let regions = vec![
+        Region::new(0, 4, RangeKind::Charwise), // "hello"
+        Region::new(6, 10, RangeKind::Charwise), // "world"
+    ];
+
+    let mut doc = Document::new(1).unwrap();
+    doc.populate_regions_buffer(&source, &regions);
+
+    let content = doc.buffer.to_string();
+    let lines: Vec<&str> = content.lines().collect();
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].contains("0:0"), "row:col for the first region; got {:?}", lines[0]);
+    assert!(lines[0].contains("hello"));
+    assert!(lines[1].contains("1:0"));
+    assert!(lines[1].contains("world"));
+}
+
+#[test]
+fn populate_regions_buffer_with_no_regions_shows_empty_placeholder() {
+    let source = TextBuffer::new(10).unwrap();
+    let mut doc = Document::new(1).unwrap();
+    doc.populate_regions_buffer(&source, &[]);
+
+    assert_eq!(doc.buffer.to_string(), "(empty)");
+}

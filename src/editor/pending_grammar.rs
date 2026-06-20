@@ -17,22 +17,27 @@ pub(super) enum PendingGrammar {
         till: bool,
     },
     TextObject(PendingTextObject),
-    /// `ds<ch>`: next key is the surround char to delete. `count` repeats the
+    /// `s<verb>`: next key selects the surround command -- `d` (delete), `c` (change),
+    /// or `g` (add). `count` is the delimiter repeat count typed before `s`.
+    SurroundVerb {
+        count: usize,
+    },
+    /// `sd<ch>`: next key is the surround char to delete. `count` repeats the
     /// delimiter on each side.
     DeleteSurround {
         count: usize,
     },
-    /// `cs<from>`: next key is the existing surround char to match. `count`
+    /// `sc<from>`: next key is the existing surround char to match. `count`
     /// carries through to both matching and the eventual replacement.
     ChangeSurroundFrom {
         count: usize,
     },
-    /// `cs<from><to>`: next key is the replacement surround char.
+    /// `sc<from><to>`: next key is the replacement surround char.
     ChangeSurroundTo {
         from: char,
         count: usize,
     },
-    /// `ys<motion><ch>`: next key is the delimiter to wrap the resolved range
+    /// `sg<motion><ch>`: next key is the delimiter to wrap the resolved range
     /// in. `delim_count` repeats that delimiter on each side.
     AddSurroundChar {
         motion: Motion,
@@ -46,15 +51,19 @@ impl<T: TerminalBackend> Editor<T> {
         match grammar {
             PendingGrammar::ReplaceChar => {
                 if let Key::Char(ch) = key {
-                    let count = if self.pending_count > 0 {
-                        self.pending_count
+                    if !self.try_run_set_aware_replace_char(ch) {
+                        let count = if self.pending_count > 0 {
+                            self.pending_count
+                        } else {
+                            1
+                        };
+                        let command = Command::ReplaceChar(ch, count);
+                        let result = self.execute_buffer_command(command);
+                        if result && !self.dot_repeat.is_replaying() {
+                            self.dot_repeat.record_single(command);
+                        }
                     } else {
-                        1
-                    };
-                    let command = Command::ReplaceChar(ch, count);
-                    let result = self.execute_buffer_command(command);
-                    if result && !self.dot_repeat.is_replaying() {
-                        self.dot_repeat.record_single(command);
+                        self.finish_region_build(Some(Action::Editor(EditorAction::ReplaceCharPending)));
                     }
                 }
                 self.pending_count = 0;
@@ -81,13 +90,39 @@ impl<T: TerminalBackend> Editor<T> {
                     self.pending_count = 0;
                 }
             },
+            PendingGrammar::SurroundVerb { count } => {
+                match key {
+                    Key::Char('d') => {
+                        let count = if count > 0 { count } else { 1 };
+                        self.pending_grammar = Some(PendingGrammar::DeleteSurround { count });
+                    }
+                    Key::Char('c') => {
+                        let count = if count > 0 { count } else { 1 };
+                        self.pending_grammar = Some(PendingGrammar::ChangeSurroundFrom { count });
+                    }
+                    Key::Char('g') => {
+                        let delim_count = if count > 0 { count } else { 1 };
+                        self.pending_operator = Some(crate::action::OperatorType::Yank);
+                        self.pending_surround_add = Some(delim_count);
+                        self.set_mode(Mode::OperatorPending);
+                    }
+                    _ => {
+                        self.set_mode(Mode::Normal);
+                    }
+                }
+                self.pending_count = 0;
+            }
             PendingGrammar::DeleteSurround { count } => {
                 self.set_mode(Mode::Normal);
                 if let Key::Char(ch) = key {
-                    let command = Command::DeleteSurround(ch, count);
-                    let result = self.execute_buffer_command(command);
-                    if result && !self.dot_repeat.is_replaying() {
-                        self.dot_repeat.record_single(command);
+                    if !self.try_run_set_aware_delete_surround(ch, count) {
+                        let command = Command::DeleteSurround(ch, count);
+                        let result = self.execute_buffer_command(command);
+                        if result && !self.dot_repeat.is_replaying() {
+                            self.dot_repeat.record_single(command);
+                        }
+                    } else {
+                        self.finish_region_build(None);
                     }
                 }
                 self.pending_count = 0;
@@ -103,10 +138,14 @@ impl<T: TerminalBackend> Editor<T> {
             PendingGrammar::ChangeSurroundTo { from, count } => {
                 self.set_mode(Mode::Normal);
                 if let Key::Char(to) = key {
-                    let command = Command::ChangeSurround(from, to, count);
-                    let result = self.execute_buffer_command(command);
-                    if result && !self.dot_repeat.is_replaying() {
-                        self.dot_repeat.record_single(command);
+                    if !self.try_run_set_aware_change_surround(from, to, count) {
+                        let command = Command::ChangeSurround(from, to, count);
+                        let result = self.execute_buffer_command(command);
+                        if result && !self.dot_repeat.is_replaying() {
+                            self.dot_repeat.record_single(command);
+                        }
+                    } else {
+                        self.finish_region_build(None);
                     }
                 }
                 self.pending_count = 0;
@@ -118,10 +157,16 @@ impl<T: TerminalBackend> Editor<T> {
             } => {
                 self.set_mode(Mode::Normal);
                 if let Key::Char(ch) = key {
-                    let command = Command::AddSurround(motion, count, ch, delim_count);
-                    let result = self.execute_buffer_command(command);
-                    if result && !self.dot_repeat.is_replaying() {
-                        self.dot_repeat.record_single(command);
+                    if !self.try_run_set_aware_add_surround(ch, delim_count) {
+                        let command = Command::AddSurround(motion, count, ch, delim_count);
+                        let result = self.execute_buffer_command(command);
+                        if result && !self.dot_repeat.is_replaying() {
+                            self.dot_repeat.record_single(command);
+                        }
+                    } else {
+                        self.finish_region_build(Some(Action::Editor(
+                            EditorAction::AddSurroundToSet { ch, delim_count },
+                        )));
                     }
                 }
                 self.pending_count = 0;

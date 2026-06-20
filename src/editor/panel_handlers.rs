@@ -334,6 +334,12 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
+    pub(super) fn handle_regions_buffer_action(&mut self, id: &str) {
+        if id == "regions:close" {
+            self.close_split_panel();
+        }
+    }
+
     /// Space on a diagnostic entry — send a code action request scoped to that diagnostic.
     fn handle_location_list_code_action(&mut self) {
         use crate::document::BufferKind;

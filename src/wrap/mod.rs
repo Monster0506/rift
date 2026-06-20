@@ -291,6 +291,8 @@ pub enum OperatorContext {
 pub enum RangeKind {
     Charwise,
     Linewise,
+    /// Rectangular column-bounded selection (Ctrl-V Visual Block).
+    Blockwise,
 }
 
 #[derive(Debug, Clone)]
@@ -326,5 +328,30 @@ impl MotionRange {
             kind: RangeKind::Linewise,
             inclusive: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_range_kind_blockwise_variant_exists() {
+        let _blockwise = RangeKind::Blockwise;
+        assert_eq!(_blockwise, RangeKind::Blockwise);
+    }
+
+    #[test]
+    fn test_motion_range_with_blockwise() {
+        let range = MotionRange {
+            anchor: 10,
+            new_cursor: 20,
+            kind: RangeKind::Blockwise,
+            inclusive: false,
+        };
+        assert_eq!(range.kind, RangeKind::Blockwise);
+        assert_eq!(range.anchor, 10);
+        assert_eq!(range.new_cursor, 20);
+        assert!(!range.inclusive);
     }
 }

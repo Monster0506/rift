@@ -9,6 +9,7 @@ pub mod manager;
 mod persistence;
 mod populate;
 mod search;
+mod selection_render;
 
 use crate::annotations::AnnotationStore;
 use crate::buffer::TextBuffer;
@@ -115,6 +116,9 @@ pub enum BufferKind {
         source_doc_id: DocumentId,
         entries: Vec<LocationEntry>,
     },
+    /// `gv` regions window: a read-only list of the active document's
+    /// banked `SelectionSet`, one line per region.
+    Regions { source_doc_id: DocumentId },
 }
 
 impl BufferKind {
@@ -129,6 +133,7 @@ impl BufferKind {
             BufferKind::Clipboard { .. } => "clipboard",
             BufferKind::ClipboardEntry { .. } => "clipboard_entry",
             BufferKind::LocationList { .. } => "location_list",
+            BufferKind::Regions { .. } => "regions",
         }
     }
 }
@@ -184,6 +189,8 @@ pub struct Document {
         std::collections::HashMap<u32, Vec<(std::ops::Range<usize>, crate::color::Color)>>,
     /// Structured metadata sidecar.
     pub annotations: AnnotationStore,
+    /// Non-contiguous multi-region selection set (visual-mode-design.md).
+    pub selection_set: crate::selection::SelectionSet,
     /// Full annotation snapshot captured before a transaction, restored on undo.
     pending_annotation_snapshot: Option<Vec<crate::annotations::Annotation>>,
     /// Undo stack parallel to the edit history; one entry per standalone edit
@@ -234,6 +241,11 @@ impl Document {
     /// Check if this document is a location list buffer (diagnostics/references).
     pub fn is_location_list(&self) -> bool {
         matches!(self.kind, BufferKind::LocationList { .. })
+    }
+
+    /// Check if this document is a `gv` regions list buffer.
+    pub fn is_regions(&self) -> bool {
+        matches!(self.kind, BufferKind::Regions { .. })
     }
 
     /// Check if this document is any clipboard-related buffer

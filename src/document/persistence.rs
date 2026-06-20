@@ -113,6 +113,7 @@ impl Document {
             } => Cow::Owned(format!("[Clipboard:{}]", i)),
             BufferKind::ClipboardEntry { entry_index: None } => Cow::Borrowed("[Clipboard:new]"),
             BufferKind::LocationList { .. } => Cow::Borrowed("[Locations]"),
+            BufferKind::Regions { .. } => Cow::Borrowed("[Regions]"),
             BufferKind::File => self
                 .file_path
                 .as_ref()

@@ -11,6 +11,7 @@ impl<T: TerminalBackend> Editor<T> {
         if current_mode == Mode::Normal
             || current_mode == Mode::Insert
             || current_mode == Mode::Replace
+            || current_mode.is_visual()
         {
             let viewport_height = self.render_system.viewport.visible_rows();
 

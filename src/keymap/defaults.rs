@@ -638,9 +638,74 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
     );
     keymap.register(
-        KeyContext::OperatorPending,
+        KeyContext::Normal,
         Key::Char('s'),
         Action::Editor(EditorAction::SurroundStart),
+    );
+    keymap.register(
+        KeyContext::OperatorPending,
+        Key::Char('g'),
+        Action::Editor(EditorAction::SurroundGiveLine),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('v'),
+        Action::Editor(EditorAction::EnterVisualChar),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('V'),
+        Action::Editor(EditorAction::EnterVisualLine),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Ctrl(b'v'),
+        Action::Editor(EditorAction::EnterVisualBlock),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::Char('o'),
+        Action::Editor(EditorAction::VisualSwapEnds),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::Char('O'),
+        Action::Editor(EditorAction::VisualSwapEnds),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::Char('d'),
+        Action::Editor(EditorAction::Operator(crate::action::OperatorType::Delete)),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::Char('c'),
+        Action::Editor(EditorAction::Operator(crate::action::OperatorType::Change)),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::Char('y'),
+        Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::Char(' '),
+        Action::Editor(EditorAction::ExpandRegion),
+    );
+    keymap.register(
+        KeyContext::Visual,
+        Key::ShiftSpace,
+        Action::Editor(EditorAction::ShrinkRegion),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('m'),
+        Action::Editor(EditorAction::RegionBankOccurrenceNext),
+    );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('M'),
+        Action::Editor(EditorAction::RegionBankOccurrencePrev),
     );
     keymap.register(
         KeyContext::Normal,
@@ -829,6 +894,53 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         KeyContext::LocationList,
         Key::Char(' '),
         Action::Buffer("location_list:code_action".to_string()),
+    );
+
+    // `gv` regions list window (visual-mode-design.md S4).
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char('g'), Key::Char('v')],
+        Action::Editor(EditorAction::ToggleRegionsWindow),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('j'),
+        Action::Editor(EditorAction::RegionsListDown),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('k'),
+        Action::Editor(EditorAction::RegionsListUp),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Enter,
+        Action::Editor(EditorAction::RegionsListSelect),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('x'),
+        Action::Editor(EditorAction::RegionsListDrop),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('q'),
+        Action::Buffer("regions:close".to_string()),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('d'),
+        Action::Editor(EditorAction::Operator(crate::action::OperatorType::Delete)),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('c'),
+        Action::Editor(EditorAction::Operator(crate::action::OperatorType::Change)),
+    );
+    keymap.register(
+        KeyContext::Regions,
+        Key::Char('y'),
+        Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
     );
 
     // Text objects are handled by run_loop.rs's pending-grammar state machine, not the trie.

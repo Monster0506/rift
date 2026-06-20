@@ -20,6 +20,7 @@ mod init;
 mod jobs;
 mod lsp_ops;
 mod mode_mgmt;
+mod multi_region;
 mod operators;
 mod panel_handlers;
 mod pending_grammar;
@@ -142,6 +143,18 @@ pub struct Editor<T: TerminalBackend> {
     /// Set while `ys` is waiting for its motion/text-object before the delimiter
     /// char. Carries the delimiter-repeat count captured when the first `s` fired.
     pending_surround_add: Option<usize>,
+    /// Char offset of the in-progress Visual region's anchor; `None` outside
+    /// Visual/VisualLine/VisualBlock. The cursor side is `buffer.cursor()`.
+    pub(super) visual_anchor: Option<usize>,
+    /// Insert anchors still waiting for the recorded session to replay at,
+    /// once the live-typed Insert session at the first anchor finishes.
+    pub(super) pending_multi_insert_anchors: Vec<usize>,
+    /// Selection-building actions accumulated since a set-aware command last consumed
+    /// the set (finalized into `DotRegister::RegionBuildSession`).
+    pub(super) region_build_recording: Vec<crate::action::Action>,
+    /// Stack of prior selection extents, for `<Shift-Space>` shrink (Task 24).
+    /// Cleared whenever a fresh Visual region starts.
+    pub(super) expand_history: Vec<(usize, usize)>,
     /// Cached display map keyed by (doc_id, buffer_revision, content_width).
     /// Avoids rebuilding the soft-wrap map on every command when the buffer hasn't changed.
     display_map_cache: Option<(
@@ -217,6 +230,8 @@ pub enum PanelKind {
     Clipboard,
     /// Diagnostics or references location list.
     LocationList,
+    /// `gv` regions list (visual-mode-design.md S4).
+    Regions,
 }
 
 /// Tracks the two windows and documents that make up a live explorer session.

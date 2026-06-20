@@ -108,10 +108,31 @@ impl<T: TerminalBackend> Editor<T> {
         Some((doc_id, needs_clear, display_map))
     }
 
+    /// Recompute `ui.selection.*` annotations from the active Visual region
+    /// (if any) and the active document's banked `SelectionSet`.
+    pub(super) fn update_selection_highlights(&mut self) {
+        let is_visual = self.current_mode.is_visual();
+        let visual_anchor = self.visual_anchor;
+        let visual_kind = self.current_mode.visual_range_kind();
+        let Some(doc) = self.document_manager.active_document_mut() else {
+            return;
+        };
+        let active = if is_visual {
+            visual_anchor
+                .zip(visual_kind)
+                .map(|(anchor, kind)| crate::selection::Region::new(anchor, doc.buffer.cursor(), kind))
+        } else {
+            None
+        };
+        let banked = doc.selection_set.sorted();
+        doc.sync_selection_annotations(active, &banked);
+    }
+
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
         let Some((_doc_id, needs_clear, display_map)) = self.update_state() else {
             return Ok(());
         };
+        self.update_selection_highlights();
 
         self.render_plugin_float();
 

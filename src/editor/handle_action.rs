@@ -28,6 +28,7 @@ impl<T: TerminalBackend> Editor<T> {
                     BufferKind::Clipboard { .. } => self.handle_clipboard_buffer_action(id),
                     BufferKind::ClipboardEntry { .. } => self.handle_clipboard_entry_action(id),
                     BufferKind::LocationList { .. } => self.handle_location_list_action(id),
+                    BufferKind::Regions { .. } => self.handle_regions_buffer_action(id),
                     _ => {}
                 }
                 return true;
@@ -40,9 +41,35 @@ impl<T: TerminalBackend> Editor<T> {
             self.post_paste_state = None;
         }
 
+        // Accumulate selection-building actions for dot-repeat (S5.9). A
+        // plain Normal-mode Move is navigation, not selection-building.
+        let is_region_building = matches!(
+            editor_action,
+            EditorAction::EnterVisualChar
+                | EditorAction::EnterVisualLine
+                | EditorAction::EnterVisualBlock
+                | EditorAction::RegionBankOccurrenceNext
+                | EditorAction::RegionBankOccurrencePrev
+        ) || self.current_mode.is_visual();
+        if is_region_building && !self.dot_repeat.is_replaying() {
+            self.region_build_recording.push(action.clone());
+        }
+
         match editor_action {
             EditorAction::Move(motion) => {
                 use crate::action::Motion;
+
+                if matches!(motion, Motion::RepeatFindForward | Motion::RepeatFindBackward) {
+                    let has_regions = self
+                        .document_manager
+                        .active_document()
+                        .map(|d| !d.selection_set.is_empty())
+                        .unwrap_or(false);
+                    if has_regions {
+                        let forward = matches!(motion, Motion::RepeatFindForward);
+                        return self.cycle_to_region(forward);
+                    }
+                }
 
                 // Interface-mode buffers snap vertical motion between actionable
                 // lines, else fall through to ordinary motion (design.md sec 9.4).
@@ -122,26 +149,50 @@ impl<T: TerminalBackend> Editor<T> {
                 consumed
             }
             EditorAction::EnterInsertMode => {
+                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertMode) {
+                    self.finish_region_build(Some(action.clone()));
+                    return true;
+                }
                 self.handle_mode_management(crate::command::Command::EnterInsertMode);
                 true
             }
             EditorAction::EnterInsertModeAfter => {
+                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAfter) {
+                    self.finish_region_build(Some(action.clone()));
+                    return true;
+                }
                 self.handle_mode_management(crate::command::Command::EnterInsertModeAfter);
                 true
             }
             EditorAction::EnterInsertModeAtLineStart => {
+                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineStart) {
+                    self.finish_region_build(Some(action.clone()));
+                    return true;
+                }
                 self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineStart);
                 true
             }
             EditorAction::EnterInsertModeAtLineEnd => {
+                if self.try_multi_insert_for_command(crate::command::Command::EnterInsertModeAtLineEnd) {
+                    self.finish_region_build(Some(action.clone()));
+                    return true;
+                }
                 self.handle_mode_management(crate::command::Command::EnterInsertModeAtLineEnd);
                 true
             }
             EditorAction::OpenLineBelow => {
+                if self.try_multi_insert_for_command(crate::command::Command::OpenLineBelow) {
+                    self.finish_region_build(Some(action.clone()));
+                    return true;
+                }
                 self.handle_mode_management(crate::command::Command::OpenLineBelow);
                 true
             }
             EditorAction::OpenLineAbove => {
+                if self.try_multi_insert_for_command(crate::command::Command::OpenLineAbove) {
+                    self.finish_region_build(Some(action.clone()));
+                    return true;
+                }
                 self.handle_mode_management(crate::command::Command::OpenLineAbove);
                 true
             }
@@ -154,10 +205,28 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::EnterNormalMode => {
+                if self.current_mode.is_visual() {
+                    if let (Some(anchor), Some(kind)) =
+                        (self.visual_anchor, self.current_mode.visual_range_kind())
+                    {
+                        if let Some(doc) = self.document_manager.active_document_mut() {
+                            let cursor = doc.buffer.cursor();
+                            doc.selection_set
+                                .bank(crate::selection::Region::new(anchor, cursor, kind));
+                        }
+                    }
+                    self.visual_anchor = None;
+                } else if let Some(doc) = self.document_manager.active_document_mut() {
+                    doc.selection_set.clear();
+                    self.region_build_recording.clear();
+                }
                 if self.current_mode == Mode::Insert || self.current_mode == Mode::Replace {
                     // Finalize insert recording for dot-repeat
                     if !self.dot_repeat.is_replaying() {
                         self.dot_repeat.finish_insert_recording();
+                    }
+                    if !self.pending_multi_insert_anchors.is_empty() {
+                        self.replay_multi_insert_at_remaining_anchors();
                     }
                     if let Some(doc) = self.document_manager.active_document_mut() {
                         doc.commit_transaction();
@@ -411,6 +480,29 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::Operator(op) => {
+                if let Some(layout) = self.panel_layout.clone() {
+                    if layout.kind == crate::editor::PanelKind::Regions {
+                        let _ = self.document_manager.switch_to_document(layout.preview_doc_id);
+                        self.close_split_panel();
+                    }
+                }
+                if self.current_mode.is_visual() {
+                    if let (Some(anchor), Some(kind)) =
+                        (self.visual_anchor, self.current_mode.visual_range_kind())
+                    {
+                        if let Some(doc) = self.document_manager.active_document_mut() {
+                            let cursor = doc.buffer.cursor();
+                            doc.selection_set
+                                .bank(crate::selection::Region::new(anchor, cursor, kind));
+                        }
+                    }
+                    self.visual_anchor = None;
+                    self.set_mode(Mode::Normal);
+                }
+                if self.try_run_set_aware_operator(*op) {
+                    self.finish_region_build(None);
+                    return true;
+                }
                 if self.current_mode == Mode::OperatorPending {
                     if let Some(pending) = self.pending_operator {
                         if pending == *op {
@@ -524,6 +616,10 @@ impl<T: TerminalBackend> Editor<T> {
 
             EditorAction::Put { before } => {
                 if let Some(text) = self.clipboard_ring.most_recent().map(|s| s.to_owned()) {
+                    if self.try_run_set_aware_put(*before, &text) {
+                        self.finish_region_build(Some(action.clone()));
+                        return true;
+                    }
                     let original_cursor = self
                         .document_manager
                         .active_document()
@@ -580,6 +676,10 @@ impl<T: TerminalBackend> Editor<T> {
                     .ok()
                     .and_then(|mut cb| cb.get_text().ok());
                 if let Some(text) = text {
+                    if self.try_run_set_aware_put(*before, &text) {
+                        self.finish_region_build(Some(action.clone()));
+                        return true;
+                    }
                     self.insert_text_at_cursor(&text, *before)
                 } else {
                     false
@@ -824,78 +924,159 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             EditorAction::SurroundStart => {
-                use crate::action::OperatorType;
+                let count = self.pending_count;
+                self.pending_count = 0;
+                self.pending_grammar =
+                    Some(super::pending_grammar::PendingGrammar::SurroundVerb { count });
+                true
+            }
+            EditorAction::SurroundGiveLine => {
                 use crate::text_objects::{Direction, Modifier, ObjectKind, TextObjectSpec};
-                if self.current_mode != Mode::OperatorPending {
-                    return false;
-                }
-                let Some(op) = self.pending_operator else {
+                // Only meaningful mid-`sg`; otherwise mirrors the old
+                // unrecognized-key-cancels-pending-operator behavior.
+                let Some(delim_count) = self.pending_surround_add.take() else {
+                    self.pending_operator = None;
+                    self.set_mode(Mode::Normal);
+                    self.pending_count = 0;
                     return false;
                 };
-                match op {
-                    OperatorType::Delete => {
-                        let count = if self.pending_count > 0 {
-                            self.pending_count
-                        } else {
-                            1
-                        };
-                        self.pending_count = 0;
-                        self.pending_operator = None;
-                        self.pending_grammar =
-                            Some(super::pending_grammar::PendingGrammar::DeleteSurround { count });
-                        true
-                    }
-                    OperatorType::Change => {
-                        let count = if self.pending_count > 0 {
-                            self.pending_count
-                        } else {
-                            1
-                        };
-                        self.pending_count = 0;
-                        self.pending_operator = None;
-                        self.pending_grammar =
-                            Some(super::pending_grammar::PendingGrammar::ChangeSurroundFrom {
-                                count,
-                            });
-                        true
-                    }
-                    OperatorType::Yank => {
-                        if let Some(delim_count) = self.pending_surround_add.take() {
-                            // yss: wrap `line_span` lines (count typed between the two
-                            // s's, like 2yy) in the current line's inner content.
-                            let line_span = if self.pending_count > 0 {
-                                self.pending_count
-                            } else {
-                                1
-                            };
-                            self.pending_count = 0;
-                            self.pending_operator = None;
-                            let spec = TextObjectSpec {
-                                modifier: Modifier::Inner,
-                                direction: Direction::Current,
-                                nesting: 1,
-                                kind: ObjectKind::Line,
-                            };
-                            self.pending_grammar =
-                                Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
-                                    motion: crate::action::Motion::TextObject(spec),
-                                    count: line_span,
-                                    delim_count,
-                                });
-                        } else {
-                            let delim_count = if self.pending_count > 0 {
-                                self.pending_count
-                            } else {
-                                1
-                            };
-                            self.pending_count = 0;
-                            self.pending_surround_add = Some(delim_count);
+                let line_span = if self.pending_count > 0 {
+                    self.pending_count
+                } else {
+                    1
+                };
+                self.pending_count = 0;
+                self.pending_operator = None;
+                let spec = TextObjectSpec {
+                    modifier: Modifier::Inner,
+                    direction: Direction::Current,
+                    nesting: 1,
+                    kind: ObjectKind::Line,
+                };
+                self.pending_grammar =
+                    Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
+                        motion: crate::action::Motion::TextObject(spec),
+                        count: line_span,
+                        delim_count,
+                    });
+                true
+            }
+
+            EditorAction::EnterVisualChar => self.enter_visual_or_resume(Mode::Visual),
+            EditorAction::EnterVisualLine => self.enter_visual_or_resume(Mode::VisualLine),
+            EditorAction::EnterVisualBlock => self.enter_visual_or_resume(Mode::VisualBlock),
+            EditorAction::ExpandRegion => self.expand_active_region(),
+            EditorAction::ShrinkRegion => self.shrink_active_region(),
+            EditorAction::ToggleRegionsWindow => {
+                self.toggle_regions_window();
+                true
+            }
+            EditorAction::RegionsListDrop => self.drop_regions_window_entry(),
+            EditorAction::RegionsListDown | EditorAction::RegionsListUp | EditorAction::RegionsListSelect => {
+                let Some(layout) = self.panel_layout.clone() else { return false };
+                if layout.kind != crate::editor::PanelKind::Regions {
+                    return false;
+                }
+                // `j`/`k` are bound directly to this arm (not through the
+                // generic Move action), so move the list's own cursor first.
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    match editor_action {
+                        EditorAction::RegionsListDown => {
+                            doc.buffer.move_down();
                         }
+                        EditorAction::RegionsListUp => {
+                            doc.buffer.move_up();
+                        }
+                        _ => {}
+                    }
+                }
+                let line = self
+                    .document_manager
+                    .active_document()
+                    .map(|d| d.buffer.line_index.get_line_at(d.buffer.cursor()))
+                    .unwrap_or(0);
+                let region = self
+                    .document_manager
+                    .get_document(layout.preview_doc_id)
+                    .map(|d| d.selection_set.sorted())
+                    .and_then(|sorted| sorted.get(line).copied());
+                let Some(region) = region else { return false };
+                if let Some(source) = self.document_manager.get_document_mut(layout.preview_doc_id) {
+                    let (start, _) = region.buffer_span(&source.buffer);
+                    let _ = source.buffer.set_cursor(start);
+                }
+                if matches!(editor_action, EditorAction::RegionsListSelect) {
+                    self.close_split_panel();
+                }
+                true
+            }
+            EditorAction::VisualSwapEnds => {
+                let Some(anchor) = self.visual_anchor else { return false };
+                let Some(doc) = self.document_manager.active_document_mut() else { return false };
+                let cursor = doc.buffer.cursor();
+                self.visual_anchor = Some(cursor);
+                let _ = doc.buffer.set_cursor(anchor);
+                true
+            }
+            EditorAction::RegionBankOccurrenceNext | EditorAction::RegionBankOccurrencePrev => {
+                let forward = matches!(editor_action, EditorAction::RegionBankOccurrenceNext);
+                let Some(doc) = self.document_manager.active_document_mut() else {
+                    return false;
+                };
+                if doc.selection_set.regions.is_empty() {
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        "Bank a region first (v + Esc)".to_string(),
+                    );
+                    return false;
+                }
+                let buf_snapshot = doc.buffer.clone();
+                match doc.selection_set.bank_occurrence(&buf_snapshot, forward) {
+                    Some((region, needle)) => {
+                        let (start, _) = region.span();
+                        let _ = doc.buffer.set_cursor(start);
+                        self.state.notify(
+                            crate::notification::NotificationType::Info,
+                            format!("Banked occurrence of \"{}\"", needle),
+                        );
                         true
+                    }
+                    None => {
+                        self.state.notify(
+                            crate::notification::NotificationType::Info,
+                            "No further occurrence to bank".to_string(),
+                        );
+                        false
                     }
                 }
             }
+            EditorAction::AddSurroundToSet { ch, delim_count } => {
+                self.try_run_set_aware_add_surround(*ch, *delim_count)
+            }
         }
+    }
+
+    /// `v`/`V`/`Ctrl-V`: start a fresh active region at the cursor, or if it sits inside a
+    /// banked region of the same kind, pop that back out with its original direction (design.md S3).
+    pub(super) fn enter_visual_or_resume(&mut self, mode: Mode) -> bool {
+        let Some(kind) = mode.visual_range_kind() else { return false };
+        let Some(doc) = self.document_manager.active_document_mut() else { return false };
+        let cursor = doc.buffer.cursor();
+        if let Some(idx) = doc.selection_set.region_containing(cursor) {
+            let region = doc.selection_set.regions.remove(idx);
+            if region.kind == kind {
+                self.visual_anchor = Some(region.anchor);
+                let _ = doc.buffer.set_cursor(region.cursor);
+                self.expand_history.clear();
+                self.set_mode(mode);
+                return true;
+            }
+            doc.selection_set.regions.insert(idx, region);
+        }
+        self.visual_anchor = Some(cursor);
+        self.expand_history.clear();
+        self.set_mode(mode);
+        true
     }
 
     /// Insert `text` at the cursor position.

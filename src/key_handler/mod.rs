@@ -53,6 +53,7 @@ impl KeyHandler {
             Mode::Rename => Self::process_command_mode_key(key),
             Mode::OperatorPending => KeyAction::Continue,
             Mode::Replace => Self::process_insert_mode_key(key),
+            Mode::Visual | Mode::VisualLine | Mode::VisualBlock => KeyAction::Continue,
         }
     }
 

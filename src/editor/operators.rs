@@ -15,8 +15,7 @@ impl<T: TerminalBackend> Editor<T> {
         op: crate::action::OperatorType,
         motion: Motion,
     ) -> bool {
-        // .take() unconditionally so a stale flag from an interrupted `ys`
-        // (e.g. a different operator key fired before the motion arrived)
+        // .take() unconditionally so a stale flag from an interrupted `sg`
         // never leaks into an unrelated operator below.
         if let Some(delim_count) = self.pending_surround_add.take() {
             if op == crate::action::OperatorType::Yank {
@@ -214,6 +213,16 @@ impl<T: TerminalBackend> Editor<T> {
                         doc.commit_transaction();
                     }
                     self.set_mode(Mode::Normal);
+                }
+            }
+            DotRegister::RegionBuildSession { actions, follow_up } => {
+                // Rebuild relative to the current cursor by replaying the
+                // recorded actions; count doesn't apply (would re-bank).
+                for action in &actions {
+                    self.handle_action(action);
+                }
+                if let Some(follow_up) = &follow_up {
+                    self.handle_action(follow_up);
                 }
             }
         }

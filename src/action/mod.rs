@@ -403,8 +403,41 @@ pub enum EditorAction {
     NextInteractiveAnnotation,
     /// Move to the previous interactive annotation.
     PrevInteractiveAnnotation,
-    /// Begin surround grammar (ds/cs/ys) under OperatorPending.
+    /// Begin surround grammar (sd/sc/sg) as a top-level Normal-mode leader.
     SurroundStart,
+    /// `g` pressed under OperatorPending while an `sg` add-surround is in
+    /// progress: `sgg<ch>` doubling shorthand for "surround the current line".
+    SurroundGiveLine,
+    /// `v`: enter/resume charwise Visual selection.
+    EnterVisualChar,
+    /// `V`: enter/resume linewise Visual selection.
+    EnterVisualLine,
+    /// `Ctrl-V`: enter/resume blockwise Visual selection.
+    EnterVisualBlock,
+    /// `o`/`O` in Visual: swap which end (anchor vs cursor) is active.
+    VisualSwapEnds,
+    /// `m` (Normal): bank the next occurrence of the last-banked region's text.
+    RegionBankOccurrenceNext,
+    /// `M` (Normal): bank the previous occurrence of the last-banked region's text.
+    RegionBankOccurrencePrev,
+    /// Dot-repeat follow-up for `sg`: re-wrap rebuilt regions with `ch`.
+    /// Synthetic action, not reachable from keymap.
+    AddSurroundToSet { ch: char, delim_count: usize },
+    /// `<Space>` in Visual: grow the active region to the next enclosing
+    /// text object.
+    ExpandRegion,
+    /// `<Shift-Space>` in Visual: undo the last `<Space>` expand step.
+    ShrinkRegion,
+    /// `gv`: toggle the regions list window.
+    ToggleRegionsWindow,
+    /// `j` inside the regions window: move down, live-jump the preview.
+    RegionsListDown,
+    /// `k` inside the regions window: move up, live-jump the preview.
+    RegionsListUp,
+    /// `Enter` inside the regions window: jump and return focus to the buffer.
+    RegionsListSelect,
+    /// `x` inside the regions window: drop that entry from the set.
+    RegionsListDrop,
 }
 
 /// Represents an action in the editor

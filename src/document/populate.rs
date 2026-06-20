@@ -327,6 +327,37 @@ impl Document {
         self.history.mark_saved();
     }
 
+    /// Populate (or repopulate) the `gv` regions list from `regions`,
+    /// computed against `source_buf` (the document the set belongs to).
+    pub fn populate_regions_buffer(&mut self, source_buf: &TextBuffer, regions: &[crate::selection::Region]) {
+        use crate::buffer::api::BufferView;
+
+        let mut content = String::new();
+        if regions.is_empty() {
+            content.push_str("(empty)");
+        } else {
+            for (i, region) in regions.iter().enumerate() {
+                let (start, end) = region.buffer_span(source_buf);
+                let row = source_buf.line_index.get_line_at(start);
+                let line_start = source_buf.line_index.get_start(row).unwrap_or(0);
+                let col = start.saturating_sub(line_start);
+                let raw: String = source_buf.chars(start..end).map(|c| c.to_char_lossy()).collect();
+                let raw = raw.replace('\n', "\u{23ce}");
+                let preview: String = if raw.chars().count() > 48 {
+                    raw.chars().take(45).chain("...".chars()).collect()
+                } else {
+                    raw
+                };
+                content.push_str(&format!("{}: {}:{} \"{}\"\n", i + 1, row, col, preview));
+            }
+            if content.ends_with('\n') {
+                content.pop();
+            }
+        }
+        self.replace_buffer_content(&content);
+        self.history.mark_saved();
+    }
+
     /// Parse the current buffer content of a clipboard index buffer and return the
     /// ordered list of original entry indices.
     pub fn parse_clipboard_order(&self) -> Vec<usize> {

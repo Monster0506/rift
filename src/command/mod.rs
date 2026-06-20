@@ -35,13 +35,13 @@ pub enum Command {
     ReplaceChar(char, usize),
     /// Enter Replace mode (R: each char overwrites instead of inserting).
     EnterReplaceMode,
-    /// Delete an existing surround pair, keeping its contents (ds<ch>).
+    /// Delete an existing surround pair, keeping its contents (sd<ch>).
     /// The trailing count repeats the delimiter char on each side.
     DeleteSurround(char, usize),
-    /// Replace an existing surround pair's delimiters (cs<from><to>).
+    /// Replace an existing surround pair's delimiters (sc<from><to>).
     /// The trailing count repeats the delimiter char on each side.
     ChangeSurround(char, char, usize),
-    /// Wrap a motion/text-object range in delimiters (ys<motion><ch>).
+    /// Wrap a motion/text-object range in delimiters (sg<motion><ch>).
     /// The motion count resolves the range; the trailing count repeats the delimiter.
     AddSurround(Motion, usize, char, usize),
 

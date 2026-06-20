@@ -103,7 +103,7 @@ pub fn capture_text(buf: &TextBuffer, range: &MotionRange) -> String {
             };
             (s, e)
         }
-        RangeKind::Charwise => {
+        RangeKind::Charwise | RangeKind::Blockwise => {
             let end_offset = if range.inclusive { 1 } else { 0 };
             (
                 range.anchor.min(range.new_cursor),

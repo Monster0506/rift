@@ -85,6 +85,9 @@ pub mod modes {
     pub const RENAME: &str = "RENAME";
     pub const OPERATOR_PENDING: &str = "OPERATOR_PENDING";
     pub const REPLACE: &str = "REPLACE";
+    pub const VISUAL: &str = "VISUAL";
+    pub const VISUAL_LINE: &str = "VISUAL_LINE";
+    pub const VISUAL_BLOCK: &str = "VISUAL_BLOCK";
     pub const OVERLAY: &str = "OVERLAY";
 }
 

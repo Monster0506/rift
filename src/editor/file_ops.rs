@@ -49,7 +49,8 @@ impl<T: TerminalBackend> Editor<T> {
                 BufferKind::UndoTree { .. }
                 | BufferKind::Terminal
                 | BufferKind::Messages { .. }
-                | BufferKind::LocationList { .. } => {
+                | BufferKind::LocationList { .. }
+                | BufferKind::Regions { .. } => {
                     self.state.handle_error(RiftError::new(
                         ErrorType::Io,
                         "CANT_SAVE",

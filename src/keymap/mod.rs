@@ -31,6 +31,11 @@ pub enum KeyContext {
     TerminalNormal,
     /// Location list panel (diagnostics, references).
     LocationList,
+    /// Visual/VisualLine/VisualBlock selection. Falls through to `Normal` so
+    /// every motion remains available without re-registering it.
+    Visual,
+    /// `gv` regions list window. Falls through to Normal for j/k/etc.
+    Regions,
 }
 
 /// KeyMap stores mappings from (Context, Key Sequence) -> Action
@@ -84,11 +89,13 @@ impl KeyMap {
     fn parent_context(context: KeyContext) -> Option<KeyContext> {
         match context {
             KeyContext::OperatorPending => Some(KeyContext::Normal),
+            KeyContext::Visual => Some(KeyContext::Normal),
             KeyContext::FileExplorer
             | KeyContext::UndoTree
             | KeyContext::Clipboard
             | KeyContext::ClipboardEntry
-            | KeyContext::LocationList => Some(KeyContext::Normal),
+            | KeyContext::LocationList
+            | KeyContext::Regions => Some(KeyContext::Normal),
             KeyContext::Terminal => Some(KeyContext::Global),
             KeyContext::TerminalNormal => Some(KeyContext::Normal),
             KeyContext::Normal | KeyContext::Insert | KeyContext::Command | KeyContext::Search => {

@@ -230,9 +230,16 @@ impl<T: TerminalBackend> Editor<T> {
                             .active_document()
                             .map(|d| d.is_location_list())
                             .unwrap_or(false);
+                        let is_regions = self
+                            .document_manager
+                            .active_document()
+                            .map(|d| d.is_regions())
+                            .unwrap_or(false);
                         match self.current_mode {
-                            Mode::Normal | Mode::OperatorPending => {
-                                if is_directory {
+                            Mode::Normal | Mode::OperatorPending | Mode::Visual | Mode::VisualLine | Mode::VisualBlock => {
+                                if self.current_mode.is_visual() {
+                                    KeyContext::Visual
+                                } else if is_directory {
                                     KeyContext::FileExplorer
                                 } else if is_undotree {
                                     KeyContext::UndoTree
@@ -244,6 +251,8 @@ impl<T: TerminalBackend> Editor<T> {
                                     KeyContext::TerminalNormal
                                 } else if is_location_list {
                                     KeyContext::LocationList
+                                } else if is_regions {
+                                    KeyContext::Regions
                                 } else if self.current_mode == Mode::OperatorPending {
                                     KeyContext::OperatorPending
                                 } else {
