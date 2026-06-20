@@ -326,6 +326,29 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
+    /// `p`/`P` (and `PutSystemClipboard`) against a non-empty `SelectionSet`:
+    /// insert the same `text` at every region, after its end for `p`, before its start for `P`. Non-destructive (design.md S5.7).
+    pub(super) fn try_run_set_aware_put(&mut self, before: bool, text: &str) -> bool {
+        let is_empty = self
+            .document_manager
+            .active_document()
+            .map(|d| d.selection_set.is_empty())
+            .unwrap_or(true);
+        if is_empty {
+            return false;
+        }
+        let text = text.to_string();
+        self.apply_to_each_region(|editor, region| {
+            let Some(doc) = editor.document_manager.active_document_mut() else {
+                return false;
+            };
+            let (start, end) = region.buffer_span(&doc.buffer);
+            let pos = if before { start } else { end };
+            let _ = doc.buffer.set_cursor(pos);
+            doc.insert_str(&text).is_ok()
+        })
+    }
+
     /// Replay the just-finished Insert session at every pending anchor; must run
     /// before the outer `MultiInsert` transaction commits so all anchors share the live-typed undo step (S5.8).
     pub(super) fn replay_multi_insert_at_remaining_anchors(&mut self) {

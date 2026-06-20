@@ -2596,3 +2596,100 @@ fn set_aware_sg_wraps_each_region_independently() {
         "\"foo\"\n\n\"foo\"\"foo\"\n"
     );
 }
+
+#[test]
+fn set_aware_put_inserts_same_text_at_every_region() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.clipboard_ring.push("X".to_string());
+    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "0X12345X6789", "p inserts after each region");
+    assert!(editor.active_document().selection_set.is_empty());
+}
+
+#[test]
+fn set_aware_put_before_inserts_ahead_of_every_region() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.clipboard_ring.push("X".to_string());
+    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: true }));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "X01234X56789", "P inserts before each region");
+}
+
+#[test]
+fn bare_repeated_p_after_set_aware_put_only_affects_single_cursor() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.clipboard_ring.push("X".to_string());
+    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
+
+    let count_of_x = editor.active_document().buffer.to_string().matches('X').count();
+    assert_eq!(count_of_x, 3, "first put = 2 X's (one per region), second bare put = 1 more, not 2 more");
+}
+
+#[test]
+fn multi_insert_is_one_undo_step() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar('X')));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    assert_eq!(editor.active_document().buffer.to_string(), "X01234X56789");
+
+    assert!(editor.active_document().undo());
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "0123456789",
+        "a single undo must remove both inserted X's at once"
+    );
+}
+
+#[test]
+fn multi_region_put_is_one_undo_step() {
+    use crate::action::{Action, EditorAction};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.clipboard_ring.push("X".to_string());
+    editor.active_document().selection_set.bank(Region::new(0, 0, RangeKind::Charwise));
+    editor.active_document().selection_set.bank(Region::new(5, 5, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
+    assert_eq!(editor.active_document().buffer.to_string(), "0X12345X6789");
+
+    assert!(editor.active_document().undo());
+    assert_eq!(editor.active_document().buffer.to_string(), "0123456789");
+}

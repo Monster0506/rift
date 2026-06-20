@@ -587,6 +587,9 @@ impl<T: TerminalBackend> Editor<T> {
 
             EditorAction::Put { before } => {
                 if let Some(text) = self.clipboard_ring.most_recent().map(|s| s.to_owned()) {
+                    if self.try_run_set_aware_put(*before, &text) {
+                        return true;
+                    }
                     let original_cursor = self
                         .document_manager
                         .active_document()
@@ -643,6 +646,9 @@ impl<T: TerminalBackend> Editor<T> {
                     .ok()
                     .and_then(|mut cb| cb.get_text().ok());
                 if let Some(text) = text {
+                    if self.try_run_set_aware_put(*before, &text) {
+                        return true;
+                    }
                     self.insert_text_at_cursor(&text, *before)
                 } else {
                     false
