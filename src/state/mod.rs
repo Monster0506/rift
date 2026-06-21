@@ -438,19 +438,18 @@ impl State {
         } else {
             self.command_line.insert(self.command_line_cursor, ch);
         }
-        self.command_line_cursor += 1;
+        self.command_line_cursor += ch.len_utf8();
     }
 
     /// Remove character before cursor (Backspace)
     pub fn remove_from_command_line(&mut self) {
         if self.command_line_cursor > 0 {
-            // Check if we are at end or middle
-            if self.command_line_cursor >= self.command_line.len() {
-                self.command_line.pop();
-            } else {
-                self.command_line.remove(self.command_line_cursor - 1);
-            }
-            self.command_line_cursor -= 1;
+            let prev_len = self.command_line[..self.command_line_cursor]
+                .chars()
+                .next_back()
+                .map_or(0, char::len_utf8);
+            self.command_line.remove(self.command_line_cursor - prev_len);
+            self.command_line_cursor -= prev_len;
         }
     }
 
@@ -469,14 +468,20 @@ impl State {
 
     /// Move command line cursor left
     pub fn move_command_line_left(&mut self) {
-        self.command_line_cursor = self.command_line_cursor.saturating_sub(1);
+        let prev_len = self.command_line[..self.command_line_cursor]
+            .chars()
+            .next_back()
+            .map_or(0, char::len_utf8);
+        self.command_line_cursor -= prev_len;
     }
 
     /// Move command line cursor right
     pub fn move_command_line_right(&mut self) {
-        if self.command_line_cursor < self.command_line.len() {
-            self.command_line_cursor += 1;
-        }
+        let next_len = self.command_line[self.command_line_cursor..]
+            .chars()
+            .next()
+            .map_or(0, char::len_utf8);
+        self.command_line_cursor += next_len;
     }
 
     /// Move command line cursor to start

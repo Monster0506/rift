@@ -299,6 +299,37 @@ fn test_handle_error_severity_mapping() {
 }
 
 #[test]
+fn test_command_line_cursor_tracks_multibyte_char_byte_length() {
+    let mut state = State::new();
+    state.append_to_command_line('a');
+    state.append_to_command_line('é'); // 2 UTF-8 bytes
+    state.append_to_command_line('b');
+
+    assert_eq!(state.command_line, "aéb");
+    assert_eq!(
+        state.command_line_cursor,
+        state.command_line.len(),
+        "cursor must land on the byte length of the string, not the char count"
+    );
+
+    // Backspacing must remove the whole multibyte char without panicking on a
+    // non-char-boundary byte index.
+    state.remove_from_command_line();
+    assert_eq!(state.command_line, "aé");
+    state.remove_from_command_line();
+    assert_eq!(state.command_line, "a");
+
+    state.move_command_line_home();
+    state.append_to_command_line('é');
+    assert_eq!(state.command_line, "éa");
+    state.move_command_line_right();
+    assert_eq!(
+        state.command_line_cursor, 3,
+        "moving right over 'é' must advance by its 2-byte length, not 1"
+    );
+}
+
+#[test]
 fn test_gutter_thresholds() {
     let mut state = State::new();
     // gutter_width: 2 (for "1 "), threshold: 10
