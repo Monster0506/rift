@@ -686,6 +686,8 @@ impl<T: TerminalBackend> Editor<T> {
                     .ok()
                     .and_then(|mut cb| cb.get_text().ok());
                 if let Some(text) = text {
+                    let text: Vec<crate::character::Character> =
+                        text.chars().map(crate::character::Character::from).collect();
                     if self.try_run_set_aware_put(*before, &text) {
                         self.finish_region_build(Some(action.clone()));
                         return true;
@@ -1111,8 +1113,8 @@ impl<T: TerminalBackend> Editor<T> {
     /// - `before = true`  (`P`): inserts at the start of the current line (above)
     ///
     /// Charwise text: `before = false` advances the cursor one position first.
-    pub(super) fn insert_text_at_cursor(&mut self, text: &str, before: bool) -> bool {
-        let is_linewise = text.ends_with('\n');
+    pub(super) fn insert_text_at_cursor(&mut self, text: &[crate::character::Character], before: bool) -> bool {
+        let is_linewise = matches!(text.last(), Some(crate::character::Character::Newline));
 
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
@@ -1162,19 +1164,17 @@ impl<T: TerminalBackend> Editor<T> {
         doc.begin_transaction("Put");
         if needs_leading_newline {
             // Insert "\n" then the text content without its own trailing newline.
-            if doc.insert_char('\n').is_ok() {
-                for ch in text.trim_end_matches('\n').chars() {
-                    if doc.insert_char(ch).is_err() {
-                        break;
-                    }
-                }
+            if doc
+                .insert_characters(&[crate::character::Character::Newline])
+                .is_ok()
+            {
+                let trimmed = text
+                    .strip_suffix(&[crate::character::Character::Newline])
+                    .unwrap_or(text);
+                let _ = doc.insert_characters(trimmed);
             }
         } else {
-            for ch in text.chars() {
-                if doc.insert_char(ch).is_err() {
-                    break;
-                }
-            }
+            let _ = doc.insert_characters(text);
         }
         doc.commit_transaction();
 

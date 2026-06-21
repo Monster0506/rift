@@ -107,7 +107,7 @@ pub enum BufferKind {
     /// Clipboard ring index buffer — editable, :w syncs back to the ring
     Clipboard {
         /// Snapshot of ring entries at populate time; used for content-matching on save
-        entries: Vec<String>,
+        entries: Vec<Vec<crate::character::Character>>,
     },
     /// Scratch buffer for editing a single clipboard ring entry in place.
     ClipboardEntry { entry_index: Option<usize> },

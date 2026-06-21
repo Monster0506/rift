@@ -64,7 +64,7 @@ impl<T: TerminalBackend> Editor<T> {
             Some(l) if l.kind == PanelKind::Clipboard => l.clone(),
             _ => return,
         };
-        let entries: std::collections::VecDeque<String> =
+        let entries: std::collections::VecDeque<Vec<crate::character::Character>> =
             self.clipboard_ring.entries().iter().cloned().collect();
         if let Some(doc) = self.document_manager.get_document_mut(layout.dir_doc_id) {
             if doc.is_clipboard() {
@@ -120,7 +120,7 @@ impl<T: TerminalBackend> Editor<T> {
         {
             let old_revision = preview.buffer.revision;
             if let Ok(mut new_buf) = crate::buffer::TextBuffer::new(entry_text.len().max(64)) {
-                let _ = new_buf.insert_str(&entry_text);
+                let _ = new_buf.insert_chars(&entry_text);
                 let _ = new_buf.set_cursor(0);
                 new_buf.revision = old_revision + 1;
                 preview.buffer = new_buf;
@@ -191,7 +191,8 @@ impl<T: TerminalBackend> Editor<T> {
             };
             match &doc.kind {
                 BufferKind::ClipboardEntry { entry_index } => {
-                    (*entry_index, doc.buffer.to_string())
+                    let len = doc.buffer.len();
+                    (*entry_index, doc.buffer.chars(0..len).collect::<Vec<_>>())
                 }
                 _ => return,
             }
@@ -206,7 +207,8 @@ impl<T: TerminalBackend> Editor<T> {
             }
             Some(idx) => {
                 // Replace the entry in the ring at the given index
-                let entries: Vec<String> = self.clipboard_ring.entries().iter().cloned().collect();
+                let entries: Vec<Vec<crate::character::Character>> =
+                    self.clipboard_ring.entries().iter().cloned().collect();
                 self.clipboard_ring = {
                     let mut ring = crate::clipboard::ClipboardRing::new();
                     for (i, entry) in entries.iter().enumerate().rev() {

@@ -26,6 +26,13 @@ fn render_ascii(editor: &mut Editor<MockTerminal>) -> String {
         .join("\n")
 }
 
+fn ring_text(editor: &Editor<MockTerminal>, index: usize) -> Option<String> {
+    editor
+        .clipboard_ring
+        .get(index)
+        .map(|chars| chars.iter().map(crate::character::Character::to_char_lossy).collect())
+}
+
 fn do_vsplit(editor: &mut Editor<MockTerminal>) {
     editor.do_split_window(
         crate::split::tree::SplitDirection::Vertical,
@@ -1779,7 +1786,7 @@ fn surround_interrupted_sg_does_not_corrupt_later_yank() {
     assert_eq!(editor.active_document().buffer.to_string(), "foo bar");
     assert_eq!(editor.current_mode, Mode::Normal);
     assert!(editor.pending_grammar.is_none());
-    assert_eq!(editor.clipboard_ring.get(0), Some("foo"));
+    assert_eq!(ring_text(&editor, 0), Some("foo".to_string()));
 }
 
 #[test]
@@ -2615,11 +2622,11 @@ fn set_aware_yank_captures_each_region_without_mutating() {
     );
     assert!(editor.active_document().selection_set.is_empty());
     assert_eq!(
-        editor.clipboard_ring.get(0),
-        Some("foo"),
+        ring_text(&editor, 0),
+        Some("foo".to_string()),
         "lowest-offset region pushed last = ring[0] (front-insert)"
     );
-    assert_eq!(editor.clipboard_ring.get(1), Some("baz"));
+    assert_eq!(ring_text(&editor, 1), Some("baz".to_string()));
 }
 
 #[test]
@@ -3013,7 +3020,7 @@ fn set_aware_put_inserts_same_text_at_every_region() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.clipboard_ring.push("X".to_string());
+    editor.clipboard_ring.push_str("X".to_string());
     editor
         .active_document()
         .selection_set
@@ -3041,7 +3048,7 @@ fn set_aware_put_before_inserts_ahead_of_every_region() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.clipboard_ring.push("X".to_string());
+    editor.clipboard_ring.push_str("X".to_string());
     editor
         .active_document()
         .selection_set
@@ -3068,7 +3075,7 @@ fn bare_repeated_p_after_set_aware_put_only_affects_single_cursor() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.clipboard_ring.push("X".to_string());
+    editor.clipboard_ring.push_str("X".to_string());
     editor
         .active_document()
         .selection_set
@@ -3186,7 +3193,7 @@ fn multi_region_put_is_one_undo_step() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.clipboard_ring.push("X".to_string());
+    editor.clipboard_ring.push_str("X".to_string());
     editor
         .active_document()
         .selection_set
@@ -3602,7 +3609,7 @@ fn every_set_aware_command_clears_the_set_after_acting() {
     // p
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.clipboard_ring.push("X".to_string());
+    editor.clipboard_ring.push_str("X".to_string());
     fresh_set(&mut editor);
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
     assert!(
@@ -3655,7 +3662,7 @@ fn dot_repeat_paste_genuinely_differs_from_bare_repeat() {
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode)); // banks "foo" at 0..2
     editor.handle_action(&Action::Editor(EditorAction::RegionBankOccurrenceNext)); // banks "foo" at 8..10
 
-    editor.clipboard_ring.push("X".to_string());
+    editor.clipboard_ring.push_str("X".to_string());
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false })); // 1st X after each anchor
 
     let _ = editor.active_document().buffer.set_cursor(0);
@@ -3685,8 +3692,8 @@ fn cycle_paste_after_set_clears_only_touches_the_single_most_recent_position() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
-    editor.clipboard_ring.push("Y".to_string());
-    editor.clipboard_ring.push("X".to_string());
+    editor.clipboard_ring.push_str("Y".to_string());
+    editor.clipboard_ring.push_str("X".to_string());
     editor
         .active_document()
         .selection_set

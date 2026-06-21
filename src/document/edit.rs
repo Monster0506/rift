@@ -206,6 +206,76 @@ impl Document {
         Ok(())
     }
 
+    /// Insert a sequence of `Character`s at the cursor, preserving raw bytes
+    /// and control chars (the byte-faithful counterpart of `insert_str`, used
+    /// for pasting clipboard-ring entries captured via `Character`).
+    pub fn insert_characters(&mut self, chars: &[Character]) -> Result<(), RiftError> {
+        let newline_count = chars
+            .iter()
+            .filter(|c| matches!(c, Character::Newline))
+            .count();
+        let line_before_insert = if newline_count > 0 {
+            Some(self.buffer.get_line())
+        } else {
+            None
+        };
+
+        let start_byte = self.buffer.char_to_byte(self.buffer.cursor());
+        let (start_position, history_pos) = self.get_edit_points(start_byte);
+
+        self.buffer.insert_chars(chars)?;
+        self.mark_dirty();
+
+        let added_bytes: usize = chars.iter().map(|c| c.len_utf8()).sum();
+        let new_end_byte = start_byte + added_bytes;
+
+        let line_inserts: Vec<usize> = match line_before_insert {
+            Some(before_line) => (0..newline_count).map(|i| before_line + 1 + i).collect(),
+            None => Vec::new(),
+        };
+
+        if !chars.is_empty() {
+            self.record_edit(
+                EditOperation::Insert {
+                    position: history_pos,
+                    text: chars.to_vec(),
+                    len: added_bytes,
+                },
+                &format!("Insert {} chars", chars.len()),
+                AnnotationUndoHint::Insertion {
+                    start: start_byte,
+                    new_end: new_end_byte,
+                    line_inserts,
+                },
+            );
+        }
+
+        let new_end_position = self.get_point(new_end_byte);
+
+        let edit = InputEdit {
+            start_byte,
+            old_end_byte: start_byte,
+            new_end_byte,
+            start_position,
+            old_end_position: start_position,
+            new_end_position,
+        };
+        if let Some(syntax) = &mut self.syntax {
+            syntax.update_tree(&edit);
+        }
+
+        self.annotations
+            .on_edit(start_byte, start_byte, new_end_byte);
+
+        if let Some(before_line) = line_before_insert {
+            for i in 0..newline_count {
+                self.annotations.on_line_inserted(before_line + 1 + i);
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn delete_backward(&mut self) -> bool {
         let cursor = self.buffer.cursor();
         if cursor == 0 {

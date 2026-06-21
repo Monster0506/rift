@@ -453,9 +453,9 @@ impl<T: TerminalBackend> Editor<T> {
                     crate::document::BufferKind::Clipboard { entries } => {
                         entries.get(i).cloned().unwrap_or_default()
                     }
-                    _ => String::new(),
+                    _ => Vec::new(),
                 },
-                None => String::new(),
+                None => Vec::new(),
             };
 
             (text, layout.preview_doc_id)
@@ -464,7 +464,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(preview) = self.document_manager.get_document_mut(preview_doc_id) {
             let old_revision = preview.buffer.revision;
             if let Ok(mut new_buf) = crate::buffer::TextBuffer::new(entry_text.len().max(64)) {
-                let _ = new_buf.insert_str(&entry_text);
+                let _ = new_buf.insert_chars(&entry_text);
                 let _ = new_buf.set_cursor(0);
                 new_buf.revision = old_revision + 1;
                 preview.buffer = new_buf;
@@ -493,7 +493,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         // Rebuild the ring from the parsed order
-        let mut new_entries: std::collections::VecDeque<String> = order
+        let mut new_entries: std::collections::VecDeque<Vec<crate::character::Character>> = order
             .into_iter()
             .filter_map(|i| entries_snapshot.get(i).cloned())
             .collect();

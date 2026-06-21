@@ -298,7 +298,10 @@ impl Document {
     }
 
     /// Populate (or repopulate) this clipboard index buffer from the ring.
-    pub fn populate_clipboard_buffer(&mut self, entries: &std::collections::VecDeque<String>) {
+    pub fn populate_clipboard_buffer(
+        &mut self,
+        entries: &std::collections::VecDeque<Vec<crate::character::Character>>,
+    ) {
         use crate::color::Color;
 
         let mut content = String::new();

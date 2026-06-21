@@ -1,6 +1,7 @@
 //! Region-set navigation (`n`/`N` when banked regions exist).
 
 use super::Editor;
+use crate::character::Character;
 use crate::term::TerminalBackend;
 
 /// Char offset of the start of `row`.
@@ -280,11 +281,7 @@ impl<T: TerminalBackend> Editor<T> {
                     return false;
                 };
                 let (start, end) = region.buffer_span(&doc.buffer);
-                let text: String = doc
-                    .buffer
-                    .chars(start..end)
-                    .map(|c| c.to_char_lossy())
-                    .collect();
+                let text: Vec<Character> = doc.buffer.chars(start..end).collect();
                 if doc.delete_range(start, end).is_err() {
                     return false;
                 }
@@ -298,11 +295,7 @@ impl<T: TerminalBackend> Editor<T> {
                     return false;
                 };
                 let (start, end) = region.buffer_span(&doc.buffer);
-                let text: String = doc
-                    .buffer
-                    .chars(start..end)
-                    .map(|c| c.to_char_lossy())
-                    .collect();
+                let text: Vec<Character> = doc.buffer.chars(start..end).collect();
                 if !text.is_empty() {
                     editor.clipboard_ring.push(text);
                 }
@@ -419,7 +412,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// `p`/`P` (and `PutSystemClipboard`) against a non-empty `SelectionSet`:
     /// insert the same `text` at every region, after its end for `p`, before its start for `P`. Non-destructive (design.md S5.7).
-    pub(super) fn try_run_set_aware_put(&mut self, before: bool, text: &str) -> bool {
+    pub(super) fn try_run_set_aware_put(&mut self, before: bool, text: &[Character]) -> bool {
         let is_empty = self
             .document_manager
             .active_document()
@@ -428,7 +421,7 @@ impl<T: TerminalBackend> Editor<T> {
         if is_empty {
             return false;
         }
-        let text = text.to_string();
+        let text = text.to_vec();
         self.apply_to_each_region(|editor, region| {
             let Some(doc) = editor.document_manager.active_document_mut() else {
                 return false;
@@ -436,7 +429,7 @@ impl<T: TerminalBackend> Editor<T> {
             let (start, end) = region.buffer_span(&doc.buffer);
             let pos = if before { start } else { end };
             let _ = doc.buffer.set_cursor(pos);
-            doc.insert_str(&text).is_ok()
+            doc.insert_characters(&text).is_ok()
         })
     }
 

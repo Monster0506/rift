@@ -11,6 +11,7 @@ use std::collections::VecDeque;
 
 use crate::buffer::api::BufferView;
 use crate::buffer::TextBuffer;
+use crate::character::Character;
 use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
 use crate::layer::{Cell, Layer};
 use crate::wrap::{MotionRange, RangeKind};
@@ -20,8 +21,11 @@ const TOOLTIP_MAX_WIDTH: usize = 42;
 
 // ─── Ring ────────────────────────────────────────────────────────────────────
 
+/// Stores entries as `Character` sequences (not `String`) so that raw
+/// non-UTF-8 bytes and control characters yanked from the buffer round-trip
+/// through paste instead of being replaced with U+FFFD.
 pub struct ClipboardRing {
-    entries: VecDeque<String>,
+    entries: VecDeque<Vec<Character>>,
     capacity: usize,
 }
 
@@ -40,8 +44,8 @@ impl ClipboardRing {
     }
 
     /// Push a new entry to the front (index 0 = most recent).
-    /// Empty strings are ignored. Oldest entry is dropped when at capacity.
-    pub fn push(&mut self, text: String) {
+    /// Empty entries are ignored. Oldest entry is dropped when at capacity.
+    pub fn push(&mut self, text: Vec<Character>) {
         if text.is_empty() {
             return;
         }
@@ -49,6 +53,12 @@ impl ClipboardRing {
         while self.entries.len() > self.capacity {
             self.entries.pop_back();
         }
+    }
+
+    /// Convenience for callers that only have a `String` (e.g. the system
+    /// clipboard, which is plain text and has no byte-faithful representation).
+    pub fn push_str(&mut self, text: String) {
+        self.push(text.chars().map(Character::from).collect());
     }
 
     /// Update the ring capacity, trimming oldest entries if needed.
@@ -64,15 +74,15 @@ impl ClipboardRing {
         self.capacity
     }
 
-    pub fn get(&self, index: usize) -> Option<&str> {
-        self.entries.get(index).map(String::as_str)
+    pub fn get(&self, index: usize) -> Option<&[Character]> {
+        self.entries.get(index).map(Vec::as_slice)
     }
 
-    pub fn most_recent(&self) -> Option<&str> {
+    pub fn most_recent(&self) -> Option<&[Character]> {
         self.get(0)
     }
 
-    pub fn entries(&self) -> &VecDeque<String> {
+    pub fn entries(&self) -> &VecDeque<Vec<Character>> {
         &self.entries
     }
 
@@ -87,8 +97,9 @@ impl ClipboardRing {
 
 // ─── Text capture ─────────────────────────────────────────────────────────────
 
-/// Extract the text covered by a `MotionRange` from the buffer as a `String`.
-pub fn capture_text(buf: &TextBuffer, range: &MotionRange) -> String {
+/// Extract the text covered by a `MotionRange` from the buffer, preserving
+/// raw bytes/control chars so it round-trips through the clipboard ring.
+pub fn capture_text(buf: &TextBuffer, range: &MotionRange) -> Vec<Character> {
     let (start, end) = match range.kind {
         RangeKind::Linewise => {
             let first = range.anchor.min(range.new_cursor);
@@ -111,11 +122,11 @@ pub fn capture_text(buf: &TextBuffer, range: &MotionRange) -> String {
             )
         }
     };
-    buf.chars(start..end).map(|c| c.to_char_lossy()).collect()
+    buf.chars(start..end).collect()
 }
 
 /// Capture the full current line (including newline) from the buffer.
-pub fn capture_current_line(buf: &TextBuffer) -> String {
+pub fn capture_current_line(buf: &TextBuffer) -> Vec<Character> {
     let cursor = buf.cursor();
     let line = buf.line_index.get_line_at(cursor);
     let start = buf.line_index.get_start(line).unwrap_or(0);
@@ -124,7 +135,7 @@ pub fn capture_current_line(buf: &TextBuffer) -> String {
     } else {
         buf.len()
     };
-    buf.chars(start..end).map(|c| c.to_char_lossy()).collect()
+    buf.chars(start..end).collect()
 }
 
 const SYSTEM_CLIPBOARD_REFRESH_INTERVAL: std::time::Duration =
@@ -205,7 +216,8 @@ impl ClipboardTooltip {
 
         for (i, entry) in ring.entries().iter().enumerate() {
             let is_selected = i == selected;
-            let row = render_entry(entry, content_width, is_selected, editor_fg, editor_bg);
+            let text: String = entry.iter().map(Character::to_char_lossy).collect();
+            let row = render_entry(&text, content_width, is_selected, editor_fg, editor_bg);
             content.push(row);
         }
 
@@ -279,6 +291,33 @@ mod tests {
         let cache = SystemClipboardCache::new();
         assert!(cache.text().is_none());
         assert!(cache.last_refreshed.is_none());
+    }
+
+    #[test]
+    fn capture_text_preserves_byte_and_control_chars() {
+        let mut buf = TextBuffer::new(16).unwrap();
+        let _ = buf.insert_chars(&[
+            Character::Unicode('a'),
+            Character::Byte(0xFF),
+            Character::Control(0x0C),
+            Character::Unicode('b'),
+        ]);
+        let range = MotionRange {
+            anchor: 0,
+            new_cursor: 4,
+            kind: RangeKind::Charwise,
+            inclusive: false,
+        };
+        let captured = capture_text(&buf, &range);
+        assert_eq!(
+            captured,
+            vec![
+                Character::Unicode('a'),
+                Character::Byte(0xFF),
+                Character::Control(0x0C),
+                Character::Unicode('b'),
+            ]
+        );
     }
 
     #[test]
