@@ -19,6 +19,24 @@ use crate::viewport::Viewport;
 
 use crate::render::{CursorInfo, StatusDrawState};
 
+/// First `max_chars` characters of `s` (never splits a multi-byte char).
+fn char_safe_prefix(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
+    }
+}
+
+/// Last `max_chars` characters of `s` (never splits a multi-byte char).
+fn char_safe_suffix(s: &str, max_chars: usize) -> &str {
+    let char_count = s.chars().count();
+    let skip = char_count.saturating_sub(max_chars);
+    match s.char_indices().nth(skip) {
+        Some((idx, _)) => &s[idx..],
+        None => s,
+    }
+}
+
 /// Status bar renderer
 pub struct StatusBar;
 
@@ -80,7 +98,10 @@ impl StatusBar {
                 let truncated = if debug_str.len() <= available_cols {
                     debug_str
                 } else {
-                    format!("{}...", &debug_str[..available_cols.saturating_sub(3)])
+                    format!(
+                        "{}...",
+                        char_safe_prefix(&debug_str, available_cols.saturating_sub(3))
+                    )
                 };
                 let spacing = available_cols.saturating_sub(truncated.len());
                 let spaced = format!("{}{}", " ".repeat(spacing), truncated);
@@ -116,7 +137,7 @@ impl StatusBar {
                 let truncated = if available_cols > 3 {
                     format!(
                         "...{}",
-                        &display_name[display_name.len().saturating_sub(available_cols - 3)..]
+                        char_safe_suffix(&display_name, available_cols - 3)
                     )
                 } else {
                     String::new()
@@ -345,7 +366,10 @@ impl StatusBar {
                 let truncated = if debug_str.len() <= padded_cols {
                     debug_str
                 } else if padded_cols > 3 {
-                    format!("{}...", &debug_str[..padded_cols.saturating_sub(3)])
+                    format!(
+                        "{}...",
+                        char_safe_prefix(&debug_str, padded_cols.saturating_sub(3))
+                    )
                 } else {
                     String::new()
                 };
@@ -384,7 +408,7 @@ impl StatusBar {
             } else if available_cols > 3 {
                 let truncated = format!(
                     "...{}",
-                    &display_name[display_name.len().saturating_sub(available_cols - 3)..]
+                    char_safe_suffix(&display_name, available_cols - 3)
                 );
                 let spacing = available_cols.saturating_sub(truncated.len());
                 for _ in 0..spacing {

@@ -35,6 +35,27 @@ fn test_status_bar_render_command_mode() {
 }
 
 #[test]
+fn test_status_bar_filename_truncation_does_not_panic_on_multibyte() {
+    let mut term = MockTerminal::new(10, 20);
+    let viewport = Viewport::new(10, 20);
+    let mut state = State::new();
+    state.file_name = "résumé_набор_文件名".to_string();
+
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
+}
+
+#[test]
+fn test_status_bar_debug_truncation_does_not_panic_on_multibyte() {
+    let mut term = MockTerminal::new(10, 20);
+    let viewport = Viewport::new(10, 20);
+    let mut state = State::new();
+    state.debug_mode = true;
+    state.file_path = Some("résumé_набор_文件名".to_string());
+
+    StatusBar::render(&mut term, &viewport, Mode::Normal, None, 0, &state).unwrap();
+}
+
+#[test]
 fn test_format_key_char() {
     assert_eq!(StatusBar::format_key(Key::Char('a')), "a");
     assert_eq!(StatusBar::format_key(Key::Char('Z')), "Z");
