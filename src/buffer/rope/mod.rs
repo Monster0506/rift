@@ -1018,14 +1018,7 @@ fn collect_bytes_range(
 
             let slice = get_piece_slice(&n.piece, original, add);
             for ch in &slice[p_start..p_end] {
-                // use std::fmt::Write;
-                // Reconstruct bytes logic: simplified.
-                // We should use Character::render to a byte buffer?
-                // Character::render uses fmt::Write (String).
-                // We can render to local string and push bytes.
-                let mut buf = String::new();
-                let _ = ch.render(&mut buf);
-                out.extend_from_slice(buf.as_bytes());
+                ch.encode_utf8(out);
             }
         }
 

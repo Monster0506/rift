@@ -60,6 +60,21 @@ fn test_delete_middle() {
 }
 
 #[test]
+fn test_bytes_range_roundtrips_byte_and_control_chars() {
+    let mut pt = PieceTable::new(Vec::new());
+    let mixed = vec![
+        Character::Unicode('a'),
+        Character::Byte(0xFF),
+        Character::Control(0x0C), // form-feed
+        Character::Unicode('b'),
+    ];
+    pt.insert(0, &mixed);
+
+    let bytes = pt.bytes_range(0..pt.len());
+    assert_eq!(bytes, vec![b'a', 0xFF, 0x0C, b'b']);
+}
+
+#[test]
 fn test_lines_basic() {
     let mut pt = PieceTable::new(Vec::new());
     pt.insert(0, &chars("Line 1\nLine 2\nLine 3"));
