@@ -328,8 +328,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         if let Some(doc) = self.document_manager.active_document_mut() {
-            let line_offset = doc.buffer.line_start(entry.line as usize);
-            let target = line_offset + entry.col as usize;
+            let entry_line = entry.line as usize;
+            let char_col = doc.lsp_char_offset_in_line(entry_line, entry.col);
+            let line_offset = doc.buffer.line_start(entry_line);
+            let target = line_offset + char_col;
             let _ = doc.buffer.set_cursor(target.min(doc.buffer.len()));
         }
 

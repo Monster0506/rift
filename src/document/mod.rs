@@ -12,6 +12,7 @@ mod search;
 mod selection_render;
 
 use crate::annotations::AnnotationStore;
+use crate::buffer::api::BufferView;
 use crate::buffer::TextBuffer;
 use crate::history::{EditSeq, EditTransaction, UndoTree};
 use crate::syntax::Syntax;
@@ -245,6 +246,32 @@ impl Document {
     /// Check if this document is a location list buffer (diagnostics/references).
     pub fn is_location_list(&self) -> bool {
         matches!(self.kind, BufferKind::LocationList { .. })
+    }
+
+    /// Convert an LSP `Position.character` (UTF-16 code units into `line`) to
+    /// this buffer's code-point offset within that line. Use this for every
+    /// position received from an LSP server before indexing the buffer.
+    pub fn lsp_char_offset_in_line(&self, line: usize, utf16_character: u32) -> usize {
+        let chars = self.line_chars(line).map(|c| c.to_char_lossy());
+        crate::lsp::protocol::utf16_offset_to_char(chars, utf16_character)
+    }
+
+    /// Convert a code-point offset within `line` to the UTF-16 code-unit
+    /// count LSP `Position.character` is measured in. Use this before sending
+    /// any cursor/selection position to an LSP server.
+    pub fn lsp_utf16_character_in_line(&self, line: usize, char_offset: usize) -> u32 {
+        let chars = self.line_chars(line).map(|c| c.to_char_lossy());
+        crate::lsp::protocol::char_offset_to_utf16(chars, char_offset)
+    }
+
+    fn line_chars(&self, line: usize) -> impl Iterator<Item = crate::character::Character> + '_ {
+        let start = self.buffer.line_start(line);
+        let end = if line + 1 < self.buffer.line_count() {
+            self.buffer.line_start(line + 1)
+        } else {
+            self.buffer.len()
+        };
+        self.buffer.chars(start..end)
     }
 
     /// Check if this document is a `gv` regions list buffer.

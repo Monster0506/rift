@@ -686,8 +686,10 @@ impl<T: TerminalBackend> Editor<T> {
                     .ok()
                     .and_then(|mut cb| cb.get_text().ok());
                 if let Some(text) = text {
-                    let text: Vec<crate::character::Character> =
-                        text.chars().map(crate::character::Character::from).collect();
+                    let text: Vec<crate::character::Character> = text
+                        .chars()
+                        .map(crate::character::Character::from)
+                        .collect();
                     if self.try_run_set_aware_put(*before, &text) {
                         self.finish_region_build(Some(action.clone()));
                         return true;
@@ -744,9 +746,11 @@ impl<T: TerminalBackend> Editor<T> {
                                 "LSP: still indexing, please wait...".to_string(),
                             );
                         } else {
-                            let line = doc.buffer.get_line() as u32;
-                            let line_start = doc.buffer.line_start(doc.buffer.get_line());
-                            let col = (doc.buffer.cursor().saturating_sub(line_start)) as u32;
+                            let cur_line = doc.buffer.get_line();
+                            let line = cur_line as u32;
+                            let line_start = doc.buffer.line_start(cur_line);
+                            let char_col = doc.buffer.cursor().saturating_sub(line_start);
+                            let col = doc.lsp_utf16_character_in_line(cur_line, char_col);
                             if self.lsp_manager.goto_definition(&path, line, col).is_none() {
                                 self.state.notify(
                                     crate::notification::NotificationType::Warning,
@@ -769,9 +773,11 @@ impl<T: TerminalBackend> Editor<T> {
                                 "LSP: still indexing, please wait...".to_string(),
                             );
                         } else {
-                            let line = doc.buffer.get_line() as u32;
-                            let line_start = doc.buffer.line_start(doc.buffer.get_line());
-                            let col = (doc.buffer.cursor().saturating_sub(line_start)) as u32;
+                            let cur_line = doc.buffer.get_line();
+                            let line = cur_line as u32;
+                            let line_start = doc.buffer.line_start(cur_line);
+                            let char_col = doc.buffer.cursor().saturating_sub(line_start);
+                            let col = doc.lsp_utf16_character_in_line(cur_line, char_col);
                             if self.lsp_manager.references(&path, line, col).is_none() {
                                 self.state.notify(
                                     crate::notification::NotificationType::Warning,
@@ -794,9 +800,11 @@ impl<T: TerminalBackend> Editor<T> {
                                 "LSP: still indexing, please wait...".to_string(),
                             );
                         } else {
-                            let line = doc.buffer.get_line() as u32;
-                            let line_start = doc.buffer.line_start(doc.buffer.get_line());
-                            let col = (doc.buffer.cursor().saturating_sub(line_start)) as u32;
+                            let cur_line = doc.buffer.get_line();
+                            let line = cur_line as u32;
+                            let line_start = doc.buffer.line_start(cur_line);
+                            let char_col = doc.buffer.cursor().saturating_sub(line_start);
+                            let col = doc.lsp_utf16_character_in_line(cur_line, char_col);
                             if self.lsp_manager.hover(&path, line, col).is_none() {
                                 self.state.notify(
                                     crate::notification::NotificationType::Warning,
@@ -813,9 +821,11 @@ impl<T: TerminalBackend> Editor<T> {
                 use crate::buffer::api::BufferView;
                 let ctx = self.document_manager.active_document().and_then(|doc| {
                     let path = doc.path()?.to_path_buf();
-                    let line = doc.buffer.get_line() as u32;
-                    let line_start = doc.buffer.line_start(doc.buffer.get_line());
-                    let col = (doc.buffer.cursor().saturating_sub(line_start)) as u32;
+                    let cur_line = doc.buffer.get_line();
+                    let line = cur_line as u32;
+                    let line_start = doc.buffer.line_start(cur_line);
+                    let char_col = doc.buffer.cursor().saturating_sub(line_start);
+                    let col = doc.lsp_utf16_character_in_line(cur_line, char_col);
                     Some((path, line, col))
                 });
                 if let Some(ctx) = ctx {
@@ -841,9 +851,11 @@ impl<T: TerminalBackend> Editor<T> {
                                 "LSP: still indexing, please wait...".to_string(),
                             );
                         } else {
-                            let line = doc.buffer.get_line() as u32;
-                            let line_start = doc.buffer.line_start(doc.buffer.get_line());
-                            let col = (doc.buffer.cursor().saturating_sub(line_start)) as u32;
+                            let cur_line = doc.buffer.get_line();
+                            let line = cur_line as u32;
+                            let line_start = doc.buffer.line_start(cur_line);
+                            let char_col = doc.buffer.cursor().saturating_sub(line_start);
+                            let col = doc.lsp_utf16_character_in_line(cur_line, char_col);
                             let uri = crate::lsp::protocol::path_to_uri(&path);
                             let norm_uri = crate::lsp::protocol::normalize_uri(&uri);
                             let diagnostics: Vec<crate::lsp::protocol::LspDiagnostic> = self
@@ -1113,7 +1125,11 @@ impl<T: TerminalBackend> Editor<T> {
     /// - `before = true`  (`P`): inserts at the start of the current line (above)
     ///
     /// Charwise text: `before = false` advances the cursor one position first.
-    pub(super) fn insert_text_at_cursor(&mut self, text: &[crate::character::Character], before: bool) -> bool {
+    pub(super) fn insert_text_at_cursor(
+        &mut self,
+        text: &[crate::character::Character],
+        before: bool,
+    ) -> bool {
         let is_linewise = matches!(text.last(), Some(crate::character::Character::Newline));
 
         let Some(doc) = self.document_manager.active_document_mut() else {

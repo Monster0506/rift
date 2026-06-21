@@ -1,6 +1,36 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// UTF-16 code units needed to encode `ch` (1, or 2 for chars outside the BMP).
+fn utf16_len(ch: char) -> u32 {
+    if (ch as u32) > 0xFFFF {
+        2
+    } else {
+        1
+    }
+}
+
+/// Convert a code-point offset within a line to a UTF-16 code-unit offset —
+/// the unit LSP `Position.character` is measured in over the wire.
+pub fn char_offset_to_utf16(line: impl Iterator<Item = char>, char_offset: usize) -> u32 {
+    line.take(char_offset).map(utf16_len).sum()
+}
+
+/// Convert a UTF-16 code-unit offset (as received from an LSP server) to a
+/// code-point offset within a line.
+pub fn utf16_offset_to_char(line: impl Iterator<Item = char>, utf16_offset: u32) -> usize {
+    let mut units = 0u32;
+    let mut chars = 0usize;
+    for ch in line {
+        if units >= utf16_offset {
+            break;
+        }
+        units += utf16_len(ch);
+        chars += 1;
+    }
+    chars
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct JsonRpcRequest {
     pub jsonrpc: &'static str,

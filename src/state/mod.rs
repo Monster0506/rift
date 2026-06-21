@@ -448,7 +448,8 @@ impl State {
                 .chars()
                 .next_back()
                 .map_or(0, char::len_utf8);
-            self.command_line.remove(self.command_line_cursor - prev_len);
+            self.command_line
+                .remove(self.command_line_cursor - prev_len);
             self.command_line_cursor -= prev_len;
         }
     }

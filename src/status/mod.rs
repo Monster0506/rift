@@ -135,10 +135,7 @@ impl StatusBar {
                 term.write(display_name.as_bytes())?;
             } else {
                 let truncated = if available_cols > 3 {
-                    format!(
-                        "...{}",
-                        char_safe_suffix(&display_name, available_cols - 3)
-                    )
+                    format!("...{}", char_safe_suffix(&display_name, available_cols - 3))
                 } else {
                     String::new()
                 };
@@ -406,10 +403,8 @@ impl StatusBar {
                 layer.write_str_colored(status_row, col, &display_name, fg, bg);
                 col += display_name.len();
             } else if available_cols > 3 {
-                let truncated = format!(
-                    "...{}",
-                    char_safe_suffix(&display_name, available_cols - 3)
-                );
+                let truncated =
+                    format!("...{}", char_safe_suffix(&display_name, available_cols - 3));
                 let spacing = available_cols.saturating_sub(truncated.len());
                 for _ in 0..spacing {
                     layer.set_cell(

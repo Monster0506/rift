@@ -486,8 +486,10 @@ impl<T: TerminalBackend> Editor<T> {
                                 if let Some(doc) =
                                     self.document_manager.get_document_mut(res.document_id)
                                 {
+                                    let char_col =
+                                        doc.lsp_char_offset_in_line(goto_line, goto_col as u32);
                                     let line_offset = doc.buffer.line_start(goto_line);
-                                    let target = (line_offset + goto_col).min(doc.buffer.len());
+                                    let target = (line_offset + char_col).min(doc.buffer.len());
                                     doc.buffer.clear_desired_col();
                                     let _ = doc.buffer.set_cursor(target);
                                 }

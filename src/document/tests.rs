@@ -13,6 +13,33 @@ fn test_new_doc_is_file_kind() {
 }
 
 #[test]
+fn test_lsp_char_offset_handles_astral_and_non_ascii() {
+    let mut doc = Document::new(1).unwrap();
+    // "🦀" is outside the BMP (2 UTF-16 units, 1 code point); "é" is 1 UTF-16
+    // unit. An LSP server reports `character` in UTF-16 units, not code points.
+    let _ = doc.insert_str("a🦀é-end");
+
+    // code points: a(0) 🦀(1) é(2) -(3) e(4) n(5) d(6)
+    // utf16 units: a=0  🦀=1,2  é=3   -=4  e=5  n=6  d=7
+
+    assert_eq!(doc.lsp_char_offset_in_line(0, 0), 0);
+    assert_eq!(
+        doc.lsp_char_offset_in_line(0, 3),
+        2,
+        "utf16 offset 3 (past the 2-unit crab) must land on code point 2 ('é'), not 3"
+    );
+    assert_eq!(doc.lsp_char_offset_in_line(0, 7), 6);
+
+    assert_eq!(doc.lsp_utf16_character_in_line(0, 0), 0);
+    assert_eq!(
+        doc.lsp_utf16_character_in_line(0, 2),
+        3,
+        "code point 2 ('é') must report utf16 offset 3 (after the 2-unit crab)"
+    );
+    assert_eq!(doc.lsp_utf16_character_in_line(0, 6), 7);
+}
+
+#[test]
 fn test_is_terminal_false_for_file() {
     let doc = Document::new(1).unwrap();
     assert!(!doc.is_terminal());

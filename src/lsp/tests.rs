@@ -55,6 +55,21 @@ fn uri_to_path_decodes_percent_encoded_multibyte_utf8() {
 }
 
 #[test]
+fn utf16_char_offset_round_trip_for_astral_emoji() {
+    // "🦀" (U+1F980) is outside the BMP: 1 code point, but 2 UTF-16 code units.
+    let line = "a🦀b";
+    assert_eq!(char_offset_to_utf16(line.chars(), 0), 0);
+    assert_eq!(char_offset_to_utf16(line.chars(), 1), 1); // past 'a'
+    assert_eq!(char_offset_to_utf16(line.chars(), 2), 3); // past 'a' + crab (2 units)
+    assert_eq!(char_offset_to_utf16(line.chars(), 3), 4); // past 'b'
+
+    assert_eq!(utf16_offset_to_char(line.chars(), 0), 0);
+    assert_eq!(utf16_offset_to_char(line.chars(), 1), 1);
+    assert_eq!(utf16_offset_to_char(line.chars(), 3), 2);
+    assert_eq!(utf16_offset_to_char(line.chars(), 4), 3);
+}
+
+#[test]
 fn uri_to_path_invalid_returns_none() {
     assert!(uri_to_path("http://example.com/foo").is_none());
     assert!(uri_to_path("not-a-uri").is_none());

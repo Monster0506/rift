@@ -27,10 +27,12 @@ fn render_ascii(editor: &mut Editor<MockTerminal>) -> String {
 }
 
 fn ring_text(editor: &Editor<MockTerminal>, index: usize) -> Option<String> {
-    editor
-        .clipboard_ring
-        .get(index)
-        .map(|chars| chars.iter().map(crate::character::Character::to_char_lossy).collect())
+    editor.clipboard_ring.get(index).map(|chars| {
+        chars
+            .iter()
+            .map(crate::character::Character::to_char_lossy)
+            .collect()
+    })
 }
 
 fn do_vsplit(editor: &mut Editor<MockTerminal>) {
