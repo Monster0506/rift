@@ -37,6 +37,24 @@ fn uri_to_path_roundtrip() {
 }
 
 #[test]
+fn uri_to_path_decodes_percent_encoded_multibyte_utf8() {
+    // "é" encodes to the 2-byte UTF-8 sequence %C3%A9; decoding byte-by-byte
+    // as Latin-1 (`byte as char`) would yield "Ã©" instead of "é".
+    #[cfg(not(windows))]
+    {
+        let uri = "file:///home/user/r%C3%A9sum%C3%A9.rs";
+        let recovered = uri_to_path(uri).expect("should parse");
+        assert_eq!(recovered, Path::new("/home/user/résumé.rs"));
+    }
+    #[cfg(windows)]
+    {
+        let uri = "file:///c:/users/test/r%C3%A9sum%C3%A9.rs";
+        let recovered = uri_to_path(uri).expect("should parse");
+        assert_eq!(recovered, Path::new(r"c:\users\test\résumé.rs"));
+    }
+}
+
+#[test]
 fn uri_to_path_invalid_returns_none() {
     assert!(uri_to_path("http://example.com/foo").is_none());
     assert!(uri_to_path("not-a-uri").is_none());
