@@ -81,30 +81,29 @@ impl CommandLine {
         let prompt_len = 1;
         let available_cmd_width = available_width.saturating_sub(prompt_len);
 
-        let offset = if command_line.len() <= available_cmd_width {
+        // `cursor_pos` is a byte offset into `command_line`; convert to a char
+        // count so the scroll/slice math below never lands inside a multi-byte
+        // UTF-8 sequence.
+        let cmd_chars: Vec<char> = command_line.chars().collect();
+        let cursor_char = command_line
+            .get(..cursor_pos.min(command_line.len()))
+            .map_or(cmd_chars.len(), |s| s.chars().count());
+
+        let offset = if cmd_chars.len() <= available_cmd_width {
             0
-        } else if cursor_pos >= available_cmd_width {
-            cursor_pos
+        } else if cursor_char >= available_cmd_width {
+            cursor_char
                 .saturating_sub(available_cmd_width)
                 .saturating_add(1)
         } else {
             0
         };
 
-        // Slice command line
-        let cmd_len = command_line.len();
-        let displayed_cmd = if offset < cmd_len {
-            let end = (offset + available_cmd_width).min(cmd_len);
-            if end > offset {
-                &command_line[offset..end]
-            } else {
-                ""
-            }
-        } else {
-            ""
-        };
-
-        content_line.extend(displayed_cmd.chars());
+        // Slice command line by char index, never by byte index.
+        let end = (offset + available_cmd_width).min(cmd_chars.len());
+        if offset < cmd_chars.len() && end > offset {
+            content_line.extend(&cmd_chars[offset..end]);
+        }
 
         // Render to layer
         cmd_window.render_with_border_chars(layer, &[content_line], default_border_chars);

@@ -472,9 +472,15 @@ impl RenderSystem {
                             },
                         );
 
+                        // `offset` is a char count (see CommandLine::render_to_layer); convert
+                        // the byte-offset cursor to match so the column math stays consistent.
+                        let cursor_char = state
+                            .content
+                            .get(..state.cursor.col.min(state.content.len()))
+                            .map_or(0, |s| s.chars().count());
                         let (cursor_row, cursor_col) = CommandLine::calculate_cursor_position(
                             (window_row, window_col),
-                            state.cursor.col,
+                            cursor_char,
                             offset,
                             state.has_border,
                         );

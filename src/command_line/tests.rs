@@ -46,6 +46,38 @@ fn test_command_line_render_to_layer() {
 }
 
 #[test]
+fn test_command_line_render_scrolled_multibyte_does_not_panic() {
+    // Scrolled command line ("offset" computed from a column budget) must not
+    // byte-slice into the middle of a multi-byte UTF-8 char.
+    let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 9);
+    let viewport = Viewport::new(24, 9);
+    let window_settings = CommandLineWindowSettings {
+        width_ratio: 1.0,
+        min_width: 9,
+        height: 3,
+        border: false,
+        reverse_video: false,
+    };
+
+    let command_line = "aééééé"; // 1 + 5*2 = 11 bytes
+    let cursor_pos = command_line.len();
+
+    CommandLine::render_to_layer(
+        &mut layer,
+        &viewport,
+        command_line,
+        cursor_pos,
+        crate::command_line::RenderOptions {
+            default_border_chars: None,
+            window_settings: &window_settings,
+            fg: None,
+            bg: None,
+            prompt: ':',
+        },
+    );
+}
+
+#[test]
 fn test_command_line_calculate_cursor_position() {
     // Window at (10, 20) with width 50
     let window_pos = (10, 20);
