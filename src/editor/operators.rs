@@ -1,9 +1,27 @@
 use super::Editor;
 use crate::action::Motion;
+use crate::command::Command;
 use crate::dot_repeat::DotRegister;
 use crate::mode::Mode;
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
+
+/// Rebuild `cmd` with its embedded count replaced by `count`, for command
+/// variants that carry one. `None` for variants with no count to override.
+fn with_count_override(cmd: Command, count: usize) -> Option<Command> {
+    match cmd {
+        Command::Move(m, _) => Some(Command::Move(m, count)),
+        Command::Delete(m, _) => Some(Command::Delete(m, count)),
+        Command::Change(m, _) => Some(Command::Change(m, count)),
+        Command::ReplaceChar(ch, _) => Some(Command::ReplaceChar(ch, count)),
+        Command::DeleteSurround(ch, _) => Some(Command::DeleteSurround(ch, count)),
+        Command::ChangeSurround(from, to, _) => Some(Command::ChangeSurround(from, to, count)),
+        Command::AddSurround(m, _, ch, delim_count) => {
+            Some(Command::AddSurround(m, count, ch, delim_count))
+        }
+        _ => None,
+    }
+}
 
 impl<T: TerminalBackend> Editor<T> {
     pub fn term_mut(&mut self) -> &mut T {
@@ -194,8 +212,17 @@ impl<T: TerminalBackend> Editor<T> {
 
         match register {
             DotRegister::Single(cmd) => {
-                for _ in 0..count {
-                    self.execute_buffer_command(cmd);
+                // A leading count on `.` replaces (not multiplies) an
+                // embedded count: 3. after d2w runs d3w once, matching vim.
+                match (self.pending_count > 0, with_count_override(cmd, count)) {
+                    (true, Some(overridden)) => {
+                        self.execute_buffer_command(overridden);
+                    }
+                    _ => {
+                        for _ in 0..count {
+                            self.execute_buffer_command(cmd);
+                        }
+                    }
                 }
             }
             DotRegister::InsertSession { entry, commands } => {

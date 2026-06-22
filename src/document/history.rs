@@ -229,29 +229,35 @@ impl Document {
         }
     }
 
+    /// Resolve a recorded `Position`'s line to a char offset; debug-asserts
+    /// on a stale/corrupt position instead of silently collapsing to 0.
+    fn line_start_checked(buffer: &TextBuffer, line: u32) -> usize {
+        let resolved = buffer.line_index.get_start(line as usize);
+        debug_assert!(
+            resolved.is_some(),
+            "stale history Position: line {line} no longer exists in buffer"
+        );
+        resolved.unwrap_or(0)
+    }
+
     /// Apply an edit operation to a given buffer.
     fn apply_operation_to_buffer(buffer: &mut TextBuffer, op: &EditOperation) {
         match op {
             EditOperation::Insert { position, text, .. } => {
-                let line_start = buffer
-                    .line_index
-                    .get_start(position.line as usize)
-                    .unwrap_or(0);
+                let line_start = Self::line_start_checked(buffer, position.line);
                 let char_offset = line_start + position.col as usize;
                 let _ = buffer.set_cursor(char_offset);
                 let _ = buffer.insert_chars(text);
             }
             EditOperation::Delete { range, .. } => {
-                let start_line_start = buffer
-                    .line_index
-                    .get_start(range.start.line as usize)
-                    .unwrap_or(0);
-                let start_offset = start_line_start + range.start.col as usize;
-                let end_line_start = buffer
-                    .line_index
-                    .get_start(range.end.line as usize)
-                    .unwrap_or(0);
-                let end_offset = end_line_start + range.end.col as usize;
+                let start_offset =
+                    Self::line_start_checked(buffer, range.start.line) + range.start.col as usize;
+                let end_offset =
+                    Self::line_start_checked(buffer, range.end.line) + range.end.col as usize;
+                debug_assert!(
+                    end_offset >= start_offset,
+                    "stale history Position: range end before start"
+                );
 
                 let count = end_offset.saturating_sub(start_offset);
                 buffer.delete_range(start_offset, count);
@@ -260,32 +266,28 @@ impl Document {
             EditOperation::Replace {
                 range, new_text, ..
             } => {
-                let start_line_start = buffer
-                    .line_index
-                    .get_start(range.start.line as usize)
-                    .unwrap_or(0);
-                let start_offset = start_line_start + range.start.col as usize;
-                let end_line_start = buffer
-                    .line_index
-                    .get_start(range.end.line as usize)
-                    .unwrap_or(0);
-                let end_offset = end_line_start + range.end.col as usize;
+                let start_offset =
+                    Self::line_start_checked(buffer, range.start.line) + range.start.col as usize;
+                let end_offset =
+                    Self::line_start_checked(buffer, range.end.line) + range.end.col as usize;
+                debug_assert!(
+                    end_offset >= start_offset,
+                    "stale history Position: range end before start"
+                );
                 let count = end_offset.saturating_sub(start_offset);
                 buffer.replace_range(start_offset, count, new_text);
             }
             EditOperation::BlockChange {
                 range, new_content, ..
             } => {
-                let start_line_start = buffer
-                    .line_index
-                    .get_start(range.start.line as usize)
-                    .unwrap_or(0);
-                let start_offset = start_line_start + range.start.col as usize;
-                let end_line_start = buffer
-                    .line_index
-                    .get_start(range.end.line as usize)
-                    .unwrap_or(0);
-                let end_offset = end_line_start + range.end.col as usize;
+                let start_offset =
+                    Self::line_start_checked(buffer, range.start.line) + range.start.col as usize;
+                let end_offset =
+                    Self::line_start_checked(buffer, range.end.line) + range.end.col as usize;
+                debug_assert!(
+                    end_offset >= start_offset,
+                    "stale history Position: range end before start"
+                );
 
                 let count = end_offset.saturating_sub(start_offset);
                 buffer.delete_range(start_offset, count);

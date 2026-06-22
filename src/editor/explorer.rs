@@ -978,19 +978,20 @@ impl<T: TerminalBackend> Editor<T> {
         self.job_manager.spawn(job);
     }
 
-    /// Re-render the undotree buffer from the linked document's current history.
+    /// Re-render the undotree buffer off the main thread (fires on every
+    /// cursor move in the pane; a large history shouldn't block input).
     pub(super) fn handle_undotree_refresh(&mut self) {
         let layout = match self.panel_layout.as_ref() {
             Some(l) if l.kind == PanelKind::UndoTree => l.clone(),
             _ => return,
         };
         if let Some(linked_doc) = self.document_manager.get_document(layout.original_doc_id) {
-            let (text, seqs, lc) = crate::undotree_view::render_tree_to_text(&linked_doc.history);
-            if let Some(ut_doc) = self.document_manager.get_document_mut(layout.dir_doc_id) {
-                ut_doc.populate_undotree_buffer(text, seqs, lc);
-            }
+            let job = crate::job_manager::jobs::undotree::UndoTreeRenderJob::new(
+                layout.dir_doc_id,
+                linked_doc.history.clone(),
+            );
+            self.job_manager.spawn(job);
         }
-        let _ = self.update_and_render();
     }
 
     /// Apply the diff from a directory buffer to the filesystem.

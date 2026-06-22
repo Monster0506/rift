@@ -541,7 +541,8 @@ impl UndoTree {
         Ok(())
     }
 
-    /// Compute replay path from one edit to another without mutating state
+    /// Compute replay path from one edit to another without mutating state.
+    /// Known gap: ignores `node.snapshot` checkpoints, replaying every op.
     pub fn compute_replay_path(&self, from: EditSeq, to: EditSeq) -> Result<ReplayPath, UndoError> {
         // Validate targets exist
         if !self.nodes.contains_key(&from) {

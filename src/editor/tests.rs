@@ -3246,6 +3246,36 @@ fn dot_repeat_destructive_group_reselects_without_reexecuting() {
 }
 
 #[test]
+fn dot_repeat_leading_count_overrides_embedded_command_count() {
+    use crate::action::Motion;
+    use crate::command::Command;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "one two three four five six seven");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    // Simulate "d2w" having just run and been recorded for dot-repeat.
+    let d2w = Command::Delete(Motion::NextWord, 2);
+    editor.execute_buffer_command(d2w);
+    editor.dot_repeat.record_single(d2w);
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "three four five six seven"
+    );
+
+    // "3." must run d3w ONCE (vim: leading count replaces the embedded
+    // count), not loop the original 2-word delete 3 times (6 words).
+    editor.pending_count = 3;
+    editor.execute_dot_repeat();
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "six seven",
+        "3. after d2w must delete 3 words once, not 2 words three times"
+    );
+}
+
+#[test]
 fn dot_repeat_non_destructive_group_rebuilds_and_reexecutes() {
     use crate::action::{Action, EditorAction};
 

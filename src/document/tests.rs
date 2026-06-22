@@ -1276,6 +1276,26 @@ fn test_undo_binary_data() {
 }
 
 #[test]
+#[should_panic(expected = "stale history Position")]
+fn test_undo_with_stale_position_panics_in_debug_instead_of_silently_corrupting() {
+    use crate::history::{EditOperation, EditTransaction, Position, Range};
+
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("hello").unwrap();
+
+    // Forge a transaction whose recorded range references a line that does
+    // not exist in this buffer (a stale/corrupt Position).
+    let mut tx = EditTransaction::new("bogus");
+    tx.record(EditOperation::Delete {
+        range: Range::new(Position::new(99, 0), Position::new(99, 1)),
+        deleted_text: vec![crate::character::Character::from('x')],
+    });
+    doc.history.push(tx, None);
+
+    doc.undo();
+}
+
+#[test]
 fn test_undo_of_non_transactional_delete_restores_cursor_onto_deleted_char() {
     let mut doc = Document::new(1).unwrap();
     doc.insert_str("hello world").unwrap();
