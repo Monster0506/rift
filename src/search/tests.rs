@@ -221,17 +221,13 @@ fn test_lookbehind_non_ascii_no_panic() {
 fn test_multiline_search() {
     let buffer = MockBuffer::new(&["line one", "line two"]);
 
-    // Search for pattern spanning newline
-    // "one\nline"
-    // Note: MockBuffer adds implicit \n
+    // Pattern "one\nline" spans the implicit newline MockBuffer inserts between lines.
     let res = find_next(&buffer, 0, "one\\nline", SearchDirection::Forward)
         .unwrap()
         .0;
     assert!(res.is_some());
     let m = res.unwrap();
-    // "line one" -> "one" starts at 5.
-    // Match: "one" (3) + "\n" (1) + "line" (4) = 8 chars
-    // Range: 5..13
+    // "one" (3) + "\n" (1) + "line" (4) = 8 chars, starting at offset 5.
     assert_eq!(m.range, 5..13);
 }
 
@@ -392,9 +388,8 @@ fn test_large_file_search_performance_with_cache() {
     assert!(result.unwrap().0.is_none());
 }
 
-/// Complex searches over a ~1 MB buffer must each finish under 1 s (debug and
-/// release). Guards against blowups like the O(N^2) lookbehind that used to hang.
-/// Runs on a worker thread so a true hang fails at the budget instead of blocking.
+/// Complex searches over a ~1 MB buffer must finish under 1s, run on a worker
+/// thread so a true hang fails the budget instead of blocking the test.
 #[test]
 fn test_complex_query_search_within_time_budget() {
     use std::sync::mpsc;

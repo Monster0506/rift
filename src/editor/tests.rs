@@ -4016,9 +4016,7 @@ fn test_explorer_preview_debounces_rapid_cursor_moves() {
 
     let dir_doc_id = editor.panel_layout.as_ref().unwrap().dir_doc_id;
 
-    // Simulate rapidly scrolling across several entries without pausing, and
-    // collect the job id spawned (if any) by each move.
-    // Line 0 is the ".." entry, so real entries start at line 1.
+    // Simulate rapid scrolling without pausing; entries start at line 1 (line 0 is "..").
     let mut spawned_job_ids = Vec::new();
     for line in 1..=6 {
         move_explorer_cursor_to_line(&mut editor, dir_doc_id, line);
@@ -4068,9 +4066,8 @@ fn test_explorer_preview_discards_stale_result() {
     let dir_doc_id = layout.dir_doc_id;
     let preview_doc_id = layout.preview_doc_id;
 
-    // The user starts on the first entry (request issued), then moves on before
-    // that job finishes. The cursor is now on the second entry when results arrive.
-    // Line 0 is "..", so the first real entry is line 1.
+    // Cursor starts on the first entry (issuing a request), then moves to the
+    // second before that request finishes (line 0 is "..", first entry is line 1).
     move_explorer_cursor_to_line(&mut editor, dir_doc_id, 1);
     let stale_path = dir.join("aaa_old.txt");
 

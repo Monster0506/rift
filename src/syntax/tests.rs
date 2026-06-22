@@ -258,4 +258,38 @@ mod markdown_tests {
             "Markdown Rust code block should produce injection highlights"
         );
     }
+
+    #[test]
+    fn test_markdown_dynamic_injection_query_reused_across_parses() {
+        let loader = make_loader();
+        let loaded = loader.load_language("markdown").expect("markdown grammar");
+        let highlights_query = loader
+            .load_query("markdown", "highlights")
+            .ok()
+            .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+            .map(Arc::new);
+        let mut syntax =
+            build_syntax(loaded, highlights_query, loader.clone()).expect("build_syntax");
+
+        syntax.incremental_parse(MD_SRC.as_bytes());
+        let first_query_ptr = syntax
+            .dynamic_injection_layers
+            .get("rust")
+            .and_then(|l| l.highlights_query.as_ref())
+            .map(Arc::as_ptr)
+            .expect("rust layer with compiled query after first parse");
+
+        syntax.incremental_parse(MD_SRC.as_bytes());
+        let second_query_ptr = syntax
+            .dynamic_injection_layers
+            .get("rust")
+            .and_then(|l| l.highlights_query.as_ref())
+            .map(Arc::as_ptr)
+            .expect("rust layer with compiled query after second parse");
+
+        assert_eq!(
+            first_query_ptr, second_query_ptr,
+            "the compiled highlights Query for an unchanged embedded language must be reused, not recompiled, across consecutive parses"
+        );
+    }
 }

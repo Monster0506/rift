@@ -65,8 +65,9 @@ pub struct Syntax {
     pub injection_layers: Vec<InjectedLayer>,
 
     // --- Dynamic injection support (Markdown: injection.language + injection.content) ---
-    /// Layers created on demand at parse time; rebuilt on every incremental_parse.
-    dynamic_injection_layers: Vec<InjectedLayer>,
+    /// Layers created on demand at parse time, cached by language name across
+    /// parses so queries and trees are reused instead of rebuilt from scratch.
+    dynamic_injection_layers: HashMap<String, InjectedLayer>,
 
     /// Optional loader used to create dynamic injection layers.
     language_loader: Option<Arc<loader::LanguageLoader>>,
@@ -87,7 +88,7 @@ impl Syntax {
             injections_query: None,
             injection_capture_langs: Vec::new(),
             injection_layers: Vec::new(),
-            dynamic_injection_layers: Vec::new(),
+            dynamic_injection_layers: HashMap::new(),
             language_loader: None,
         })
     }
@@ -126,7 +127,11 @@ impl Syntax {
             layer.cached_highlights = IntervalTree::default();
             layer.byte_ranges.clear();
         }
-        self.dynamic_injection_layers.clear();
+        for layer in self.dynamic_injection_layers.values_mut() {
+            layer.tree = None;
+            layer.cached_highlights = IntervalTree::default();
+            layer.byte_ranges.clear();
+        }
     }
 
     pub fn update_tree(&mut self, edit: &InputEdit) {
@@ -138,7 +143,7 @@ impl Syntax {
                 tree.edit(edit);
             }
         }
-        for layer in &mut self.dynamic_injection_layers {
+        for layer in self.dynamic_injection_layers.values_mut() {
             if let Some(tree) = &mut layer.tree {
                 tree.edit(edit);
             }
@@ -423,20 +428,15 @@ impl Syntax {
             by_lang.entry(lang).or_default().push(range);
         }
 
-        // Rebuild dynamic layers (cleared on every parse).
-        self.dynamic_injection_layers.clear();
+        // Drop cached layers for languages no longer present in this document.
+        self.dynamic_injection_layers
+            .retain(|lang_name, _| by_lang.contains_key(lang_name));
 
         for (lang_name, ranges) in by_lang {
             let lang_loaded = match loader.load_language(&lang_name) {
                 Ok(l) => l,
                 Err(_) => continue,
             };
-
-            let highlights_query = loader
-                .load_query(&lang_name, "highlights")
-                .ok()
-                .and_then(|src| tree_sitter::Query::new(&lang_loaded.language, &src).ok())
-                .map(Arc::new);
 
             let ts_ranges: Vec<tree_sitter::Range> = ranges
                 .iter()
@@ -460,7 +460,24 @@ impl Syntax {
                 continue;
             }
 
-            let new_tree = match parser.parse(source, None) {
+            // Reuse the cached compiled query and previous tree for this language,
+            // if present, so we avoid recompiling the query and get an incremental reparse.
+            let prev_layer = self.dynamic_injection_layers.get(&lang_name);
+            let highlights_query =
+                prev_layer
+                    .and_then(|l| l.highlights_query.clone())
+                    .or_else(|| {
+                        loader
+                            .load_query(&lang_name, "highlights")
+                            .ok()
+                            .and_then(|src| {
+                                tree_sitter::Query::new(&lang_loaded.language, &src).ok()
+                            })
+                            .map(Arc::new)
+                    });
+            let prev_tree = prev_layer.and_then(|l| l.tree.as_ref());
+
+            let new_tree = match parser.parse(source, prev_tree) {
                 Some(t) => t,
                 None => continue,
             };
@@ -477,14 +494,17 @@ impl Syntax {
                 }
             }
 
-            self.dynamic_injection_layers.push(InjectedLayer {
-                language: lang_loaded.language,
-                language_name: lang_name,
-                highlights_query,
-                tree: Some(new_tree),
-                cached_highlights: IntervalTree::new(highlights),
-                byte_ranges: ranges,
-            });
+            self.dynamic_injection_layers.insert(
+                lang_name.clone(),
+                InjectedLayer {
+                    language: lang_loaded.language,
+                    language_name: lang_name,
+                    highlights_query,
+                    tree: Some(new_tree),
+                    cached_highlights: IntervalTree::new(highlights),
+                    byte_ranges: ranges,
+                },
+            );
         }
     }
 
@@ -583,7 +603,7 @@ impl Syntax {
         for layer in &self.injection_layers {
             result.extend(collect_from_layer(layer, &range));
         }
-        for layer in &self.dynamic_injection_layers {
+        for layer in self.dynamic_injection_layers.values() {
             result.extend(collect_from_layer(layer, &range));
         }
 

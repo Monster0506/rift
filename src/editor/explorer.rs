@@ -615,9 +615,8 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.update_and_render();
     }
 
-    /// Computes the path that should currently be shown in the explorer preview,
-    /// based on the entry under the cursor in the dir pane. Used both to decide
-    /// whether to spawn a new preview job and to reject stale job results.
+    /// The path that should currently be shown in the explorer preview, used
+    /// both to decide whether to spawn a new preview job and to reject stale results.
     pub(super) fn current_explorer_target_path(&self) -> Option<std::path::PathBuf> {
         let layout = match &self.panel_layout {
             Some(l)
