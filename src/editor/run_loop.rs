@@ -178,8 +178,17 @@ impl<T: TerminalBackend> Editor<T> {
                     if let Key::Char(ch) = key_press {
                         if ch.is_ascii_digit() && (ch != '0' || self.pending_count > 0) {
                             let digit = ch.to_digit(10).unwrap() as usize;
-                            self.pending_count =
-                                self.pending_count.saturating_mul(10).saturating_add(digit);
+                            // First digit of the motion's own count (the 3 in
+                            // `2d3w`): stash the operator's count, don't concat.
+                            if self.current_mode == Mode::OperatorPending
+                                && self.pending_operator_count == 0
+                            {
+                                self.pending_operator_count = self.pending_count.max(1);
+                                self.pending_count = digit;
+                            } else {
+                                self.pending_count =
+                                    self.pending_count.saturating_mul(10).saturating_add(digit);
+                            }
                             // Update UI? (Render pending count)
                             self.update_state_and_render(
                                 key_press,

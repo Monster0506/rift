@@ -3246,6 +3246,87 @@ fn dot_repeat_destructive_group_reselects_without_reexecuting() {
 }
 
 #[test]
+fn dd_with_leading_count_deletes_n_lines() {
+    use crate::action::{Action, EditorAction, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "one\ntwo\nthree\nfour\n");
+
+    editor.pending_count = 3;
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "four\n");
+}
+
+#[test]
+fn dd_count_does_not_leak_into_next_motion() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "one\ntwo\nthree\nfour\nfive\n");
+
+    editor.pending_count = 2;
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "three\nfour\nfive\n"
+    );
+    assert_eq!(editor.pending_count, 0, "count must not survive past dd");
+
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Down)));
+    assert_eq!(
+        editor.active_document().buffer.get_line(),
+        1,
+        "a leaked count would have moved down 2 lines instead of 1"
+    );
+}
+
+#[test]
+fn x_with_leading_count_deletes_n_chars() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "hello world");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    editor.pending_count = 3;
+    editor.handle_action(&Action::Editor(EditorAction::Delete(Motion::Right)));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "lo world");
+}
+
+#[test]
+fn operator_count_and_motion_count_multiply_not_concatenate() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "one two three four five six seven eight");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    // "2d3w" must delete 2*3=6 words, not loop a 23-word delete; mirrors
+    // run_loop's digit handler stashing the operator count for the motion.
+    editor.pending_count = 2;
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.pending_operator_count = editor.pending_count.max(1);
+    editor.pending_count = 3;
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::NextWord)));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "seven eight");
+}
+
+#[test]
 fn dot_repeat_leading_count_overrides_embedded_command_count() {
     use crate::action::Motion;
     use crate::command::Command;

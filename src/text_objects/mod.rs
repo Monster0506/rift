@@ -751,8 +751,8 @@ fn find_quote_pair_dir(
                 return scan_fwd(open_pos + 1).map(|close| (open_pos, close));
             }
 
-            // TO-1: nothing behind the cursor on this line -- fall forward to
-            // the next quoted string instead of no-op'ing, matching vim.
+            // Nothing behind the cursor on this line: fall forward to the
+            // next quoted string instead of no-op'ing, matching vim.
             let open_pos = scan_fwd(cursor)?;
             scan_fwd(open_pos + 1).map(|close| (open_pos, close))
         }

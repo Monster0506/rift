@@ -287,6 +287,11 @@ impl<T: TerminalBackend> Editor<T> {
                         return true;
                     }
                 }
+                let count = if self.pending_count > 0 {
+                    self.pending_count
+                } else {
+                    1
+                };
                 // Capture deleted text to ring in Normal mode (x / X).
                 if self.current_mode == Mode::Normal {
                     let viewport_height = self.render_system.viewport.visible_rows();
@@ -295,7 +300,7 @@ impl<T: TerminalBackend> Editor<T> {
                         let tab_width = doc.options.tab_width;
                         crate::executor::compute_motion_range(
                             *motion,
-                            1,
+                            count,
                             doc,
                             viewport_height,
                             last_search_query.as_deref(),
@@ -315,7 +320,7 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                     }
                 }
-                let command = crate::command::Command::Delete(*motion, 1);
+                let command = crate::command::Command::Delete(*motion, count);
                 let result = self.execute_buffer_command(command);
                 if result && self.current_mode == Mode::Normal && !self.dot_repeat.is_replaying() {
                     self.dot_repeat.record_single(command);
@@ -323,7 +328,12 @@ impl<T: TerminalBackend> Editor<T> {
                 result
             }
             EditorAction::DeleteLine => {
-                let command = crate::command::Command::DeleteLine;
+                let count = if self.pending_count > 0 {
+                    self.pending_count
+                } else {
+                    1
+                };
+                let command = crate::command::Command::DeleteLine(count);
                 let result = self.execute_buffer_command(command);
                 if result && self.current_mode == Mode::Normal && !self.dot_repeat.is_replaying() {
                     self.dot_repeat.record_single(command);

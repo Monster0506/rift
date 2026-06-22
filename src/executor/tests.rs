@@ -333,7 +333,7 @@ fn test_execute_delete_line_single_undo() {
 
     // Wrap delete line in transaction (simulating normal mode behavior)
     doc.begin_transaction("DeleteLine");
-    execute_command(Command::DeleteLine, &mut doc, false, 8, 24, None, None).unwrap();
+    execute_command(Command::DeleteLine(1), &mut doc, false, 8, 24, None, None).unwrap();
     doc.commit_transaction();
 
     assert_eq!(doc.buffer.to_string(), "");

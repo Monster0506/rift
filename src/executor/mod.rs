@@ -225,9 +225,12 @@ pub fn execute_command(
                 let _ = doc.delete_range(delete_start, delete_end);
             }
         }
-        Command::ChangeLine => {
+        Command::ChangeLine(count) => {
             doc.buffer.move_to_line_start();
             let start = doc.buffer.cursor();
+            for _ in 0..count.max(1).saturating_sub(1) {
+                doc.buffer.move_down();
+            }
             doc.buffer.move_to_line_end();
             let end = doc.buffer.cursor();
             if end > start {
@@ -287,11 +290,18 @@ pub fn execute_command(
         Command::DeleteBackward => {
             doc.delete_backward();
         }
-        Command::DeleteLine => {
+        Command::DeleteLine(count) => {
             doc.begin_transaction("DeleteLine");
             doc.buffer.move_to_line_start();
             let start = doc.buffer.cursor();
-            if doc.buffer.move_down() {
+            let mut reached_last_line = false;
+            for _ in 0..count.max(1) {
+                if !doc.buffer.move_down() {
+                    reached_last_line = true;
+                    break;
+                }
+            }
+            if !reached_last_line {
                 let end = doc.buffer.cursor();
                 let _ = doc.delete_range(start, end);
             } else {

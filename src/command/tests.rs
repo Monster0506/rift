@@ -7,7 +7,7 @@ fn test_command_is_mutating() {
     assert!(Command::InsertChar('a').is_mutating());
     assert!(Command::DeleteForward.is_mutating());
     assert!(Command::DeleteBackward.is_mutating());
-    assert!(Command::DeleteLine.is_mutating());
+    assert!(Command::DeleteLine(1).is_mutating());
 
     // Non-mutating commands
     assert!(!Command::Move(Motion::Left, 1).is_mutating());

@@ -138,6 +138,9 @@ pub struct Editor<T: TerminalBackend> {
     // Input state
     pending_keys: Vec<crate::key::Key>,
     pending_count: usize,
+    /// 0 = not yet captured. Set from `pending_count` on the first digit
+    /// typed for the motion (the 2 in `2d3w`), then multiplied with it.
+    pending_operator_count: usize,
     pending_operator: Option<crate::action::OperatorType>,
     pending_grammar: Option<pending_grammar::PendingGrammar>,
     /// Set while `ys` is waiting for its motion/text-object before the delimiter

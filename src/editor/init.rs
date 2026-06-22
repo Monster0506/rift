@@ -95,6 +95,7 @@ impl<T: TerminalBackend> Editor<T> {
             split_tree,
             pending_keys: Vec::new(),
             pending_count: 0,
+            pending_operator_count: 0,
             pending_operator: None,
             pending_grammar: None,
             pending_surround_add: None,

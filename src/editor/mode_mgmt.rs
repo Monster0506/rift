@@ -69,7 +69,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 self.set_mode(Mode::Insert);
             }
-            Command::Change(_, _) | Command::ChangeLine => {
+            Command::Change(_, _) | Command::ChangeLine(_) => {
                 let (expand_tabs, tab_width) = {
                     let doc = self.document_manager.active_document().unwrap();
                     (doc.options.expand_tabs, doc.options.tab_width)
@@ -316,6 +316,7 @@ impl<T: TerminalBackend> Editor<T> {
         // Clear operator if leaving OperatorPending (and not entering it)
         if mode != Mode::OperatorPending {
             self.pending_operator = None;
+            self.pending_operator_count = 0;
         }
 
         match mode {

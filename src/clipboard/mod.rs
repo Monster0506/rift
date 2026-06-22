@@ -124,13 +124,14 @@ pub fn capture_text(buf: &TextBuffer, range: &MotionRange) -> Vec<Character> {
     buf.chars(start..end).collect()
 }
 
-/// Capture the full current line (including newline) from the buffer.
-pub fn capture_current_line(buf: &TextBuffer) -> Vec<Character> {
+/// Capture `count` lines (including newlines) starting at the cursor's line.
+pub fn capture_current_line(buf: &TextBuffer, count: usize) -> Vec<Character> {
     let cursor = buf.cursor();
     let line = buf.line_index.get_line_at(cursor);
+    let last_line = (line + count.max(1).saturating_sub(1)).min(buf.get_total_lines() - 1);
     let start = buf.line_index.get_start(line).unwrap_or(0);
-    let end = if line + 1 < buf.get_total_lines() {
-        buf.line_index.get_start(line + 1).unwrap_or(buf.len())
+    let end = if last_line + 1 < buf.get_total_lines() {
+        buf.line_index.get_start(last_line + 1).unwrap_or(buf.len())
     } else {
         buf.len()
     };

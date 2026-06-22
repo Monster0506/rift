@@ -13,6 +13,8 @@ fn with_count_override(cmd: Command, count: usize) -> Option<Command> {
         Command::Move(m, _) => Some(Command::Move(m, count)),
         Command::Delete(m, _) => Some(Command::Delete(m, count)),
         Command::Change(m, _) => Some(Command::Change(m, count)),
+        Command::DeleteLine(_) => Some(Command::DeleteLine(count)),
+        Command::ChangeLine(_) => Some(Command::ChangeLine(count)),
         Command::ReplaceChar(ch, _) => Some(Command::ReplaceChar(ch, count)),
         Command::DeleteSurround(ch, _) => Some(Command::DeleteSurround(ch, count)),
         Command::ChangeSurround(from, to, _) => Some(Command::ChangeSurround(from, to, count)),
@@ -37,12 +39,9 @@ impl<T: TerminalBackend> Editor<T> {
         // never leaks into an unrelated operator below.
         if let Some(delim_count) = self.pending_surround_add.take() {
             if op == crate::action::OperatorType::Yank {
-                let count = if self.pending_count > 0 {
-                    self.pending_count
-                } else {
-                    1
-                };
+                let count = self.pending_operator_count.max(1) * self.pending_count.max(1);
                 self.pending_operator = None;
+                self.pending_operator_count = 0;
                 self.pending_count = 0;
                 self.pending_grammar =
                     Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
@@ -53,12 +52,9 @@ impl<T: TerminalBackend> Editor<T> {
                 return true;
             }
         }
-        let count = if self.pending_count > 0 {
-            self.pending_count
-        } else {
-            1
-        };
+        let count = self.pending_operator_count.max(1) * self.pending_count.max(1);
         self.pending_operator = None;
+        self.pending_operator_count = 0;
         self.pending_count = 0;
 
         // Capture text to ring before any destructive operation, and for yank.
@@ -145,12 +141,17 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn execute_operator_linewise(&mut self, op: crate::action::OperatorType) -> bool {
         self.pending_operator = None;
         self.pending_surround_add = None;
+        // Consume both counts and clear them so neither leaks into the
+        // next motion.
+        let count = self.pending_operator_count.max(1) * self.pending_count.max(1);
+        self.pending_operator_count = 0;
+        self.pending_count = 0;
 
-        // Capture current line text for all operators.
+        // Capture current line(s) text for all operators.
         let captured = self
             .document_manager
             .active_document()
-            .map(|doc| crate::clipboard::capture_current_line(&doc.buffer));
+            .map(|doc| crate::clipboard::capture_current_line(&doc.buffer, count));
         let in_clipboard = self
             .document_manager
             .active_document()
@@ -165,7 +166,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         match op {
             crate::action::OperatorType::Delete => {
-                let command = crate::command::Command::DeleteLine;
+                let command = crate::command::Command::DeleteLine(count);
                 self.set_mode(Mode::Normal);
                 let result = self.execute_buffer_command(command);
                 if result && !self.dot_repeat.is_replaying() && command.is_repeatable() {
@@ -174,7 +175,7 @@ impl<T: TerminalBackend> Editor<T> {
                 result
             }
             crate::action::OperatorType::Change => {
-                let command = crate::command::Command::ChangeLine;
+                let command = crate::command::Command::ChangeLine(count);
                 self.document_manager
                     .active_document_mut()
                     .unwrap()

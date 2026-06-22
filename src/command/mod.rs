@@ -28,8 +28,8 @@ pub enum Command {
     Change(Motion, usize),
     DeleteForward,
     DeleteBackward,
-    DeleteLine,
-    ChangeLine,
+    DeleteLine(usize),
+    ChangeLine(usize),
     InsertChar(char),
     /// Replace `count` chars at cursor with `ch` (r<ch> with optional count).
     ReplaceChar(char, usize),
@@ -87,10 +87,10 @@ impl Command {
             self,
             Command::DeleteForward
                 | Command::DeleteBackward
-                | Command::DeleteLine
+                | Command::DeleteLine(_)
                 | Command::Delete(_, _)
                 | Command::Change(_, _)
-                | Command::ChangeLine
+                | Command::ChangeLine(_)
                 | Command::OpenLineBelow
                 | Command::OpenLineAbove
                 | Command::InsertChar(_)
