@@ -884,16 +884,17 @@ impl<T: TerminalBackend> Editor<T> {
                 .map_or((None, None), |doc| {
                     let cursor = doc.buffer.cursor();
                     let line = doc.buffer.line_index.get_line_at(cursor);
+                    let cursor_byte = doc.buffer.char_to_byte(cursor);
                     let tip = doc
                         .annotations
-                        .tooltip_at(cursor, Some(kind_registry))
+                        .tooltip_at(cursor_byte, Some(kind_registry))
                         .or_else(|| doc.annotations.tooltip_at_line(line, Some(kind_registry)))
                         .map(|s| s.to_string());
                     // Affordance hint for the interactive annotation under the
                     // cursor, so its actions + key bindings are discoverable.
                     let affordance = doc
                         .annotations
-                        .interactive_at(cursor)
+                        .interactive_at(cursor_byte)
                         .or_else(|| doc.annotations.interactive_at_line(line))
                         .and_then(|a| a.affordance_line("Enter"));
                     (tip, affordance)

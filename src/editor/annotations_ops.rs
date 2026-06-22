@@ -21,10 +21,9 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let cursor = doc.buffer.cursor();
             let line = doc.buffer.line_index.get_line_at(cursor);
-            // Byte-offset (Point/Range) annotations first, then line-anchored ones
-            // (e.g. fs.entry rows in the explorer).
+            let cursor_byte = doc.buffer.char_to_byte(cursor);
             doc.annotations
-                .interactive_at(cursor)
+                .interactive_at(cursor_byte)
                 .or_else(|| doc.annotations.interactive_at_line(line))
                 .and_then(|a| {
                     let act = match verb {
@@ -295,17 +294,18 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.active_document_mut() else {
                 return false;
             };
-            let cursor = doc.buffer.cursor();
+            let cursor_byte = doc.buffer.char_to_byte(doc.buffer.cursor());
             let next = if forward {
-                doc.annotations.next_interactive(cursor)
+                doc.annotations.next_interactive(cursor_byte)
             } else {
-                doc.annotations.prev_interactive(cursor)
+                doc.annotations.prev_interactive(cursor_byte)
             };
             next.and_then(|a| match a.anchor {
                 crate::annotations::Anchor::Point(p) => Some(p.offset),
                 crate::annotations::Anchor::Range(s, _) => Some(s.offset),
                 crate::annotations::Anchor::Line(_) => None,
             })
+            .map(|byte_offset| doc.buffer.byte_to_char(byte_offset))
         };
         if let Some(offset) = target {
             if let Some(doc) = self.document_manager.active_document_mut() {
