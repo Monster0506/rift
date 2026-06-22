@@ -41,6 +41,15 @@ pub struct LspClient {
     pub root_uri: Option<String>,
 }
 
+impl Drop for LspClient {
+    /// Kill and reap the server process so it (and the reader thread blocked
+    /// on its stdout) don't outlive this client as a leaked process/thread.
+    fn drop(&mut self) {
+        let _ = self._process.kill();
+        let _ = self._process.wait();
+    }
+}
+
 impl LspClient {
     /// Spawn the language server process and set up I/O threads.
     pub fn start(
@@ -118,6 +127,12 @@ impl LspClient {
 
     fn write_message<T: serde::Serialize>(&mut self, msg: &T) {
         let _ = crate::transport::write_framed(&mut self.stdin, msg);
+    }
+
+    /// OS process id of the server, for tests verifying it doesn't leak.
+    #[cfg(test)]
+    pub(crate) fn pid(&self) -> u32 {
+        self._process.id()
     }
 
     /// Drain all pending raw messages from the reader thread.
@@ -240,5 +255,46 @@ mod tests {
     fn method_with_no_id_is_a_notification() {
         let parsed = parse_rpc_message(msg(None, Some("textDocument/publishDiagnostics")));
         assert!(matches!(parsed, Some(RawLspMessage::Notification { .. })));
+    }
+
+    fn process_is_running(pid: u32) -> bool {
+        #[cfg(windows)]
+        {
+            let out = std::process::Command::new("tasklist")
+                .args(["/FI", &format!("PID eq {pid}")])
+                .output()
+                .expect("tasklist");
+            String::from_utf8_lossy(&out.stdout).contains(&pid.to_string())
+        }
+        #[cfg(not(windows))]
+        {
+            std::process::Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        }
+    }
+
+    #[test]
+    fn drop_kills_and_reaps_the_child_process() {
+        // A long-running, stdio-redirect-safe placeholder "server".
+        let client = LspClient::start(
+            "test".to_string(),
+            "ping",
+            &["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
+            None,
+        )
+        .expect("spawn ping");
+        let pid = client.pid();
+        assert!(process_is_running(pid), "ping should have started");
+
+        drop(client);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+
+        assert!(
+            !process_is_running(pid),
+            "Drop must kill+reap the child instead of leaking it"
+        );
     }
 }

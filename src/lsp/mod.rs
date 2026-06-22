@@ -727,6 +727,9 @@ impl LspManager {
                             .remove(&id)
                             .map(|p| p.method)
                             .unwrap_or_default();
+                        if let Some(c) = self.clients.get_mut(lang) {
+                            c.pending.remove(&id);
+                        }
                         results.push(LspMessage::Error { method, message });
                     }
                     RawLspMessage::Notification { method, params } => {
@@ -833,6 +836,10 @@ impl LspManager {
         for client in self.clients.values_mut() {
             client.send_notification("exit", Value::Null);
         }
+        // Brief grace period for servers to exit on `exit`; dropping each
+        // client below kills+reaps anything still running.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        self.clients.clear();
     }
 }
 

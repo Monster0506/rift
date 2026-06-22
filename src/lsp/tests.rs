@@ -280,6 +280,61 @@ fn manager_has_client_for_path_false_when_not_opened() {
     assert!(!mgr.has_client_for_path(Path::new("/any/path.rs")));
 }
 
+#[test]
+fn shutdown_all_clears_clients_and_kills_the_process() {
+    use config::LspServerConfig;
+
+    let mut mgr = LspManager::new(None);
+    mgr.register_server(
+        "fake".to_string(),
+        LspServerConfig {
+            // A long-running, stdio-redirect-safe placeholder "server".
+            command: "ping".to_string(),
+            args: vec!["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
+            extensions: vec![],
+            root_markers: vec![],
+            capabilities: vec![],
+            initialization_options: None,
+        },
+    );
+    mgr.did_open(Path::new("/tmp/fake.rs"), "fake", "content");
+    assert!(
+        mgr.clients.contains_key("fake"),
+        "client should have spawned"
+    );
+    let pid = mgr.clients["fake"].pid();
+
+    mgr.shutdown_all();
+
+    assert!(
+        mgr.clients.is_empty(),
+        "shutdown_all must clear the client map"
+    );
+    assert!(
+        !process_is_running(pid),
+        "shutdown_all must not leave the process running"
+    );
+}
+
+fn process_is_running(pid: u32) -> bool {
+    #[cfg(windows)]
+    {
+        let out = std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}")])
+            .output()
+            .expect("tasklist");
+        String::from_utf8_lossy(&out.stdout).contains(&pid.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+}
+
 // ── route_response integration (via public mod_fns) ──────────────────────────
 
 #[test]
