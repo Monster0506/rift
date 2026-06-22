@@ -694,15 +694,25 @@ fn resolve_any_bracket(
     bracket_range(modifier, open_pos, close_pos)
 }
 
+/// A quote delimiter at `pos` is escaped only when preceded by an odd number
+/// of consecutive backslashes (an even count means the backslashes escape
+/// each other in pairs, leaving the quote itself a real delimiter).
+fn is_quote_escaped(buf: &TextBuffer, pos: usize) -> bool {
+    let mut count = 0;
+    let mut p = pos;
+    while p > 0 && buf.char_at(p - 1) == Some(Character::Unicode('\\')) {
+        count += 1;
+        p -= 1;
+    }
+    count % 2 == 1
+}
+
 fn find_quote_pair_dir(
     cursor: usize,
     buf: &TextBuffer,
     quote: Character,
     direction: Direction,
 ) -> Option<(usize, usize)> {
-    let is_escaped =
-        |pos: usize| -> bool { pos > 0 && buf.char_at(pos - 1) == Some(Character::Unicode('\\')) };
-
     match direction {
         Direction::Current => {
             let len = buf.len();
@@ -710,35 +720,44 @@ fn find_quote_pair_dir(
             let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
             let line_end = buf.line_index.get_end(current_line, len).unwrap_or(len);
 
-            let open_pos = {
-                let mut pos = cursor;
-                let mut found = None;
-                loop {
-                    if buf.char_at(pos) == Some(quote) && !is_escaped(pos) {
-                        found = Some(pos);
-                        break;
-                    }
-                    if pos == line_start {
-                        break;
-                    }
-                    pos -= 1;
-                }
-                found?
+            let scan_fwd = |from: usize| -> Option<usize> {
+                (from..line_end)
+                    .find(|&p| buf.char_at(p) == Some(quote) && !is_quote_escaped(buf, p))
+            };
+            let scan_back = |from: usize| -> Option<usize> {
+                (line_start..=from)
+                    .rev()
+                    .find(|&p| buf.char_at(p) == Some(quote) && !is_quote_escaped(buf, p))
             };
 
-            let close_pos = {
-                let mut pos = open_pos + 1;
-                let mut found = None;
-                while pos < line_end {
-                    if buf.char_at(pos) == Some(quote) && !is_escaped(pos) {
-                        found = Some(pos);
-                        break;
-                    }
-                    pos += 1;
-                }
-                found?
-            };
-            Some((open_pos, close_pos))
+            if buf.char_at(cursor) == Some(quote) && !is_quote_escaped(buf, cursor) {
+                // TO-2: cursor sits exactly on an unescaped quote. Parity from
+                // line start determines whether it is the opener or closer of
+                // its pair, so it pairs with its own partner rather than the
+                // gap before/after an adjacent string.
+                let quotes_through_cursor = (line_start..=cursor)
+                    .filter(|&p| buf.char_at(p) == Some(quote) && !is_quote_escaped(buf, p))
+                    .count();
+                return if quotes_through_cursor % 2 == 1 {
+                    scan_fwd(cursor + 1).map(|close| (cursor, close))
+                } else {
+                    cursor
+                        .checked_sub(1)
+                        .and_then(scan_back)
+                        .map(|open| (open, cursor))
+                };
+            }
+
+            // Nearest enclosing pair: the closest quote behind the cursor is
+            // the opener, paired with the next quote after it.
+            if let Some(open_pos) = scan_back(cursor) {
+                return scan_fwd(open_pos + 1).map(|close| (open_pos, close));
+            }
+
+            // TO-1: nothing behind the cursor on this line -- fall forward to
+            // the next quoted string instead of no-op'ing, matching vim.
+            let open_pos = scan_fwd(cursor)?;
+            scan_fwd(open_pos + 1).map(|close| (open_pos, close))
         }
         Direction::Next => {
             let len = buf.len();
@@ -747,7 +766,7 @@ fn find_quote_pair_dir(
                 if pos >= len {
                     return None;
                 }
-                if buf.char_at(pos) == Some(quote) && !is_escaped(pos) {
+                if buf.char_at(pos) == Some(quote) && !is_quote_escaped(buf, pos) {
                     break pos;
                 }
                 pos += 1;
@@ -757,7 +776,7 @@ fn find_quote_pair_dir(
                 if pos2 >= len {
                     return None;
                 }
-                if buf.char_at(pos2) == Some(quote) && !is_escaped(pos2) {
+                if buf.char_at(pos2) == Some(quote) && !is_quote_escaped(buf, pos2) {
                     break pos2;
                 }
                 pos2 += 1;
@@ -768,11 +787,13 @@ fn find_quote_pair_dir(
             // Nearest complete quote pair entirely before the cursor.
             let mut close_pos = cursor.checked_sub(1)?;
             loop {
-                if buf.char_at(close_pos) == Some(quote) && !is_escaped(close_pos) && close_pos > 0
+                if buf.char_at(close_pos) == Some(quote)
+                    && !is_quote_escaped(buf, close_pos)
+                    && close_pos > 0
                 {
                     let mut p = close_pos - 1;
                     loop {
-                        if buf.char_at(p) == Some(quote) && !is_escaped(p) {
+                        if buf.char_at(p) == Some(quote) && !is_quote_escaped(buf, p) {
                             return Some((p, close_pos));
                         }
                         if p == 0 {
@@ -800,8 +821,6 @@ fn quote_pair_with_nesting(
     q: char,
 ) -> Option<(usize, usize)> {
     let quote = Character::from(q);
-    let is_escaped =
-        |pos: usize| -> bool { pos > 0 && buf.char_at(pos - 1) == Some(Character::Unicode('\\')) };
     let (mut open_pos, mut close_pos) = find_quote_pair_dir(cursor, buf, quote, direction)?;
 
     for _ in 1..nesting {
@@ -812,7 +831,7 @@ fn quote_pair_with_nesting(
         }
         let mut p = open_pos - 1;
         let prev_close = loop {
-            if buf.char_at(p) == Some(quote) && !is_escaped(p) {
+            if buf.char_at(p) == Some(quote) && !is_quote_escaped(buf, p) {
                 break p;
             }
             if p == line_start {
@@ -825,7 +844,7 @@ fn quote_pair_with_nesting(
         }
         let mut p2 = prev_close - 1;
         let prev_open = loop {
-            if buf.char_at(p2) == Some(quote) && !is_escaped(p2) {
+            if buf.char_at(p2) == Some(quote) && !is_quote_escaped(buf, p2) {
                 break p2;
             }
             if p2 == line_start {
@@ -1009,32 +1028,47 @@ fn resolve_sentence(
     let is_sentence_end = |ch: Character| matches!(ch, Character::Unicode('.' | '!' | '?'));
 
     // Find sentence start: scan backward to previous terminator + trailing space.
-    let mut start = cursor;
+    // If the cursor itself sits on a terminator, start the scan one char
+    // earlier so it finds the *previous* boundary instead of matching its own
+    // terminator -- the sentence ending at the cursor is the one to select.
+    let on_terminator = matches!(buf.char_at(cursor), Some(ch) if is_sentence_end(ch));
     let mut prev_end_pos: Option<usize> = None;
-    let mut pos = cursor;
-    loop {
-        match buf.char_at(pos) {
-            Some(ch) if is_sentence_end(ch) => {
-                prev_end_pos = Some(pos);
+    let mut newline_boundary: Option<usize> = None;
+    if let Some(mut pos) = if on_terminator {
+        cursor.checked_sub(1)
+    } else {
+        Some(cursor)
+    } {
+        loop {
+            match buf.char_at(pos) {
+                Some(ch) if is_sentence_end(ch) => {
+                    prev_end_pos = Some(pos);
+                    break;
+                }
+                Some(Character::Newline) => {
+                    newline_boundary = Some(pos);
+                    break;
+                }
+                _ => {}
+            }
+            if pos == 0 {
                 break;
             }
-            Some(Character::Newline) => break,
-            _ => {}
+            pos -= 1;
         }
-        if pos == 0 {
-            break;
-        }
-        pos -= 1;
     }
 
-    if let Some(end_pos) = prev_end_pos {
-        // Sentence starts after the terminator + any whitespace.
-        start = end_pos + 1;
-        while start < len {
-            match buf.char_at(start) {
-                Some(Character::Unicode(c)) if c.is_whitespace() => start += 1,
-                _ => break,
-            }
+    // Sentence starts right after the found boundary (or buffer start if
+    // none), plus any trailing whitespace.
+    let mut start = match (prev_end_pos, newline_boundary) {
+        (Some(end_pos), _) => end_pos + 1,
+        (None, Some(nl)) => nl + 1,
+        (None, None) => 0,
+    };
+    while start < len {
+        match buf.char_at(start) {
+            Some(Character::Unicode(c)) if c.is_whitespace() => start += 1,
+            _ => break,
         }
     }
 

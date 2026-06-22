@@ -120,6 +120,31 @@ fn around_double_quote() {
 }
 
 #[test]
+fn inner_quote_cursor_before_quotes_on_line_forward_fallback() {
+    // `let x = "abc"`, cursor on 'x' (pos 4), before any quote on the line.
+    // Real vim selects the next quoted string on the line ("abc").
+    let r = res(inner(ObjectKind::DoubleQuote), "let x = \"abc\"", 4).unwrap();
+    assert_eq!(r, (9, 11, true));
+}
+
+#[test]
+fn inner_quote_cursor_on_closing_quote_pairs_with_preceding_opener() {
+    // `"a" "b"`, cursor on the closing quote of "a" (pos 2).
+    // Must select "a" [1,1], not the gap between the two strings.
+    let r = res(inner(ObjectKind::DoubleQuote), "\"a\" \"b\"", 2).unwrap();
+    assert_eq!(r, (1, 1, true));
+}
+
+#[test]
+fn inner_quote_escaped_backslash_before_real_delimiter() {
+    // `"a\\"`, the content is a\ followed by a real closing quote: the
+    // backslash before the final `"` is itself escaped (\\), so the quote is
+    // NOT escaped and IS a real delimiter.
+    let r = res(inner(ObjectKind::DoubleQuote), "\"a\\\\\"", 2).unwrap();
+    assert_eq!(r, (1, 3, true));
+}
+
+#[test]
 fn inner_line() {
     // "hello\nworld", cursor at pos 0 → "hello" [0,4]
     let r = res(inner(ObjectKind::Line), "hello\nworld", 0).unwrap();
@@ -291,6 +316,16 @@ fn leading_count_extends_sentence_across_n_sentences() {
 }
 
 #[test]
+fn inner_sentence_cursor_on_terminator_selects_sentence_it_closes() {
+    // "One. Two.", cursor on the '.' that ends "One" (pos 3): selects the
+    // sentence the terminator closes ("One" [0,2], consistent with this
+    // resolver's convention of excluding the final terminator -- see the
+    // count=2 case below), not the next sentence, and must not no-op.
+    let r = res(inner(ObjectKind::Sentence), "One. Two.", 3).unwrap();
+    assert_eq!(r, (0, 2, true));
+}
+
+#[test]
 fn leading_count_extends_paragraph_across_n_groups() {
     // Two single-line paragraphs separated by a blank line; a blank-line run
     // counts as its own group, so 3ip from the first line is needed to reach
@@ -455,5 +490,21 @@ mod treesitter_tests {
         let tree = html_tree(src);
         let r = res_ts(around(ObjectKind::Tag), &tree, src, 9).unwrap();
         assert_eq!(&src[r.0..=r.1], "<p>hello</p>");
+    }
+
+    #[test]
+    fn around_tag_count_exceeding_nesting_depth_clamps_to_outermost() {
+        // Only 2 tag levels exist (div, p); a count of 3 must clamp to the
+        // outermost ancestor (div) instead of no-op'ing.
+        let src = "<div><p>hello</p></div>";
+        let tree = html_tree(src);
+        let spec = TextObjectSpec {
+            modifier: Modifier::Around,
+            direction: Direction::Current,
+            nesting: 3,
+            kind: ObjectKind::Tag,
+        };
+        let r = res_ts(spec, &tree, src, 9).unwrap();
+        assert_eq!(&src[r.0..=r.1], "<div><p>hello</p></div>");
     }
 }

@@ -68,8 +68,10 @@ fn find_ancestor_nth<'tree>(
 ) -> Option<Node<'tree>> {
     let mut remaining = n.max(1) as i32;
     let mut cur = Some(node);
+    let mut last_match = None;
     while let Some(nd) = cur {
         if pred(nd.kind()) {
+            last_match = Some(nd);
             remaining -= 1;
             if remaining <= 0 {
                 return Some(nd);
@@ -77,7 +79,10 @@ fn find_ancestor_nth<'tree>(
         }
         cur = nd.parent();
     }
-    None
+    // Requested count exceeds the available nesting depth: clamp to the
+    // outermost matching ancestor instead of no-op'ing, matching vim's
+    // counted-text-object behavior.
+    last_match
 }
 
 fn node_char_range(node: Node, buf: &TextBuffer) -> Option<(usize, usize)> {
