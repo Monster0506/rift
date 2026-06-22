@@ -3963,3 +3963,159 @@ fn visual_highlight_redraws_on_a_frame_after_the_initial_one() {
         "selection highlight must redraw on a later frame, not just the first ever render"
     );
 }
+
+/// Drains pending job messages synchronously, blocking briefly for each job thread to finish.
+fn drain_jobs(editor: &mut Editor<MockTerminal>) {
+    use std::time::{Duration, Instant};
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match editor
+            .job_manager
+            .receiver()
+            .recv_timeout(Duration::from_millis(50))
+        {
+            Ok(msg) => {
+                let _ = editor.handle_job_message(msg);
+            }
+            Err(_) => {
+                if Instant::now() >= deadline {
+                    break;
+                }
+                if editor.job_manager.receiver().try_recv().is_err() {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+fn move_explorer_cursor_to_line(
+    editor: &mut Editor<MockTerminal>,
+    dir_doc_id: DocumentId,
+    line: usize,
+) {
+    let doc = editor
+        .document_manager
+        .get_document_mut(dir_doc_id)
+        .unwrap();
+    let pos = doc.buffer.line_index.get_start(line).unwrap_or(0);
+    let _ = doc.buffer.set_cursor(pos);
+}
+
+#[test]
+fn test_explorer_preview_debounces_rapid_cursor_moves() {
+    let dir = std::env::temp_dir().join(format!("rift_preview_debounce_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    for i in 0..6 {
+        std::fs::write(dir.join(format!("file{i}.txt")), "hello").unwrap();
+    }
+
+    let mut editor = create_editor();
+    editor.open_explorer(dir.clone());
+    drain_jobs(&mut editor);
+
+    let dir_doc_id = editor.panel_layout.as_ref().unwrap().dir_doc_id;
+
+    // Simulate rapidly scrolling across several entries without pausing, and
+    // collect the job id spawned (if any) by each move.
+    // Line 0 is the ".." entry, so real entries start at line 1.
+    let mut spawned_job_ids = Vec::new();
+    for line in 1..=6 {
+        move_explorer_cursor_to_line(&mut editor, dir_doc_id, line);
+        let before = editor.job_manager.total_spawned();
+        editor.update_explorer_preview();
+        let after = editor.job_manager.total_spawned();
+        if after > before {
+            spawned_job_ids.push(after);
+        }
+    }
+
+    assert_eq!(
+        spawned_job_ids.len(),
+        6,
+        "expected one job spawned per cursor move (each targets a distinct entry)"
+    );
+
+    // Every job superseded by a later cursor move should have been cancelled;
+    // only the most recent one may still be running.
+    let cancelled_count = spawned_job_ids[..spawned_job_ids.len() - 1]
+        .iter()
+        .filter(|id| {
+            editor.job_manager.job_state(**id) == Some(crate::job_manager::JobState::Cancelled)
+        })
+        .count();
+    assert_eq!(
+        cancelled_count,
+        spawned_job_ids.len() - 1,
+        "every superseded preview job should be cancelled instead of left to run unbounded"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_explorer_preview_discards_stale_result() {
+    let dir = std::env::temp_dir().join(format!("rift_preview_stale_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    std::fs::write(dir.join("aaa_old.txt"), "old content").unwrap();
+    std::fs::write(dir.join("zzz_new.txt"), "new content").unwrap();
+
+    let mut editor = create_editor();
+    editor.open_explorer(dir.clone());
+    drain_jobs(&mut editor);
+
+    let layout = editor.panel_layout.as_ref().unwrap().clone();
+    let dir_doc_id = layout.dir_doc_id;
+    let preview_doc_id = layout.preview_doc_id;
+
+    // The user starts on the first entry (request issued), then moves on before
+    // that job finishes. The cursor is now on the second entry when results arrive.
+    // Line 0 is "..", so the first real entry is line 1.
+    move_explorer_cursor_to_line(&mut editor, dir_doc_id, 1);
+    let stale_path = dir.join("aaa_old.txt");
+
+    move_explorer_cursor_to_line(&mut editor, dir_doc_id, 2);
+    let current_path = dir.join("zzz_new.txt");
+
+    // The newer request's result lands first (e.g. small/local file)...
+    let fresh_result = Box::new(
+        crate::job_manager::jobs::explorer_preview::ExplorerPreviewResult {
+            right_doc_id: preview_doc_id,
+            path: current_path,
+            dir_entries: None,
+            file_text: Some("new content".to_string()),
+        },
+    );
+    editor
+        .handle_job_message(crate::job_manager::JobMessage::Custom(10000, fresh_result))
+        .unwrap();
+
+    // ...but the older (now stale) request's result, issued earlier, arrives after it.
+    let stale_result = Box::new(
+        crate::job_manager::jobs::explorer_preview::ExplorerPreviewResult {
+            right_doc_id: preview_doc_id,
+            path: stale_path,
+            dir_entries: None,
+            file_text: Some("old content".to_string()),
+        },
+    );
+    editor
+        .handle_job_message(crate::job_manager::JobMessage::Custom(9999, stale_result))
+        .unwrap();
+
+    let preview_doc = editor
+        .document_manager
+        .get_document(preview_doc_id)
+        .unwrap();
+    let text = String::from_utf8_lossy(&preview_doc.buffer.to_logical_bytes()).to_string();
+    assert!(
+        text.contains("new content"),
+        "preview should show the entry currently under the cursor, got: {text:?}"
+    );
+    assert!(
+        !text.contains("old content"),
+        "stale preview result must not clobber the current preview, got: {text:?}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
