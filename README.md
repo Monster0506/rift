@@ -160,6 +160,10 @@ Known issues:
 - file explorer entry duplication on recursive directory traversal
 - terminal keybinding actions not bindable to other keys
 - annotation line adornments (e.g. markdown horizontal rules) misrendering on the wrong line when multibyte characters appeared earlier in the buffer (byte offset used where a char offset was required)
+- undo tree jumps to a distant history node by replaying the diff path from the common ancestor, which got slower the further away the target was; added snapshot-based teleport so distant jumps restore state directly instead of replaying every intermediate edit
+- quote text objects (`i"`/`a"` etc.) used a "nearest enclosing, doubled-quote" pairing rule that diverges from real vim; switching to vim's sequential pairing broke that nesting behavior, so quote/character disambiguation now only kicks in when the cursor sits exactly on a quote char
+- a leading count before an operator (e.g. `2dw`) was captured eagerly and cleared the count text objects rely on later, breaking text-object grammar; the count is now captured lazily on the first digit typed after entering operator-pending mode
+- deleting a surround pair shared between multiple selected regions could shift a sibling region onto the wrong (inner) pair after the first deletion; fixed by tracking already-consumed coordinate ranges and skipping any region whose anchor falls inside one, instead of shifting positions
 
 
 ## Install
