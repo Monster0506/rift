@@ -511,7 +511,10 @@ fn test_undo_tree_clear() {
 
 #[test]
 fn test_document_snapshot() {
-    let snap = DocumentSnapshot::new("Hello\nWorld\n".chars().map(Character::from).collect());
+    let snap = DocumentSnapshot::new(
+        "Hello\nWorld\n".chars().map(Character::from).collect(),
+        Vec::new(),
+    );
     assert_eq!(snap.byte_count, 12);
     assert_eq!(snap.line_count, 3); // "Hello", "World", ""
 }
@@ -1045,6 +1048,65 @@ fn test_compute_replay_path() {
 
     // Verify state was NOT mutated
     assert_eq!(tree.current_seq(), 3);
+}
+
+fn insert_tx(label: &str) -> EditTransaction {
+    let mut tx = EditTransaction::new(label.to_string());
+    tx.record(EditOperation::Insert {
+        position: Position::new(0, 0),
+        text: vec![Character::from('a')],
+        len: 1,
+    });
+    tx
+}
+
+#[test]
+fn test_compute_replay_path_uses_checkpoint_for_a_distant_jump() {
+    let mut tree = UndoTree::new();
+
+    // Chain 0 -> 1 -> ... -> 6, with a checkpoint at seq=2.
+    for i in 1..=6 {
+        tree.push(insert_tx(&format!("Edit {i}")), None);
+        if i == 2 {
+            tree.checkpoint(DocumentSnapshot::new(
+                vec![Character::from('x')],
+                Vec::new(),
+            ));
+        }
+    }
+    assert_eq!(tree.current_seq(), 6);
+
+    // Jumping back to the checkpoint (seq=2) would cost 4 undo_ops via the
+    // diff path; the checkpoint itself is 0 steps away, so it must win.
+    let replay = tree.compute_replay_path(6, 2).unwrap();
+    assert!(
+        replay.snapshot_restore.is_some(),
+        "must restore from the checkpoint instead of diffing 4 ops"
+    );
+    assert!(replay.undo_ops.is_empty());
+    assert!(replay.redo_ops.is_empty());
+}
+
+#[test]
+fn test_compute_replay_path_ignores_a_distant_checkpoint() {
+    let mut tree = UndoTree::new();
+
+    tree.push(insert_tx("Edit 1"), None); // seq=1
+    tree.checkpoint(DocumentSnapshot::new(Vec::new(), Vec::new()));
+    for i in 2..=10 {
+        tree.push(insert_tx(&format!("Edit {i}")), None);
+    }
+    assert_eq!(tree.current_seq(), 10);
+
+    // seq=9 is one undo away from seq=10, but the checkpoint at seq=1 is 8
+    // steps from seq=9 -- the cheap diff path must win here.
+    let replay = tree.compute_replay_path(10, 9).unwrap();
+    assert!(
+        replay.snapshot_restore.is_none(),
+        "a distant checkpoint must not be preferred over a 1-op diff"
+    );
+    assert_eq!(replay.undo_ops.len(), 1);
+    assert!(replay.redo_ops.is_empty());
 }
 
 // =============================================================================

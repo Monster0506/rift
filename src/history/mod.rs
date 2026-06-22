@@ -330,16 +330,20 @@ pub struct DocumentSnapshot {
     pub full_text: Vec<Character>,
     pub byte_count: usize,
     pub line_count: u32,
+    /// Annotation state at checkpoint time, restored alongside the text so a
+    /// snapshot-based `goto_seq` jump doesn't lose/misplace annotations.
+    pub annotations: Vec<crate::annotations::Annotation>,
 }
 
 impl DocumentSnapshot {
-    pub fn new(text: Vec<Character>) -> Self {
+    pub fn new(text: Vec<Character>, annotations: Vec<crate::annotations::Annotation>) -> Self {
         let byte_count = text.len();
         let line_count = text.iter().filter(|c| **c == Character::Newline).count() as u32 + 1;
         Self {
             full_text: text,
             byte_count,
             line_count,
+            annotations,
         }
     }
 }
@@ -396,6 +400,9 @@ pub struct ReplayPath {
     pub undo_ops: Vec<EditTransaction>,
     /// Operations to redo (apply forward in order)
     pub redo_ops: Vec<EditTransaction>,
+    /// When set, restore from this checkpoint instead of `undo_ops`, then
+    /// apply `redo_ops` forward from there (cheaper for a distant jump).
+    pub snapshot_restore: Option<DocumentSnapshot>,
 }
 
 // =============================================================================
@@ -541,8 +548,19 @@ impl UndoTree {
         Ok(())
     }
 
+    /// Nearest ancestor of `seq` (inclusive) carrying a checkpoint snapshot,
+    /// and how many forward ops separate it from `seq`.
+    fn nearest_checkpoint(&self, ancestors: &[EditSeq]) -> Option<(usize, &DocumentSnapshot)> {
+        ancestors.iter().enumerate().find_map(|(depth, seq)| {
+            self.nodes
+                .get(seq)
+                .and_then(|n| n.snapshot.as_deref())
+                .map(|snap| (depth, snap))
+        })
+    }
+
     /// Compute replay path from one edit to another without mutating state.
-    /// Known gap: ignores `node.snapshot` checkpoints, replaying every op.
+    /// Prefers a checkpoint near `to` over diffing when that's cheaper.
     pub fn compute_replay_path(&self, from: EditSeq, to: EditSeq) -> Result<ReplayPath, UndoError> {
         // Validate targets exist
         if !self.nodes.contains_key(&from) {
@@ -559,6 +577,7 @@ impl UndoTree {
                 to_seq: to,
                 undo_ops: Vec::new(),
                 redo_ops: Vec::new(),
+                snapshot_restore: None,
             });
         }
 
@@ -609,11 +628,32 @@ impl UndoTree {
             }
         }
 
+        // A checkpoint nearer to `to` than the diff path's total op count
+        // makes a snapshot restore + short forward replay cheaper.
+        if let Some((depth, snapshot)) = self.nearest_checkpoint(&target_ancestors) {
+            if depth < undo_ops.len() + redo_ops.len() {
+                let mut snap_redo_ops = Vec::new();
+                for seq in target_ancestors[..depth].iter().rev() {
+                    if let Some(node) = self.nodes.get(seq) {
+                        snap_redo_ops.push(node.transaction.clone());
+                    }
+                }
+                return Ok(ReplayPath {
+                    from_seq: from,
+                    to_seq: to,
+                    undo_ops: Vec::new(),
+                    redo_ops: snap_redo_ops,
+                    snapshot_restore: Some(snapshot.clone()),
+                });
+            }
+        }
+
         Ok(ReplayPath {
             from_seq: from,
             to_seq: to,
             undo_ops,
             redo_ops,
+            snapshot_restore: None,
         })
     }
 

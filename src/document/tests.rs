@@ -1423,6 +1423,39 @@ fn test_undo_redo_restores_annotation_marker_positions() {
     assert_eq!(span(&doc), (8, 13));
 }
 
+/// A `goto_seq` jump back to a checkpoint must restore both the buffer text
+/// and the annotation positions exactly as they were when checkpointed.
+#[test]
+fn test_goto_seq_restores_correctly_via_checkpoint_snapshot() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("hello world").unwrap();
+    doc.annotations.add(Annotation::new(
+        Kind::new("ui.link"),
+        Anchor::range(6, 11),
+        AnnotationOwner::User,
+    ));
+    doc.checkpoint();
+    let checkpoint_seq = doc.history.current_seq();
+
+    // Pile on enough edits that a diff-based jump back would replay many
+    // ops; the checkpoint at `checkpoint_seq` should be used instead.
+    for _ in 0..20 {
+        doc.insert_str("!").unwrap();
+    }
+    assert_eq!(doc.buffer.to_string(), "hello world!!!!!!!!!!!!!!!!!!!!");
+
+    doc.goto_seq(checkpoint_seq).unwrap();
+
+    assert_eq!(doc.buffer.to_string(), "hello world");
+    let span = match doc.annotations.iter().next().unwrap().anchor {
+        Anchor::Range(s, e) => (s.offset, e.offset),
+        other => panic!("expected range, got {:?}", other),
+    };
+    assert_eq!(span, (6, 11));
+}
+
 /// `goto_seq` must keep the annotation undo/redo stacks in sync with the
 /// replay, like plain `undo()`/`redo()`, or a later undo/redo pops mismatched.
 #[test]

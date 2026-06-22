@@ -332,13 +332,34 @@ impl Document {
 
         let full_text: Vec<crate::character::Character> =
             self.buffer.chars(0..self.buffer.len()).collect();
-        let snapshot = DocumentSnapshot::new(full_text);
+        let snapshot = DocumentSnapshot::new(full_text, self.annotations.snapshot());
         self.history.checkpoint(snapshot);
     }
 
     /// Navigate to a specific edit sequence in the undo tree
     pub fn goto_seq(&mut self, target: u64) -> Result<(), crate::history::UndoError> {
         let replay_path = self.history.goto_seq(target)?;
+
+        if let Some(snapshot) = &replay_path.snapshot_restore {
+            // Teleport via checkpoint: replace buffer/annotations wholesale,
+            // invalidate the tree (caller reparses), then replay the tail.
+            self.replace_buffer_content_chars(&snapshot.full_text);
+            self.annotations.restore(snapshot.annotations.clone());
+            if let Some(syntax) = &mut self.syntax {
+                syntax.invalidate_trees();
+            }
+            self.annotation_undo_stack.clear();
+            self.annotation_redo_stack.clear();
+            for tx in &replay_path.redo_ops {
+                for op in &tx.ops {
+                    Self::apply_operation_to_buffer(&mut self.buffer, op);
+                }
+            }
+            self.mark_dirty();
+            self.selection_set.clear();
+            return Ok(());
+        }
+
         // Walk the annotation stacks in lockstep so they stay in sync with
         // `history.current` for the next plain undo()/redo().
         for tx in &replay_path.undo_ops {
