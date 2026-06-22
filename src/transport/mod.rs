@@ -2,6 +2,10 @@ use std::io::{BufRead, Write};
 
 use serde::Serialize;
 
+/// Reject a framed body larger than this instead of allocating on an
+/// attacker/bug-controlled `Content-Length` from an untrusted peer.
+pub const MAX_FRAME_LEN: usize = 256 * 1024 * 1024;
+
 /// Serialize `msg` as JSON, write `Content-Length: N\r\n\r\n` then the body, then flush.
 pub fn write_framed<W: Write, T: Serialize>(writer: &mut W, msg: &T) -> std::io::Result<()> {
     let body = serde_json::to_vec(msg)
@@ -45,6 +49,12 @@ pub fn read_framed<R: BufRead>(reader: &mut R) -> std::io::Result<Vec<u8>> {
             "missing Content-Length header",
         )
     })?;
+    if n > MAX_FRAME_LEN {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Content-Length {n} exceeds max frame size {MAX_FRAME_LEN}"),
+        ));
+    }
 
     let mut body = vec![0u8; n];
     reader.read_exact(&mut body)?;
@@ -79,6 +89,16 @@ mod tests {
     #[test]
     fn read_framed_rejects_missing_header() {
         let data = b"no-header\r\n\r\n{}";
+        let mut reader = std::io::BufReader::new(Cursor::new(data.as_ref()));
+        let err = read_framed(&mut reader).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn read_framed_rejects_oversized_content_length_without_allocating() {
+        // A malicious/buggy peer claims a huge body but sends none; this must
+        // error out before `vec![0u8; n]` tries to allocate gigabytes.
+        let data = b"Content-Length: 999999999999\r\n\r\n";
         let mut reader = std::io::BufReader::new(Cursor::new(data.as_ref()));
         let err = read_framed(&mut reader).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
