@@ -123,6 +123,17 @@ impl Job for Box<dyn Job + Send> {
     }
 }
 
+/// Extract a readable message from a caught panic payload.
+fn panic_payload_to_string(payload: &Box<dyn Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        s.to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    }
+}
+
 /// Manages background jobs.
 pub struct JobManager {
     /// Sender to clone for new jobs
@@ -165,7 +176,13 @@ impl JobManager {
         let handle = thread::spawn(move || {
             // Signal start
             if sender.send(JobMessage::Started(id, silent)).is_ok() {
-                job_box.run(id, sender, signal);
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    job_box.run(id, sender.clone(), signal);
+                }));
+                if let Err(payload) = result {
+                    let details = panic_payload_to_string(&payload);
+                    let _ = sender.send(JobMessage::Error(id, format!("job panicked: {details}")));
+                }
             }
         });
 

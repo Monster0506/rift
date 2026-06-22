@@ -300,3 +300,38 @@ fn test_fs_batch_delete_job_name() {
     let job = FsBatchDeleteJob::new(vec![]);
     assert_eq!(job.name(), "fs-batch-delete");
 }
+
+#[derive(Debug)]
+struct PanickingJob;
+
+impl Job for PanickingJob {
+    fn run(self: Box<Self>, _id: usize, _sender: Sender<JobMessage>, _signal: CancellationSignal) {
+        panic!("intentional test panic");
+    }
+}
+
+#[test]
+fn test_panicking_job_reaches_terminal_state() {
+    let mut manager = JobManager::new();
+    let id = manager.spawn(PanickingJob);
+
+    // Drain Started and the resulting Error message.
+    for _ in 0..2 {
+        if let Ok(msg) = manager.receiver().recv_timeout(Duration::from_millis(500)) {
+            manager.update_job_state(&msg);
+        }
+    }
+
+    let job_handle = manager.jobs.get(&id).expect("Job should exist");
+    assert_eq!(
+        job_handle.state,
+        JobState::Failed,
+        "panicked job should be marked Failed, not stuck Running"
+    );
+
+    // Give the thread a moment to fully terminate before cleanup.
+    thread::sleep(Duration::from_millis(50));
+    let cleaned = manager.cleanup_finished_jobs();
+    assert!(cleaned.contains(&id), "panicked job should be reapable");
+    assert!(!manager.jobs.contains_key(&id));
+}
