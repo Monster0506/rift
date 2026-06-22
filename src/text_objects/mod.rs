@@ -694,9 +694,8 @@ fn resolve_any_bracket(
     bracket_range(modifier, open_pos, close_pos)
 }
 
-/// A quote delimiter at `pos` is escaped only when preceded by an odd number
-/// of consecutive backslashes (an even count means the backslashes escape
-/// each other in pairs, leaving the quote itself a real delimiter).
+/// A quote at `pos` is escaped only when preceded by an odd number of
+/// backslashes (an even count escapes each other in pairs, not the quote).
 fn is_quote_escaped(buf: &TextBuffer, pos: usize) -> bool {
     let mut count = 0;
     let mut p = pos;
@@ -731,10 +730,8 @@ fn find_quote_pair_dir(
             };
 
             if buf.char_at(cursor) == Some(quote) && !is_quote_escaped(buf, cursor) {
-                // TO-2: cursor sits exactly on an unescaped quote. Parity from
-                // line start determines whether it is the opener or closer of
-                // its pair, so it pairs with its own partner rather than the
-                // gap before/after an adjacent string.
+                // Cursor is on an unescaped quote: parity from line start
+                // says whether it's an opener or closer of its own pair.
                 let quotes_through_cursor = (line_start..=cursor)
                     .filter(|&p| buf.char_at(p) == Some(quote) && !is_quote_escaped(buf, p))
                     .count();
@@ -1027,10 +1024,8 @@ fn resolve_sentence(
 
     let is_sentence_end = |ch: Character| matches!(ch, Character::Unicode('.' | '!' | '?'));
 
-    // Find sentence start: scan backward to previous terminator + trailing space.
-    // If the cursor itself sits on a terminator, start the scan one char
-    // earlier so it finds the *previous* boundary instead of matching its own
-    // terminator -- the sentence ending at the cursor is the one to select.
+    // Scan backward for the previous terminator + trailing space. If the
+    // cursor is on a terminator, start one char earlier to find the prior one.
     let on_terminator = matches!(buf.char_at(cursor), Some(ch) if is_sentence_end(ch));
     let mut prev_end_pos: Option<usize> = None;
     let mut newline_boundary: Option<usize> = None;

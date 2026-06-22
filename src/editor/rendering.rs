@@ -125,9 +125,8 @@ impl<T: TerminalBackend> Editor<T> {
             None
         };
         let banked = doc.selection_set.sorted();
-        // No active selection, nothing banked, and no leftover ui.selection.*
-        // annotation from a previous frame: there is nothing to add or
-        // remove, so skip the full annotation clear + interval-index rebuild.
+        // Nothing selected and no leftover ui.selection.* annotation: skip
+        // the full annotation clear + interval-index rebuild.
         if active.is_none()
             && banked.is_empty()
             && doc.annotations.query_kind("ui.selection").next().is_none()

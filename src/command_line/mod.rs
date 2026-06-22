@@ -81,9 +81,8 @@ impl CommandLine {
         let prompt_len = 1;
         let available_cmd_width = available_width.saturating_sub(prompt_len);
 
-        // `cursor_pos` is a byte offset into `command_line`; convert to a char
-        // count so the scroll/slice math below never lands inside a multi-byte
-        // UTF-8 sequence.
+        // Convert the byte-offset cursor_pos to a char count so the slicing
+        // below never lands inside a multi-byte UTF-8 sequence.
         let cmd_chars: Vec<char> = command_line.chars().collect();
         let cursor_char = command_line
             .get(..cursor_pos.min(command_line.len()))

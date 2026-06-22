@@ -21,9 +21,8 @@ const TOOLTIP_MAX_WIDTH: usize = 42;
 
 // ─── Ring ────────────────────────────────────────────────────────────────────
 
-/// Stores entries as `Character` sequences (not `String`) so that raw
-/// non-UTF-8 bytes and control characters yanked from the buffer round-trip
-/// through paste instead of being replaced with U+FFFD.
+/// Stores entries as `Character` sequences, not `String`, so yanked raw
+/// bytes/control chars round-trip through paste instead of becoming U+FFFD.
 pub struct ClipboardRing {
     entries: VecDeque<Vec<Character>>,
     capacity: usize,

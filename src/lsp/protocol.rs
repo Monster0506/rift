@@ -10,7 +10,7 @@ fn utf16_len(ch: char) -> u32 {
     }
 }
 
-/// Convert a code-point offset within a line to a UTF-16 code-unit offset —
+/// Convert a code-point offset within a line to a UTF-16 code-unit offset,
 /// the unit LSP `Position.character` is measured in over the wire.
 pub fn char_offset_to_utf16(line: impl Iterator<Item = char>, char_offset: usize) -> u32 {
     line.take(char_offset).map(utf16_len).sum()

@@ -25,8 +25,9 @@ impl Document {
         }
         self.transaction_depth -= 1;
         if self.transaction_depth == 0 {
-            if let Some(tx) = self.current_transaction.take() {
+            if let Some(mut tx) = self.current_transaction.take() {
                 if !tx.is_empty() {
+                    tx.cursor_after = Some(self.buffer.cursor());
                     self.history.push(tx, None);
                     if let Some(snapshot) = self.pending_annotation_snapshot.take() {
                         self.annotation_undo_stack
@@ -83,14 +84,20 @@ impl Document {
             return false;
         }
 
-        let ops = if let Some(tx) = self.history.current_transaction() {
-            tx.ops.clone()
+        let (ops, cursor_after) = if let Some(tx) = self.history.current_transaction() {
+            (tx.ops.clone(), tx.cursor_after)
         } else {
             return false;
         };
 
         for op in ops {
             self.apply_operation_with_tree_update(&op);
+        }
+
+        // Restore cursor to where the edit left it, symmetric with undo()'s
+        // cursor_before restore.
+        if let Some(offset) = cursor_after {
+            let _ = self.buffer.set_cursor(offset.min(self.buffer.len()));
         }
 
         // Re-apply the post-edit annotation positions; record how to undo
@@ -330,10 +337,8 @@ impl Document {
     /// Navigate to a specific edit sequence in the undo tree
     pub fn goto_seq(&mut self, target: u64) -> Result<(), crate::history::UndoError> {
         let replay_path = self.history.goto_seq(target)?;
-        // Walk the annotation undo/redo stacks in lockstep with the replay so
-        // diagnostics/marks/line-anchored annotations track the buffer jump
-        // and the stacks stay in sync with `history.current` for the *next*
-        // plain undo()/redo() afterward.
+        // Walk the annotation stacks in lockstep so they stay in sync with
+        // `history.current` for the next plain undo()/redo().
         for tx in &replay_path.undo_ops {
             for op in tx.inverse() {
                 self.apply_operation_with_tree_update(&op);

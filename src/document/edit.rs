@@ -32,11 +32,14 @@ impl Document {
         )
     }
 
+    /// `cursor_before` is the cursor position right before this edit (caller
+    /// must capture it pre-mutation); used to restore the cursor on undo/redo.
     pub(super) fn record_edit(
         &mut self,
         op: EditOperation,
         description: &str,
         annotation_undo: AnnotationUndoHint,
+        cursor_before: usize,
     ) {
         // Bump the monotonic edit sequence number once per applied edit.
         self.document_version = self.document_version.wrapping_add(1);
@@ -62,7 +65,11 @@ impl Document {
             self.annotation_undo_stack.push(entry);
             self.annotation_redo_stack.clear();
             let mut tx = EditTransaction::new(description);
+            tx.cursor_before = Some(cursor_before);
             tx.record(op);
+            // The buffer has already been mutated by the caller, so its
+            // current cursor is exactly where this single-op edit left it.
+            tx.cursor_after = Some(self.buffer.cursor());
             self.history.push(tx, None);
         }
     }
@@ -77,7 +84,8 @@ impl Document {
             None
         };
 
-        let start_byte = self.buffer.char_to_byte(self.buffer.cursor());
+        let cursor_before = self.buffer.cursor();
+        let start_byte = self.buffer.char_to_byte(cursor_before);
         let (start_position, history_pos) = self.get_edit_points(start_byte);
 
         self.buffer.insert_char(ch)?;
@@ -107,6 +115,7 @@ impl Document {
                 new_end: new_end_byte,
                 line_inserts,
             },
+            cursor_before,
         );
 
         let new_end_position = self.get_point(new_end_byte);
@@ -145,7 +154,8 @@ impl Document {
             None
         };
 
-        let start_byte = self.buffer.char_to_byte(self.buffer.cursor());
+        let cursor_before = self.buffer.cursor();
+        let start_byte = self.buffer.char_to_byte(cursor_before);
         let (start_position, history_pos) = self.get_edit_points(start_byte);
 
         self.buffer.insert_str(s)?;
@@ -175,6 +185,7 @@ impl Document {
                     new_end: new_end_byte,
                     line_inserts,
                 },
+                cursor_before,
             );
         }
 
@@ -206,9 +217,8 @@ impl Document {
         Ok(())
     }
 
-    /// Insert a sequence of `Character`s at the cursor, preserving raw bytes
-    /// and control chars (the byte-faithful counterpart of `insert_str`, used
-    /// for pasting clipboard-ring entries captured via `Character`).
+    /// Insert `Character`s at the cursor, preserving raw bytes/control chars
+    /// (the byte-faithful counterpart of `insert_str`).
     pub fn insert_characters(&mut self, chars: &[Character]) -> Result<(), RiftError> {
         let newline_count = chars
             .iter()
@@ -220,7 +230,8 @@ impl Document {
             None
         };
 
-        let start_byte = self.buffer.char_to_byte(self.buffer.cursor());
+        let cursor_before = self.buffer.cursor();
+        let start_byte = self.buffer.char_to_byte(cursor_before);
         let (start_position, history_pos) = self.get_edit_points(start_byte);
 
         self.buffer.insert_chars(chars)?;
@@ -247,6 +258,7 @@ impl Document {
                     new_end: new_end_byte,
                     line_inserts,
                 },
+                cursor_before,
             );
         }
 
@@ -315,6 +327,7 @@ impl Document {
                     }
                 ),
                 AnnotationUndoHint::Snapshot,
+                cursor,
             );
 
             let edit = InputEdit {
@@ -375,6 +388,7 @@ impl Document {
                     }
                 ),
                 AnnotationUndoHint::Snapshot,
+                cursor,
             );
 
             let edit = InputEdit {
@@ -420,6 +434,7 @@ impl Document {
         }
 
         use crate::buffer::api::BufferView;
+        let cursor_before = self.buffer.cursor();
         let old_chars: Vec<Character> = self.buffer.chars(pos..end).collect();
 
         let start_byte = self.buffer.char_to_byte(pos);
@@ -438,6 +453,7 @@ impl Document {
             },
             "Replace",
             AnnotationUndoHint::Snapshot,
+            cursor_before,
         );
 
         let new_end_byte = self.buffer.char_to_byte(pos + new_chars.len());
@@ -485,6 +501,7 @@ impl Document {
         }
 
         use crate::buffer::api::BufferView;
+        let cursor_before = self.buffer.cursor();
         let deleted_chars: Vec<Character> = self.buffer.chars(start..end).collect();
 
         // Track deleted lines for line-anchored annotations in every buffer.
@@ -520,6 +537,7 @@ impl Document {
             },
             &format!("Delete {} chars", count),
             AnnotationUndoHint::Snapshot,
+            cursor_before,
         );
 
         let edit = InputEdit {

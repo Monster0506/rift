@@ -1276,6 +1276,47 @@ fn test_undo_binary_data() {
 }
 
 #[test]
+fn test_undo_of_non_transactional_delete_restores_cursor_onto_deleted_char() {
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("hello world").unwrap();
+    doc.buffer.set_cursor(0).unwrap();
+
+    // `x` / single-char delete outside an explicit transaction (record_edit's
+    // non-transaction branch).
+    assert!(doc.delete_forward());
+    assert_eq!(doc.buffer.to_string(), "ello world");
+
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "hello world");
+    assert_eq!(
+        doc.buffer.cursor(),
+        0,
+        "undo must land the cursor back on the restored char, not past it"
+    );
+}
+
+#[test]
+fn test_redo_of_non_transactional_insert_restores_cursor_after_inserted_text() {
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("hello").unwrap();
+    doc.buffer.set_cursor(0).unwrap();
+    doc.insert_str("XY").unwrap();
+    assert_eq!(doc.buffer.to_string(), "XYhello");
+    assert_eq!(doc.buffer.cursor(), 2);
+
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "hello");
+
+    doc.redo();
+    assert_eq!(doc.buffer.to_string(), "XYhello");
+    assert_eq!(
+        doc.buffer.cursor(),
+        2,
+        "redo must restore the cursor to exactly where the edit left it"
+    );
+}
+
+#[test]
 fn test_get_changed_line_for_seq() {
     let mut doc = Document::new(1).unwrap();
 
@@ -1362,9 +1403,8 @@ fn test_undo_redo_restores_annotation_marker_positions() {
     assert_eq!(span(&doc), (8, 13));
 }
 
-/// `goto_seq` (undo-tree navigation) must keep the annotation undo/redo
-/// stacks in lockstep with the replay, exactly like plain `undo()`/`redo()`,
-/// so a subsequent plain undo/redo doesn't pop a mismatched entry.
+/// `goto_seq` must keep the annotation undo/redo stacks in sync with the
+/// replay, like plain `undo()`/`redo()`, or a later undo/redo pops mismatched.
 #[test]
 fn test_goto_seq_keeps_annotation_stacks_in_sync() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};

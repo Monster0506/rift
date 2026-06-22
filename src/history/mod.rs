@@ -283,6 +283,9 @@ pub struct EditTransaction {
     /// Cursor offset (char index) at the moment the transaction was opened.
     /// Used to restore cursor on undo regardless of operation range direction.
     pub cursor_before: Option<usize>,
+    /// Cursor offset (char index) right after the transaction's edits were
+    /// applied. Used to restore cursor on redo, symmetric with `cursor_before`.
+    pub cursor_after: Option<usize>,
 }
 
 impl EditTransaction {
@@ -291,6 +294,7 @@ impl EditTransaction {
             ops: Vec::new(),
             description: description.into(),
             cursor_before: None,
+            cursor_after: None,
         }
     }
 
@@ -714,10 +718,11 @@ impl UndoTree {
         // Create node
         let mut node = EditNode::new(seq, transaction, Some(self.current));
 
-        // Determine if this should be a checkpoint
+        // total_memory never decreases (no eviction policy yet), so once
+        // it crosses the threshold, only the interval check still matters.
         let should_checkpoint = snapshot.is_some()
-            || self.edits_since_checkpoint >= self.checkpoint_interval
-            || self.total_memory >= self.checkpoint_memory_threshold;
+            || (self.total_memory < self.checkpoint_memory_threshold
+                && self.edits_since_checkpoint >= self.checkpoint_interval);
 
         if should_checkpoint {
             if let Some(snap) = snapshot {

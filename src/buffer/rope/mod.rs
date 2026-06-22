@@ -281,10 +281,8 @@ impl PieceTable {
 
     /// Convert character index to byte offset.
     ///
-    /// O(log n) to find the target piece, but O(piece_len) within it (no
-    /// per-piece prefix-sum cache yet), so this degrades to O(piece_len) on a
-    /// single large piece such as a freshly opened file (one `Original` piece
-    /// spanning the whole buffer).
+    /// O(log n) to the target piece, then O(piece_len) within it (no
+    /// per-piece prefix-sum cache yet) -- see `buffer::api`'s module doc.
     pub fn char_to_byte(&self, char_index: usize) -> usize {
         if char_index >= self.len() {
             return self.byte_len();

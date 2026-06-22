@@ -248,17 +248,15 @@ impl Document {
         matches!(self.kind, BufferKind::LocationList { .. })
     }
 
-    /// Convert an LSP `Position.character` (UTF-16 code units into `line`) to
-    /// this buffer's code-point offset within that line. Use this for every
-    /// position received from an LSP server before indexing the buffer.
+    /// Convert an LSP `Position.character` (UTF-16 units) on `line` to this
+    /// buffer's code-point offset. Use before indexing on any LSP position.
     pub fn lsp_char_offset_in_line(&self, line: usize, utf16_character: u32) -> usize {
         let chars = self.line_chars(line).map(|c| c.to_char_lossy());
         crate::lsp::protocol::utf16_offset_to_char(chars, utf16_character)
     }
 
-    /// Convert a code-point offset within `line` to the UTF-16 code-unit
-    /// count LSP `Position.character` is measured in. Use this before sending
-    /// any cursor/selection position to an LSP server.
+    /// Convert a code-point offset on `line` to UTF-16 units. Use before
+    /// sending any cursor/selection position to an LSP server.
     pub fn lsp_utf16_character_in_line(&self, line: usize, char_offset: usize) -> u32 {
         let chars = self.line_chars(line).map(|c| c.to_char_lossy());
         crate::lsp::protocol::char_offset_to_utf16(chars, char_offset)

@@ -137,9 +137,8 @@ fn inner_quote_cursor_on_closing_quote_pairs_with_preceding_opener() {
 
 #[test]
 fn inner_quote_escaped_backslash_before_real_delimiter() {
-    // `"a\\"`, the content is a\ followed by a real closing quote: the
-    // backslash before the final `"` is itself escaped (\\), so the quote is
-    // NOT escaped and IS a real delimiter.
+    // The backslash before the final `"` is itself escaped (\\), so that
+    // quote is NOT escaped and is a real delimiter.
     let r = res(inner(ObjectKind::DoubleQuote), "\"a\\\\\"", 2).unwrap();
     assert_eq!(r, (1, 3, true));
 }
@@ -317,10 +316,8 @@ fn leading_count_extends_sentence_across_n_sentences() {
 
 #[test]
 fn inner_sentence_cursor_on_terminator_selects_sentence_it_closes() {
-    // "One. Two.", cursor on the '.' that ends "One" (pos 3): selects the
-    // sentence the terminator closes ("One" [0,2], consistent with this
-    // resolver's convention of excluding the final terminator -- see the
-    // count=2 case below), not the next sentence, and must not no-op.
+    // Cursor on the '.' ending "One": selects "One" [0,2] (the sentence the
+    // terminator closes), not the next sentence, and must not no-op.
     let r = res(inner(ObjectKind::Sentence), "One. Two.", 3).unwrap();
     assert_eq!(r, (0, 2, true));
 }

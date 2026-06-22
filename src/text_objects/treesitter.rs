@@ -79,9 +79,8 @@ fn find_ancestor_nth<'tree>(
         }
         cur = nd.parent();
     }
-    // Requested count exceeds the available nesting depth: clamp to the
-    // outermost matching ancestor instead of no-op'ing, matching vim's
-    // counted-text-object behavior.
+    // Count exceeds available nesting depth: clamp to the outermost match
+    // instead of no-op'ing, matching vim.
     last_match
 }
 
