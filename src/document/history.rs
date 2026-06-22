@@ -330,14 +330,24 @@ impl Document {
     /// Navigate to a specific edit sequence in the undo tree
     pub fn goto_seq(&mut self, target: u64) -> Result<(), crate::history::UndoError> {
         let replay_path = self.history.goto_seq(target)?;
+        // Walk the annotation undo/redo stacks in lockstep with the replay so
+        // diagnostics/marks/line-anchored annotations track the buffer jump
+        // and the stacks stay in sync with `history.current` for the *next*
+        // plain undo()/redo() afterward.
         for tx in &replay_path.undo_ops {
             for op in tx.inverse() {
                 self.apply_operation_with_tree_update(&op);
+            }
+            if let Some(entry) = self.annotation_undo_stack.pop() {
+                self.restore_annotations_for_undo(entry);
             }
         }
         for tx in &replay_path.redo_ops {
             for op in &tx.ops {
                 self.apply_operation_with_tree_update(op);
+            }
+            if let Some(entry) = self.annotation_redo_stack.pop() {
+                self.restore_annotations_for_redo(entry);
             }
         }
         self.mark_dirty();

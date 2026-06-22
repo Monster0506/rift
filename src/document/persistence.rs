@@ -177,7 +177,7 @@ impl Document {
             path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
         ));
 
-        {
+        let write_result = (|| -> Result<(), RiftError> {
             let mut file = fs::File::create(&temp_path)?;
             let line_ending_bytes = self.options.line_ending.as_bytes();
 
@@ -189,6 +189,14 @@ impl Document {
                 }
             }
             file.sync_all()?;
+            Ok(())
+        })();
+
+        if let Err(e) = write_result {
+            // Best-effort cleanup: the original file is untouched (the
+            // rename below hasn't happened), so leave no stray `<name>~`.
+            let _ = fs::remove_file(&temp_path);
+            return Err(e);
         }
 
         fs::rename(&temp_path, path)?;

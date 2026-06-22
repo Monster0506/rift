@@ -184,12 +184,19 @@ impl DocumentManager {
             .filter(|(_, id)| !self.private_document_ids.contains(*id))
             .map(|(i, _)| i)
             .collect();
-        if public_tabs.len() > 1 {
-            let current_pos = public_tabs.iter().position(|&i| i == self.current_tab);
-            if let Some(pos) = current_pos {
+        if public_tabs.is_empty() {
+            return;
+        }
+        let current_pos = public_tabs.iter().position(|&i| i == self.current_tab);
+        match current_pos {
+            // Current tab is private (e.g. a frozen/preview buffer): land on
+            // the first public tab instead of no-op'ing.
+            None => self.current_tab = public_tabs[0],
+            Some(pos) if public_tabs.len() > 1 => {
                 let next_pos = (pos + 1) % public_tabs.len();
                 self.current_tab = public_tabs[next_pos];
             }
+            Some(_) => {}
         }
     }
 
@@ -202,9 +209,13 @@ impl DocumentManager {
             .filter(|(_, id)| !self.private_document_ids.contains(*id))
             .map(|(i, _)| i)
             .collect();
-        if public_tabs.len() > 1 {
-            let current_pos = public_tabs.iter().position(|&i| i == self.current_tab);
-            if let Some(pos) = current_pos {
+        if public_tabs.is_empty() {
+            return;
+        }
+        let current_pos = public_tabs.iter().position(|&i| i == self.current_tab);
+        match current_pos {
+            None => self.current_tab = public_tabs[0],
+            Some(pos) if public_tabs.len() > 1 => {
                 let prev_pos = if pos == 0 {
                     public_tabs.len() - 1
                 } else {
@@ -212,6 +223,7 @@ impl DocumentManager {
                 };
                 self.current_tab = public_tabs[prev_pos];
             }
+            Some(_) => {}
         }
     }
 

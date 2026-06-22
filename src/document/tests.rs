@@ -1221,6 +1221,33 @@ fn test_switching_tabs() {
 }
 
 #[test]
+fn test_switching_tabs_from_private_document_lands_on_first_public_tab() {
+    let mut manager = create_manager();
+    manager.add_document(Document::new(1).unwrap());
+    manager.add_document(Document::new(2).unwrap());
+    manager.add_private_document(Document::new(3).unwrap());
+
+    // current_tab now points at the private doc (3), which is excluded from
+    // public_tabs -- next/prev must not no-op, they must land on a real tab.
+    assert_eq!(manager.active_document_id(), Some(3));
+
+    manager.switch_next_tab();
+    assert_eq!(
+        manager.active_document_id(),
+        Some(1),
+        "switch_next_tab from a private doc must land on the first public tab, not no-op"
+    );
+
+    manager.add_private_document(Document::new(4).unwrap());
+    manager.switch_prev_tab();
+    assert_eq!(
+        manager.active_document_id(),
+        Some(1),
+        "switch_prev_tab from a private doc must land on the first public tab, not no-op"
+    );
+}
+
+#[test]
 fn test_open_existing_file_switches_tab() {
     let _manager = create_manager();
 }
@@ -1333,6 +1360,50 @@ fn test_undo_redo_restores_annotation_marker_positions() {
     assert_eq!(span(&doc), (6, 11));
     doc.redo();
     assert_eq!(span(&doc), (8, 13));
+}
+
+/// `goto_seq` (undo-tree navigation) must keep the annotation undo/redo
+/// stacks in lockstep with the replay, exactly like plain `undo()`/`redo()`,
+/// so a subsequent plain undo/redo doesn't pop a mismatched entry.
+#[test]
+fn test_goto_seq_keeps_annotation_stacks_in_sync() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("hello world").unwrap();
+    let seq_after_first_edit = doc.history.current_seq();
+
+    let id = doc.annotations.add(Annotation::new(
+        Kind::new("ui.link"),
+        Anchor::range(6, 11),
+        AnnotationOwner::User,
+    ));
+    let span = |doc: &Document| match doc.annotations.get(id).unwrap().anchor {
+        Anchor::Range(s, e) => (s.offset, e.offset),
+        other => panic!("expected range, got {:?}", other),
+    };
+
+    // Insert "XY" at the start: the marker shifts right by 2.
+    doc.buffer.set_cursor(0).ok();
+    doc.insert_str("XY").unwrap();
+    assert_eq!(span(&doc), (8, 13));
+
+    // Jump back via the undo-tree (goto_seq), as the undotree pane does on
+    // every cursor move, instead of a plain undo().
+    doc.goto_seq(seq_after_first_edit).unwrap();
+    assert_eq!(
+        span(&doc),
+        (6, 11),
+        "goto_seq must revert the annotation shift like undo() does"
+    );
+
+    // A plain redo() afterward must re-apply the same shift, not pop a
+    // stale/mismatched annotation entry left over from before the jump.
+    doc.redo();
+    assert_eq!(
+        span(&doc),
+        (8, 13),
+        "redo() after goto_seq must use the entry goto_seq pushed, not desync"
+    );
 }
 
 /// Diff-based undo for pure insertions must restore exactly what a full
