@@ -3,6 +3,14 @@ use super::{PanelKind, PanelLayout};
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
+/// Tracks the path and job id of the explorer preview currently in flight,
+/// so repeated cursor moves dedupe against it instead of spawning duplicates.
+#[derive(Debug, Clone)]
+pub(super) struct PendingExplorerPreview {
+    pub(super) path: std::path::PathBuf,
+    pub(super) job_id: usize,
+}
+
 fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
     let mut out = std::path::PathBuf::new();
     for component in path.components() {
@@ -607,6 +615,36 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.update_and_render();
     }
 
+    /// Computes the path that should currently be shown in the explorer preview,
+    /// based on the entry under the cursor in the dir pane. Used both to decide
+    /// whether to spawn a new preview job and to reject stale job results.
+    pub(super) fn current_explorer_target_path(&self) -> Option<std::path::PathBuf> {
+        let layout = match &self.panel_layout {
+            Some(l)
+                if l.kind == PanelKind::FileExplorer
+                    && self.split_tree.focused_window_id() == l.dir_win_id =>
+            {
+                l.clone()
+            }
+            _ => return None,
+        };
+
+        let doc = self.document_manager.get_document(layout.dir_doc_id)?;
+        let cursor = doc.buffer.cursor();
+        let line_num = doc.buffer.line_index.get_line_at(cursor);
+        let line_bytes = doc.buffer.get_line_bytes(line_num);
+        let line_text = String::from_utf8_lossy(&line_bytes).trim_end().to_string();
+        let dir_path = match &doc.kind {
+            crate::document::BufferKind::Directory { path, .. } => path.clone(),
+            _ => return None,
+        };
+        let entry_name = line_text.trim_end_matches('/');
+        if entry_name.is_empty() || entry_name == ".." {
+            return None;
+        }
+        Some(dir_path.join(entry_name))
+    }
+
     /// Called after every cursor movement: if in the explorer dir pane, spawn a preview job.
     pub(super) fn update_explorer_preview(&mut self) {
         let layout = match &self.panel_layout {
@@ -619,25 +657,11 @@ impl<T: TerminalBackend> Editor<T> {
             _ => return,
         };
 
-        let (target_path, preview_doc_id) = {
-            let doc = match self.document_manager.get_document(layout.dir_doc_id) {
-                Some(d) => d,
-                None => return,
-            };
-            let cursor = doc.buffer.cursor();
-            let line_num = doc.buffer.line_index.get_line_at(cursor);
-            let line_bytes = doc.buffer.get_line_bytes(line_num);
-            let line_text = String::from_utf8_lossy(&line_bytes).trim_end().to_string();
-            let dir_path = match &doc.kind {
-                crate::document::BufferKind::Directory { path, .. } => path.clone(),
-                _ => return,
-            };
-            let entry_name = line_text.trim_end_matches('/');
-            if entry_name.is_empty() || entry_name == ".." {
-                return;
-            }
-            (dir_path.join(entry_name), layout.preview_doc_id)
+        let target_path = match self.current_explorer_target_path() {
+            Some(p) => p,
+            None => return,
         };
+        let preview_doc_id = layout.preview_doc_id;
 
         // Skip if the preview pane is already showing this path.
         let already_showing = self
@@ -652,12 +676,28 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
+        // Skip if a job for this exact path is already pending/in-flight.
+        if let Some(pending) = &self.pending_explorer_preview {
+            if pending.path == target_path {
+                return;
+            }
+        }
+
+        // Cancel any prior still-in-flight preview job before starting a new one.
+        if let Some(pending) = self.pending_explorer_preview.take() {
+            self.job_manager.cancel_job(pending.job_id);
+        }
+
         let job = crate::job_manager::jobs::explorer_preview::ExplorerPreviewJob::new(
             preview_doc_id,
-            target_path,
+            target_path.clone(),
             false,
         );
-        self.job_manager.spawn(job);
+        let job_id = self.job_manager.spawn(job);
+        self.pending_explorer_preview = Some(PendingExplorerPreview {
+            path: target_path,
+            job_id,
+        });
     }
 
     /// Called after every cursor movement in the undotree pane: applies goto_seq on the linked doc.

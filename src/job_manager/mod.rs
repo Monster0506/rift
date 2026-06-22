@@ -277,6 +277,16 @@ impl JobManager {
     pub fn job_name(&self, id: usize) -> &'static str {
         self.jobs.get(&id).map(|h| h.name).unwrap_or("job")
     }
+
+    /// Returns the current state of a job, if it is still tracked.
+    pub fn job_state(&self, id: usize) -> Option<JobState> {
+        self.jobs.get(&id).map(|h| h.state)
+    }
+
+    /// Returns the number of jobs ever spawned so far (monotonic counter).
+    pub fn total_spawned(&self) -> usize {
+        self.next_job_id - 1
+    }
 }
 
 impl Default for JobManager {

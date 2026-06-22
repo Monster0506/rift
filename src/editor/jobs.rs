@@ -293,6 +293,24 @@ impl<T: TerminalBackend> Editor<T> {
                     .downcast::<crate::job_manager::jobs::explorer_preview::ExplorerPreviewResult>()
                 {
                     Ok(res) => {
+                        // Clear in-flight tracking for this job regardless of staleness.
+                        if self
+                            .pending_explorer_preview
+                            .as_ref()
+                            .is_some_and(|p| p.job_id == id)
+                        {
+                            self.pending_explorer_preview = None;
+                        }
+
+                        // Discard stale results: the cursor may have moved to a different
+                        // entry since this job was spawned.
+                        let current_target = self.current_explorer_target_path();
+                        if current_target.as_deref() != Some(res.path.as_path()) {
+                            self.job_manager
+                                .update_job_state(&JobMessage::Finished(id, true));
+                            return Ok(());
+                        }
+
                         let preview_doc_id = res.right_doc_id;
                         let preview_path = res.path.clone();
                         let is_file_preview = res.dir_entries.is_none();

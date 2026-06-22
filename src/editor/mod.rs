@@ -213,6 +213,9 @@ pub struct Editor<T: TerminalBackend> {
     /// sync `try_incremental_parse` exceeding its time budget (design.md #1).
     pending_syntax_reparse:
         std::collections::HashMap<crate::document::DocumentId, jobs::PendingSyntaxReparse>,
+    /// Tracks the most recently requested explorer preview path and its
+    /// in-flight job id, so cursor moves dedupe/cancel instead of piling up jobs.
+    pending_explorer_preview: Option<explorer::PendingExplorerPreview>,
 }
 
 /// State retained between a `Put` and a `CyclePaste` action.
