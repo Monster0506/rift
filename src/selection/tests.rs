@@ -65,12 +65,32 @@ fn commit_active_banks_into_the_set() {
 }
 
 #[test]
+fn take_for_batch_dedupes_same_line_linewise_regions() {
+    // Same line, different columns: raw spans don't overlap (bank keeps
+    // both) but buffer_span is identical -- must dedupe to one in the batch.
+    let mut buf = TextBuffer::new(20).unwrap();
+    buf.insert_str("hello world\nfoo\n").unwrap();
+    let mut set = SelectionSet::default();
+    set.bank(Region::new(0, 0, RangeKind::Linewise));
+    set.bank(Region::new(5, 5, RangeKind::Linewise));
+    assert_eq!(set.regions.len(), 2, "bank() itself still keeps both");
+
+    let batch = set.take_for_batch(&buf);
+    assert_eq!(
+        batch.len(),
+        1,
+        "take_for_batch must dedupe by buffer_span, not raw span"
+    );
+}
+
+#[test]
 fn take_for_batch_orders_highest_offset_first_and_clears() {
     let mut set = SelectionSet::default();
     set.bank(region(0, 2));
     set.bank(region(10, 12));
     set.bank(region(20, 22));
-    let batch = set.take_for_batch();
+    let buf = TextBuffer::new(30).unwrap();
+    let batch = set.take_for_batch(&buf);
     assert_eq!(
         batch.iter().map(|r| r.span().0).collect::<Vec<_>>(),
         vec![20, 10, 0]

@@ -69,6 +69,28 @@ impl Rect {
     }
 }
 
+/// Repeatedly union overlapping/touching rects so a full invalidation from
+/// several layers (e.g. identical full-screen rects) composites once.
+fn merge_dirty_rects(mut rects: Vec<Rect>) -> Vec<Rect> {
+    loop {
+        let mut merged_any = false;
+        'outer: for i in 0..rects.len() {
+            for j in (i + 1)..rects.len() {
+                if rects[i].intersects(&rects[j]) || rects[i].is_adjacent(&rects[j]) {
+                    rects[i] = rects[i].union(&rects[j]);
+                    rects.remove(j);
+                    merged_any = true;
+                    break 'outer;
+                }
+            }
+        }
+        if !merged_any {
+            break;
+        }
+    }
+    rects
+}
+
 /// Layer priority - higher values render on top
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LayerPriority(pub u8);
@@ -587,6 +609,7 @@ impl LayerCompositor {
         if dirty_rects.is_empty() {
             return;
         }
+        let dirty_rects = merge_dirty_rects(dirty_rects);
 
         // Process each dirty rect
         for rect in dirty_rects {

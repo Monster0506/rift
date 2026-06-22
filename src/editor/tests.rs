@@ -2241,6 +2241,32 @@ fn escape_in_normal_clears_a_nonempty_banked_set() {
 }
 
 #[test]
+fn set_aware_delete_surround_handles_two_regions_sharing_one_enclosing_pair() {
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    // "(a(b)c)": 'a' and 'c' share the outer pair only; a stale offset for
+    // the lower region would land on the inner pair's open paren instead.
+    let mut editor = create_editor();
+    load_text(&mut editor, "(a(b)c)");
+    {
+        let doc = editor.active_document();
+        doc.selection_set
+            .bank(Region::new(5, 5, RangeKind::Charwise)); // 'c'
+        doc.selection_set
+            .bank(Region::new(1, 1, RangeKind::Charwise)); // 'a'
+    }
+
+    assert!(editor.try_run_set_aware_delete_surround('(', 1));
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "a(b)c",
+        "must strip only the shared outer pair, leaving the inner \"(b)\" intact"
+    );
+}
+
+#[test]
 fn issue_worked_example_bank_two_regions_no_delete_yet() {
     use crate::action::{Action, EditorAction, Motion};
     use crate::buffer::api::BufferView;

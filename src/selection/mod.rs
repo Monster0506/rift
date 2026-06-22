@@ -106,10 +106,14 @@ impl SelectionSet {
         v
     }
 
-    pub fn take_for_batch(&mut self) -> Vec<Region> {
+    /// Dedupes by `buffer_span` so same-line Linewise regions (identical
+    /// buffer_span, non-overlapping raw span) aren't applied twice.
+    pub fn take_for_batch(&mut self, buf: &TextBuffer) -> Vec<Region> {
         self.commit_active();
         let mut v = std::mem::take(&mut self.regions);
         v.sort_by_key(|r| std::cmp::Reverse(r.span().0));
+        let mut seen = std::collections::HashSet::new();
+        v.retain(|r| seen.insert(r.buffer_span(buf)));
         v
     }
 

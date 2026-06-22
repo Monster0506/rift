@@ -4,6 +4,30 @@ use super::*;
 use crate::character::Character;
 
 #[test]
+fn merge_dirty_rects_collapses_identical_full_screen_rects() {
+    // One full-screen rect per layer must collapse to a single rect,
+    // not be re-walked once per layer.
+    let full_screen = Rect::new(0, 0, 23, 79);
+    let rects = vec![full_screen; 8];
+    let merged = merge_dirty_rects(rects);
+    assert_eq!(merged, vec![full_screen]);
+}
+
+#[test]
+fn merge_dirty_rects_keeps_disjoint_rects_separate() {
+    let rects = vec![Rect::new(0, 0, 1, 1), Rect::new(20, 20, 21, 21)];
+    let merged = merge_dirty_rects(rects);
+    assert_eq!(merged.len(), 2);
+}
+
+#[test]
+fn merge_dirty_rects_unions_overlapping_rects() {
+    let rects = vec![Rect::new(0, 0, 5, 5), Rect::new(3, 3, 8, 8)];
+    let merged = merge_dirty_rects(rects);
+    assert_eq!(merged, vec![Rect::new(0, 0, 8, 8)]);
+}
+
+#[test]
 fn test_layer_priority_ordering() {
     assert!(LayerPriority::CONTENT < LayerPriority::STATUS_BAR);
     assert!(LayerPriority::STATUS_BAR < LayerPriority::FLOATING_WINDOW);

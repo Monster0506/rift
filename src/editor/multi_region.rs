@@ -137,7 +137,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.active_document_mut() else {
                 return false;
             };
-            doc.selection_set.take_for_batch()
+            doc.selection_set.take_for_batch(&doc.buffer)
         };
         if batch.is_empty() {
             return false;
@@ -174,7 +174,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.active_document_mut() else {
                 return false;
             };
-            let batch = doc.selection_set.take_for_batch();
+            let batch = doc.selection_set.take_for_batch(&doc.buffer);
             if batch.is_empty() {
                 return false;
             }
@@ -339,20 +339,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// `sd<ch>` against a non-empty `SelectionSet`: reuse the existing
     /// single-cursor `Command::DeleteSurround` resolution once per region.
     pub(super) fn try_run_set_aware_delete_surround(&mut self, ch: char, count: usize) -> bool {
-        let is_empty = self
-            .document_manager
-            .active_document()
-            .map(|d| d.selection_set.is_empty())
-            .unwrap_or(true);
-        if is_empty {
-            return false;
-        }
-        self.apply_to_each_region(|editor, region| {
-            let Some(doc) = editor.document_manager.active_document_mut() else {
-                return false;
-            };
-            let (start, _) = region.buffer_span(&doc.buffer);
-            let _ = doc.buffer.set_cursor(start);
+        self.apply_to_each_region_surround(ch, count, |editor| {
             editor.execute_buffer_command(crate::command::Command::DeleteSurround(ch, count))
         })
     }
@@ -365,6 +352,22 @@ impl<T: TerminalBackend> Editor<T> {
         to: char,
         count: usize,
     ) -> bool {
+        self.apply_to_each_region_surround(from, count, |editor| {
+            editor.execute_buffer_command(crate::command::Command::ChangeSurround(from, to, count))
+        })
+    }
+
+    /// Like `apply_to_each_region`, but for sd/sc: two regions can share an
+    /// enclosing pair, so skip a region already absorbed by an earlier one.
+    fn apply_to_each_region_surround<F>(
+        &mut self,
+        resolve_ch: char,
+        count: usize,
+        mut exec: F,
+    ) -> bool
+    where
+        F: FnMut(&mut Self) -> bool,
+    {
         let is_empty = self
             .document_manager
             .active_document()
@@ -373,14 +376,47 @@ impl<T: TerminalBackend> Editor<T> {
         if is_empty {
             return false;
         }
-        self.apply_to_each_region(|editor, region| {
-            let Some(doc) = editor.document_manager.active_document_mut() else {
+        let batch = {
+            let Some(doc) = self.document_manager.active_document_mut() else {
                 return false;
+            };
+            doc.selection_set.take_for_batch(&doc.buffer)
+        };
+        if batch.is_empty() {
+            return false;
+        }
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.begin_transaction("MultiRegion");
+        }
+        let mut any = false;
+        let mut consumed: Vec<(usize, usize)> = Vec::new();
+        for region in batch {
+            if consumed
+                .iter()
+                .any(|&(s, e)| region.anchor >= s && region.anchor < e)
+            {
+                continue;
+            }
+            let Some(doc) = self.document_manager.active_document_mut() else {
+                break;
             };
             let (start, _) = region.buffer_span(&doc.buffer);
             let _ = doc.buffer.set_cursor(start);
-            editor.execute_buffer_command(crate::command::Command::ChangeSurround(from, to, count))
-        })
+            let Some((open_range, close_range)) =
+                crate::text_objects::resolve_surround_pair(resolve_ch, &doc.buffer, count)
+            else {
+                continue;
+            };
+            if exec(self) {
+                any = true;
+                consumed.push((open_range.start, close_range.end));
+            }
+        }
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.commit_transaction();
+        }
+        self.do_incremental_syntax_parse();
+        any
     }
 
     /// `sg<ch>` against a non-empty `SelectionSet`: the region supplies the range directly,
