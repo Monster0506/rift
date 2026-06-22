@@ -70,6 +70,33 @@ fn utf16_char_offset_round_trip_for_astral_emoji() {
 }
 
 #[test]
+fn utf8_char_offset_round_trip_for_astral_emoji() {
+    // "🦀" is 1 code point but 4 UTF-8 bytes.
+    let line = "a🦀b";
+    assert_eq!(char_offset_to_utf8(line.chars(), 1), 1); // past 'a'
+    assert_eq!(char_offset_to_utf8(line.chars(), 2), 5); // past 'a' + crab (4 bytes)
+    assert_eq!(char_offset_to_utf8(line.chars(), 3), 6); // past 'b'
+
+    assert_eq!(utf8_offset_to_char(line.chars(), 1), 1);
+    assert_eq!(utf8_offset_to_char(line.chars(), 5), 2);
+    assert_eq!(utf8_offset_to_char(line.chars(), 6), 3);
+}
+
+#[test]
+fn position_encoding_from_wire_parses_known_values_only() {
+    assert_eq!(
+        PositionEncoding::from_wire("utf-16"),
+        Some(PositionEncoding::Utf16)
+    );
+    assert_eq!(
+        PositionEncoding::from_wire("utf-8"),
+        Some(PositionEncoding::Utf8)
+    );
+    assert_eq!(PositionEncoding::from_wire("utf-32"), None);
+    assert_eq!(PositionEncoding::default(), PositionEncoding::Utf16);
+}
+
+#[test]
 fn uri_to_path_invalid_returns_none() {
     assert!(uri_to_path("http://example.com/foo").is_none());
     assert!(uri_to_path("not-a-uri").is_none());

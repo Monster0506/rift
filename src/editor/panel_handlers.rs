@@ -327,9 +327,10 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
+        let encoding = self.lsp_manager.position_encoding_for_path(&path);
         if let Some(doc) = self.document_manager.active_document_mut() {
             let entry_line = entry.line as usize;
-            let char_col = doc.lsp_char_offset_in_line(entry_line, entry.col);
+            let char_col = doc.lsp_char_offset_in_line(entry_line, entry.col, encoding);
             let line_offset = doc.buffer.line_start(entry_line);
             let target = line_offset + char_col;
             let _ = doc.buffer.set_cursor(target.min(doc.buffer.len()));

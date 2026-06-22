@@ -31,6 +31,63 @@ pub fn utf16_offset_to_char(line: impl Iterator<Item = char>, utf16_offset: u32)
     chars
 }
 
+/// Convert a code-point offset within a line to a UTF-8 byte offset.
+pub fn char_offset_to_utf8(line: impl Iterator<Item = char>, char_offset: usize) -> u32 {
+    line.take(char_offset).map(|c| c.len_utf8() as u32).sum()
+}
+
+/// Convert a UTF-8 byte offset (as received from an LSP server) to a
+/// code-point offset within a line.
+pub fn utf8_offset_to_char(line: impl Iterator<Item = char>, byte_offset: u32) -> usize {
+    let mut bytes = 0u32;
+    let mut chars = 0usize;
+    for ch in line {
+        if bytes >= byte_offset {
+            break;
+        }
+        bytes += ch.len_utf8() as u32;
+        chars += 1;
+    }
+    chars
+}
+
+/// The unit an LSP server measures `Position.character` in, negotiated via
+/// the initialize response's `positionEncoding` (defaults to UTF-16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PositionEncoding {
+    #[default]
+    Utf16,
+    Utf8,
+}
+
+impl PositionEncoding {
+    pub fn from_wire(s: &str) -> Option<Self> {
+        match s {
+            "utf-16" => Some(Self::Utf16),
+            "utf-8" => Some(Self::Utf8),
+            _ => None,
+        }
+    }
+
+    pub fn char_offset_in_line(self, line: impl Iterator<Item = char>, units: u32) -> usize {
+        match self {
+            Self::Utf16 => utf16_offset_to_char(line, units),
+            Self::Utf8 => utf8_offset_to_char(line, units),
+        }
+    }
+
+    pub fn units_for_char_offset(
+        self,
+        line: impl Iterator<Item = char>,
+        char_offset: usize,
+    ) -> u32 {
+        match self {
+            Self::Utf16 => char_offset_to_utf16(line, char_offset),
+            Self::Utf8 => char_offset_to_utf8(line, char_offset),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct JsonRpcRequest {
     pub jsonrpc: &'static str,

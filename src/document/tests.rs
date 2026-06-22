@@ -22,21 +22,48 @@ fn test_lsp_char_offset_handles_astral_and_non_ascii() {
     // code points: a(0) 🦀(1) é(2) -(3) e(4) n(5) d(6)
     // utf16 units: a=0  🦀=1,2  é=3   -=4  e=5  n=6  d=7
 
-    assert_eq!(doc.lsp_char_offset_in_line(0, 0), 0);
+    use crate::lsp::protocol::PositionEncoding;
+    let enc = PositionEncoding::Utf16;
+    assert_eq!(doc.lsp_char_offset_in_line(0, 0, enc), 0);
     assert_eq!(
-        doc.lsp_char_offset_in_line(0, 3),
+        doc.lsp_char_offset_in_line(0, 3, enc),
         2,
         "utf16 offset 3 (past the 2-unit crab) must land on code point 2 ('é'), not 3"
     );
-    assert_eq!(doc.lsp_char_offset_in_line(0, 7), 6);
+    assert_eq!(doc.lsp_char_offset_in_line(0, 7, enc), 6);
 
-    assert_eq!(doc.lsp_utf16_character_in_line(0, 0), 0);
+    assert_eq!(doc.lsp_position_units_in_line(0, 0, enc), 0);
     assert_eq!(
-        doc.lsp_utf16_character_in_line(0, 2),
+        doc.lsp_position_units_in_line(0, 2, enc),
         3,
         "code point 2 ('é') must report utf16 offset 3 (after the 2-unit crab)"
     );
-    assert_eq!(doc.lsp_utf16_character_in_line(0, 6), 7);
+    assert_eq!(doc.lsp_position_units_in_line(0, 6, enc), 7);
+}
+
+/// The same `character` value must decode differently per negotiated
+/// encoding, proving it's respected rather than hardcoded to one unit.
+#[test]
+fn test_lsp_position_units_differ_by_negotiated_encoding() {
+    use crate::lsp::protocol::PositionEncoding;
+    let mut doc = Document::new(1).unwrap();
+    // "a🦀é-": utf16 units a=1,crab=2,é=1,-=1 (total 5); utf8 bytes a=1,crab=4,é=2,-=1 (total 8).
+    let _ = doc.insert_str("a🦀é-end");
+
+    assert_eq!(
+        doc.lsp_position_units_in_line(0, 3, PositionEncoding::Utf16),
+        4
+    );
+    assert_eq!(
+        doc.lsp_position_units_in_line(0, 3, PositionEncoding::Utf8),
+        7
+    );
+
+    assert_eq!(
+        doc.lsp_char_offset_in_line(0, 4, PositionEncoding::Utf16),
+        3
+    );
+    assert_eq!(doc.lsp_char_offset_in_line(0, 7, PositionEncoding::Utf8), 3);
 }
 
 #[test]

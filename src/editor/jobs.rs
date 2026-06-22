@@ -483,11 +483,20 @@ impl<T: TerminalBackend> Editor<T> {
                             self.pending_goto_target.take()
                         {
                             if goto_doc == res.document_id {
+                                let encoding = self
+                                    .document_manager
+                                    .get_document(res.document_id)
+                                    .and_then(|d| d.path())
+                                    .map(|p| self.lsp_manager.position_encoding_for_path(p))
+                                    .unwrap_or_default();
                                 if let Some(doc) =
                                     self.document_manager.get_document_mut(res.document_id)
                                 {
-                                    let char_col =
-                                        doc.lsp_char_offset_in_line(goto_line, goto_col as u32);
+                                    let char_col = doc.lsp_char_offset_in_line(
+                                        goto_line,
+                                        goto_col as u32,
+                                        encoding,
+                                    );
                                     let line_offset = doc.buffer.line_start(goto_line);
                                     let target = (line_offset + char_col).min(doc.buffer.len());
                                     doc.buffer.clear_desired_col();

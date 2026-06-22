@@ -195,9 +195,9 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let target_line = loc.range.start.line as usize;
-        // `character` is a UTF-16 code-unit offset; converted to a code-point
-        // offset once the target document's buffer is available below.
-        let target_utf16_col = loc.range.start.character;
+        // `character` is in the server's negotiated wire units; converted to
+        // a code-point offset once the target document's buffer is available.
+        let target_units_col = loc.range.start.character;
 
         // If the file is already buffered we can set the cursor immediately after
         // switching. If it isn't, open_file creates a placeholder and spawns an
@@ -211,8 +211,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         if already_open {
+            let encoding = self.lsp_manager.position_encoding_for_path(&path);
             if let Some(doc) = self.document_manager.active_document_mut() {
-                let target_col = doc.lsp_char_offset_in_line(target_line, target_utf16_col);
+                let target_col =
+                    doc.lsp_char_offset_in_line(target_line, target_units_col, encoding);
                 let line_offset = doc.buffer.line_start(target_line);
                 let target = line_offset + target_col;
                 doc.buffer.clear_desired_col();
@@ -222,7 +224,7 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             // File is loading asynchronously. Record the jump; FileLoadResult applies it.
             if let Some(doc_id) = self.document_manager.active_document_id() {
-                self.pending_goto_target = Some((doc_id, target_line, target_utf16_col as usize));
+                self.pending_goto_target = Some((doc_id, target_line, target_units_col as usize));
             }
         }
     }
@@ -510,6 +512,7 @@ impl<T: TerminalBackend> Editor<T> {
     ) -> Option<crate::document::DocumentId> {
         let path = crate::lsp::protocol::uri_to_path(uri)?;
         let doc_id = self.document_manager.find_open_document_id(&path)?;
+        let encoding = self.lsp_manager.position_encoding_for_path(&path);
 
         let doc = self.document_manager.get_document_mut(doc_id)?;
 
@@ -527,8 +530,10 @@ impl<T: TerminalBackend> Editor<T> {
         for edit in &edits {
             let start_line = edit.range.start.line as usize;
             let end_line = edit.range.end.line as usize;
-            let start_char = doc.lsp_char_offset_in_line(start_line, edit.range.start.character);
-            let end_char = doc.lsp_char_offset_in_line(end_line, edit.range.end.character);
+            let start_char =
+                doc.lsp_char_offset_in_line(start_line, edit.range.start.character, encoding);
+            let end_char =
+                doc.lsp_char_offset_in_line(end_line, edit.range.end.character, encoding);
 
             let start_offset = doc.buffer.line_start(start_line) + start_char;
             let end_offset = doc.buffer.line_start(end_line) + end_char;

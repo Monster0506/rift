@@ -760,7 +760,8 @@ impl<T: TerminalBackend> Editor<T> {
                             let line = cur_line as u32;
                             let line_start = doc.buffer.line_start(cur_line);
                             let char_col = doc.buffer.cursor().saturating_sub(line_start);
-                            let col = doc.lsp_utf16_character_in_line(cur_line, char_col);
+                            let encoding = self.lsp_manager.position_encoding_for_path(&path);
+                            let col = doc.lsp_position_units_in_line(cur_line, char_col, encoding);
                             if self.lsp_manager.goto_definition(&path, line, col).is_none() {
                                 self.state.notify(
                                     crate::notification::NotificationType::Warning,
@@ -787,7 +788,8 @@ impl<T: TerminalBackend> Editor<T> {
                             let line = cur_line as u32;
                             let line_start = doc.buffer.line_start(cur_line);
                             let char_col = doc.buffer.cursor().saturating_sub(line_start);
-                            let col = doc.lsp_utf16_character_in_line(cur_line, char_col);
+                            let encoding = self.lsp_manager.position_encoding_for_path(&path);
+                            let col = doc.lsp_position_units_in_line(cur_line, char_col, encoding);
                             if self.lsp_manager.references(&path, line, col).is_none() {
                                 self.state.notify(
                                     crate::notification::NotificationType::Warning,
@@ -814,7 +816,8 @@ impl<T: TerminalBackend> Editor<T> {
                             let line = cur_line as u32;
                             let line_start = doc.buffer.line_start(cur_line);
                             let char_col = doc.buffer.cursor().saturating_sub(line_start);
-                            let col = doc.lsp_utf16_character_in_line(cur_line, char_col);
+                            let encoding = self.lsp_manager.position_encoding_for_path(&path);
+                            let col = doc.lsp_position_units_in_line(cur_line, char_col, encoding);
                             if self.lsp_manager.hover(&path, line, col).is_none() {
                                 self.state.notify(
                                     crate::notification::NotificationType::Warning,
@@ -835,7 +838,8 @@ impl<T: TerminalBackend> Editor<T> {
                     let line = cur_line as u32;
                     let line_start = doc.buffer.line_start(cur_line);
                     let char_col = doc.buffer.cursor().saturating_sub(line_start);
-                    let col = doc.lsp_utf16_character_in_line(cur_line, char_col);
+                    let encoding = self.lsp_manager.position_encoding_for_path(&path);
+                    let col = doc.lsp_position_units_in_line(cur_line, char_col, encoding);
                     Some((path, line, col))
                 });
                 if let Some(ctx) = ctx {
@@ -865,7 +869,8 @@ impl<T: TerminalBackend> Editor<T> {
                             let line = cur_line as u32;
                             let line_start = doc.buffer.line_start(cur_line);
                             let char_col = doc.buffer.cursor().saturating_sub(line_start);
-                            let col = doc.lsp_utf16_character_in_line(cur_line, char_col);
+                            let encoding = self.lsp_manager.position_encoding_for_path(&path);
+                            let col = doc.lsp_position_units_in_line(cur_line, char_col, encoding);
                             let uri = crate::lsp::protocol::path_to_uri(&path);
                             let norm_uri = crate::lsp::protocol::normalize_uri(&uri);
                             let diagnostics: Vec<crate::lsp::protocol::LspDiagnostic> = self
@@ -1128,13 +1133,8 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// Insert `text` at the cursor position.
-    ///
-    /// Linewise text (ends with `\n`) is handled specially:
-    /// - `before = false` (`p`): inserts at the start of the next line (below)
-    /// - `before = true`  (`P`): inserts at the start of the current line (above)
-    ///
-    /// Charwise text: `before = false` advances the cursor one position first.
+    /// Insert `text` at the cursor. Linewise text (ends with `\n`) inserts
+    /// below (`p`) or above (`P`) the line; Charwise `p` advances one first.
     pub(super) fn insert_text_at_cursor(
         &mut self,
         text: &[crate::character::Character],

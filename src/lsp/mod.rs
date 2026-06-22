@@ -116,6 +116,9 @@ pub struct LspManager {
     pending_opens: HashMap<String, Vec<(String, serde_json::Value)>>,
     /// Debug log messages queued by internal methods that can't return LspMessage directly.
     pending_logs: Vec<String>,
+    /// language -> negotiated `Position.character` unit, from the server's
+    /// initialize response (LSP defaults to UTF-16 when it omits the field).
+    position_encodings: HashMap<String, crate::lsp::protocol::PositionEncoding>,
 }
 
 impl LspManager {
@@ -153,7 +156,22 @@ impl LspManager {
             indexing_idle_since: HashMap::new(),
             pending_opens: HashMap::new(),
             pending_logs: Vec::new(),
+            position_encodings: HashMap::new(),
         }
+    }
+
+    /// Negotiated `Position.character` unit for the server handling `path`
+    /// (UTF-16 if unknown/not yet negotiated, per the LSP default).
+    pub fn position_encoding_for_path(
+        &self,
+        path: &Path,
+    ) -> crate::lsp::protocol::PositionEncoding {
+        let uri = path_to_uri(path);
+        self.open_docs
+            .get(&uri)
+            .and_then(|s| self.position_encodings.get(&s.language))
+            .copied()
+            .unwrap_or_default()
     }
 
     /// Returns the LSP language name for a given document URI, if the document is open.
@@ -253,7 +271,7 @@ impl LspManager {
                 workspace_folders,
                 capabilities: ClientCapabilities {
                     general: GeneralCapabilities {
-                        position_encodings: vec!["utf-8".into()],
+                        position_encodings: vec!["utf-16".into(), "utf-8".into()],
                     },
                     text_document: TextDocumentClientCapabilities {
                         synchronization: TextDocumentSyncClientCapabilities {
@@ -645,6 +663,16 @@ impl LspManager {
                                 c.initialized = true;
                                 c.send_notification("initialized", serde_json::json!({}));
                             }
+
+                            // Server's chosen Position.character unit; LSP
+                            // defaults to UTF-16 when the field is absent.
+                            let encoding = result
+                                .get("capabilities")
+                                .and_then(|c| c.get("positionEncoding"))
+                                .and_then(|v| v.as_str())
+                                .and_then(crate::lsp::protocol::PositionEncoding::from_wire)
+                                .unwrap_or_default();
+                            self.position_encodings.insert(lang.to_string(), encoding);
 
                             // Flush any didOpen calls that arrived before initialization.
                             let queued = self.pending_opens.remove(lang).unwrap_or_default();
