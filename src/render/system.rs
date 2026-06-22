@@ -1,18 +1,83 @@
 use crate::error::RiftError;
-use crate::layer::{LayerCompositor, LayerPriority};
+use crate::layer::{CellStyle, LayerCompositor, LayerPriority};
 use crate::render::components::{Rect, Renderable};
 use crate::render::ecs::World;
 use crate::render::{
     calculate_cursor_column_at, CommandDrawState, ContentDrawState, CursorPosition, DrawContext,
-    NotificationDrawState, RenderState, StatusDrawState,
+    InlineAdornment, NotificationDrawState, RenderState, StatusDrawState,
 };
 use crate::term::TerminalBackend;
 use crate::viewport::Viewport;
+use std::hash::{Hash, Hasher};
 
 use crate::command_line::CommandLine;
 use crate::mode::Mode;
 use crate::status::StatusBar;
 use crate::term::CursorShape;
+
+/// Hash annotation presentation style spans without allocating: each style's
+/// fields are fed directly into the hasher instead of Debug-formatting to a String.
+fn hash_annotation_styles(spans: &[(std::ops::Range<usize>, CellStyle)]) -> u64 {
+    let mut h: u64 = 0;
+    for (range, style) in spans {
+        h = h
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(range.start as u64);
+        h = h
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(range.end as u64 + 1);
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        style.hash(&mut hasher);
+        h = h
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(hasher.finish());
+    }
+    h
+}
+
+/// Hash inline (overlay/leading) and trailing adornment virtual text so the
+/// content layer redraws when inlay hints or other virtual text change.
+fn hash_virtual_text(
+    inline: &[InlineAdornment],
+    adornments: &[(usize, String, crate::color::Color)],
+) -> u64 {
+    let mut h: u64 = 0;
+    for (start, end, text, color, leading) in inline {
+        h = h
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(*start as u64);
+        h = h
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(*end as u64 + 1);
+        for b in text.bytes() {
+            h = h
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(b as u64 + 1);
+        }
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        color.hash(&mut hasher);
+        leading.hash(&mut hasher);
+        h = h
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(hasher.finish());
+    }
+    for (line, text, color) in adornments {
+        h = h
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(*line as u64);
+        for b in text.bytes() {
+            h = h
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(b as u64 + 1);
+        }
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        color.hash(&mut hasher);
+        h = h
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(hasher.finish());
+    }
+    h
+}
 
 /// Persistent rendering system that holds all render-related state
 pub struct RenderSystem {
@@ -123,26 +188,11 @@ impl RenderSystem {
                 }
                 h
             },
-            annotation_styles_hash: {
-                let mut h: u64 = 0;
-                for (range, style) in ctx.annotation_styles.unwrap_or(&[]) {
-                    h = h
-                        .wrapping_mul(6364136223846793005)
-                        .wrapping_add(range.start as u64);
-                    h = h
-                        .wrapping_mul(6364136223846793005)
-                        .wrapping_add(range.end as u64 + 1);
-                    h = h
-                        .wrapping_mul(6364136223846793005)
-                        .wrapping_add(format!("{style:?}").len() as u64 + 1);
-                    for b in format!("{style:?}").bytes() {
-                        h = h
-                            .wrapping_mul(6364136223846793005)
-                            .wrapping_add(b as u64 + 1);
-                    }
-                }
-                h
-            },
+            annotation_styles_hash: hash_annotation_styles(ctx.annotation_styles.unwrap_or(&[])),
+            annotation_text_hash: hash_virtual_text(
+                ctx.annotation_inline.unwrap_or(&[]),
+                ctx.annotation_adornments.unwrap_or(&[]),
+            ),
             editor_bg: ctx.state.settings.editor_bg,
             editor_fg: ctx.state.settings.editor_fg,
             theme: ctx.state.settings.theme.clone(),

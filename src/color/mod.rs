@@ -20,7 +20,7 @@ pub type CellColorSpans = Vec<CellColorSpan>;
 
 /// Color representation wrapping crossterm's Color enum
 /// Supports 16 colors, 256 colors, and RGB colors
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Color {
     /// Reset to default color
     Reset,

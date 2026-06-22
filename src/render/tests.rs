@@ -2,8 +2,10 @@
 
 use crate::buffer::TextBuffer;
 use crate::character::Character;
+use crate::color::Color;
 use crate::key::Key;
 use crate::layer::Cell;
+use crate::layer::{CellAttrs, CellStyle};
 use crate::layer::{Layer, LayerPriority};
 use crate::mode::Mode;
 use crate::render::{
@@ -1268,4 +1270,113 @@ fn test_cursor_column_at_mid_text() {
     let _ = buf.set_cursor(3);
 
     assert_eq!(calculate_cursor_column_at(&buf, 0, 4, buf.cursor()), 3,);
+}
+
+// Annotation style hashing: must hash style fields directly, not via format!.
+
+#[test]
+fn test_cell_style_hash_no_alloc_and_distinguishes_styles() {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    // CellStyle must implement Hash directly (no Debug-string roundtrip).
+    let style_a = CellStyle {
+        fg: Some(Color::Red),
+        bg: None,
+        attrs: CellAttrs::default(),
+    };
+    let style_b = CellStyle {
+        fg: Some(Color::Blue),
+        bg: None,
+        attrs: CellAttrs::default(),
+    };
+
+    let mut hasher_a1 = DefaultHasher::new();
+    style_a.hash(&mut hasher_a1);
+    let mut hasher_a2 = DefaultHasher::new();
+    style_a.hash(&mut hasher_a2);
+    let mut hasher_b = DefaultHasher::new();
+    style_b.hash(&mut hasher_b);
+
+    assert_eq!(
+        hasher_a1.finish(),
+        hasher_a2.finish(),
+        "hashing the same style twice must be consistent"
+    );
+    assert_ne!(
+        hasher_a1.finish(),
+        hasher_b.finish(),
+        "different styles must hash differently"
+    );
+}
+
+// ContentDrawState: inline/adornment virtual text must affect redraw decisions.
+
+fn inline_render_state<'a>(
+    buf: &'a TextBuffer,
+    state: &'a State,
+    inline: &'a [(usize, usize, String, Color, bool)],
+) -> RenderState<'a> {
+    RenderState {
+        buf,
+        current_mode: Mode::Normal,
+        pending_key: None,
+        pending_count: 0,
+        state,
+        needs_clear: false,
+        tab_width: 4,
+        highlights: None,
+        capture_map: None,
+        injection_highlights: None,
+        skip_content: false,
+        cursor_row_offset: 0,
+        cursor_col_offset: 0,
+        cursor_viewport: None,
+        terminal_cursor: None,
+        custom_highlights: None,
+        plugin_highlights: None,
+        annotation_styles: None,
+        annotation_adornments: None,
+        annotation_inline: Some(inline),
+        annotation_concealed: None,
+        terminal_cell_colors: None,
+        show_line_numbers: false,
+        display_map: None,
+    }
+}
+
+#[test]
+fn test_inline_annotation_change_triggers_content_redraw() {
+    let mut term = MockTerminal::new(10, 80);
+    let mut buf = TextBuffer::new(100).unwrap();
+    buf.insert_str("hello").unwrap();
+    let state = State::new();
+    let mut system = RenderSystem::new(10, 80);
+
+    let inline_v1 = vec![(0usize, 0usize, "A".to_string(), Color::Red, true)];
+    let inline_v2 = vec![(0usize, 0usize, "BB".to_string(), Color::Red, true)];
+
+    system
+        .render(&mut term, inline_render_state(&buf, &state, &inline_v1))
+        .unwrap();
+    let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
+    let first_char_v1 = layer.get_cell(0, 0).unwrap().content;
+
+    // Same revision, scroll, etc, only the inline virtual text changed.
+    system
+        .render(&mut term, inline_render_state(&buf, &state, &inline_v2))
+        .unwrap();
+    let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
+    let first_char_v2 = layer.get_cell(0, 0).unwrap().content;
+
+    assert_eq!(
+        first_char_v1,
+        Character::from('A'),
+        "first inline annotation render should draw the leading virtual text"
+    );
+    assert_eq!(
+        first_char_v2,
+        Character::from('B'),
+        "changing inline annotation text alone must trigger a content redraw"
+    );
 }

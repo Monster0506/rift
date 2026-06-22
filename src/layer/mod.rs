@@ -115,7 +115,7 @@ impl LayerPriority {
 }
 
 /// Text rendering attributes that compose on top of fg/bg color.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct CellAttrs {
     pub bold: bool,
     pub italic: bool,
@@ -131,7 +131,7 @@ impl CellAttrs {
 }
 
 /// A fully-resolved cell style: optional fg/bg plus text attributes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct CellStyle {
     pub fg: Option<Color>,
     pub bg: Option<Color>,

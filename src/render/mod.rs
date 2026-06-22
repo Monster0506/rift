@@ -62,6 +62,10 @@ pub struct ContentDrawState {
     /// ui.link, etc.) so changes to them (e.g. Visual-mode selection) redraw
     /// even when no buffer edit or scroll occurred.
     pub annotation_styles_hash: u64,
+    /// Hash of inline (overlay/leading) and trailing adornment virtual text
+    /// (e.g. LSP inlay hints), so changes redraw even when buffer revision
+    /// and every other field stay the same.
+    pub annotation_text_hash: u64,
     /// Theme/Color context
     pub editor_bg: Option<crate::color::Color>,
     pub editor_fg: Option<crate::color::Color>,
