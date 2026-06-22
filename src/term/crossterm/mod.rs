@@ -32,6 +32,14 @@ impl CrosstermBackend {
     }
 }
 
+// Ensures raw mode and the alternate screen are restored even if a fallible
+// call (e.g. `?`) or a panic drops the backend before `deinit()` runs.
+impl Drop for CrosstermBackend {
+    fn drop(&mut self) {
+        self.deinit();
+    }
+}
+
 impl TerminalBackend for CrosstermBackend {
     fn init(&mut self) -> Result<(), String> {
         // Enable alternate screen buffer (prevents scrolling in main buffer)

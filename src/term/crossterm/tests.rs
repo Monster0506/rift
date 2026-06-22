@@ -3,6 +3,7 @@
 use crate::key::Key;
 use crate::term::crossterm::CrosstermBackend;
 use crate::term::TerminalBackend;
+use std::mem::ManuallyDrop;
 
 #[test]
 fn test_crossterm_backend_new() {
@@ -189,6 +190,23 @@ fn test_translate_key_event() {
     };
     let key = super::translate_key_event(key_event);
     assert_eq!(key, Key::Delete);
+}
+
+#[test]
+fn drop_restores_raw_mode_and_alternate_screen_without_explicit_deinit() {
+    // Simulate post-init state without touching the real terminal, then
+    // drop the backend without calling deinit() to prove Drop cleans up.
+    let backend = CrosstermBackend {
+        writer: std::io::BufWriter::with_capacity(8192, std::io::stdout()),
+        raw_mode_enabled: true,
+        alternate_screen_enabled: true,
+    };
+    let mut wrapped = ManuallyDrop::new(backend);
+    unsafe {
+        ManuallyDrop::drop(&mut wrapped);
+    }
+    assert!(!wrapped.raw_mode_enabled);
+    assert!(!wrapped.alternate_screen_enabled);
 }
 
 #[test]
