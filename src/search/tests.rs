@@ -668,3 +668,29 @@ fn test_smartcase_various_letters_no_hang() {
         handle.join().unwrap();
     }
 }
+
+#[test]
+fn compile_regex_plain_pattern_applies_smartcase() {
+    // A plain lowercase regex (no slashes) should be case-insensitive by
+    // default, matching the literal fast path's smartcase behavior.
+    let (regex, _) = compile_regex("hello.*world").expect("should compile");
+    let matches: Vec<_> = regex.find_all("HELLO there WORLD").collect();
+    assert_eq!(
+        matches.len(),
+        1,
+        "smartcase should make this match case-insensitively"
+    );
+}
+
+#[test]
+fn compile_regex_interior_slash_is_not_treated_as_rift_format() {
+    // A regex with no leading slash but an interior slash should be compiled
+    // as a plain pattern, not misparsed as `pattern/flags`.
+    let (regex, _) = compile_regex("foo.*/bar").expect("should compile");
+    let matches: Vec<_> = regex.find_all("foo123/bar").collect();
+    assert_eq!(
+        matches.len(),
+        1,
+        "interior slash should be part of the pattern, not a flag delimiter"
+    );
+}

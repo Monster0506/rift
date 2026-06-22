@@ -658,21 +658,21 @@ pub fn find_iter<'a, 'c, B: BufferView + ?Sized>(
 
 /// Compile query into Regex
 pub fn compile_regex(query: &str) -> Result<(RiftRegex, String), RiftError> {
-    let is_rift_format = query.contains('/');
+    // Rift format (`pattern/flags`) only applies when the query is delimiter-led,
+    // matching `extract_pattern`'s own definition.
+    let is_rift_format = query.starts_with('/');
 
     let (pattern, mut flags) = if is_rift_format {
-        let query_for_parser = if query.starts_with('/') {
-            std::borrow::Cow::Borrowed(query)
-        } else {
-            std::borrow::Cow::Owned(format!("/{}", query))
-        };
-
-        let (pat, flags) = parse_rift_format(&query_for_parser).map_err(|e| {
+        let (pat, flags) = parse_rift_format(query).map_err(|e| {
             RiftError::new(ErrorType::Internal, "REGEX_PARSE_ERROR", format!("{:?}", e))
         })?;
         (pat, flags)
     } else {
-        (query.to_string(), monster_regex::Flags::default())
+        let mut flags = monster_regex::Flags::default();
+        if flags.ignore_case.is_none() {
+            flags.ignore_case = Some(!query.chars().any(|c| c.is_uppercase()));
+        }
+        (query.to_string(), flags)
     };
 
     flags.multiline = true;
