@@ -118,6 +118,28 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
+    /// Create an in-memory scratch buffer with `lines` as its content and switch to it.
+    pub fn create_scratch_buffer(
+        &mut self,
+        title: String,
+        lines: &[String],
+    ) -> Result<crate::document::DocumentId, RiftError> {
+        let id = self.document_manager.next_id();
+        let doc = crate::document::Document::new_scratch(id, title, lines)?;
+        self.document_manager.add_document(doc);
+        self.document_manager.switch_to_document(id)?;
+        self.split_tree.focused_window_mut().document_id = id;
+        self.sync_state_with_active_document();
+        let _ = self.force_full_redraw();
+        self.plugin_host
+            .dispatch(&crate::plugin::EditorEvent::BufOpen {
+                buf: id,
+                path: None,
+                filetype: None,
+            });
+        Ok(id)
+    }
+
     /// Open a new terminal buffer
     pub fn open_terminal(&mut self, shell_cmd: Option<String>) -> Result<(), RiftError> {
         let size = self
@@ -184,8 +206,6 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             Ok((None, _stats)) => {
-                // No match found - don't move cursor, no notification needed
-                // The user can see from the cursor position that nothing was found
                 false
             }
             Err(e) => {

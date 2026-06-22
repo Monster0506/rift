@@ -57,6 +57,34 @@ fn test_new_directory_show_hidden_defaults_false() {
 }
 
 #[test]
+fn test_new_scratch_has_no_path() {
+    let lines = vec!["one".to_string(), "two".to_string(), "three".to_string()];
+    let doc = Document::new_scratch(1, "[Scratch] test".to_string(), &lines).unwrap();
+    assert!(doc.path().is_none());
+    assert_eq!(doc.display_name(), "[Scratch] test");
+    assert_eq!(doc.kind.kind_str(), "scratch");
+}
+
+#[test]
+fn test_new_scratch_content_joins_lines_with_newline() {
+    use crate::buffer::api::BufferView;
+    let lines = vec!["one".to_string(), "two".to_string(), "three".to_string()];
+    let doc = Document::new_scratch(1, "scratch".to_string(), &lines).unwrap();
+    let text: String = doc
+        .buffer
+        .chars(0..doc.buffer.len())
+        .map(|c| c.to_string())
+        .collect();
+    assert_eq!(text, "one\ntwo\nthree");
+}
+
+#[test]
+fn test_new_scratch_empty_lines() {
+    let doc = Document::new_scratch(1, "scratch".to_string(), &[]).unwrap();
+    assert_eq!(doc.buffer.len(), 0);
+}
+
+#[test]
 fn test_new_undotree_kind() {
     let doc = Document::new_undotree(1, 42).unwrap();
     assert!(doc.is_undotree());

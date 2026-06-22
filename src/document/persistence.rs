@@ -114,6 +114,7 @@ impl Document {
             BufferKind::ClipboardEntry { entry_index: None } => Cow::Borrowed("[Clipboard:new]"),
             BufferKind::LocationList { .. } => Cow::Borrowed("[Locations]"),
             BufferKind::Regions { .. } => Cow::Borrowed("[Regions]"),
+            BufferKind::Scratch { title } => Cow::Owned(title.clone()),
             BufferKind::File => self
                 .file_path
                 .as_ref()

@@ -119,6 +119,9 @@ pub enum BufferKind {
     /// `gv` regions window: a read-only list of the active document's
     /// banked `SelectionSet`, one line per region.
     Regions { source_doc_id: DocumentId },
+    /// Plugin-created in-memory buffer with no disk path (`rift.create_scratch_buf`).
+    /// `title` is shown as the tab label in place of a filename.
+    Scratch { title: String },
 }
 
 impl BufferKind {
@@ -134,6 +137,7 @@ impl BufferKind {
             BufferKind::ClipboardEntry { .. } => "clipboard_entry",
             BufferKind::LocationList { .. } => "location_list",
             BufferKind::Regions { .. } => "regions",
+            BufferKind::Scratch { .. } => "scratch",
         }
     }
 }

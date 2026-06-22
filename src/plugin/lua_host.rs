@@ -1194,6 +1194,37 @@ impl LuaHost {
             api.set("close_buf", f)?;
         }
 
+        // rift.create_scratch_buf(name, lines) — create an in-memory buffer
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, (name, lines): (String, LuaTable)| {
+                let mut v = Vec::new();
+                for s in lines.sequence_values::<String>() {
+                    v.push(s?);
+                }
+                sh.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .mutations
+                    .push(PluginMutation::CreateScratchBuf { name, lines: v });
+                Ok(())
+            })?;
+            api.set("create_scratch_buf", f)?;
+        }
+
+        // rift.reload_buf([force]) — reload the active buffer's content from disk, discarding in-memory edits if `force`.
+        {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |_, force: Option<bool>| {
+                sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
+                    PluginMutation::ReloadBuffer {
+                        force: force.unwrap_or(false),
+                    },
+                );
+                Ok(())
+            })?;
+            api.set("reload_buf", f)?;
+        }
+
         // rift.get_commands() → sequence of { name, description }
         // Returns all registered plugin commands (both Rust and Lua).
         {

@@ -307,6 +307,45 @@ impl Document {
         })
     }
 
+    /// Create an in-memory buffer with no disk path, populated with `lines`.
+    /// Used by `rift.create_scratch_buf`
+    pub fn new_scratch(
+        id: super::DocumentId,
+        title: String,
+        lines: &[String],
+    ) -> Result<Self, RiftError> {
+        let content = lines.join("\n");
+        let mut buffer = TextBuffer::new(content.len().max(64))?;
+        let _ = buffer.insert_str(&content);
+        buffer.move_to_start();
+        Ok(Document {
+            id,
+            buffer,
+            options: DocumentOptions::default(),
+            file_path: None,
+            is_read_only: false,
+            interface_mode: false,
+            syntax: None,
+            history: UndoTree::new(),
+            current_transaction: None,
+            transaction_depth: 0,
+            view_state: ViewState::default(),
+            terminal: None,
+            terminal_cursor: None,
+            kind: BufferKind::Scratch { title },
+            custom_highlights: vec![],
+            plugin_highlights: vec![],
+            terminal_cell_colors: vec![],
+            highlight_slots: std::collections::HashMap::new(),
+            annotations: AnnotationStore::new(),
+            selection_set: crate::selection::SelectionSet::default(),
+            pending_annotation_snapshot: None,
+            annotation_undo_stack: Vec::new(),
+            annotation_redo_stack: Vec::new(),
+            document_version: 0,
+        })
+    }
+
     pub fn new_clipboard(id: super::DocumentId) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         Ok(Document {

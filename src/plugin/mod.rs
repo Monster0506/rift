@@ -198,6 +198,13 @@ pub enum PluginMutation {
         presentation: Option<crate::annotations::Presentation>,
         description: Option<String>,
     },
+    /// Create an in-memory buffer with no disk path, populated with `lines`,
+    /// and switch to it. Fires `BufOpen` once applied, same as a file load.
+    CreateScratchBuf { name: String, lines: Vec<String> },
+    /// Reload the active buffer's content from disk, discarding in-memory
+    /// edits if `force`. The Lua-facing counterpart of `open_file(None, _)`,
+    /// which `rift.open_file` cannot reach since its `path` is mandatory.
+    ReloadBuffer { force: bool },
 }
 
 /// Where a plugin-authored annotation is anchored.

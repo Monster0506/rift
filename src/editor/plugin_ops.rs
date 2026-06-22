@@ -644,6 +644,17 @@ impl<T: TerminalBackend> Editor<T> {
                 PluginMutation::CloseBuffer { force } => {
                     self.do_quit(force);
                 }
+                PluginMutation::CreateScratchBuf { name, lines } => {
+                    if let Err(e) = self.create_scratch_buffer(name, &lines) {
+                        self.state.notify(
+                            crate::notification::NotificationType::Error,
+                            format!("create_scratch_buf failed: {}", e.message),
+                        );
+                    }
+                }
+                PluginMutation::ReloadBuffer { force } => {
+                    let _ = self.open_file(None, force);
+                }
                 PluginMutation::MoveWindow { direction } => {
                     let size = self.term.get_size().unwrap();
                     let layouts = self

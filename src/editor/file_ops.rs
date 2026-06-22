@@ -50,7 +50,8 @@ impl<T: TerminalBackend> Editor<T> {
                 | BufferKind::Terminal
                 | BufferKind::Messages { .. }
                 | BufferKind::LocationList { .. }
-                | BufferKind::Regions { .. } => {
+                | BufferKind::Regions { .. }
+                | BufferKind::Scratch { .. } => {
                     self.state.handle_error(RiftError::new(
                         ErrorType::Io,
                         "CANT_SAVE",
