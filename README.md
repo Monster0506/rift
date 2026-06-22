@@ -113,9 +113,7 @@ I use this daily and primarily.
 
 Todo:
 - registers + unified yank/paste/delete
-- visual selection (v, V, Ctrl+V)
 - macros (q{reg} / @{reg})
-- text objects (iw, aw, i", a(, etc.)
 - jump list (Ctrl+O / Ctrl+I)
 - marks and jumps (m{a-z}, '{mark})
 - change list (g; / g,)

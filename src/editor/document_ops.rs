@@ -205,9 +205,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let _ = doc.buffer.set_cursor(m.range.start);
                 true
             }
-            Ok((None, _stats)) => {
-                false
-            }
+            Ok((None, _stats)) => false,
             Err(e) => {
                 // Actual search error (e.g., regex compilation failure)
                 self.state.notify(
