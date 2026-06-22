@@ -454,6 +454,16 @@ impl TextBuffer {
         crate::movement::buffer::move_word_left(self)
     }
 
+    pub fn move_big_word_right(&mut self) -> bool {
+        self.desired_col = None;
+        crate::movement::buffer::move_big_word_right(self)
+    }
+
+    pub fn move_big_word_left(&mut self) -> bool {
+        self.desired_col = None;
+        crate::movement::buffer::move_big_word_left(self)
+    }
+
     pub fn move_paragraph_forward(&mut self) -> bool {
         self.desired_col = None;
         crate::movement::buffer::move_paragraph_forward(self)

@@ -89,6 +89,21 @@ fn test_word_left_symbols() {
 }
 
 #[test]
+fn test_big_word_right_skips_punctuation() {
+    let mut buffer = create_buffer("foo->bar baz");
+    apply_motion(Motion::NextBigWord, &mut buffer);
+    assert_eq!(buffer.cursor(), 9); // 'b' of "baz", whole token jumped in one motion
+}
+
+#[test]
+fn test_big_word_left_skips_punctuation() {
+    let mut buffer = create_buffer("foo bar->baz");
+    buffer.move_to_end();
+    apply_motion(Motion::PreviousBigWord, &mut buffer);
+    assert_eq!(buffer.cursor(), 4); // 'b' of "bar->baz", whole token in one motion
+}
+
+#[test]
 fn test_find_char_forward_basic() {
     let mut buf = create_buffer("hello world");
     apply_motion(Motion::FindCharForward('l'), &mut buf);

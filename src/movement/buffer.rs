@@ -2,7 +2,7 @@
 //!
 //! These functions work with TextBuffer for insert mode navigation.
 
-use super::classify::{classify_character, is_sentence_end, CharClass};
+use super::classify::{classify_character, is_sentence_end, is_word_char, CharClass};
 use crate::buffer::TextBuffer;
 use crate::character::Character;
 
@@ -105,6 +105,87 @@ pub fn move_word_left(buffer: &mut TextBuffer) -> bool {
             let prev_pos = buffer.cursor() - 1;
             match buffer.char_at(prev_pos) {
                 Some(pc) if classify_character(pc) == target_class => {
+                    buffer.move_left();
+                }
+                _ => break,
+            }
+        }
+    }
+
+    buffer.cursor() != start_pos
+}
+
+/// Move cursor forward by one WORD (whitespace-delimited, no punctuation boundary)
+///
+/// Returns `true` if the cursor moved, `false` if already at end
+pub fn move_big_word_right(buffer: &mut TextBuffer) -> bool {
+    let len = buffer.len();
+    if buffer.cursor() >= len {
+        return false;
+    }
+    let start_pos = buffer.cursor();
+
+    if let Some(curr) = buffer.char_at(buffer.cursor()) {
+        let on_whitespace = !is_word_char(curr.to_char_lossy());
+
+        // 1. Skip the current run (non-whitespace or whitespace)
+        while buffer.cursor() < len {
+            match buffer.char_at(buffer.cursor()) {
+                Some(c) if is_word_char(c.to_char_lossy()) != on_whitespace => {
+                    buffer.move_right();
+                }
+                _ => break,
+            }
+        }
+
+        // 2. Skip trailing whitespace if we started on a non-whitespace run
+        if !on_whitespace {
+            while buffer.cursor() < len {
+                match buffer.char_at(buffer.cursor()) {
+                    Some(c) if !is_word_char(c.to_char_lossy()) => {
+                        buffer.move_right();
+                    }
+                    _ => break,
+                }
+            }
+        }
+    }
+
+    buffer.cursor() != start_pos
+}
+
+/// Move cursor backward by one WORD (whitespace-delimited, no punctuation boundary)
+///
+/// Returns `true` if the cursor moved, `false` if already at beginning
+pub fn move_big_word_left(buffer: &mut TextBuffer) -> bool {
+    if buffer.cursor() == 0 {
+        return false;
+    }
+    let start_pos = buffer.cursor();
+
+    buffer.move_left();
+
+    // 1. Skip whitespace backwards
+    while buffer.cursor() > 0 {
+        match buffer.char_at(buffer.cursor()) {
+            Some(c) if !is_word_char(c.to_char_lossy()) => {
+                buffer.move_left();
+            }
+            _ => break,
+        }
+    }
+
+    // 2. Find start of current non-whitespace run
+    if let Some(curr) = buffer.char_at(buffer.cursor()) {
+        if !is_word_char(curr.to_char_lossy()) {
+            // Still whitespace? Means start of file is whitespace
+            return true;
+        }
+
+        while buffer.cursor() > 0 {
+            let prev_pos = buffer.cursor() - 1;
+            match buffer.char_at(prev_pos) {
+                Some(pc) if is_word_char(pc.to_char_lossy()) => {
                     buffer.move_left();
                 }
                 _ => break,

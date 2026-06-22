@@ -131,10 +131,10 @@ impl Motion {
                 buf.move_word_left();
             }
             Motion::NextBigWord => {
-                buf.move_word_right();
+                buf.move_big_word_right();
             }
             Motion::PreviousBigWord => {
-                buf.move_word_left();
+                buf.move_big_word_left();
             }
             Motion::NextParagraph => {
                 buf.move_paragraph_forward();
