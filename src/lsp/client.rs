@@ -19,7 +19,7 @@ pub enum RawLspMessage {
     Notification { method: String, params: Value },
     /// A request from the server that needs a response (has both method and id).
     ServerRequest {
-        id: u64,
+        id: protocol::RequestId,
         method: String,
         params: Value,
     },
@@ -92,11 +92,11 @@ impl LspClient {
     }
 
     /// Send a JSON-RPC response to a server-initiated request.
-    pub fn send_response(&mut self, id: u64, result: Value) {
+    pub fn send_response(&mut self, id: protocol::RequestId, result: Value) {
         #[derive(serde::Serialize)]
         struct Response {
             jsonrpc: &'static str,
-            id: u64,
+            id: protocol::RequestId,
             result: Value,
         }
         self.write_message(&Response {
@@ -162,11 +162,15 @@ fn spawn_reader_thread(stdout: ChildStdout, tx: Sender<RawLspMessage>) -> thread
 fn parse_rpc_message(msg: JsonRpcMessage) -> Option<RawLspMessage> {
     if let Some(method) = msg.method {
         let params = msg.params.unwrap_or(Value::Null);
-        // Server-initiated request has both method and id; needs a response.
-        if let Some(Value::Number(n)) = &msg.id {
-            if let Some(id) = n.as_u64() {
-                return Some(RawLspMessage::ServerRequest { id, method, params });
-            }
+        // A method with an id (number or string, both valid) is a
+        // server-initiated request; with no id at all, it's a notification.
+        let request_id = match &msg.id {
+            Some(Value::Number(n)) => n.as_u64().map(protocol::RequestId::Number),
+            Some(Value::String(s)) => Some(protocol::RequestId::String(s.clone())),
+            _ => None,
+        };
+        if let Some(id) = request_id {
+            return Some(RawLspMessage::ServerRequest { id, method, params });
         }
         return Some(RawLspMessage::Notification { method, params });
     }
@@ -188,4 +192,53 @@ fn parse_rpc_message(msg: JsonRpcMessage) -> Option<RawLspMessage> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn msg(id: Option<Value>, method: Option<&str>) -> JsonRpcMessage {
+        JsonRpcMessage {
+            jsonrpc: "2.0".to_string(),
+            id,
+            method: method.map(str::to_string),
+            params: Some(Value::Null),
+            result: None,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn server_request_with_string_id_is_not_misrouted_as_notification() {
+        let parsed = parse_rpc_message(msg(
+            Some(Value::String("req-1".to_string())),
+            Some("workspace/configuration"),
+        ));
+        match parsed {
+            Some(RawLspMessage::ServerRequest { id, method, .. }) => {
+                assert_eq!(id, protocol::RequestId::String("req-1".to_string()));
+                assert_eq!(method, "workspace/configuration");
+            }
+            other => panic!("expected ServerRequest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn server_request_with_numeric_id_still_works() {
+        let parsed =
+            parse_rpc_message(msg(Some(Value::from(7)), Some("client/registerCapability")));
+        match parsed {
+            Some(RawLspMessage::ServerRequest { id, .. }) => {
+                assert_eq!(id, protocol::RequestId::Number(7));
+            }
+            other => panic!("expected ServerRequest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn method_with_no_id_is_a_notification() {
+        let parsed = parse_rpc_message(msg(None, Some("textDocument/publishDiagnostics")));
+        assert!(matches!(parsed, Some(RawLspMessage::Notification { .. })));
+    }
 }

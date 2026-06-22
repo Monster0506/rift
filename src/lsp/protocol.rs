@@ -105,6 +105,15 @@ pub struct JsonRpcNotification {
     pub params: Option<Value>,
 }
 
+/// A JSON-RPC request/response id, which the spec permits to be either a
+/// number or a string. Server-initiated requests may use either.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum RequestId {
+    Number(u64),
+    String(String),
+}
+
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcMessage {
     #[allow(dead_code)]
