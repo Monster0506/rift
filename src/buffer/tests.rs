@@ -10,6 +10,22 @@ fn test_new_buffer() {
 }
 
 #[test]
+fn test_delete_range_rejects_overflowing_bounds_without_panicking() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    buffer.insert_str("hello").unwrap();
+    assert!(!buffer.delete_range(usize::MAX - 1, 10));
+    assert_eq!(buffer.to_string(), "hello");
+}
+
+#[test]
+fn test_replace_range_rejects_overflowing_bounds_without_panicking() {
+    let mut buffer = TextBuffer::new(10).unwrap();
+    buffer.insert_str("hello").unwrap();
+    assert!(!buffer.replace_range(usize::MAX - 1, 10, &[Character::from('x')]));
+    assert_eq!(buffer.to_string(), "hello");
+}
+
+#[test]
 fn test_insert_char() {
     let mut buffer = TextBuffer::new(10).unwrap();
     buffer.insert_char('a').unwrap();

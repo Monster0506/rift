@@ -234,7 +234,9 @@ impl TextBuffer {
         if count == 0 {
             return false;
         }
-        let end = start + count;
+        let Some(end) = start.checked_add(count) else {
+            return false;
+        };
         if end > self.len() {
             return false;
         }
@@ -258,7 +260,9 @@ impl TextBuffer {
     /// Replace `count` characters at `start` with `chars` in a single rope pass.
     /// Cursor is moved to `start + chars.len()` after the replace.
     pub fn replace_range(&mut self, start: usize, count: usize, chars: &[Character]) -> bool {
-        let end = start + count;
+        let Some(end) = start.checked_add(count) else {
+            return false;
+        };
         if end > self.len() {
             return false;
         }

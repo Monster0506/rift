@@ -279,7 +279,12 @@ impl PieceTable {
         get_line_at_pos(self.root.as_deref(), pos, &self.original, &self.add)
     }
 
-    /// Convert character index to byte offset
+    /// Convert character index to byte offset.
+    ///
+    /// O(log n) to find the target piece, but O(piece_len) within it (no
+    /// per-piece prefix-sum cache yet), so this degrades to O(piece_len) on a
+    /// single large piece such as a freshly opened file (one `Original` piece
+    /// spanning the whole buffer).
     pub fn char_to_byte(&self, char_index: usize) -> usize {
         if char_index >= self.len() {
             return self.byte_len();
@@ -289,6 +294,8 @@ impl PieceTable {
 
     /// Convert byte offset to character index
     /// Returns the index of the character containing the byte, or the char starting at that byte.
+    ///
+    /// Same O(piece_len) in-piece scan caveat as [`Self::char_to_byte`].
     pub fn byte_to_char(&self, byte_offset: usize) -> usize {
         if byte_offset >= self.byte_len() {
             return self.len();
@@ -1116,6 +1123,8 @@ fn find_nth_newline_end(
     }
 }
 
+/// O(log n) to the target piece, then O(piece_len) to count newlines within
+/// it via `count_stats` -- same in-piece scan caveat as `char_to_byte`.
 fn get_line_at_pos(
     node: Option<&Node>,
     pos: usize,

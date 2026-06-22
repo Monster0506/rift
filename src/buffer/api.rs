@@ -18,6 +18,13 @@
 //! deletion operations. Ropes and piece tables should maintain cumulative
 //! code‑point counts per node or segment and use binary search.
 //!
+//! Known gap: the rope implementation finds the target *piece* in O(log n)
+//! but still scans linearly within it (no per-piece prefix-sum cache), so a
+//! single large piece -- e.g. a freshly opened file, which starts as one
+//! `Original` piece spanning the whole buffer -- degrades this to
+//! O(piece_len) until edits fragment it. See `char_to_byte`/`byte_to_char`
+//! in `buffer::rope`.
+//!
 //! ## Revision semantics
 //!
 //! Revision increments only on text mutations (insert, delete) or when a
