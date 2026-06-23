@@ -783,13 +783,16 @@ impl<T: TerminalBackend> Editor<T> {
         let preview_win_id = self.split_tree.focused_window_id();
         let original_doc_id = self.split_tree.focused_window().document_id;
 
-        let dir_win_id = self.split_tree.split(
-            crate::split::tree::SplitDirection::Horizontal,
-            preview_win_id,
-            loc_doc_id,
-            rows,
-            cols,
-        );
+        let dir_win_id = self
+            .split_tree
+            .split(
+                crate::split::tree::SplitDirection::Horizontal,
+                preview_win_id,
+                loc_doc_id,
+                rows,
+                cols,
+            )
+            .expect("preview_win_id is the focused window, which is always a valid leaf");
 
         self.split_tree.set_focus(dir_win_id);
         let _ = self.document_manager.switch_to_document(loc_doc_id);

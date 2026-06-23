@@ -297,7 +297,9 @@ impl<T: TerminalBackend> Editor<T> {
                     size.rows as usize,
                     size.cols as usize,
                 );
-                self.switch_focus(new_id);
+                if let Some(new_id) = new_id {
+                    self.switch_focus(new_id);
+                }
             }
             SplitSubcommand::File(path) => {
                 let path_buf = std::path::PathBuf::from(&path);
@@ -337,7 +339,9 @@ impl<T: TerminalBackend> Editor<T> {
                     size.rows as usize,
                     size.cols as usize,
                 );
-                self.switch_focus(new_id);
+                if let Some(new_id) = new_id {
+                    self.switch_focus(new_id);
+                }
             }
             SplitSubcommand::Navigate(dir) => {
                 let size = self.term.get_size().unwrap();

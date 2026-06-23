@@ -215,13 +215,16 @@ impl<T: TerminalBackend> Editor<T> {
             w.document_id = dir_doc_id;
         }
 
-        let preview_win_id = self.split_tree.split(
-            crate::split::tree::SplitDirection::Vertical,
-            dir_win_id,
-            preview_doc_id,
-            rows,
-            cols,
-        );
+        let preview_win_id = self
+            .split_tree
+            .split(
+                crate::split::tree::SplitDirection::Vertical,
+                dir_win_id,
+                preview_doc_id,
+                rows,
+                cols,
+            )
+            .expect("dir_win_id is the focused window, which is always a valid leaf");
 
         self.split_tree.set_focus(dir_win_id);
         let _ = self.document_manager.switch_to_document(dir_doc_id);
@@ -397,13 +400,16 @@ impl<T: TerminalBackend> Editor<T> {
             w.document_id = index_doc_id;
         }
 
-        let preview_win_id = self.split_tree.split(
-            crate::split::tree::SplitDirection::Vertical,
-            index_win_id,
-            preview_doc_id,
-            rows,
-            cols,
-        );
+        let preview_win_id = self
+            .split_tree
+            .split(
+                crate::split::tree::SplitDirection::Vertical,
+                index_win_id,
+                preview_doc_id,
+                rows,
+                cols,
+            )
+            .expect("index_win_id is the focused window, which is always a valid leaf");
 
         self.split_tree.set_focus(index_win_id);
         let _ = self.document_manager.switch_to_document(index_doc_id);
@@ -579,13 +585,16 @@ impl<T: TerminalBackend> Editor<T> {
             w.document_id = ut_id;
         }
 
-        let preview_win_id = self.split_tree.split(
-            crate::split::tree::SplitDirection::Vertical,
-            dir_win_id,
-            preview_id,
-            rows,
-            cols,
-        );
+        let preview_win_id = self
+            .split_tree
+            .split(
+                crate::split::tree::SplitDirection::Vertical,
+                dir_win_id,
+                preview_id,
+                rows,
+                cols,
+            )
+            .expect("dir_win_id is the focused window, which is always a valid leaf");
 
         if let Some(linked_doc) = self.document_manager.get_document(linked_id) {
             let (text, seqs, lc) = crate::undotree_view::render_tree_to_text(&linked_doc.history);

@@ -52,7 +52,11 @@ impl SplitTree {
         new_doc_id: DocumentId,
         viewport_rows: usize,
         viewport_cols: usize,
-    ) -> WindowId {
+    ) -> Option<WindowId> {
+        if !self.windows.contains_key(&target_id) || !Self::is_leaf(&self.root, target_id) {
+            return None;
+        }
+
         let new_id = self.next_window_id;
         self.next_window_id += 1;
 
@@ -79,7 +83,16 @@ impl SplitTree {
             new_id,
         );
 
-        new_id
+        Some(new_id)
+    }
+
+    fn is_leaf(node: &SplitNode, target_id: WindowId) -> bool {
+        match node {
+            SplitNode::Leaf(id) => *id == target_id,
+            SplitNode::Split { first, second, .. } => {
+                Self::is_leaf(first, target_id) || Self::is_leaf(second, target_id)
+            }
+        }
     }
 
     fn replace_leaf(
