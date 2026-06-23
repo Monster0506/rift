@@ -3,6 +3,15 @@ use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+/// Whether `path`'s parent directory exists, so a path can only be opened as
+/// a new file if no missing directories would need to be created for it.
+pub(crate) fn parent_dir_missing(path: &Path) -> bool {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => !parent.exists(),
+        _ => false,
+    }
+}
+
 /// Manages multiple open documents (tabs)
 pub struct DocumentManager {
     /// Active documents mapped by ID
@@ -316,29 +325,27 @@ impl DocumentManager {
 
     /// Open a file from disk, or create a new one if it doesn't exist
     fn open_existing_or_new_file(&mut self, path_str: &str) -> Result<(), RiftError> {
-        let document_result = Document::from_file(self.next_document_id, path_str);
+        let path = Path::new(path_str);
 
-        let document = match document_result {
-            Ok(doc) => doc,
-            Err(e) => {
-                if e.kind == ErrorType::Io
-                    && e.message
-                        .contains(crate::constants::errors::MSG_FILE_NOT_FOUND_WIN)
-                {
-                    if Path::new(path_str).exists() {
-                        // File exists but we couldn't read it (AccessDenied,
-                        // IsDir, etc.)
-                        return Err(e);
-                    } else {
-                        // File doesn't exist, so we are creating a new one
-                        let mut doc = Document::new(self.next_document_id)?;
-                        doc.set_path(path_str);
-                        doc
-                    }
-                } else {
-                    return Err(e);
-                }
+        let document = if path.exists() {
+            if path.is_dir() {
+                return Err(RiftError::new(
+                    ErrorType::Execution,
+                    crate::constants::errors::NOT_A_FILE,
+                    crate::constants::errors::MSG_NOT_A_FILE,
+                ));
             }
+            Document::from_file(self.next_document_id, path_str)?
+        } else if parent_dir_missing(path) {
+            return Err(RiftError::new(
+                ErrorType::Io,
+                crate::constants::errors::PARENT_DIR_MISSING,
+                crate::constants::errors::MSG_PARENT_DIR_MISSING,
+            ));
+        } else {
+            let mut doc = Document::new(self.next_document_id)?;
+            doc.set_path(path_str);
+            doc
         };
 
         self.add_document(document);
@@ -494,5 +501,49 @@ impl DocumentManager {
 impl Default for DocumentManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_file_creates_empty_document_for_nonexistent_path_in_existing_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("brand_new.txt");
+        let path_str = path.to_string_lossy().into_owned();
+
+        let mut mgr = DocumentManager::new();
+        mgr.open_file(Some(path_str), false).unwrap();
+
+        let doc = mgr.active_document().unwrap();
+        assert_eq!(doc.path(), Some(path.as_path()));
+        assert_eq!(doc.buffer.len(), 0);
+        assert!(!path.exists(), "opening must not touch disk");
+    }
+
+    #[test]
+    fn open_file_rejects_path_whose_parent_directory_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("no_such_subdir").join("file.txt");
+        let path_str = path.to_string_lossy().into_owned();
+
+        let mut mgr = DocumentManager::new();
+        let err = mgr.open_file(Some(path_str), false).unwrap_err();
+
+        assert_eq!(err.code, crate::constants::errors::PARENT_DIR_MISSING);
+        assert!(mgr.active_document().is_none());
+    }
+
+    #[test]
+    fn open_file_rejects_existing_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path_str = dir.path().to_string_lossy().into_owned();
+
+        let mut mgr = DocumentManager::new();
+        let err = mgr.open_file(Some(path_str), false).unwrap_err();
+
+        assert_eq!(err.code, crate::constants::errors::NOT_A_FILE);
     }
 }

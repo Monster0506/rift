@@ -67,7 +67,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.document_manager.open_file(Some(path_str), force)?;
                 // Restore the switched-to document's view state
                 self.restore_view_state();
-            } else {
+            } else if path.exists() {
                 // Save current document's view state before switching
                 self.save_current_view_state();
                 // Not open, create placeholder and async load
@@ -77,6 +77,17 @@ impl<T: TerminalBackend> Editor<T> {
                     path.clone(),
                 );
                 self.job_manager.spawn(job);
+            } else if crate::document::manager::parent_dir_missing(&path) {
+                return Err(RiftError::new(
+                    ErrorType::Io,
+                    crate::constants::errors::PARENT_DIR_MISSING,
+                    crate::constants::errors::MSG_PARENT_DIR_MISSING,
+                ));
+            } else {
+                // Brand-new file: nothing on disk to load, so open an empty
+                // buffer directly instead of spawning a job that would error.
+                self.save_current_view_state();
+                self.document_manager.create_placeholder(&path_str)?;
             }
         } else {
             // Reload current
@@ -236,6 +247,90 @@ impl<T: TerminalBackend> Editor<T> {
 #[cfg(test)]
 mod tests {
     use super::resolve_link_path_in;
+    use crate::action::{Action, EditorAction};
+    use crate::editor::Editor;
+    use crate::test_utils::MockTerminal;
+
+    fn create_editor() -> Editor<MockTerminal> {
+        Editor::new(MockTerminal::new(24, 80)).unwrap()
+    }
+
+    fn drain_jobs(editor: &mut Editor<MockTerminal>) {
+        use std::time::{Duration, Instant};
+        let deadline = Instant::now() + Duration::from_millis(500);
+        loop {
+            match editor
+                .job_manager
+                .receiver()
+                .recv_timeout(Duration::from_millis(20))
+            {
+                Ok(msg) => {
+                    let _ = editor.handle_job_message(msg);
+                }
+                Err(_) => {
+                    if Instant::now() >= deadline {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn open_file_on_nonexistent_path_opens_empty_buffer_with_no_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("brand_new.txt");
+        let path_str = path.to_string_lossy().into_owned();
+
+        let mut editor = create_editor();
+        editor.open_file(Some(path_str), false).unwrap();
+        drain_jobs(&mut editor);
+
+        let doc = editor.document_manager.active_document().unwrap();
+        assert_eq!(doc.path(), Some(path.as_path()));
+        assert_eq!(doc.buffer.len(), 0);
+        assert!(!path.exists(), "opening must not touch disk");
+        assert!(
+            editor.state.error_manager.notifications().is_empty(),
+            "opening a brand-new file should not raise an error notification"
+        );
+    }
+
+    #[test]
+    fn write_after_opening_nonexistent_path_creates_the_file_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("brand_new.txt");
+        let path_str = path.to_string_lossy().into_owned();
+
+        let mut editor = create_editor();
+        editor.open_file(Some(path_str), false).unwrap();
+        editor.handle_action(&Action::Editor(EditorAction::InsertChar('h')));
+        editor.do_save();
+        drain_jobs(&mut editor);
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "h");
+    }
+
+    #[test]
+    fn open_file_rejects_path_whose_parent_directory_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("no_such_subdir").join("file.txt");
+        let path_str = path.to_string_lossy().into_owned();
+
+        let mut editor = create_editor();
+        let err = editor.open_file(Some(path_str), false).unwrap_err();
+
+        assert_eq!(err.code, crate::constants::errors::PARENT_DIR_MISSING);
+        assert!(
+            editor
+                .document_manager
+                .active_document()
+                .unwrap()
+                .path()
+                .is_none(),
+            "no document should be created for a path needing a missing directory"
+        );
+    }
 
     #[test]
     fn resolve_link_rebases_onto_document_dir() {

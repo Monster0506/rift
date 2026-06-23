@@ -1358,6 +1358,59 @@ fn test_execute_edit_directory_fails() {
 }
 
 #[test]
+fn test_execute_edit_missing_parent_dir_fails() {
+    let mut state = State::new();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("no_such_subdir").join("file.txt");
+    let command = ParsedCommand::Edit {
+        path: Some(path.to_string_lossy().into_owned()),
+        bangs: 0,
+    };
+
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    assert_eq!(result, ExecutionResult::Failure);
+    assert!(state
+        .error_manager
+        .notifications()
+        .iter_active()
+        .any(|n| n.message.contains("parent directory")));
+}
+
+#[test]
+fn test_execute_edit_nonexistent_file_in_existing_dir_succeeds() {
+    let mut state = State::new();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("brand_new.txt");
+    let command = ParsedCommand::Edit {
+        path: Some(path.to_string_lossy().into_owned()),
+        bangs: 0,
+    };
+
+    let settings_registry = create_settings_registry();
+    let document_settings_registry = create_document_settings_registry();
+    let mut document = Document::new(1).unwrap();
+    let result = CommandExecutor::execute(
+        command,
+        &mut state,
+        &mut document,
+        &settings_registry,
+        &document_settings_registry,
+    );
+
+    assert!(matches!(result, ExecutionResult::Edit { .. }));
+}
+
+#[test]
 fn test_execute_file() {
     let mut state = State::new();
     let command = ParsedCommand::File {

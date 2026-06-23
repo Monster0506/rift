@@ -260,6 +260,15 @@ impl CommandExecutor {
                         ));
                         return ExecutionResult::Failure;
                     }
+                    if !path_buf.exists() && crate::document::manager::parent_dir_missing(path_buf)
+                    {
+                        state.handle_error(RiftError::new(
+                            ErrorType::Execution,
+                            crate::constants::errors::PARENT_DIR_MISSING,
+                            crate::constants::errors::MSG_PARENT_DIR_MISSING.to_string(),
+                        ));
+                        return ExecutionResult::Failure;
+                    }
                 }
                 ExecutionResult::Edit { path, bangs }
             }

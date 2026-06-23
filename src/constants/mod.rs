@@ -62,6 +62,7 @@ pub mod errors {
     pub const REGEX_PARSE_ERROR: &str = "REGEX_PARSE_ERROR";
     pub const REGEX_COMPILE_ERROR: &str = "REGEX_COMPILE_ERROR";
     pub const UTF8_ERROR: &str = "UTF8_ERROR";
+    pub const PARENT_DIR_MISSING: &str = "PARENT_DIR_MISSING";
 
     // Error Messages
     pub const MSG_UNSAVED_CHANGES: &str = "No write since last change (add ! to override)";
@@ -69,6 +70,7 @@ pub mod errors {
     pub const MSG_NOT_A_FILE: &str = "Cannot edit a directory";
     pub const MSG_NOT_A_DIRECTORY: &str = "Not a directory; :file expects a directory path";
     pub const MSG_FILE_NOT_FOUND_WIN: &str = "The system cannot find the file specified";
+    pub const MSG_PARENT_DIR_MISSING: &str = "No such directory; create the parent directory first";
 }
 
 pub mod history {
