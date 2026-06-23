@@ -197,15 +197,22 @@ impl LanguageLoader {
         {
             return false;
         }
-        let lib = unsafe { RawLib::open(test_lib_path()).expect("open test library") };
+        let lib = Arc::new(unsafe { RawLib::open(test_lib_path()).expect("open test library") });
         self.loaded_libs
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(lib);
+            .push(lib.clone());
         self.dynamic_languages
             .write()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(lang_name.to_string(), language);
+            .insert(
+                lang_name.to_string(),
+                LoadedLanguage {
+                    language,
+                    name: lang_name.to_string(),
+                    lib: Some(lib),
+                },
+            );
         true
     }
 
