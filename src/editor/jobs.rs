@@ -183,6 +183,14 @@ impl<T: TerminalBackend> Editor<T> {
                     crate::notification::NotificationType::Warning,
                     format!("{} cancelled", name),
                 );
+
+                if self.pending_quit_job_id == Some(id) {
+                    self.pending_quit_job_id = None;
+                    self.state.notify(
+                        crate::notification::NotificationType::Warning,
+                        "Quit aborted: save was cancelled".to_string(),
+                    );
+                }
             }
             JobMessage::Custom(id, payload) => {
                 let any_payload = payload.into_any();

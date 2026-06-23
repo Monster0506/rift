@@ -340,6 +340,26 @@ fn test_handle_execution_result_quit_only_checks_current_buffer() {
 }
 
 #[test]
+fn test_cancelled_save_clears_pending_quit_job_id() {
+    let mut editor = create_editor();
+    let job_id = 42;
+    editor.pending_quit_job_id = Some(job_id);
+
+    editor
+        .handle_job_message(crate::job_manager::JobMessage::Cancelled(job_id))
+        .unwrap();
+
+    assert_eq!(
+        editor.pending_quit_job_id, None,
+        "a cancelled save tied to a pending quit must clear pending_quit_job_id"
+    );
+    assert!(
+        !editor.should_quit,
+        "a cancelled save must not force the editor to quit"
+    );
+}
+
+#[test]
 fn test_handle_execution_result_edit() {
     let mut editor = create_editor();
     editor
