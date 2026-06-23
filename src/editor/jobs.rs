@@ -45,7 +45,8 @@ impl<T: TerminalBackend> Editor<T> {
             syntax.language_name.clone(),
             doc_id,
             doc.buffer.revision,
-        );
+        )
+        .with_lib(syntax.lib());
 
         Some(self.job_manager.spawn(job))
     }

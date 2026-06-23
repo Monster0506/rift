@@ -2,13 +2,16 @@ use crate::error::{ErrorType, RiftError};
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use tree_sitter::Language;
 
-/// Handle to a loaded language, keeping the library alive
+/// Handle to a loaded language, keeping the backing dynamic library alive.
+/// `lib` must be cloned alongside every clone of `language` or the memory it points into can be unmapped.
+#[derive(Clone)]
 pub struct LoadedLanguage {
     pub language: Language,
     pub name: String,
+    pub lib: Option<Arc<RawLib>>,
 }
 
 impl LoadedLanguage {
@@ -18,6 +21,7 @@ impl LoadedLanguage {
         Self {
             language,
             name: name.to_string(),
+            lib: None,
         }
     }
 }
@@ -36,10 +40,11 @@ pub struct DynamicRegistry {
 pub struct LanguageLoader {
     _grammar_dir: PathBuf,
     pub dynamic: RwLock<DynamicRegistry>,
-    /// Shared libraries loaded at runtime — must outlive every Language derived from them.
-    loaded_libs: Mutex<Vec<RawLib>>,
+    /// Shared libraries loaded at runtime, kept alive only via the `Arc<RawLib>`
+    /// bundled into each `dynamic_languages` entry; never removed once inserted.
+    loaded_libs: Mutex<Vec<Arc<RawLib>>>,
     /// Grammars registered via `register_grammar()`, keyed by language name.
-    dynamic_languages: RwLock<HashMap<String, Language>>,
+    dynamic_languages: RwLock<HashMap<String, LoadedLanguage>>,
 }
 
 impl LanguageLoader {
@@ -143,6 +148,8 @@ impl LanguageLoader {
         let lib =
             unsafe { RawLib::open(so_path).map_err(|e| format!("dlopen '{}': {}", so_path, e))? };
 
+        // SAFETY: `language` borrows code/data inside `lib`; the `Arc<RawLib>`
+        // below must be cloned into every copy of `language` that escapes this loader.
         let language: Language = unsafe {
             type LangFn = unsafe extern "C" fn() -> *const tree_sitter::ffi::TSLanguage;
             let sym = lib
@@ -156,15 +163,24 @@ impl LanguageLoader {
             Language::from_raw(ptr)
         };
 
+        let lib = Arc::new(lib);
+
         self.loaded_libs
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(lib);
+            .push(lib.clone());
 
         self.dynamic_languages
             .write()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(lang_name.to_string(), language);
+            .insert(
+                lang_name.to_string(),
+                LoadedLanguage {
+                    language,
+                    name: lang_name.to_string(),
+                    lib: Some(lib),
+                },
+            );
 
         Ok(())
     }
@@ -264,8 +280,8 @@ impl LanguageLoader {
                 .dynamic_languages
                 .read()
                 .unwrap_or_else(|e| e.into_inner());
-            if let Some(lang) = langs.get(lang_name).cloned() {
-                return Ok(LoadedLanguage::bundled(lang, lang_name));
+            if let Some(loaded) = langs.get(lang_name).cloned() {
+                return Ok(loaded);
             }
         }
 
@@ -491,7 +507,9 @@ fn test_lib_path() -> &'static str {
 
 // Raw dynamic library handle
 
-struct RawLib(*mut std::ffi::c_void);
+/// Owns a dlopen/LoadLibrary handle. Any `Language` derived from this library
+/// is only valid as long as an `Arc<RawLib>` for it is still reachable.
+pub struct RawLib(*mut std::ffi::c_void);
 
 unsafe impl Send for RawLib {}
 unsafe impl Sync for RawLib {}
@@ -519,6 +537,8 @@ impl RawLib {
 }
 
 impl Drop for RawLib {
+    /// Unmaps the library. Safe only because every `Language` derived from it
+    /// is paired with an `Arc<RawLib>`, so this runs after the last one drops.
     fn drop(&mut self) {
         unsafe { sys::close(self.0) };
     }
@@ -569,4 +589,44 @@ mod sys {
         std::ptr::null_mut()
     }
     pub unsafe fn close(_: *mut std::ffi::c_void) {}
+}
+
+#[cfg(all(test, any(unix, windows)))]
+mod tests {
+    use super::RawLib;
+    use std::sync::Arc;
+
+    #[cfg(windows)]
+    const ALWAYS_LOADED_LIB: &str = "kernel32.dll";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    const ALWAYS_LOADED_LIB: &str = "libc.so.6";
+    #[cfg(target_os = "macos")]
+    const ALWAYS_LOADED_LIB: &str = "libSystem.B.dylib";
+
+    /// A `Language`-bearing `Arc<RawLib>` clone must outlive the original
+    /// storage slot, mirroring `register_grammar`/`load_language`.
+    #[test]
+    fn arc_rawlib_outlives_original_storage_slot() {
+        let lib = unsafe { RawLib::open(ALWAYS_LOADED_LIB) }.expect("open a system library");
+        let lib = Arc::new(lib);
+
+        // Simulates `loaded_libs` holding one reference...
+        let mut loaded_libs: Vec<Arc<RawLib>> = vec![lib.clone()];
+        // ...and a `LoadedLanguage`-like clone holding another, handed out to a caller.
+        let handed_out: Arc<RawLib> = lib.clone();
+        drop(lib);
+
+        assert_eq!(Arc::strong_count(&handed_out), 2);
+
+        // Drop the loader-side storage entirely (e.g. loader itself goes away).
+        loaded_libs.clear();
+        drop(loaded_libs);
+
+        // The handed-out clone must still keep the library mapped.
+        assert_eq!(
+            Arc::strong_count(&handed_out),
+            1,
+            "the library must still be alive via the outstanding Arc clone"
+        );
+    }
 }

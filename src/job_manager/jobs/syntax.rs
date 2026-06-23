@@ -1,7 +1,9 @@
 use crate::buffer::TextBuffer;
 use crate::job_manager::{CancellationSignal, Job, JobMessage};
 use crate::syntax::interval_tree::IntervalTree;
+use crate::syntax::loader::RawLib;
 use std::sync::mpsc::Sender;
+use std::sync::Arc;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor, Tree};
 
@@ -37,6 +39,9 @@ pub struct SyntaxParseJob {
     language_name: String,
     document_id: u64,
     revision: u64,
+    /// Keeps `parser`'s language's backing dynamic library alive for the job's
+    /// lifetime; runs on a background thread detached from the `Syntax` that spawned it.
+    _lib: Option<Arc<RawLib>>,
 }
 
 impl std::fmt::Debug for SyntaxParseJob {
@@ -68,7 +73,15 @@ impl SyntaxParseJob {
             language_name,
             document_id,
             revision,
+            _lib: None,
         }
+    }
+
+    /// Attach the backing library handle for `parser`'s language, if it was
+    /// loaded dynamically, so it stays mapped for the lifetime of this job.
+    pub fn with_lib(mut self, lib: Option<Arc<RawLib>>) -> Self {
+        self._lib = lib;
+        self
     }
 }
 
@@ -91,6 +104,7 @@ impl Job for SyntaxParseJob {
             language_name,
             document_id,
             revision,
+            _lib,
         } = *self;
 
         // Parse using logical bytes so tree-sitter node offsets are in the

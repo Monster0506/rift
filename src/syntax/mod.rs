@@ -41,6 +41,8 @@ pub struct InjectedLayer {
     pub cached_highlights: IntervalTree<u32>,
     /// Byte ranges in the host document covered by this layer.
     pub byte_ranges: Vec<std::ops::Range<usize>>,
+    /// Keeps a dynamically loaded `language`'s backing library alive (see `RawLib`).
+    pub lib: Option<Arc<loader::RawLib>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -58,6 +60,9 @@ pub struct Syntax {
     pub highlights_query: Option<Arc<Query>>,
     pub language_name: String,
     cached_highlights: IntervalTree<u32>,
+    /// Keeps `language`'s backing dynamic library alive for as long as this
+    /// `Syntax` (and any `Tree`/`Parser` derived from it) may exist.
+    lib: Option<Arc<loader::RawLib>>,
 
     // --- Static injection support (Svelte, HTML: capture name = language name) ---
     pub injections_query: Option<Arc<Query>>,
@@ -85,12 +90,19 @@ impl Syntax {
             highlights_query,
             language_name: loaded.name,
             cached_highlights: IntervalTree::default(),
+            lib: loaded.lib,
             injections_query: None,
             injection_capture_langs: Vec::new(),
             injection_layers: Vec::new(),
             dynamic_injection_layers: HashMap::new(),
             language_loader: None,
         })
+    }
+
+    /// The `Arc<RawLib>` keeping this syntax's `language` alive, if it came
+    /// from a dynamically loaded grammar. Clone it into anything that outlives `self`.
+    pub fn lib(&self) -> Option<Arc<loader::RawLib>> {
+        self.lib.clone()
     }
 
     /// Attach an injections query and pre-built injection layers (static protocol).
@@ -517,6 +529,7 @@ impl Syntax {
                     tree: Some(new_tree),
                     cached_highlights: IntervalTree::new(highlights),
                     byte_ranges: ranges,
+                    lib: lang_loaded.lib,
                 },
             );
         }
@@ -687,6 +700,7 @@ pub fn build_syntax(
                             tree: None,
                             cached_highlights: IntervalTree::default(),
                             byte_ranges: Vec::new(),
+                            lib: lang_loaded.lib,
                         });
                     }
                 }
