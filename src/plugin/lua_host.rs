@@ -834,7 +834,8 @@ impl LuaHost {
         // rift.emit(event_name [, payload])  — fire a UserEvent to all registered handlers
         // Optional payload table keys are merged into the event table alongside `name`.
         {
-            let f = lua.create_function(|lua, (name, payload): (String, Option<LuaTable>)| {
+            let sh = Arc::clone(&shared);
+            let f = lua.create_function(move |lua, (name, payload): (String, Option<LuaTable>)| {
                 let handlers: LuaTable = lua.globals().get("_rift_handlers")?;
                 let list: Option<LuaTable> = handlers.get("UserEvent")?;
                 if let Some(list) = list {
@@ -853,7 +854,18 @@ impl LuaHost {
                         .collect::<LuaResult<_>>()?;
                     for entry in snapshot {
                         let f: LuaFunction = entry.get("fn")?;
-                        f.call::<()>(ev.clone())?;
+                        let slot_id: u32 = entry.get("slot").unwrap_or(0);
+                        // Tag this handler's slot, then restore the caller's slot
+                        // afterward so reentrant emit() doesn't corrupt ownership.
+                        let prev_slot = {
+                            let mut s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                            let prev = s.current_slot;
+                            s.current_slot = slot_id;
+                            prev
+                        };
+                        let result = f.call::<()>(ev.clone());
+                        sh.lock().unwrap_or_else(|e| e.into_inner()).current_slot = prev_slot;
+                        result?;
                     }
                 }
                 Ok(())
@@ -2358,13 +2370,20 @@ end
                     };
                     // Set current_slot before the handler runs so that
                     // clear_highlights()/add_highlight() tag mutations with the right slot.
-                    {
-                        self.shared
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .current_slot = slot_id;
-                    }
-                    if let Err(e) = f.call::<()>(ev_table.clone()) {
+                    // Restore the prior value after so a reentrant dispatch (e.g. via
+                    // rift.emit) doesn't leave current_slot pointing at an inner handler.
+                    let prev_slot = {
+                        let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+                        let prev = s.current_slot;
+                        s.current_slot = slot_id;
+                        prev
+                    };
+                    let call_result = f.call::<()>(ev_table.clone());
+                    self.shared
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .current_slot = prev_slot;
+                    if let Err(e) = call_result {
                         errors.push(format!("[lua:{}] {}", event.name(), e));
                     }
                 }

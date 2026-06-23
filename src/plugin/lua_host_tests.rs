@@ -894,3 +894,56 @@ fn test_shelldone_fanout_does_not_invoke_handlers_registered_during_same_pass() 
     let check = host.exec("assert(_G.count == 1, 'count was ' .. _G.count)");
     assert!(check.is_none(), "assertion failed: {:?}", check);
 }
+
+#[test]
+fn test_current_slot_restored_after_reentrant_emit() {
+    let host = make_host();
+    // Handler B is registered for a UserEvent and adds a highlight of its own
+    // when fired reentrantly from inside handler A.
+    assert!(host
+        .exec(
+            r#"
+        _G.b_slot = rift.on('UserEvent', function(_ev)
+            rift.add_highlight(2, 0, 2, 1, "blue")
+        end)
+    "#
+        )
+        .is_none());
+    // Handler A emits the UserEvent (running B reentrantly), then adds its
+    // own highlight afterward. Each highlight must be tagged with its own
+    // handler's slot, not leak into the other.
+    assert!(host
+        .exec(
+            r#"
+        _G.a_slot = rift.on('EditorStart', function(_ev)
+            rift.emit('Reentrant')
+            rift.add_highlight(1, 0, 1, 1, "red")
+        end)
+    "#
+        )
+        .is_none());
+
+    let errors = host.dispatch_event(&EditorEvent::EditorStart);
+    assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+
+    let mutations = host.drain_mutations();
+    let slots: Vec<u32> = mutations
+        .iter()
+        .filter_map(|m| match m {
+            PluginMutation::AddHighlight { slot, .. } => Some(*slot),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(slots.len(), 2, "expected two AddHighlight mutations");
+    let b_highlight_slot = slots[0];
+    let a_highlight_slot = slots[1];
+
+    let check = host.exec(&format!(
+        r#"
+        assert({} == _G.b_slot, "B's highlight should be tagged with B's slot")
+        assert({} == _G.a_slot, "A's highlight should be tagged with A's slot")
+    "#,
+        b_highlight_slot, a_highlight_slot
+    ));
+    assert!(check.is_none(), "{:?}", check);
+}
