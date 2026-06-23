@@ -947,3 +947,42 @@ fn test_current_slot_restored_after_reentrant_emit() {
     ));
     assert!(check.is_none(), "{:?}", check);
 }
+
+#[test]
+fn test_shell_done_handler_error_surfaces_as_notification() {
+    let host = make_host();
+    assert!(host
+        .exec(
+            r#"
+        rift.on('UserEvent', function(ev)
+            if ev.name == 'ShellDone' then
+                local x = nil
+                return x.boom
+            end
+        end)
+    "#
+        )
+        .is_none());
+
+    host.shared
+        .lock()
+        .unwrap()
+        .pending_shell_events
+        .push(("mytag".to_string(), true, "output".to_string()));
+
+    let mutations = host.drain_mutations();
+    let got_error = mutations.iter().any(|m| {
+        matches!(
+            m,
+            PluginMutation::Notify {
+                level: NotificationType::Error,
+                ..
+            }
+        )
+    });
+    assert!(
+        got_error,
+        "expected an error notification from the failing ShellDone handler, got: {:?}",
+        mutations
+    );
+}

@@ -2630,7 +2630,16 @@ end
                         .collect::<LuaResult<_>>()?;
                     for entry in snapshot {
                         let f: LuaFunction = entry.get("fn")?;
-                        let _ = f.call::<()>(ev.clone());
+                        if let Err(e) = f.call::<()>(ev.clone()) {
+                            self.shared
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .mutations
+                                .push(PluginMutation::Notify {
+                                    message: format!("[lua:ShellDone] {}", e),
+                                    level: NotificationType::Error,
+                                });
+                        }
                     }
                 }
                 Ok(())
