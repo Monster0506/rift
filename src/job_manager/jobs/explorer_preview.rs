@@ -36,6 +36,18 @@ const FILE_PREVIEW_BYTES: usize = 8 * 1024; // 8 KiB
 /// Maximum number of lines shown in a file preview.
 const FILE_PREVIEW_LINES: usize = 200;
 
+/// Decodes a read buffer as UTF-8, dropping a trailing partial char cut off
+/// by the read boundary. Only an invalid sequence earlier means real binary.
+fn decode_preview_text(slice: &[u8]) -> Option<&str> {
+    match std::str::from_utf8(slice) {
+        Ok(s) => Some(s),
+        Err(err) if err.error_len().is_none() => {
+            std::str::from_utf8(&slice[..err.valid_up_to()]).ok()
+        }
+        Err(_) => None,
+    }
+}
+
 /// Background job that produces a preview for the file-explorer right pane.
 ///
 /// - If `path` is a directory it reads the entries and returns them.
@@ -119,13 +131,13 @@ impl Job for ExplorerPreviewJob {
                     let mut buf = vec![0u8; FILE_PREVIEW_BYTES];
                     let n = file.read(&mut buf).unwrap_or(0);
                     let slice = &buf[..n];
-                    match std::str::from_utf8(slice) {
-                        Ok(s) => s
+                    match decode_preview_text(slice) {
+                        Some(s) => s
                             .lines()
                             .take(FILE_PREVIEW_LINES)
                             .collect::<Vec<_>>()
                             .join("\n"),
-                        Err(_) => "<binary file>".to_string(),
+                        None => "<binary file>".to_string(),
                     }
                 }
             };
@@ -305,5 +317,53 @@ mod tests {
         assert!(msgs
             .iter()
             .any(|m| matches!(m, JobMessage::Finished(1, true))));
+    }
+
+    #[test]
+    fn test_explorer_preview_valid_utf8_split_at_boundary_is_not_binary() {
+        // "e2 82 ac" (the euro sign) straddles the FILE_PREVIEW_BYTES cutoff:
+        // 2 bytes land before it, 1 byte after, so a single 8 KiB read splits it.
+        let mut content = vec![b'a'; FILE_PREVIEW_BYTES - 2];
+        content.extend_from_slice("\u{20ac}".as_bytes());
+        content.extend_from_slice(b"trailing text after the split char");
+
+        let path = std::env::temp_dir().join(format!(
+            "rift_preview_split_utf8_{}_{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, &content).unwrap();
+
+        let job = Box::new(ExplorerPreviewJob::new(1, path.clone(), false));
+        let (tx, rx) = mpsc::channel();
+        job.run(1, tx, make_signal(false));
+        let msgs: Vec<JobMessage> = rx.try_iter().collect();
+        let payload = msgs
+            .into_iter()
+            .find_map(|m| {
+                if let JobMessage::Custom(_, p) = m {
+                    Some(p)
+                } else {
+                    None
+                }
+            })
+            .expect("should have Custom message");
+        let result = payload
+            .into_any()
+            .downcast::<ExplorerPreviewResult>()
+            .unwrap();
+        let text = result.file_text.unwrap();
+
+        let _ = std::fs::remove_file(&path);
+
+        assert_ne!(
+            text, "<binary file>",
+            "valid UTF-8 file misclassified as binary due to a multibyte char \
+             straddling the read boundary"
+        );
+        assert!(text.starts_with(&"a".repeat(100)));
     }
 }
