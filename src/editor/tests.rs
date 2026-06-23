@@ -4136,3 +4136,34 @@ fn test_explorer_preview_discards_stale_result() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn dd_deletes_the_current_line_via_the_operator_doubling_path_not_a_keymap_sequence() {
+    use crate::key::Key;
+    use crate::keymap::{KeyContext, MatchResult};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "first\nsecond\nthird\n");
+
+    // No [d, d] sequence is registered; the run loop's Ambiguous handler
+    // executes operator keys immediately, so each 'd' is dispatched on its own.
+    let feed_key = |editor: &mut Editor<MockTerminal>, key: Key| match editor
+        .keymap
+        .lookup(KeyContext::Normal, &[key])
+    {
+        MatchResult::Exact(action) | MatchResult::Ambiguous(action) => {
+            let action = action.clone();
+            editor.handle_action(&action);
+        }
+        other => panic!("key {key:?} did not resolve: {other:?}"),
+    };
+
+    feed_key(&mut editor, Key::Char('d'));
+    feed_key(&mut editor, Key::Char('d'));
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "second\nthird\n",
+        "dd should delete the first line via the operator-doubling path"
+    );
+}

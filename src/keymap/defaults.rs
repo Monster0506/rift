@@ -729,13 +729,6 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         )))),
     );
 
-    // Sequences
-    keymap.register_sequence(
-        KeyContext::Normal,
-        vec![Key::Char('d'), Key::Char('d')],
-        Action::Editor(EditorAction::DeleteLine),
-    );
-
     let ww = Key::Ctrl(b'w');
     for (ch, cmd) in [
         ('h', ":split :l"),
