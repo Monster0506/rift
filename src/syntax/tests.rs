@@ -350,6 +350,35 @@ mod markdown_tests {
             "the compiled highlights Query for an unchanged embedded language must be reused, not recompiled, across consecutive parses"
         );
     }
+
+    const MD_HTML_SRC: &str =
+        "# Hello\n\n<div class=\"foo\">\n  <span>bar</span>\n</div>\n\nplain text after\n";
+
+    #[test]
+    fn test_markdown_html_block_injection_highlights() {
+        let loader = make_loader();
+        let loaded = loader.load_language("markdown").expect("markdown grammar");
+        let highlights_query = loader
+            .load_query("markdown", "highlights")
+            .ok()
+            .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+            .map(Arc::new);
+        let mut syntax =
+            build_syntax(loaded, highlights_query, loader.clone()).expect("build_syntax");
+        syntax.incremental_parse(MD_HTML_SRC.as_bytes());
+
+        // The HTML block's language comes from a `#set! injection.language` predicate,
+        // not a captured text node, so it must still produce an injection layer.
+        assert!(
+            !syntax.dynamic_injection_layers.is_empty(),
+            "Markdown HTML block should produce a dynamic injection layer"
+        );
+        let inj = syntax.injection_highlights_named(None);
+        assert!(
+            !inj.is_empty(),
+            "Markdown HTML block should produce injection highlights"
+        );
+    }
 }
 
 // Dynamic grammar registration dedup
@@ -378,33 +407,5 @@ mod register_grammar_tests {
 
         let resolved = loader.load_language("dup_lang").expect("dup_lang resolves");
         assert_eq!(resolved.name, "dup_lang");
-    }
-
-    const MD_HTML_SRC: &str = "# Hello\n\n<div class=\"foo\">\n  <span>bar</span>\n</div>\n\nplain text after\n";
-
-    #[test]
-    fn test_markdown_html_block_injection_highlights() {
-        let loader = make_loader();
-        let loaded = loader.load_language("markdown").expect("markdown grammar");
-        let highlights_query = loader
-            .load_query("markdown", "highlights")
-            .ok()
-            .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
-            .map(Arc::new);
-        let mut syntax =
-            build_syntax(loaded, highlights_query, loader.clone()).expect("build_syntax");
-        syntax.incremental_parse(MD_HTML_SRC.as_bytes());
-
-        // The HTML block's language comes from a `#set! injection.language` predicate,
-        // not a captured text node, so it must still produce an injection layer.
-        assert!(
-            !syntax.dynamic_injection_layers.is_empty(),
-            "Markdown HTML block should produce a dynamic injection layer"
-        );
-        let inj = syntax.injection_highlights_named(None);
-        assert!(
-            !inj.is_empty(),
-            "Markdown HTML block should produce injection highlights"
-        );
     }
 }
