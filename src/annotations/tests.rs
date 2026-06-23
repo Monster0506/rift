@@ -73,6 +73,35 @@ fn test_on_lines_deleted_removes_in_range() {
     assert_eq!(store.directory_entries_by_line(), vec![(1, 1), (2, 3)]);
 }
 
+/// Removing Delete-sticky Line annotations on line deletion is a pure
+/// line-anchor edit; it must not invalidate the Point/Range interval index.
+#[test]
+fn test_on_lines_deleted_removal_keeps_index_valid() {
+    let mut store = AnnotationStore::new();
+    let point = store.add(Annotation::new(
+        Kind::new("a.point"),
+        Anchor::point(0),
+        AnnotationOwner::User,
+    ));
+    store.create_directory_entry(1, 1);
+    store.create_directory_entry(2, 2);
+    store.create_directory_entry(3, 3);
+
+    // Force the interval index to build once.
+    assert_eq!(store.query_at(0).count(), 1);
+    assert!(!store.is_index_dirty());
+
+    // Deletes line 2, hitting the removal branch (Delete-sticky entry 2).
+    store.on_lines_deleted(2, 1);
+
+    assert_eq!(store.directory_entries_by_line(), vec![(1, 1), (2, 3)]);
+    assert!(store.get(point).is_some());
+    assert!(
+        !store.is_index_dirty(),
+        "line-anchor removal should not invalidate the Point/Range index"
+    );
+}
+
 #[test]
 fn test_on_lines_deleted_multi_count() {
     let mut store = AnnotationStore::new();

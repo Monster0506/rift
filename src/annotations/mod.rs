@@ -954,7 +954,8 @@ impl AnnotationStore {
             return;
         }
 
-        let mut to_remove: Vec<AnnotationId> = Vec::new();
+        let mut to_remove: std::collections::HashSet<AnnotationId> =
+            std::collections::HashSet::new();
         let mut shifted: Vec<(usize, usize, AnnotationId)> = Vec::new();
         {
             let by_id = self.by_id.borrow();
@@ -962,7 +963,7 @@ impl AnnotationStore {
                 let Some(&idx) = by_id.get(id) else { continue };
                 if *l < last_exclusive {
                     if self.annotations[idx].stickiness == Stickiness::Delete {
-                        to_remove.push(*id);
+                        to_remove.insert(*id);
                     }
                 } else {
                     let new_line = l - count;
@@ -974,8 +975,7 @@ impl AnnotationStore {
 
         if !to_remove.is_empty() {
             self.annotations.retain(|a| !to_remove.contains(&a.id));
-            self.invalidate_index();
-            return;
+            self.aux_dirty.set(true);
         }
 
         let mut line_index = self.line_index.borrow_mut();
