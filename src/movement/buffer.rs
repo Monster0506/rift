@@ -281,6 +281,9 @@ pub fn move_sentence_backward(buffer: &mut TextBuffer) -> bool {
                         return true;
                     }
                 }
+            } else if c == Character::Newline && pos + 1 < start_pos {
+                let _ = buffer.set_cursor(pos + 1);
+                return true;
             }
         }
         pos -= 1;

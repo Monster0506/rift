@@ -186,6 +186,24 @@ fn test_sentence_forward_newline() {
 }
 
 #[test]
+fn test_sentence_newline_forward_backward_are_inverses() {
+    let mut buffer = TextBuffer::new(0).unwrap();
+    buffer
+        .insert_str("first line\nsecond line\nthird line")
+        .unwrap();
+    buffer.move_to_start();
+
+    assert!(move_sentence_forward(&mut buffer));
+    assert_eq!(buffer.cursor(), 11); // Start of "second line"
+
+    assert!(move_sentence_forward(&mut buffer));
+    assert_eq!(buffer.cursor(), 23); // Start of "third line"
+
+    assert!(move_sentence_backward(&mut buffer));
+    assert_eq!(buffer.cursor(), 11); // Back to start of "second line"
+}
+
+#[test]
 fn test_sentence_forward_no_punctuation() {
     let mut buffer = TextBuffer::new(0).unwrap();
     buffer.insert_str("No punctuation here").unwrap();
