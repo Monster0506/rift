@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 
 #[derive(Debug)]
@@ -299,6 +300,57 @@ fn test_fs_batch_delete_job_name() {
     use crate::job_manager::jobs::fs::FsBatchDeleteJob;
     let job = FsBatchDeleteJob::new(vec![]);
     assert_eq!(job.name(), "fs-batch-delete");
+}
+
+#[derive(Debug)]
+struct ConcurrencyProbeJob {
+    current: Arc<AtomicUsize>,
+    max_seen: Arc<AtomicUsize>,
+}
+
+impl Job for ConcurrencyProbeJob {
+    fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, _signal: CancellationSignal) {
+        let now = self.current.fetch_add(1, Ordering::SeqCst) + 1;
+        self.max_seen.fetch_max(now, Ordering::SeqCst);
+        thread::sleep(Duration::from_millis(30));
+        self.current.fetch_sub(1, Ordering::SeqCst);
+        let _ = sender.send(JobMessage::Finished(id, true));
+    }
+}
+
+#[test]
+fn test_spawn_caps_concurrently_running_jobs() {
+    const CAP: usize = MAX_CONCURRENT_JOBS;
+    const JOB_COUNT: usize = 50;
+
+    let mut manager = JobManager::new();
+    let current = Arc::new(AtomicUsize::new(0));
+    let max_seen = Arc::new(AtomicUsize::new(0));
+
+    for _ in 0..JOB_COUNT {
+        manager.spawn(ConcurrencyProbeJob {
+            current: current.clone(),
+            max_seen: max_seen.clone(),
+        });
+    }
+
+    // Drain messages until every job has finished.
+    let mut finished = 0;
+    while finished < JOB_COUNT {
+        match manager.receiver().recv_timeout(Duration::from_secs(5)) {
+            Ok(JobMessage::Finished(_, _)) => finished += 1,
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+
+    assert_eq!(finished, JOB_COUNT, "all jobs should finish");
+    assert!(
+        max_seen.load(Ordering::SeqCst) <= CAP,
+        "observed {} concurrently running jobs, expected at most {}",
+        max_seen.load(Ordering::SeqCst),
+        CAP
+    );
 }
 
 #[derive(Debug)]

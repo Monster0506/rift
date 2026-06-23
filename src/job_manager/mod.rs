@@ -1,12 +1,47 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 
 pub mod jobs;
 
 use std::any::Any;
+
+/// Maximum number of job threads allowed to run their body concurrently.
+/// Newly spawned jobs queue behind this limit instead of starting immediately.
+const MAX_CONCURRENT_JOBS: usize = 8;
+
+/// Simple blocking counting semaphore used to cap concurrent job threads.
+struct Semaphore {
+    state: Mutex<usize>,
+    condvar: Condvar,
+}
+
+impl Semaphore {
+    fn new(permits: usize) -> Self {
+        Self {
+            state: Mutex::new(permits),
+            condvar: Condvar::new(),
+        }
+    }
+
+    /// Block until a permit is available, then take it.
+    fn acquire(&self) {
+        let mut permits = self.state.lock().unwrap();
+        while *permits == 0 {
+            permits = self.condvar.wait(permits).unwrap();
+        }
+        *permits -= 1;
+    }
+
+    /// Return a permit and wake one waiter.
+    fn release(&self) {
+        let mut permits = self.state.lock().unwrap();
+        *permits += 1;
+        self.condvar.notify_one();
+    }
+}
 
 /// Sealed trait for job payloads to ensure type safety.
 pub trait JobPayload: Any + Send + std::fmt::Debug + 'static {
@@ -151,6 +186,8 @@ pub struct JobManager {
     jobs: HashMap<usize, JobHandle>,
     /// Counter for generating job IDs
     next_job_id: usize,
+    /// Caps how many job bodies may run concurrently.
+    concurrency_limiter: Arc<Semaphore>,
 }
 
 impl JobManager {
@@ -162,6 +199,7 @@ impl JobManager {
             receiver,
             jobs: HashMap::new(),
             next_job_id: 1,
+            concurrency_limiter: Arc::new(Semaphore::new(MAX_CONCURRENT_JOBS)),
         }
     }
 
@@ -179,17 +217,24 @@ impl JobManager {
         let silent = job.is_silent();
         let name = job.name();
         let job_box = Box::new(job);
+        let limiter = self.concurrency_limiter.clone();
 
         let handle = thread::spawn(move || {
             // Signal start
             if sender.send(JobMessage::Started(id, silent)).is_ok() {
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    job_box.run(id, sender.clone(), signal);
-                }));
-                if let Err(payload) = result {
-                    let details = panic_payload_to_string(&payload);
-                    let _ = sender.send(JobMessage::Error(id, format!("job panicked: {details}")));
+                limiter.acquire();
+                if signal.is_cancelled() {
+                    let _ = sender.send(JobMessage::Cancelled(id));
+                } else {
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        job_box.run(id, sender.clone(), signal);
+                    }));
+                    if let Err(payload) = result {
+                        let details = panic_payload_to_string(&payload);
+                        let _ = sender.send(JobMessage::Error(id, format!("job panicked: {details}")));
+                    }
                 }
+                limiter.release();
             }
         });
 
