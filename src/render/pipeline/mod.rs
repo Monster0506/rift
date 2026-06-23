@@ -315,12 +315,17 @@ pub fn contrasting_color(bg: Color) -> Color {
             }
         }
         Color::Ansi256(n) => {
-            if n >= 232 {
-                if n >= 244 {
-                    Color::Black
-                } else {
-                    Color::White
-                }
+            let (r, g, b) = if n >= 232 {
+                let step = (n - 232) * 10 + 8;
+                (step, step, step)
+            } else {
+                let i = n - 16;
+                let ramp = |v: u8| if v == 0 { 0 } else { 55 + 40 * v };
+                (ramp(i / 36), ramp((i / 6) % 6), ramp(i % 6))
+            };
+            let lum = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
+            if lum > 128.0 {
+                Color::Black
             } else {
                 Color::White
             }

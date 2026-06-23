@@ -329,3 +329,21 @@ fn test_tab_layout_directory_filename_width() {
         assert!(item.width > 0, "all chars should have non-zero width");
     }
 }
+
+#[test]
+fn test_contrasting_color_grayscale_ramp() {
+    assert_eq!(contrasting_color(Color::Ansi256(232)), Color::White);
+    assert_eq!(contrasting_color(Color::Ansi256(255)), Color::Black);
+}
+
+#[test]
+fn test_contrasting_color_cube_near_white_gets_black() {
+    // Ansi256(231) is the brightest cube color (rgb 255,255,255).
+    assert_eq!(contrasting_color(Color::Ansi256(231)), Color::Black);
+}
+
+#[test]
+fn test_contrasting_color_cube_black_gets_white() {
+    // Ansi256(16) is the darkest cube color (rgb 0,0,0).
+    assert_eq!(contrasting_color(Color::Ansi256(16)), Color::White);
+}
