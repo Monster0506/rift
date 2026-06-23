@@ -835,16 +835,34 @@ impl LuaHost {
         // Optional payload table keys are merged into the event table alongside `name`.
         {
             let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |lua, (name, payload): (String, Option<LuaTable>)| {
-                let handlers: LuaTable = lua.globals().get("_rift_handlers")?;
-                let list: Option<LuaTable> = handlers.get("UserEvent")?;
-                if let Some(list) = list {
-                    let ev = lua.create_table()?;
-                    ev.set("name", name.as_str())?;
-                    if let Some(p) = payload {
-                        for pair in p.pairs::<LuaValue, LuaValue>() {
-                            let (k, v) = pair?;
-                            ev.set(k, v)?;
+            let f =
+                lua.create_function(move |lua, (name, payload): (String, Option<LuaTable>)| {
+                    let handlers: LuaTable = lua.globals().get("_rift_handlers")?;
+                    let list: Option<LuaTable> = handlers.get("UserEvent")?;
+                    if let Some(list) = list {
+                        let ev = lua.create_table()?;
+                        ev.set("name", name.as_str())?;
+                        if let Some(p) = payload {
+                            for pair in p.pairs::<LuaValue, LuaValue>() {
+                                let (k, v) = pair?;
+                                ev.set(k, v)?;
+                            }
+                        }
+                        for entry in list.sequence_values::<LuaTable>() {
+                            let entry = entry?;
+                            let f: LuaFunction = entry.get("fn")?;
+                            let slot_id: u32 = entry.get("slot").unwrap_or(0);
+                            // Tag this handler's slot, then restore the caller's slot
+                            // afterward so reentrant emit() doesn't corrupt ownership.
+                            let prev_slot = {
+                                let mut s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                                let prev = s.current_slot;
+                                s.current_slot = slot_id;
+                                prev
+                            };
+                            let result = f.call::<()>(ev.clone());
+                            sh.lock().unwrap_or_else(|e| e.into_inner()).current_slot = prev_slot;
+                            result?;
                         }
                     }
                     // Snapshot the handler list before dispatch so handlers that
@@ -2052,6 +2070,8 @@ end
 -- rift.json.decode(str) → value
 -- Minimal recursive descent JSON parser (no unicode escapes, no numbers in exponent form).
 do
+    local MAX_JSON_DEPTH = 200
+
     local function skip_ws(s, i)
         while i <= #s and s:sub(i,i):match("%s") do i = i + 1 end
         return i
@@ -2083,13 +2103,13 @@ do
         error("unterminated string")
     end
 
-    local function parse_array(s, i)
+    local function parse_array(s, i, depth)
         i = i + 1  -- skip '['
         local arr = {}
         i = skip_ws(s, i)
         if s:sub(i,i) == ']' then return arr, i + 1 end
         while true do
-            local v; v, i = parse_value(s, i)
+            local v; v, i = parse_value(s, i, depth)
             arr[#arr+1] = v
             i = skip_ws(s, i)
             local c = s:sub(i,i)
@@ -2099,7 +2119,7 @@ do
         end
     end
 
-    local function parse_object(s, i)
+    local function parse_object(s, i, depth)
         i = i + 1  -- skip '{'
         local obj = {}
         i = skip_ws(s, i)
@@ -2111,7 +2131,7 @@ do
             i = skip_ws(s, i)
             if s:sub(i,i) ~= ':' then error("expected ':'") end
             i = i + 1
-            local v; v, i = parse_value(s, i)
+            local v; v, i = parse_value(s, i, depth)
             obj[k] = v
             i = skip_ws(s, i)
             local c = s:sub(i,i)
@@ -2121,12 +2141,14 @@ do
         end
     end
 
-    parse_value = function(s, i)
+    parse_value = function(s, i, depth)
+        depth = depth + 1
+        if depth > MAX_JSON_DEPTH then error("json too deeply nested") end
         i = skip_ws(s, i)
         local c = s:sub(i,i)
         if c == '"' then return parse_string(s, i)
-        elseif c == '[' then return parse_array(s, i)
-        elseif c == '{' then return parse_object(s, i)
+        elseif c == '[' then return parse_array(s, i, depth)
+        elseif c == '{' then return parse_object(s, i, depth)
         elseif s:sub(i, i+3) == "true"  then return true,  i + 4
         elseif s:sub(i, i+4) == "false" then return false, i + 5
         elseif s:sub(i, i+3) == "null"  then return nil,   i + 4
@@ -2139,7 +2161,7 @@ do
     end
 
     function rift.json.decode(str)
-        local ok, val = pcall(function() return (parse_value(str, 1)) end)
+        local ok, val = pcall(function() return (parse_value(str, 1, 0)) end)
         if ok then return val end
         return nil, val  -- nil, error_message
     end

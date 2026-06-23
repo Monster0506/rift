@@ -910,8 +910,7 @@ fn test_current_slot_restored_after_reentrant_emit() {
         )
         .is_none());
     // Handler A emits the UserEvent (running B reentrantly), then adds its
-    // own highlight afterward. Each highlight must be tagged with its own
-    // handler's slot, not leak into the other.
+    // own highlight; each must be tagged with its own slot, not leaked.
     assert!(host
         .exec(
             r#"
@@ -964,11 +963,11 @@ fn test_shell_done_handler_error_surfaces_as_notification() {
         )
         .is_none());
 
-    host.shared
-        .lock()
-        .unwrap()
-        .pending_shell_events
-        .push(("mytag".to_string(), true, "output".to_string()));
+    host.shared.lock().unwrap().pending_shell_events.push((
+        "mytag".to_string(),
+        true,
+        "output".to_string(),
+    ));
 
     let mutations = host.drain_mutations();
     let got_error = mutations.iter().any(|m| {
@@ -985,4 +984,19 @@ fn test_shell_done_handler_error_surfaces_as_notification() {
         "expected an error notification from the failing ShellDone handler, got: {:?}",
         mutations
     );
+}
+
+#[test]
+fn test_json_decode_rejects_deeply_nested_input() {
+    let host = make_host();
+    let check = host.exec(
+        r#"
+        local nested = string.rep("[", 5000) .. string.rep("]", 5000)
+        local ok, val, err = pcall(rift.json.decode, nested)
+        assert(ok, "rift.json.decode must not raise uncatchably: " .. tostring(val))
+        assert(val == nil, "expected nil result for too-deeply-nested json")
+        assert(err ~= nil, "expected an error message for too-deeply-nested json")
+    "#,
+    );
+    assert!(check.is_none(), "{:?}", check);
 }
