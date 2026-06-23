@@ -505,9 +505,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// If a non-operator key sequence has been pending longer than the
-    /// timeout, flush it: execute the shorter exact action if one exists,
-    /// otherwise just clear the pending state.
+    /// Past timeout, flush a pending non-operator sequence: run the shorter
+    /// exact action if one exists, otherwise just clear the pending state.
     pub(super) fn flush_pending_keys_on_timeout(&mut self) -> Result<(), RiftError> {
         use crate::keymap::MatchResult;
 

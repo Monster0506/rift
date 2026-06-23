@@ -244,14 +244,27 @@ pub fn detach() -> anyhow::Result<()> {
 }
 
 #[cfg(unix)]
+fn publish_shutdown_flag(shutdown: Arc<AtomicBool>) {
+    SHUTDOWN_FLAG.store(shutdown.as_ptr() as *mut _, Ordering::Relaxed);
+    std::mem::forget(shutdown);
+}
+
+#[cfg(unix)]
 fn install_sigterm_handler(shutdown: Arc<AtomicBool>) {
+    install_sigterm_handler_with(shutdown, || {});
+}
+
+/// `after_publish` runs between the flag publish and the OS-level install;
+/// tests use it to check the flag is already live there. Production passes a no-op.
+#[cfg(unix)]
+fn install_sigterm_handler_with(shutdown: Arc<AtomicBool>, after_publish: impl FnOnce()) {
     extern "C" {
         fn signal(signum: i32, handler: extern "C" fn(i32)) -> extern "C" fn(i32);
     }
+    // Publish before installing the handler so a signal can never observe a null pointer.
+    publish_shutdown_flag(shutdown);
+    after_publish();
     let _ = unsafe { signal(15, sigterm_handler) };
-    // Safety: only written once before any signal can fire.
-    SHUTDOWN_FLAG.store(shutdown.as_ptr() as *mut _, Ordering::Relaxed);
-    std::mem::forget(shutdown);
 }
 
 #[cfg(unix)]
@@ -326,6 +339,32 @@ fn do_handshake(reader: &mut BufReader<TcpStream>, expected_token: &str) -> anyh
         rows: params.viewport.rows,
         cols: params.viewport.cols,
     })
+}
+
+/// Clamp a peer-supplied dimension into the valid u16 range instead of
+/// silently wrapping (e.g. 65536 -> 0) when cast from u64.
+fn clamp_dimension(value: u64, default: u16) -> u16 {
+    if value == 0 || value > u16::MAX as u64 {
+        default
+    } else {
+        value as u16
+    }
+}
+
+/// Forward a key, blocking if the channel is full so a burst never drops a
+/// keystroke. Returns false if the receiver (editor thread) has hung up.
+fn forward_key(input_tx: &SyncSender<Key>, key: Key) -> bool {
+    input_tx.send(key).is_ok()
+}
+
+fn parse_resize_params(params: &serde_json::Value) -> Key {
+    let cols = params["cols"]
+        .as_u64()
+        .map_or(80, |v| clamp_dimension(v, 80));
+    let rows = params["rows"]
+        .as_u64()
+        .map_or(24, |v| clamp_dimension(v, 24));
+    Key::Resize(cols, rows)
 }
 
 /// How often the reader checks `shutdown` between blocking reads. Bounds how
@@ -435,14 +474,19 @@ fn serve_client(
                             }
                             if let Some(key_str) = msg["params"]["key"].as_str() {
                                 if let Some(key) = crate::ipc::key_notation::key_to_vim(key_str) {
-                                    let _ = input_tx.try_send(key);
+                                    if !forward_key(input_tx, key) {
+                                        result = ServeResult::EditorExited;
+                                        break 'serve;
+                                    }
                                 }
                             }
                         }
                         "resize" => {
-                            let cols = msg["params"]["cols"].as_u64().unwrap_or(80) as u16;
-                            let rows = msg["params"]["rows"].as_u64().unwrap_or(24) as u16;
-                            let _ = input_tx.try_send(Key::Resize(cols, rows));
+                            // Dropping a stale resize is fine; only the latest size matters.
+                            let key = parse_resize_params(&msg["params"]);
+                            if input_tx.try_send(key).is_err() {
+                                eprintln!("rift: dropped resize message");
+                            }
                         }
                         _ => {}
                     }
@@ -562,6 +606,70 @@ mod tests {
         (
             input_tx, input_rx, output_tx, output_rx, detach_tx, detach_rx,
         )
+    }
+
+    // --- install_sigterm_handler ordering tests ---
+
+    // raise() runs the handler synchronously so it can't reproduce the race;
+    // this hooks the midpoint between publish and OS-level install instead.
+    #[cfg(unix)]
+    #[test]
+    fn flag_is_published_before_os_handler_is_installed() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let mut seen_published = false;
+        install_sigterm_handler_with(Arc::clone(&shutdown), || {
+            seen_published = !SHUTDOWN_FLAG.load(Ordering::Relaxed).is_null();
+        });
+        assert!(seen_published);
+        sigterm_handler(15);
+        assert!(shutdown.load(Ordering::Relaxed));
+    }
+
+    // --- forward_key tests ---
+
+    #[test]
+    fn forward_key_blocks_instead_of_dropping_under_burst() {
+        let (input_tx, input_rx) = sync_channel::<Key>(64);
+        const TOTAL: usize = 100;
+        let sender = std::thread::spawn(move || {
+            for i in 0..TOTAL {
+                let c = char::from_u32('a' as u32 + (i % 26) as u32).unwrap();
+                assert!(forward_key(&input_tx, Key::Char(c)));
+            }
+        });
+        let mut received = 0;
+        while received < TOTAL {
+            if input_rx.recv_timeout(Duration::from_secs(2)).is_ok() {
+                received += 1;
+            } else {
+                break;
+            }
+        }
+        sender.join().unwrap();
+        assert_eq!(received, TOTAL);
+    }
+
+    // --- parse_resize_params tests ---
+
+    #[test]
+    fn resize_params_wrapping_value_clamped_not_wrapped() {
+        let params = serde_json::json!({"cols": 65536, "rows": 65616});
+        let key = parse_resize_params(&params);
+        assert_eq!(key, Key::Resize(80, 24));
+    }
+
+    #[test]
+    fn resize_params_zero_clamped_to_default() {
+        let params = serde_json::json!({"cols": 0, "rows": 0});
+        let key = parse_resize_params(&params);
+        assert_eq!(key, Key::Resize(80, 24));
+    }
+
+    #[test]
+    fn resize_params_valid_value_passed_through() {
+        let params = serde_json::json!({"cols": 120, "rows": 40});
+        let key = parse_resize_params(&params);
+        assert_eq!(key, Key::Resize(120, 40));
     }
 
     // --- do_handshake tests ---

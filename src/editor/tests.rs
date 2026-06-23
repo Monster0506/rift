@@ -631,10 +631,8 @@ fn test_explorer_split_select_does_not_follow_swapped_symlink() {
     editor.open_explorer(base.clone());
     let layout = editor.panel_layout.clone().expect("panel layout");
 
-    // Simulate a listing snapshot where the fs.entry payload carries no
-    // name/is_dir (the documented fallback case), forcing select-time
-    // resolution. At listing time `link` pointed at a file, so it was
-    // listed as a file (is_dir: false).
+    // No name/is_dir in the fs.entry payload forces select-time resolution;
+    // `link` pointed at a file at listing time, so is_dir is false here.
     let entries = vec![DirEntry {
         path: link.clone(),
         is_dir: false,
@@ -670,9 +668,8 @@ fn test_explorer_split_select_does_not_follow_swapped_symlink() {
     }
     editor.handle_explorer_split_select();
 
-    // If treated as a directory, the explorer split stays open and its
-    // dir pane buffer's path changes to the descended-into directory.
-    // If treated as a file, the split closes and the dir doc is removed.
+    // Directory: split stays open, dir pane path changes to the descended dir.
+    // File: split closes and the dir doc is removed.
     let descended = match editor.document_manager.get_document(layout.dir_doc_id) {
         Some(doc) => match &doc.kind {
             crate::document::BufferKind::Directory { path, .. } => *path != base,
@@ -4310,9 +4307,8 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
         MatchResult::Ambiguous(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
 
-    // Enter the pending state exactly as the run loop's Ambiguous-non-operator
-    // branch does, but back-date the stamp past the timeout instead of
-    // sleeping, so the test resolves immediately whether the fix is present.
+    // Back-date the pending-state stamp past the timeout instead of sleeping,
+    // so the test resolves immediately regardless of whether the fix is present.
     editor.pending_keys.push(Key::Char('Q'));
     editor.pending_keys_started_at =
         Some(std::time::Instant::now() - std::time::Duration::from_millis(1500));
