@@ -43,6 +43,13 @@ pub struct CancellationSignal {
 }
 
 impl CancellationSignal {
+    /// Create a signal that is never cancelled, for non-job callers.
+    pub fn new_uncancelled() -> Self {
+        Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
     /// Check if the job has been cancelled.
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)

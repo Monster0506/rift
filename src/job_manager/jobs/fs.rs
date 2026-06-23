@@ -1,7 +1,30 @@
 use crate::job_manager::{CancellationSignal, Job, JobMessage};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
+
+/// Recreate a symlink found at `entry_path` as a symlink at `dest`.
+/// Falls back to copying the link's target path on platforms without symlink support.
+fn recreate_symlink(entry_path: &Path, dest: &Path) -> std::io::Result<()> {
+    let target = fs::read_link(entry_path)?;
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&target, dest)
+    }
+    #[cfg(windows)]
+    {
+        if entry_path.is_dir() {
+            std::os::windows::fs::symlink_dir(&target, dest)
+        } else {
+            std::os::windows::fs::symlink_file(&target, dest)
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        fs::copy(entry_path, dest).map(|_| ())
+    }
+}
 
 /// Job to copy a file or directory (recursively)
 #[derive(Debug)]
@@ -19,39 +42,16 @@ impl FsCopyJob {
     }
 
     pub fn copy_recursive_pub(source: &Path, destination: &Path) -> std::io::Result<()> {
-        if source.is_dir() && destination.starts_with(source) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!(
-                    "cannot copy {:?}: destination {:?} is inside the source",
-                    source, destination
-                ),
-            ));
-        }
-        if source.is_dir() {
-            fs::create_dir_all(destination)?;
-            for entry in fs::read_dir(source)? {
-                let entry = entry?;
-                let dest_child = destination.join(entry.file_name());
-                if entry.file_type()?.is_dir() {
-                    Self::copy_recursive_pub(&entry.path(), &dest_child)?;
-                } else {
-                    fs::copy(entry.path(), dest_child)?;
-                }
-            }
-        } else {
-            if let Some(parent) = destination.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::copy(source, destination)?;
-        }
-        Ok(())
+        let signal = CancellationSignal::new_uncancelled();
+        let mut visited = HashSet::new();
+        Self::copy_recursive(source, destination, &signal, &mut visited)
     }
 
     fn copy_recursive(
         source: &Path,
         destination: &Path,
         signal: &CancellationSignal,
+        visited: &mut HashSet<PathBuf>,
     ) -> std::io::Result<()> {
         if signal.is_cancelled() {
             return Err(std::io::Error::new(
@@ -60,20 +60,41 @@ impl FsCopyJob {
             ));
         }
 
-        if source.is_dir() {
+        let source_meta = fs::symlink_metadata(source)?;
+        if source_meta.file_type().is_symlink() {
+            if let Some(parent) = destination.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            return recreate_symlink(source, destination);
+        }
+
+        if source_meta.is_dir() {
+            if destination.starts_with(source) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "cannot copy {:?}: destination {:?} is inside the source",
+                        source, destination
+                    ),
+                ));
+            }
+            if let Ok(canonical) = fs::canonicalize(source) {
+                if !visited.insert(canonical) {
+                    return Ok(());
+                }
+            }
+
             fs::create_dir_all(destination)?;
             for entry in fs::read_dir(source)? {
-                let entry = entry?;
-                let file_type = entry.file_type()?;
-                if file_type.is_dir() {
-                    Self::copy_recursive(
-                        &entry.path(),
-                        &destination.join(entry.file_name()),
-                        signal,
-                    )?;
-                } else {
-                    fs::copy(entry.path(), destination.join(entry.file_name()))?;
+                if signal.is_cancelled() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Interrupted,
+                        "Cancelled",
+                    ));
                 }
+                let entry = entry?;
+                let dest_child = destination.join(entry.file_name());
+                Self::copy_recursive(&entry.path(), &dest_child, signal, visited)?;
             }
         } else {
             if let Some(parent) = destination.parent() {
@@ -97,7 +118,8 @@ impl Job for FsCopyJob {
             format!("Copying {:?} to {:?}", self.source, self.destination),
         ));
 
-        match Self::copy_recursive(&self.source, &self.destination, &signal) {
+        let mut visited = HashSet::new();
+        match Self::copy_recursive(&self.source, &self.destination, &signal, &mut visited) {
             Ok(_) => {
                 let _ = sender.send(JobMessage::Finished(id, false));
             }
@@ -111,6 +133,11 @@ impl Job for FsCopyJob {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::job_manager::CancellationSignal;
+
+    fn fresh_signal() -> CancellationSignal {
+        CancellationSignal::new_uncancelled()
+    }
 
     #[test]
     fn copy_recursive_pub_errors_when_destination_is_inside_source() {
@@ -220,6 +247,49 @@ mod tests {
         let dst = dir.path().join("src_extra");
         FsCopyJob::copy_recursive_pub(&src, &dst).unwrap();
         assert_eq!(std::fs::read_to_string(dst.join("f.txt")).unwrap(), "hi");
+    }
+
+    #[cfg(unix)]
+    fn make_self_referential_symlink(src: &Path) -> std::io::Result<()> {
+        std::os::unix::fs::symlink(src, src.join("self_link"))
+    }
+
+    #[cfg(windows)]
+    fn make_self_referential_symlink(src: &Path) -> std::io::Result<()> {
+        std::os::windows::fs::symlink_dir(src, src.join("self_link"))
+    }
+
+    #[test]
+    fn copy_recursive_does_not_loop_on_self_referential_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("looped");
+        std::fs::create_dir(&src).unwrap();
+        std::fs::write(src.join("real.txt"), "data").unwrap();
+        // Symlink inside src pointing back at src itself.
+        if make_self_referential_symlink(&src).is_err() {
+            // No symlink privilege on this machine (common on Windows CI); skip.
+            return;
+        }
+
+        let dst = dir.path().join("looped_copy");
+        let signal = fresh_signal();
+        let mut visited = HashSet::new();
+        let result = FsCopyJob::copy_recursive(&src, &dst, &signal, &mut visited);
+
+        assert!(
+            result.is_ok(),
+            "copy must terminate without error on a self-referential symlink: {:?}",
+            result.err()
+        );
+        assert_eq!(
+            std::fs::read_to_string(dst.join("real.txt")).unwrap(),
+            "data"
+        );
+        let link_meta = std::fs::symlink_metadata(dst.join("self_link")).unwrap();
+        assert!(
+            link_meta.file_type().is_symlink(),
+            "self_link must be recreated as a symlink, not recursed into"
+        );
     }
 }
 
