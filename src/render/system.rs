@@ -101,6 +101,20 @@ pub struct RenderSystem {
     cursor_animator: crate::cursor::CursorAnimator,
 }
 
+/// Finds the 1-based index of the search match containing (or starting at)
+/// `cursor_offset`. Matches must be sorted by range, as produced by search.
+fn match_index_at_cursor(
+    matches: &[crate::search::SearchMatch],
+    cursor_offset: usize,
+) -> Option<usize> {
+    let idx =
+        matches.partition_point(|m| m.range.start < cursor_offset && m.range.end <= cursor_offset);
+    matches
+        .get(idx)
+        .filter(|m| m.range.contains(&cursor_offset) || m.range.start == cursor_offset)
+        .map(|_| idx + 1)
+}
+
 impl RenderSystem {
     /// Create a new render system with specified dimensions
     pub fn new(rows: usize, cols: usize) -> Self {
@@ -243,12 +257,7 @@ impl RenderSystem {
 
         let (search_match_index, search_total_matches) = if !ctx.state.search_matches.is_empty() {
             let cursor_offset = ctx.buf.cursor();
-            let idx = ctx
-                .state
-                .search_matches
-                .iter()
-                .position(|m| m.range.contains(&cursor_offset) || m.range.start == cursor_offset)
-                .map(|i| i + 1);
+            let idx = match_index_at_cursor(&ctx.state.search_matches, cursor_offset);
             (idx, ctx.state.search_matches.len())
         } else {
             (None, 0)
@@ -868,4 +877,46 @@ fn render_completion_menu(
     );
 
     window.render_cells(layer, &cell_rows);
+}
+
+#[cfg(test)]
+mod match_index_tests {
+    use super::match_index_at_cursor;
+    use crate::search::SearchMatch;
+
+    fn make_matches(ranges: &[(usize, usize)]) -> Vec<SearchMatch> {
+        ranges
+            .iter()
+            .map(|&(s, e)| SearchMatch { range: s..e })
+            .collect()
+    }
+
+    #[test]
+    fn finds_index_of_match_containing_cursor_in_large_sorted_list() {
+        let ranges: Vec<(usize, usize)> = (0..10_000).map(|i| (i * 10, i * 10 + 3)).collect();
+        let matches = make_matches(&ranges);
+
+        assert_eq!(match_index_at_cursor(&matches, 0), Some(1));
+        assert_eq!(match_index_at_cursor(&matches, 5_001), Some(501));
+        assert_eq!(match_index_at_cursor(&matches, 50_010), Some(5_002));
+        assert_eq!(match_index_at_cursor(&matches, 99_990 + 2), Some(10_000));
+    }
+
+    #[test]
+    fn returns_none_when_cursor_is_between_matches() {
+        let matches = make_matches(&[(0, 3), (10, 13)]);
+        assert_eq!(match_index_at_cursor(&matches, 5), None);
+    }
+
+    #[test]
+    fn matches_zero_width_match_at_cursor_start() {
+        let matches = make_matches(&[(0, 0), (5, 5)]);
+        assert_eq!(match_index_at_cursor(&matches, 5), Some(2));
+    }
+
+    #[test]
+    fn returns_none_for_empty_matches() {
+        let matches: Vec<SearchMatch> = Vec::new();
+        assert_eq!(match_index_at_cursor(&matches, 0), None);
+    }
 }
