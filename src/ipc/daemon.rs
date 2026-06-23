@@ -328,6 +328,43 @@ fn do_handshake(reader: &mut BufReader<TcpStream>, expected_token: &str) -> anyh
     })
 }
 
+/// How often the reader checks `shutdown` between blocking reads. Bounds how
+/// long `join()` can take after a shutdown is requested.
+const READER_POLL_INTERVAL: Duration = Duration::from_millis(200);
+
+/// Reads frames from `reader`, sending each to `msg_tx`, until a real
+/// disconnect or `shutdown` is set. A read timeout on the socket ensures the
+/// loop notices `shutdown` even if no cross-clone socket shutdown arrives.
+fn reader_loop(
+    reader: &mut BufReader<TcpStream>,
+    shutdown: &Arc<AtomicBool>,
+    msg_tx: &std::sync::mpsc::Sender<std::io::Result<Vec<u8>>>,
+) {
+    reader
+        .get_ref()
+        .set_read_timeout(Some(READER_POLL_INTERVAL))
+        .ok();
+    loop {
+        if shutdown.load(Ordering::Relaxed) {
+            break;
+        }
+        match read_framed(reader) {
+            Ok(bytes) => {
+                if msg_tx.send(Ok(bytes)).is_err() {
+                    break;
+                }
+            }
+            Err(e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => {
+                continue;
+            }
+            Err(e) => {
+                let _ = msg_tx.send(Err(e));
+                break;
+            }
+        }
+    }
+}
+
 fn serve_client(
     mut reader: BufReader<TcpStream>,
     expected_token: &str,
@@ -365,21 +402,14 @@ fn serve_client(
     while detach_rx.try_recv().is_ok() {}
     let _ = input_tx.try_send(Key::Resize(size.cols, size.rows));
 
-    // Reader runs on its own thread with blocking reads — no timeout means large
-    // frames (directory listings etc.) are never corrupted by partial reads.
+    // Reader runs on its own thread with a periodic read timeout, so it can
+    // notice `reader_shutdown` even if the cross-clone socket shutdown below
+    // does not interrupt its blocking read on this platform.
+    let reader_shutdown = Arc::new(AtomicBool::new(false));
+    let reader_shutdown_clone = Arc::clone(&reader_shutdown);
     let (msg_tx, msg_rx) = std::sync::mpsc::channel::<std::io::Result<Vec<u8>>>();
-    let reader_thread = std::thread::spawn(move || loop {
-        match read_framed(&mut reader) {
-            Ok(bytes) => {
-                if msg_tx.send(Ok(bytes)).is_err() {
-                    break;
-                }
-            }
-            Err(e) => {
-                let _ = msg_tx.send(Err(e));
-                break;
-            }
-        }
+    let reader_thread = std::thread::spawn(move || {
+        reader_loop(&mut reader, &reader_shutdown_clone, &msg_tx);
     });
 
     let one_ms = Duration::from_millis(1);
@@ -475,6 +505,7 @@ fn serve_client(
         }
     }
 
+    reader_shutdown.store(true, Ordering::Relaxed);
     let _ = write_stream.shutdown(std::net::Shutdown::Both);
     reader_thread.join().ok();
     result
@@ -1004,5 +1035,50 @@ mod tests {
         drop(input_rx);
         drop(client);
         handle.join().unwrap();
+    }
+
+    /// Joins `handle` on a watchdog thread so a hung reader thread fails the
+    /// test fast instead of blocking the whole suite. Returns None on timeout.
+    fn join_with_timeout<T: Send + 'static>(
+        handle: std::thread::JoinHandle<T>,
+        timeout: Duration,
+    ) -> Option<T> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(handle.join());
+        });
+        rx.recv_timeout(timeout).ok().map(|r| r.unwrap())
+    }
+
+    /// Reproduces the reader thread's blocking-read loop exactly as
+    /// `serve_client` spawns it, so the shutdown behavior can be verified
+    /// in isolation without depending on cross-clone socket shutdown.
+    fn spawn_reader_loop(
+        mut reader: BufReader<TcpStream>,
+        shutdown: Arc<AtomicBool>,
+    ) -> std::thread::JoinHandle<()> {
+        let (msg_tx, _msg_rx) = std::sync::mpsc::channel::<std::io::Result<Vec<u8>>>();
+        std::thread::spawn(move || reader_loop(&mut reader, &shutdown, &msg_tx))
+    }
+
+    /// The cross-clone `.shutdown()` signal does not reliably interrupt a
+    /// blocking `read_framed` call on every platform. Without a read timeout,
+    /// the reader thread must wait for actual bytes or a real socket close,
+    /// so setting only the shutdown flag (no data, no socket-level shutdown)
+    /// leaves it blocked forever and `join` never returns in bounded time.
+    #[test]
+    fn reader_thread_exits_on_shutdown_flag_without_socket_shutdown() {
+        let (client, server) = connected_pair();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let reader_thread = spawn_reader_loop(BufReader::new(server), Arc::clone(&shutdown));
+
+        // Client sends nothing further and the socket itself is never shut
+        // down, simulating the cross-clone signal failing to propagate.
+        std::thread::sleep(Duration::from_millis(150));
+        shutdown.store(true, Ordering::Relaxed);
+
+        let joined = join_with_timeout(reader_thread, Duration::from_secs(3));
+        assert!(joined.is_some(), "reader thread did not exit in time");
+        drop(client);
     }
 }
