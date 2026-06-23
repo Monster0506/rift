@@ -2,7 +2,12 @@
 //! Manages popup notifications for the user
 
 use crate::error::ErrorSeverity;
+use std::collections::VecDeque;
 use std::time::{Duration, Instant, SystemTime};
+
+/// Maximum number of entries retained in the persistent message log.
+/// Oldest entries are dropped once this cap is exceeded.
+const MESSAGE_LOG_CAPACITY: usize = 500;
 
 /// Types of notifications
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,8 +122,9 @@ pub struct NotificationManager {
     next_id: u64,
     /// Monotonic generation counter for change detection
     pub generation: u64,
-    /// Persistent log of all messages and job events (never pruned)
-    message_log: Vec<MessageEntry>,
+    /// Ring buffer log of recent messages and job events, capped at
+    /// `MESSAGE_LOG_CAPACITY` entries.
+    message_log: VecDeque<MessageEntry>,
     last_render_time: Option<Instant>,
 }
 
@@ -129,7 +135,7 @@ impl NotificationManager {
             notifications: Vec::new(),
             next_id: 0,
             generation: 0,
-            message_log: Vec::new(),
+            message_log: VecDeque::new(),
             last_render_time: None,
         }
     }
@@ -144,7 +150,7 @@ impl NotificationManager {
         let id = self.next_id;
         self.next_id += 1;
         let message: String = message.into();
-        self.message_log.push(MessageEntry::Notification {
+        self.push_log_entry(MessageEntry::Notification {
             time: SystemTime::now(),
             kind,
             message: message.clone(),
@@ -162,18 +168,42 @@ impl NotificationManager {
         silent: bool,
         message: impl Into<String>,
     ) {
-        self.message_log.push(MessageEntry::JobEvent {
+        let entry = MessageEntry::JobEvent {
             time: SystemTime::now(),
             job_id,
             kind,
             silent,
             message: message.into(),
-        });
+        };
+        // Coalesce repeated progress ticks for the same job into the latest entry
+        // instead of appending one per tick.
+        if matches!(kind, JobEventKind::Progress(_)) {
+            if let Some(last) = self.message_log.back_mut() {
+                if matches!(
+                    last,
+                    MessageEntry::JobEvent { job_id: last_id, kind: JobEventKind::Progress(_), .. }
+                        if *last_id == job_id
+                ) {
+                    *last = entry;
+                    self.generation += 1;
+                    return;
+                }
+            }
+        }
+        self.push_log_entry(entry);
         self.generation += 1;
     }
 
-    pub fn message_log(&self) -> &[MessageEntry] {
-        &self.message_log
+    /// Push an entry onto the log, dropping the oldest entry if over capacity.
+    fn push_log_entry(&mut self, entry: MessageEntry) {
+        if self.message_log.len() >= MESSAGE_LOG_CAPACITY {
+            self.message_log.pop_front();
+        }
+        self.message_log.push_back(entry);
+    }
+
+    pub fn message_log(&self) -> Vec<MessageEntry> {
+        self.message_log.iter().cloned().collect()
     }
 
     /// Add an info notification (convenience)

@@ -173,6 +173,51 @@ fn test_message_log_clear_all_does_not_affect_log() {
 }
 
 #[test]
+fn test_message_log_bounded_under_heavy_progress_ticks() {
+    let mut mgr = NotificationManager::new();
+    let tick_count = 5000;
+    for i in 0..tick_count {
+        mgr.log_job_event(1, JobEventKind::Progress(i % 100), false, "tick");
+    }
+
+    assert!(
+        mgr.message_log().len() < tick_count as usize,
+        "message_log grew unbounded: {} entries for {} ticks",
+        mgr.message_log().len(),
+        tick_count
+    );
+}
+
+#[test]
+fn test_message_log_coalesces_progress_per_job() {
+    let mut mgr = NotificationManager::new();
+    mgr.log_job_event(1, JobEventKind::Started, false, "job: started");
+    for pct in 0..50 {
+        mgr.log_job_event(1, JobEventKind::Progress(pct), false, "job: progress");
+    }
+
+    let log = mgr.message_log();
+    let progress_entries: Vec<_> = log
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                MessageEntry::JobEvent {
+                    job_id: 1,
+                    kind: JobEventKind::Progress(_),
+                    ..
+                }
+            )
+        })
+        .collect();
+    assert_eq!(progress_entries.len(), 1);
+    match progress_entries[0] {
+        MessageEntry::JobEvent { kind, .. } => assert_eq!(*kind, JobEventKind::Progress(49)),
+        _ => panic!("expected JobEvent"),
+    }
+}
+
+#[test]
 fn test_progress_job_event_stores_percentage() {
     let mut mgr = NotificationManager::new();
     mgr.log_job_event(3, JobEventKind::Progress(42), false, "fs-copy: halfway");

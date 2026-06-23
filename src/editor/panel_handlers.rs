@@ -251,12 +251,7 @@ impl<T: TerminalBackend> Editor<T> {
             None => return,
         };
 
-        let log = self
-            .state
-            .error_manager
-            .notifications()
-            .message_log()
-            .to_vec();
+        let log = self.state.error_manager.notifications().message_log();
 
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             let cursor = doc.buffer.cursor();

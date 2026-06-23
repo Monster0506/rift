@@ -333,12 +333,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
 
-        let log = self
-            .state
-            .error_manager
-            .notifications()
-            .message_log()
-            .to_vec();
+        let log = self.state.error_manager.notifications().message_log();
         doc.populate_messages_buffer(&log);
         // On initial open, position at the end so the newest messages are visible
         let len = doc.buffer.len();
