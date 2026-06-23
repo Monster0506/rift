@@ -115,14 +115,41 @@ impl SplitTree {
             return false;
         }
 
+        let promoted_focus = Self::sibling_first_leaf(&self.root, id);
+
         self.windows.remove(&id);
         self.root = Self::remove_leaf(std::mem::replace(&mut self.root, SplitNode::Leaf(0)), id);
 
         if self.focused_window == id {
-            self.focused_window = *self.windows.keys().next().unwrap();
+            self.focused_window =
+                promoted_focus.unwrap_or_else(|| *self.windows.keys().next().unwrap());
         }
 
         true
+    }
+
+    // First leaf id of the sibling subtree that takes over target_id's space, if any.
+    fn sibling_first_leaf(node: &SplitNode, target_id: WindowId) -> Option<WindowId> {
+        match node {
+            SplitNode::Split { first, second, .. } => {
+                if matches!(&**first, SplitNode::Leaf(id) if *id == target_id) {
+                    return Some(Self::first_leaf(second));
+                }
+                if matches!(&**second, SplitNode::Leaf(id) if *id == target_id) {
+                    return Some(Self::first_leaf(first));
+                }
+                Self::sibling_first_leaf(first, target_id)
+                    .or_else(|| Self::sibling_first_leaf(second, target_id))
+            }
+            SplitNode::Leaf(_) => None,
+        }
+    }
+
+    fn first_leaf(node: &SplitNode) -> WindowId {
+        match node {
+            SplitNode::Leaf(id) => *id,
+            SplitNode::Split { first, .. } => Self::first_leaf(first),
+        }
     }
 
     fn remove_leaf(node: SplitNode, target_id: WindowId) -> SplitNode {

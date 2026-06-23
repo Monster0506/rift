@@ -93,6 +93,29 @@ fn close_middle_window_in_three() {
     assert!(tree.get_window(w3).is_some());
 }
 
+#[test]
+fn close_focused_window_focuses_sibling_not_arbitrary_window() {
+    // Closing w1 should promote its sibling subtree, whose first leaf is w2.
+    // Many other windows exist so an arbitrary HashMap pick is unlikely to match.
+    let mut tree = SplitTree::new(1, 24, 80);
+    let w1 = tree.focused_window_id();
+    let w2 = tree.split(SplitDirection::Horizontal, w1, 2, 3, 80);
+    let w3 = tree.split(SplitDirection::Horizontal, w2, 3, 3, 80);
+    let w4 = tree.split(SplitDirection::Horizontal, w3, 4, 3, 80);
+    let w5 = tree.split(SplitDirection::Horizontal, w4, 5, 3, 80);
+    let w6 = tree.split(SplitDirection::Horizontal, w5, 6, 3, 80);
+    let w7 = tree.split(SplitDirection::Horizontal, w6, 7, 3, 80);
+    let _w8 = tree.split(SplitDirection::Horizontal, w7, 8, 3, 80);
+
+    tree.set_focus(w1);
+    assert!(tree.close_window(w1));
+    assert_eq!(
+        tree.focused_window_id(),
+        w2,
+        "focus should move to the sibling that took over w1's space"
+    );
+}
+
 // ============================================================
 // Focus management
 // ============================================================
