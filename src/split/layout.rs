@@ -50,9 +50,12 @@ fn compute_node_layout(
                 SplitDirection::Horizontal => {
                     let available = rows.saturating_sub(1);
                     let first_rows = ((available as f64) * ratio).round() as usize;
-                    let first_rows = first_rows
-                        .max(MIN_WINDOW_ROWS)
-                        .min(available.saturating_sub(MIN_WINDOW_ROWS));
+                    let first_rows = if available < 2 * MIN_WINDOW_ROWS {
+                        available / 2
+                    } else {
+                        let lo = MIN_WINDOW_ROWS.min(available / 2);
+                        first_rows.clamp(lo, available - lo)
+                    };
                     let second_rows = available.saturating_sub(first_rows);
 
                     compute_node_layout(first, row, col, first_rows, cols, layouts);
@@ -68,9 +71,12 @@ fn compute_node_layout(
                 SplitDirection::Vertical => {
                     let available = cols.saturating_sub(1);
                     let first_cols = ((available as f64) * ratio).round() as usize;
-                    let first_cols = first_cols
-                        .max(MIN_WINDOW_COLS)
-                        .min(available.saturating_sub(MIN_WINDOW_COLS));
+                    let first_cols = if available < 2 * MIN_WINDOW_COLS {
+                        available / 2
+                    } else {
+                        let lo = MIN_WINDOW_COLS.min(available / 2);
+                        first_cols.clamp(lo, available - lo)
+                    };
                     let second_cols = available.saturating_sub(first_cols);
 
                     compute_node_layout(first, row, col, rows, first_cols, layouts);

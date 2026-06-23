@@ -326,6 +326,37 @@ fn layout_enforces_minimum_cols() {
 }
 
 #[test]
+fn layout_no_degenerate_pane_when_available_below_two_min() {
+    use super::layout::{MIN_WINDOW_COLS, MIN_WINDOW_ROWS};
+
+    let mut htree = SplitTree::new(1, 24, 80);
+    let hw1 = htree.focused_window_id();
+    let hw2 = htree.split(SplitDirection::Horizontal, hw1, 1, 12, 80);
+
+    let total_rows = 2 * MIN_WINDOW_ROWS - 1;
+    let h_layouts = htree.compute_layout(total_rows, 80);
+    let hl1 = h_layouts.iter().find(|l| l.window_id == hw1).unwrap();
+    let hl2 = h_layouts.iter().find(|l| l.window_id == hw2).unwrap();
+    let available_rows = total_rows.saturating_sub(1);
+    let row_floor = MIN_WINDOW_ROWS.min(available_rows / 2);
+    assert!(hl1.rows >= row_floor, "hl1.rows={}", hl1.rows);
+    assert!(hl2.rows >= row_floor, "hl2.rows={}", hl2.rows);
+
+    let mut vtree = SplitTree::new(1, 24, 80);
+    let vw1 = vtree.focused_window_id();
+    let vw2 = vtree.split(SplitDirection::Vertical, vw1, 2, 24, 40);
+
+    let total_cols = 2 * MIN_WINDOW_COLS - 1;
+    let v_layouts = vtree.compute_layout(24, total_cols);
+    let vl1 = v_layouts.iter().find(|l| l.window_id == vw1).unwrap();
+    let vl2 = v_layouts.iter().find(|l| l.window_id == vw2).unwrap();
+    let available_cols = total_cols.saturating_sub(1);
+    let col_floor = MIN_WINDOW_COLS.min(available_cols / 2);
+    assert!(vl1.cols >= col_floor, "vl1.cols={}", vl1.cols);
+    assert!(vl2.cols >= col_floor, "vl2.cols={}", vl2.cols);
+}
+
+#[test]
 fn layout_rows_cols_sum_to_total() {
     let mut tree = SplitTree::new(1, 24, 80);
     let w1 = tree.focused_window_id();
