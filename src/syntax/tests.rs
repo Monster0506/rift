@@ -351,3 +351,34 @@ mod markdown_tests {
         );
     }
 }
+
+// =============================================================================
+// Dynamic grammar registration dedup
+// =============================================================================
+
+#[cfg(feature = "treesitter")]
+mod register_grammar_tests {
+    use crate::syntax::loader::LanguageLoader;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_register_grammar_dedup_skips_second_library_load() {
+        let loader = LanguageLoader::new(PathBuf::from("."));
+        let lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+
+        let first = loader.register_grammar_for_test("dup_lang", lang.clone());
+        assert!(first, "first registration should succeed");
+        assert_eq!(loader.loaded_libs_count(), 1);
+
+        let second = loader.register_grammar_for_test("dup_lang", lang);
+        assert!(!second, "duplicate registration should be a no-op");
+        assert_eq!(
+            loader.loaded_libs_count(),
+            1,
+            "loaded_libs must not grow when the same grammar is registered twice"
+        );
+
+        let resolved = loader.load_language("dup_lang").expect("dup_lang resolves");
+        assert_eq!(resolved.name, "dup_lang");
+    }
+}

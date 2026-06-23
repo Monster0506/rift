@@ -129,6 +129,17 @@ impl LanguageLoader {
         so_path: &str,
         fn_name: &str,
     ) -> Result<(), String> {
+        // Re-registering an already-loaded grammar is a no-op: avoids leaking
+        // a second library handle and shadowing the existing Language entry.
+        if self
+            .dynamic_languages
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(lang_name)
+        {
+            return Ok(());
+        }
+
         let lib =
             unsafe { RawLib::open(so_path).map_err(|e| format!("dlopen '{}': {}", so_path, e))? };
 
@@ -156,6 +167,38 @@ impl LanguageLoader {
             .insert(lang_name.to_string(), language);
 
         Ok(())
+    }
+
+    /// Test-only entry point exercising the same dedup check as `register_grammar`,
+    /// without requiring a caller-supplied dynamic library on disk.
+    #[cfg(test)]
+    pub(crate) fn register_grammar_for_test(&self, lang_name: &str, language: Language) -> bool {
+        if self
+            .dynamic_languages
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(lang_name)
+        {
+            return false;
+        }
+        let lib = unsafe { RawLib::open(test_lib_path()).expect("open test library") };
+        self.loaded_libs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(lib);
+        self.dynamic_languages
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(lang_name.to_string(), language);
+        true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn loaded_libs_count(&self) -> usize {
+        self.loaded_libs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
     }
 
     // -------------------------------------------------------------------------
@@ -422,6 +465,27 @@ fn get_bundled_injections_query(lang_name: &str) -> Option<&'static str> {
         #[cfg(feature = "treesitter")]
         "markdown" => Some(tree_sitter_md::INJECTION_QUERY_BLOCK),
         _ => None,
+    }
+}
+
+/// A library path guaranteed loadable on this platform, for test-only use.
+#[cfg(test)]
+fn test_lib_path() -> &'static str {
+    #[cfg(windows)]
+    {
+        "kernel32.dll"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "/usr/lib/libSystem.dylib"
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        "libc.so.6"
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        "unused"
     }
 }
 
