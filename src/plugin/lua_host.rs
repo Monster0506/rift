@@ -848,8 +848,12 @@ impl LuaHost {
                                 ev.set(k, v)?;
                             }
                         }
-                        for entry in list.sequence_values::<LuaTable>() {
-                            let entry = entry?;
+                        // Snapshot the handler list before dispatch so handlers that
+                        // call rift.on/rift.off mid-pass only affect the next emit.
+                        let snapshot: Vec<LuaTable> = list
+                            .sequence_values::<LuaTable>()
+                            .collect::<LuaResult<_>>()?;
+                        for entry in snapshot {
                             let f: LuaFunction = entry.get("fn")?;
                             let slot_id: u32 = entry.get("slot").unwrap_or(0);
                             // Tag this handler's slot, then restore the caller's slot
@@ -865,29 +869,8 @@ impl LuaHost {
                             result?;
                         }
                     }
-                    // Snapshot the handler list before dispatch so handlers that
-                    // call rift.on/rift.off mid-pass only affect the next emit.
-                    let snapshot: Vec<LuaTable> = list
-                        .sequence_values::<LuaTable>()
-                        .collect::<LuaResult<_>>()?;
-                    for entry in snapshot {
-                        let f: LuaFunction = entry.get("fn")?;
-                        let slot_id: u32 = entry.get("slot").unwrap_or(0);
-                        // Tag this handler's slot, then restore the caller's slot
-                        // afterward so reentrant emit() doesn't corrupt ownership.
-                        let prev_slot = {
-                            let mut s = sh.lock().unwrap_or_else(|e| e.into_inner());
-                            let prev = s.current_slot;
-                            s.current_slot = slot_id;
-                            prev
-                        };
-                        let result = f.call::<()>(ev.clone());
-                        sh.lock().unwrap_or_else(|e| e.into_inner()).current_slot = prev_slot;
-                        result?;
-                    }
-                }
-                Ok(())
-            })?;
+                    Ok(())
+                })?;
             api.set("emit", f)?;
         }
 
