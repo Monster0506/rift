@@ -846,8 +846,12 @@ impl LuaHost {
                             ev.set(k, v)?;
                         }
                     }
-                    for entry in list.sequence_values::<LuaTable>() {
-                        let entry = entry?;
+                    // Snapshot the handler list before dispatch so handlers that
+                    // call rift.on/rift.off mid-pass only affect the next emit.
+                    let snapshot: Vec<LuaTable> = list
+                        .sequence_values::<LuaTable>()
+                        .collect::<LuaResult<_>>()?;
+                    for entry in snapshot {
                         let f: LuaFunction = entry.get("fn")?;
                         f.call::<()>(ev.clone())?;
                     }
@@ -2337,8 +2341,11 @@ end
             }
         };
 
+        // Snapshot the handler list before dispatch so handlers that call
+        // rift.on/rift.off mid-pass only affect the next dispatch.
+        let snapshot: Vec<LuaResult<LuaTable>> = list.sequence_values::<LuaTable>().collect();
         let mut errors = Vec::new();
-        for entry in list.sequence_values::<LuaTable>() {
+        for entry in snapshot {
             match entry {
                 Ok(entry) => {
                     let slot_id: u32 = entry.get("slot").unwrap_or(0);
@@ -2597,8 +2604,12 @@ end
                     ev.set("tag", tag.as_str())?;
                     ev.set("success", success)?;
                     ev.set("output", output.as_str())?;
-                    for entry in list.sequence_values::<LuaTable>() {
-                        let entry = entry?;
+                    // Snapshot the handler list before dispatch so handlers that
+                    // call rift.on/rift.off mid-pass only affect the next event.
+                    let snapshot: Vec<LuaTable> = list
+                        .sequence_values::<LuaTable>()
+                        .collect::<LuaResult<_>>()?;
+                    for entry in snapshot {
                         let f: LuaFunction = entry.get("fn")?;
                         let _ = f.call::<()>(ev.clone());
                     }

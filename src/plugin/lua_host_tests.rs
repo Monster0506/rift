@@ -829,3 +829,68 @@ fn test_load_dir_ownership_tracks_each_file_separately() {
     );
     assert!(check.is_none(), "assertion failed: {:?}", check);
 }
+
+#[test]
+fn test_emit_does_not_invoke_handlers_registered_during_same_pass() {
+    // A handler that re-arms by registering another handler for the same
+    // event must not have that new handler invoked within the same emit.
+    let host = make_host();
+    assert!(host.exec("_G.count = 0").is_none());
+    assert!(host
+        .exec(
+            r#"
+        rift.on('UserEvent', function(ev)
+            _G.count = _G.count + 1
+            rift.on('UserEvent', function(_ev) _G.count = _G.count + 1 end)
+        end)
+    "#
+        )
+        .is_none());
+    assert!(host.exec("rift.emit('Ping')").is_none());
+    let check = host.exec("assert(_G.count == 1, 'count was ' .. _G.count)");
+    assert!(check.is_none(), "assertion failed: {:?}", check);
+}
+
+#[test]
+fn test_dispatch_event_does_not_invoke_handlers_registered_during_same_pass() {
+    let host = make_host();
+    assert!(host.exec("_G.count = 0").is_none());
+    assert!(host
+        .exec(
+            r#"
+        rift.on('EditorStart', function(_ev)
+            _G.count = _G.count + 1
+            rift.on('EditorStart', function(_ev) _G.count = _G.count + 1 end)
+        end)
+    "#
+        )
+        .is_none());
+    let errors = host.dispatch_event(&EditorEvent::EditorStart);
+    assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+    let check = host.exec("assert(_G.count == 1, 'count was ' .. _G.count)");
+    assert!(check.is_none(), "assertion failed: {:?}", check);
+}
+
+#[test]
+fn test_shelldone_fanout_does_not_invoke_handlers_registered_during_same_pass() {
+    let host = make_host();
+    assert!(host.exec("_G.count = 0").is_none());
+    assert!(host
+        .exec(
+            r#"
+        rift.on('UserEvent', function(ev)
+            _G.count = _G.count + 1
+            rift.on('UserEvent', function(_ev) _G.count = _G.count + 1 end)
+        end)
+    "#
+        )
+        .is_none());
+    host.shared.lock().unwrap().pending_shell_events.push((
+        "tag1".to_string(),
+        true,
+        "out".to_string(),
+    ));
+    let _ = host.drain_mutations();
+    let check = host.exec("assert(_G.count == 1, 'count was ' .. _G.count)");
+    assert!(check.is_none(), "assertion failed: {:?}", check);
+}
