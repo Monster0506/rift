@@ -131,7 +131,6 @@ impl StyledLine {
             StyledLine::PerSpan { text, spans } => {
                 let mut result = Vec::with_capacity(text.len());
                 let mut span_idx = 0;
-                let mut current_style = ColorStyle::new();
 
                 for (i, &ch) in text.iter().enumerate() {
                     // Check if we've moved past the current span
@@ -139,16 +138,14 @@ impl StyledLine {
                         span_idx += 1;
                     }
 
-                    // Update current style if we're in a new span
-                    if span_idx < spans.len()
+                    let current_style = if span_idx < spans.len()
                         && spans[span_idx].start <= i
                         && i < spans[span_idx].end
                     {
-                        current_style = spans[span_idx].style;
-                    } else if span_idx >= spans.len() || i >= spans[span_idx].start {
-                        // Outside any span, use default
-                        current_style = ColorStyle::new();
-                    }
+                        spans[span_idx].style
+                    } else {
+                        ColorStyle::new()
+                    };
 
                     result.push(StyledChar::new(ch, current_style));
                 }

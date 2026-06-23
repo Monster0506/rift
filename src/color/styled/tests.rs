@@ -61,3 +61,25 @@ fn test_styled_line_conversion() {
     assert_eq!(per_char.len(), 5);
     assert_eq!(per_char[0].style.fg, Some(Color::Red));
 }
+
+#[test]
+fn test_styled_line_to_per_char_gap_between_spans_is_default() {
+    let text = b"0123456789".to_vec();
+    let spans = vec![
+        ColorSpan::new(0, 3, ColorStyle::fg(Color::Red)),
+        ColorSpan::new(6, 9, ColorStyle::fg(Color::Blue)),
+    ];
+    let line = StyledLine::per_span(text, spans);
+    let per_char = line.to_per_char();
+
+    for c in &per_char[0..3] {
+        assert_eq!(c.style.fg, Some(Color::Red));
+    }
+    for (i, c) in per_char[3..6].iter().enumerate() {
+        assert_eq!(c.style.fg, None, "gap char {i} should be default");
+    }
+    for c in &per_char[6..9] {
+        assert_eq!(c.style.fg, Some(Color::Blue));
+    }
+    assert_eq!(per_char[9].style.fg, None);
+}
