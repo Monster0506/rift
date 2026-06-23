@@ -692,9 +692,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             EditorAction::PutSystemClipboard { before } => {
-                let text = arboard::Clipboard::new()
-                    .ok()
-                    .and_then(|mut cb| cb.get_text().ok());
+                let text = crate::clipboard::read_system_clipboard_text();
                 if let Some(text) = text {
                     let text: Vec<crate::character::Character> = text
                         .chars()

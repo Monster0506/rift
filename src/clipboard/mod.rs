@@ -141,10 +141,57 @@ pub fn capture_current_line(buf: &TextBuffer, count: usize) -> Vec<Character> {
 const SYSTEM_CLIPBOARD_REFRESH_INTERVAL: std::time::Duration =
     std::time::Duration::from_millis(250);
 
+/// Upper bound on how long a single clipboard read may block the caller.
+/// A hung clipboard owner stalls the worker thread, not the caller, past this.
+const CLIPBOARD_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// Request sent to the clipboard worker thread.
+struct ReadRequest(std::sync::mpsc::Sender<Option<String>>);
+
+/// Owns a single long-lived `arboard::Clipboard` connection on a dedicated
+/// worker thread, so callers never reconnect on every read.
+struct ClipboardWorker {
+    requests: std::sync::mpsc::Sender<ReadRequest>,
+}
+
+impl ClipboardWorker {
+    fn new() -> Self {
+        let (requests, rx) = std::sync::mpsc::channel::<ReadRequest>();
+        std::thread::spawn(move || {
+            let mut clipboard = arboard::Clipboard::new().ok();
+            for ReadRequest(reply) in rx {
+                let text = clipboard.as_mut().and_then(|cb| cb.get_text().ok());
+                let _ = reply.send(text);
+            }
+        });
+        Self { requests }
+    }
+
+    /// Ask the worker to read the clipboard, waiting at most
+    /// [`CLIPBOARD_READ_TIMEOUT`] for a reply.
+    fn read(&self) -> Option<String> {
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+        if self.requests.send(ReadRequest(reply_tx)).is_err() {
+            return None;
+        }
+        reply_rx.recv_timeout(CLIPBOARD_READ_TIMEOUT).ok().flatten()
+    }
+}
+
+/// Read the system clipboard text without blocking the caller past
+/// [`CLIPBOARD_READ_TIMEOUT`], reusing a single shared connection.
+pub fn read_system_clipboard_text() -> Option<String> {
+    use std::sync::OnceLock;
+    static WORKER: OnceLock<ClipboardWorker> = OnceLock::new();
+    WORKER.get_or_init(ClipboardWorker::new).read()
+}
+
 #[derive(Default)]
 pub struct SystemClipboardCache {
     text: Option<String>,
     last_refreshed: Option<std::time::Instant>,
+    /// Number of completed reads, for tests to observe refresh behavior.
+    read_count: u32,
 }
 
 impl SystemClipboardCache {
@@ -159,14 +206,17 @@ impl SystemClipboardCache {
         if !stale {
             return;
         }
-        self.text = arboard::Clipboard::new()
-            .ok()
-            .and_then(|mut cb| cb.get_text().ok());
+        self.text = read_system_clipboard_text();
+        self.read_count += 1;
         self.last_refreshed = Some(std::time::Instant::now());
     }
 
     pub fn text(&self) -> Option<&str> {
         self.text.as_deref()
+    }
+
+    pub fn read_count(&self) -> u32 {
+        self.read_count
     }
 }
 
@@ -318,6 +368,34 @@ mod tests {
                 Character::Unicode('b'),
             ]
         );
+    }
+
+    #[test]
+    fn read_system_clipboard_text_never_blocks_past_timeout() {
+        // Can't simulate a truly hung owner here, but a non-hung read should
+        // return well within the bounded read deadline.
+        let start = std::time::Instant::now();
+        let _ = read_system_clipboard_text();
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(2),
+            "clipboard read took {:?}, expected it to be bounded by the read timeout",
+            start.elapsed()
+        );
+    }
+
+    #[test]
+    fn refresh_if_stale_does_not_block_render_thread() {
+        // refresh_if_stale must never perform the arboard read inline on the
+        // calling thread for longer than the bounded worker read allows.
+        let mut cache = SystemClipboardCache::new();
+        let start = std::time::Instant::now();
+        cache.refresh_if_stale();
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(2),
+            "refresh_if_stale took {:?}, expected the read to be off-thread and bounded",
+            start.elapsed()
+        );
+        assert_eq!(cache.read_count(), 1);
     }
 
     #[test]
