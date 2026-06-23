@@ -16,6 +16,32 @@ fn test_syntax_new_placeholder() {
     assert_eq!(buffer.len(), 0);
 }
 
+#[test]
+fn test_byte_to_point_matches_reference_scan() {
+    // Reference implementation: rescans source[..byte] each call.
+    fn reference_byte_to_point(source: &[u8], byte: usize) -> tree_sitter::Point {
+        let byte = byte.min(source.len());
+        let row = source[..byte].iter().filter(|&&b| b == b'\n').count();
+        let last_nl = source[..byte]
+            .iter()
+            .rposition(|&b| b == b'\n')
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        tree_sitter::Point {
+            row,
+            column: byte - last_nl,
+        }
+    }
+
+    let source = b"line1\nline2\n\nline4\nlast line no newline";
+    let index = super::NewlineIndex::build(source);
+    for byte in 0..=source.len() {
+        let expected = reference_byte_to_point(source, byte);
+        let actual = index.point_at(byte);
+        assert_eq!(actual, expected, "byte_to_point mismatch at offset {byte}");
+    }
+}
+
 // =============================================================================
 // IntervalTree Tests
 // =============================================================================
@@ -256,6 +282,38 @@ mod markdown_tests {
         assert!(
             !inj.is_empty(),
             "Markdown Rust code block should produce injection highlights"
+        );
+    }
+
+    #[test]
+    fn test_markdown_many_paragraphs_parses_quickly() {
+        // Many paragraphs each trigger an injection range; a per-range
+        // source rescan here would make this quadratic and blow the budget.
+        let n = 2_000;
+        let mut src = String::new();
+        for i in 0..n {
+            src.push_str(&format!("Paragraph number {i} with some text in it.\n\n"));
+            src.push_str("```rust\nlet x = 1;\n```\n\n");
+        }
+
+        let loader = make_loader();
+        let loaded = loader.load_language("markdown").expect("markdown grammar");
+        let highlights_query = loader
+            .load_query("markdown", "highlights")
+            .ok()
+            .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+            .map(Arc::new);
+        let mut syntax =
+            build_syntax(loaded, highlights_query, loader.clone()).expect("build_syntax");
+
+        let start = std::time::Instant::now();
+        let ok = syntax.incremental_parse(src.as_bytes());
+        let elapsed = start.elapsed();
+
+        assert!(ok, "Markdown parse should succeed");
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "parsing {n} paragraphs took {elapsed:?}, expected well under 1s"
         );
     }
 

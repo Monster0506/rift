@@ -321,6 +321,7 @@ impl Syntax {
             }
         }
 
+        let newline_index = NewlineIndex::build(source);
         for (li, layer) in self.injection_layers.iter_mut().enumerate() {
             let ranges = &lang_ranges[li];
             if ranges.is_empty() {
@@ -334,8 +335,8 @@ impl Syntax {
             let ts_ranges: Vec<tree_sitter::Range> = ranges
                 .iter()
                 .map(|r| {
-                    let sp = byte_to_point(source, r.start);
-                    let ep = byte_to_point(source, r.end);
+                    let sp = newline_index.point_at(r.start);
+                    let ep = newline_index.point_at(r.end);
                     tree_sitter::Range {
                         start_byte: r.start,
                         end_byte: r.end,
@@ -432,6 +433,7 @@ impl Syntax {
         self.dynamic_injection_layers
             .retain(|lang_name, _| by_lang.contains_key(lang_name));
 
+        let newline_index = NewlineIndex::build(source);
         for (lang_name, ranges) in by_lang {
             let lang_loaded = match loader.load_language(&lang_name) {
                 Ok(l) => l,
@@ -441,8 +443,8 @@ impl Syntax {
             let ts_ranges: Vec<tree_sitter::Range> = ranges
                 .iter()
                 .map(|r| {
-                    let sp = byte_to_point(source, r.start);
-                    let ep = byte_to_point(source, r.end);
+                    let sp = newline_index.point_at(r.start);
+                    let ep = newline_index.point_at(r.end);
                     tree_sitter::Range {
                         start_byte: r.start,
                         end_byte: r.end,
@@ -704,18 +706,40 @@ fn normalize_lang_name(name: &str) -> String {
     }
 }
 
-/// Convert a byte offset to a tree-sitter `Point` (row, column).
-fn byte_to_point(source: &[u8], byte: usize) -> tree_sitter::Point {
-    let byte = byte.min(source.len());
-    let row = source[..byte].iter().filter(|&&b| b == b'\n').count();
-    let last_nl = source[..byte]
-        .iter()
-        .rposition(|&b| b == b'\n')
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    tree_sitter::Point {
-        row,
-        column: byte - last_nl,
+/// Byte offsets of every newline in a source buffer, built once per parse so
+/// repeated byte-to-point lookups can binary-search instead of rescanning.
+struct NewlineIndex {
+    newlines: Vec<usize>,
+    source_len: usize,
+}
+
+impl NewlineIndex {
+    fn build(source: &[u8]) -> Self {
+        let newlines = source
+            .iter()
+            .enumerate()
+            .filter(|&(_, &b)| b == b'\n')
+            .map(|(i, _)| i)
+            .collect();
+        Self {
+            newlines,
+            source_len: source.len(),
+        }
+    }
+
+    /// Convert a byte offset to a tree-sitter `Point` via binary search.
+    fn point_at(&self, byte: usize) -> tree_sitter::Point {
+        let byte = byte.min(self.source_len);
+        let row = self.newlines.partition_point(|&nl| nl < byte);
+        let last_nl = if row == 0 {
+            0
+        } else {
+            self.newlines[row - 1] + 1
+        };
+        tree_sitter::Point {
+            row,
+            column: byte - last_nl,
+        }
     }
 }
 
