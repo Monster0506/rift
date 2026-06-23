@@ -204,13 +204,16 @@ impl RenderSystem {
                 .map(|_| {
                     let highlights = ctx.highlights.unwrap_or(&[]);
                     let mut hash: u64 = highlights.len() as u64;
-                    for (range, _color) in highlights.iter().take(16) {
+                    for (range, capture) in highlights.iter() {
                         hash = hash
                             .wrapping_mul(6364136223846793005)
                             .wrapping_add(range.start as u64);
                         hash = hash
                             .wrapping_mul(6364136223846793005)
                             .wrapping_add(range.end as u64 + 1);
+                        hash = hash
+                            .wrapping_mul(6364136223846793005)
+                            .wrapping_add(*capture as u64 + 1);
                     }
                     hash
                 })

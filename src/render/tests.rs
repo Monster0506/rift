@@ -1380,3 +1380,114 @@ fn test_inline_annotation_change_triggers_content_redraw() {
         "changing inline annotation text alone must trigger a content redraw"
     );
 }
+
+// highlights_hash: must cover all visible highlights and their capture index
+
+fn render_state_with_highlights<'a>(
+    buf: &'a TextBuffer,
+    state: &'a State,
+    highlights: &'a [(std::ops::Range<usize>, u32)],
+) -> RenderState<'a> {
+    RenderState {
+        buf,
+        current_mode: Mode::Normal,
+        pending_key: None,
+        pending_count: 0,
+        state,
+        needs_clear: true,
+        tab_width: 4,
+        highlights: Some(highlights),
+        capture_map: None,
+        injection_highlights: None,
+        skip_content: false,
+        cursor_row_offset: 0,
+        cursor_col_offset: 0,
+        cursor_viewport: None,
+        terminal_cursor: None,
+        custom_highlights: None,
+        plugin_highlights: None,
+        annotation_styles: None,
+        annotation_adornments: None,
+        annotation_inline: None,
+        annotation_concealed: None,
+        terminal_cell_colors: None,
+        show_line_numbers: false,
+        display_map: None,
+    }
+}
+
+fn content_highlights_hash(system: &RenderSystem) -> u64 {
+    use crate::render::components::Renderable;
+    system
+        .world
+        .renderables
+        .iter()
+        .find_map(|(_, r)| match r {
+            Renderable::TextBuffer(s) => Some(s.highlights_hash),
+            _ => None,
+        })
+        .expect("content entity not found")
+}
+
+fn syntax_colors_state() -> State {
+    let mut state = State::new();
+    state.settings.syntax_colors = Some(crate::color::theme::SyntaxColors::from_base_colors(&[(
+        "function",
+        crate::color::Color::Red,
+    )]));
+    state
+}
+
+#[test]
+fn test_highlights_hash_detects_change_beyond_take_16_cap() {
+    let mut term = MockTerminal::new(10, 80);
+    let buf = TextBuffer::new(1000).unwrap();
+    let state = syntax_colors_state();
+    let mut system = RenderSystem::new(10, 80);
+
+    let mut base: Vec<(std::ops::Range<usize>, u32)> =
+        (0..20).map(|i| (i * 10..i * 10 + 5, 1)).collect();
+    system
+        .render(&mut term, render_state_with_highlights(&buf, &state, &base))
+        .unwrap();
+    let hash_before = content_highlights_hash(&system);
+
+    // Only the range at index 17 (beyond the old take(16) cap) changes.
+    base[17] = (170..200, 1);
+    system
+        .render(&mut term, render_state_with_highlights(&buf, &state, &base))
+        .unwrap();
+    let hash_after = content_highlights_hash(&system);
+
+    assert_ne!(
+        hash_before, hash_after,
+        "changing a highlight range beyond index 16 must change highlights_hash"
+    );
+}
+
+#[test]
+fn test_highlights_hash_detects_capture_change_on_same_range() {
+    let mut term = MockTerminal::new(10, 80);
+    let buf = TextBuffer::new(1000).unwrap();
+    let state = syntax_colors_state();
+    let mut system = RenderSystem::new(10, 80);
+
+    let mut base: Vec<(std::ops::Range<usize>, u32)> =
+        (0..20).map(|i| (i * 10..i * 10 + 5, 1)).collect();
+    system
+        .render(&mut term, render_state_with_highlights(&buf, &state, &base))
+        .unwrap();
+    let hash_before = content_highlights_hash(&system);
+
+    // Same byte ranges throughout, only the capture index at index 0 changes.
+    base[0].1 = 2;
+    system
+        .render(&mut term, render_state_with_highlights(&buf, &state, &base))
+        .unwrap();
+    let hash_after = content_highlights_hash(&system);
+
+    assert_ne!(
+        hash_before, hash_after,
+        "changing only a highlight's capture index must change highlights_hash"
+    );
+}
