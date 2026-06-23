@@ -453,6 +453,28 @@ fn render_gutter(
     }
 }
 
+/// Decision for drawing a single glyph at a given visual column, accounting
+/// for horizontal scroll clipping at the left edge.
+struct GlyphDrawPlan {
+    /// Columns this glyph occupies in the visible area (0 if fully clipped
+    /// or zero-width).
+    visible_width: usize,
+    /// True if this glyph is wider than its visible_width: it straddles the
+    /// left scroll edge and must render as a space, not its clipped glyph.
+    straddles_left_edge: bool,
+}
+
+/// Computes how much of a glyph of `width` columns, starting at
+/// `current_visual_col`, is visible given the viewport's `left_col` scroll.
+fn plan_glyph_draw(width: usize, current_visual_col: usize, left_col: usize) -> GlyphDrawPlan {
+    let next_visual_col = current_visual_col + width;
+    let visible_width = next_visual_col.saturating_sub(left_col.max(current_visual_col));
+    GlyphDrawPlan {
+        visible_width,
+        straddles_left_edge: visible_width > 0 && visible_width < width,
+    }
+}
+
 struct RenderLineConfig {
     line_num: usize,
     row_idx: usize,
@@ -576,10 +598,8 @@ fn render_line(
 
         // Check visibility against viewport
         if next_visual_col > left_col {
-            // Number of columns this item contributes to the visible area.
-            // For items that straddle the left edge (current_visual_col < left_col),
-            // only count the portion that is actually in view.
-            let visible_width = next_visual_col - left_col.max(current_visual_col);
+            let plan = plan_glyph_draw(width, current_visual_col, left_col);
+            let visible_width = plan.visible_width;
 
             // Calculate where to draw in the layer (relative to gutter)
             let mut display_col = rendered_col + config.gutter_width;
@@ -614,15 +634,16 @@ fn render_line(
                 }
             }
 
-            if display_col < config.visible_cols {
+            if display_col < config.visible_cols && visible_width > 0 {
                 let fg = item.fg.or(config.default_fg);
                 let bg = item.bg.or(config.default_bg);
 
                 // Tabs are already expanded by TabLayout — store a space so the
                 // terminal never receives a raw \t (which would jump to the
                 // terminal's own tab stop rather than the editor's tab_width).
-                // Wide chars (width > 1) also fill their remaining columns with spaces.
-                let display_char = if item.char == Character::Tab {
+                // A glyph straddling the left scroll edge also renders as a space:
+                // terminals show a partially-scrolled double-width cell as blank.
+                let display_char = if item.char == Character::Tab || plan.straddles_left_edge {
                     Character::from(' ')
                 } else {
                     item.char

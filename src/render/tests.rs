@@ -1221,6 +1221,156 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
     );
 }
 
+#[test]
+fn test_wide_char_straddling_left_col_renders_as_space() {
+    // A CJK char (width 2) followed by "hello": with left_col=1 it straddles
+    // the left edge and must render as a space, keeping later columns aligned.
+    let mut term = MockTerminal::new(5, 40);
+    let mut buf = TextBuffer::new(64).unwrap();
+    buf.insert_str("你hello").unwrap();
+    let mut state = State::new();
+    state.update_buffer_stats(1, 6, crate::document::LineEnding::LF);
+    let mut system = RenderSystem::new(5, 40);
+
+    system.viewport.set_scroll(0, 1);
+
+    system
+        .render(
+            &mut term,
+            RenderState {
+                buf: &buf,
+                current_mode: Mode::Normal,
+                pending_key: None,
+                pending_count: 0,
+                state: &state,
+                needs_clear: true,
+                tab_width: 4,
+                highlights: None,
+                capture_map: None,
+                injection_highlights: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
+                terminal_cursor: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
+                annotation_concealed: None,
+                terminal_cell_colors: None,
+                show_line_numbers: false,
+                display_map: None,
+            },
+        )
+        .unwrap();
+
+    let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
+    assert_eq!(
+        layer.get_cell(0, 0).unwrap().content,
+        Character::from(' '),
+        "partially-scrolled wide glyph must render as a space, not a clipped glyph"
+    );
+    assert_eq!(
+        layer.get_cell(0, 1).unwrap().content,
+        Character::from('h'),
+        "'h' must follow directly after the straddling wide char, not be shifted"
+    );
+}
+
+#[test]
+fn test_zero_width_char_does_not_write_stray_cell() {
+    // 'a' followed by a zero-width combining accent: the accent must not
+    // write its own cell, which would corrupt whatever the terminal has there.
+    let mut term = MockTerminal::new(5, 40);
+    let mut buf = TextBuffer::new(64).unwrap();
+    buf.insert_str("a\u{0301}").unwrap();
+    let mut state = State::new();
+    state.update_buffer_stats(1, 2, crate::document::LineEnding::LF);
+    let mut system = RenderSystem::new(5, 40);
+
+    system
+        .render(
+            &mut term,
+            RenderState {
+                buf: &buf,
+                current_mode: Mode::Normal,
+                pending_key: None,
+                pending_count: 0,
+                state: &state,
+                needs_clear: true,
+                tab_width: 4,
+                highlights: None,
+                capture_map: None,
+                injection_highlights: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
+                terminal_cursor: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: None,
+                annotation_inline: None,
+                annotation_concealed: None,
+                terminal_cell_colors: None,
+                show_line_numbers: false,
+                display_map: None,
+            },
+        )
+        .unwrap();
+
+    let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
+    assert_eq!(
+        layer.get_cell(0, 0).unwrap().content,
+        Character::from('a'),
+        "'a' must remain in its own cell"
+    );
+    assert_ne!(
+        layer.get_cell(0, 1).unwrap().content,
+        Character::from('\u{0301}'),
+        "a zero-width combining char must not write its own stray cell"
+    );
+}
+
+// plan_glyph_draw: left-scroll-edge clipping decisions
+
+#[test]
+fn test_plan_glyph_draw_fully_visible() {
+    use crate::render::plan_glyph_draw;
+    let plan = plan_glyph_draw(1, 5, 0);
+    assert_eq!(plan.visible_width, 1);
+    assert!(!plan.straddles_left_edge);
+}
+
+#[test]
+fn test_plan_glyph_draw_wide_char_straddling_left_edge() {
+    use crate::render::plan_glyph_draw;
+    // A width-2 glyph starting at visual col 0 with left_col=1 has only
+    // 1 column visible: it straddles the edge and must render as a space.
+    let plan = plan_glyph_draw(2, 0, 1);
+    assert_eq!(plan.visible_width, 1);
+    assert!(plan.straddles_left_edge);
+}
+
+#[test]
+fn test_plan_glyph_draw_wide_char_fully_off_screen() {
+    use crate::render::plan_glyph_draw;
+    let plan = plan_glyph_draw(2, 0, 2);
+    assert_eq!(plan.visible_width, 0);
+    assert!(!plan.straddles_left_edge);
+}
+
+#[test]
+fn test_plan_glyph_draw_zero_width_char_is_never_drawn() {
+    use crate::render::plan_glyph_draw;
+    let plan = plan_glyph_draw(0, 3, 0);
+    assert_eq!(plan.visible_width, 0);
+    assert!(!plan.straddles_left_edge);
+}
+
 // wrap_text unicode display-width tests
 
 #[test]
