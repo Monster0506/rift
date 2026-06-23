@@ -415,6 +415,18 @@ impl Syntax {
                     }
                 }
 
+                // Some patterns (e.g. markdown HTML blocks/frontmatter) supply the
+                // language via `#set! injection.language "x"` instead of a capture.
+                if lang_name.is_none() {
+                    for prop in query.property_settings(m.pattern_index) {
+                        if &*prop.key == "injection.language" {
+                            if let Some(v) = &prop.value {
+                                lang_name = Some(normalize_lang_name(v));
+                            }
+                        }
+                    }
+                }
+
                 if let (Some(lang), Some(range)) = (lang_name, content_range) {
                     if !lang.is_empty() {
                         pairs.push((lang, range));
