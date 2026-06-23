@@ -209,6 +209,26 @@ fn test_index_queries_and_rebuild_after_edit() {
     );
 }
 
+/// `update()` mutating only a non-positional field (no anchor or
+/// interactivity change) must not invalidate the already-built index.
+#[test]
+fn test_update_non_positional_change_keeps_index_valid() {
+    let mut store = AnnotationStore::new();
+    let id = store.add(Annotation::new(
+        Kind::new("ui.checkbox"),
+        Anchor::point(5),
+        AnnotationOwner::User,
+    ));
+    // Force the index to build once.
+    assert_eq!(store.query_at(5).count(), 1);
+    assert!(!store.is_index_dirty());
+
+    // Toggle `visible` only; the anchor never moves.
+    store.update(id, |a| a.visible = !a.visible);
+
+    assert!(!store.is_index_dirty());
+}
+
 // Interactive navigation (P4)
 
 fn interactive(kind: &str, start: usize, end: usize) -> Annotation {

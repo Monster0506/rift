@@ -285,6 +285,12 @@ impl AnnotationStore {
         self.aux_dirty.set(true);
     }
 
+    /// Whether the interval tree index is currently stale. Test-only.
+    #[cfg(test)]
+    pub(crate) fn is_index_dirty(&self) -> bool {
+        self.index_dirty.get()
+    }
+
     /// Rebuild `by_id` + `line_index` if stale (a single O(n) pass). Used by
     /// line-anchor edit tracking, which never needs the interval tree.
     fn ensure_aux(&self) {
@@ -384,11 +390,15 @@ impl AnnotationStore {
     }
 
     /// Mutate the annotation with the given id in place. Returns `false` if no
-    /// such annotation exists.
+    /// such annotation exists. Skips the index rebuild when neither the anchor
+    /// nor interactivity changed, since those are all the index depends on.
     pub fn update(&mut self, id: AnnotationId, f: impl FnOnce(&mut Annotation)) -> bool {
         if let Some(a) = self.annotations.iter_mut().find(|a| a.id == id) {
+            let before = (a.anchor, a.is_interactive());
             f(a);
-            self.invalidate_index();
+            if (a.anchor, a.is_interactive()) != before {
+                self.invalidate_index();
+            }
             true
         } else {
             false

@@ -352,9 +352,7 @@ mod markdown_tests {
     }
 }
 
-// =============================================================================
 // Dynamic grammar registration dedup
-// =============================================================================
 
 #[cfg(feature = "treesitter")]
 mod register_grammar_tests {
