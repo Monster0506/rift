@@ -577,6 +577,120 @@ fn test_explorer_toggle_hidden_flips_show_hidden() {
     }
 }
 
+#[cfg(any(unix, windows))]
+fn symlink_dir_for_test(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link)
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_dir(target, link)
+    }
+}
+
+#[cfg(any(unix, windows))]
+fn symlink_file_for_test(target: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link)
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_file(target, link)
+    }
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn test_explorer_split_select_does_not_follow_swapped_symlink() {
+    use crate::document::DirEntry;
+
+    let base = std::env::temp_dir().join(format!(
+        "rift_explorer_toctou_test_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let dir_b = base.join("dir_b");
+    let target_file = base.join("target_file.txt");
+    let link = base.join("link");
+
+    std::fs::create_dir_all(&dir_b).unwrap();
+    std::fs::write(&target_file, "a").unwrap();
+    if symlink_file_for_test(&target_file, &link).is_err() {
+        // No permission to create symlinks in this environment (e.g.
+        // unprivileged Windows); skip rather than fail spuriously.
+        let _ = std::fs::remove_dir_all(&base);
+        return;
+    }
+
+    let mut editor = create_editor();
+    editor.open_explorer(base.clone());
+    let layout = editor.panel_layout.clone().expect("panel layout");
+
+    // Simulate a listing snapshot where the fs.entry payload carries no
+    // name/is_dir (the documented fallback case), forcing select-time
+    // resolution. At listing time `link` pointed at a file, so it was
+    // listed as a file (is_dir: false).
+    let entries = vec![DirEntry {
+        path: link.clone(),
+        is_dir: false,
+        id: 0,
+    }];
+    {
+        let doc = editor
+            .document_manager
+            .get_document_mut(layout.dir_doc_id)
+            .unwrap();
+        doc.populate_directory_buffer(entries);
+        doc.annotations
+            .clear_by_kind_prefix(crate::annotations::well_known::FS_ENTRY);
+        doc.annotations.create_directory_entry(1, 1);
+    }
+
+    // Disk state changes between listing and selection: the symlink is
+    // swapped to point at a directory instead of a file.
+    std::fs::remove_file(&link).unwrap();
+    if symlink_dir_for_test(&dir_b, &link).is_err() {
+        let _ = std::fs::remove_dir_all(&base);
+        return;
+    }
+
+    // Move cursor onto the "link" line and select it.
+    {
+        let doc = editor
+            .document_manager
+            .get_document_mut(layout.dir_doc_id)
+            .unwrap();
+        let line_start = doc.buffer.line_index.get_start(1).unwrap();
+        doc.buffer.set_cursor(line_start).unwrap();
+    }
+    editor.handle_explorer_split_select();
+
+    // If treated as a directory, the explorer split stays open and its
+    // dir pane buffer's path changes to the descended-into directory.
+    // If treated as a file, the split closes and the dir doc is removed.
+    let descended = match editor.document_manager.get_document(layout.dir_doc_id) {
+        Some(doc) => match &doc.kind {
+            crate::document::BufferKind::Directory { path, .. } => *path != base,
+            _ => false,
+        },
+        None => false,
+    };
+
+    // The entry was listed as a file; selecting it must not silently
+    // follow a symlink that was swapped to a directory after listing.
+    assert!(
+        !descended,
+        "explorer followed a symlink that changed from file to directory after listing"
+    );
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
 fn load_text(editor: &mut Editor<MockTerminal>, text: &str) {
     let doc = editor.active_document();
     doc.buffer.move_to_start();

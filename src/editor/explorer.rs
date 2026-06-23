@@ -781,8 +781,12 @@ impl<T: TerminalBackend> Editor<T> {
         let (entry_name, is_dir) = match entry_info {
             Some((name, is_dir)) => (name, is_dir),
             None => {
+                // No listing-time payload: use symlink_metadata so a symlink is
+                // never reported as a directory based on a live, possibly-changed target.
                 let name = line_text.trim_end_matches('/').to_string();
-                let is_dir = dir_path.join(&name).is_dir();
+                let is_dir = std::fs::symlink_metadata(dir_path.join(&name))
+                    .map(|m| m.is_dir())
+                    .unwrap_or(false);
                 (name, is_dir)
             }
         };
