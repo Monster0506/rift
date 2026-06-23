@@ -231,7 +231,8 @@ impl JobManager {
                     }));
                     if let Err(payload) = result {
                         let details = panic_payload_to_string(&payload);
-                        let _ = sender.send(JobMessage::Error(id, format!("job panicked: {details}")));
+                        let _ =
+                            sender.send(JobMessage::Error(id, format!("job panicked: {details}")));
                     }
                 }
                 limiter.release();
