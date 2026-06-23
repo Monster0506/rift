@@ -416,7 +416,9 @@ fn layout_no_degenerate_pane_when_available_below_two_min() {
 
     let mut htree = SplitTree::new(1, 24, 80);
     let hw1 = htree.focused_window_id();
-    let hw2 = htree.split(SplitDirection::Horizontal, hw1, 1, 12, 80);
+    let hw2 = htree
+        .split(SplitDirection::Horizontal, hw1, 1, 12, 80)
+        .unwrap();
 
     let total_rows = 2 * MIN_WINDOW_ROWS - 1;
     let h_layouts = htree.compute_layout(total_rows, 80);
@@ -429,7 +431,9 @@ fn layout_no_degenerate_pane_when_available_below_two_min() {
 
     let mut vtree = SplitTree::new(1, 24, 80);
     let vw1 = vtree.focused_window_id();
-    let vw2 = vtree.split(SplitDirection::Vertical, vw1, 2, 24, 40);
+    let vw2 = vtree
+        .split(SplitDirection::Vertical, vw1, 2, 24, 40)
+        .unwrap();
 
     let total_cols = 2 * MIN_WINDOW_COLS - 1;
     let v_layouts = vtree.compute_layout(24, total_cols);
