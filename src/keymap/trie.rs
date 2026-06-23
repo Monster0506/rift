@@ -65,19 +65,8 @@ impl TrieNode {
     /// Look up a sequence
     pub fn lookup<'a>(&'a self, keys: &[Key]) -> MatchResult<'a> {
         if keys.is_empty() {
-            // We reached the end of the input sequence.
-            // If this node has an action, it's an exact match.
-            // But if it also has children, it's ambiguous (Prefix).
-            // Usually, longest match wins, or specific overrides prefix.
-            // If we have an exact match here, we return it.
-            // If we have children but no action, it's a Prefix.
-            // If we have children AND action, strictly speaking it's an Exact match for the *current* sequence,
-            // but the user might type more.
-            // Vim logic: if exact match exists, execute it immediately UNLESS there's a longer mapping?
-            // Actually, if a mapping is a prefix of another, usually wait for timeout.
-            // For simplicity: if Exact match exists, return Exact.
-            // If NO exact match but Children exist, return Prefix.
-
+            // A node with both an action and children is Ambiguous: the caller
+            // waits for more keys, then flushes to this action on timeout.
             if let Some(action) = &self.action {
                 if !self.children.is_empty() {
                     return MatchResult::Ambiguous(action);

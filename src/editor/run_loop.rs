@@ -7,6 +7,10 @@ use crate::mode::Mode;
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
+/// Milliseconds an ambiguous non-operator key sequence waits for a follow-up
+/// key before the shorter action is flushed, mirroring vim's `timeoutlen`.
+const KEY_SEQUENCE_TIMEOUT_MS: u64 = 1000;
+
 impl<T: TerminalBackend> Editor<T> {
     pub fn run(&mut self) -> Result<(), RiftError> {
         // Initial render
@@ -14,6 +18,11 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Main event loop
         while !self.should_quit {
+            // Pending-key timer only applies while a sequence is in progress.
+            if self.pending_keys.is_empty() {
+                self.pending_keys_started_at = None;
+            }
+
             let mut jobs_changed = false;
             const MAX_JOB_MESSAGES: usize = 10;
             let mut processed_jobs = 0;
@@ -68,7 +77,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.update_keypress(key_press);
 
                 use crate::key::Key;
-                use crate::keymap::{KeyContext, MatchResult};
+                use crate::keymap::MatchResult;
 
                 // Handle special keys immediately
                 if let Key::Resize(cols, rows) = key_press {
@@ -206,78 +215,7 @@ impl<T: TerminalBackend> Editor<T> {
                 // Input Processing Loop (allows backtracking)
                 loop {
                     // 1. Resolve Context
-                    let context = {
-                        let is_directory = self
-                            .document_manager
-                            .active_document()
-                            .map(|d| d.is_directory())
-                            .unwrap_or(false);
-                        let is_undotree = self
-                            .document_manager
-                            .active_document()
-                            .map(|d| d.is_undotree())
-                            .unwrap_or(false);
-                        let is_clipboard = self
-                            .document_manager
-                            .active_document()
-                            .map(|d| d.is_clipboard())
-                            .unwrap_or(false);
-                        let is_clipboard_entry = self
-                            .document_manager
-                            .active_document()
-                            .map(|d| {
-                                matches!(d.kind, crate::document::BufferKind::ClipboardEntry { .. })
-                            })
-                            .unwrap_or(false);
-                        let is_terminal = self
-                            .document_manager
-                            .active_document()
-                            .map(|d| d.is_terminal())
-                            .unwrap_or(false);
-                        let is_location_list = self
-                            .document_manager
-                            .active_document()
-                            .map(|d| d.is_location_list())
-                            .unwrap_or(false);
-                        let is_regions = self
-                            .document_manager
-                            .active_document()
-                            .map(|d| d.is_regions())
-                            .unwrap_or(false);
-                        match self.current_mode {
-                            Mode::Normal
-                            | Mode::OperatorPending
-                            | Mode::Visual
-                            | Mode::VisualLine
-                            | Mode::VisualBlock => {
-                                if self.current_mode.is_visual() {
-                                    KeyContext::Visual
-                                } else if is_directory {
-                                    KeyContext::FileExplorer
-                                } else if is_undotree {
-                                    KeyContext::UndoTree
-                                } else if is_clipboard {
-                                    KeyContext::Clipboard
-                                } else if is_clipboard_entry {
-                                    KeyContext::ClipboardEntry
-                                } else if is_terminal {
-                                    KeyContext::TerminalNormal
-                                } else if is_location_list {
-                                    KeyContext::LocationList
-                                } else if is_regions {
-                                    KeyContext::Regions
-                                } else if self.current_mode == Mode::OperatorPending {
-                                    KeyContext::OperatorPending
-                                } else {
-                                    KeyContext::Normal
-                                }
-                            }
-                            Mode::Insert | Mode::Replace => KeyContext::Insert,
-                            Mode::Command => KeyContext::Command,
-                            Mode::Search => KeyContext::Search,
-                            Mode::Rename => KeyContext::Command,
-                        }
-                    };
+                    let context = self.resolve_key_context();
 
                     // 2. Lookup Action in KeyMap
                     let match_result = self.keymap.lookup(context, &self.pending_keys);
@@ -315,6 +253,7 @@ impl<T: TerminalBackend> Editor<T> {
                             if let Action::Editor(EditorAction::Operator(_)) = action {
                                 let action = action.clone();
                                 self.pending_keys.clear();
+                                self.pending_keys_started_at = None;
                                 self.handle_action(&action);
                                 // Don't clear pending_count for operators
                                 self.update_state_and_render(
@@ -324,7 +263,9 @@ impl<T: TerminalBackend> Editor<T> {
                                 )?;
                                 break;
                             }
-                            // For non-operators, wait for more keys
+                            // For non-operators, wait for more keys (subject to timeout).
+                            self.pending_keys_started_at
+                                .get_or_insert_with(std::time::Instant::now);
                             self.update_state_and_render(
                                 key_press,
                                 crate::key_handler::KeyAction::Continue,
@@ -333,7 +274,9 @@ impl<T: TerminalBackend> Editor<T> {
                             break;
                         }
                         MatchResult::Prefix => {
-                            // Wait for more keys.
+                            // Wait for more keys (subject to timeout).
+                            self.pending_keys_started_at
+                                .get_or_insert_with(std::time::Instant::now);
                             self.update_state_and_render(
                                 key_press,
                                 crate::key_handler::KeyAction::Continue,
@@ -447,6 +390,8 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
             } else {
+                self.flush_pending_keys_on_timeout()?;
+
                 let poll_dur =
                     std::time::Duration::from_millis(self.state.settings.poll_timeout_ms);
                 let notif_tick = self.state.error_manager.notifications().tick(poll_dur);
@@ -482,6 +427,108 @@ impl<T: TerminalBackend> Editor<T> {
             .dispatch(&crate::plugin::EditorEvent::EditorQuit);
         self.apply_plugin_mutations();
 
+        Ok(())
+    }
+
+    /// Resolve the active `KeyContext` for `self.pending_keys` lookups, based
+    /// on the current mode and active document kind.
+    pub(super) fn resolve_key_context(&self) -> crate::keymap::KeyContext {
+        use crate::keymap::KeyContext;
+
+        let is_directory = self
+            .document_manager
+            .active_document()
+            .map(|d| d.is_directory())
+            .unwrap_or(false);
+        let is_undotree = self
+            .document_manager
+            .active_document()
+            .map(|d| d.is_undotree())
+            .unwrap_or(false);
+        let is_clipboard = self
+            .document_manager
+            .active_document()
+            .map(|d| d.is_clipboard())
+            .unwrap_or(false);
+        let is_clipboard_entry = self
+            .document_manager
+            .active_document()
+            .map(|d| matches!(d.kind, crate::document::BufferKind::ClipboardEntry { .. }))
+            .unwrap_or(false);
+        let is_terminal = self
+            .document_manager
+            .active_document()
+            .map(|d| d.is_terminal())
+            .unwrap_or(false);
+        let is_location_list = self
+            .document_manager
+            .active_document()
+            .map(|d| d.is_location_list())
+            .unwrap_or(false);
+        let is_regions = self
+            .document_manager
+            .active_document()
+            .map(|d| d.is_regions())
+            .unwrap_or(false);
+        match self.current_mode {
+            Mode::Normal
+            | Mode::OperatorPending
+            | Mode::Visual
+            | Mode::VisualLine
+            | Mode::VisualBlock => {
+                if self.current_mode.is_visual() {
+                    KeyContext::Visual
+                } else if is_directory {
+                    KeyContext::FileExplorer
+                } else if is_undotree {
+                    KeyContext::UndoTree
+                } else if is_clipboard {
+                    KeyContext::Clipboard
+                } else if is_clipboard_entry {
+                    KeyContext::ClipboardEntry
+                } else if is_terminal {
+                    KeyContext::TerminalNormal
+                } else if is_location_list {
+                    KeyContext::LocationList
+                } else if is_regions {
+                    KeyContext::Regions
+                } else if self.current_mode == Mode::OperatorPending {
+                    KeyContext::OperatorPending
+                } else {
+                    KeyContext::Normal
+                }
+            }
+            Mode::Insert | Mode::Replace => KeyContext::Insert,
+            Mode::Command => KeyContext::Command,
+            Mode::Search => KeyContext::Search,
+            Mode::Rename => KeyContext::Command,
+        }
+    }
+
+    /// If a non-operator key sequence has been pending longer than the
+    /// timeout, flush it: execute the shorter exact action if one exists,
+    /// otherwise just clear the pending state.
+    pub(super) fn flush_pending_keys_on_timeout(&mut self) -> Result<(), RiftError> {
+        use crate::keymap::MatchResult;
+
+        let Some(started_at) = self.pending_keys_started_at else {
+            return Ok(());
+        };
+        if started_at.elapsed() < std::time::Duration::from_millis(KEY_SEQUENCE_TIMEOUT_MS) {
+            return Ok(());
+        }
+
+        let context = self.resolve_key_context();
+        let match_result = self.keymap.lookup(context, &self.pending_keys);
+        self.pending_keys.clear();
+        self.pending_keys_started_at = None;
+
+        if let MatchResult::Exact(action) | MatchResult::Ambiguous(action) = match_result {
+            let action = action.clone();
+            self.handle_action(&action);
+            self.pending_count = 0;
+            self.update_and_render()?;
+        }
         Ok(())
     }
 

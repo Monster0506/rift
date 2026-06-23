@@ -143,6 +143,9 @@ pub struct Editor<T: TerminalBackend> {
     pending_operator_count: usize,
     pending_operator: Option<crate::action::OperatorType>,
     pending_grammar: Option<pending_grammar::PendingGrammar>,
+    /// When `Some`, `pending_keys` is non-empty waiting on a non-operator
+    /// Ambiguous/Prefix match; cleared once resolved or flushed by timeout.
+    pending_keys_started_at: Option<std::time::Instant>,
     /// Set while `ys` is waiting for its motion/text-object before the delimiter
     /// char. Carries the delimiter-repeat count captured when the first `s` fired.
     pending_surround_add: Option<usize>,

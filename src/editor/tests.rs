@@ -4167,3 +4167,55 @@ fn dd_deletes_the_current_line_via_the_operator_doubling_path_not_a_keymap_seque
         "dd should delete the first line via the operator-doubling path"
     );
 }
+
+#[test]
+fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
+    use crate::action::{Action, EditorAction, Motion};
+    use crate::buffer::api::BufferView;
+    use crate::key::Key;
+    use crate::keymap::{KeyContext, MatchResult};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "line one\nline two\nline three\n");
+
+    // 'Q' is both a complete action and a prefix of [Q, Q], same shape as an
+    // Ambiguous non-operator match -- nothing in the default keymap does this.
+    editor.keymap.register(
+        KeyContext::Normal,
+        Key::Char('Q'),
+        Action::Editor(EditorAction::Move(Motion::Down)),
+    );
+    editor.keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char('Q'), Key::Char('Q')],
+        Action::Editor(EditorAction::Move(Motion::Right)),
+    );
+
+    assert_eq!(
+        editor.keymap.lookup(KeyContext::Normal, &[Key::Char('Q')]),
+        MatchResult::Ambiguous(&Action::Editor(EditorAction::Move(Motion::Down)))
+    );
+
+    // Enter the pending state exactly as the run loop's Ambiguous-non-operator
+    // branch does, but back-date the stamp past the timeout instead of
+    // sleeping, so the test resolves immediately whether the fix is present.
+    editor.pending_keys.push(Key::Char('Q'));
+    editor.pending_keys_started_at =
+        Some(std::time::Instant::now() - std::time::Duration::from_millis(1500));
+
+    editor.flush_pending_keys_on_timeout().unwrap();
+
+    assert!(
+        editor.pending_keys.is_empty(),
+        "timeout flush should clear pending_keys"
+    );
+    assert!(
+        editor.pending_keys_started_at.is_none(),
+        "timeout flush should clear the pending-key timer"
+    );
+    assert_eq!(
+        editor.active_document().buffer.cursor(),
+        editor.active_document().buffer.line_start(1),
+        "the short 'Q' action (Move Down) should have fired, not the longer sequence"
+    );
+}
