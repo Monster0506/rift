@@ -48,6 +48,28 @@ fn test_move_word_right_symbols() {
 }
 
 #[test]
+fn test_move_word_end_basic() {
+    let mut buffer = create_buffer("foo bar");
+    // "foo" -> lands on last char of "foo", not one past it
+    assert!(buffer.move_word_end());
+    assert_eq!(buffer.cursor(), 2); // last 'o' of "foo"
+
+    // Already on last char of "foo" -> advances to last char of "bar"
+    assert!(buffer.move_word_end());
+    assert_eq!(buffer.cursor(), 6); // last 'r' of "bar"
+}
+
+#[test]
+fn test_move_word_end_motion_dispatch() {
+    let mut buffer = create_buffer("foo bar");
+    apply_motion(Motion::WordEnd, &mut buffer);
+    assert_eq!(buffer.cursor(), 2);
+
+    apply_motion(Motion::WordEnd, &mut buffer);
+    assert_eq!(buffer.cursor(), 6);
+}
+
+#[test]
 fn test_move_word_left_basic() {
     let mut buffer = create_buffer("hello world");
     buffer.move_to_end();

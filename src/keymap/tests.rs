@@ -343,6 +343,18 @@ fn test_default_explorer_toggle_hidden_keybind() {
 }
 
 #[test]
+fn test_default_word_end_keybind() {
+    let mut map = KeyMap::new();
+    register_defaults(&mut map);
+
+    assert_eq!(
+        map.get_action(KeyContext::Normal, Key::Char('e')),
+        Some(&Action::Editor(EditorAction::Move(Motion::WordEnd))),
+        "Normal 'e' should be bound to Motion::WordEnd by default"
+    );
+}
+
+#[test]
 fn test_operator_pending_text_objects_not_in_trie() {
     use crate::keymap::trie::MatchResult;
 

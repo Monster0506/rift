@@ -33,6 +33,8 @@ pub enum Motion {
     NextWord,
     /// Move to the previous word
     PreviousWord,
+    /// Move to the end of the current or next word (vim's `e`)
+    WordEnd,
     /// Move to the next big word (whitespace delimited)
     NextBigWord,
     /// Move to the previous big word (whitespace delimited)
@@ -129,6 +131,9 @@ impl Motion {
             }
             Motion::PreviousWord => {
                 buf.move_word_left();
+            }
+            Motion::WordEnd => {
+                buf.move_word_end();
             }
             Motion::NextBigWord => {
                 buf.move_big_word_right();

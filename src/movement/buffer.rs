@@ -45,7 +45,7 @@ pub fn move_word_right(buffer: &mut TextBuffer) -> bool {
     buffer.cursor() != start_pos
 }
 
-/// Move cursor to the end of the current word, without skipping trailing whitespace.
+/// Move cursor to the end of the current or next word (vim's inclusive `e` motion).
 ///
 /// Returns `true` if the cursor moved, `false` if already at end
 pub fn move_word_end(buffer: &mut TextBuffer) -> bool {
@@ -55,18 +55,44 @@ pub fn move_word_end(buffer: &mut TextBuffer) -> bool {
     }
     let start_pos = buffer.cursor();
 
+    // If already on the last character of a word, step past it (and any
+    // trailing whitespace) so we search for the *next* word's end.
     if let Some(curr) = buffer.char_at(buffer.cursor()) {
-        let start_class = classify_character(curr);
+        let curr_class = classify_character(curr);
+        let next_class = buffer.char_at(buffer.cursor() + 1).map(classify_character);
+        if curr_class != CharClass::Whitespace && next_class != Some(curr_class) {
+            buffer.move_right();
+        }
+    }
 
-        // Skip current word category
+    // Skip leading whitespace
+    while buffer.cursor() < len {
+        match buffer.char_at(buffer.cursor()) {
+            Some(c) if classify_character(c) == CharClass::Whitespace => {
+                buffer.move_right();
+            }
+            _ => break,
+        }
+    }
+
+    if buffer.cursor() >= len {
+        return buffer.cursor() != start_pos;
+    }
+
+    if let Some(curr) = buffer.char_at(buffer.cursor()) {
+        let target_class = classify_character(curr);
+
+        // Skip through the word's character class, then step back one
+        // position so the cursor lands inclusively on the last character.
         while buffer.cursor() < len {
             match buffer.char_at(buffer.cursor()) {
-                Some(c) if classify_character(c) == start_class => {
+                Some(c) if classify_character(c) == target_class => {
                     buffer.move_right();
                 }
                 _ => break,
             }
         }
+        buffer.move_left();
     }
 
     buffer.cursor() != start_pos

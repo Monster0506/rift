@@ -210,6 +210,11 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::Char('b'),
         Action::Editor(EditorAction::Move(Motion::PreviousWord)),
     );
+    keymap.register(
+        KeyContext::Normal,
+        Key::Char('e'),
+        Action::Editor(EditorAction::Move(Motion::WordEnd)),
+    );
     // Line Motion
     keymap.register(
         KeyContext::Normal,
