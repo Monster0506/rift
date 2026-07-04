@@ -360,6 +360,15 @@ impl LspManager {
         }
     }
 
+    /// True when a did_change for `path` would actually reach a live client,
+    /// so callers can skip materializing the document content otherwise.
+    pub fn is_tracking(&self, path: &Path) -> bool {
+        let uri = path_to_uri(path);
+        self.open_docs
+            .get(&uri)
+            .is_some_and(|state| self.clients.contains_key(&state.language))
+    }
+
     /// Notify the server that a document's content changed.
     pub fn did_change(&mut self, path: &Path, content: &str) {
         let uri = path_to_uri(path);

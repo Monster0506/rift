@@ -664,8 +664,14 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Send LSP did_change for the currently active document.
     pub(super) fn lsp_notify_change(&mut self) {
+        // Materializing the full document is O(N); skip it when no live
+        // client would receive the notification (the common no-LSP case).
+        let lsp_manager = &self.lsp_manager;
         let info = self.document_manager.active_document().and_then(|doc| {
             let path = doc.path()?.to_path_buf();
+            if !lsp_manager.is_tracking(&path) {
+                return None;
+            }
             let content = String::from_utf8_lossy(&doc.buffer.to_logical_bytes()).into_owned();
             Some((path, content))
         });
