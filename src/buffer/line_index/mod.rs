@@ -152,9 +152,11 @@ impl LineIndex {
 
     pub fn replace(&mut self, pos: usize, count: usize, chars: &[Character]) {
         self.table.replace(pos, count, chars);
-        // Replace can both delete and insert; rebuild lazily rather than
-        // tracking both edits' line effects here.
-        *self.line_starts.get_mut() = None;
+        if let Some(starts) = self.line_starts.get_mut().as_mut() {
+            Self::apply_delete(starts, pos, count);
+            Self::apply_insert(starts, pos, chars);
+            debug_assert_eq!(starts.len(), self.table.get_line_count());
+        }
     }
 
     pub fn len(&self) -> usize {
