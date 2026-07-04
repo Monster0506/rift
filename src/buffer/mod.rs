@@ -86,6 +86,12 @@ impl TextBuffer {
         self.line_index.len()
     }
 
+    /// Total UTF-8 byte length of the text (O(1), from rope metadata).
+    #[must_use]
+    pub fn byte_len(&self) -> usize {
+        self.line_index.table.byte_len()
+    }
+
     /// Check if buffer is empty
     #[must_use]
     pub fn is_empty(&self) -> bool {
