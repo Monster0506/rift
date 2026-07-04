@@ -1091,12 +1091,11 @@ fn find_nth_newline_end(
     if target <= left_nl {
         find_nth_newline_end(node.left.as_deref(), target, original, add)
     } else {
-        let slice = get_piece_slice(&node.piece, original, add);
-        let (piece_nl, _) = count_stats(slice);
-        let current_nl = left_nl + piece_nl;
+        let current_nl = left_nl + node.piece_newlines;
 
         if target <= current_nl {
             // In this piece
+            let slice = get_piece_slice(&node.piece, original, add);
             let needed_in_piece = target - left_nl;
 
             let mut count = 0;
@@ -1144,7 +1143,10 @@ fn get_line_at_pos(
         let left_nl = node.left.as_ref().map_or(0, |n| n.newlines);
 
         if pos < left_len + node.piece.len {
-            // In this piece
+            // In this piece; a piece with no newlines needs no scan.
+            if node.piece_newlines == 0 {
+                return left_nl;
+            }
             let offset = pos - left_len;
             let slice = get_piece_slice(&node.piece, original, add);
 
@@ -1152,10 +1154,8 @@ fn get_line_at_pos(
             left_nl + piece_nl_before
         } else {
             // In right child
-            let slice = get_piece_slice(&node.piece, original, add);
-            let (piece_nl, _) = count_stats(slice);
             left_nl
-                + piece_nl
+                + node.piece_newlines
                 + get_line_at_pos(
                     node.right.as_deref(),
                     pos - left_len - node.piece.len,
@@ -1187,6 +1187,10 @@ fn get_byte_offset_recursive(
     } else if char_pos < left_len + node.piece.len {
         // In this piece
         let offset = char_pos - left_len;
+        // All-single-byte piece: in-piece byte offset equals char offset.
+        if node.piece_byte_len == node.piece.len {
+            return left_byte_len + offset;
+        }
         let slice = get_piece_slice(&node.piece, original, add);
 
         // Sum byte len of `offset` characters
@@ -1229,6 +1233,10 @@ fn get_char_idx_recursive(
     } else if byte_pos < left_byte_len + node.piece_byte_len {
         // In this piece
         let target_in_piece = byte_pos - left_byte_len;
+        // All-single-byte piece: in-piece char index equals byte offset.
+        if node.piece_byte_len == node.piece.len {
+            return left_len + target_in_piece;
+        }
         let slice = get_piece_slice(&node.piece, original, add);
 
         let mut current_bytes = 0;
