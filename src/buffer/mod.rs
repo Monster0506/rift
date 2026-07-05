@@ -26,8 +26,20 @@ pub struct ByteEdit {
     pub ins_bytes: usize,
 }
 
+/// A mutation in character coordinates: `del` chars removed at `pos`, then
+/// `ins` chars inserted there. Consumed by incremental caches.
+#[derive(Debug, Clone, Copy)]
+pub struct CharEdit {
+    pub pos: usize,
+    pub del: usize,
+    pub ins: usize,
+}
+
+/// Consumers only fast-path a single pending edit; past this cap they
+/// rebuild from scratch anyway, so stop accumulating.
+const CHAR_EDIT_LOG_CAP: usize = 64;
+
 /// Text buffer using a Piece Table for efficient insertion and deletion.
-#[derive(Clone)]
 pub struct TextBuffer {
     /// Line index which also holds the PieceTable
     pub line_index: LineIndex,
@@ -43,6 +55,25 @@ pub struct TextBuffer {
     /// Cache for byte offsets of line starts (expensive to compute)
     pub byte_map_cache: RefCell<Option<crate::buffer::byte_map::ByteLineMap>>,
     pub edit_log: Vec<ByteEdit>,
+    /// Char-coordinate mirror of `edit_log`, drained by `take_char_edits`.
+    char_edit_log: Vec<CharEdit>,
+}
+
+impl Clone for TextBuffer {
+    fn clone(&self) -> Self {
+        TextBuffer {
+            line_index: self.line_index.clone(),
+            cursor: self.cursor,
+            desired_col: self.desired_col,
+            revision: self.revision,
+            line_cache: self.line_cache.clone(),
+            byte_map_cache: self.byte_map_cache.clone(),
+            edit_log: self.edit_log.clone(),
+            // A clone starts a new edit lineage; stale char edits must not
+            // patch caches keyed to another buffer's history.
+            char_edit_log: Vec::new(),
+        }
+    }
 }
 
 impl TextBuffer {
@@ -57,7 +88,19 @@ impl TextBuffer {
             line_cache: RefCell::new(LineCache::new()),
             byte_map_cache: RefCell::new(None),
             edit_log: Vec::new(),
+            char_edit_log: Vec::new(),
         })
+    }
+
+    fn log_char_edit(&mut self, pos: usize, del: usize, ins: usize) {
+        if self.char_edit_log.len() < CHAR_EDIT_LOG_CAP {
+            self.char_edit_log.push(CharEdit { pos, del, ins });
+        }
+    }
+
+    /// Drain the char-coordinate edits logged since the last call.
+    pub fn take_char_edits(&mut self) -> Vec<CharEdit> {
+        std::mem::take(&mut self.char_edit_log)
     }
 
     /// Get the current cursor position
@@ -220,6 +263,7 @@ impl TextBuffer {
     pub fn insert_chars(&mut self, chars: &[Character]) -> Result<(), RiftError> {
         let byte_pos = self.char_to_byte(self.cursor);
         let ins_bytes: usize = chars.iter().map(|c| c.len_utf8()).sum();
+        self.log_char_edit(self.cursor, 0, chars.len());
         self.line_index.insert(self.cursor, chars);
         self.cursor += chars.len();
         self.revision += 1;
@@ -248,6 +292,7 @@ impl TextBuffer {
         }
         let byte_pos = self.char_to_byte(start);
         let del_bytes = self.char_to_byte(end) - byte_pos;
+        self.log_char_edit(start, count, 0);
         self.line_index.delete(start, count);
         if self.cursor >= end {
             self.cursor -= count;
@@ -275,6 +320,7 @@ impl TextBuffer {
         let byte_pos = self.char_to_byte(start);
         let del_bytes = self.char_to_byte(end) - byte_pos;
         let ins_bytes: usize = chars.iter().map(|c| c.len_utf8()).sum();
+        self.log_char_edit(start, count, chars.len());
         self.line_index.replace(start, count, chars);
         self.cursor = start + chars.len();
         self.revision += 1;
@@ -294,6 +340,7 @@ impl TextBuffer {
         self.cursor -= 1;
         let byte_pos = self.char_to_byte(self.cursor);
         let del_bytes = self.line_index.char_at(self.cursor).len_utf8();
+        self.log_char_edit(self.cursor, 1, 0);
         self.line_index.delete(self.cursor, 1);
         self.revision += 1;
         self.edit_log.push(ByteEdit {
@@ -312,6 +359,7 @@ impl TextBuffer {
         let target = self.line_index.char_at(self.cursor);
         let byte_pos = self.char_to_byte(self.cursor);
         let del_bytes = target.len_utf8();
+        self.log_char_edit(self.cursor, 1, 0);
         self.line_index.delete(self.cursor, 1);
         self.revision += 1;
         self.edit_log.push(ByteEdit {

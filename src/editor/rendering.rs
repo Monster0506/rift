@@ -164,6 +164,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Resolve the display map, reusing `display_map_cache` when revision,
     /// width, and wrap/tab params match (since `:set wrap` doesn't bump revision).
+    /// A cached map that is exactly one buffer edit behind is patched in place.
     pub(super) fn resolve_display_map_cached(
         &mut self,
         doc_id: crate::document::DocumentId,
@@ -172,19 +173,35 @@ impl<T: TerminalBackend> Editor<T> {
         use std::sync::Arc;
         let soft_wrap = self.state.settings.soft_wrap;
         let wrap_width = self.state.settings.wrap_width;
-        let doc = self.document_manager.get_document(doc_id)?;
+        let doc = self.document_manager.get_document_mut(doc_id)?;
         let revision = doc.buffer.revision;
         let params = super::resolve_wrap_params(doc, content_width, soft_wrap, wrap_width);
+        let edits = doc.buffer.take_char_edits();
 
-        if let Some((cid, crev, cw, cached)) = &self.display_map_cache {
-            if *cid == doc_id && *crev == revision && *cw == content_width {
-                let valid = match (&params, cached) {
+        if let Some((cid, crev, cw, cached)) = self.display_map_cache.take() {
+            if cid == doc_id && cw == content_width {
+                let valid = match (&params, &cached) {
                     (None, None) => true,
                     (Some((w, tw)), Some(m)) => m.wrap_width == *w && m.tab_width == *tw,
                     _ => false,
                 };
                 if valid {
-                    return cached.clone();
+                    if crev == revision {
+                        self.display_map_cache = Some((cid, crev, cw, cached.clone()));
+                        return cached;
+                    }
+                    // Exactly one edit behind: rewrap only the affected lines.
+                    if edits.len() == 1 && crev.wrapping_add(1) == revision {
+                        if let Some(mut map) = cached {
+                            let e = edits[0];
+                            if Arc::make_mut(&mut map).apply_edit(&doc.buffer, e.pos, e.del, e.ins)
+                            {
+                                self.display_map_cache =
+                                    Some((doc_id, revision, cw, Some(map.clone())));
+                                return Some(map);
+                            }
+                        }
+                    }
                 }
             }
         }
