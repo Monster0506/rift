@@ -1,4 +1,3 @@
-use super::resolve_display_map;
 use super::Editor;
 use crate::error::{ErrorType, RiftError};
 use crate::render;
@@ -188,8 +187,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Resolve the display map, reusing `display_map_cache` when revision,
-    /// width, and wrap/tab params match (since `:set wrap` doesn't bump revision).
+    /// Resolve the display map through the per-(doc, width) cache; entries are
+    /// reused when revision and wrap/tab params match (`:set wrap` doesn't bump revision).
     /// A cached map that is exactly one buffer edit behind is patched in place.
     pub(super) fn resolve_display_map_cached(
         &mut self,
@@ -197,6 +196,7 @@ impl<T: TerminalBackend> Editor<T> {
         content_width: usize,
     ) -> Option<std::sync::Arc<crate::wrap::DisplayMap>> {
         use std::sync::Arc;
+        const CACHE_CAP: usize = 8;
         let soft_wrap = self.state.settings.soft_wrap;
         let wrap_width = self.state.settings.wrap_width;
         let doc = self.document_manager.get_document_mut(doc_id)?;
@@ -204,28 +204,35 @@ impl<T: TerminalBackend> Editor<T> {
         let params = super::resolve_wrap_params(doc, content_width, soft_wrap, wrap_width);
         let edits = doc.buffer.take_char_edits();
 
-        if let Some((cid, crev, cw, cached)) = self.display_map_cache.take() {
-            if cid == doc_id && cw == content_width {
-                let valid = match (&params, &cached) {
-                    (None, None) => true,
-                    (Some((w, tw)), Some(m)) => m.wrap_width == *w && m.tab_width == *tw,
-                    _ => false,
-                };
-                if valid {
-                    if crev == revision {
-                        self.display_map_cache = Some((cid, crev, cw, cached.clone()));
-                        return cached;
-                    }
-                    // Exactly one edit behind: rewrap only the affected lines.
-                    if edits.len() == 1 && crev.wrapping_add(1) == revision {
-                        if let Some(mut map) = cached {
-                            let e = edits[0];
-                            if Arc::make_mut(&mut map).apply_edit(&doc.buffer, e.pos, e.del, e.ins)
-                            {
-                                self.display_map_cache =
-                                    Some((doc_id, revision, cw, Some(map.clone())));
-                                return Some(map);
-                            }
+        let slot = self
+            .display_map_cache
+            .iter()
+            .position(|e| e.doc_id == doc_id && e.content_width == content_width);
+        if let Some(pos) = slot {
+            let entry = self.display_map_cache.remove(pos);
+            let valid = match (&params, &entry.map) {
+                (None, None) => true,
+                (Some((w, tw)), Some(m)) => m.wrap_width == *w && m.tab_width == *tw,
+                _ => false,
+            };
+            if valid {
+                if entry.revision == revision {
+                    let map = entry.map.clone();
+                    self.display_map_cache.push(entry);
+                    return map;
+                }
+                // Exactly one edit behind: rewrap only the affected lines.
+                if edits.len() == 1 && entry.revision.wrapping_add(1) == revision {
+                    if let Some(mut map) = entry.map {
+                        let e = edits[0];
+                        if Arc::make_mut(&mut map).apply_edit(&doc.buffer, e.pos, e.del, e.ins) {
+                            self.display_map_cache.push(super::DisplayMapCacheEntry {
+                                doc_id,
+                                revision,
+                                content_width,
+                                map: Some(map.clone()),
+                            });
+                            return Some(map);
                         }
                     }
                 }
@@ -234,8 +241,33 @@ impl<T: TerminalBackend> Editor<T> {
 
         let map =
             params.map(|(w, tw)| Arc::new(crate::wrap::DisplayMap::build(&doc.buffer, w, tw)));
-        self.display_map_cache = Some((doc_id, revision, content_width, map.clone()));
+        if self.display_map_cache.len() >= CACHE_CAP {
+            self.display_map_cache.remove(0);
+        }
+        self.display_map_cache.push(super::DisplayMapCacheEntry {
+            doc_id,
+            revision,
+            content_width,
+            map: map.clone(),
+        });
         map
+    }
+
+    /// The display-map cache key a window `cols` wide resolves to, i.e. its
+    /// (doc_id, content_width) after subtracting the gutter.
+    fn window_map_key(
+        &self,
+        doc_id: crate::document::DocumentId,
+        cols: usize,
+    ) -> Option<(crate::document::DocumentId, usize)> {
+        let doc = self.document_manager.get_document(doc_id)?;
+        let show = doc.options.show_line_numbers && self.state.settings.show_line_numbers;
+        let gutter_width = if show {
+            doc.buffer.get_total_lines().to_string().len() + 2
+        } else {
+            0
+        };
+        Some((doc_id, cols.saturating_sub(gutter_width).max(1)))
     }
 
     /// Render the clipboard ring tooltip to the TOOLTIP layer.
@@ -480,7 +512,6 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_window_viewports(&mut self) {
         let global_show_line_numbers = self.state.settings.show_line_numbers;
         let soft_wrap = self.state.settings.soft_wrap;
-        let wrap_width = self.state.settings.wrap_width;
 
         let size = match self.term.get_size() {
             Ok(s) => s,
@@ -579,16 +610,17 @@ impl<T: TerminalBackend> Editor<T> {
 
             if soft_wrap {
                 let content_width = layout.cols.saturating_sub(gutter_width).max(1);
-                let doc = match self.document_manager.get_document(doc_id) {
-                    Some(d) => d,
-                    None => continue,
-                };
-                if let Some(dm) = resolve_display_map(doc, content_width, soft_wrap, wrap_width) {
+                if let Some(dm) = self.resolve_display_map_cached(doc_id, content_width) {
                     let cursor_visual_row = dm.char_to_visual_row(cursor_pos);
                     let total_visual = dm.total_visual_rows();
-                    window
-                        .viewport
-                        .update_visual(cursor_visual_row, 0, total_visual, gutter_width);
+                    if let Some(window) = self.split_tree.get_window_mut(layout.window_id) {
+                        window.viewport.update_visual(
+                            cursor_visual_row,
+                            0,
+                            total_visual,
+                            gutter_width,
+                        );
+                    }
                 }
             }
         }
@@ -596,6 +628,40 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn render_multi_window(&mut self, needs_clear: bool) -> Result<(), RiftError> {
         use crate::layer::LayerPriority;
+
+        let size = self
+            .term
+            .get_size()
+            .map_err(|e| RiftError::new(ErrorType::Internal, "TERM_SIZE", e))?;
+        let total_rows = size.rows as usize;
+        let total_cols = size.cols as usize;
+        let content_rows = total_rows.saturating_sub(1);
+        let layouts = self.split_tree.compute_layout(content_rows, total_cols);
+
+        // The window loop below borrows all of self at once, so resolve each
+        // window's display map through the &mut self cache up front.
+        let mut window_maps: Vec<Option<std::sync::Arc<crate::wrap::DisplayMap>>> =
+            Vec::with_capacity(layouts.len());
+        for layout in &layouts {
+            let key = self
+                .split_tree
+                .get_window(layout.window_id)
+                .map(|w| w.document_id)
+                .and_then(|doc_id| self.window_map_key(doc_id, layout.cols));
+            window_maps
+                .push(key.and_then(|(doc_id, cw)| self.resolve_display_map_cached(doc_id, cw)));
+        }
+        let focused_display_map = {
+            let focused_id = self.split_tree.focused_window_id();
+            match layouts.iter().position(|l| l.window_id == focused_id) {
+                Some(i) => window_maps[i].clone(),
+                None => {
+                    let doc_id = self.split_tree.focused_window().document_id;
+                    self.window_map_key(doc_id, total_cols)
+                        .and_then(|(doc_id, cw)| self.resolve_display_map_cached(doc_id, cw))
+                }
+            }
+        };
 
         let Editor {
             document_manager,
@@ -609,14 +675,6 @@ impl<T: TerminalBackend> Editor<T> {
             kind_registry,
             ..
         } = self;
-
-        let size = term
-            .get_size()
-            .map_err(|e| RiftError::new(ErrorType::Internal, "TERM_SIZE", e))?;
-        let total_rows = size.rows as usize;
-        let total_cols = size.cols as usize;
-        let content_rows = total_rows.saturating_sub(1);
-        let layouts = split_tree.compute_layout(content_rows, total_cols);
 
         if render_system.compositor.rows() != total_rows
             || render_system.compositor.cols() != total_cols
@@ -632,7 +690,7 @@ impl<T: TerminalBackend> Editor<T> {
         let focused_id = split_tree.focused_window_id();
         let focused_doc_id = split_tree.focused_window().document_id;
 
-        for layout in &layouts {
+        for (layout, display_map) in layouts.iter().zip(&window_maps) {
             let window = match split_tree.get_window(layout.window_id) {
                 Some(w) => w,
                 None => continue,
@@ -652,16 +710,8 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 0
             };
-            let window_cols = layout.cols;
-            let content_width = window_cols.saturating_sub(gutter_width).max(1);
-            let display_map = resolve_display_map(
-                doc,
-                content_width,
-                state.settings.soft_wrap,
-                state.settings.wrap_width,
-            );
 
-            let (start_line, end_line) = if let Some(ref dm) = display_map {
+            let (start_line, end_line) = if let Some(dm) = display_map {
                 let top_vr = window.viewport.top_visual_row();
                 let bottom_vr = top_vr + window.viewport.visible_rows();
                 let start_l = dm
@@ -785,7 +835,7 @@ impl<T: TerminalBackend> Editor<T> {
                     Some(&doc.terminal_cell_colors)
                 },
                 show_line_numbers: doc.options.show_line_numbers,
-                display_map: display_map.as_ref(),
+                display_map: display_map.as_deref(),
                 gutter_width_override: Some(gutter_width),
                 search_matches_override: if window.document_id == focused_doc_id {
                     None
@@ -847,26 +897,12 @@ impl<T: TerminalBackend> Editor<T> {
             None => return Ok(()),
         };
 
-        let (row_off, col_off, focused_cols) = focused_layout
+        let (row_off, col_off) = focused_layout
             .as_ref()
-            .map(|l| (l.row, l.col, l.cols))
-            .unwrap_or((0, 0, total_cols));
+            .map(|l| (l.row, l.col))
+            .unwrap_or((0, 0));
 
         let focused_tab_width = focused_doc.options.tab_width;
-        let focused_doc_show_line_numbers =
-            focused_doc.options.show_line_numbers && state.settings.show_line_numbers;
-        let focused_gutter_width = if focused_doc_show_line_numbers {
-            focused_doc.buffer.get_total_lines().to_string().len() + 2
-        } else {
-            0
-        };
-        let focused_content_width = focused_cols.saturating_sub(focused_gutter_width).max(1);
-        let focused_display_map = resolve_display_map(
-            focused_doc,
-            focused_content_width,
-            state.settings.soft_wrap,
-            state.settings.wrap_width,
-        );
 
         let focused_vp = &split_tree.focused_window().viewport;
         let render_state = render::RenderState {
@@ -908,7 +944,7 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(&focused_doc.terminal_cell_colors)
             },
             show_line_numbers: focused_doc.options.show_line_numbers,
-            display_map: focused_display_map.as_ref(),
+            display_map: focused_display_map.as_deref(),
             scroll_hint: None,
         };
 

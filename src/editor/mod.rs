@@ -165,14 +165,9 @@ pub struct Editor<T: TerminalBackend> {
     /// Stack of prior selection extents, for `<Shift-Space>` shrink (Task 24).
     /// Cleared whenever a fresh Visual region starts.
     pub(super) expand_history: Vec<(usize, usize)>,
-    /// Cached display map keyed by (doc_id, buffer_revision, content_width).
-    /// Arc-shared so cache hits hand out a pointer, not a rows-vector copy.
-    display_map_cache: Option<(
-        crate::document::DocumentId,
-        u64,
-        usize,
-        Option<std::sync::Arc<crate::wrap::DisplayMap>>,
-    )>,
+    /// Display-map entries keyed by (doc_id, content_width), so each split
+    /// window keeps its own reusable map. LRU order: most recent at the back.
+    display_map_cache: Vec<DisplayMapCacheEntry>,
     /// Doc whose TextChangedCoarse event is pending dispatch at the next render.
     pending_text_changed: Option<crate::document::DocumentId>,
     /// Latest CursorMoved event pending dispatch at the next render.
@@ -226,6 +221,15 @@ pub struct Editor<T: TerminalBackend> {
     /// Tracks the most recently requested explorer preview path and its
     /// in-flight job id, so cursor moves dedupe/cancel instead of piling up jobs.
     pending_explorer_preview: Option<explorer::PendingExplorerPreview>,
+}
+
+/// One `display_map_cache` slot. `map` is `None` when wrap is off for the
+/// doc, cached so that lookup is also cheap. Arc-shared: hits hand out a pointer.
+struct DisplayMapCacheEntry {
+    doc_id: DocumentId,
+    revision: u64,
+    content_width: usize,
+    map: Option<std::sync::Arc<crate::wrap::DisplayMap>>,
 }
 
 /// State retained between a `Put` and a `CyclePaste` action.

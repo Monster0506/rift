@@ -1332,7 +1332,7 @@ fn test_display_map_cache_populated_after_command() {
 
     // Cache must be absent before any command.
     assert!(
-        editor.display_map_cache.is_none(),
+        editor.display_map_cache.is_empty(),
         "cache should start empty"
     );
 
@@ -1343,8 +1343,8 @@ fn test_display_map_cache_populated_after_command() {
 
     // Cache must be populated with the buffer's current revision.
     let rev = editor.active_document().buffer.revision;
-    match &editor.display_map_cache {
-        Some((_, cached_rev, _, _)) => assert_eq!(*cached_rev, rev),
+    match editor.display_map_cache.last() {
+        Some(entry) => assert_eq!(entry.revision, rev),
         None => panic!("display_map_cache should be populated after a command"),
     }
 }
@@ -1358,13 +1358,13 @@ fn test_display_map_cache_revision_stable_across_moves() {
         crate::action::Motion::Right,
         1,
     ));
-    let rev_after_first = editor.display_map_cache.as_ref().map(|(_, rev, _, _)| *rev);
+    let rev_after_first = editor.display_map_cache.last().map(|e| e.revision);
 
     editor.execute_buffer_command(crate::command::Command::Move(
         crate::action::Motion::Right,
         1,
     ));
-    let rev_after_second = editor.display_map_cache.as_ref().map(|(_, rev, _, _)| *rev);
+    let rev_after_second = editor.display_map_cache.last().map(|e| e.revision);
 
     // Buffer revision unchanged (no mutations), so cached revision should be the same.
     assert_eq!(
@@ -1382,21 +1382,13 @@ fn test_display_map_cache_invalidated_after_mutation() {
         crate::action::Motion::Right,
         1,
     ));
-    let rev_before = editor
-        .display_map_cache
-        .as_ref()
-        .map(|(_, rev, _, _)| *rev)
-        .unwrap();
+    let rev_before = editor.display_map_cache.last().map(|e| e.revision).unwrap();
 
     // A mutation increments the buffer revision.
     editor.current_mode = Mode::Insert;
     editor.execute_buffer_command(crate::command::Command::InsertChar('x'));
 
-    let rev_after = editor
-        .display_map_cache
-        .as_ref()
-        .map(|(_, rev, _, _)| *rev)
-        .unwrap();
+    let rev_after = editor.display_map_cache.last().map(|e| e.revision).unwrap();
 
     assert_ne!(
         rev_before, rev_after,
@@ -1419,11 +1411,11 @@ fn test_resolve_display_map_cached_reuses_across_moves() {
     assert!(rows_first.unwrap() > 2, "long lines should wrap to >2 rows");
 
     // A second call with no mutation must hit the cache and return an identical map.
-    let cached_rev = editor.display_map_cache.as_ref().map(|(_, r, _, _)| *r);
+    let cached_rev = editor.display_map_cache.last().map(|e| e.revision);
     let second = editor.resolve_display_map_cached(doc_id, 20);
     assert_eq!(second.map(|m| m.total_visual_rows()), rows_first);
     assert_eq!(
-        editor.display_map_cache.as_ref().map(|(_, r, _, _)| *r),
+        editor.display_map_cache.last().map(|e| e.revision),
         cached_rev,
         "revision must be unchanged (cache hit, no rebuild)"
     );
@@ -1474,6 +1466,33 @@ fn test_resolve_display_map_cached_rebuilds_on_tab_width_change() {
         Some(8),
         "tab-width change must invalidate the cached map"
     );
+}
+
+#[test]
+fn test_resolve_display_map_cached_keeps_entries_per_width() {
+    let mut editor = create_editor_sized(24, 40);
+    set_content(
+        &mut editor,
+        "this is a fairly long first line that wraps\nsecond long line also wraps here\n",
+    );
+    let doc_id = editor.document_manager.active_document_id().unwrap();
+
+    let narrow = editor.resolve_display_map_cached(doc_id, 15);
+    let wide = editor.resolve_display_map_cached(doc_id, 30);
+    assert_eq!(editor.display_map_cache.len(), 2, "one entry per width");
+
+    // Re-resolving either width must be a cache hit: same Arc, no rebuild.
+    let narrow_again = editor.resolve_display_map_cached(doc_id, 15);
+    let wide_again = editor.resolve_display_map_cached(doc_id, 30);
+    assert!(std::sync::Arc::ptr_eq(
+        narrow.as_ref().unwrap(),
+        narrow_again.as_ref().unwrap()
+    ));
+    assert!(std::sync::Arc::ptr_eq(
+        wide.as_ref().unwrap(),
+        wide_again.as_ref().unwrap()
+    ));
+    assert_eq!(editor.display_map_cache.len(), 2);
 }
 
 #[test]

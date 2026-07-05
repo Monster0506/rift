@@ -104,7 +104,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_multi_insert_anchors: Vec::new(),
             region_build_recording: Vec::new(),
             expand_history: Vec::new(),
-            display_map_cache: None,
+            display_map_cache: Vec::new(),
             pending_text_changed: None,
             pending_cursor_moved: None,
             dot_repeat: DotRepeat::new(),
