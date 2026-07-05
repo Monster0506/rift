@@ -162,12 +162,12 @@ pub struct Editor<T: TerminalBackend> {
     /// Cleared whenever a fresh Visual region starts.
     pub(super) expand_history: Vec<(usize, usize)>,
     /// Cached display map keyed by (doc_id, buffer_revision, content_width).
-    /// Avoids rebuilding the soft-wrap map on every command when the buffer hasn't changed.
+    /// Arc-shared so cache hits hand out a pointer, not a rows-vector copy.
     display_map_cache: Option<(
         crate::document::DocumentId,
         u64,
         usize,
-        Option<crate::wrap::DisplayMap>,
+        Option<std::sync::Arc<crate::wrap::DisplayMap>>,
     )>,
     /// Doc whose TextChangedCoarse event is pending dispatch at the next render.
     pending_text_changed: Option<crate::document::DocumentId>,

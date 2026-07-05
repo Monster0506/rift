@@ -30,7 +30,7 @@ impl<T: TerminalBackend> Editor<T> {
     ) -> Option<(
         crate::document::DocumentId,
         bool,
-        Option<crate::wrap::DisplayMap>,
+        Option<std::sync::Arc<crate::wrap::DisplayMap>>,
     )> {
         self.flush_pending_text_changed();
         self.flush_pending_cursor_moved();
@@ -158,7 +158,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.update_window_viewports();
             self.render_multi_window(needs_clear)
         } else {
-            self.render(needs_clear, display_map.as_ref())
+            self.render(needs_clear, display_map.as_deref())
         }
     }
 
@@ -168,7 +168,8 @@ impl<T: TerminalBackend> Editor<T> {
         &mut self,
         doc_id: crate::document::DocumentId,
         content_width: usize,
-    ) -> Option<crate::wrap::DisplayMap> {
+    ) -> Option<std::sync::Arc<crate::wrap::DisplayMap>> {
+        use std::sync::Arc;
         let soft_wrap = self.state.settings.soft_wrap;
         let wrap_width = self.state.settings.wrap_width;
         let doc = self.document_manager.get_document(doc_id)?;
@@ -188,7 +189,8 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        let map = params.map(|(w, tw)| crate::wrap::DisplayMap::build(&doc.buffer, w, tw));
+        let map =
+            params.map(|(w, tw)| Arc::new(crate::wrap::DisplayMap::build(&doc.buffer, w, tw)));
         self.display_map_cache = Some((doc_id, revision, content_width, map.clone()));
         map
     }

@@ -1,4 +1,3 @@
-use super::resolve_display_map;
 use super::Editor;
 use crate::executor::execute_command;
 use crate::mode::Mode;
@@ -15,8 +14,7 @@ impl<T: TerminalBackend> Editor<T> {
         {
             let viewport_height = self.render_system.viewport.visible_rows();
 
-            // Compute cache key before borrowing doc mutably.
-            let (doc_id, revision, content_width) = {
+            let (doc_id, content_width) = {
                 let doc = self.document_manager.active_document().unwrap();
                 let gutter_width = if self.state.settings.show_line_numbers {
                     self.state.gutter_width
@@ -30,34 +28,10 @@ impl<T: TerminalBackend> Editor<T> {
                     .visible_cols()
                     .saturating_sub(gutter_width)
                     .max(1);
-                (doc.id, doc.buffer.revision, content_width)
+                (doc.id, content_width)
             };
 
-            // Return a clone of the cached map if key matches; otherwise rebuild.
-            let cache_hit = self
-                .display_map_cache
-                .as_ref()
-                .and_then(|(cid, crev, cw, map)| {
-                    if *cid == doc_id && *crev == revision && *cw == content_width {
-                        Some(map.clone())
-                    } else {
-                        None
-                    }
-                });
-
-            let display_map = if let Some(hit) = cache_hit {
-                hit
-            } else {
-                let doc = self.document_manager.active_document().unwrap();
-                let map = resolve_display_map(
-                    doc,
-                    content_width,
-                    self.state.settings.soft_wrap,
-                    self.state.settings.wrap_width,
-                );
-                self.display_map_cache = Some((doc_id, revision, content_width, map.clone()));
-                map
-            };
+            let display_map = self.resolve_display_map_cached(doc_id, content_width);
 
             let cursor_before = self
                 .document_manager
@@ -76,7 +50,7 @@ impl<T: TerminalBackend> Editor<T> {
                 tab_width,
                 viewport_height,
                 self.state.last_search_query.as_deref(),
-                display_map.as_ref(),
+                display_map.as_deref(),
             );
 
             // Record insert-mode mutations for dot-repeat
@@ -91,29 +65,7 @@ impl<T: TerminalBackend> Editor<T> {
 
                 // Refresh the display-map cache with the post-mutation revision so
                 // subsequent non-mutating commands in the same frame get cache hits.
-                if let Some(doc) = self.document_manager.active_document() {
-                    let gutter_width = if self.state.settings.show_line_numbers {
-                        self.state.gutter_width
-                    } else {
-                        0
-                    };
-                    let new_width = self
-                        .split_tree
-                        .focused_window()
-                        .viewport
-                        .visible_cols()
-                        .saturating_sub(gutter_width)
-                        .max(1);
-                    let new_rev = doc.buffer.revision;
-                    let new_id = doc.id;
-                    let map = resolve_display_map(
-                        doc,
-                        new_width,
-                        self.state.settings.soft_wrap,
-                        self.state.settings.wrap_width,
-                    );
-                    self.display_map_cache = Some((new_id, new_rev, new_width, map));
-                }
+                let _ = self.resolve_display_map_cached(doc_id, content_width);
             }
 
             // Collect event info from doc before taking mutable borrows.
