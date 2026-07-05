@@ -6,6 +6,52 @@ use super::classify::{classify_character, is_sentence_end, is_word_char, CharCla
 use crate::buffer::TextBuffer;
 use crate::character::Character;
 
+/// Chars fetched per rope lookup when scanning backward.
+const REV_BLOCK: usize = 512;
+
+/// Reverse char reader: yields the chars before `end` (end-1, end-2, ...),
+/// fetching REV_BLOCK-sized blocks so each rope lookup amortizes.
+struct RevChars<'a> {
+    buffer: &'a TextBuffer,
+    block: Vec<Character>,
+    block_start: usize,
+    idx: usize,
+}
+
+impl<'a> RevChars<'a> {
+    fn new(buffer: &'a TextBuffer, end: usize) -> Self {
+        Self {
+            buffer,
+            block: Vec::new(),
+            block_start: end,
+            idx: 0,
+        }
+    }
+}
+
+impl Iterator for RevChars<'_> {
+    type Item = Character;
+
+    fn next(&mut self) -> Option<Character> {
+        if self.idx == 0 {
+            if self.block_start == 0 {
+                return None;
+            }
+            let start = self.block_start.saturating_sub(REV_BLOCK);
+            self.block.clear();
+            self.block
+                .extend(self.buffer.iter_at(start).take(self.block_start - start));
+            self.idx = self.block.len();
+            self.block_start = start;
+            if self.idx == 0 {
+                return None;
+            }
+        }
+        self.idx -= 1;
+        Some(self.block[self.idx])
+    }
+}
+
 /// Move cursor forward by one word in the buffer
 ///
 /// Returns `true` if the cursor moved, `false` if already at end
@@ -16,33 +62,36 @@ pub fn move_word_right(buffer: &mut TextBuffer) -> bool {
     }
     let start_pos = buffer.cursor();
 
-    if let Some(curr) = buffer.char_at(buffer.cursor()) {
-        let start_class = classify_character(curr);
+    let mut iter = buffer.iter_at(start_pos);
+    let mut pos = start_pos;
+    let mut cur = iter.next();
+
+    if let Some(first) = cur {
+        let start_class = classify_character(first);
 
         // 1. Skip current word category
-        while buffer.cursor() < len {
-            match buffer.char_at(buffer.cursor()) {
-                Some(c) if classify_character(c) == start_class => {
-                    buffer.move_right();
-                }
-                _ => break,
+        while let Some(c) = cur {
+            if classify_character(c) != start_class {
+                break;
             }
+            pos += 1;
+            cur = iter.next();
         }
 
         // 2. Skip whitespace if we weren't already on whitespace
         if start_class != CharClass::Whitespace {
-            while buffer.cursor() < len {
-                match buffer.char_at(buffer.cursor()) {
-                    Some(c) if classify_character(c) == CharClass::Whitespace => {
-                        buffer.move_right();
-                    }
-                    _ => break,
+            while let Some(c) = cur {
+                if classify_character(c) != CharClass::Whitespace {
+                    break;
                 }
+                pos += 1;
+                cur = iter.next();
             }
         }
     }
 
-    buffer.cursor() != start_pos
+    let _ = buffer.set_cursor(pos);
+    pos != start_pos
 }
 
 /// Move cursor to the end of the current or next word (vim's inclusive `e` motion).
@@ -55,47 +104,52 @@ pub fn move_word_end(buffer: &mut TextBuffer) -> bool {
     }
     let start_pos = buffer.cursor();
 
+    let mut iter = buffer.iter_at(start_pos);
+    let mut pos = start_pos;
+    let mut cur = iter.next();
+
     // If already on the last character of a word, step past it (and any
     // trailing whitespace) so we search for the *next* word's end.
-    if let Some(curr) = buffer.char_at(buffer.cursor()) {
+    if let Some(curr) = cur {
         let curr_class = classify_character(curr);
-        let next_class = buffer.char_at(buffer.cursor() + 1).map(classify_character);
+        let next_class = iter.clone().next().map(classify_character);
         if curr_class != CharClass::Whitespace && next_class != Some(curr_class) {
-            buffer.move_right();
+            pos += 1;
+            cur = iter.next();
         }
     }
 
     // Skip leading whitespace
-    while buffer.cursor() < len {
-        match buffer.char_at(buffer.cursor()) {
-            Some(c) if classify_character(c) == CharClass::Whitespace => {
-                buffer.move_right();
-            }
-            _ => break,
+    while let Some(c) = cur {
+        if classify_character(c) != CharClass::Whitespace {
+            break;
         }
+        pos += 1;
+        cur = iter.next();
     }
 
-    if buffer.cursor() >= len {
-        return buffer.cursor() != start_pos;
+    if cur.is_none() {
+        let _ = buffer.set_cursor(pos);
+        return pos != start_pos;
     }
 
-    if let Some(curr) = buffer.char_at(buffer.cursor()) {
+    if let Some(curr) = cur {
         let target_class = classify_character(curr);
 
         // Skip through the word's character class, then step back one
         // position so the cursor lands inclusively on the last character.
-        while buffer.cursor() < len {
-            match buffer.char_at(buffer.cursor()) {
-                Some(c) if classify_character(c) == target_class => {
-                    buffer.move_right();
-                }
-                _ => break,
+        while let Some(c) = cur {
+            if classify_character(c) != target_class {
+                break;
             }
+            pos += 1;
+            cur = iter.next();
         }
-        buffer.move_left();
+        pos = pos.saturating_sub(1);
     }
 
-    buffer.cursor() != start_pos
+    let _ = buffer.set_cursor(pos);
+    pos != start_pos
 }
 
 /// Move cursor backward by one word in the buffer
@@ -107,38 +161,43 @@ pub fn move_word_left(buffer: &mut TextBuffer) -> bool {
     }
     let start_pos = buffer.cursor();
 
-    buffer.move_left();
+    let mut rev = RevChars::new(buffer, start_pos);
+    let mut pos = start_pos - 1;
+    // Invariant: cur is the char at pos; rev yields the char at pos - 1 next.
+    let mut cur = rev.next();
 
     // 1. Skip whitespace backwards
-    while buffer.cursor() > 0 {
-        match buffer.char_at(buffer.cursor()) {
+    while pos > 0 {
+        match cur {
             Some(c) if classify_character(c) == CharClass::Whitespace => {
-                buffer.move_left();
+                pos -= 1;
+                cur = rev.next();
             }
             _ => break,
         }
     }
 
     // 2. Find start of current category
-    if let Some(curr) = buffer.char_at(buffer.cursor()) {
+    if let Some(curr) = cur {
         let target_class = classify_character(curr);
         if target_class == CharClass::Whitespace {
             // Still whitespace? Means start of file is whitespace
+            let _ = buffer.set_cursor(pos);
             return true;
         }
 
-        while buffer.cursor() > 0 {
-            let prev_pos = buffer.cursor() - 1;
-            match buffer.char_at(prev_pos) {
+        while pos > 0 {
+            match rev.next() {
                 Some(pc) if classify_character(pc) == target_class => {
-                    buffer.move_left();
+                    pos -= 1;
                 }
                 _ => break,
             }
         }
     }
 
-    buffer.cursor() != start_pos
+    let _ = buffer.set_cursor(pos);
+    pos != start_pos
 }
 
 /// Move cursor forward by one WORD (whitespace-delimited, no punctuation boundary)
@@ -151,33 +210,36 @@ pub fn move_big_word_right(buffer: &mut TextBuffer) -> bool {
     }
     let start_pos = buffer.cursor();
 
-    if let Some(curr) = buffer.char_at(buffer.cursor()) {
+    let mut iter = buffer.iter_at(start_pos);
+    let mut pos = start_pos;
+    let mut cur = iter.next();
+
+    if let Some(curr) = cur {
         let on_whitespace = !is_word_char(curr.to_char_lossy());
 
         // 1. Skip the current run (non-whitespace or whitespace)
-        while buffer.cursor() < len {
-            match buffer.char_at(buffer.cursor()) {
-                Some(c) if is_word_char(c.to_char_lossy()) != on_whitespace => {
-                    buffer.move_right();
-                }
-                _ => break,
+        while let Some(c) = cur {
+            if is_word_char(c.to_char_lossy()) == on_whitespace {
+                break;
             }
+            pos += 1;
+            cur = iter.next();
         }
 
         // 2. Skip trailing whitespace if we started on a non-whitespace run
         if !on_whitespace {
-            while buffer.cursor() < len {
-                match buffer.char_at(buffer.cursor()) {
-                    Some(c) if !is_word_char(c.to_char_lossy()) => {
-                        buffer.move_right();
-                    }
-                    _ => break,
+            while let Some(c) = cur {
+                if is_word_char(c.to_char_lossy()) {
+                    break;
                 }
+                pos += 1;
+                cur = iter.next();
             }
         }
     }
 
-    buffer.cursor() != start_pos
+    let _ = buffer.set_cursor(pos);
+    pos != start_pos
 }
 
 /// Move cursor backward by one WORD (whitespace-delimited, no punctuation boundary)
@@ -189,37 +251,42 @@ pub fn move_big_word_left(buffer: &mut TextBuffer) -> bool {
     }
     let start_pos = buffer.cursor();
 
-    buffer.move_left();
+    let mut rev = RevChars::new(buffer, start_pos);
+    let mut pos = start_pos - 1;
+    // Invariant: cur is the char at pos; rev yields the char at pos - 1 next.
+    let mut cur = rev.next();
 
     // 1. Skip whitespace backwards
-    while buffer.cursor() > 0 {
-        match buffer.char_at(buffer.cursor()) {
+    while pos > 0 {
+        match cur {
             Some(c) if !is_word_char(c.to_char_lossy()) => {
-                buffer.move_left();
+                pos -= 1;
+                cur = rev.next();
             }
             _ => break,
         }
     }
 
     // 2. Find start of current non-whitespace run
-    if let Some(curr) = buffer.char_at(buffer.cursor()) {
+    if let Some(curr) = cur {
         if !is_word_char(curr.to_char_lossy()) {
             // Still whitespace? Means start of file is whitespace
+            let _ = buffer.set_cursor(pos);
             return true;
         }
 
-        while buffer.cursor() > 0 {
-            let prev_pos = buffer.cursor() - 1;
-            match buffer.char_at(prev_pos) {
+        while pos > 0 {
+            match rev.next() {
                 Some(pc) if is_word_char(pc.to_char_lossy()) => {
-                    buffer.move_left();
+                    pos -= 1;
                 }
                 _ => break,
             }
         }
     }
 
-    buffer.cursor() != start_pos
+    let _ = buffer.set_cursor(pos);
+    pos != start_pos
 }
 
 /// Move cursor forward to the next sentence
@@ -238,30 +305,26 @@ pub fn move_sentence_forward(buffer: &mut TextBuffer) -> bool {
             || matches!(c, Character::Tab | Character::Newline)
     };
 
-    let mut pos = buffer.cursor();
-    while pos < len {
-        if let Some(c) = buffer.char_at(pos) {
-            if is_terminator(c) {
-                // Check if next char is whitespace or EOF (standard sentence definition)
-                let next_pos = pos + 1;
-                if next_pos >= len || buffer.char_at(next_pos).is_none_or(is_whitespace) {
-                    // Found sentence boundary - skip to start of next sentence
-                    pos = next_pos;
-                    while pos < len {
-                        if let Some(wc) = buffer.char_at(pos) {
-                            if !is_whitespace(wc) {
-                                break;
-                            }
-                        }
-                        pos += 1;
+    let mut iter = buffer.iter_at(start_pos).peekable();
+    let mut pos = start_pos;
+    while let Some(c) = iter.next() {
+        if is_terminator(c) {
+            // Check if next char is whitespace or EOF (standard sentence definition)
+            if iter.peek().copied().is_none_or(is_whitespace) {
+                // Found sentence boundary - skip to start of next sentence
+                let mut target = pos + 1;
+                for wc in iter.by_ref() {
+                    if !is_whitespace(wc) {
+                        break;
                     }
-                    let _ = buffer.set_cursor(pos);
-                    return true;
+                    target += 1;
                 }
-            } else if c == Character::Newline && pos > start_pos {
-                let _ = buffer.set_cursor(pos + 1);
+                let _ = buffer.set_cursor(target.min(len));
                 return true;
             }
+        } else if c == Character::Newline && pos > start_pos {
+            let _ = buffer.set_cursor(pos + 1);
+            return true;
         }
         pos += 1;
     }
@@ -285,33 +348,33 @@ pub fn move_sentence_backward(buffer: &mut TextBuffer) -> bool {
             || matches!(c, Character::Tab | Character::Newline)
     };
 
-    let mut pos = buffer.cursor().saturating_sub(1);
+    let mut rev = RevChars::new(buffer, start_pos);
+    let mut pos = start_pos - 1;
+    // Invariant: next_c is the char at pos + 1 (None at end of buffer).
+    let mut next_c = buffer.char_at(start_pos);
     while pos > 0 {
-        if let Some(c) = buffer.char_at(pos) {
-            if is_terminator(c) {
-                let next_pos = pos + 1;
-                if next_pos < buffer.len() && buffer.char_at(next_pos).is_some_and(is_whitespace) {
-                    // Found terminator + whitespace - skip to start of next sentence
-                    let mut s = next_pos;
-                    while s < buffer.len() {
-                        if let Some(wc) = buffer.char_at(s) {
-                            if !is_whitespace(wc) {
-                                break;
-                            }
-                        }
-                        s += 1;
+        let Some(c) = rev.next() else { break };
+        if is_terminator(c) {
+            if next_c.is_some_and(is_whitespace) {
+                // Found terminator + whitespace - skip to start of next sentence
+                let mut s = pos + 1;
+                for wc in buffer.iter_at(pos + 1) {
+                    if !is_whitespace(wc) {
+                        break;
                     }
-
-                    if s < buffer.cursor() {
-                        let _ = buffer.set_cursor(s);
-                        return true;
-                    }
+                    s += 1;
                 }
-            } else if c == Character::Newline && pos + 1 < start_pos {
-                let _ = buffer.set_cursor(pos + 1);
-                return true;
+
+                if s < start_pos {
+                    let _ = buffer.set_cursor(s);
+                    return true;
+                }
             }
+        } else if c == Character::Newline && pos + 1 < start_pos {
+            let _ = buffer.set_cursor(pos + 1);
+            return true;
         }
+        next_c = Some(c);
         pos -= 1;
     }
 
