@@ -27,9 +27,10 @@ fn test_viewport_update_cursor_scroll_down() {
     let mut viewport = Viewport::new(10, 80);
     // 10 visible rows -> 9 content rows, half = 4
     // cursor=10 -> ideal_top = 10 - 4 = 6
-    let scrolled = viewport.update(10, 0, 100, 0);
+    let needs_full = viewport.update(10, 0, 100, 0);
     assert_eq!(viewport.top_line(), 6);
-    assert!(scrolled);
+    // First update always requests a full redraw.
+    assert!(needs_full);
 }
 
 #[test]
@@ -40,9 +41,10 @@ fn test_viewport_update_cursor_scroll_up() {
     assert!(viewport.top_line() > 0);
 
     // cursor=5 -> ideal_top = 5 - 4 = 1
-    let scrolled = viewport.update(5, 0, 100, 0);
+    let needs_full = viewport.update(5, 0, 100, 0);
     assert_eq!(viewport.top_line(), 1);
-    assert!(scrolled);
+    // A plain scroll repaints through the cell diff, not a full redraw.
+    assert!(!needs_full);
 }
 
 #[test]

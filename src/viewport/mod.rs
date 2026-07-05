@@ -52,7 +52,8 @@ impl Viewport {
     /// Update viewport based on cursor position and total lines.
     /// Keeps the cursor vertically centered whenever the document is large enough;
     /// clamps naturally at the top and bottom edges.
-    /// Returns true if the viewport scrolled or if this is the first update.
+    /// Returns true if a full terminal redraw is required (first update after a
+    /// reset); plain scrolls repaint through the double-buffer cell diff.
     pub fn update(
         &mut self,
         cursor_line: usize,
@@ -82,9 +83,10 @@ impl Viewport {
             }
         }
 
-        self.top_line != self.prev_top_line || self.left_col != self.prev_left_col || was_first
+        was_first
     }
 
+    /// Soft-wrap variant of [`Self::update`]; same full-redraw return contract.
     pub fn update_visual(
         &mut self,
         cursor_visual_row: usize,
@@ -105,7 +107,7 @@ impl Viewport {
         self.left_col = 0;
         self.prev_left_col = 0;
 
-        self.top_visual_row != self.prev_top_visual_row || was_first
+        was_first
     }
 
     /// Get the previous top line (before last update)

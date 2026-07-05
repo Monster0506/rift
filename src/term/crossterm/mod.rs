@@ -25,7 +25,8 @@ pub struct CrosstermBackend {
 impl CrosstermBackend {
     pub fn new() -> Result<Self, String> {
         Ok(CrosstermBackend {
-            writer: BufWriter::with_capacity(8192, stdout()),
+            // Sized so a full colored frame flushes in one write syscall.
+            writer: BufWriter::with_capacity(256 * 1024, stdout()),
             raw_mode_enabled: false,
             alternate_screen_enabled: false,
         })
