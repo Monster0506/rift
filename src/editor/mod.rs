@@ -221,6 +221,8 @@ pub struct Editor<T: TerminalBackend> {
     /// Tracks the most recently requested explorer preview path and its
     /// in-flight job id, so cursor moves dedupe/cancel instead of piling up jobs.
     pending_explorer_preview: Option<explorer::PendingExplorerPreview>,
+    /// When startup finished its first contentful paint, for perf reporting.
+    pub(crate) startup_first_paint: Option<std::time::Instant>,
 }
 
 /// One `display_map_cache` slot. `map` is `None` when wrap is off for the

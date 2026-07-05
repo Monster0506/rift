@@ -1330,11 +1330,9 @@ fn test_display_map_cache_populated_after_command() {
     let mut editor = create_editor_sized(24, 80);
     set_content(&mut editor, "hello world\n");
 
-    // Cache must be absent before any command.
-    assert!(
-        editor.display_map_cache.is_empty(),
-        "cache should start empty"
-    );
+    // Drop the entry left by the constructor's first paint, so the command
+    // below is what populates the cache.
+    editor.display_map_cache.clear();
 
     editor.execute_buffer_command(crate::command::Command::Move(
         crate::action::Motion::Right,
@@ -1476,6 +1474,7 @@ fn test_resolve_display_map_cached_keeps_entries_per_width() {
         "this is a fairly long first line that wraps\nsecond long line also wraps here\n",
     );
     let doc_id = editor.document_manager.active_document_id().unwrap();
+    editor.display_map_cache.clear();
 
     let narrow = editor.resolve_display_map_cached(doc_id, 15);
     let wide = editor.resolve_display_map_cached(doc_id, 30);
@@ -4347,4 +4346,174 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
         editor.active_document().buffer.line_start(1),
         "the short 'Q' action (Move Down) should have fired, not the longer sequence"
     );
+}
+
+/// Roughly 3.5 MB / 80k lines of plausible Rust for the TTFP harness.
+#[cfg(feature = "treesitter")]
+fn generate_huge_rust_source() -> String {
+    use std::fmt::Write as _;
+    let mut src = String::with_capacity(4 * 1024 * 1024);
+    for i in 0..8_000u32 {
+        let _ = write!(
+            src,
+            "/// Doc comment for item {i} explaining what it does in some detail.\n\
+             pub fn generated_fn_{i}(input: &str, count: usize) -> Result<String, std::io::Error> {{\n\
+             \x20   let mut out = String::with_capacity(count.max(16));\n\
+             \x20   for (idx, ch) in input.chars().enumerate() {{\n\
+             \x20       if idx % 3 == 0 {{\n\
+             \x20           out.push(ch.to_ascii_uppercase());\n\
+             \x20       }} else {{\n\
+             \x20           out.push(ch);\n\
+             \x20       }}\n\
+             \x20   }}\n\
+             \x20   // Trailing marker {i} with a string literal \"lit-{i}\".\n\
+             \x20   Ok(format!(\"{{}}-{{}}\", out, count))\n\
+             }}\n\n",
+        );
+    }
+    src
+}
+
+/// Manual TTFP timing harness, not a pass/fail test. Run with:
+/// cargo test --release --features treesitter --lib -- --ignored --nocapture ttfp
+#[test]
+#[ignore = "manual timing harness"]
+#[cfg(feature = "treesitter")]
+fn ttfp_open_huge_treesitter_annotation_doc() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner};
+    use std::time::{Duration, Instant};
+
+    let src = generate_huge_rust_source();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("huge.rs");
+    std::fs::write(&path, &src).unwrap();
+    let path_str = path.to_string_lossy().into_owned();
+    eprintln!(
+        "doc: {} bytes, {} lines",
+        src.len(),
+        src.matches('\n').count()
+    );
+
+    // Doc-independent fixed cost: VM init, plugin load, keymap, term setup.
+    let t = Instant::now();
+    let empty = Editor::new(MockTerminal::new(50, 180)).unwrap();
+    let fixed_init = t.elapsed();
+    drop(empty);
+
+    let t0 = Instant::now();
+    let mut editor = Editor::with_file(MockTerminal::new(50, 180), Some(path_str.clone())).unwrap();
+    let init = t0.elapsed();
+    let ttfp = editor
+        .startup_first_paint
+        .map(|t| t.duration_since(t0))
+        .unwrap_or(init);
+
+    // Annotation-full: 10k styled range annotations spread across the doc.
+    let t = Instant::now();
+    {
+        let doc = editor.active_document();
+        let len = doc.buffer.len();
+        let n = 10_000usize;
+        for k in 0..n {
+            let start = k * (len / n);
+            let ann = Annotation::new(
+                crate::annotations::Kind::new("diag.warning"),
+                Anchor::range(start, (start + 12).min(len)),
+                AnnotationOwner::Lsp,
+            )
+            .with_presentation(crate::annotations::Presentation::with_face(
+                crate::annotations::FaceRef::new("diag.warning"),
+            ));
+            doc.annotations.add(ann);
+        }
+    }
+    let annotate = t.elapsed();
+
+    let t = Instant::now();
+    editor.update_and_render().unwrap();
+    let annotated_paint = t.elapsed();
+
+    // Attribution passes: re-run the size-dependent pieces of with_file.
+    let t = Instant::now();
+    let doc2 = crate::document::Document::from_file(9_999, &path_str).unwrap();
+    let file_load = t.elapsed();
+    drop(doc2);
+
+    let t = Instant::now();
+    let loaded = editor
+        .language_loader
+        .load_language_for_file(&path)
+        .unwrap();
+    let q_src = editor
+        .language_loader
+        .load_query(&loaded.name, "highlights")
+        .unwrap();
+    let query = tree_sitter::Query::new(&loaded.language, &q_src).unwrap();
+    let syntax_setup = t.elapsed();
+    drop(query);
+
+    let t = Instant::now();
+    editor.update_lua_state();
+    let lua_snapshot = t.elapsed();
+
+    let t = Instant::now();
+    let buf_clone = editor.active_document().buffer.clone();
+    let buffer_clone = t.elapsed();
+    drop(buf_clone);
+
+    let t = Instant::now();
+    let fresh_map = super::resolve_display_map(
+        editor.document_manager.active_document().unwrap(),
+        178,
+        editor.state.settings.soft_wrap,
+        editor.state.settings.wrap_width,
+    );
+    let map_build = t.elapsed();
+    drop(fresh_map);
+
+    let t = Instant::now();
+    editor.force_full_redraw().unwrap();
+    let full_redraw = t.elapsed();
+
+    // Drain jobs until the background parse lands, then paint highlighted.
+    let t = Instant::now();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while editor
+        .active_document()
+        .syntax
+        .as_ref()
+        .and_then(|s| s.tree.as_ref())
+        .is_none()
+    {
+        if Instant::now() >= deadline {
+            eprintln!("WARNING: background parse never landed");
+            break;
+        }
+        if let Ok(msg) = editor
+            .job_manager
+            .receiver()
+            .recv_timeout(Duration::from_millis(20))
+        {
+            editor.handle_job_message(msg).unwrap();
+        }
+    }
+    let parse_wait = t.elapsed();
+    let t = Instant::now();
+    editor.update_and_render().unwrap();
+    let highlighted_paint = t.elapsed();
+
+    eprintln!("--- TTFP phases ---");
+    eprintln!("TTFP (open to first paint):          {ttfp:>10.2?}");
+    eprintln!("empty-doc Editor::new (fixed cost):  {fixed_init:>10.2?}");
+    eprintln!("with_file (startup to input loop):   {init:>10.2?}");
+    eprintln!("  file load + line index (re-run):   {file_load:>10.2?}");
+    eprintln!("  grammar + query compile (re-run):  {syntax_setup:>10.2?}");
+    eprintln!("  lua snapshot, one call (re-run):   {lua_snapshot:>10.2?}");
+    eprintln!("  buffer clone for parse job (rr):   {buffer_clone:>10.2?}");
+    eprintln!("  display map build (re-run):        {map_build:>10.2?}");
+    eprintln!("  full-frame redraw (steady state):  {full_redraw:>10.2?}");
+    eprintln!("add 10k annotations (harness only):  {annotate:>10.2?}");
+    eprintln!("annotated repaint:                   {annotated_paint:>10.2?}");
+    eprintln!("background parse wait:               {parse_wait:>10.2?}");
+    eprintln!("highlighted repaint:                 {highlighted_paint:>10.2?}");
 }

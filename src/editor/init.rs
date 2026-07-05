@@ -128,6 +128,7 @@ impl<T: TerminalBackend> Editor<T> {
             pending_syntax_reparse: std::collections::HashMap::new(),
             pending_search_refresh: None,
             pending_explorer_preview: None,
+            startup_first_paint: None,
         };
 
         // Register default keymaps
@@ -138,6 +139,11 @@ impl<T: TerminalBackend> Editor<T> {
                 .state
                 .notify(crate::notification::NotificationType::Error, e.to_string())
         }
+
+        // First contentful paint: show the buffer before syntax setup, plugin
+        // event dispatch, and job spawns; highlights/annotations repaint later.
+        let _ = editor.update_and_render();
+        editor.startup_first_paint = Some(std::time::Instant::now());
 
         // Trigger background search cache warming for initial document
         if let Some(doc) = editor.document_manager.active_document() {
