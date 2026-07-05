@@ -27,11 +27,11 @@ pub struct DisplayMap {
     pub tab_width: usize,
 }
 
-/// Wrap a char stream into visual rows, logging each line's first row index
+/// Wrap chunked chars into visual rows, logging each line's first row index
 /// (a trailing newline logs one extra); emit_final_row closes the buffer tail.
 #[allow(clippy::too_many_arguments)]
-fn wrap_chars(
-    chars: impl Iterator<Item = Character>,
+fn wrap_chars<'a>(
+    chunks: impl Iterator<Item = &'a [Character]>,
     first_line: usize,
     start_char: usize,
     wrap_width: usize,
@@ -52,56 +52,9 @@ fn wrap_chars(
 
     line_first_rows.push(rows.len());
 
-    for ch in chars {
-        if ch == Character::Newline {
-            rows.push(VisualRowInfo {
-                logical_line: line_idx,
-                char_start: seg_char_start,
-                char_end: char_pos,
-                segment_col_start: seg_col_start,
-                segment_col_end: visual_col,
-                is_first,
-            });
-            line_idx += 1;
-            char_pos += 1;
-            line_first_rows.push(rows.len());
-            visual_col = 0;
-            seg_char_start = char_pos;
-            seg_col_start = 0;
-            is_first = true;
-            in_word = false;
-            continue;
-        }
-
-        let is_word_char = match ch {
-            Character::Unicode(c) => !c.is_whitespace(),
-            Character::Tab => false,
-            _ => true,
-        };
-        if is_word_char && !in_word {
-            in_word = true;
-            last_word_start_char = char_pos;
-            last_word_start_col = visual_col;
-        } else if !is_word_char {
-            in_word = false;
-        }
-
-        let w = char_visual_width(ch, visual_col, tab_width);
-
-        if visual_col > seg_col_start && visual_col + w > seg_col_start + wrap_width {
-            if last_word_start_char > seg_char_start {
-                rows.push(VisualRowInfo {
-                    logical_line: line_idx,
-                    char_start: seg_char_start,
-                    char_end: last_word_start_char,
-                    segment_col_start: seg_col_start,
-                    segment_col_end: last_word_start_col,
-                    is_first,
-                });
-                is_first = false;
-                seg_col_start = last_word_start_col;
-                seg_char_start = last_word_start_char;
-            } else {
+    for chunk in chunks {
+        for &ch in chunk {
+            if ch == Character::Newline {
                 rows.push(VisualRowInfo {
                     logical_line: line_idx,
                     char_start: seg_char_start,
@@ -110,16 +63,69 @@ fn wrap_chars(
                     segment_col_end: visual_col,
                     is_first,
                 });
-                is_first = false;
-                seg_col_start = visual_col;
+                line_idx += 1;
+                char_pos += 1;
+                line_first_rows.push(rows.len());
+                visual_col = 0;
                 seg_char_start = char_pos;
+                seg_col_start = 0;
+                is_first = true;
+                in_word = false;
+                continue;
+            }
+
+            let is_word_char = match ch {
+                Character::Unicode(c) => !c.is_whitespace(),
+                Character::Tab => false,
+                _ => true,
+            };
+            if is_word_char && !in_word {
+                in_word = true;
                 last_word_start_char = char_pos;
                 last_word_start_col = visual_col;
+            } else if !is_word_char {
+                in_word = false;
             }
-        }
 
-        visual_col += w;
-        char_pos += 1;
+            // Printable ASCII is always one column; skip the width tables.
+            let w = match ch {
+                Character::Unicode(c) if (c as u32).wrapping_sub(0x20) < 0x5f => 1,
+                _ => char_visual_width(ch, visual_col, tab_width),
+            };
+
+            if visual_col > seg_col_start && visual_col + w > seg_col_start + wrap_width {
+                if last_word_start_char > seg_char_start {
+                    rows.push(VisualRowInfo {
+                        logical_line: line_idx,
+                        char_start: seg_char_start,
+                        char_end: last_word_start_char,
+                        segment_col_start: seg_col_start,
+                        segment_col_end: last_word_start_col,
+                        is_first,
+                    });
+                    is_first = false;
+                    seg_col_start = last_word_start_col;
+                    seg_char_start = last_word_start_char;
+                } else {
+                    rows.push(VisualRowInfo {
+                        logical_line: line_idx,
+                        char_start: seg_char_start,
+                        char_end: char_pos,
+                        segment_col_start: seg_col_start,
+                        segment_col_end: visual_col,
+                        is_first,
+                    });
+                    is_first = false;
+                    seg_col_start = visual_col;
+                    seg_char_start = char_pos;
+                    last_word_start_char = char_pos;
+                    last_word_start_col = visual_col;
+                }
+            }
+
+            visual_col += w;
+            char_pos += 1;
+        }
     }
 
     if emit_final_row {
@@ -141,7 +147,7 @@ impl DisplayMap {
         let mut line_first_visual: Vec<usize> = Vec::with_capacity(total_lines);
 
         wrap_chars(
-            buf.iter_at(0),
+            buf.line_index.table.iter_chunks_at(0),
             0,
             0,
             wrap_width,
@@ -200,8 +206,21 @@ impl DisplayMap {
 
         let mut new_rows: Vec<VisualRowInfo> = Vec::new();
         let mut new_line_rows: Vec<usize> = Vec::new();
+        let mut remaining = end_char - start_char;
+        let region_chunks =
+            buf.line_index
+                .table
+                .iter_chunks_at(start_char)
+                .map_while(move |chunk| {
+                    if remaining == 0 {
+                        return None;
+                    }
+                    let take = chunk.len().min(remaining);
+                    remaining -= take;
+                    Some(&chunk[..take])
+                });
         wrap_chars(
-            buf.iter_at(start_char).take(end_char - start_char),
+            region_chunks,
             first_line,
             start_char,
             self.wrap_width,
