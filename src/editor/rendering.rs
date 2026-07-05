@@ -818,17 +818,6 @@ impl<T: TerminalBackend> Editor<T> {
             Some(d) => d,
             None => return Ok(()),
         };
-        focused_doc.recompute_directory_highlights();
-
-        let highlights = focused_doc
-            .syntax
-            .as_mut()
-            .map(|syntax| syntax.highlights(None));
-        let capture_names = focused_doc.syntax.as_ref().map(|s| s.capture_names());
-        let injection_hl = focused_doc
-            .syntax
-            .as_ref()
-            .map(|s| s.injection_highlights_named(None));
 
         let (row_off, col_off, focused_cols) = focused_layout
             .as_ref()
@@ -860,9 +849,11 @@ impl<T: TerminalBackend> Editor<T> {
             pending_count: *pending_count,
             needs_clear,
             tab_width: focused_tab_width,
-            highlights: highlights.as_deref(),
-            capture_map: capture_names,
-            injection_highlights: injection_hl.as_deref(),
+            // Cursor-only overlay (skip_content): highlights are never drawn
+            // from this state, so skip the full-file capture collection.
+            highlights: None,
+            capture_map: None,
+            injection_highlights: None,
             skip_content: true,
             cursor_row_offset: row_off,
             cursor_col_offset: col_off,
