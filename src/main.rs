@@ -37,6 +37,11 @@ fn main() {
 
     let args = cli::parse();
 
+    // Internal mode: proxy one language server for editors to reattach to.
+    if let Some(key) = args.lsp_broker {
+        monster_rift::lsp::broker::run(&key);
+    }
+
     if args.list_sessions {
         monster_rift::ipc::session::print_newest();
     }

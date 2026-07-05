@@ -1760,6 +1760,7 @@ impl LuaHost {
                     let initialization_options = tbl
                         .get::<Option<LuaValue>>("initialization_options")?
                         .and_then(|v| lua_to_json(v).ok());
+                    let keep_alive = tbl.get::<Option<bool>>("keep_alive")?.unwrap_or(true);
                     sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
                         PluginMutation::LspRegisterServer {
                             language,
@@ -1770,6 +1771,7 @@ impl LuaHost {
                                 root_markers,
                                 capabilities,
                                 initialization_options,
+                                keep_alive,
                             },
                         },
                     );

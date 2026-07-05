@@ -20,6 +20,8 @@ pub struct Args {
     pub detach: bool,
     pub connect: Option<String>,
     pub list_sessions: bool,
+    /// Internal: run as an LSP keepalive broker for the given key.
+    pub lsp_broker: Option<String>,
 }
 
 /// Parse `std::env::args()`. Prints version and exits 0 for `-v`/`--version`.
@@ -83,6 +85,12 @@ pub fn parse_args(args: &[&str]) -> Result<Option<Args>, String> {
             }
         } else if arg == "--list-sessions" {
             result.list_sessions = true;
+        } else if arg == "--lsp-broker" {
+            i += 1;
+            match args.get(i) {
+                Some(key) => result.lsp_broker = Some(key.to_string()),
+                None => return Err("'--lsp-broker' requires a key argument".into()),
+            }
         } else if arg.starts_with('-') {
             return Err(format!("unknown flag: '{arg}'"));
         } else {

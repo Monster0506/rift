@@ -38,6 +38,9 @@ pub struct LspServerConfig {
     pub capabilities: Vec<LspCapability>,
     /// Passed verbatim as `initializationOptions` in the LSP initialize request.
     pub initialization_options: Option<serde_json::Value>,
+    /// Keep the server alive in a broker across editor sessions, so restarts
+    /// reattach to its warm index instead of paying a full reindex.
+    pub keep_alive: bool,
 }
 
 impl LspServerConfig {

@@ -1,3 +1,4 @@
+pub mod broker;
 pub mod client;
 pub mod config;
 pub mod protocol;
@@ -249,13 +250,35 @@ impl LspManager {
                 root_uri.as_deref().unwrap_or("null")
             ));
 
-            let mut client = LspClient::start(
-                language.to_string(),
-                &server.command,
-                &server.args,
-                root_uri.clone(),
-            )
-            .ok()?;
+            // Keepalive: attach to a broker-owned warm server when possible,
+            // so a fresh editor session skips the server's cold reindex.
+            let keepalive = if server.keep_alive {
+                LspClient::start_keepalive(
+                    language.to_string(),
+                    &server.command,
+                    &server.args,
+                    root_uri.clone(),
+                )
+                .map_err(|e| {
+                    self.pending_logs.push(format!(
+                        "LSP [{}]: keepalive unavailable ({}), spawning directly",
+                        language, e
+                    ));
+                })
+                .ok()
+            } else {
+                None
+            };
+            let mut client = match keepalive {
+                Some(c) => c,
+                None => LspClient::start(
+                    language.to_string(),
+                    &server.command,
+                    &server.args,
+                    root_uri.clone(),
+                )
+                .ok()?,
+            };
 
             // Send initialize
             let workspace_folders = root_uri.as_ref().map(|uri| {

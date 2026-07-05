@@ -295,6 +295,7 @@ fn shutdown_all_clears_clients_and_kills_the_process() {
             root_markers: vec![],
             capabilities: vec![],
             initialization_options: None,
+            keep_alive: false,
         },
     );
     mgr.did_open(Path::new("/tmp/fake.rs"), "fake", "content");

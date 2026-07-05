@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::io::BufReader;
-use std::process::{Child, ChildStdin, ChildStdout, Stdio};
+use std::io::{BufReader, Read, Write};
+use std::process::{Child, ChildStdout, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
@@ -27,11 +27,12 @@ pub enum RawLspMessage {
     ParseError { message: String },
 }
 
-/// One live connection to a language server process.
+/// One live connection to a language server, either a spawned child process
+/// (stdio) or a keepalive broker socket that outlives this editor session.
 pub struct LspClient {
     pub language: String,
-    _process: Child,
-    stdin: ChildStdin,
+    _process: Option<Child>,
+    writer: Box<dyn Write + Send>,
     next_id: u64,
     /// Maps request id -> method name so responses can be routed.
     pub pending: HashMap<u64, String>,
@@ -42,11 +43,13 @@ pub struct LspClient {
 }
 
 impl Drop for LspClient {
-    /// Kill and reap the server process so it (and the reader thread blocked
-    /// on its stdout) don't outlive this client as a leaked process/thread.
+    /// Kill and reap an owned server process so it (and the reader thread
+    /// blocked on its stdout) don't leak. Broker connections just close.
     fn drop(&mut self) {
-        let _ = self._process.kill();
-        let _ = self._process.wait();
+        if let Some(process) = &mut self._process {
+            let _ = process.kill();
+            let _ = process.wait();
+        }
     }
 }
 
@@ -73,8 +76,34 @@ impl LspClient {
 
         Ok(Self {
             language,
-            _process: process,
-            stdin,
+            _process: Some(process),
+            writer: Box::new(stdin),
+            next_id: 1,
+            pending: HashMap::new(),
+            receiver: rx,
+            _reader_thread: reader_thread,
+            initialized: false,
+            root_uri,
+        })
+    }
+
+    /// Attach to (or spawn) the keepalive broker for this server, so the
+    /// server and its warm index survive across editor sessions.
+    pub fn start_keepalive(
+        language: String,
+        command: &str,
+        args: &[String],
+        root_uri: Option<String>,
+    ) -> anyhow::Result<Self> {
+        let (reader, writer) = super::broker::attach(command, args, root_uri.as_deref())?;
+
+        let (tx, rx) = mpsc::channel::<RawLspMessage>();
+        let reader_thread = spawn_reader_thread(reader, tx);
+
+        Ok(Self {
+            language,
+            _process: None,
+            writer: Box::new(writer),
             next_id: 1,
             pending: HashMap::new(),
             receiver: rx,
@@ -126,13 +155,13 @@ impl LspClient {
     }
 
     fn write_message<T: serde::Serialize>(&mut self, msg: &T) {
-        let _ = crate::transport::write_framed(&mut self.stdin, msg);
+        let _ = crate::transport::write_framed(&mut self.writer, msg);
     }
 
     /// OS process id of the server, for tests verifying it doesn't leak.
     #[cfg(test)]
     pub(crate) fn pid(&self) -> u32 {
-        self._process.id()
+        self._process.as_ref().expect("stdio client").id()
     }
 
     /// Drain all pending raw messages from the reader thread.
@@ -145,9 +174,12 @@ impl LspClient {
     }
 }
 
-fn spawn_reader_thread(stdout: ChildStdout, tx: Sender<RawLspMessage>) -> thread::JoinHandle<()> {
+fn spawn_reader_thread<R: Read + Send + 'static>(
+    source: R,
+    tx: Sender<RawLspMessage>,
+) -> thread::JoinHandle<()> {
     thread::spawn(move || {
-        let mut reader = BufReader::new(stdout);
+        let mut reader = BufReader::new(source);
         loop {
             let body = match crate::transport::read_framed(&mut reader) {
                 Ok(b) => b,
