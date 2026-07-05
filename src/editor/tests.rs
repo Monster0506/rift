@@ -4534,7 +4534,12 @@ fn generate_prose_markdown() -> String {
 }
 
 #[cfg(feature = "treesitter")]
-fn measure_scroll(editor: &mut Editor<MockTerminal>, label: &str, n: usize) {
+fn measure_scroll(
+    editor: &mut Editor<MockTerminal>,
+    label: &str,
+    motion: crate::action::Motion,
+    n: usize,
+) {
     use std::time::Instant;
     let mut times = Vec::with_capacity(n);
     let mut bytes = Vec::with_capacity(n);
@@ -4545,10 +4550,7 @@ fn measure_scroll(editor: &mut Editor<MockTerminal>, label: &str, n: usize) {
         editor.term.clear();
         let top_before = editor.render_system.viewport.top_visual_row();
         let t = Instant::now();
-        editor.execute_buffer_command(crate::command::Command::Move(
-            crate::action::Motion::Down,
-            1,
-        ));
+        editor.execute_buffer_command(crate::command::Command::Move(motion, 1));
         editor.update_and_render().unwrap();
         times.push(t.elapsed());
         if editor.render_system.viewport.top_visual_row() != top_before {
@@ -4644,7 +4646,7 @@ fn scroll_latency_wrapped_markdown() {
             editor.state.settings.soft_wrap
         );
     }
-    measure_scroll(&mut editor, "j from top", 300);
+    measure_scroll(&mut editor, "j from top", crate::action::Motion::Down, 300);
     {
         let cursor = editor.active_document().buffer.cursor();
         let line = editor.active_document().buffer.get_line();
@@ -4656,9 +4658,15 @@ fn scroll_latency_wrapped_markdown() {
 
     editor.goto_line(2_500);
     editor.update_and_render().unwrap();
-    measure_scroll(&mut editor, "j from middle", 300);
+    measure_scroll(
+        &mut editor,
+        "j from middle",
+        crate::action::Motion::Down,
+        300,
+    );
+    measure_scroll(&mut editor, "k back up", crate::action::Motion::Up, 300);
 
     editor.goto_line(0);
     editor.update_and_render().unwrap();
-    measure_scroll(&mut editor, "j near end", 300);
+    measure_scroll(&mut editor, "j near end", crate::action::Motion::Down, 300);
 }
