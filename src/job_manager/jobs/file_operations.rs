@@ -213,75 +213,10 @@ impl Job for FileLoadJob {
                 ));
             }
 
-            // Detect line endings and normalize
-            let mut line_ending = LineEnding::LF;
-            let mut normalized_chars = Vec::with_capacity(bytes.len());
-
-            let mut remaining = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-                &bytes[3..]
-            } else {
-                &bytes[..]
-            };
-            while !remaining.is_empty() {
-                if remaining[0] == b'\r' {
-                    if remaining.len() > 1 && remaining[1] == b'\n' {
-                        line_ending = LineEnding::CRLF;
-                        normalized_chars.push(Character::Newline);
-                        remaining = &remaining[2..];
-                    } else {
-                        // Standalone \r — strip it
-                        remaining = &remaining[1..];
-                    }
-                    continue;
-                }
-
-                match std::str::from_utf8(remaining) {
-                    Ok(s) => {
-                        let mut chars = s.chars().peekable();
-                        while let Some(c) = chars.next() {
-                            if c == '\r' {
-                                if chars.peek() == Some(&'\n') {
-                                    line_ending = LineEnding::CRLF;
-                                    chars.next();
-                                    normalized_chars.push(Character::Newline);
-                                }
-                                // else: standalone \r — strip it
-                            } else {
-                                normalized_chars.push(Character::from(c));
-                            }
-                        }
-                        break;
-                    }
-                    Err(e) => {
-                        let valid_up_to = e.valid_up_to();
-                        // SAFETY: from_utf8 guarantees remaining[..valid_up_to] is valid UTF-8
-                        let valid =
-                            unsafe { std::str::from_utf8_unchecked(&remaining[..valid_up_to]) };
-                        let mut chars = valid.chars().peekable();
-                        while let Some(c) = chars.next() {
-                            if c == '\r' {
-                                if chars.peek() == Some(&'\n') {
-                                    line_ending = LineEnding::CRLF;
-                                    chars.next();
-                                    normalized_chars.push(Character::Newline);
-                                }
-                                // else: standalone \r — strip it
-                            } else {
-                                normalized_chars.push(Character::from(c));
-                            }
-                        }
-                        let error_len = e.error_len().unwrap_or(1);
-                        for &b in &remaining[valid_up_to..valid_up_to + error_len] {
-                            normalized_chars.push(Character::Byte(b));
-                        }
-                        remaining = &remaining[valid_up_to + error_len..];
-                    }
-                }
-            }
-
-            // We should use PieceTable::new with normalized_chars
+            let (normalized_chars, line_ending, starts) =
+                crate::document::decode_file_bytes(&bytes);
             let piece_table = PieceTable::new(normalized_chars);
-            let line_index = LineIndex::from_table(piece_table);
+            let line_index = LineIndex::from_table_with_starts(piece_table, starts);
 
             Ok(FileLoadResult {
                 document_id: self.document_id,

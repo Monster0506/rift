@@ -33,6 +33,16 @@ impl LineIndex {
         }
     }
 
+    /// Wrap a piece table with a precomputed line-start vector (one entry per
+    /// line, `starts[0] == 0`), e.g. collected while decoding file bytes.
+    pub fn from_table_with_starts(table: PieceTable, starts: Vec<usize>) -> Self {
+        debug_assert_eq!(starts.len(), table.get_line_count());
+        Self {
+            table,
+            line_starts: RefCell::new(Some(starts)),
+        }
+    }
+
     /// Build the line-start offset vector if it has not been built yet (one
     /// O(n) pass over the buffer). All line queries go through this first.
     fn ensure_built(&self) {

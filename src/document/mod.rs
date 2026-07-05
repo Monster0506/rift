@@ -18,6 +18,7 @@ use crate::history::{EditSeq, EditTransaction, UndoTree};
 use crate::syntax::Syntax;
 use crate::term::Terminal;
 use definitions::DocumentOptions;
+pub(crate) use factories::decode_file_bytes;
 pub use manager::DocumentManager;
 use std::path::PathBuf;
 

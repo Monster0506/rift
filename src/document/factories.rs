@@ -12,6 +12,67 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 
+/// Decode raw file bytes into buffer characters plus line starts, normalizing
+/// CRLF (and a standalone `\r`, which is dropped) and skipping a UTF-8 BOM.
+pub(crate) fn decode_file_bytes(
+    bytes: &[u8],
+) -> (Vec<crate::character::Character>, LineEnding, Vec<usize>) {
+    use crate::character::Character;
+    let mut line_ending = LineEnding::LF;
+    let mut chars = Vec::with_capacity(bytes.len());
+    let mut starts = vec![0usize];
+    let mut remaining = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        &bytes[3..]
+    } else {
+        bytes
+    };
+    while !remaining.is_empty() {
+        match std::str::from_utf8(remaining) {
+            Ok(s) => {
+                push_normalized(s, &mut chars, &mut starts, &mut line_ending);
+                break;
+            }
+            Err(e) => {
+                let valid_up_to = e.valid_up_to();
+                // SAFETY: from_utf8 guarantees remaining[..valid_up_to] is valid UTF-8
+                let valid = unsafe { std::str::from_utf8_unchecked(&remaining[..valid_up_to]) };
+                push_normalized(valid, &mut chars, &mut starts, &mut line_ending);
+                let error_len = e.error_len().unwrap_or(1);
+                for &b in &remaining[valid_up_to..valid_up_to + error_len] {
+                    chars.push(Character::Byte(b));
+                }
+                remaining = &remaining[valid_up_to + error_len..];
+            }
+        }
+    }
+    (chars, line_ending, starts)
+}
+
+fn push_normalized(
+    s: &str,
+    out: &mut Vec<crate::character::Character>,
+    starts: &mut Vec<usize>,
+    line_ending: &mut LineEnding,
+) {
+    use crate::character::Character;
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        if c == '\r' {
+            if it.peek() == Some(&'\n') {
+                *line_ending = LineEnding::CRLF;
+                it.next();
+                out.push(Character::Newline);
+                starts.push(out.len());
+            }
+        } else if c == '\n' {
+            out.push(Character::Newline);
+            starts.push(out.len());
+        } else {
+            out.push(Character::from(c));
+        }
+    }
+}
+
 impl Document {
     /// Create a new empty document
     pub fn new(id: super::DocumentId) -> Result<Self, RiftError> {
@@ -49,34 +110,16 @@ impl Document {
         let path = path.as_ref();
         let bytes = std::fs::read(path)?;
 
-        // Detect line endings and normalize
-        let mut line_ending = LineEnding::LF;
-        let mut normalized_bytes = Vec::with_capacity(bytes.len());
-        let mut i = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-            3
-        } else {
-            0
-        };
-        while i < bytes.len() {
-            if bytes[i] == b'\r' {
-                if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
-                    line_ending = LineEnding::CRLF;
-                    normalized_bytes.push(b'\n');
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            } else {
-                normalized_bytes.push(bytes[i]);
-                i += 1;
-            }
-        }
+        // Bulk construction: the chars vec becomes the piece table's original
+        // slice directly, skipping the general insert path and its copies.
+        let (chars, line_ending, starts) = decode_file_bytes(&bytes);
+        drop(bytes);
+        let table = crate::buffer::rope::PieceTable::new(chars);
+        let line_index =
+            crate::buffer::line_index::LineIndex::from_table_with_starts(table, starts);
 
-        let mut buffer =
-            TextBuffer::new(normalized_bytes.len().max(4096)).map_err(io::Error::other)?;
-        buffer
-            .insert_bytes(&normalized_bytes)
-            .map_err(io::Error::other)?;
+        let mut buffer = TextBuffer::new(4096).map_err(io::Error::other)?;
+        buffer.line_index = line_index;
         buffer.move_to_start();
 
         Ok(Document {
