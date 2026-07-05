@@ -127,6 +127,7 @@ impl<T: TerminalBackend> Editor<T> {
             hovered_annotation: None,
             pending_syntax_reparse: std::collections::HashMap::new(),
             pending_search_refresh: None,
+            search_highlights_synced: None,
             pending_explorer_preview: None,
             startup_first_paint: None,
         };
@@ -303,7 +304,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.state.gutter_width = 0;
         }
 
-        self.update_search_highlights();
+        self.refresh_search_highlights_if_stale();
     }
 
     /// Force a full redraw of the editor

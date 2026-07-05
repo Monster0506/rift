@@ -218,6 +218,9 @@ pub struct Editor<T: TerminalBackend> {
     /// Deadline for a debounced search-highlight refresh after undo/redo, so
     /// a burst of undos pays one full-buffer re-search instead of one each.
     pending_search_refresh: Option<std::time::Instant>,
+    /// (doc id, buffer revision, query) of the last search-highlight sync, so
+    /// the per-frame call skips the full re-search when nothing changed.
+    search_highlights_synced: Option<(crate::document::DocumentId, u64, String)>,
     /// Tracks the most recently requested explorer preview path and its
     /// in-flight job id, so cursor moves dedupe/cancel instead of piling up jobs.
     pending_explorer_preview: Option<explorer::PendingExplorerPreview>,

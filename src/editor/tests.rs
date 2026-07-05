@@ -4666,6 +4666,13 @@ fn scroll_latency_wrapped_markdown() {
     );
     measure_scroll(&mut editor, "k back up", crate::action::Motion::Up, 300);
 
+    // A high-hit-count active search stresses the per-frame highlight sync.
+    editor.state.last_search_query = Some("the".to_string());
+    editor.update_search_highlights();
+    editor.update_and_render().unwrap();
+    eprintln!("search matches: {}", editor.state.search_matches.len());
+    measure_scroll(&mut editor, "j with /the", crate::action::Motion::Down, 300);
+
     editor.goto_line(0);
     editor.update_and_render().unwrap();
     measure_scroll(&mut editor, "j near end", crate::action::Motion::Down, 300);

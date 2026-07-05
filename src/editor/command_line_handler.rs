@@ -33,21 +33,50 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    /// Per-frame staleness check: a memo hit is free; an edit, undo, or doc
+    /// switch arms the debounce instead of re-searching inline.
+    pub(super) fn refresh_search_highlights_if_stale(&mut self) {
+        match self.state.last_search_query.clone() {
+            Some(query) => {
+                let Some(doc) = self.document_manager.active_document() else {
+                    return;
+                };
+                let key = (doc.id, doc.buffer.revision, query);
+                if self.search_highlights_synced.as_ref() != Some(&key)
+                    && self.pending_search_refresh.is_none()
+                {
+                    self.schedule_search_refresh();
+                }
+            }
+            None => self.update_search_highlights(),
+        }
+    }
+
     pub(super) fn update_search_highlights(&mut self) {
         if let Some(query) = self.state.last_search_query.clone() {
             let doc = self.document_manager.active_document_mut().unwrap();
+            // Called every frame; skip the full re-search and annotation
+            // rebuild when the doc, its content, and the query are unchanged.
+            let key = (doc.id, doc.buffer.revision, query.clone());
+            if self.search_highlights_synced.as_ref() == Some(&key) {
+                return;
+            }
             match doc.find_all_matches(&query) {
                 Ok((matches, _)) => {
                     // Render highlights through ui.search annotations, not a decorator.
                     doc.sync_search_annotations(&matches, None);
                     self.state.search_matches = matches;
+                    self.search_highlights_synced = Some(key);
                 }
                 Err(_) => {
                     doc.clear_search_annotations();
                     self.state.search_matches.clear();
+                    self.search_highlights_synced = None;
                 }
             }
-        } else {
+        } else if self.search_highlights_synced.take().is_some()
+            || !self.state.search_matches.is_empty()
+        {
             if let Some(doc) = self.document_manager.active_document_mut() {
                 doc.clear_search_annotations();
             }
