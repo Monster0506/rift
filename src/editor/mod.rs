@@ -78,6 +78,10 @@ fn plugin_dirs() -> Vec<std::path::PathBuf> {
     dirs
 }
 
+/// Above this size a synchronous parse reliably exceeds its time budget, so
+/// callers skip the O(N) source copy and go straight to the background job.
+pub(crate) const SYNC_PARSE_MAX_BYTES: usize = 256 * 1024;
+
 /// Resolve the wrap/tab width a display map would use, or `None` for no
 /// soft-wrap. Cheap, so it can validate a cached display map before reuse.
 fn resolve_wrap_params(

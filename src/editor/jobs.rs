@@ -360,9 +360,11 @@ impl<T: TerminalBackend> Editor<T> {
                                         doc.set_syntax(syntax);
                                         // Synchronously parse so highlights are ready for the
                                         // immediately following render (no async timing gap).
-                                        let source = doc.buffer.to_logical_bytes();
-                                        if let Some(s) = &mut doc.syntax {
-                                            s.incremental_parse(&source);
+                                        if doc.buffer.byte_len() <= super::SYNC_PARSE_MAX_BYTES {
+                                            let source = doc.buffer.to_logical_bytes();
+                                            if let Some(s) = &mut doc.syntax {
+                                                s.incremental_parse(&source);
+                                            }
                                         }
                                     }
                                     self.spawn_syntax_parse_job(preview_doc_id);

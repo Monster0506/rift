@@ -137,9 +137,7 @@ impl<T: TerminalBackend> Editor<T> {
         use crate::syntax::ParseOutcome;
 
         const SYNC_PARSE_BUDGET: std::time::Duration = std::time::Duration::from_micros(1500);
-        // Above this size the sync attempt reliably exceeds its budget, so
-        // skip the O(N) source copy and background the reparse directly.
-        const SYNC_PARSE_MAX_BYTES: usize = 256 * 1024;
+        use super::SYNC_PARSE_MAX_BYTES;
 
         let Some(doc) = self.document_manager.active_document_mut() else {
             return;

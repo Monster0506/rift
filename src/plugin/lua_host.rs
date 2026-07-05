@@ -164,7 +164,7 @@ struct LuaSharedState {
     buf_lines: Arc<Vec<String>>,
     /// Active buffer ID.
     buf_id: usize,
-    /// Kind string for the active buffer ("file", "terminal", "directory", ,).
+    /// Kind string for the active buffer ("file", "terminal", "directory", ...).
     buf_kind: String,
     /// Cursor position (row 0-indexed, col 0-indexed).
     cursor: (usize, usize),
@@ -1019,7 +1019,7 @@ impl LuaHost {
 
         // rift.add_highlight(start_line, start_col, end_line, end_col, color)
         // line numbers are 1-indexed; columns are 0-indexed
-        // color: named ("red", "green", ,) or hex ("#rrggbb")
+        // color: named ("red", "green", ...) or hex ("#rrggbb")
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(
