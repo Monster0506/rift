@@ -37,6 +37,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             self.poll_pending_syntax_reparse();
+            self.poll_pending_search_refresh();
 
             // Poll LSP messages
             let lsp_msgs = self.lsp_manager.poll();

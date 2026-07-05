@@ -6,7 +6,33 @@ use crate::search::SearchDirection;
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
+/// Debounce window for re-running the search after undo/redo, coalescing a
+/// burst of undos into one full-buffer scan.
+const SEARCH_REFRESH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(40);
+
 impl<T: TerminalBackend> Editor<T> {
+    /// Schedule a debounced `update_search_highlights`. With no active query
+    /// the refresh is just a cheap clear, so it runs immediately.
+    pub(super) fn schedule_search_refresh(&mut self) {
+        if self.state.last_search_query.is_none() {
+            self.update_search_highlights();
+            return;
+        }
+        self.pending_search_refresh = Some(std::time::Instant::now() + SEARCH_REFRESH_DEBOUNCE);
+    }
+
+    /// Fire an elapsed search-refresh deadline. Called once per run-loop tick.
+    pub(super) fn poll_pending_search_refresh(&mut self) {
+        let due = self
+            .pending_search_refresh
+            .is_some_and(|d| std::time::Instant::now() >= d);
+        if due {
+            self.pending_search_refresh = None;
+            self.update_search_highlights();
+            let _ = self.update_and_render();
+        }
+    }
+
     pub(super) fn update_search_highlights(&mut self) {
         if let Some(query) = self.state.last_search_query.clone() {
             let doc = self.document_manager.active_document_mut().unwrap();

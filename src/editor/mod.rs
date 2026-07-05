@@ -216,6 +216,9 @@ pub struct Editor<T: TerminalBackend> {
     /// sync `try_incremental_parse` exceeding its time budget (design.md #1).
     pending_syntax_reparse:
         std::collections::HashMap<crate::document::DocumentId, jobs::PendingSyntaxReparse>,
+    /// Deadline for a debounced search-highlight refresh after undo/redo, so
+    /// a burst of undos pays one full-buffer re-search instead of one each.
+    pending_search_refresh: Option<std::time::Instant>,
     /// Tracks the most recently requested explorer preview path and its
     /// in-flight job id, so cursor moves dedupe/cancel instead of piling up jobs.
     pending_explorer_preview: Option<explorer::PendingExplorerPreview>,

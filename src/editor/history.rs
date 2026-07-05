@@ -23,7 +23,7 @@ impl<T: TerminalBackend> Editor<T> {
             );
         }
         self.state.clear_command_line();
-        self.update_search_highlights();
+        self.schedule_search_refresh();
         self.do_incremental_syntax_parse();
         if let Some(doc_id) = self.document_manager.active_document_id() {
             self.spawn_syntax_parse_job_immediate(doc_id);
@@ -48,7 +48,7 @@ impl<T: TerminalBackend> Editor<T> {
             );
         }
         self.state.clear_command_line();
-        self.update_search_highlights();
+        self.schedule_search_refresh();
         self.do_incremental_syntax_parse();
         if let Some(doc_id) = self.document_manager.active_document_id() {
             self.spawn_syntax_parse_job_immediate(doc_id);
@@ -77,7 +77,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
         self.state.clear_command_line();
-        self.update_search_highlights();
+        self.schedule_search_refresh();
     }
 
     /// Navigate to previous (older) history entry

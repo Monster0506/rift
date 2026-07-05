@@ -126,6 +126,7 @@ impl<T: TerminalBackend> Editor<T> {
             kind_registry: crate::annotations::registry::KindRegistry::with_core(),
             hovered_annotation: None,
             pending_syntax_reparse: std::collections::HashMap::new(),
+            pending_search_refresh: None,
             pending_explorer_preview: None,
         };
 
