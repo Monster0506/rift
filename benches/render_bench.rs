@@ -131,6 +131,7 @@ fn render_loop(c: &mut Criterion) {
                     terminal_cell_colors: None,
                     show_line_numbers: true,
                     display_map: None,
+                    scroll_hint: None,
                 };
 
                 // Measure the full render pass

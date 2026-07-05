@@ -185,6 +185,9 @@ pub struct RenderState<'a> {
     /// Per-document line number override (AND-ed with global setting).
     pub show_line_numbers: bool,
     pub display_map: Option<&'a DisplayMap>,
+    /// Vertical scroll this frame as `(top, bottom, delta)` content rows, so
+    /// the compositor can ride the terminal's scroll region.
+    pub scroll_hint: Option<(usize, usize, isize)>,
 }
 
 /// Context for rendering passed to helpers

@@ -271,6 +271,7 @@ fn test_render_does_not_clear_screen() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -315,6 +316,7 @@ fn test_render_cursor_positioning() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -358,6 +360,7 @@ fn test_render_empty_buffer() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -404,6 +407,7 @@ fn test_render_multiline_buffer() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -453,6 +457,7 @@ fn test_render_file_loaded_at_start() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -513,6 +518,7 @@ fn test_render_viewport_scrolling() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -558,6 +564,7 @@ fn test_render_viewport_edge_cases() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -602,6 +609,7 @@ fn test_render_large_buffer() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -654,6 +662,7 @@ fn test_render_cursor_at_viewport_boundaries() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -706,6 +715,7 @@ fn test_render_cursor_at_viewport_boundaries() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -789,6 +799,7 @@ fn test_render_line_numbers_enabled() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -849,6 +860,7 @@ fn test_render_line_numbers_disabled() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -899,6 +911,7 @@ fn test_render_line_numbers_gutter_width() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -964,6 +977,7 @@ fn test_render_cursor_position_with_line_numbers() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -1007,6 +1021,7 @@ fn test_no_redraw_on_noop() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -1055,6 +1070,7 @@ fn test_no_redraw_on_noop() {
                 terminal_cell_colors: None,
                 show_line_numbers: true,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -1142,6 +1158,7 @@ fn test_tab_rendered_as_space_not_raw_tab() {
                 terminal_cell_colors: None,
                 show_line_numbers: false,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -1207,6 +1224,7 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
                 terminal_cell_colors: None,
                 show_line_numbers: false,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -1262,6 +1280,7 @@ fn test_wide_char_straddling_left_col_renders_as_space() {
                 terminal_cell_colors: None,
                 show_line_numbers: false,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -1318,6 +1337,7 @@ fn test_zero_width_char_does_not_write_stray_cell() {
                 terminal_cell_colors: None,
                 show_line_numbers: false,
                 display_map: None,
+                scroll_hint: None,
             },
         )
         .unwrap();
@@ -1492,6 +1512,7 @@ fn inline_render_state<'a>(
         terminal_cell_colors: None,
         show_line_numbers: false,
         display_map: None,
+        scroll_hint: None,
     }
 }
 
@@ -1563,6 +1584,7 @@ fn render_state_with_highlights<'a>(
         terminal_cell_colors: None,
         show_line_numbers: false,
         display_map: None,
+        scroll_hint: None,
     }
 }
 

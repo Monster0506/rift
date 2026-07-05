@@ -430,6 +430,7 @@ impl RenderSystem {
         // Clone viewport to avoid simultaneous borrow of self in update_world
         let viewport = self.viewport.clone();
         let skip_content = state.skip_content;
+        let scroll_hint = state.scroll_hint;
         let cursor_row_offset = state.cursor_row_offset;
         let cursor_col_offset = state.cursor_col_offset;
         let cursor_viewport = state.cursor_viewport;
@@ -722,7 +723,7 @@ impl RenderSystem {
         }
 
         self.compositor
-            .render_to_terminal(term, ctx.needs_clear)
+            .render_to_terminal(term, ctx.needs_clear, scroll_hint)
             .map_err(|e| RiftError::new(crate::error::ErrorType::Renderer, "RENDER_FAILED", e))?;
 
         if !software {

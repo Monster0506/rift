@@ -352,6 +352,82 @@ impl DoubleBuffer {
         (batches, stats)
     }
 
+    /// Scroll rows `top..=bottom` by `delta` (positive = content moved up) via
+    /// the terminal's scroll region; false means fall back to the plain diff.
+    pub fn apply_scroll<T: crate::term::TerminalBackend>(
+        &mut self,
+        term: &mut T,
+        top: usize,
+        bottom: usize,
+        delta: isize,
+    ) -> Result<bool, String> {
+        let k = delta.unsigned_abs();
+        if self.force_full_redraw
+            || delta == 0
+            || bottom >= self.rows
+            || top >= bottom
+            || k > bottom - top
+        {
+            return Ok(false);
+        }
+
+        // Probe one mid-region row: after a real scroll the desired frame's
+        // row equals the previous frame's row shifted by `delta`.
+        let probe = if delta > 0 {
+            top + (bottom - top - k) / 2
+        } else {
+            top + k + (bottom - top - k) / 2
+        };
+        let shifted = (probe as isize + delta) as usize;
+        if self.current[probe * self.cols..(probe + 1) * self.cols]
+            != self.previous[shifted * self.cols..(shifted + 1) * self.cols]
+        {
+            return Ok(false);
+        }
+
+        // Reset colors first: cells the terminal blanks in use the current
+        // background, which must match the Cell::empty() model below.
+        let mut esc = format!("\x1b[0m\x1b[{};{}r", top + 1, bottom + 1);
+        if delta > 0 {
+            esc.push_str(&format!("\x1b[{}S", k));
+        } else {
+            esc.push_str(&format!("\x1b[{}T", k));
+        }
+        esc.push_str("\x1b[r");
+        term.write(esc.as_bytes())?;
+
+        // Shift the previous-frame model the same way the terminal moved.
+        if delta > 0 {
+            for r in top..=bottom - k {
+                let (dst, src) = (r * self.cols, (r + k) * self.cols);
+                for c in 0..self.cols {
+                    self.previous[dst + c] = self.previous[src + c].clone();
+                }
+            }
+            for r in bottom - k + 1..=bottom {
+                self.previous[r * self.cols..(r + 1) * self.cols].fill(Cell::empty());
+            }
+        } else {
+            for r in (top + k..=bottom).rev() {
+                let (dst, src) = (r * self.cols, (r - k) * self.cols);
+                for c in 0..self.cols {
+                    self.previous[dst + c] = self.previous[src + c].clone();
+                }
+            }
+            for r in top..top + k {
+                self.previous[r * self.cols..(r + 1) * self.cols].fill(Cell::empty());
+            }
+        }
+
+        // Everything in the region is fair game for the diff scan.
+        let region = Rect::new(top, 0, bottom, self.cols.saturating_sub(1));
+        self.frame_dirty_rect = Some(match self.frame_dirty_rect {
+            Some(existing) => existing.union(&region),
+            None => region,
+        });
+        Ok(true)
+    }
+
     /// Swap buffers after rendering
     /// Copies current to previous and clears force_full_redraw
     pub fn swap(&mut self) {

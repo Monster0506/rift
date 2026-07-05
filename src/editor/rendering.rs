@@ -6,6 +6,15 @@ use crate::screen_buffer::FrameStats;
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
+/// Per-frame update_state result: active document, whether a full redraw is
+/// required, the soft-wrap display map, and the scroll-region hint.
+type FrameState = (
+    crate::document::DocumentId,
+    bool,
+    Option<std::sync::Arc<crate::wrap::DisplayMap>>,
+    Option<(usize, usize, isize)>,
+);
+
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_state_and_render(
         &mut self,
@@ -25,13 +34,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// State-update phase: syncs viewport/cursor/document-derived state ahead of
     /// rendering. No cell composition or layer writes happen here.
-    fn update_state(
-        &mut self,
-    ) -> Option<(
-        crate::document::DocumentId,
-        bool,
-        Option<std::sync::Arc<crate::wrap::DisplayMap>>,
-    )> {
+    fn update_state(&mut self) -> Option<FrameState> {
         self.flush_pending_text_changed();
         self.flush_pending_cursor_moved();
         // Fire cursor enter/leave annotation hooks for any transition this frame.
@@ -105,7 +108,30 @@ impl<T: TerminalBackend> Editor<T> {
                 .update(cursor_line, viewport_col, total_lines, gutter_width)
         };
 
-        Some((doc_id, needs_clear, display_map))
+        // A pure vertical scroll rides the terminal's scroll region; content
+        // occupies rows 0..=visible_rows-2 (status bar on the last row).
+        let scroll_hint = {
+            let vp = &self.render_system.viewport;
+            let content_bottom = vp.visible_rows().saturating_sub(2);
+            let (delta, horizontal) = if display_map.is_some() {
+                (
+                    vp.top_visual_row() as isize - vp.prev_top_visual_row() as isize,
+                    false,
+                )
+            } else {
+                (
+                    vp.top_line() as isize - vp.prev_top_line() as isize,
+                    vp.left_col() != vp.prev_left_col(),
+                )
+            };
+            if !needs_clear && !horizontal && delta != 0 && content_bottom >= 1 {
+                Some((0usize, content_bottom, delta))
+            } else {
+                None
+            }
+        };
+
+        Some((doc_id, needs_clear, display_map, scroll_hint))
     }
 
     /// Recompute `ui.selection.*` annotations from the active Visual region
@@ -137,7 +163,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
-        let Some((_doc_id, needs_clear, display_map)) = self.update_state() else {
+        let Some((_doc_id, needs_clear, display_map, scroll_hint)) = self.update_state() else {
             return Ok(());
         };
         self.update_selection_highlights();
@@ -158,7 +184,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.update_window_viewports();
             self.render_multi_window(needs_clear)
         } else {
-            self.render(needs_clear, display_map.as_deref())
+            self.render(needs_clear, display_map.as_deref(), scroll_hint)
         }
     }
 
@@ -244,7 +270,7 @@ impl<T: TerminalBackend> Editor<T> {
         let stats = self
             .render_system
             .compositor
-            .render_to_terminal(&mut self.term, needs_clear)
+            .render_to_terminal(&mut self.term, needs_clear, None)
             .map_err(|e| {
                 RiftError::new(
                     ErrorType::Internal,
@@ -263,6 +289,7 @@ impl<T: TerminalBackend> Editor<T> {
         &mut self,
         needs_clear: bool,
         display_map: Option<&crate::wrap::DisplayMap>,
+        scroll_hint: Option<(usize, usize, isize)>,
     ) -> Result<(), RiftError> {
         let Editor {
             document_manager,
@@ -422,6 +449,7 @@ impl<T: TerminalBackend> Editor<T> {
             },
             show_line_numbers: doc.options.show_line_numbers,
             display_map,
+            scroll_hint,
         };
 
         let _ = render_system.render(term, state)?;
@@ -881,6 +909,7 @@ impl<T: TerminalBackend> Editor<T> {
             },
             show_line_numbers: focused_doc.options.show_line_numbers,
             display_map: focused_display_map.as_ref(),
+            scroll_hint: None,
         };
 
         let _ = render_system.render(term, render_state)?;

@@ -460,3 +460,116 @@ fn test_control_char_cursor_tracking_after_render() {
         "expected ≤1 cursor move on row 0, got {row0_moves}"
     );
 }
+
+/// Fill a whole row with one character in the current frame.
+fn fill_row(buffer: &mut DoubleBuffer, row: usize, ch: char) {
+    for c in 0..buffer.cols() {
+        buffer.set_cell(row, c, Cell::from_char(ch));
+    }
+}
+
+/// Rows whose cells changed according to the pending diff.
+fn changed_rows(buffer: &DoubleBuffer) -> Vec<usize> {
+    let (batches, _) = buffer.get_batched_changes();
+    let mut rows: Vec<usize> = batches.iter().map(|b| b.row).collect();
+    rows.dedup();
+    rows
+}
+
+#[test]
+fn apply_scroll_up_repaints_only_the_new_bottom_row() {
+    use crate::test_utils::MockTerminal;
+    let mut buffer = DoubleBuffer::new(6, 10);
+    for (r, ch) in ['a', 'b', 'c', 'd', 'e'].into_iter().enumerate() {
+        fill_row(&mut buffer, r, ch);
+    }
+    fill_row(&mut buffer, 5, 's'); // status row, outside the region
+    buffer.swap();
+
+    // Scrolled down one line: content rows shift up, a new bottom row appears.
+    for (r, ch) in ['b', 'c', 'd', 'e', 'z'].into_iter().enumerate() {
+        fill_row(&mut buffer, r, ch);
+    }
+
+    let mut term = MockTerminal::new(6, 10);
+    let applied = buffer
+        .apply_scroll(&mut term, 0, 4, 1)
+        .expect("no io error");
+    assert!(applied, "matching frames must take the scroll path");
+
+    let out = term.get_written_string();
+    assert!(out.contains("\u{1b}[1;5r"), "sets the region: {out:?}");
+    assert!(out.contains("\u{1b}[1S"), "scrolls up by one: {out:?}");
+    assert!(out.contains("\u{1b}[r"), "resets the region: {out:?}");
+
+    assert_eq!(
+        changed_rows(&buffer),
+        vec![4],
+        "only the newly exposed row should repaint"
+    );
+}
+
+#[test]
+fn apply_scroll_down_repaints_only_the_new_top_row() {
+    use crate::test_utils::MockTerminal;
+    let mut buffer = DoubleBuffer::new(6, 10);
+    for (r, ch) in ['b', 'c', 'd', 'e', 'f'].into_iter().enumerate() {
+        fill_row(&mut buffer, r, ch);
+    }
+    fill_row(&mut buffer, 5, 's');
+    buffer.swap();
+
+    for (r, ch) in ['a', 'b', 'c', 'd', 'e'].into_iter().enumerate() {
+        fill_row(&mut buffer, r, ch);
+    }
+
+    let mut term = MockTerminal::new(6, 10);
+    let applied = buffer
+        .apply_scroll(&mut term, 0, 4, -1)
+        .expect("no io error");
+    assert!(applied);
+    assert!(term.get_written_string().contains("\u{1b}[1T"));
+    assert_eq!(changed_rows(&buffer), vec![0]);
+}
+
+#[test]
+fn apply_scroll_rejects_frames_that_are_not_shifted() {
+    use crate::test_utils::MockTerminal;
+    let mut buffer = DoubleBuffer::new(6, 10);
+    for r in 0..5 {
+        fill_row(&mut buffer, r, 'a');
+    }
+    buffer.swap();
+    for (r, ch) in ['v', 'w', 'x', 'y', 'z'].into_iter().enumerate() {
+        fill_row(&mut buffer, r, ch);
+    }
+
+    let mut term = MockTerminal::new(6, 10);
+    let applied = buffer
+        .apply_scroll(&mut term, 0, 4, 1)
+        .expect("no io error");
+    assert!(!applied, "a stale hint must fall back to the plain diff");
+    assert!(term.get_written_string().is_empty(), "nothing emitted");
+}
+
+#[test]
+fn apply_scroll_rejects_pending_full_redraw_and_bad_ranges() {
+    use crate::test_utils::MockTerminal;
+    let mut term = MockTerminal::new(6, 10);
+
+    // First frame: force_full_redraw is pending.
+    let mut fresh = DoubleBuffer::new(6, 10);
+    assert!(!fresh.apply_scroll(&mut term, 0, 4, 1).unwrap());
+
+    let mut buffer = DoubleBuffer::new(6, 10);
+    buffer.swap();
+    assert!(!buffer.apply_scroll(&mut term, 0, 4, 0).unwrap());
+    assert!(
+        !buffer.apply_scroll(&mut term, 0, 9, 1).unwrap(),
+        "bottom out of range"
+    );
+    assert!(
+        !buffer.apply_scroll(&mut term, 0, 4, 5).unwrap(),
+        "delta spans whole region"
+    );
+}

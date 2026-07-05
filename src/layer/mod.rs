@@ -674,12 +674,13 @@ impl LayerCompositor {
         }
     }
 
-    /// Render the composited output to the terminal using double buffering
-    /// Only cells that changed since the last frame are rendered
+    /// Render the composited output, diffing against the previous frame. A
+    /// `(top, bottom, delta)` scroll hint rides the terminal's scroll region.
     pub fn render_to_terminal<T: crate::term::TerminalBackend>(
         &mut self,
         term: &mut T,
         needs_clear: bool,
+        scroll_hint: Option<(usize, usize, isize)>,
     ) -> Result<FrameStats, String> {
         // Composite if needed
         if self.has_dirty() {
@@ -689,6 +690,8 @@ impl LayerCompositor {
         // Force full redraw if requested
         if needs_clear {
             self.buffer.invalidate();
+        } else if let Some((top, bottom, delta)) = scroll_hint {
+            self.buffer.apply_scroll(term, top, bottom, delta)?;
         }
 
         // Delegate to double buffer

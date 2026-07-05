@@ -116,6 +116,18 @@ impl Viewport {
         self.prev_top_line
     }
 
+    /// Get the previous top visual row (before last update)
+    #[must_use]
+    pub fn prev_top_visual_row(&self) -> usize {
+        self.prev_top_visual_row
+    }
+
+    /// Get the previous leftmost visible column (before last update)
+    #[must_use]
+    pub fn prev_left_col(&self) -> usize {
+        self.prev_left_col
+    }
+
     #[must_use]
     pub fn top_line(&self) -> usize {
         self.top_line
