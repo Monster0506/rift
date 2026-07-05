@@ -31,12 +31,21 @@ impl<T: TerminalBackend> Editor<T> {
         ) = if let Some(doc) = self.document_manager.active_document() {
             let buf_id = doc.id as usize;
             let buf_kind = doc.kind.kind_str().to_string();
-            let text = doc.buffer.to_string();
-            let lines: Arc<Vec<String>> = Arc::new(
-                text.split('\n')
-                    .map(|l| l.trim_end_matches('\r').to_string())
-                    .collect(),
-            );
+            let revision = doc.buffer.revision;
+            let lines = self
+                .plugin_host
+                .cached_lines_snapshot(buf_id, revision)
+                .unwrap_or_else(|| {
+                    let text = doc.buffer.to_string();
+                    let lines: Arc<Vec<String>> = Arc::new(
+                        text.split('\n')
+                            .map(|l| l.trim_end_matches('\r').to_string())
+                            .collect(),
+                    );
+                    self.plugin_host
+                        .store_lines_snapshot(buf_id, revision, lines.clone());
+                    lines
+                });
             let (row, col) = {
                 let cursor = doc.buffer.cursor();
                 let row = doc.buffer.line_index.get_line_at(cursor);
