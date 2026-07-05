@@ -23,13 +23,19 @@ impl Document {
             bg: Some(Color::Cyan),
             ..Default::default()
         };
+        // Cap highlight annotations: every edit clones the store for undo and
+        // shifts anchors, so an unbounded match count makes keystrokes O(matches).
+        const MAX_HIGHLIGHTED_MATCHES: usize = 10_000;
         for (i, m) in matches.iter().enumerate() {
+            let is_current = current == Some(i);
+            if i >= MAX_HIGHLIGHTED_MATCHES && !is_current {
+                continue;
+            }
             let start = self.buffer.char_to_byte(m.range.start);
             let end = self.buffer.char_to_byte(m.range.end);
             if start >= end {
                 continue;
             }
-            let is_current = current == Some(i);
             let style = if is_current { current_style } else { base };
             self.annotations.add(
                 Annotation::new(
