@@ -73,7 +73,7 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                     });
                 }
-                let _ = self.force_full_redraw();
+                let _ = self.update_and_render();
                 true
             }
             Some(Handler::Builtin(Builtin::FollowLink)) => {
@@ -146,7 +146,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let ran = self.plugin_host.invoke_annotation_action(&ctx);
                 if ran {
                     self.apply_plugin_mutations();
-                    let _ = self.force_full_redraw();
+                    let _ = self.update_and_render();
                 }
                 ran
             }
@@ -155,7 +155,7 @@ impl<T: TerminalBackend> Editor<T> {
                     return false;
                 }
                 self.execute_command_line(cmd);
-                let _ = self.force_full_redraw();
+                let _ = self.update_and_render();
                 true
             }
             // Remote handler is reserved for IPC; nothing to do in-process.
@@ -282,7 +282,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         if let Some(off) = doc.buffer.line_index.get_start(line) {
             let _ = doc.buffer.set_cursor(off);
-            let _ = self.force_full_redraw();
+            let _ = self.update_and_render();
             true
         } else {
             false
@@ -311,7 +311,7 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some(doc) = self.document_manager.active_document_mut() {
                 let _ = doc.buffer.set_cursor(offset);
             }
-            let _ = self.force_full_redraw();
+            let _ = self.update_and_render();
             true
         } else {
             false

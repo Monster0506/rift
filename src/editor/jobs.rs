@@ -414,7 +414,7 @@ impl<T: TerminalBackend> Editor<T> {
 
                         // Sync state and redraw to update dirty indicator
                         self.sync_state_with_active_document();
-                        let _ = self.force_full_redraw();
+                        let _ = self.update_and_render();
 
                         self.job_manager
                             .update_job_state(&JobMessage::Finished(id, true));
