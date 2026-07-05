@@ -42,6 +42,8 @@ pub struct CursorInfo {
 pub struct ContentDrawState {
     pub revision: u64,
     pub top_line: usize,
+    /// Wrapped scroll position; `top_line` does not move under soft wrap.
+    pub top_visual_row: usize,
     pub left_col: usize,
     pub rows: usize,
     pub tab_width: usize,

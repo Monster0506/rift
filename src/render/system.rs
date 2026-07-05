@@ -181,6 +181,7 @@ impl RenderSystem {
         let content_state = ContentDrawState {
             revision: ctx.buf.revision,
             top_line: ctx.viewport.top_line(),
+            top_visual_row: ctx.viewport.top_visual_row(),
             left_col: ctx.viewport.left_col(),
             rows: ctx.viewport.visible_rows(),
             tab_width: ctx.tab_width,

@@ -4517,3 +4517,148 @@ fn ttfp_open_huge_treesitter_annotation_doc() {
     eprintln!("background parse wait:               {parse_wait:>10.2?}");
     eprintln!("highlighted repaint:                 {highlighted_paint:>10.2?}");
 }
+
+/// Paragraph-per-line prose in the shape of a Gutenberg markdown book.
+#[cfg(feature = "treesitter")]
+fn generate_prose_markdown() -> String {
+    use std::fmt::Write as _;
+    let mut src = String::with_capacity(1_300_000);
+    let sentence = "Call me Ishmael. Some years ago, never mind how long precisely, \
+        having little or no money in my purse, and nothing particular to interest me \
+        on shore, I thought I would sail about a little and see the watery part of the world. ";
+    for i in 0..1_300 {
+        let _ = writeln!(src, "## CHAPTER FRAGMENT {i}\n");
+        let _ = writeln!(src, "{}\n", sentence.repeat(2 + (i % 5)));
+    }
+    src
+}
+
+#[cfg(feature = "treesitter")]
+fn measure_scroll(editor: &mut Editor<MockTerminal>, label: &str, n: usize) {
+    use std::time::Instant;
+    let mut times = Vec::with_capacity(n);
+    let mut bytes = Vec::with_capacity(n);
+    let mut scrolls = 0usize;
+    let mut rides = 0usize;
+    let mut top_changes = 0usize;
+    for _ in 0..n {
+        editor.term.clear();
+        let top_before = editor.render_system.viewport.top_visual_row();
+        let t = Instant::now();
+        editor.execute_buffer_command(crate::command::Command::Move(
+            crate::action::Motion::Down,
+            1,
+        ));
+        editor.update_and_render().unwrap();
+        times.push(t.elapsed());
+        if editor.render_system.viewport.top_visual_row() != top_before {
+            top_changes += 1;
+        }
+        let written = editor.term.get_written_string();
+        bytes.push(written.len());
+        if written.len() > 500 {
+            scrolls += 1;
+        }
+        if written.contains("\u{1b}[1S") || written.contains("\u{1b}[1T") {
+            rides += 1;
+        }
+    }
+    times.sort();
+    bytes.sort();
+    let avg = times.iter().sum::<std::time::Duration>() / n as u32;
+    eprintln!(
+        "{label:<16} avg={avg:>9.2?} p95={:>9.2?} max={:>9.2?} | bytes p95={} max={} | top_changes={top_changes} scrolls={scrolls} rides={rides}",
+        times[n * 95 / 100],
+        times[n - 1],
+        bytes[n * 95 / 100],
+        bytes[n - 1]
+    );
+}
+
+/// Manual scroll-latency harness for wrapped markdown prose. Run with:
+/// cargo test --release --features treesitter --lib -- --ignored --nocapture scroll_latency
+#[test]
+#[ignore = "manual timing harness"]
+#[cfg(feature = "treesitter")]
+fn scroll_latency_wrapped_markdown() {
+    use std::time::{Duration, Instant};
+
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default();
+    let real = std::path::PathBuf::from(&home)
+        .join("Documents")
+        .join("moby_dick.md");
+    let src = if real.exists() {
+        eprintln!("using {}", real.display());
+        std::fs::read_to_string(&real).unwrap()
+    } else {
+        eprintln!("using synthetic prose");
+        generate_prose_markdown()
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("prose.md");
+    std::fs::write(&path, &src).unwrap();
+    eprintln!(
+        "doc: {} bytes, {} lines",
+        src.len(),
+        src.matches('\n').count()
+    );
+
+    let mut editor = Editor::with_file(
+        MockTerminal::new(50, 180),
+        Some(path.to_string_lossy().into_owned()),
+    )
+    .unwrap();
+
+    // Let the background markdown parse land so highlights are in play.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while editor
+        .active_document()
+        .syntax
+        .as_ref()
+        .and_then(|s| s.tree.as_ref())
+        .is_none()
+    {
+        if Instant::now() >= deadline {
+            eprintln!("WARNING: background parse never landed");
+            break;
+        }
+        if let Ok(msg) = editor
+            .job_manager
+            .receiver()
+            .recv_timeout(Duration::from_millis(20))
+        {
+            editor.handle_job_message(msg).unwrap();
+        }
+    }
+    editor.update_and_render().unwrap();
+
+    eprintln!("--- scroll latency (soft wrap on, one j per sample) ---");
+    {
+        let cursor = editor.active_document().buffer.cursor();
+        let line = editor.active_document().buffer.get_line();
+        eprintln!(
+            "pre: cursor={cursor} line={line} top_vr={} soft_wrap={}",
+            editor.render_system.viewport.top_visual_row(),
+            editor.state.settings.soft_wrap
+        );
+    }
+    measure_scroll(&mut editor, "j from top", 300);
+    {
+        let cursor = editor.active_document().buffer.cursor();
+        let line = editor.active_document().buffer.get_line();
+        eprintln!(
+            "post: cursor={cursor} line={line} top_vr={}",
+            editor.render_system.viewport.top_visual_row()
+        );
+    }
+
+    editor.goto_line(2_500);
+    editor.update_and_render().unwrap();
+    measure_scroll(&mut editor, "j from middle", 300);
+
+    editor.goto_line(0);
+    editor.update_and_render().unwrap();
+    measure_scroll(&mut editor, "j near end", 300);
+}
