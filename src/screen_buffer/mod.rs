@@ -371,17 +371,19 @@ impl DoubleBuffer {
             return Ok(false);
         }
 
-        // Probe one mid-region row: after a real scroll the desired frame's
-        // row equals the previous frame's row shifted by `delta`.
-        let probe = if delta > 0 {
-            top + (bottom - top - k) / 2
+        // Probe the shifted region's edge rows: the centered cursor (and any
+        // cursor-line styling) sits mid-region, so edges verify a real shift.
+        let (lo, hi) = if delta > 0 {
+            (top, bottom - k)
         } else {
-            top + k + (bottom - top - k) / 2
+            (top + k, bottom)
         };
-        let shifted = (probe as isize + delta) as usize;
-        if self.current[probe * self.cols..(probe + 1) * self.cols]
-            != self.previous[shifted * self.cols..(shifted + 1) * self.cols]
-        {
+        let row_shifted = |r: usize| {
+            let s = (r as isize + delta) as usize;
+            self.current[r * self.cols..(r + 1) * self.cols]
+                == self.previous[s * self.cols..(s + 1) * self.cols]
+        };
+        if !row_shifted(lo) || !row_shifted(hi) {
             return Ok(false);
         }
 
