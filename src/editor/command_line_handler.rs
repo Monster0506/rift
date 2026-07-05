@@ -158,6 +158,9 @@ impl<T: TerminalBackend> Editor<T> {
                 if name == "lua" {
                     let s = cmd.trim_start_matches(':').trim();
                     let code = s.strip_prefix("lua").map(|r| r.trim_start()).unwrap_or("");
+                    // First :lua in a pluginless session: snapshot state for it.
+                    self.plugin_host.mark_lua_used();
+                    self.update_lua_state();
                     if let Some(err) = self.plugin_host.lua_exec(code) {
                         self.state
                             .notify(crate::notification::NotificationType::Error, err);

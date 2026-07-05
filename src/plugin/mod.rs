@@ -330,6 +330,9 @@ pub struct PluginHost {
     cursor_hold: CursorHoldState,
     /// Embedded Lua VM for script plugins. `None` until `init_lua()` is called.
     lua: Option<lua_host::LuaHost>,
+    /// True once any Lua plugin file or `:lua` snippet has run. Editor-state
+    /// snapshots are skipped until then (nothing Lua-side can read them).
+    lua_used: std::cell::Cell<bool>,
 }
 
 impl PluginHost {
@@ -348,7 +351,18 @@ impl PluginHost {
             mutation_queue: Vec::new(),
             cursor_hold: CursorHoldState::new(cursor_hold_polls),
             lua: None,
+            lua_used: std::cell::Cell::new(false),
         }
+    }
+
+    /// Whether any Lua code has run and can therefore observe editor state.
+    pub fn lua_state_wanted(&self) -> bool {
+        self.lua_used.get()
+    }
+
+    /// Record that Lua code is about to run for the first time.
+    pub fn mark_lua_used(&self) {
+        self.lua_used.set(true);
     }
 
     /// Register a handler for a named event.
@@ -620,19 +634,36 @@ impl PluginHost {
     /// Load all top-level `.lua` files in `dir`, sorted lexicographically. Returns error strings.
     pub fn lua_load_dir(&self, dir: &std::path::Path) -> Vec<String> {
         match &self.lua {
-            Some(lua) => lua.load_dir(dir),
+            Some(lua) => {
+                let has_lua_files = std::fs::read_dir(dir)
+                    .map(|rd| {
+                        rd.flatten().any(|e| {
+                            let p = e.path();
+                            p.is_file() && p.extension().is_some_and(|x| x == "lua")
+                        })
+                    })
+                    .unwrap_or(false);
+                if has_lua_files {
+                    self.lua_used.set(true);
+                }
+                lua.load_dir(dir)
+            }
             None => vec![],
         }
     }
 
     /// Execute a single `.lua` file. Returns an error string on failure.
     pub fn lua_load_file(&self, path: &std::path::Path) -> Option<String> {
-        self.lua.as_ref()?.load_file(path)
+        let lua = self.lua.as_ref()?;
+        self.lua_used.set(true);
+        lua.load_file(path)
     }
 
     /// Execute a Lua snippet directly (for `:lua` command).
     pub fn lua_exec(&self, code: &str) -> Option<String> {
-        self.lua.as_ref()?.exec(code)
+        let lua = self.lua.as_ref()?;
+        self.lua_used.set(true);
+        lua.exec(code)
     }
 
     /// Dispatch an event to all registered handlers.

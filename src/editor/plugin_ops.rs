@@ -7,6 +7,12 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_lua_state(&self) {
         use crate::plugin::lua_host::BufEntry;
 
+        // Snapshotting materializes the whole buffer; skip it until some Lua
+        // code has actually run and could observe the state.
+        if !self.plugin_host.lua_state_wanted() {
+            return;
+        }
+
         let tab_width = self.state.settings.tab_width;
         let expand_tabs = self.state.settings.expand_tabs;
         let mode = self.current_mode.as_str();
