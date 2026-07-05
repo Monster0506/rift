@@ -1,4 +1,4 @@
-//! Lua 5.4 plugin host — embeds mlua and exposes the `rift.*` API.
+//! Lua 5.4 plugin host - embeds mlua and exposes the `rift.*` API.
 
 use crate::notification::NotificationType;
 use crate::plugin::events::EditorEvent;
@@ -164,7 +164,7 @@ struct LuaSharedState {
     buf_lines: Arc<Vec<String>>,
     /// Active buffer ID.
     buf_id: usize,
-    /// Kind string for the active buffer ("file", "terminal", "directory", …).
+    /// Kind string for the active buffer ("file", "terminal", "directory", ,).
     buf_kind: String,
     /// Cursor position (row 0-indexed, col 0-indexed).
     cursor: (usize, usize),
@@ -200,7 +200,7 @@ struct LuaSharedState {
     focused_win_id: u64,
     /// ID of the previously focused window, if any.
     previous_win_id: Option<u64>,
-    /// Snapshot of LSP diagnostics: normalized_uri → [(line, col, severity, message)].
+    /// Snapshot of LSP diagnostics: normalized_uri -> [(line, col, severity, message)].
     /// severity: 1=error, 2=warning, 3=info, 4=hint
     lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>>,
     /// The plugin file currently being loaded, used to tag registrations with their owner.
@@ -309,7 +309,7 @@ impl LuaHost {
 
         let api = lua.create_table()?;
 
-        // rift.on(event_name, handler_fn) → handle (integer)
+        // rift.on(event_name, handler_fn) -> handle (integer)
         // Returns a handle that can be passed to rift.off() to unregister.
         {
             let sh = Arc::clone(&shared);
@@ -360,7 +360,7 @@ impl LuaHost {
             api.set("on", on_fn)?;
         }
 
-        // rift.off(handle) — unregister a handler by its slot handle
+        // rift.off(handle) - unregister a handler by its slot handle
         {
             let f = lua.create_function(|lua, handle: i64| {
                 let slot_events: LuaTable = lua.globals().get("_rift_slot_events")?;
@@ -408,7 +408,7 @@ impl LuaHost {
             api.set("notify", f)?;
         }
 
-        // rift.append_lines(lines)  — appends a Lua sequence of strings to the active buffer
+        // rift.append_lines(lines)  - appends a Lua sequence of strings to the active buffer
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, lines: LuaTable| {
@@ -732,7 +732,7 @@ impl LuaHost {
             api.set("annotations", annotations)?;
         }
 
-        // rift.current_buf() → integer buffer id
+        // rift.current_buf() -> integer buffer id
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -741,7 +741,7 @@ impl LuaHost {
             api.set("current_buf", f)?;
         }
 
-        // rift.get_cursor() → row (1-indexed), col (0-indexed)
+        // rift.get_cursor() -> row (1-indexed), col (0-indexed)
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -751,7 +751,7 @@ impl LuaHost {
             api.set("get_cursor", f)?;
         }
 
-        // rift.get_lines(start, end) → sequence of strings
+        // rift.get_lines(start, end) -> sequence of strings
         // start/end are 1-indexed; end = -1 means last line
         {
             let sh = Arc::clone(&shared);
@@ -774,8 +774,8 @@ impl LuaHost {
         }
 
         // rift.register_command(name, fn [, description [, arg_type]])
-        // description — shown in tab completion dropdown
-        // arg_type    — drives argument completion: "file", "dir"
+        // description - shown in tab completion dropdown
+        // arg_type    - drives argument completion: "file", "dir"
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(
@@ -809,7 +809,7 @@ impl LuaHost {
         }
         lua.globals().set("_rift_commands", lua.create_table()?)?;
 
-        // rift.register_action(id, fn)  — register a keymap action handler
+        // rift.register_action(id, fn)  - register a keymap action handler
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |lua, (id, callback): (String, LuaFunction)| {
@@ -831,7 +831,7 @@ impl LuaHost {
         }
         lua.globals().set("_rift_actions", lua.create_table()?)?;
 
-        // rift.emit(event_name [, payload])  — fire a UserEvent to all registered handlers
+        // rift.emit(event_name [, payload])  - fire a UserEvent to all registered handlers
         // Optional payload table keys are merged into the event table alongside `name`.
         {
             let sh = Arc::clone(&shared);
@@ -935,7 +935,7 @@ impl LuaHost {
             api.set("spawn", f)?;
         }
 
-        // rift.insert(text) — insert text at the current cursor position
+        // rift.insert(text) - insert text at the current cursor position
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, text: String| {
@@ -948,7 +948,7 @@ impl LuaHost {
             api.set("insert", f)?;
         }
 
-        // rift.delete_before(n) — delete n chars immediately before the cursor
+        // rift.delete_before(n) - delete n chars immediately before the cursor
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, n: i64| {
@@ -963,7 +963,7 @@ impl LuaHost {
             api.set("delete_before", f)?;
         }
 
-        // rift.delete_forward(n) — delete n chars immediately after the cursor
+        // rift.delete_forward(n) - delete n chars immediately after the cursor
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, n: i64| {
@@ -978,7 +978,7 @@ impl LuaHost {
             api.set("delete_forward", f)?;
         }
 
-        // rift.set_cursor(row, col) — move cursor (row 1-indexed, col 0-indexed)
+        // rift.set_cursor(row, col) - move cursor (row 1-indexed, col 0-indexed)
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (row, col): (i64, i64)| {
@@ -995,7 +995,7 @@ impl LuaHost {
             api.set("set_cursor", f)?;
         }
 
-        // rift.replace_lines(start, end, lines) — replace 1-indexed inclusive line range
+        // rift.replace_lines(start, end, lines) - replace 1-indexed inclusive line range
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (start, end_, lines): (i64, i64, LuaTable)| {
@@ -1019,7 +1019,7 @@ impl LuaHost {
 
         // rift.add_highlight(start_line, start_col, end_line, end_col, color)
         // line numbers are 1-indexed; columns are 0-indexed
-        // color: named ("red", "green", …) or hex ("#rrggbb")
+        // color: named ("red", "green", ,) or hex ("#rrggbb")
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(
@@ -1042,7 +1042,7 @@ impl LuaHost {
             api.set("add_highlight", f)?;
         }
 
-        // rift.clear_highlights() — remove this handler's highlights from the active buffer
+        // rift.clear_highlights() - remove this handler's highlights from the active buffer
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -1054,7 +1054,7 @@ impl LuaHost {
             api.set("clear_highlights", f)?;
         }
 
-        // rift.set_cursor_hold_delay(ms) — set the CursorHold idle threshold in milliseconds
+        // rift.set_cursor_hold_delay(ms) - set the CursorHold idle threshold in milliseconds
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ms: u32| {
@@ -1067,7 +1067,7 @@ impl LuaHost {
             api.set("set_cursor_hold_delay", f)?;
         }
 
-        // rift.set_option(name, value) — set a document option
+        // rift.set_option(name, value) - set a document option
         // Supported: "tab_width", "expand_tabs", "show_line_numbers"
         {
             let sh = Arc::clone(&shared);
@@ -1090,7 +1090,7 @@ impl LuaHost {
             api.set("set_option", f)?;
         }
 
-        // rift.get_option(name) — read a document option from the current snapshot
+        // rift.get_option(name) - read a document option from the current snapshot
         // Returns: tab_width (int), expand_tabs (bool), show_line_numbers (bool)
         {
             let sh = Arc::clone(&shared);
@@ -1105,7 +1105,7 @@ impl LuaHost {
             api.set("get_option", f)?;
         }
 
-        // rift.get_filetype() → string or nil
+        // rift.get_filetype() -> string or nil
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |lua, ()| {
@@ -1118,7 +1118,7 @@ impl LuaHost {
             api.set("get_filetype", f)?;
         }
 
-        // rift.get_filepath() → string or nil
+        // rift.get_filepath() -> string or nil
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |lua, ()| {
@@ -1131,7 +1131,7 @@ impl LuaHost {
             api.set("get_filepath", f)?;
         }
 
-        // rift.get_buf_list() → sequence of { id, name, is_dirty, is_current, kind, path, line_count, is_read_only }
+        // rift.get_buf_list() -> sequence of { id, name, is_dirty, is_current, kind, path, line_count, is_read_only }
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |lua, ()| {
@@ -1156,7 +1156,7 @@ impl LuaHost {
             api.set("get_buf_list", f)?;
         }
 
-        // rift.buf_kind() → "file" | "terminal" | "directory" | "undotree" | "messages" | …
+        // rift.buf_kind() -> "file" | "terminal" | "directory" | "undotree" | "messages" | ,
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -1169,7 +1169,7 @@ impl LuaHost {
             api.set("buf_kind", f)?;
         }
 
-        // rift.switch_buf(buf_id) — switch the active buffer to the given ID
+        // rift.switch_buf(buf_id) - switch the active buffer to the given ID
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, id: u64| {
@@ -1182,7 +1182,7 @@ impl LuaHost {
             api.set("switch_buf", f)?;
         }
 
-        // rift.open_file(path [, force]) — open a file, optionally discarding unsaved changes
+        // rift.open_file(path [, force]) - open a file, optionally discarding unsaved changes
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (path, force): (String, Option<bool>)| {
@@ -1197,7 +1197,7 @@ impl LuaHost {
             api.set("open_file", f)?;
         }
 
-        // rift.close_buf([force]) — close the current buffer, optionally discarding changes
+        // rift.close_buf([force]) - close the current buffer, optionally discarding changes
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, force: Option<bool>| {
@@ -1211,7 +1211,7 @@ impl LuaHost {
             api.set("close_buf", f)?;
         }
 
-        // rift.create_scratch_buf(name, lines) — create an in-memory buffer
+        // rift.create_scratch_buf(name, lines) - create an in-memory buffer
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (name, lines): (String, LuaTable)| {
@@ -1228,7 +1228,7 @@ impl LuaHost {
             api.set("create_scratch_buf", f)?;
         }
 
-        // rift.reload_buf([force]) — reload the active buffer's content from disk, discarding in-memory edits if `force`.
+        // rift.reload_buf([force]) - reload the active buffer's content from disk, discarding in-memory edits if `force`.
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, force: Option<bool>| {
@@ -1242,7 +1242,7 @@ impl LuaHost {
             api.set("reload_buf", f)?;
         }
 
-        // rift.get_commands() → sequence of { name, description }
+        // rift.get_commands() -> sequence of { name, description }
         // Returns all registered plugin commands (both Rust and Lua).
         {
             let sh = Arc::clone(&shared);
@@ -1260,7 +1260,7 @@ impl LuaHost {
             api.set("get_commands", f)?;
         }
 
-        // rift.save() — request a save of the active buffer to disk
+        // rift.save() - request a save of the active buffer to disk
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -1273,7 +1273,7 @@ impl LuaHost {
             api.set("save", f)?;
         }
 
-        // rift.get_tab_width() → integer
+        // rift.get_tab_width() -> integer
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -1282,7 +1282,7 @@ impl LuaHost {
             api.set("get_tab_width", f)?;
         }
 
-        // rift.get_expand_tabs() → boolean
+        // rift.get_expand_tabs() -> boolean
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -1291,7 +1291,7 @@ impl LuaHost {
             api.set("get_expand_tabs", f)?;
         }
 
-        // rift.get_mode() → "normal" | "insert" | "command" | "search"
+        // rift.get_mode() -> "normal" | "insert" | "command" | "search"
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -1300,7 +1300,7 @@ impl LuaHost {
             api.set("get_mode", f)?;
         }
 
-        // rift.get_line_count() → integer
+        // rift.get_line_count() -> integer
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -1309,7 +1309,7 @@ impl LuaHost {
             api.set("get_line_count", f)?;
         }
 
-        // rift.can_undo() → bool
+        // rift.can_undo() -> bool
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -1318,7 +1318,7 @@ impl LuaHost {
             api.set("can_undo", f)?;
         }
 
-        // rift.can_redo() → bool
+        // rift.can_redo() -> bool
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -1327,7 +1327,7 @@ impl LuaHost {
             api.set("can_redo", f)?;
         }
 
-        // rift.is_dirty() → bool
+        // rift.is_dirty() -> bool
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -1336,7 +1336,7 @@ impl LuaHost {
             api.set("is_dirty", f)?;
         }
 
-        // rift.get_scroll() → top_line, left_col
+        // rift.get_scroll() -> top_line, left_col
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -1359,7 +1359,7 @@ impl LuaHost {
             api.set("set_scroll", f)?;
         }
 
-        // rift.get_line_ending() → "lf" | "crlf"
+        // rift.get_line_ending() -> "lf" | "crlf"
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -1372,7 +1372,7 @@ impl LuaHost {
             api.set("get_line_ending", f)?;
         }
 
-        // rift.set_line_ending(type) — "lf" | "crlf"
+        // rift.set_line_ending(type) - "lf" | "crlf"
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ending: String| {
@@ -1385,10 +1385,10 @@ impl LuaHost {
             api.set("set_line_ending", f)?;
         }
 
-        // rift.search(needle [, opts]) → array of {row, col_start, col_end}
+        // rift.search(needle [, opts]) -> array of {row, col_start, col_end}
         // Literal search over the current buffer lines.
         // row is 1-indexed; col_start/col_end are 0-indexed byte offsets within the line.
-        // opts.whole_word = true  — only match when surrounded by non-word characters.
+        // opts.whole_word = true  - only match when surrounded by non-word characters.
         {
             let sh = Arc::clone(&shared);
             let f =
@@ -1437,7 +1437,7 @@ impl LuaHost {
             api.set("search", f)?;
         }
 
-        // rift.get_window_size() → rows, cols
+        // rift.get_window_size() -> rows, cols
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
@@ -1447,7 +1447,7 @@ impl LuaHost {
             api.set("get_window_size", f)?;
         }
 
-        // rift.exec_action(action_string) — fire a built-in editor action by name
+        // rift.exec_action(action_string) - fire a built-in editor action by name
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, action: String| {
@@ -1460,7 +1460,7 @@ impl LuaHost {
             api.set("exec_action", f)?;
         }
 
-        // rift.map(mode, keys, action) — register a key binding
+        // rift.map(mode, keys, action) - register a key binding
         // mode: "n" | "i" | "c" | "s" | "g"
         // keys: vim notation, e.g. "<C-p>", "gg", "<leader>s"
         // action: action string, e.g. "editor:save", or a registered plugin action id
@@ -1501,7 +1501,7 @@ impl LuaHost {
             api.set("map", f)?;
         }
 
-        // rift.center_on_line(n) — move cursor to line n (1-indexed) and center it in viewport
+        // rift.center_on_line(n) - move cursor to line n (1-indexed) and center it in viewport
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, row: usize| {
@@ -1514,7 +1514,7 @@ impl LuaHost {
             api.set("center_on_line", f)?;
         }
 
-        // rift.unmap(mode, keys) — remove a key binding
+        // rift.unmap(mode, keys) - remove a key binding
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (mode, keys): (String, String)| {
@@ -1527,11 +1527,11 @@ impl LuaHost {
             api.set("unmap", f)?;
         }
 
-        // rift.windows — window management sub-table
+        // rift.windows - window management sub-table
         {
             let windows = lua.create_table()?;
 
-            // rift.windows.move(direction) — move focused window in a direction
+            // rift.windows.move(direction) - move focused window in a direction
             // direction: "left" | "right" | "up" | "down"
             {
                 let sh = Arc::clone(&shared);
@@ -1557,7 +1557,7 @@ impl LuaHost {
                 windows.set("move", f)?;
             }
 
-            // rift.windows.exchange() — swap focused window contents with previously focused window
+            // rift.windows.exchange() - swap focused window contents with previously focused window
             {
                 let sh = Arc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
@@ -1570,7 +1570,7 @@ impl LuaHost {
                 windows.set("exchange", f)?;
             }
 
-            // rift.windows.focus_prev() — focus the previously focused window
+            // rift.windows.focus_prev() - focus the previously focused window
             {
                 let sh = Arc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
@@ -1583,7 +1583,7 @@ impl LuaHost {
                 windows.set("focus_prev", f)?;
             }
 
-            // rift.windows.list() → array of { id, buf, row, col, rows, cols }
+            // rift.windows.list() -> array of { id, buf, row, col, rows, cols }
             {
                 let sh = Arc::clone(&shared);
                 let f = lua.create_function(move |lua, ()| {
@@ -1604,7 +1604,7 @@ impl LuaHost {
                 windows.set("list", f)?;
             }
 
-            // rift.windows.current() → integer window id of the focused window
+            // rift.windows.current() -> integer window id of the focused window
             {
                 let sh = Arc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
@@ -1613,7 +1613,7 @@ impl LuaHost {
                 windows.set("current", f)?;
             }
 
-            // rift.windows.previous() → integer window id of the previously focused window, or nil
+            // rift.windows.previous() -> integer window id of the previously focused window, or nil
             {
                 let sh = Arc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
@@ -1626,7 +1626,7 @@ impl LuaHost {
                 windows.set("previous", f)?;
             }
 
-            // rift.windows.navigate(direction) — move focus to adjacent window
+            // rift.windows.navigate(direction) - move focus to adjacent window
             // direction: "left" | "right" | "up" | "down"
             {
                 let sh = Arc::clone(&shared);
@@ -1654,7 +1654,7 @@ impl LuaHost {
             api.set("windows", windows)?;
         }
 
-        // rift.register_filetype(ext, lang_name) — map a file extension to a language name
+        // rift.register_filetype(ext, lang_name) - map a file extension to a language name
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (ext, lang_name): (String, String)| {
@@ -1667,7 +1667,7 @@ impl LuaHost {
             api.set("register_filetype", f)?;
         }
 
-        // rift.register_language_query(lang_name, query_src) — override highlights query
+        // rift.register_language_query(lang_name, query_src) - override highlights query
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (lang_name, query_src): (String, String)| {
@@ -1682,7 +1682,7 @@ impl LuaHost {
             api.set("register_language_query", f)?;
         }
 
-        // rift.register_injections_query(lang_name, query_src) — set injections query
+        // rift.register_injections_query(lang_name, query_src) - set injections query
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (lang_name, query_src): (String, String)| {
@@ -1714,7 +1714,7 @@ impl LuaHost {
             api.set("register_grammar", f)?;
         }
 
-        // rift.lsp — Language Server Protocol sub-table
+        // rift.lsp - Language Server Protocol sub-table
         {
             let lsp = lua.create_table()?;
 
@@ -1908,7 +1908,7 @@ impl LuaHost {
                 lsp.set("diagnostic_prev", f)?;
             }
 
-            // rift.lsp.get_diagnostics([uri]) → array of {line, col, severity, message}
+            // rift.lsp.get_diagnostics([uri]) -> array of {line, col, severity, message}
             // uri is optional; if omitted, uses the active file's URI.
             // severity: 1=error, 2=warning, 3=info, 4=hint
             {
@@ -1955,12 +1955,12 @@ impl LuaHost {
 
         lua.globals().set("rift", api)?;
 
-        // Embedded Lua prelude — convenience wrappers that don't need Rust bindings.
+        // Embedded Lua prelude - convenience wrappers that don't need Rust bindings.
         lua.load(r#"
 -- rift.log level constants
 rift.log = { DEBUG = "debug", INFO = "info", WARN = "warn", ERROR = "error" }
 
--- rift.get_current_line() → string
+-- rift.get_current_line() -> string
 function rift.get_current_line()
     local row = select(1, rift.get_cursor())
     local lines = rift.get_lines(row, row)
@@ -1979,7 +1979,7 @@ function rift.delete_current_line()
     rift.replace_lines(row, row, {})
 end
 
--- rift.inspect(val) → string  (pretty-prints any Lua value)
+-- rift.inspect(val) -> string  (pretty-prints any Lua value)
 function rift.inspect(val, _depth)
     local depth = _depth or 0
     local t = type(val)
@@ -1998,7 +1998,7 @@ function rift.inspect(val, _depth)
     end
 end
 
--- rift.json — minimal JSON encode/decode
+-- rift.json - minimal JSON encode/decode
 rift.json = {}
 function rift.json.encode(val)
     local t = type(val)
@@ -2026,7 +2026,7 @@ function rift.json.encode(val)
     return "null"
 end
 
--- rift.fs — path and file utilities
+-- rift.fs - path and file utilities
 rift.fs = {}
 function rift.fs.basename(path)
     return path:match("([^/\\]+)$") or path
@@ -2050,7 +2050,7 @@ function rift.fs.read(path)
     return content
 end
 
--- rift.json.decode(str) → value
+-- rift.json.decode(str) -> value
 -- Minimal recursive descent JSON parser (no unicode escapes, no numbers in exponent form).
 do
     local MAX_JSON_DEPTH = 200
@@ -2150,7 +2150,7 @@ do
     end
 end
 
--- rift.get_word_at_cursor() → string
+-- rift.get_word_at_cursor() -> string
 -- Returns the word (alphanumeric + underscore) under the cursor, or "" if none.
 function rift.get_word_at_cursor()
     local row, col = rift.get_cursor()
@@ -2168,7 +2168,7 @@ function rift.get_word_at_cursor()
     return line:sub(s, e)
 end
 
--- rift.debounce(fn, polls) → debounced_fn
+-- rift.debounce(fn, polls) -> debounced_fn
 -- Returns a wrapper that only calls fn after it has been invoked `polls`
 -- consecutive times without being reset. Intended for use with
 -- TextChangedCoarse handlers where you want to wait for a pause in typing.
@@ -2185,10 +2185,10 @@ function rift.debounce(fn, polls)
     end
 end
 
--- rift.plugins — plugin ownership and lifecycle management
+-- rift.plugins - plugin ownership and lifecycle management
 rift.plugins = {}
 
--- rift.plugins.list() → string[]
+-- rift.plugins.list() -> string[]
 -- Returns all plugin names that have registered anything, sorted lexicographically.
 function rift.plugins.list()
     local seen = {}
@@ -2206,7 +2206,7 @@ function rift.plugins.list()
     return result
 end
 
--- rift.plugins.info(name) → {handlers, commands, actions, keys}
+-- rift.plugins.info(name) -> {handlers, commands, actions, keys}
 -- Returns a description of everything registered by the named plugin.
 -- handlers: array of {slot, event}
 -- commands: array of command name strings

@@ -441,7 +441,7 @@ impl Document {
             let annotation_entry_id = self.annotations.directory_entry_id_at_line(line_idx);
 
             if let Some(entry_id) = annotation_entry_id {
-                // Line has a known annotation. entry_id=0 is the "no-id" sentinel → skip silently.
+                // Line has a known annotation. entry_id=0 is the "no-id" sentinel -> skip silently.
                 if entry_id == 0 {
                     continue;
                 }

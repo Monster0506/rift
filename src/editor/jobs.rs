@@ -555,12 +555,14 @@ impl<T: TerminalBackend> Editor<T> {
 
                         if is_current {
                             if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                                let source = doc.buffer.to_logical_bytes();
                                 if let Some(syntax) = &mut doc.syntax {
                                     syntax.update_from_result(*result);
                                     // The background job only parses the host grammar, so
                                     // re-derive injections here from the live source.
-                                    syntax.parse_injections_pub(&source);
+                                    if syntax.injections_query.is_some() {
+                                        let source = doc.buffer.to_logical_bytes();
+                                        syntax.parse_injections_pub(&source);
+                                    }
                                 }
                             }
                         }

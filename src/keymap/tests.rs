@@ -114,7 +114,7 @@ fn test_register_from_str() {
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
 }
-// FileExplorer → Normal → Global fallback chain
+// FileExplorer -> Normal -> Global fallback chain
 
 #[test]
 fn test_file_explorer_buffer_falls_back_to_normal() {
@@ -141,7 +141,7 @@ fn test_file_explorer_buffer_falls_back_to_global_via_normal() {
         Action::Editor(EditorAction::Quit),
     );
 
-    // FileExplorer → Normal → Global
+    // FileExplorer -> Normal -> Global
     assert_eq!(
         map.get_action(KeyContext::FileExplorer, Key::Char('q')),
         Some(&Action::Editor(EditorAction::Quit))
@@ -308,7 +308,7 @@ fn test_sequence_fallback_through_normal_to_global() {
         Action::Editor(EditorAction::Move(Motion::StartOfFile)),
     );
 
-    // FileExplorer → Normal → Global should find 'gg'
+    // FileExplorer -> Normal -> Global should find 'gg'
     assert_eq!(
         map.lookup(KeyContext::FileExplorer, &[Key::Char('g'), Key::Char('g')]),
         MatchResult::Exact(&Action::Editor(EditorAction::Move(Motion::StartOfFile)))

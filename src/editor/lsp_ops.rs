@@ -195,14 +195,8 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let target_line = loc.range.start.line as usize;
-        // `character` is in the server's negotiated wire units; converted to
-        // a code-point offset once the target document's buffer is available.
         let target_units_col = loc.range.start.character;
 
-        // If the file is already buffered we can set the cursor immediately after
-        // switching. If it isn't, open_file creates a placeholder and spawns an
-        // async FileLoadJob — the content won't be there yet, so we stash the jump
-        // target and let the job-completion handler apply it.
         let already_open = self.document_manager.find_open_document_id(&path).is_some();
 
         if let Err(e) = self.open_file(Some(path.to_string_lossy().into_owned()), false) {
@@ -346,7 +340,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        // Build location-list entries — uri="" signals a code action row, line = index.
         let entries: Vec<crate::document::LocationEntry> = actions
             .iter()
             .enumerate()
@@ -415,7 +408,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Execute a code action — apply immediately if it has an edit, otherwise resolve it.
     pub(super) fn execute_code_action(&mut self, action: serde_json::Value) {
         if let Some(edit) = action.get("edit").cloned() {
             self.apply_workspace_edit(&edit);
@@ -437,7 +429,7 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 self.state.notify(
                     NotificationType::Warning,
-                    "LSP: cannot resolve action — no server for this file".to_string(),
+                    "LSP: cannot resolve action: no server for this file".to_string(),
                 );
             }
         }
@@ -578,7 +570,6 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let uri = crate::lsp::protocol::normalize_uri(&crate::lsp::protocol::path_to_uri(&path));
-        // Exclude hints (severity 4) — navigate only errors, warnings, and info.
         let diags: Vec<_> = self
             .lsp_diagnostics
             .get(&uri)
@@ -716,9 +707,6 @@ impl<T: TerminalBackend> Editor<T> {
                 };
                 let line = d.range.start.line;
                 let col = d.range.start.character;
-                // Collapse multi-line messages so each entry occupies exactly one buffer line.
-                // A multi-line message would shift the line→entry index mapping and
-                // cause the wrong action to be applied when the user presses Enter/Space.
                 let first_line = d
                     .message
                     .lines()

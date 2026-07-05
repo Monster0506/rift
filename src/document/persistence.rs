@@ -1,4 +1,4 @@
-//! Document persistence — save, load, path management, display name.
+//! Document persistence: save, load, path management, display name.
 
 use super::{BufferKind, Document, LineEnding};
 use crate::error::{ErrorType, RiftError};

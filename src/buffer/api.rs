@@ -6,17 +6,17 @@
 //!
 //! ## Indexing model
 //!
-//! All offsets are **code‑point based** using Unicode scalar values (U+XXXX).
+//! All offsets are **code-point based** using Unicode scalar values (U+XXXX).
 //! This is not grapheme clusters; emoji sequences, combining marks, and other
 //! multi-code-point constructs count as multiple positions. This is a known
 //! limitation; grapheme-aware editing would require a separate API layer.
 //!
 //! ## Implementor requirement
 //!
-//! Implementations **must** provide O(log n) or better code‑point to byte
+//! Implementations **must** provide O(log n) or better code-point to byte
 //! offset mapping. This is essential for `set_cursor`, `move_left/right`, and
 //! deletion operations. Ropes and piece tables should maintain cumulative
-//! code‑point counts per node or segment and use binary search.
+//! code-point counts per node or segment and use binary search.
 //!
 //! Known gap: the rope only finds the target piece in O(log n); an in-piece
 //! scan degrades this to O(piece_len). See `char_to_byte` in `buffer::rope`.
@@ -40,9 +40,9 @@ use crate::character::Character;
 use crate::error::RiftError;
 use std::ops::Range;
 
-/// Read‑only view of a document at a specific revision.
+/// Read-only view of a document at a specific revision.
 pub trait BufferView {
-    /// Total number of code‑points in the document.
+    /// Total number of code-points in the document.
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool {
         self.len() == 0
@@ -51,7 +51,7 @@ pub trait BufferView {
     /// Number of logical lines.
     fn line_count(&self) -> usize;
 
-    /// Code‑point offset of the start of `line` (0‑based).
+    /// Code-point offset of the start of `line` (0-based).
     fn line_start(&self, line: usize) -> usize;
 
     type CharIter<'a>: Iterator<Item = Character> + Clone + 'a
@@ -106,27 +106,27 @@ pub trait BufferView {
 /// Builder for accumulating operations in a transaction.
 ///
 /// Operations do not increment revision until the transaction commits.
-/// All offsets are code‑point based.
+/// All offsets are code-point based.
 pub trait TransactionBuilder {
-    /// Set cursor to `pos` (code‑point offset).
+    /// Set cursor to `pos` (code-point offset).
     fn set_cursor(&mut self, pos: usize) -> Result<(), RiftError>;
 
-    /// Current cursor position (code‑point offset).
+    /// Current cursor position (code-point offset).
     fn cursor(&self) -> usize;
 
-    /// Insert UTF‑8 string at cursor.
+    /// Insert UTF-8 string at cursor.
     fn insert_str(&mut self, s: &str) -> Result<(), RiftError>;
 
-    /// Delete `count` code‑points before cursor (backspace).
+    /// Delete `count` code-points before cursor (backspace).
     fn delete_backward(&mut self, count: usize) -> Result<(), RiftError>;
 
-    /// Delete `count` code‑points at cursor (forward delete).
+    /// Delete `count` code-points at cursor (forward delete).
     fn delete_forward(&mut self, count: usize) -> Result<(), RiftError>;
 
-    /// Move cursor left by `chars` code‑points. Returns `true` if moved.
+    /// Move cursor left by `chars` code-points. Returns `true` if moved.
     fn move_left(&mut self, chars: usize) -> bool;
 
-    /// Move cursor right by `chars` code‑points. Returns `true` if moved.
+    /// Move cursor right by `chars` code-points. Returns `true` if moved.
     fn move_right(&mut self, chars: usize) -> bool;
 
     /// Move cursor up by `lines` logical lines. Returns `true` if moved.
@@ -141,30 +141,30 @@ pub trait BufferMut {
     /// The concrete snapshot type for this buffer.
     type Snapshot: BufferView + Send + Sync;
 
-    /// Set cursor to `pos` (code‑point offset).
+    /// Set cursor to `pos` (code-point offset).
     /// Does not increment revision (navigation is not an edit).
     fn set_cursor(&mut self, pos: usize) -> Result<(), RiftError>;
 
-    /// Current cursor position (code‑point offset).
+    /// Current cursor position (code-point offset).
     fn cursor(&self) -> usize;
 
-    /// Insert UTF‑8 string at cursor. Does not move cursor.
+    /// Insert UTF-8 string at cursor. Does not move cursor.
     /// Increments revision by 1.
     fn insert_str(&mut self, s: &str) -> Result<(), RiftError>;
 
-    /// Delete `count` code‑points before cursor (backspace).
+    /// Delete `count` code-points before cursor (backspace).
     /// Increments revision by 1.
     fn delete_backward(&mut self, count: usize) -> Result<(), RiftError>;
 
-    /// Delete `count` code‑points at cursor (forward delete).
+    /// Delete `count` code-points at cursor (forward delete).
     /// Increments revision by 1.
     fn delete_forward(&mut self, count: usize) -> Result<(), RiftError>;
 
-    /// Move cursor left by `chars` code‑points. Returns `true` if moved.
+    /// Move cursor left by `chars` code-points. Returns `true` if moved.
     /// Does not increment revision (navigation is not an edit).
     fn move_left(&mut self, chars: usize) -> bool;
 
-    /// Move cursor right by `chars` code‑points. Returns `true` if moved.
+    /// Move cursor right by `chars` code-points. Returns `true` if moved.
     /// Does not increment revision (navigation is not an edit).
     fn move_right(&mut self, chars: usize) -> bool;
 

@@ -18,7 +18,7 @@ pub struct VisualRowInfo {
     pub is_first: bool,
 }
 
-/// Precomputed mapping from visual rows → buffer positions.
+/// Precomputed mapping from visual rows -> buffer positions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DisplayMap {
     rows: Vec<VisualRowInfo>,

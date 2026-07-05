@@ -47,7 +47,7 @@ fn lsp_diagnostics_survive_line_insertion() {
     let mut store = AnnotationStore::new();
     store.create_lsp_diagnostic(4, "error".into());
 
-    // Insert a line before line 4 → diagnostic shifts to line 5
+    // Insert a line before line 4 -> diagnostic shifts to line 5
     store.on_line_inserted(3);
 
     let diags: Vec<_> = store.lsp_diagnostics().collect();
@@ -60,7 +60,7 @@ fn lsp_diagnostics_survive_line_deletion_outside_range() {
     let mut store = AnnotationStore::new();
     store.create_lsp_diagnostic(10, "error".into());
 
-    // Delete lines 0–4 (5 lines) → diagnostic shifts to line 5
+    // Delete lines 0–4 (5 lines) -> diagnostic shifts to line 5
     store.on_lines_deleted(0, 5);
 
     let diags: Vec<_> = store.lsp_diagnostics().collect();

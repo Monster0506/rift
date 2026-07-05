@@ -580,11 +580,11 @@ fn hover_short_content_stays_on_one_line() {
 
 #[test]
 fn hover_cjk_content_wraps_by_display_width() {
-    // "你好" is 2 CJK chars, display width 4 each → total 4.
+    // "你好" is 2 CJK chars, display width 4 each -> total 4.
     // At width 3 the word cannot be split further so it stays alone on a line.
     let s = "你好 world";
     let wrapped = crate::render::wrap_text(s, 5);
     // "你好" has display width 4 (fits in 5), "world" has width 5 (fits in 5)
-    // → each word on its own line since 4+1+5 = 10 > 5
+    // -> each word on its own line since 4+1+5 = 10 > 5
     assert_eq!(wrapped.len(), 2, "got: {:?}", wrapped);
 }

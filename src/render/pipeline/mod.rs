@@ -445,7 +445,7 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for SearchDecorator<'a, I> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut item = self.input.next()?;
 
-        // Fast forward matches — SearchMatch.range is in code-point (char) offsets
+        // Fast forward matches
         while *self.idx < self.matches.len() {
             if self.matches[*self.idx].range.end <= item.char_offset {
                 *self.idx += 1;

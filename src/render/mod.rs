@@ -638,11 +638,6 @@ fn render_line(
                 let fg = item.fg.or(config.default_fg);
                 let bg = item.bg.or(config.default_bg);
 
-                // Tabs are already expanded by TabLayout — store a space so the
-                // terminal never receives a raw \t (which would jump to the
-                // terminal's own tab stop rather than the editor's tab_width).
-                // A glyph straddling the left scroll edge also renders as a space:
-                // terminals show a partially-scrolled double-width cell as blank.
                 let display_char = if item.char == Character::Tab || plan.straddles_left_edge {
                     Character::from(' ')
                 } else {

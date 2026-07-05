@@ -719,7 +719,7 @@ fn move_window_single_window_returns_false() {
 #[test]
 fn move_window_no_neighbor_flips_parent_direction() {
     // HSplit(w1, w2(focused)); w2 has no right neighbor.
-    // ^WL should flip parent to VSplit, w2 stays second → w2 on right.
+    // ^WL should flip parent to VSplit, w2 stays second -> w2 on right.
     let mut tree = SplitTree::new(1, 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
@@ -745,7 +745,7 @@ fn move_window_no_neighbor_flips_parent_direction() {
 #[test]
 fn move_window_no_neighbor_flip_left_swaps_children() {
     // HSplit(w1, w2(focused)); w2 has no left neighbor.
-    // ^WH flips parent to VSplit, w2 should move to first (left) → children swapped.
+    // ^WH flips parent to VSplit, w2 should move to first (left) -> children swapped.
     let mut tree = SplitTree::new(1, 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
@@ -801,7 +801,7 @@ fn move_window_no_neighbor_preserves_ratio() {
 
 #[test]
 fn move_window_toward_neighbor() {
-    // VSplit(w1(focused), w2); w1 presses Right → w1 lands to the right of w2.
+    // VSplit(w1(focused), w2); w1 presses Right -> w1 lands to the right of w2.
     let mut tree = SplitTree::new(1, 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree.split(SplitDirection::Vertical, w1, 2, 24, 40).unwrap();
@@ -818,7 +818,7 @@ fn move_window_toward_neighbor() {
 
 #[test]
 fn move_window_preserves_size_when_has_neighbor() {
-    // VSplit(w1=40cols, w2=40cols); move w1 right → new VSplit(w2, w1).
+    // VSplit(w1=40cols, w2=40cols); move w1 right -> new VSplit(w2, w1).
     // w1 should still occupy ~40 cols (half) in the new split.
     let mut tree = SplitTree::new(1, 24, 80);
     let w1 = tree.focused_window_id();
@@ -857,7 +857,7 @@ fn three_window_tree() -> (
 
 #[test]
 fn demo3_left_neighbor_swap() {
-    // H(V([w1],w2), w3) + Right → H(V(w2,[w1]), w3).
+    // H(V([w1],w2), w3) + Right -> H(V(w2,[w1]), w3).
     // w1 moves right: now to the right of w2. w3 unchanged at bottom.
     let (mut tree, w1, w2, w3) = three_window_tree();
     tree.set_focus(w1);
@@ -876,7 +876,7 @@ fn demo3_left_neighbor_swap() {
 
 #[test]
 fn demo8_up_joins_top_row_between() {
-    // H(V(w1,w2), [w3]) + Up → V(V(w1,[w3]), w2).
+    // H(V(w1,w2), [w3]) + Up -> V(V(w1,[w3]), w2).
     // w3 (full-width bottom) moves up, lands between w1 and w2.
     // After: all 3 in one row; w3 between w1 (left) and w2 (right).
     let (mut tree, w1, w2, w3) = three_window_tree();
@@ -896,7 +896,7 @@ fn demo8_up_joins_top_row_between() {
 
 #[test]
 fn demo16_down_moves_to_bottom_row() {
-    // H(V(w1,[w2]), w3) + Down → H(w1, V(w3,[w2])).
+    // H(V(w1,[w2]), w3) + Down -> H(w1, V(w3,[w2])).
     // w2 (top-right) moves down; w1 expands to full top; w2 lands right of w3.
     let (mut tree, w1, w2, w3) = three_window_tree();
     tree.set_focus(w2);
@@ -917,7 +917,7 @@ fn demo16_down_moves_to_bottom_row() {
 
 #[test]
 fn demo17_down_moves_to_bottom_row_left() {
-    // H(V([w1],w2), w3) + Down → H(w2, V(w3,[w1])).
+    // H(V([w1],w2), w3) + Down -> H(w2, V(w3,[w1])).
     // w1 (top-left) moves down; w2 expands to full top; w1 lands right of w3.
     let (mut tree, w1, w2, w3) = three_window_tree();
     tree.set_focus(w1);

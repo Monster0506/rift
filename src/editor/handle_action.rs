@@ -1149,10 +1149,10 @@ impl<T: TerminalBackend> Editor<T> {
 
         if is_linewise {
             if before {
-                // P: insert above → start of current line
+                // P: insert above -> start of current line
                 doc.buffer.move_to_line_start();
             } else {
-                // p: insert below → start of next line
+                // p: insert below -> start of next line
                 let line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
                 let total = doc.buffer.get_total_lines();
                 if line + 1 < total {

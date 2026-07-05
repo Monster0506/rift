@@ -151,7 +151,7 @@ fn test_color_decorator_no_highlights_no_color() {
     let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
     assert_eq!(items.len(), 5);
     for item in &items {
-        assert!(item.fg.is_none(), "no highlights → no color");
+        assert!(item.fg.is_none(), "no highlights -> no color");
     }
 }
 
@@ -184,8 +184,8 @@ fn test_color_decorator_partial_range_colors_only_matching() {
 fn test_color_decorator_multiple_ranges() {
     let input = chars("abcde").into_iter();
     let highlights = vec![
-        (0..2, Color::Red),   // "ab" → red
-        (3..5, Color::Green), // "de" → green
+        (0..2, Color::Red),   // "ab" -> red
+        (3..5, Color::Green), // "de" -> green
     ];
     let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
     assert_eq!(items[0].fg, Some(Color::Red));
@@ -212,7 +212,7 @@ fn test_color_decorator_range_starts_after_all_items() {
     let highlights = vec![(10..12, Color::Cyan)];
     let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
     for item in &items {
-        assert!(item.fg.is_none(), "range beyond input → no color applied");
+        assert!(item.fg.is_none(), "range beyond input -> no color applied");
     }
 }
 

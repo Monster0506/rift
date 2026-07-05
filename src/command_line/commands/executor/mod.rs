@@ -359,7 +359,7 @@ impl CommandExecutor {
 
                         // Begin transaction to group all substitutions
                         document.begin_transaction(format!(
-                            "Substitute: {} → {}",
+                            "Substitute: {} -> {}",
                             pattern, replacement
                         ));
 

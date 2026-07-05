@@ -110,7 +110,7 @@ impl<T: TerminalBackend> Editor<T> {
             dot_repeat: DotRepeat::new(),
             panel_layout: None,
             last_notification_generation: 0,
-            // 25 idle polls × 16 ms ≈ 400 ms before CursorHold fires.
+            // 25 idle polls * 16 ms = 400 ms before CursorHold fires.
             plugin_host: crate::plugin::PluginHost::new(25),
             clipboard_ring: crate::clipboard::ClipboardRing::new(),
             system_clipboard_cache: crate::clipboard::SystemClipboardCache::new(),

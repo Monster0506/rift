@@ -44,9 +44,9 @@ pub fn parse() -> Args {
 }
 
 /// Internal parser — returns:
-///   `Ok(None)`       → version flag seen, caller should print version + exit
-///   `Ok(Some(args))` → success
-///   `Err(msg)`       → bad input, caller should print error + exit
+///   `Ok(None)`       -> version flag seen, caller should print version + exit
+///   `Ok(Some(args))` -> success
+///   `Err(msg)`       -> bad input, caller should print error + exit
 pub fn parse_args(args: &[&str]) -> Result<Option<Args>, String> {
     let mut result = Args::default();
     let mut i = 0;

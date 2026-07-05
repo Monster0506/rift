@@ -415,7 +415,7 @@ fn test_populate_directory_clears_old_highlights_on_repopulate() {
     doc.populate_directory_buffer(entries2);
     let second_count = doc.custom_highlights.len();
 
-    // Fewer entries → fewer highlight ranges
+    // Fewer entries -> fewer highlight ranges
     assert!(
         second_count < first_count || second_count > 0,
         "highlights should be rebuilt on repopulate"
@@ -537,7 +537,7 @@ fn test_parse_diff_empty_lines_ignored() {
 
 #[test]
 fn test_parse_diff_one_entry_replaced_is_rename() {
-    // Replacing the only entry with a new name → rename.
+    // Replacing the only entry with a new name -> rename.
     // With the ID system, the user edits the visible name after the invisible /001 prefix.
     let mut doc = make_populated_directory_doc("/tmp", &[("old.txt", false)]);
     // /001 is the ID of old.txt; user changed the visible name to new.txt
@@ -935,7 +935,7 @@ fn test_parse_diff_multiple_deletes() {
         "/tmp",
         &[("a.txt", false), ("b.txt", false), ("c.txt", false)],
     );
-    // Keep only a.txt (id=1); b.txt (id=2) and c.txt (id=3) are absent → deleted.
+    // Keep only a.txt (id=1); b.txt (id=2) and c.txt (id=3) are absent -> deleted.
     set_annotated_buffer(&mut doc, "../\n/001 a.txt");
 
     let diff = doc.parse_directory_diff();
@@ -964,7 +964,7 @@ fn test_parse_diff_rename_to_subdirectory_path() {
     assert_eq!(
         diff.renames.len(),
         1,
-        "exactly one rename (test → Playground/test): {:?}",
+        "exactly one rename (test -> Playground/test): {:?}",
         diff
     );
     assert!(
@@ -981,7 +981,7 @@ fn test_parse_diff_rename_to_subdirectory_path() {
 
 #[test]
 fn test_parse_diff_rename_into_dir_while_dir_line_removed_does_not_delete_dir() {
-    // Bug: user changes "test" → "Playground/test" AND removes the "Playground/" line.
+    // Bug: user changes "test" -> "Playground/test" AND removes the "Playground/" line.
     // The old dir entry (id=1) must be protected from deletion because it is the parent
     // of the rename destination — removing it would wipe the file that was just moved in.
     let mut doc = make_populated_directory_doc("/tmp", &[("Playground", true), ("test", false)]);
@@ -1846,7 +1846,7 @@ fn test_buffer_text_has_no_annotation_prefix_after_populate() {
 
 #[test]
 fn test_parse_diff_reorder_without_rename_produces_no_diff() {
-    // The ID system: swapping order of lines does not change IDs → no renames.
+    // The ID system: swapping order of lines does not change IDs -> no renames.
     let mut doc =
         make_populated_directory_doc("/tmp", &[("alpha.txt", false), ("beta.txt", false)]);
     // Swap order but keep IDs — both names unchanged.
@@ -1854,7 +1854,7 @@ fn test_parse_diff_reorder_without_rename_produces_no_diff() {
     let diff = doc.parse_directory_diff();
     assert!(
         diff.renames.is_empty(),
-        "reorder without name change → no renames: {:?}",
+        "reorder without name change -> no renames: {:?}",
         diff
     );
     assert!(diff.deletes.is_empty());
@@ -1867,10 +1867,10 @@ fn test_parse_diff_entry_with_zero_id_silently_ignored() {
     // for id=0 in its map (entries start at id=1), so the line is silently ignored —
     // it does NOT appear in creates, renames, or deletes.
     let mut doc = make_populated_directory_doc("/tmp", &[("real.txt", false)]);
-    // Replace buffer with annotation-encoded /000 prefix (id=0 not in map → silently ignored).
+    // Replace buffer with annotation-encoded /000 prefix (id=0 not in map -> silently ignored).
     set_annotated_buffer(&mut doc, "../\n/001 real.txt\n/000 ghost.txt");
     let diff = doc.parse_directory_diff();
-    // Existing entry "real.txt" (id=1) is still present → no deletes.
+    // Existing entry "real.txt" (id=1) is still present -> no deletes.
     assert!(
         diff.deletes.is_empty(),
         "real.txt should not be deleted: {:?}",
@@ -1895,7 +1895,7 @@ fn test_parse_diff_all_entries_deleted() {
         "/tmp",
         &[("a.txt", false), ("b.txt", false), ("c.txt", false)],
     );
-    // Buffer only contains the header — all entry IDs absent → all deleted.
+    // Buffer only contains the header — all entry IDs absent -> all deleted.
     set_annotated_buffer(&mut doc, "../");
     let diff = doc.parse_directory_diff();
     assert_eq!(
@@ -2016,13 +2016,13 @@ fn test_parse_diff_whitespace_only_line_not_a_create() {
 #[test]
 fn test_parse_diff_rename_to_empty_visible_name_is_ignored() {
     // User deletes the visible name portion but leaves the ID prefix: "/001 " (with trailing space stripped by trim).
-    // The trimmed visible part is empty → no rename should be produced.
+    // The trimmed visible part is empty -> no rename should be produced.
     let mut doc = make_populated_directory_doc("/tmp", &[("a.txt", false)]);
     // Buffer line: "/001 " — visible part is "" after stripping prefix.
     set_annotated_buffer(&mut doc, "../\n/001 ");
 
     let diff = doc.parse_directory_diff();
-    // trim_end_matches('/') on "" is still ""; new_name == "" ≠ "a.txt" → would produce rename to "".
+    // trim_end_matches('/') on "" is still ""; new_name == "" ≠ "a.txt" -> would produce rename to "".
     // This is a known edge case: the rename target is empty, which apply_directory_diff must guard.
     // Here we just verify the diff is consistent (either no rename or exactly one rename to "").
     if !diff.renames.is_empty() {
@@ -2036,7 +2036,7 @@ fn test_parse_diff_rename_to_empty_visible_name_is_ignored() {
 #[test]
 fn test_parse_diff_id_only_line_no_trailing_text_not_counted_as_create() {
     // A line that exactly matches a valid ID prefix format but with nothing visible after it
-    // must not land in creates (it has a prefix → handled as a known-ID line, not a raw create).
+    // must not land in creates (it has a prefix -> handled as a known-ID line, not a raw create).
     let mut doc = make_populated_directory_doc("/tmp", &[("a.txt", false)]);
     set_annotated_buffer(&mut doc, "../\n/001 ");
 

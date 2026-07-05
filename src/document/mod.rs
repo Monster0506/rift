@@ -97,7 +97,7 @@ pub enum BufferKind {
     /// Undo tree visualisation for a linked document
     UndoTree {
         linked_doc_id: DocumentId,
-        /// Maps buffer line index → EditSeq; u64::MAX = non-navigable connector line
+        /// Maps buffer line index -> EditSeq; u64::MAX = non-navigable connector line
         sequences: Vec<EditSeq>,
     },
     /// Messages log buffer showing all editor notifications

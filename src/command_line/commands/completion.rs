@@ -1,5 +1,5 @@
 //! Command line tab completion logic
-//! Pure functions — no I/O. Filesystem completion is handled by CompletionJob.
+//! Pure functions.  Filesystem completion is handled by CompletionJob.
 //!
 //! Command resolution is designed so any correctly registered command works:
 //! the leading `:` is stripped from tokens, and `resolve_command_descriptor`
@@ -160,7 +160,6 @@ pub fn parse_context(
                         token_start,
                     };
                 }
-                // Token doesn't start with prefix — fall through to completion hint
             }
 
             match desc.completion {
@@ -1017,7 +1016,6 @@ mod tests {
 
     #[test]
     fn test_parse_context_local_setting_value_alias_resolved() {
-        // "et" is an alias for "expandtabs" — must resolve to canonical name
         let reg = create_settings_registry();
         let doc_reg = create_document_settings_registry();
         let pc = parse_context("setlocal et ", &reg, &doc_reg);

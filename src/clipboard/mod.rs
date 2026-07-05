@@ -19,8 +19,6 @@ use crate::wrap::{MotionRange, RangeKind};
 pub const DEFAULT_RING_CAPACITY: usize = 10;
 const TOOLTIP_MAX_WIDTH: usize = 42;
 
-// ─── Ring ────────────────────────────────────────────────────────────────────
-
 /// Stores entries as `Character` sequences, not `String`, so yanked raw
 /// bytes/control chars round-trip through paste instead of becoming U+FFFD.
 pub struct ClipboardRing {
@@ -93,8 +91,6 @@ impl ClipboardRing {
         self.entries.is_empty()
     }
 }
-
-// ─── Text capture ─────────────────────────────────────────────────────────────
 
 /// Extract the text covered by a `MotionRange` from the buffer, preserving
 /// raw bytes/control chars so it round-trips through the clipboard ring.
@@ -219,8 +215,6 @@ impl SystemClipboardCache {
         self.read_count
     }
 }
-
-// ─── Tooltip ──────────────────────────────────────────────────────────────────
 
 pub struct ClipboardTooltip;
 

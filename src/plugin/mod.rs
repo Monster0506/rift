@@ -116,7 +116,7 @@ pub enum PluginMutation {
     SwapWindows,
     /// Focus the previously focused window.
     FocusPreviousWindow,
-    /// Register a file extension → language name mapping.
+    /// Register a file extension -> language name mapping.
     RegisterFiletype { ext: String, lang_name: String },
     /// Register (or override) the highlights query for a language.
     RegisterLanguageQuery {

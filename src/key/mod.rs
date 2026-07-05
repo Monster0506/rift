@@ -49,16 +49,16 @@ impl Key {
     ///   - Single byte:  direct control character
     pub fn to_vt100_bytes(&self) -> Vec<u8> {
         match self {
-            // Printable character → UTF-8 encoding
+            // Printable character -> UTF-8 encoding
             Key::Char(c) => {
                 let mut buf = [0; 4];
                 c.encode_utf8(&mut buf).as_bytes().to_vec()
             }
 
-            // Ctrl+key → mask to control range (0x00–0x1F)
+            // Ctrl+key -> mask to control range (0x00–0x1F)
             Key::Ctrl(c) => vec![c & 0x1f],
 
-            // Alt+key → ESC prefix followed by the character
+            // Alt+key -> ESC prefix followed by the character
             Key::Alt(c) => vec![0x1b, *c],
 
             // Single-byte control characters

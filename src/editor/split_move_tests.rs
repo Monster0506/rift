@@ -445,7 +445,7 @@ fn three_horizontal_wl_on_a_swaps_with_b() {
     move_window(&mut editor, Direction::Right);
 
     let after = render_ascii(&mut editor);
-    print_screen("three-horiz AFTER ^WL on A → | B | A | C |", &after);
+    print_screen("three-horiz AFTER ^WL on A -> | B | A | C |", &after);
 
     let col_a = col_of(&after, "WINDOW_A").expect("WINDOW_A missing after move");
     let col_b = col_of(&after, "WINDOW_B").expect("WINDOW_B missing after move");

@@ -301,7 +301,7 @@ mod tests {
                         saw_file = true;
                     }
                     if saw_file && entry.is_dir {
-                        panic!("directory found after file — sorting is wrong");
+                        panic!("directory found after file - sorting is wrong");
                     }
                 }
             }

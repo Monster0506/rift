@@ -33,7 +33,7 @@ pub struct LspClient {
     _process: Child,
     stdin: ChildStdin,
     next_id: u64,
-    /// Maps request id → method name so responses can be routed.
+    /// Maps request id -> method name so responses can be routed.
     pub pending: HashMap<u64, String>,
     receiver: Receiver<RawLspMessage>,
     _reader_thread: thread::JoinHandle<()>,

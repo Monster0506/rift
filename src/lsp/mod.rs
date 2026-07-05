@@ -109,7 +109,7 @@ pub struct LspManager {
     server_names: HashMap<String, String>,
     /// When indexing_tokens last dropped to 0. ServerReady is emitted after a 600ms grace
     /// period so that tokens arriving in rapid succession (like rust-analyzer's quick
-    /// initial Fetching → Building CrateGraph sequence) don't trigger premature readiness.
+    /// initial Fetching -> Building CrateGraph sequence) don't trigger premature readiness.
     indexing_idle_since: HashMap<String, std::time::Instant>,
     /// Documents queued for didOpen before their server's initialize handshake completes.
     /// language -> list of (uri, params) waiting to be sent.

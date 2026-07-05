@@ -29,11 +29,11 @@ impl LoadedLanguage {
 /// Runtime-registered language customisations from plugins.
 #[derive(Default)]
 pub struct DynamicRegistry {
-    /// File extension → language name overrides (e.g. "svelte" → "svelte").
+    /// File extension -> language name overrides (e.g. "svelte" -> "svelte").
     pub filetype_map: HashMap<String, String>,
-    /// Language name → highlights query source override.
+    /// Language name -> highlights query source override.
     pub highlights_overrides: HashMap<String, String>,
-    /// Language name → injections query source.
+    /// Language name -> injections query source.
     pub injections_queries: HashMap<String, String>,
 }
 
@@ -472,7 +472,7 @@ fn get_bundled_language(lang_name: &str) -> Option<(Language, &'static str)> {
 /// Built-in injections queries for bundled grammars.
 ///
 /// The capture name in these queries is the target language name.
-/// Our simplified injection protocol maps capture name → language,
+/// Our simplified injection protocol maps capture name -> language,
 /// avoiding the need to parse `#set! injection.language` predicates.
 fn get_bundled_injections_query(lang_name: &str) -> Option<&'static str> {
     match lang_name {

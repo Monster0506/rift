@@ -44,77 +44,77 @@ fn res_count(
 
 #[test]
 fn inner_word_middle() {
-    // "hello world", cursor on 'e' (pos 1) → selects "hello" [0,4]
+    // "hello world", cursor on 'e' (pos 1) -> selects "hello" [0,4]
     let r = res(inner(ObjectKind::Word), "hello world", 1).unwrap();
     assert_eq!(r, (0, 4, true));
 }
 
 #[test]
 fn inner_word_start() {
-    // cursor on 'h' (pos 0) → selects "hello" [0,4]
+    // cursor on 'h' (pos 0) -> selects "hello" [0,4]
     let r = res(inner(ObjectKind::Word), "hello world", 0).unwrap();
     assert_eq!(r, (0, 4, true));
 }
 
 #[test]
 fn inner_word_on_space() {
-    // "hello world", cursor on space (pos 5) → selects " " [5,5]
+    // "hello world", cursor on space (pos 5) -> selects " " [5,5]
     let r = res(inner(ObjectKind::Word), "hello world", 5).unwrap();
     assert_eq!(r, (5, 5, true));
 }
 
 #[test]
 fn around_word_eats_trailing_space() {
-    // "hello world", cursor on 'l' (pos 2) → "hello " [0,5]
+    // "hello world", cursor on 'l' (pos 2) -> "hello " [0,5]
     let r = res(around(ObjectKind::Word), "hello world", 2).unwrap();
     assert_eq!(r, (0, 5, true));
 }
 
 #[test]
 fn inner_paren() {
-    // "(hello)", cursor on 'e' (pos 2) → "hello" [1,5]
+    // "(hello)", cursor on 'e' (pos 2) -> "hello" [1,5]
     let r = res(inner(ObjectKind::Paren), "(hello)", 2).unwrap();
     assert_eq!(r, (1, 5, true));
 }
 
 #[test]
 fn around_paren() {
-    // "(hello)", cursor on 'e' (pos 2) → "(hello)" [0,6]
+    // "(hello)", cursor on 'e' (pos 2) -> "(hello)" [0,6]
     let r = res(around(ObjectKind::Paren), "(hello)", 2).unwrap();
     assert_eq!(r, (0, 6, true));
 }
 
 #[test]
 fn inner_paren_cursor_on_open() {
-    // "(hello)", cursor on '(' (pos 0) → "hello" [1,5]
+    // "(hello)", cursor on '(' (pos 0) -> "hello" [1,5]
     let r = res(inner(ObjectKind::Paren), "(hello)", 0).unwrap();
     assert_eq!(r, (1, 5, true));
 }
 
 #[test]
 fn inner_paren_cursor_on_close() {
-    // "(hello)", cursor on ')' (pos 6) → "hello" [1,5]
+    // "(hello)", cursor on ')' (pos 6) -> "hello" [1,5]
     let r = res(inner(ObjectKind::Paren), "(hello)", 6).unwrap();
     assert_eq!(r, (1, 5, true));
 }
 
 #[test]
 fn inner_paren_nested() {
-    // "((ab)c)", cursor on 'c' (pos 5) → inner of outer = "(ab)c" [1,5]
+    // "((ab)c)", cursor on 'c' (pos 5) -> inner of outer = "(ab)c" [1,5]
     let r = res(inner(ObjectKind::Paren), "((ab)c)", 5).unwrap();
     assert_eq!(r, (1, 5, true));
 }
 
 #[test]
 fn inner_double_quote() {
-    // `"hello"`, cursor on 'e' (pos 2) → "hello" [1,5]
+    // `"hello"`, cursor on 'e' (pos 2) -> "hello" [1,5]
     let r = res(inner(ObjectKind::DoubleQuote), "\"hello\"", 2).unwrap();
     assert_eq!(r, (1, 5, true));
 }
 
 #[test]
 fn around_double_quote() {
-    // `"hello"`, cursor on 'e' (pos 2) → `"hello"` [0,6]
+    // `"hello"`, cursor on 'e' (pos 2) -> `"hello"` [0,6]
     let r = res(around(ObjectKind::DoubleQuote), "\"hello\"", 2).unwrap();
     assert_eq!(r, (0, 6, true));
 }
@@ -145,14 +145,14 @@ fn inner_quote_escaped_backslash_before_real_delimiter() {
 
 #[test]
 fn inner_line() {
-    // "hello\nworld", cursor at pos 0 → "hello" [0,4]
+    // "hello\nworld", cursor at pos 0 -> "hello" [0,4]
     let r = res(inner(ObjectKind::Line), "hello\nworld", 0).unwrap();
     assert_eq!(r, (0, 4, true));
 }
 
 #[test]
 fn around_line() {
-    // "hello\nworld", cursor at pos 0 → "hello\n" [0,5]
+    // "hello\nworld", cursor at pos 0 -> "hello\n" [0,5]
     let r = res(around(ObjectKind::Line), "hello\nworld", 0).unwrap();
     assert_eq!(r, (0, 5, true));
 }
@@ -171,28 +171,28 @@ fn empty_paren_inner_is_none() {
 
 #[test]
 fn paren_not_inside_is_none() {
-    // No parens on the line at all → None
+    // No parens on the line at all -> None
     assert!(res(inner(ObjectKind::Paren), "hello", 2).is_none());
 }
 
 #[test]
 fn inner_paren_cursor_before_on_same_line() {
     // "ab(cd)" cursor at 'a' (pos 0): not inside any paren, but '(' is ahead
-    // on the same line → forward search finds it → selects "cd" [3,4]
+    // on the same line -> forward search finds it -> selects "cd" [3,4]
     let r = res(inner(ObjectKind::Paren), "ab(cd)", 0).unwrap();
     assert_eq!(r, (3, 4, true));
 }
 
 #[test]
 fn inner_curly() {
-    // "{abc}", cursor at 'a' (pos 1) → "abc" [1,3]
+    // "{abc}", cursor at 'a' (pos 1) -> "abc" [1,3]
     let r = res(inner(ObjectKind::CurlyBrace), "{abc}", 1).unwrap();
     assert_eq!(r, (1, 3, true));
 }
 
 #[test]
 fn inner_square() {
-    // "[ab]", cursor at 'a' (pos 1) → "ab" [1,2]
+    // "[ab]", cursor at 'a' (pos 1) -> "ab" [1,2]
     let r = res(inner(ObjectKind::SquareBracket), "[ab]", 1).unwrap();
     assert_eq!(r, (1, 2, true));
 }
@@ -201,7 +201,7 @@ fn inner_square() {
 
 #[test]
 fn inner_strict_trims_inner_whitespace() {
-    // "(  ab  )", cursor on 'a' (pos 3) → InnerStrict trims to "ab" [3,4]
+    // "(  ab  )", cursor on 'a' (pos 3) -> InnerStrict trims to "ab" [3,4]
     let r = res(
         make_spec(Modifier::InnerStrict, ObjectKind::Paren),
         "(  ab  )",
@@ -213,7 +213,7 @@ fn inner_strict_trims_inner_whitespace() {
 
 #[test]
 fn around_loose_eats_trailing_whitespace_outside() {
-    // "(ab)  cd", cursor on 'a' (pos 1) → AroundLoose eats trailing spaces too
+    // "(ab)  cd", cursor on 'a' (pos 1) -> AroundLoose eats trailing spaces too
     let r = res(
         make_spec(Modifier::AroundLoose, ObjectKind::Paren),
         "(ab)  cd",
@@ -225,14 +225,14 @@ fn around_loose_eats_trailing_whitespace_outside() {
 
 #[test]
 fn any_bracket_matches_nearest_type() {
-    // "[ab]", cursor at 'a' (pos 1) → AnyBracket finds the square brackets
+    // "[ab]", cursor at 'a' (pos 1) -> AnyBracket finds the square brackets
     let r = res(inner(ObjectKind::AnyBracket), "[ab]", 1).unwrap();
     assert_eq!(r, (1, 2, true));
 }
 
 #[test]
 fn any_quote_matches_nearest_type() {
-    // "'ab'", cursor at 'a' (pos 1) → AnyQuote finds the single quotes
+    // "'ab'", cursor at 'a' (pos 1) -> AnyQuote finds the single quotes
     let r = res(inner(ObjectKind::AnyQuote), "'ab'", 1).unwrap();
     assert_eq!(r, (1, 2, true));
 }
