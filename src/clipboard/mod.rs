@@ -139,17 +139,21 @@ const SYSTEM_CLIPBOARD_REFRESH_INTERVAL: std::time::Duration =
 
 /// Upper bound on how long a single clipboard read may block the caller.
 /// A hung clipboard owner stalls the worker thread, not the caller, past this.
+#[cfg(feature = "system_clipboard")]
 const CLIPBOARD_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// Request sent to the clipboard worker thread.
+#[cfg(feature = "system_clipboard")]
 struct ReadRequest(std::sync::mpsc::Sender<Option<String>>);
 
 /// Owns a single long-lived `arboard::Clipboard` connection on a dedicated
 /// worker thread, so callers never reconnect on every read.
+#[cfg(feature = "system_clipboard")]
 struct ClipboardWorker {
     requests: std::sync::mpsc::Sender<ReadRequest>,
 }
 
+#[cfg(feature = "system_clipboard")]
 impl ClipboardWorker {
     fn new() -> Self {
         let (requests, rx) = std::sync::mpsc::channel::<ReadRequest>();
@@ -176,10 +180,17 @@ impl ClipboardWorker {
 
 /// Read the system clipboard text without blocking the caller past
 /// [`CLIPBOARD_READ_TIMEOUT`], reusing a single shared connection.
+#[cfg(feature = "system_clipboard")]
 pub fn read_system_clipboard_text() -> Option<String> {
     use std::sync::OnceLock;
     static WORKER: OnceLock<ClipboardWorker> = OnceLock::new();
     WORKER.get_or_init(ClipboardWorker::new).read()
+}
+
+/// System clipboard access is compiled out; callers see an always-empty clipboard.
+#[cfg(not(feature = "system_clipboard"))]
+pub fn read_system_clipboard_text() -> Option<String> {
+    None
 }
 
 #[derive(Default)]
