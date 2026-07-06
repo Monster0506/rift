@@ -1,10 +1,21 @@
 use super::*;
 use crate::notification::NotificationType;
 use crate::plugin::events::EditorEvent;
-use std::sync::Arc;
 
 fn make_host() -> LuaHost {
     LuaHost::new().expect("LuaHost::new failed")
+}
+
+/// Build a deferred lines source from text lines, as the editor would.
+fn lines_source(lines: &[&str]) -> Option<BufLinesSource> {
+    let text = lines.join("\n");
+    let mut buffer = crate::buffer::TextBuffer::new(text.len().max(16)).unwrap();
+    buffer.insert_str(&text).unwrap();
+    Some(BufLinesSource {
+        revision: buffer.revision,
+        line_count: buffer.get_total_lines(),
+        buffer,
+    })
 }
 
 #[test]
@@ -363,11 +374,7 @@ fn test_get_lines_returns_correct_lines() {
     host.update_state(
         1,
         "file".to_string(),
-        Arc::new(vec![
-            "alpha".to_string(),
-            "beta".to_string(),
-            "gamma".to_string(),
-        ]),
+        lines_source(&["alpha", "beta", "gamma"]),
         (0, 0),
         4,
         true,
@@ -397,12 +404,57 @@ fn test_get_lines_returns_correct_lines() {
 }
 
 #[test]
+fn test_line_count_and_find_materialize_from_deferred_source() {
+    let host = make_host();
+    host.update_state(
+        1,
+        "file".to_string(),
+        lines_source(&["needle here", "no match", "another needle"]),
+        (0, 0),
+        4,
+        true,
+        "normal",
+        None,
+        None,
+        vec![],
+        (0, 0),
+        false,
+        false,
+        false,
+        (0, 0),
+        "lf",
+        vec![],
+        vec![],
+        0,
+        None,
+        std::collections::HashMap::new(),
+    );
+    // get_line_count is served from the cheap scalar without materializing.
+    assert!(host
+        .exec("rift.notify('info', tostring(rift.get_line_count()))")
+        .is_none());
+    // search materializes lines lazily and scans them.
+    assert!(host
+        .exec("rift.notify('info', tostring(#rift.search('needle')))")
+        .is_none());
+    let mutations = host.drain_mutations();
+    match &mutations[0] {
+        PluginMutation::Notify { message, .. } => assert_eq!(message, "3"),
+        _ => panic!("expected line count 3"),
+    }
+    match &mutations[1] {
+        PluginMutation::Notify { message, .. } => assert_eq!(message, "2"),
+        _ => panic!("expected 2 needle matches"),
+    }
+}
+
+#[test]
 fn test_get_cursor_returns_1indexed_row() {
     let host = make_host();
     host.update_state(
         1,
         "file".to_string(),
-        Arc::new(vec![]),
+        None,
         (4, 2),
         4,
         true,
@@ -438,7 +490,7 @@ fn test_current_buf_returns_id() {
     host.update_state(
         42,
         "file".to_string(),
-        Arc::new(vec![]),
+        None,
         (0, 0),
         4,
         true,

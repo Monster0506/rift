@@ -151,6 +151,14 @@ fn annotation_view_to_table(lua: &Lua, v: &AnnotationView) -> LuaResult<LuaTable
     Ok(t)
 }
 
+/// Deferred source for the active buffer's lines: `update_state` stores a cheap
+/// buffer clone, and the getters materialize `Vec<String>` only when Lua reads.
+pub struct BufLinesSource {
+    pub revision: u64,
+    pub line_count: usize,
+    pub buffer: crate::buffer::TextBuffer,
+}
+
 /// State shared between Lua API closures and the host.
 /// Stored behind `Arc<Mutex>` so closures can be `'static`.
 struct LuaSharedState {
@@ -160,8 +168,12 @@ struct LuaSharedState {
     annotations: Arc<Vec<AnnotationView>>,
     /// The store's next id at snapshot time; `add{}` pre-claims ids from here.
     next_annotation_id: u64,
-    /// Snapshot of the active buffer's text lines, updated before each dispatch.
-    buf_lines: Arc<Vec<String>>,
+    /// Deferred source of the active buffer's lines, set before each dispatch.
+    buf_source: Option<BufLinesSource>,
+    /// Lines materialized from `buf_source` on first read, with the revision
+    /// they were built at so an unchanged buffer reuses them.
+    buf_lines_cache: Arc<Vec<String>>,
+    buf_lines_cache_rev: Option<u64>,
     /// Active buffer ID.
     buf_id: usize,
     /// Kind string for the active buffer ("file", "terminal", "directory", ...).
@@ -222,13 +234,39 @@ pub struct WinEntry {
     pub cols: usize,
 }
 
+impl LuaSharedState {
+    /// Materialize (and cache) the active buffer's lines, rebuilding only when
+    /// the source revision differs from the cached one.
+    fn lines(&mut self) -> Arc<Vec<String>> {
+        if let Some(src) = &self.buf_source {
+            if self.buf_lines_cache_rev != Some(src.revision) {
+                let text = src.buffer.to_string();
+                self.buf_lines_cache = Arc::new(
+                    text.split('\n')
+                        .map(|l| l.trim_end_matches('\r').to_string())
+                        .collect(),
+                );
+                self.buf_lines_cache_rev = Some(src.revision);
+            }
+        }
+        self.buf_lines_cache.clone()
+    }
+
+    /// Line count without materializing the lines (equals `lines().len()`).
+    fn line_count(&self) -> usize {
+        self.buf_source.as_ref().map_or(0, |s| s.line_count)
+    }
+}
+
 impl Default for LuaSharedState {
     fn default() -> Self {
         Self {
             mutations: Vec::new(),
             annotations: Arc::new(vec![]),
             next_annotation_id: 1,
-            buf_lines: Arc::new(vec![]),
+            buf_source: None,
+            buf_lines_cache: Arc::new(vec![]),
+            buf_lines_cache_rev: None,
             buf_id: 0,
             buf_kind: "file".to_string(),
             cursor: (0, 0),
@@ -756,8 +794,8 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |lua, (start, end_): (i64, i64)| {
-                let s = sh.lock().unwrap_or_else(|e| e.into_inner());
-                let len = s.buf_lines.len() as i64;
+                let lines = sh.lock().unwrap_or_else(|e| e.into_inner()).lines();
+                let len = lines.len() as i64;
                 let start = (start - 1).max(0) as usize;
                 let end_ = if end_ < 0 {
                     (len + end_ + 1).max(0)
@@ -765,7 +803,7 @@ impl LuaHost {
                     end_.min(len)
                 } as usize;
                 let t = lua.create_table()?;
-                for (i, line) in s.buf_lines[start..end_].iter().enumerate() {
+                for (i, line) in lines[start..end_].iter().enumerate() {
                     t.set(i + 1, line.as_str())?;
                 }
                 Ok(t)
@@ -1304,7 +1342,7 @@ impl LuaHost {
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap_or_else(|e| e.into_inner()).buf_lines.len() as i64)
+                Ok(sh.lock().unwrap_or_else(|e| e.into_inner()).line_count() as i64)
             })?;
             api.set("get_line_count", f)?;
         }
@@ -1397,11 +1435,7 @@ impl LuaHost {
                         .as_ref()
                         .and_then(|t| t.get::<bool>("whole_word").ok())
                         .unwrap_or(false);
-                    let lines = sh
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .buf_lines
-                        .clone();
+                    let lines = sh.lock().unwrap_or_else(|e| e.into_inner()).lines();
                     let results = lua.create_table()?;
                     if needle.is_empty() {
                         return Ok(results);
@@ -2290,7 +2324,7 @@ end
         &self,
         buf_id: usize,
         buf_kind: String,
-        lines: Arc<Vec<String>>,
+        source: Option<BufLinesSource>,
         cursor: (usize, usize),
         tab_width: usize,
         expand_tabs: bool,
@@ -2313,7 +2347,7 @@ end
         let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
         s.buf_id = buf_id;
         s.buf_kind = buf_kind;
-        s.buf_lines = lines;
+        s.buf_source = source;
         s.cursor = cursor;
         s.tab_width = tab_width;
         s.expand_tabs = expand_tabs;

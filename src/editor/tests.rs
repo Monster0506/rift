@@ -4676,4 +4676,59 @@ fn scroll_latency_wrapped_markdown() {
     editor.goto_line(0);
     editor.update_and_render().unwrap();
     measure_scroll(&mut editor, "j near end", crate::action::Motion::Down, 300);
+
+    // Insert-mode typing, with and without a match-heavy search active.
+    editor.goto_line(2_500);
+    editor.current_mode = crate::mode::Mode::Insert;
+    measure_type(&mut editor, "type with /the", 200);
+    editor.current_mode = crate::mode::Mode::Normal;
+    editor.state.last_search_query = None;
+    editor.update_search_highlights();
+    editor.update_and_render().unwrap();
+    editor.current_mode = crate::mode::Mode::Insert;
+    measure_type(&mut editor, "type no search", 200);
+
+    // Attribution: split the mutation from the render, and time the big
+    // per-mutation pieces directly.
+    {
+        let t = Instant::now();
+        editor.execute_buffer_command(crate::command::Command::InsertChar('y'));
+        let exec = t.elapsed();
+        let t = Instant::now();
+        editor.update_and_render().unwrap();
+        let render = t.elapsed();
+        let t = Instant::now();
+        editor.execute_buffer_command(crate::command::Command::InsertChar('y'));
+        let exec2 = t.elapsed();
+        let t = Instant::now();
+        editor.update_lua_state();
+        let lua_rebuild = t.elapsed();
+        let t = Instant::now();
+        editor.update_lua_state();
+        let lua_hit = t.elapsed();
+        let ann_count = editor.active_document().annotations.iter().count();
+        eprintln!(
+            "typing split: exec={exec:.2?}/{exec2:.2?} render={render:.2?} lua_rebuild={lua_rebuild:.2?} lua_hit={lua_hit:.2?} annotations={ann_count}"
+        );
+    }
+}
+
+#[cfg(feature = "treesitter")]
+fn measure_type(editor: &mut Editor<MockTerminal>, label: &str, n: usize) {
+    use std::time::Instant;
+    let mut times = Vec::with_capacity(n);
+    for _ in 0..n {
+        let t = Instant::now();
+        editor.execute_buffer_command(crate::command::Command::InsertChar('x'));
+        editor.update_and_render().unwrap();
+        times.push(t.elapsed());
+    }
+    times.sort();
+    let avg = times.iter().sum::<std::time::Duration>() / n as u32;
+    eprintln!(
+        "{label:<16} avg={avg:>9.2?} p50={:>9.2?} p95={:>9.2?} max={:>9.2?}",
+        times[n / 2],
+        times[n * 95 / 100],
+        times[n - 1]
+    );
 }

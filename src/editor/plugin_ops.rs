@@ -1,7 +1,6 @@
 use super::Editor;
 #[allow(unused_imports)]
 use crate::term::TerminalBackend;
-use std::sync::Arc;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_lua_state(&self) {
@@ -20,7 +19,7 @@ impl<T: TerminalBackend> Editor<T> {
         let (
             buf_id,
             buf_kind,
-            lines,
+            source,
             cursor,
             filetype,
             file_path,
@@ -31,21 +30,13 @@ impl<T: TerminalBackend> Editor<T> {
         ) = if let Some(doc) = self.document_manager.active_document() {
             let buf_id = doc.id as usize;
             let buf_kind = doc.kind.kind_str().to_string();
-            let revision = doc.buffer.revision;
-            let lines = self
-                .plugin_host
-                .cached_lines_snapshot(buf_id, revision)
-                .unwrap_or_else(|| {
-                    let text = doc.buffer.to_string();
-                    let lines: Arc<Vec<String>> = Arc::new(
-                        text.split('\n')
-                            .map(|l| l.trim_end_matches('\r').to_string())
-                            .collect(),
-                    );
-                    self.plugin_host
-                        .store_lines_snapshot(buf_id, revision, lines.clone());
-                    lines
-                });
+            // Cheap deferred source: a plugin that never reads lines pays only
+            // the buffer clone, not a full per-keystroke line materialization.
+            let source = Some(crate::plugin::lua_host::BufLinesSource {
+                revision: doc.buffer.revision,
+                line_count: doc.buffer.get_total_lines(),
+                buffer: doc.buffer.clone(),
+            });
             let (row, col) = {
                 let cursor = doc.buffer.cursor();
                 let row = doc.buffer.line_index.get_line_at(cursor);
@@ -64,7 +55,7 @@ impl<T: TerminalBackend> Editor<T> {
             (
                 buf_id,
                 buf_kind,
-                lines,
+                source,
                 (row, col),
                 filetype,
                 file_path,
@@ -77,7 +68,7 @@ impl<T: TerminalBackend> Editor<T> {
             (
                 0,
                 "file".to_string(),
-                Arc::new(vec![]),
+                None,
                 (0, 0),
                 None,
                 None,
@@ -167,7 +158,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.plugin_host.lua_update_state(
             buf_id,
             buf_kind,
-            lines,
+            source,
             cursor,
             tab_width,
             expand_tabs,

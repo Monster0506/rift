@@ -22,13 +22,9 @@ pub use events::EditorEvent;
 
 use crate::document::DocumentId;
 use crate::notification::NotificationType;
-use std::sync::Arc;
 
 /// An event handler.
 type Handler = Box<dyn Fn(&EditorEvent) + Send + 'static>;
-
-/// Lines-snapshot cache entry: (buf_id, buffer revision, lines).
-type LinesSnapshot = (usize, u64, Arc<Vec<String>>);
 
 /// A command handler. Receives split args, returns mutations to apply.
 type CommandHandler = Box<dyn Fn(&[String]) -> Vec<PluginMutation> + Send + 'static>;
@@ -336,9 +332,6 @@ pub struct PluginHost {
     /// True once any Lua plugin file or `:lua` snippet has run. Editor-state
     /// snapshots are skipped until then (nothing Lua-side can read them).
     lua_used: std::cell::Cell<bool>,
-    /// Last built lines snapshot, so repeat snapshots of an unchanged buffer
-    /// skip the O(N) rebuild.
-    lines_snapshot: std::cell::RefCell<Option<LinesSnapshot>>,
 }
 
 impl PluginHost {
@@ -358,21 +351,7 @@ impl PluginHost {
             cursor_hold: CursorHoldState::new(cursor_hold_polls),
             lua: None,
             lua_used: std::cell::Cell::new(false),
-            lines_snapshot: std::cell::RefCell::new(None),
         }
-    }
-
-    /// The cached lines snapshot for (buf_id, revision), if still current.
-    pub fn cached_lines_snapshot(&self, buf_id: usize, revision: u64) -> Option<Arc<Vec<String>>> {
-        self.lines_snapshot
-            .borrow()
-            .as_ref()
-            .filter(|(b, r, _)| *b == buf_id && *r == revision)
-            .map(|(_, _, lines)| lines.clone())
-    }
-
-    pub fn store_lines_snapshot(&self, buf_id: usize, revision: u64, lines: Arc<Vec<String>>) {
-        *self.lines_snapshot.borrow_mut() = Some((buf_id, revision, lines));
     }
 
     /// Whether any Lua code has run and can therefore observe editor state.
@@ -593,7 +572,7 @@ impl PluginHost {
         &self,
         buf_id: usize,
         buf_kind: String,
-        lines: Arc<Vec<String>>,
+        source: Option<lua_host::BufLinesSource>,
         cursor: (usize, usize),
         tab_width: usize,
         expand_tabs: bool,
@@ -617,7 +596,7 @@ impl PluginHost {
             lua.update_state(
                 buf_id,
                 buf_kind,
-                lines,
+                source,
                 cursor,
                 tab_width,
                 expand_tabs,
