@@ -37,8 +37,19 @@ impl<T: TerminalBackend> Editor<T> {
             return None;
         }
 
+        let buffer = {
+            crate::perf_span!(
+                "syntax_job_buffer_clone",
+                crate::perf::PerfFields {
+                    bytes: Some(doc.buffer.byte_len() as u32),
+                    ..Default::default()
+                }
+            );
+            doc.buffer.clone()
+        };
+
         let job = SyntaxParseJob::new(
-            doc.buffer.clone(),
+            buffer,
             parser,
             syntax.tree.clone(),
             syntax.highlights_query.clone(),

@@ -122,8 +122,27 @@ impl Job for SyntaxParseJob {
         // "range start index out of range" panic when both representations
         // were mixed within the same parse/query cycle.
         let text = buffer;
-        let source_bytes = text.to_logical_bytes();
-        let tree = parser.parse(source_bytes.as_slice(), old_tree.as_ref());
+        let source_bytes = {
+            crate::perf_span!(
+                "syntax_reparse_job_to_bytes",
+                crate::perf::PerfFields {
+                    bytes: Some(text.byte_len() as u32),
+                    ..Default::default()
+                }
+            );
+            text.to_logical_bytes()
+        };
+
+        let tree = {
+            crate::perf_span!(
+                "syntax_reparse_job_parse",
+                crate::perf::PerfFields {
+                    bytes: Some(source_bytes.len() as u32),
+                    ..Default::default()
+                }
+            );
+            parser.parse(source_bytes.as_slice(), old_tree.as_ref())
+        };
 
         if signal.is_cancelled() {
             return;
@@ -132,6 +151,13 @@ impl Job for SyntaxParseJob {
         // Highlights
         let mut highlights = Vec::new();
         if let (Some(tree), Some(query)) = (&tree, &highlights_query) {
+            crate::perf_span!(
+                "syntax_reparse_job_highlights",
+                crate::perf::PerfFields {
+                    bytes: Some(source_bytes.len() as u32),
+                    ..Default::default()
+                }
+            );
             let root_node = tree.root_node();
             let full_bytes = source_bytes; // same representation as parse
 
