@@ -15,14 +15,15 @@ use crate::color::Color;
 use crate::key::Key;
 use crate::term::{ColorTerminal, Size, TerminalBackend};
 
-/// Crossterm-based terminal backend implementation
-pub struct CrosstermBackend {
-    writer: BufWriter<std::io::Stdout>,
+/// Crossterm-based terminal backend implementation, generic over its output
+/// sink so the same ANSI encoding path can target a buffer instead of a TTY.
+pub struct CrosstermBackend<W: Write = std::io::Stdout> {
+    writer: BufWriter<W>,
     raw_mode_enabled: bool,
     alternate_screen_enabled: bool,
 }
 
-impl CrosstermBackend {
+impl CrosstermBackend<std::io::Stdout> {
     pub fn new() -> Result<Self, String> {
         Ok(CrosstermBackend {
             // Sized so a full colored frame flushes in one write syscall.
@@ -33,15 +34,27 @@ impl CrosstermBackend {
     }
 }
 
+impl<W: Write> CrosstermBackend<W> {
+    /// Build a backend that encodes through the same crossterm calls as
+    /// `new()` but writes to `writer` instead of stdout (no TTY required).
+    pub fn with_writer(writer: W) -> Self {
+        CrosstermBackend {
+            writer: BufWriter::with_capacity(256 * 1024, writer),
+            raw_mode_enabled: false,
+            alternate_screen_enabled: false,
+        }
+    }
+}
+
 // Ensures raw mode and the alternate screen are restored even if a fallible
 // call (e.g. `?`) or a panic drops the backend before `deinit()` runs.
-impl Drop for CrosstermBackend {
+impl<W: Write> Drop for CrosstermBackend<W> {
     fn drop(&mut self) {
         self.deinit();
     }
 }
 
-impl TerminalBackend for CrosstermBackend {
+impl<W: Write> TerminalBackend for CrosstermBackend<W> {
     fn init(&mut self) -> Result<(), String> {
         // Enable alternate screen buffer (prevents scrolling in main buffer)
         execute!(self.writer, terminal::EnterAlternateScreen)
@@ -155,7 +168,7 @@ impl TerminalBackend for CrosstermBackend {
     }
 }
 
-impl ColorTerminal for CrosstermBackend {
+impl<W: Write> ColorTerminal for CrosstermBackend<W> {
     fn set_foreground_color(&mut self, color: Color) -> Result<(), String> {
         execute!(self.writer, SetForegroundColor(color.to_crossterm()))
             .map_err(|e| format!("Failed to set foreground color: {e}"))?;
