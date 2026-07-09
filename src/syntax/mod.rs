@@ -68,11 +68,17 @@ pub struct Syntax {
     pub injections_query: Option<Arc<Query>>,
     pub injection_capture_langs: Vec<(u32, String)>,
     pub injection_layers: Vec<InjectedLayer>,
+    /// Content ranges discovered by the last static-injection scan, keyed by
+    /// index into `injection_layers`, so a single-edit reparse can reuse them.
+    static_injection_ranges: IntervalTree<usize>,
 
     // --- Dynamic injection support (Markdown: injection.language + injection.content) ---
     /// Layers created on demand at parse time, cached by language name across
     /// parses so queries and trees are reused instead of rebuilt from scratch.
     dynamic_injection_layers: HashMap<String, InjectedLayer>,
+    /// Content ranges discovered by the last dynamic-injection scan, keyed by
+    /// language, so a single-edit reparse can shift and reuse them.
+    dynamic_injection_ranges: IntervalTree<String>,
 
     /// Optional loader used to create dynamic injection layers.
     language_loader: Option<Arc<loader::LanguageLoader>>,
@@ -98,7 +104,9 @@ impl Syntax {
             injections_query: None,
             injection_capture_langs: Vec::new(),
             injection_layers: Vec::new(),
+            static_injection_ranges: IntervalTree::default(),
             dynamic_injection_layers: HashMap::new(),
+            dynamic_injection_ranges: IntervalTree::default(),
             language_loader: None,
             pending_edits: Vec::new(),
         })
@@ -161,11 +169,13 @@ impl Syntax {
             layer.cached_highlights = IntervalTree::default();
             layer.byte_ranges.clear();
         }
+        self.static_injection_ranges = IntervalTree::default();
         for layer in self.dynamic_injection_layers.values_mut() {
             layer.tree = None;
             layer.cached_highlights = IntervalTree::default();
             layer.byte_ranges.clear();
         }
+        self.dynamic_injection_ranges = IntervalTree::default();
     }
 
     pub fn update_tree(&mut self, edit: &InputEdit) {
@@ -358,25 +368,51 @@ impl Syntax {
         query: &Query,
         scoped: Option<(&Tree, InputEdit)>,
     ) {
-        let mut lang_ranges: Vec<Vec<std::ops::Range<usize>>> =
-            vec![Vec::new(); self.injection_layers.len()];
+        // Collect (content_range, layer_index) pairs, reusing the cached ranges
+        // for anything outside the changed region on a single edit.
+        let (query_ranges, mut pairs): (Vec<std::ops::Range<usize>>, Vec<(std::ops::Range<usize>, usize)>) =
+            match scoped {
+                Some((prev_tree, edit)) => {
+                    scoped_requery_plan(prev_tree, tree, edit, &self.static_injection_ranges)
+                }
+                None => (vec![0..source.len()], Vec::new()),
+            };
 
-        let root = tree.root_node();
-        let mut cursor = QueryCursor::new();
-        let mut matches = cursor.matches(query, root, source);
+        {
+            let root = tree.root_node();
+            for range in query_ranges {
+                let mut cursor = QueryCursor::new();
+                cursor.set_byte_range(range);
+                let mut matches = cursor.matches(query, root, source);
 
-        while let Some(m) = matches.next() {
-            for cap in m.captures {
-                for (cap_idx, lang_name) in &self.injection_capture_langs {
-                    if cap.index == *cap_idx {
-                        for (li, layer) in self.injection_layers.iter().enumerate() {
-                            if layer.language_name == *lang_name {
-                                lang_ranges[li].push(cap.node.byte_range());
+                while let Some(m) = matches.next() {
+                    for cap in m.captures {
+                        for (cap_idx, lang_name) in &self.injection_capture_langs {
+                            if cap.index == *cap_idx {
+                                for (li, layer) in self.injection_layers.iter().enumerate() {
+                                    if layer.language_name == *lang_name {
+                                        pairs.push((cap.node.byte_range(), li));
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
+        }
+
+        // set_included_ranges requires sorted, non-overlapping ranges; a scoped
+        // pass can also re-emit a range already kept (see scoped_query_highlights).
+        pairs.sort_by(|a, b| a.0.start.cmp(&b.0.start).then(a.0.end.cmp(&b.0.end)));
+        if scoped.is_some() {
+            pairs.dedup();
+        }
+        self.static_injection_ranges = IntervalTree::new(pairs.clone());
+
+        let mut lang_ranges: Vec<Vec<std::ops::Range<usize>>> =
+            vec![Vec::new(); self.injection_layers.len()];
+        for (range, li) in pairs {
+            lang_ranges[li].push(range);
         }
 
         let newline_index = NewlineIndex::build(source);
@@ -450,51 +486,72 @@ impl Syntax {
             None => return,
         };
 
-        // Collect (normalized_language_name, content_range) pairs from each match.
-        let mut pairs: Vec<(String, std::ops::Range<usize>)> = Vec::new();
+        // Collect (content_range, normalized_language_name) pairs, reusing the
+        // cached ranges for anything outside the changed region on a single edit.
+        let (query_ranges, mut pairs): (
+            Vec<std::ops::Range<usize>>,
+            Vec<(std::ops::Range<usize>, String)>,
+        ) = match scoped {
+            Some((prev_tree, edit)) => {
+                scoped_requery_plan(prev_tree, tree, edit, &self.dynamic_injection_ranges)
+            }
+            None => (vec![0..source.len()], Vec::new()),
+        };
+
         {
             let root = tree.root_node();
-            let mut cursor = QueryCursor::new();
-            let mut matches = cursor.matches(query, root, source);
+            for range in query_ranges {
+                let mut cursor = QueryCursor::new();
+                cursor.set_byte_range(range);
+                let mut matches = cursor.matches(query, root, source);
 
-            while let Some(m) = matches.next() {
-                let mut lang_name: Option<String> = None;
-                let mut content_range: Option<std::ops::Range<usize>> = None;
+                while let Some(m) = matches.next() {
+                    let mut lang_name: Option<String> = None;
+                    let mut content_range: Option<std::ops::Range<usize>> = None;
 
-                for cap in m.captures {
-                    if cap.index == lang_cap_idx {
-                        let text = std::str::from_utf8(&source[cap.node.byte_range()])
-                            .unwrap_or("")
-                            .trim();
-                        lang_name = Some(normalize_lang_name(text));
-                    } else if cap.index == content_cap_idx {
-                        content_range = Some(cap.node.byte_range());
+                    for cap in m.captures {
+                        if cap.index == lang_cap_idx {
+                            let text = std::str::from_utf8(&source[cap.node.byte_range()])
+                                .unwrap_or("")
+                                .trim();
+                            lang_name = Some(normalize_lang_name(text));
+                        } else if cap.index == content_cap_idx {
+                            content_range = Some(cap.node.byte_range());
+                        }
                     }
-                }
 
-                // Some patterns (e.g. markdown HTML blocks/frontmatter) supply the
-                // language via `#set! injection.language "x"` instead of a capture.
-                if lang_name.is_none() {
-                    for prop in query.property_settings(m.pattern_index) {
-                        if &*prop.key == "injection.language" {
-                            if let Some(v) = &prop.value {
-                                lang_name = Some(normalize_lang_name(v));
+                    // Some patterns (e.g. markdown HTML blocks/frontmatter) supply the
+                    // language via `#set! injection.language "x"` instead of a capture.
+                    if lang_name.is_none() {
+                        for prop in query.property_settings(m.pattern_index) {
+                            if &*prop.key == "injection.language" {
+                                if let Some(v) = &prop.value {
+                                    lang_name = Some(normalize_lang_name(v));
+                                }
                             }
                         }
                     }
-                }
 
-                if let (Some(lang), Some(range)) = (lang_name, content_range) {
-                    if !lang.is_empty() {
-                        pairs.push((lang, range));
+                    if let (Some(lang), Some(range)) = (lang_name, content_range) {
+                        if !lang.is_empty() {
+                            pairs.push((range, lang));
+                        }
                     }
                 }
             }
         }
 
+        // set_included_ranges requires sorted, non-overlapping ranges; a scoped
+        // pass can also re-emit a range already kept (see scoped_query_highlights).
+        pairs.sort_by(|a, b| a.0.start.cmp(&b.0.start).then(a.0.end.cmp(&b.0.end)));
+        if scoped.is_some() {
+            pairs.dedup();
+        }
+        self.dynamic_injection_ranges = IntervalTree::new(pairs.clone());
+
         // Group ranges by language name.
         let mut by_lang: HashMap<String, Vec<std::ops::Range<usize>>> = HashMap::new();
-        for (lang, range) in pairs {
+        for (range, lang) in pairs {
             by_lang.entry(lang).or_default().push(range);
         }
 
