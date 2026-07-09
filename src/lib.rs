@@ -35,6 +35,7 @@ pub mod movement;
 pub mod notification;
 pub mod plugin;
 pub mod render;
+pub mod replay;
 pub mod screen_buffer;
 pub mod search;
 pub mod selection;
