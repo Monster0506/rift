@@ -490,11 +490,16 @@ impl DoubleBuffer {
         use crossterm::style::ResetColor;
 
         // Get batched changes
-        let (batches, stats) = self.get_batched_changes();
+        let (batches, stats) = {
+            crate::perf_span!("render_diff", crate::perf::PerfFields::default());
+            self.get_batched_changes()
+        };
 
         if batches.is_empty() {
             return Ok(stats);
         }
+
+        crate::perf_span!("ansi_serialize", crate::perf::PerfFields::default());
 
         // Hide cursor during rendering
         term.hide_cursor()?;

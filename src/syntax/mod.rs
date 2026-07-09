@@ -176,6 +176,13 @@ impl Syntax {
         source: &[u8],
         budget: std::time::Duration,
     ) -> ParseOutcome {
+        crate::perf_span!(
+            "syntax_reparse",
+            crate::perf::PerfFields {
+                bytes: Some(source.len() as u32),
+                ..Default::default()
+            }
+        );
         use std::ops::ControlFlow;
         use std::time::Instant;
 

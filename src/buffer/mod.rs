@@ -263,6 +263,14 @@ impl TextBuffer {
     pub fn insert_chars(&mut self, chars: &[Character]) -> Result<(), RiftError> {
         let byte_pos = self.char_to_byte(self.cursor);
         let ins_bytes: usize = chars.iter().map(|c| c.len_utf8()).sum();
+        crate::perf_span!(
+            "buffer_mutate",
+            crate::perf::PerfFields {
+                tag: Some("insert"),
+                bytes: Some(ins_bytes as u32),
+                ..Default::default()
+            }
+        );
         self.log_char_edit(self.cursor, 0, chars.len());
         self.line_index.insert(self.cursor, chars);
         self.cursor += chars.len();
@@ -292,6 +300,14 @@ impl TextBuffer {
         }
         let byte_pos = self.char_to_byte(start);
         let del_bytes = self.char_to_byte(end) - byte_pos;
+        crate::perf_span!(
+            "buffer_mutate",
+            crate::perf::PerfFields {
+                tag: Some("delete"),
+                bytes: Some(del_bytes as u32),
+                ..Default::default()
+            }
+        );
         self.log_char_edit(start, count, 0);
         self.line_index.delete(start, count);
         if self.cursor >= end {
@@ -320,6 +336,14 @@ impl TextBuffer {
         let byte_pos = self.char_to_byte(start);
         let del_bytes = self.char_to_byte(end) - byte_pos;
         let ins_bytes: usize = chars.iter().map(|c| c.len_utf8()).sum();
+        crate::perf_span!(
+            "buffer_mutate",
+            crate::perf::PerfFields {
+                tag: Some("replace"),
+                bytes: Some((del_bytes + ins_bytes) as u32),
+                ..Default::default()
+            }
+        );
         self.log_char_edit(start, count, chars.len());
         self.line_index.replace(start, count, chars);
         self.cursor = start + chars.len();
