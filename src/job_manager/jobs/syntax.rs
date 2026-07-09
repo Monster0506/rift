@@ -94,6 +94,13 @@ impl Job for SyntaxParseJob {
         if signal.is_cancelled() {
             return;
         }
+        crate::perf_span!(
+            "syntax_reparse_job",
+            crate::perf::PerfFields {
+                bytes: Some(self.buffer.byte_len() as u32),
+                ..Default::default()
+            }
+        );
 
         // Destructure to avoid partial moves
         let SyntaxParseJob {
