@@ -6,6 +6,7 @@ use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn do_undo(&mut self, count: Option<u64>) {
+        crate::perf_span!("history_undo", crate::perf::PerfFields::default());
         let doc = self.document_manager.active_document_mut().unwrap();
         let count = count.unwrap_or(1) as usize;
         let mut undone = 0;
@@ -31,6 +32,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn do_redo(&mut self, count: Option<u64>) {
+        crate::perf_span!("history_redo", crate::perf::PerfFields::default());
         let doc = self.document_manager.active_document_mut().unwrap();
         let count = count.unwrap_or(1) as usize;
         let mut redone = 0;

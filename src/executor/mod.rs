@@ -381,9 +381,11 @@ pub fn execute_command(
             // Buffer navigation handled by editor
         }
         Command::Undo => {
+            crate::perf_span!("history_undo", crate::perf::PerfFields::default());
             doc.undo();
         }
         Command::Redo => {
+            crate::perf_span!("history_redo", crate::perf::PerfFields::default());
             doc.redo();
         }
         Command::DotRepeat => {

@@ -64,6 +64,7 @@ impl Job for FileSaveJob {
     }
 
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
+        crate::perf_span!("document_save", crate::perf::PerfFields::default());
         let parent = self.path.parent().unwrap_or_else(|| Path::new("."));
         let temp_path = parent.join(format!(
             "{}~",

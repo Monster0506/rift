@@ -36,6 +36,13 @@ pub fn find_all(
     buffer: &impl BufferView,
     query: &str,
 ) -> Result<(Vec<SearchMatch>, SearchStats), RiftError> {
+    crate::perf_span!(
+        "search_find_all",
+        crate::perf::PerfFields {
+            bytes: Some(query.len() as u32),
+            ..Default::default()
+        }
+    );
     let t0 = std::time::Instant::now();
 
     let tier = classify_query(query);
@@ -327,6 +334,13 @@ pub fn find_next(
     query: &str,
     direction: SearchDirection,
 ) -> Result<(Option<SearchMatch>, SearchStats), RiftError> {
+    crate::perf_span!(
+        "search_find_next",
+        crate::perf::PerfFields {
+            bytes: Some(query.len() as u32),
+            ..Default::default()
+        }
+    );
     // Fast path: plain literals skip the engine entirely (chunk scan).
     if let SearchTier::Literal = classify_query(query) {
         return find_next_literal(buffer, start_pos, query, direction);

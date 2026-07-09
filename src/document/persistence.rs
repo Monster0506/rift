@@ -15,6 +15,7 @@ impl Document {
                 "No file path",
             )
         })?;
+        crate::perf_span!("document_save", crate::perf::PerfFields::default());
         self.write_to_file(path)?;
         self.history.mark_saved();
         Ok(())
@@ -23,6 +24,7 @@ impl Document {
     /// Save document to a new path
     pub fn save_as(&mut self, path: impl AsRef<Path>) -> Result<(), RiftError> {
         let path = path.as_ref();
+        crate::perf_span!("document_save", crate::perf::PerfFields::default());
         self.write_to_file(path)?;
         self.file_path = Some(path.to_path_buf());
         self.history.mark_saved();
