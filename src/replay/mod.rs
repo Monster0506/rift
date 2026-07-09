@@ -1,6 +1,7 @@
 //! Scripted replay: drive an `Editor` through a recorded operation
 //! sequence for profiling and deterministic regression checks.
 
+mod assert;
 pub mod backend;
 pub mod ops;
 pub mod runner;

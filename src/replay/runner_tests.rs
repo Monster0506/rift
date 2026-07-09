@@ -47,3 +47,36 @@ fn wait_idle_returns_after_roughly_its_timeout() {
     assert_eq!(report.marks.len(), 1);
     assert!(start.elapsed() >= Duration::from_millis(20));
 }
+
+#[test]
+fn assertions_pass_against_matching_state() {
+    let script = "new\nkeys ihello<Esc>\n\
+                  assert mode normal\nassert cursor 0 5\nassert line 0 \"hello\"\n\
+                  assert buffer\n<<<\nhello\n>>>\n";
+    let ops = parse(script).unwrap();
+    run(&ops, Vec::new()).unwrap();
+}
+
+#[test]
+fn assert_cursor_fails_with_actual_position_in_the_message() {
+    let ops = parse("new\nkeys ihello<Esc>\nassert cursor 0 0\n").unwrap();
+    let err = run(&ops, Vec::new()).unwrap_err();
+    assert_eq!(err.code, "REPLAY_ASSERT");
+    assert!(err.message.contains("0:0"));
+    assert!(err.message.contains("0:5"));
+}
+
+#[test]
+fn assert_mode_fails_when_still_in_insert() {
+    let ops = parse("new\nkeys ihello\nassert mode normal\n").unwrap();
+    let err = run(&ops, Vec::new()).unwrap_err();
+    assert_eq!(err.code, "REPLAY_ASSERT");
+    assert!(err.message.contains("insert"));
+}
+
+#[test]
+fn assert_line_fails_on_mismatched_text() {
+    let ops = parse("new\nkeys ihello<Esc>\nassert line 0 \"goodbye\"\n").unwrap();
+    let err = run(&ops, Vec::new()).unwrap_err();
+    assert_eq!(err.code, "REPLAY_ASSERT");
+}

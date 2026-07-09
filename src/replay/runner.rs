@@ -78,8 +78,8 @@ pub fn run<W: Write>(ops: &[ScriptOp], writer: W) -> Result<RunReport, RiftError
                     at: clock.elapsed(),
                 });
             }
-            ScriptOp::Assert(_) => {
-                // Wired up in a follow-up change.
+            ScriptOp::Assert(assertion) => {
+                super::assert::check(ed, assertion)?;
             }
         }
     }

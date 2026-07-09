@@ -291,6 +291,11 @@ impl<T: TerminalBackend> Editor<T> {
             _ => {}
         }
     }
+    /// The editor's current mode.
+    pub fn mode(&self) -> Mode {
+        self.current_mode
+    }
+
     pub(super) fn set_mode(&mut self, mode: Mode) {
         let old_mode = self.current_mode;
         self.current_mode = mode;
