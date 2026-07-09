@@ -107,6 +107,7 @@ impl KeyMap {
 
     /// Look up a key sequence, walking the fallback chain.
     pub fn lookup<'a>(&'a self, context: KeyContext, keys: &[Key]) -> MatchResult<'a> {
+        crate::perf_span!("keymap_lookup", crate::perf::PerfFields::default());
         let mut ctx = context;
         loop {
             if let Some(trie) = self.mappings.get(&ctx) {

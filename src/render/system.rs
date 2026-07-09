@@ -167,6 +167,7 @@ impl RenderSystem {
 
     /// Update the ECS world components based on current context
     fn update_world(&mut self, ctx: &DrawContext) {
+        crate::perf_span!("ecs_update_world", crate::perf::PerfFields::default());
         self.world.tick();
 
         // 1. Content

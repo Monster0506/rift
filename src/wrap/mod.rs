@@ -143,6 +143,13 @@ fn wrap_chars<'a>(
 impl DisplayMap {
     pub fn build(buf: &TextBuffer, wrap_width: usize, tab_width: usize) -> Self {
         let total_lines = buf.get_total_lines();
+        crate::perf_span!(
+            "wrap_build",
+            crate::perf::PerfFields {
+                lines: Some(total_lines as u32),
+                ..Default::default()
+            }
+        );
         let mut rows: Vec<VisualRowInfo> = Vec::with_capacity(total_lines + 4);
         let mut line_first_visual: Vec<usize> = Vec::with_capacity(total_lines);
 

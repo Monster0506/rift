@@ -249,6 +249,7 @@ pub(crate) fn render_content_to_layer_offset(
     row_offset: usize,
     col_offset: usize,
 ) -> Result<(), String> {
+    crate::perf_span!("render_content", crate::perf::PerfFields::default());
     let buf = ctx.buf;
     let viewport = ctx.viewport;
     let editor_bg = ctx.state.settings.editor_bg;

@@ -11,6 +11,7 @@ impl<T: TerminalBackend> Editor<T> {
         if !self.plugin_host.lua_state_wanted() {
             return;
         }
+        crate::perf_span!("lua_state_sync", crate::perf::PerfFields::default());
 
         let tab_width = self.state.settings.tab_width;
         let expand_tabs = self.state.settings.expand_tabs;
