@@ -144,6 +144,32 @@ impl<T: Clone> IntervalTree<T> {
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
+
+    /// Ranges strictly before the edit are kept, ranges at/after its old end
+    /// shift by the byte delta, and ranges touching or inside it are dropped.
+    pub fn shift_for_edit(
+        &self,
+        start_byte: usize,
+        old_end_byte: usize,
+        new_end_byte: usize,
+    ) -> Vec<(Range<usize>, T)> {
+        let delta = new_end_byte as i64 - old_end_byte as i64;
+        self.nodes
+            .iter()
+            .filter_map(|node| {
+                let r = &node.range;
+                if r.end < start_byte {
+                    Some((r.clone(), node.val.clone()))
+                } else if r.start >= old_end_byte {
+                    let new_start = (r.start as i64 + delta) as usize;
+                    let new_end = (r.end as i64 + delta) as usize;
+                    Some((new_start..new_end, node.val.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
 }
 
 // Default for easy instantiation

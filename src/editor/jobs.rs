@@ -48,6 +48,8 @@ impl<T: TerminalBackend> Editor<T> {
             doc.buffer.clone()
         };
 
+        let (old_highlights, pending_edits) = syntax.highlights_snapshot();
+
         let job = SyntaxParseJob::new(
             buffer,
             parser,
@@ -57,7 +59,8 @@ impl<T: TerminalBackend> Editor<T> {
             doc_id,
             doc.buffer.revision,
         )
-        .with_lib(syntax.lib());
+        .with_lib(syntax.lib())
+        .with_highlights_context(old_highlights, &pending_edits);
 
         Some(self.job_manager.spawn(job))
     }

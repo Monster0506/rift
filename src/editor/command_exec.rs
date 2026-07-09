@@ -111,6 +111,10 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn flush_pending_text_changed(&mut self) {
         if let Some(buf) = self.pending_text_changed.take() {
             self.update_lua_state();
+            crate::perf_span!(
+                "plugin_dispatch_text_changed",
+                crate::perf::PerfFields::default()
+            );
             self.plugin_host
                 .dispatch(&crate::plugin::EditorEvent::TextChangedCoarse { buf });
             self.apply_plugin_mutations();

@@ -5,7 +5,7 @@ use crate::syntax::loader::RawLib;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use streaming_iterator::StreamingIterator;
-use tree_sitter::{Parser, Query, QueryCursor, Tree};
+use tree_sitter::{InputEdit, Parser, Query, QueryCursor, Tree};
 
 #[derive(Debug)]
 pub struct SyntaxParseResult {
@@ -42,6 +42,10 @@ pub struct SyntaxParseJob {
     /// Keeps `parser`'s language's backing dynamic library alive for the job's
     /// lifetime; runs on a background thread detached from the `Syntax` that spawned it.
     _lib: Option<Arc<RawLib>>,
+    /// Highlights as of `old_tree`, plus the single edit since then (if
+    /// exactly one landed); otherwise the highlights query rescans everything.
+    old_highlights: IntervalTree<u32>,
+    single_edit: Option<InputEdit>,
 }
 
 impl std::fmt::Debug for SyntaxParseJob {
@@ -74,6 +78,8 @@ impl SyntaxParseJob {
             document_id,
             revision,
             _lib: None,
+            old_highlights: IntervalTree::default(),
+            single_edit: None,
         }
     }
 
@@ -81,6 +87,21 @@ impl SyntaxParseJob {
     /// loaded dynamically, so it stays mapped for the lifetime of this job.
     pub fn with_lib(mut self, lib: Option<Arc<RawLib>>) -> Self {
         self._lib = lib;
+        self
+    }
+
+    /// Attach the previous highlights and edits since the last completed parse,
+    /// so highlights can be scoped to the changed region (only 1 edit is optimized).
+    pub fn with_highlights_context(
+        mut self,
+        old_highlights: IntervalTree<u32>,
+        edits: &[InputEdit],
+    ) -> Self {
+        self.old_highlights = old_highlights;
+        self.single_edit = match edits {
+            [edit] => Some(*edit),
+            _ => None,
+        };
         self
     }
 }
@@ -112,6 +133,8 @@ impl Job for SyntaxParseJob {
             document_id,
             revision,
             _lib,
+            old_highlights,
+            single_edit,
         } = *self;
 
         // Parse using logical bytes so tree-sitter node offsets are in the
@@ -138,6 +161,7 @@ impl Job for SyntaxParseJob {
                 "syntax_reparse_job_parse",
                 crate::perf::PerfFields {
                     bytes: Some(source_bytes.len() as u32),
+                    tag: Some(if old_tree.is_some() { "incremental" } else { "full" }),
                     ..Default::default()
                 }
             );
@@ -148,34 +172,80 @@ impl Job for SyntaxParseJob {
             return;
         }
 
-        // Highlights
+        // On a single-edit incremental reparse, scope the query to what
+        // tree-sitter says changed and reuse the rest of the old highlights.
         let mut highlights = Vec::new();
         if let (Some(tree), Some(query)) = (&tree, &highlights_query) {
+            let scoped = match (old_tree.as_ref(), single_edit) {
+                (Some(prev_tree), Some(edit)) => Some((prev_tree, edit)),
+                _ => None,
+            };
             crate::perf_span!(
                 "syntax_reparse_job_highlights",
                 crate::perf::PerfFields {
                     bytes: Some(source_bytes.len() as u32),
+                    tag: Some(if scoped.is_some() { "scoped" } else { "full" }),
                     ..Default::default()
                 }
             );
             let root_node = tree.root_node();
             let full_bytes = source_bytes; // same representation as parse
 
-            let mut cursor = QueryCursor::new();
-            cursor.set_byte_range(0..full_bytes.len());
+            let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
+                Some((prev_tree, edit)) => {
+                    // changed_ranges can miss a token that absorbs the edit at
+                    // its exact boundary, so always query the edit's own span too.
+                    let mut ranges: Vec<std::ops::Range<usize>> = prev_tree
+                        .changed_ranges(tree)
+                        .map(|r| r.start_byte..r.end_byte)
+                        .collect();
+                    ranges.push(edit.start_byte..edit.new_end_byte.max(edit.start_byte + 1));
+                    ranges.sort_by_key(|r| r.start);
+                    let mut merged: Vec<std::ops::Range<usize>> = Vec::new();
+                    for r in ranges {
+                        match merged.last_mut() {
+                            Some(last) if r.start <= last.end => last.end = last.end.max(r.end),
+                            _ => merged.push(r),
+                        }
+                    }
 
-            let mut matches = cursor.matches(query, root_node, full_bytes.as_slice());
+                    highlights = old_highlights
+                        .shift_for_edit(edit.start_byte, edit.old_end_byte, edit.new_end_byte)
+                        .into_iter()
+                        .filter(|(r, _)| !merged.iter().any(|c| r.start < c.end && c.start < r.end))
+                        .collect();
+                    merged
+                }
+                None => vec![0..full_bytes.len()],
+            };
 
-            while let Some(m) = matches.next() {
-                if signal.is_cancelled() {
-                    return;
+            for range in query_ranges {
+                let mut cursor = QueryCursor::new();
+                cursor.set_byte_range(range);
+                let mut matches = cursor.matches(query, root_node, full_bytes.as_slice());
+                while let Some(m) = matches.next() {
+                    if signal.is_cancelled() {
+                        return;
+                    }
+                    for capture in m.captures {
+                        let range = capture.node.byte_range();
+                        // Store index instead of allocating string
+                        let capture_index = capture.index;
+                        highlights.push((range, capture_index));
+                    }
                 }
-                for capture in m.captures {
-                    let range = capture.node.byte_range();
-                    // Store index instead of allocating string
-                    let capture_index = capture.index;
-                    highlights.push((range, capture_index));
-                }
+            }
+
+            if scoped.is_some() {
+                // set_byte_range matches on a pattern's whole span, so a
+                // scoped requery can re-emit a capture already kept below.
+                highlights.sort_by(|a, b| {
+                    a.0.start
+                        .cmp(&b.0.start)
+                        .then(a.0.end.cmp(&b.0.end))
+                        .then(a.1.cmp(&b.1))
+                });
+                highlights.dedup();
             }
         }
 
@@ -194,5 +264,160 @@ impl Job for SyntaxParseJob {
 
     fn is_silent(&self) -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "treesitter")]
+mod tests {
+    use super::*;
+    use crate::syntax::loader::LanguageLoader;
+    use std::path::PathBuf;
+    use std::sync::{atomic::AtomicBool, mpsc};
+
+    fn make_signal() -> CancellationSignal {
+        CancellationSignal {
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    fn rust_language_and_query() -> (tree_sitter::Language, Arc<Query>) {
+        let loader = LanguageLoader::new(PathBuf::from("."));
+        let loaded = loader.load_language("rust").expect("rust grammar");
+        let query_src = loader
+            .load_query("rust", "highlights")
+            .expect("rust highlights query");
+        let query = Query::new(&loaded.language, &query_src).expect("compile highlights query");
+        (loaded.language, Arc::new(query))
+    }
+
+    fn make_buffer(src: &str) -> TextBuffer {
+        let mut buffer = TextBuffer::new(src.len().max(16)).unwrap();
+        buffer.insert_str(src).unwrap();
+        buffer
+    }
+
+    fn run_job(job: SyntaxParseJob) -> SyntaxParseResult {
+        let (tx, rx) = mpsc::channel();
+        Box::new(job).run(1, tx, make_signal());
+
+        let mut result = None;
+        for msg in rx {
+            if let JobMessage::Custom(_, payload) = msg {
+                result = payload
+                    .into_any()
+                    .downcast::<SyntaxParseResult>()
+                    .ok()
+                    .map(|b| *b);
+            }
+        }
+        result.expect("SyntaxParseJob did not produce a SyntaxParseResult")
+    }
+
+    fn sorted_highlights(tree: &IntervalTree<u32>) -> Vec<(std::ops::Range<usize>, u32)> {
+        let mut items: Vec<_> = tree.iter().map(|(r, v)| (r.clone(), *v)).collect();
+        items.sort_by(|a, b| {
+            a.0.start
+                .cmp(&b.0.start)
+                .then(a.0.end.cmp(&b.0.end))
+                .then(a.1.cmp(&b.1))
+        });
+        items
+    }
+
+    /// A scoped single-edit reparse must match a full from-scratch parse of
+    /// the same edited content.
+    #[test]
+    fn test_scoped_highlights_match_full_recompute_after_single_edit() {
+        let (language, query) = rust_language_and_query();
+
+        let initial_src = "fn foo() { let a = 1; let b = 2; }";
+        let buffer1 = make_buffer(initial_src);
+
+        let mut parser1 = Parser::new();
+        parser1.set_language(&language).unwrap();
+        let tree1 = parser1
+            .parse(buffer1.to_logical_bytes().as_slice(), None)
+            .unwrap();
+
+        let initial_highlights = {
+            let root = tree1.root_node();
+            let mut cursor = QueryCursor::new();
+            cursor.set_byte_range(0..buffer1.byte_len());
+            let source = buffer1.to_logical_bytes();
+            let mut matches = cursor.matches(&query, root, source.as_slice());
+            let mut items = Vec::new();
+            while let Some(m) = matches.next() {
+                for capture in m.captures {
+                    items.push((capture.node.byte_range(), capture.index));
+                }
+            }
+            IntervalTree::new(items)
+        };
+
+        // Insert one character ("1" -> "11") inside the first literal.
+        let insert_pos = initial_src.find("1;").unwrap() + 1;
+        let mut buffer2 = buffer1.clone();
+        buffer2.set_cursor(insert_pos).unwrap();
+        buffer2.insert_str("1").unwrap();
+
+        let edit = InputEdit {
+            start_byte: insert_pos,
+            old_end_byte: insert_pos,
+            new_end_byte: insert_pos + 1,
+            start_position: tree_sitter::Point {
+                row: 0,
+                column: insert_pos,
+            },
+            old_end_position: tree_sitter::Point {
+                row: 0,
+                column: insert_pos,
+            },
+            new_end_position: tree_sitter::Point {
+                row: 0,
+                column: insert_pos + 1,
+            },
+        };
+        let mut old_tree_edited = tree1.clone();
+        old_tree_edited.edit(&edit);
+
+        let mut parser2 = Parser::new();
+        parser2.set_language(&language).unwrap();
+        let job = SyntaxParseJob::new(
+            buffer2.clone(),
+            parser2,
+            Some(old_tree_edited),
+            Some(query.clone()),
+            "rust".to_string(),
+            1,
+            buffer2.revision,
+        )
+        .with_highlights_context(initial_highlights.clone(), std::slice::from_ref(&edit));
+
+        let result = run_job(job);
+
+        // Ground truth: a full from-scratch parse and query of the edited content.
+        let mut parser3 = Parser::new();
+        parser3.set_language(&language).unwrap();
+        let expected_source = buffer2.to_logical_bytes();
+        let expected_tree = parser3.parse(expected_source.as_slice(), None).unwrap();
+        let expected_highlights = {
+            let root = expected_tree.root_node();
+            let mut cursor = QueryCursor::new();
+            cursor.set_byte_range(0..expected_source.len());
+            let mut matches = cursor.matches(&query, root, expected_source.as_slice());
+            let mut items = Vec::new();
+            while let Some(m) = matches.next() {
+                for capture in m.captures {
+                    items.push((capture.node.byte_range(), capture.index));
+                }
+            }
+            IntervalTree::new(items)
+        };
+
+        assert_eq!(
+            sorted_highlights(&result.highlights),
+            sorted_highlights(&expected_highlights),
+        );
     }
 }

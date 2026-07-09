@@ -76,6 +76,10 @@ pub struct Syntax {
 
     /// Optional loader used to create dynamic injection layers.
     language_loader: Option<Arc<loader::LanguageLoader>>,
+
+    /// Edits since `cached_highlights` was last fully replaced, so a
+    /// background job can shift the still-valid part instead of requerying.
+    pending_edits: Vec<InputEdit>,
 }
 
 impl Syntax {
@@ -96,7 +100,14 @@ impl Syntax {
             injection_layers: Vec::new(),
             dynamic_injection_layers: HashMap::new(),
             language_loader: None,
+            pending_edits: Vec::new(),
         })
+    }
+
+    /// Snapshot of the current highlights and the edits applied since they
+    /// were last fully recomputed, for a background job to reuse.
+    pub(crate) fn highlights_snapshot(&self) -> (IntervalTree<u32>, Vec<InputEdit>) {
+        (self.cached_highlights.clone(), self.pending_edits.clone())
     }
 
     /// The `Arc<RawLib>` keeping this syntax's `language` alive, if it came
@@ -127,6 +138,7 @@ impl Syntax {
         }
         self.tree = result.tree;
         self.cached_highlights = result.highlights;
+        self.pending_edits.clear();
     }
 
     /// Discard all cached trees and highlights after a non-incremental change (e.g. undo/redo).
@@ -134,6 +146,7 @@ impl Syntax {
     pub fn invalidate_trees(&mut self) {
         self.tree = None;
         self.cached_highlights = IntervalTree::default();
+        self.pending_edits.clear();
         for layer in &mut self.injection_layers {
             layer.tree = None;
             layer.cached_highlights = IntervalTree::default();
@@ -160,6 +173,7 @@ impl Syntax {
                 tree.edit(edit);
             }
         }
+        self.pending_edits.push(*edit);
     }
 
     // -----------------------------------------------------------------------

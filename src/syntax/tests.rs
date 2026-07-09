@@ -105,6 +105,45 @@ fn test_interval_tree_sorted_query() {
     assert_eq!(res[2].1, 3); // 20..30
 }
 
+#[test]
+fn test_shift_for_edit_insertion() {
+    // Insert 5 bytes at offset 10: range before the edit is untouched, range
+    // after shifts by +5, range straddling the edit is dropped.
+    let items = vec![(0..5, 1), (20..30, 2), (8..12, 3)];
+    let tree = IntervalTree::new(items);
+
+    let shifted = tree.shift_for_edit(10, 10, 15);
+    let mut shifted = shifted;
+    shifted.sort_by_key(|(r, _)| r.start);
+
+    assert_eq!(shifted, vec![(0..5, 1), (25..35, 2)]);
+}
+
+#[test]
+fn test_shift_for_edit_deletion() {
+    // Delete 4 bytes at offset 10 (old_end 14 -> new_end 10): range after
+    // shifts by -4.
+    let items = vec![(0..5, 1), (20..30, 2)];
+    let tree = IntervalTree::new(items);
+
+    let mut shifted = tree.shift_for_edit(10, 14, 10);
+    shifted.sort_by_key(|(r, _)| r.start);
+
+    assert_eq!(shifted, vec![(0..5, 1), (16..26, 2)]);
+}
+
+#[test]
+fn test_shift_for_edit_boundary_asymmetry() {
+    // Touching the edit's start may mean absorption (dropped); touching its
+    // old end is unambiguously the next token (shifted).
+    let items = vec![(0..10, 1), (10..20, 2)];
+    let tree = IntervalTree::new(items);
+
+    let shifted = tree.shift_for_edit(10, 10, 12);
+
+    assert_eq!(shifted, vec![(12..22, 2)]);
+}
+
 // =============================================================================
 // Svelte / injection highlighting tests
 // =============================================================================
@@ -163,6 +202,70 @@ mod svelte_tests {
         assert!(
             syntax.tree.is_none(),
             "aborted parse must not commit a tree"
+        );
+    }
+
+    #[test]
+    fn test_pending_edits_accumulate_and_clear() {
+        let loader = make_loader();
+        let mut syntax = svelte_syntax(&loader);
+        let src = SVELTE_SRC.as_bytes();
+        syntax.incremental_parse(src);
+
+        let (_, edits) = syntax.highlights_snapshot();
+        assert!(edits.is_empty(), "no edits yet after the initial parse");
+
+        let edit = tree_sitter::InputEdit {
+            start_byte: 0,
+            old_end_byte: 0,
+            new_end_byte: 1,
+            start_position: tree_sitter::Point { row: 0, column: 0 },
+            old_end_position: tree_sitter::Point { row: 0, column: 0 },
+            new_end_position: tree_sitter::Point { row: 0, column: 1 },
+        };
+        syntax.update_tree(&edit);
+        let (_, edits) = syntax.highlights_snapshot();
+        assert_eq!(edits, vec![edit]);
+
+        syntax.update_tree(&edit);
+        let (_, edits) = syntax.highlights_snapshot();
+        assert_eq!(edits.len(), 2, "a second edit before a parse accumulates");
+
+        syntax.invalidate_trees();
+        let (_, edits) = syntax.highlights_snapshot();
+        assert!(edits.is_empty(), "invalidate_trees resets the edit backlog");
+    }
+
+    #[test]
+    fn test_pending_edits_clear_after_result_applied() {
+        let loader = make_loader();
+        let mut syntax = svelte_syntax(&loader);
+        let src = SVELTE_SRC.as_bytes();
+        syntax.incremental_parse(src);
+
+        let edit = tree_sitter::InputEdit {
+            start_byte: 0,
+            old_end_byte: 0,
+            new_end_byte: 1,
+            start_position: tree_sitter::Point { row: 0, column: 0 },
+            old_end_position: tree_sitter::Point { row: 0, column: 0 },
+            new_end_position: tree_sitter::Point { row: 0, column: 1 },
+        };
+        syntax.update_tree(&edit);
+
+        let result = crate::job_manager::jobs::syntax::SyntaxParseResult {
+            tree: syntax.tree.clone(),
+            highlights: syntax.highlights_snapshot().0,
+            language_name: syntax.language_name.clone(),
+            document_id: 0,
+            revision: 0,
+        };
+        syntax.update_from_result(result);
+
+        let (_, edits) = syntax.highlights_snapshot();
+        assert!(
+            edits.is_empty(),
+            "applying a completed result resets the edit backlog"
         );
     }
 
