@@ -572,12 +572,26 @@ impl<T: TerminalBackend> Editor<T> {
                         if is_current {
                             if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
                                 if let Some(syntax) = &mut doc.syntax {
+                                    // Capture the pre-update tree/edit so injections can be
+                                    // scoped to the changed region below.
+                                    let (old_host_tree, edit): (
+                                        Option<tree_sitter::Tree>,
+                                        Option<tree_sitter::InputEdit>,
+                                    ) = if syntax.injections_query.is_some() {
+                                        (syntax.tree.clone(), syntax.single_pending_edit())
+                                    } else {
+                                        (None, None)
+                                    };
                                     syntax.update_from_result(*result);
                                     // The background job only parses the host grammar, so
                                     // re-derive injections here from the live source.
                                     if syntax.injections_query.is_some() {
                                         let source = doc.buffer.to_logical_bytes();
-                                        syntax.parse_injections_pub(&source);
+                                        syntax.parse_injections_pub(
+                                            &source,
+                                            old_host_tree.as_ref(),
+                                            edit,
+                                        );
                                     }
                                 }
                             }

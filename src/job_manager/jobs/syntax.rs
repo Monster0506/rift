@@ -193,28 +193,10 @@ impl Job for SyntaxParseJob {
 
             let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
                 Some((prev_tree, edit)) => {
-                    // changed_ranges can miss a token that absorbs the edit at
-                    // its exact boundary, so always query the edit's own span too.
-                    let mut ranges: Vec<std::ops::Range<usize>> = prev_tree
-                        .changed_ranges(tree)
-                        .map(|r| r.start_byte..r.end_byte)
-                        .collect();
-                    ranges.push(edit.start_byte..edit.new_end_byte.max(edit.start_byte + 1));
-                    ranges.sort_by_key(|r| r.start);
-                    let mut merged: Vec<std::ops::Range<usize>> = Vec::new();
-                    for r in ranges {
-                        match merged.last_mut() {
-                            Some(last) if r.start <= last.end => last.end = last.end.max(r.end),
-                            _ => merged.push(r),
-                        }
-                    }
-
-                    highlights = old_highlights
-                        .shift_for_edit(edit.start_byte, edit.old_end_byte, edit.new_end_byte)
-                        .into_iter()
-                        .filter(|(r, _)| !merged.iter().any(|c| r.start < c.end && c.start < r.end))
-                        .collect();
-                    merged
+                    let (ranges, kept) =
+                        crate::syntax::scoped_requery_plan(prev_tree, tree, edit, &old_highlights);
+                    highlights = kept;
+                    ranges
                 }
                 None => vec![0..full_bytes.len()],
             };

@@ -332,6 +332,56 @@ mod svelte_tests {
             inj.iter().take(10).map(|(_, n)| n).collect::<Vec<_>>()
         );
     }
+
+    /// A scoped single-edit injection requery must match a full recompute of
+    /// the same edited content for the static (Svelte) protocol too.
+    #[test]
+    fn test_scoped_static_injection_highlights_match_full_recompute() {
+        use tree_sitter::{InputEdit, Parser};
+
+        let loader = make_loader();
+        let mut syntax = svelte_syntax(&loader);
+        syntax.incremental_parse(SVELTE_SRC.as_bytes());
+
+        // Insert one character ("0" -> "10") inside the TypeScript block's literal.
+        let insert_pos = SVELTE_SRC.find("= 0;").unwrap() + 2;
+        let mut edited = SVELTE_SRC.to_string();
+        edited.insert(insert_pos, '1');
+
+        let point_at = |src: &str, byte: usize| {
+            super::super::NewlineIndex::build(src.as_bytes()).point_at(byte)
+        };
+        let edit = InputEdit {
+            start_byte: insert_pos,
+            old_end_byte: insert_pos,
+            new_end_byte: insert_pos + 1,
+            start_position: point_at(SVELTE_SRC, insert_pos),
+            old_end_position: point_at(SVELTE_SRC, insert_pos),
+            new_end_position: point_at(&edited, insert_pos + 1),
+        };
+        syntax.update_tree(&edit);
+
+        let old_host_tree = syntax.tree.clone();
+        let mut parser = Parser::new();
+        parser.set_language(&syntax.language).unwrap();
+        let new_host_tree = parser
+            .parse(edited.as_bytes(), old_host_tree.as_ref())
+            .unwrap();
+        syntax.tree = Some(new_host_tree);
+        syntax.parse_injections_pub(edited.as_bytes(), old_host_tree.as_ref(), Some(edit));
+
+        let mut scoped_result = syntax.injection_highlights_named(None);
+
+        let mut fresh = svelte_syntax(&loader);
+        fresh.incremental_parse(edited.as_bytes());
+        let mut expected_result = fresh.injection_highlights_named(None);
+
+        let sort_key = |v: &(std::ops::Range<usize>, String)| (v.0.start, v.0.end, v.1.clone());
+        scoped_result.sort_by_key(sort_key);
+        expected_result.sort_by_key(sort_key);
+
+        assert_eq!(scoped_result, expected_result);
+    }
 }
 
 // =============================================================================
@@ -481,6 +531,72 @@ mod markdown_tests {
             !inj.is_empty(),
             "Markdown HTML block should produce injection highlights"
         );
+    }
+
+    fn build_markdown(loader: &Arc<LanguageLoader>) -> Syntax {
+        let loaded = loader.load_language("markdown").expect("markdown grammar");
+        let highlights_query = loader
+            .load_query("markdown", "highlights")
+            .ok()
+            .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+            .map(Arc::new);
+        build_syntax(loaded, highlights_query, loader.clone()).expect("build_syntax")
+    }
+
+    /// A scoped single-edit injection requery must match a full recompute of
+    /// the same edited content (both discovered ranges and layer highlights).
+    #[test]
+    fn test_scoped_dynamic_injection_highlights_match_full_recompute() {
+        use tree_sitter::{InputEdit, Parser};
+
+        let loader = make_loader();
+        let initial_src = "# Hello\n\n```rust\nfn foo() { let a = 1; let b = 2; }\n```\n";
+        let mut syntax = build_markdown(&loader);
+        syntax.incremental_parse(initial_src.as_bytes());
+        assert!(
+            !syntax.dynamic_injection_layers.is_empty(),
+            "expected a rust injection layer before the edit"
+        );
+
+        // Insert one character ("1" -> "11") inside the fenced Rust literal.
+        let insert_pos = initial_src.find("1;").unwrap() + 1;
+        let mut edited = initial_src.to_string();
+        edited.insert(insert_pos, '1');
+
+        let point_at =
+            |src: &str, byte: usize| super::super::NewlineIndex::build(src.as_bytes()).point_at(byte);
+        let edit = InputEdit {
+            start_byte: insert_pos,
+            old_end_byte: insert_pos,
+            new_end_byte: insert_pos + 1,
+            start_position: point_at(initial_src, insert_pos),
+            old_end_position: point_at(initial_src, insert_pos),
+            new_end_position: point_at(&edited, insert_pos + 1),
+        };
+        syntax.update_tree(&edit);
+
+        // Mirror handle_job_message: the async job reparses the host grammar
+        // from the just-edited tree, then injections are scoped from it.
+        let old_host_tree = syntax.tree.clone();
+        let mut parser = Parser::new();
+        parser.set_language(&syntax.language).unwrap();
+        let new_host_tree = parser
+            .parse(edited.as_bytes(), old_host_tree.as_ref())
+            .unwrap();
+        syntax.tree = Some(new_host_tree);
+        syntax.parse_injections_pub(edited.as_bytes(), old_host_tree.as_ref(), Some(edit));
+
+        let mut scoped_result = syntax.injection_highlights_named(None);
+
+        let mut fresh = build_markdown(&loader);
+        fresh.incremental_parse(edited.as_bytes());
+        let mut expected_result = fresh.injection_highlights_named(None);
+
+        let sort_key = |v: &(std::ops::Range<usize>, String)| (v.0.start, v.0.end, v.1.clone());
+        scoped_result.sort_by_key(sort_key);
+        expected_result.sort_by_key(sort_key);
+
+        assert_eq!(scoped_result, expected_result);
     }
 }
 
