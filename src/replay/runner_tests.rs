@@ -11,6 +11,23 @@ fn typing_into_a_new_buffer_records_marks_in_order() {
 }
 
 #[test]
+fn tick_percentiles_are_none_without_any_keys() {
+    let ops = parse("new\nmark only\n").unwrap();
+    let report = run(&ops, Vec::new()).unwrap();
+    assert!(report.tick_percentiles().is_none());
+}
+
+#[test]
+fn tick_percentiles_cover_every_scripted_key() {
+    let ops = parse("new\nkeys ihello<Esc>\n").unwrap();
+    let report = run(&ops, Vec::new()).unwrap();
+    assert_eq!(report.ticks.len(), 7); // i h e l l o <Esc>
+    let p = report.tick_percentiles().unwrap();
+    assert!(p.p50 <= p.p95);
+    assert!(p.p95 <= p.max);
+}
+
+#[test]
 fn keys_are_encoded_through_the_real_crossterm_write_path() {
     let ops = parse("new\nkeys ihello<Esc>\n").unwrap();
     let mut captured = Vec::new();

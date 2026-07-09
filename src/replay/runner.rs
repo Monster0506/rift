@@ -5,6 +5,7 @@ use super::backend::ReplayBackend;
 use super::ops::ScriptOp;
 use crate::editor::Editor;
 use crate::error::{ErrorType, RiftError};
+use crate::key::Key;
 use std::io::Write;
 use std::time::{Duration, Instant};
 
@@ -13,12 +14,53 @@ use std::time::{Duration, Instant};
 pub struct Mark {
     pub label: String,
     pub at: Duration,
+    /// Perf spans recorded since the previous mark (or session start).
+    /// Only populated when built with the `perf_instrumentation` feature.
+    #[cfg(feature = "perf_instrumentation")]
+    pub perf_events: Vec<crate::perf::PerfEvent>,
+}
+
+/// Wall-clock cost of a single `tick()` spent processing one scripted key.
+#[derive(Debug, Clone, Copy)]
+pub struct TickTiming {
+    pub key: Key,
+    pub duration: Duration,
+}
+
+/// avg/p50/p95/max over a set of durations.
+#[derive(Debug, Clone, Copy)]
+pub struct Percentiles {
+    pub avg: Duration,
+    pub p50: Duration,
+    pub p95: Duration,
+    pub max: Duration,
 }
 
 /// Outcome of running a script to completion.
 #[derive(Debug, Clone, Default)]
 pub struct RunReport {
     pub marks: Vec<Mark>,
+    pub ticks: Vec<TickTiming>,
+}
+
+impl RunReport {
+    /// Latency percentiles across every scripted keypress, or `None` if the
+    /// script never typed anything.
+    pub fn tick_percentiles(&self) -> Option<Percentiles> {
+        if self.ticks.is_empty() {
+            return None;
+        }
+        let mut sorted: Vec<Duration> = self.ticks.iter().map(|t| t.duration).collect();
+        sorted.sort();
+        let n = sorted.len();
+        let avg = sorted.iter().sum::<Duration>() / n as u32;
+        Some(Percentiles {
+            avg,
+            p50: sorted[n / 2],
+            p95: sorted[(n * 95 / 100).min(n - 1)],
+            max: sorted[n - 1],
+        })
+    }
 }
 
 const DEFAULT_ROWS: u16 = 24;
@@ -65,8 +107,13 @@ pub fn run<W: Write>(ops: &[ScriptOp], writer: W) -> Result<RunReport, RiftError
             }
             ScriptOp::Keys(keys) => {
                 ed.term.push_keys(keys.iter().copied());
-                for _ in keys {
+                for key in keys {
+                    let started = Instant::now();
                     ed.tick()?;
+                    report.ticks.push(TickTiming {
+                        key: *key,
+                        duration: started.elapsed(),
+                    });
                 }
             }
             ScriptOp::WaitIdle { timeout_ms } => {
@@ -76,6 +123,8 @@ pub fn run<W: Write>(ops: &[ScriptOp], writer: W) -> Result<RunReport, RiftError
                 report.marks.push(Mark {
                     label: label.clone(),
                     at: clock.elapsed(),
+                    #[cfg(feature = "perf_instrumentation")]
+                    perf_events: crate::perf::drain_events(),
                 });
             }
             ScriptOp::Assert(assertion) => {

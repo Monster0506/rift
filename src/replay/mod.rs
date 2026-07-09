@@ -8,4 +8,4 @@ pub mod runner;
 
 pub use backend::ReplayBackend;
 pub use ops::{parse, Assertion, ParseError, ScriptOp};
-pub use runner::{run, Mark, RunReport};
+pub use runner::{run, Mark, Percentiles, RunReport, TickTiming};
