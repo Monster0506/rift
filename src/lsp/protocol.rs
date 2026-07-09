@@ -341,6 +341,10 @@ pub struct VersionedTextDocumentIdentifier {
 
 #[derive(Debug, Serialize)]
 pub struct TextDocumentContentChangeEvent {
+    /// Present for an incremental change (replace just this range); omitted
+    /// for a full-document change, where `text` is the entire new content.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range: Option<LspRange>,
     pub text: String,
 }
 

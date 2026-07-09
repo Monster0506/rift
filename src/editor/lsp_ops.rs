@@ -653,23 +653,35 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Send LSP did_change for the currently active document.
+    /// Send LSP did_change: an incremental range+text delta when possible,
+    /// otherwise the full document (skipped entirely if nothing is tracking it).
     pub(super) fn lsp_notify_change(&mut self) {
-        // Materializing the full document is O(N); skip it when no live
-        // client would receive the notification (the common no-LSP case).
-        let lsp_manager = &self.lsp_manager;
-        let info = self.document_manager.active_document().and_then(|doc| {
-            let path = doc.path()?.to_path_buf();
-            if !lsp_manager.is_tracking(&path) {
-                return None;
-            }
-            let content = String::from_utf8_lossy(&doc.buffer.to_logical_bytes()).into_owned();
-            Some((path, content))
-        });
-
-        if let Some((path, content)) = info {
-            self.lsp_manager.did_change(&path, &content);
+        let Some(doc) = self.document_manager.active_document_mut() else {
+            return;
+        };
+        let Some(path) = doc.path().map(|p| p.to_path_buf()) else {
+            doc.discard_pending_lsp_changes();
+            return;
+        };
+        if !self.lsp_manager.is_tracking(&path) {
+            doc.discard_pending_lsp_changes();
+            return;
         }
+
+        let encoding = self.lsp_manager.position_encoding_for_path(&path);
+        if self.lsp_manager.supports_incremental_sync(&path) {
+            if let Some((range, text)) = doc.take_incremental_lsp_changes(encoding) {
+                self.lsp_manager
+                    .did_change_incremental(&path, vec![(range, text)]);
+                return;
+            }
+        } else {
+            doc.discard_pending_lsp_changes();
+        }
+
+        let doc = self.document_manager.active_document().unwrap();
+        let content = String::from_utf8_lossy(&doc.buffer.to_logical_bytes()).into_owned();
+        self.lsp_manager.did_change(&path, &content);
     }
 
     /// Open the diagnostics panel for the current document.

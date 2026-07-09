@@ -120,6 +120,9 @@ pub struct LspManager {
     /// language -> negotiated `Position.character` unit, from the server's
     /// initialize response (LSP defaults to UTF-16 when it omits the field).
     position_encodings: HashMap<String, crate::lsp::protocol::PositionEncoding>,
+    /// language -> whether the server's initialize response negotiated
+    /// incremental (as opposed to full-document) sync.
+    incremental_sync: HashMap<String, bool>,
 }
 
 impl LspManager {
@@ -158,6 +161,7 @@ impl LspManager {
             pending_opens: HashMap::new(),
             pending_logs: Vec::new(),
             position_encodings: HashMap::new(),
+            incremental_sync: HashMap::new(),
         }
     }
 
@@ -412,12 +416,59 @@ impl LspManager {
         let params = serde_json::to_value(DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier { uri, version },
             content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
                 text: content.to_string(),
             }],
         })
         .unwrap_or(Value::Null);
 
         client.send_notification("textDocument/didChange", params);
+    }
+
+    /// Notify the server of incremental changes (applied in order) instead of
+    /// resending the document. Only call when `supports_incremental_sync` is true.
+    pub fn did_change_incremental(&mut self, path: &Path, changes: Vec<(LspRange, String)>) {
+        let uri = path_to_uri(path);
+
+        let (language, version) = match self.open_docs.get_mut(&uri) {
+            Some(state) => {
+                state.version += 1;
+                (state.language.clone(), state.version)
+            }
+            None => return,
+        };
+
+        let client = match self.clients.get_mut(&language) {
+            Some(c) => c,
+            None => return,
+        };
+
+        let content_changes = changes
+            .into_iter()
+            .map(|(range, text)| TextDocumentContentChangeEvent {
+                range: Some(range),
+                text,
+            })
+            .collect();
+
+        let params = serde_json::to_value(DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier { uri, version },
+            content_changes,
+        })
+        .unwrap_or(Value::Null);
+
+        client.send_notification("textDocument/didChange", params);
+    }
+
+    /// Whether the server handling `path` negotiated incremental document
+    /// sync (defaults to false -- full-document sync -- until negotiated).
+    pub fn supports_incremental_sync(&self, path: &Path) -> bool {
+        let uri = path_to_uri(path);
+        self.open_docs
+            .get(&uri)
+            .and_then(|s| self.incremental_sync.get(&s.language))
+            .copied()
+            .unwrap_or(false)
     }
 
     /// Notify the server that a document was saved.
@@ -705,6 +756,15 @@ impl LspManager {
                                 .and_then(crate::lsp::protocol::PositionEncoding::from_wire)
                                 .unwrap_or_default();
                             self.position_encodings.insert(lang.to_string(), encoding);
+
+                            // textDocumentSync is either a bare number or an
+                            // object with a `change` field; 2 == Incremental.
+                            let sync = result.get("capabilities").and_then(|c| c.get("textDocumentSync"));
+                            let sync_kind = sync
+                                .and_then(|s| s.as_u64())
+                                .or_else(|| sync.and_then(|s| s.get("change")).and_then(|v| v.as_u64()));
+                            self.incremental_sync
+                                .insert(lang.to_string(), sync_kind == Some(2));
 
                             // Flush any didOpen calls that arrived before initialization.
                             let queued = self.pending_opens.remove(lang).unwrap_or_default();

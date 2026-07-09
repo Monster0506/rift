@@ -43,6 +43,7 @@ impl Document {
     ) {
         // Bump the monotonic edit sequence number once per applied edit.
         self.document_version = self.document_version.wrapping_add(1);
+        self.pending_lsp_edits.push(op.clone());
         if let Some(ref mut tx) = self.current_transaction {
             tx.record(op);
         } else {

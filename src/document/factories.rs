@@ -102,6 +102,7 @@ impl Document {
             annotation_undo_stack: Vec::new(),
             annotation_redo_stack: Vec::new(),
             document_version: 0,
+            pending_lsp_edits: Vec::new(),
         })
     }
 
@@ -150,6 +151,7 @@ impl Document {
             annotation_undo_stack: Vec::new(),
             annotation_redo_stack: Vec::new(),
             document_version: 0,
+            pending_lsp_edits: Vec::new(),
         })
     }
 
@@ -193,6 +195,7 @@ impl Document {
                 annotation_undo_stack: Vec::new(),
                 annotation_redo_stack: Vec::new(),
                 document_version: 0,
+            pending_lsp_edits: Vec::new(),
             },
             rx,
         ))
@@ -235,6 +238,7 @@ impl Document {
             annotation_undo_stack: Vec::new(),
             annotation_redo_stack: Vec::new(),
             document_version: 0,
+            pending_lsp_edits: Vec::new(),
         })
     }
 
@@ -275,6 +279,7 @@ impl Document {
             annotation_undo_stack: Vec::new(),
             annotation_redo_stack: Vec::new(),
             document_version: 0,
+            pending_lsp_edits: Vec::new(),
         })
     }
 
@@ -313,6 +318,7 @@ impl Document {
             annotation_undo_stack: Vec::new(),
             annotation_redo_stack: Vec::new(),
             document_version: 0,
+            pending_lsp_edits: Vec::new(),
         })
     }
 
@@ -347,6 +353,7 @@ impl Document {
             annotation_undo_stack: Vec::new(),
             annotation_redo_stack: Vec::new(),
             document_version: 0,
+            pending_lsp_edits: Vec::new(),
         })
     }
 
@@ -386,6 +393,7 @@ impl Document {
             annotation_undo_stack: Vec::new(),
             annotation_redo_stack: Vec::new(),
             document_version: 0,
+            pending_lsp_edits: Vec::new(),
         })
     }
 
@@ -419,6 +427,7 @@ impl Document {
             annotation_undo_stack: Vec::new(),
             annotation_redo_stack: Vec::new(),
             document_version: 0,
+            pending_lsp_edits: Vec::new(),
         })
     }
 }

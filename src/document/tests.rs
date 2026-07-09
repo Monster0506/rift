@@ -67,6 +67,93 @@ fn test_lsp_position_units_differ_by_negotiated_encoding() {
 }
 
 #[test]
+fn test_incremental_lsp_change_for_single_char_insert() {
+    use crate::lsp::protocol::PositionEncoding;
+    let mut doc = Document::new(1).unwrap();
+    let _ = doc.insert_str("ac");
+    let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
+    let _ = doc.buffer.set_cursor(1);
+    let _ = doc.insert_char('b');
+
+    let (range, text) = doc
+        .take_incremental_lsp_changes(PositionEncoding::Utf16)
+        .expect("a single insert must convert to an incremental change");
+    assert_eq!(range.start.line, 0);
+    assert_eq!(range.start.character, 1);
+    assert_eq!(range.end.line, 0);
+    assert_eq!(range.end.character, 1, "an insertion's range is zero-width");
+    assert_eq!(text, "b");
+}
+
+#[test]
+fn test_incremental_lsp_change_for_single_char_delete() {
+    use crate::lsp::protocol::PositionEncoding;
+    let mut doc = Document::new(1).unwrap();
+    let _ = doc.insert_str("abc");
+    let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
+    let _ = doc.buffer.set_cursor(2);
+    doc.delete_backward();
+
+    let (range, text) = doc
+        .take_incremental_lsp_changes(PositionEncoding::Utf16)
+        .expect("a single delete must convert to an incremental change");
+    assert_eq!(range.start.line, 0);
+    assert_eq!(range.start.character, 1);
+    assert_eq!(range.end.line, 0);
+    assert_eq!(range.end.character, 2, "the removed 'b' is one utf16 unit wide");
+    assert_eq!(text, "");
+}
+
+#[test]
+fn test_incremental_lsp_change_positions_a_non_bmp_char_correctly() {
+    use crate::lsp::protocol::PositionEncoding;
+    let mut doc = Document::new(1).unwrap();
+    // "🦀" is 2 UTF-16 units; deleting the 'x' right after it must report a
+    // range starting at unit 2 (after the crab), not code-point offset 1.
+    let _ = doc.insert_str("🦀x");
+    let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
+    let _ = doc.buffer.set_cursor(2);
+    doc.delete_backward();
+
+    let (range, text) = doc
+        .take_incremental_lsp_changes(PositionEncoding::Utf16)
+        .expect("a single delete must convert to an incremental change");
+    assert_eq!(range.start.character, 2, "must land after the 2-unit crab");
+    assert_eq!(range.end.character, 3);
+    assert_eq!(text, "");
+}
+
+#[test]
+fn test_incremental_lsp_change_falls_back_for_multiple_edits() {
+    use crate::lsp::protocol::PositionEncoding;
+    let mut doc = Document::new(1).unwrap();
+    let _ = doc.insert_str("a");
+    let _ = doc.insert_str("b");
+
+    assert!(
+        doc.take_incremental_lsp_changes(PositionEncoding::Utf16)
+            .is_none(),
+        "two edits since the last drain must fall back to full sync"
+    );
+}
+
+#[test]
+fn test_incremental_lsp_change_falls_back_for_multiline_delete() {
+    use crate::lsp::protocol::PositionEncoding;
+    let mut doc = Document::new(1).unwrap();
+    let _ = doc.insert_str("ab\ncd");
+    let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
+    let _ = doc.buffer.set_cursor(0);
+    let _ = doc.delete_range(0, 3); // removes "ab\n", spanning a line break
+
+    assert!(
+        doc.take_incremental_lsp_changes(PositionEncoding::Utf16)
+            .is_none(),
+        "a delete spanning a newline must fall back to full sync"
+    );
+}
+
+#[test]
 fn test_is_terminal_false_for_file() {
     let doc = Document::new(1).unwrap();
     assert!(!doc.is_terminal());

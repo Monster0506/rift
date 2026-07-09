@@ -207,6 +207,9 @@ pub struct Document {
     /// Monotonic edit sequence number, incremented once per applied edit.
     /// Lets producers reconcile stale annotation positions (design.md sec 11).
     document_version: u64,
+    /// Edits recorded since the last `take_lsp_edits`, for an LSP client to
+    /// express as incremental changes instead of resending the whole document.
+    pending_lsp_edits: Vec<crate::history::EditOperation>,
 }
 
 impl Document {
@@ -271,6 +274,104 @@ impl Document {
     ) -> u32 {
         let chars = self.line_chars(line).map(|c| c.to_char_lossy());
         encoding.units_for_char_offset(chars, char_offset)
+    }
+
+    /// Drain edits since the last call as one incremental LSP change, only if
+    /// exactly one landed and it's a single-line insert/delete/replace (else None: fall back to full sync).
+    pub fn take_incremental_lsp_changes(
+        &mut self,
+        encoding: crate::lsp::protocol::PositionEncoding,
+    ) -> Option<(crate::lsp::protocol::LspRange, String)> {
+        use crate::character::Character;
+        use crate::history::EditOperation;
+        use crate::lsp::protocol::{LspPosition, LspRange};
+
+        let mut ops = std::mem::take(&mut self.pending_lsp_edits);
+        if ops.len() != 1 {
+            return None;
+        }
+        let op = ops.pop().unwrap();
+
+        let single_line = |c: &Character| !matches!(c, Character::Newline);
+        match op {
+            EditOperation::Insert { position, text, .. } => {
+                let units =
+                    self.lsp_position_units_in_line(position.line as usize, position.col as usize, encoding);
+                let pos = LspPosition {
+                    line: position.line,
+                    character: units,
+                };
+                let text: String = text.iter().map(Character::to_char_lossy).collect();
+                Some((
+                    LspRange {
+                        start: pos.clone(),
+                        end: pos,
+                    },
+                    text,
+                ))
+            }
+            EditOperation::Delete { range, deleted_text } => {
+                if range.start.line != range.end.line || !deleted_text.iter().all(single_line) {
+                    return None;
+                }
+                let (start, end) =
+                    self.lsp_range_across_removed(range, deleted_text.len(), &deleted_text, encoding);
+                Some((LspRange { start, end }, String::new()))
+            }
+            EditOperation::Replace {
+                range,
+                old_text,
+                new_text,
+            } => {
+                if range.start.line != range.end.line || !old_text.iter().all(single_line) {
+                    return None;
+                }
+                let (start, end) =
+                    self.lsp_range_across_removed(range, old_text.len(), &old_text, encoding);
+                let text: String = new_text.iter().map(Character::to_char_lossy).collect();
+                Some((LspRange { start, end }, text))
+            }
+            EditOperation::BlockChange { .. } => None,
+        }
+    }
+
+    /// LSP start/end for a range since removed: `start` reads the still-valid
+    /// current prefix; `end` chains that prefix with the removed text itself.
+    fn lsp_range_across_removed(
+        &self,
+        range: crate::history::Range,
+        removed_len: usize,
+        removed_text: &[crate::character::Character],
+        encoding: crate::lsp::protocol::PositionEncoding,
+    ) -> (crate::lsp::protocol::LspPosition, crate::lsp::protocol::LspPosition) {
+        use crate::lsp::protocol::LspPosition;
+
+        let start_units =
+            self.lsp_position_units_in_line(range.start.line as usize, range.start.col as usize, encoding);
+        let prefix = self
+            .line_chars(range.start.line as usize)
+            .map(|c| c.to_char_lossy())
+            .take(range.start.col as usize);
+        let removed = removed_text.iter().map(|c| c.to_char_lossy());
+        let end_char_offset = range.start.col as usize + removed_len;
+        let end_units = encoding.units_for_char_offset(prefix.chain(removed), end_char_offset);
+
+        (
+            LspPosition {
+                line: range.start.line,
+                character: start_units,
+            },
+            LspPosition {
+                line: range.end.line,
+                character: end_units,
+            },
+        )
+    }
+
+    /// Discard edits recorded since the last drain, so they don't linger for
+    /// next time; call this when skipping incremental sync for this edit.
+    pub fn discard_pending_lsp_changes(&mut self) {
+        self.pending_lsp_edits.clear();
     }
 
     fn line_chars(&self, line: usize) -> impl Iterator<Item = crate::character::Character> + '_ {
