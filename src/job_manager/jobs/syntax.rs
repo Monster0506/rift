@@ -192,12 +192,7 @@ impl Job for SyntaxParseJob {
             let full_bytes = source_bytes; // same representation as parse
 
             let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
-                Some((prev_tree, edit)) => {
-                    let (ranges, kept) =
-                        crate::syntax::scoped_requery_plan(prev_tree, tree, edit, &old_highlights);
-                    highlights = kept;
-                    ranges
-                }
+                Some((prev_tree, edit)) => crate::syntax::scoped_query_ranges(prev_tree, tree, edit),
                 None => vec![0..full_bytes.len()],
             };
 
@@ -216,6 +211,13 @@ impl Job for SyntaxParseJob {
                         highlights.push((range, capture_index));
                     }
                 }
+            }
+
+            // Keep old entries the fresh requery above doesn't overlap; only
+            // it can tell whether a boundary-touching range was affected.
+            if let Some((_, edit)) = scoped {
+                let kept = crate::syntax::scoped_kept_items(&old_highlights, edit, &highlights);
+                highlights.extend(kept);
             }
 
             if scoped.is_some() {
@@ -401,5 +403,111 @@ mod tests {
             sorted_highlights(&result.highlights),
             sorted_highlights(&expected_highlights),
         );
+    }
+
+    fn point_at(source: &[u8], byte: usize) -> tree_sitter::Point {
+        let byte = byte.min(source.len());
+        let row = source[..byte].iter().filter(|&&b| b == b'\n').count();
+        let last_nl = source[..byte]
+            .iter()
+            .rposition(|&b| b == b'\n')
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        tree_sitter::Point {
+            row,
+            column: byte - last_nl,
+        }
+    }
+
+    fn full_highlights(language: &tree_sitter::Language, query: &Query, source: &[u8]) -> IntervalTree<u32> {
+        let mut parser = Parser::new();
+        parser.set_language(language).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let mut cursor = QueryCursor::new();
+        cursor.set_byte_range(0..source.len());
+        let mut matches = cursor.matches(query, root, source);
+        let mut items = Vec::new();
+        while let Some(m) = matches.next() {
+            for capture in m.captures {
+                items.push((capture.node.byte_range(), capture.index));
+            }
+        }
+        IntervalTree::new(items)
+    }
+
+    /// Simulates fast typing (each keystroke's job chains onto the last).
+    /// A subtle scoping bug can compound into flickering without ever failing a single-edit test.
+    #[test]
+    fn test_scoped_highlights_stay_correct_across_many_sequential_edits() {
+        let (language, query) = rust_language_and_query();
+
+        let mut buffer = make_buffer("fn foo() {\n}\n");
+        let mut parser = Parser::new();
+        parser.set_language(&language).unwrap();
+        let mut tree = parser
+            .parse(buffer.to_logical_bytes().as_slice(), None)
+            .unwrap();
+        let mut highlights = full_highlights(&language, &query, buffer.to_logical_bytes().as_slice());
+
+        // Type this, one character at a time, right before the closing brace.
+        let to_type = "    let x = 12345;\n    let y = x + 1;\n";
+        let mut insert_pos = buffer.to_logical_bytes().len() - "}\n".len();
+
+        for ch in to_type.chars() {
+            let mut ch_buf = [0u8; 4];
+            let ch_bytes = ch.encode_utf8(&mut ch_buf).as_bytes();
+
+            let old_source = buffer.to_logical_bytes();
+            let start_position = point_at(&old_source, insert_pos);
+
+            buffer.set_cursor(insert_pos).unwrap();
+            buffer.insert_str(&ch.to_string()).unwrap();
+            let new_source = buffer.to_logical_bytes();
+            let new_end_position = point_at(&new_source, insert_pos + ch_bytes.len());
+
+            let edit = InputEdit {
+                start_byte: insert_pos,
+                old_end_byte: insert_pos,
+                new_end_byte: insert_pos + ch_bytes.len(),
+                start_position,
+                old_end_position: start_position,
+                new_end_position,
+            };
+            tree.edit(&edit);
+
+            let mut step_parser = Parser::new();
+            step_parser.set_language(&language).unwrap();
+            let job = SyntaxParseJob::new(
+                buffer.clone(),
+                step_parser,
+                Some(tree.clone()),
+                Some(query.clone()),
+                "rust".to_string(),
+                1,
+                buffer.revision,
+            )
+            .with_highlights_context(highlights.clone(), std::slice::from_ref(&edit));
+
+            let result = run_job(job);
+            tree = result.tree.expect("each step must produce a tree");
+            highlights = result.highlights;
+            insert_pos += ch_bytes.len();
+
+            // Zero-width ranges are transient error-recovery artifacts of
+            // incomplete syntax mid-typing; they can't render, so exclude them.
+            let step_expected = full_highlights(&language, &query, buffer.to_logical_bytes().as_slice());
+            let non_empty = |v: Vec<(std::ops::Range<usize>, u32)>| -> Vec<_> {
+                v.into_iter().filter(|(r, _)| !r.is_empty()).collect()
+            };
+            assert_eq!(
+                non_empty(sorted_highlights(&highlights)),
+                non_empty(sorted_highlights(&step_expected)),
+                "highlights diverged from a full recompute after typing {ch:?}"
+            );
+        }
+
+        let expected = full_highlights(&language, &query, buffer.to_logical_bytes().as_slice());
+        assert_eq!(sorted_highlights(&highlights), sorted_highlights(&expected));
     }
 }

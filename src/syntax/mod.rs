@@ -224,6 +224,9 @@ impl Syntax {
             return ParseOutcome::NoLanguage;
         }
 
+        let old_tree = self.tree.clone();
+        let single_edit = self.single_pending_edit();
+
         let deadline = Instant::now() + budget;
         let mut parse_timed_out = false;
         let mut parse_progress = |_state: &tree_sitter::ParseState| {
@@ -236,7 +239,7 @@ impl Syntax {
         };
         let new_tree = parser.parse_with_options(
             &mut |i, _| source.get(i..).unwrap_or(&[]),
-            self.tree.as_ref(),
+            old_tree.as_ref(),
             Some(tree_sitter::ParseOptions::new().progress_callback(&mut parse_progress)),
         );
 
@@ -248,36 +251,49 @@ impl Syntax {
         }
 
         if let Some(query) = &self.highlights_query {
-            let root_node = tree.root_node();
-            let mut cursor = QueryCursor::new();
-            let mut highlights = Vec::new();
-            let mut query_timed_out = false;
-            let mut query_progress = |_state: &tree_sitter::QueryCursorState| {
-                if Instant::now() >= deadline {
-                    query_timed_out = true;
-                    ControlFlow::Break(())
-                } else {
-                    ControlFlow::Continue(())
-                }
+            // Scoping to the changed region keeps this inside budget instead
+            // of always falling back to the (slower to appear) async job.
+            let scoped = match (old_tree.as_ref(), single_edit) {
+                (Some(prev), Some(edit)) => Some((prev, edit)),
+                _ => None,
             };
-            let mut matches = cursor.matches_with_options(
-                query,
-                root_node,
-                source,
-                tree_sitter::QueryCursorOptions::new().progress_callback(&mut query_progress),
-            );
-            while let Some(m) = matches.next() {
-                for capture in m.captures {
-                    highlights.push((capture.node.byte_range(), capture.index));
+
+            if let Some((prev_tree, edit)) = scoped {
+                self.cached_highlights =
+                    scoped_query_highlights(query, &tree, source, &self.cached_highlights, Some((prev_tree, edit)));
+            } else {
+                let root_node = tree.root_node();
+                let mut cursor = QueryCursor::new();
+                let mut highlights = Vec::new();
+                let mut query_timed_out = false;
+                let mut query_progress = |_state: &tree_sitter::QueryCursorState| {
+                    if Instant::now() >= deadline {
+                        query_timed_out = true;
+                        ControlFlow::Break(())
+                    } else {
+                        ControlFlow::Continue(())
+                    }
+                };
+                let mut matches = cursor.matches_with_options(
+                    query,
+                    root_node,
+                    source,
+                    tree_sitter::QueryCursorOptions::new().progress_callback(&mut query_progress),
+                );
+                while let Some(m) = matches.next() {
+                    for capture in m.captures {
+                        highlights.push((capture.node.byte_range(), capture.index));
+                    }
                 }
+                if query_timed_out {
+                    return ParseOutcome::Aborted;
+                }
+                self.cached_highlights = IntervalTree::new(highlights);
             }
-            if query_timed_out {
-                return ParseOutcome::Aborted;
-            }
-            self.cached_highlights = IntervalTree::new(highlights);
         }
 
         self.tree = Some(tree);
+        self.pending_edits.clear();
         self.parse_injections(source);
         ParseOutcome::Completed
     }
@@ -368,16 +384,14 @@ impl Syntax {
         query: &Query,
         scoped: Option<(&Tree, InputEdit)>,
     ) {
-        // Collect (content_range, layer_index) pairs, reusing the cached ranges
-        // for anything outside the changed region on a single edit.
-        let (query_ranges, mut pairs): (Vec<std::ops::Range<usize>>, Vec<(std::ops::Range<usize>, usize)>) =
-            match scoped {
-                Some((prev_tree, edit)) => {
-                    scoped_requery_plan(prev_tree, tree, edit, &self.static_injection_ranges)
-                }
-                None => (vec![0..source.len()], Vec::new()),
-            };
+        // (content_range, layer_index) pairs: query just the changed region on
+        // a single edit, keeping cached ranges the fresh requery doesn't touch.
+        let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
+            Some((prev_tree, edit)) => scoped_query_ranges(prev_tree, tree, edit),
+            None => vec![0..source.len()],
+        };
 
+        let mut fresh: Vec<(std::ops::Range<usize>, usize)> = Vec::new();
         {
             let root = tree.root_node();
             for range in query_ranges {
@@ -391,7 +405,7 @@ impl Syntax {
                             if cap.index == *cap_idx {
                                 for (li, layer) in self.injection_layers.iter().enumerate() {
                                     if layer.language_name == *lang_name {
-                                        pairs.push((cap.node.byte_range(), li));
+                                        fresh.push((cap.node.byte_range(), li));
                                     }
                                 }
                             }
@@ -401,8 +415,14 @@ impl Syntax {
             }
         }
 
+        let mut pairs: Vec<(std::ops::Range<usize>, usize)> = match scoped {
+            Some((_, edit)) => scoped_kept_items(&self.static_injection_ranges, edit, &fresh),
+            None => Vec::new(),
+        };
+        pairs.extend(fresh);
+
         // set_included_ranges requires sorted, non-overlapping ranges; a scoped
-        // pass can also re-emit a range already kept (see scoped_query_highlights).
+        // pass can also re-emit a range from an overlapping broad pattern match.
         pairs.sort_by(|a, b| a.0.start.cmp(&b.0.start).then(a.0.end.cmp(&b.0.end)));
         if scoped.is_some() {
             pairs.dedup();
@@ -486,18 +506,14 @@ impl Syntax {
             None => return,
         };
 
-        // Collect (content_range, normalized_language_name) pairs, reusing the
-        // cached ranges for anything outside the changed region on a single edit.
-        let (query_ranges, mut pairs): (
-            Vec<std::ops::Range<usize>>,
-            Vec<(std::ops::Range<usize>, String)>,
-        ) = match scoped {
-            Some((prev_tree, edit)) => {
-                scoped_requery_plan(prev_tree, tree, edit, &self.dynamic_injection_ranges)
-            }
-            None => (vec![0..source.len()], Vec::new()),
+        // (content_range, language_name) pairs: query just the changed region
+        // on a single edit, keeping cached ranges the fresh requery doesn't touch.
+        let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
+            Some((prev_tree, edit)) => scoped_query_ranges(prev_tree, tree, edit),
+            None => vec![0..source.len()],
         };
 
+        let mut fresh: Vec<(std::ops::Range<usize>, String)> = Vec::new();
         {
             let root = tree.root_node();
             for range in query_ranges {
@@ -534,15 +550,21 @@ impl Syntax {
 
                     if let (Some(lang), Some(range)) = (lang_name, content_range) {
                         if !lang.is_empty() {
-                            pairs.push((range, lang));
+                            fresh.push((range, lang));
                         }
                     }
                 }
             }
         }
 
+        let mut pairs: Vec<(std::ops::Range<usize>, String)> = match scoped {
+            Some((_, edit)) => scoped_kept_items(&self.dynamic_injection_ranges, edit, &fresh),
+            None => Vec::new(),
+        };
+        pairs.extend(fresh);
+
         // set_included_ranges requires sorted, non-overlapping ranges; a scoped
-        // pass can also re-emit a range already kept (see scoped_query_highlights).
+        // pass can also re-emit a range from an overlapping broad pattern match.
         pairs.sort_by(|a, b| a.0.start.cmp(&b.0.start).then(a.0.end.cmp(&b.0.end)));
         if scoped.is_some() {
             pairs.dedup();
@@ -835,14 +857,13 @@ fn normalize_lang_name(name: &str) -> String {
     }
 }
 
-/// Ranges to (re)query plus the still-valid items kept from `old_items`. Always
-/// includes the edit's own span, since changed_ranges can miss a token absorbing it.
-pub(crate) fn scoped_requery_plan<T: Clone>(
+/// Ranges to (re)query for a single-edit reparse: changed_ranges plus the
+/// edit's own span (changed_ranges alone can miss a token absorbing an edit).
+pub(crate) fn scoped_query_ranges(
     prev_tree: &Tree,
     new_tree: &Tree,
     edit: InputEdit,
-    old_items: &IntervalTree<T>,
-) -> (Vec<std::ops::Range<usize>>, Vec<(std::ops::Range<usize>, T)>) {
+) -> Vec<std::ops::Range<usize>> {
     let mut ranges: Vec<std::ops::Range<usize>> = prev_tree
         .changed_ranges(new_tree)
         .map(|r| r.start_byte..r.end_byte)
@@ -857,14 +878,21 @@ pub(crate) fn scoped_requery_plan<T: Clone>(
             _ => merged.push(r),
         }
     }
+    merged
+}
 
-    let kept = old_items
+/// Old items surviving a single edit, shifted by its byte delta, with
+/// anything overlapping `fresh` dropped (`fresh` is authoritative for whatever it covers).
+pub(crate) fn scoped_kept_items<T: Clone>(
+    old_items: &IntervalTree<T>,
+    edit: InputEdit,
+    fresh: &[(std::ops::Range<usize>, T)],
+) -> Vec<(std::ops::Range<usize>, T)> {
+    old_items
         .shift_for_edit(edit.start_byte, edit.old_end_byte, edit.new_end_byte)
         .into_iter()
-        .filter(|(r, _)| !merged.iter().any(|c| r.start < c.end && c.start < r.end))
-        .collect();
-
-    (merged, kept)
+        .filter(|(r, _)| !fresh.iter().any(|(fr, _)| r.start < fr.end && fr.start < r.end))
+        .collect()
 }
 
 /// Recompute a highlights query, scoped to the changed region on a
@@ -878,21 +906,28 @@ pub(crate) fn scoped_query_highlights(
 ) -> IntervalTree<u32> {
     let root_node = new_tree.root_node();
 
-    let (query_ranges, mut highlights) = match scoped {
-        Some((prev_tree, edit)) => scoped_requery_plan(prev_tree, new_tree, edit, old_highlights),
-        None => (vec![0..source.len()], Vec::new()),
+    let query_ranges = match scoped {
+        Some((prev_tree, edit)) => scoped_query_ranges(prev_tree, new_tree, edit),
+        None => vec![0..source.len()],
     };
 
+    let mut fresh = Vec::new();
     for range in query_ranges {
         let mut cursor = QueryCursor::new();
         cursor.set_byte_range(range);
         let mut matches = cursor.matches(query, root_node, source);
         while let Some(m) = matches.next() {
             for capture in m.captures {
-                highlights.push((capture.node.byte_range(), capture.index));
+                fresh.push((capture.node.byte_range(), capture.index));
             }
         }
     }
+
+    let mut highlights = match scoped {
+        Some((_, edit)) => scoped_kept_items(old_highlights, edit, &fresh),
+        None => Vec::new(),
+    };
+    highlights.extend(fresh);
 
     if scoped.is_some() {
         highlights.sort_by(|a, b| {

@@ -145,8 +145,8 @@ impl<T: Clone> IntervalTree<T> {
         self.nodes.is_empty()
     }
 
-    /// Ranges strictly before the edit are kept, ranges at/after its old end
-    /// shift by the byte delta, and ranges touching or inside it are dropped.
+    /// Ranges at/before the edit are kept, at/after its old end shift by the
+    /// delta, overlapping it are dropped (caller must also filter its fresh requery for touching cases).
     pub fn shift_for_edit(
         &self,
         start_byte: usize,
@@ -158,7 +158,7 @@ impl<T: Clone> IntervalTree<T> {
             .iter()
             .filter_map(|node| {
                 let r = &node.range;
-                if r.end < start_byte {
+                if r.end <= start_byte {
                     Some((r.clone(), node.val.clone()))
                 } else if r.start >= old_end_byte {
                     let new_start = (r.start as i64 + delta) as usize;

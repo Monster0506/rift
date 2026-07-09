@@ -131,16 +131,14 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Time-budgeted incremental syntax parse for the active document.
-    ///
-    /// Tries a synchronous parse first (tree-sitter reuses unchanged subtrees,
-    /// so this is normally well under a millisecond). If it exceeds its time
-    /// budget, the attempt is aborted and a background `SyntaxParseJob` is
-    /// debounced instead, so a slow parse never stalls a keystroke.
+    /// Time-budgeted incremental syntax parse for the active document; past
+    /// the budget, falls back to a debounced background `SyntaxParseJob`.
     pub(super) fn do_incremental_syntax_parse(&mut self) {
         use crate::syntax::ParseOutcome;
 
-        const SYNC_PARSE_BUDGET: std::time::Duration = std::time::Duration::from_micros(1500);
+        // 1.5ms was too tight even for a few-hundred-line file (incremental
+        // reparse alone can take 1-2ms), forcing every keystroke into a flicker-visible fallback.
+        const SYNC_PARSE_BUDGET: std::time::Duration = std::time::Duration::from_micros(5000);
         use super::SYNC_PARSE_MAX_BYTES;
 
         let Some(doc) = self.document_manager.active_document_mut() else {

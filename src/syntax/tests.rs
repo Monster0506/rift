@@ -133,15 +133,16 @@ fn test_shift_for_edit_deletion() {
 }
 
 #[test]
-fn test_shift_for_edit_boundary_asymmetry() {
-    // Touching the edit's start may mean absorption (dropped); touching its
-    // old end is unambiguously the next token (shifted).
+fn test_shift_for_edit_touching_boundaries_are_kept() {
+    // Ending exactly at the edit start is kept; starting exactly at its old
+    // end is shifted (caller must still filter both against its fresh requery).
     let items = vec![(0..10, 1), (10..20, 2)];
     let tree = IntervalTree::new(items);
 
-    let shifted = tree.shift_for_edit(10, 10, 12);
+    let mut shifted = tree.shift_for_edit(10, 10, 12);
+    shifted.sort_by_key(|(r, _)| r.start);
 
-    assert_eq!(shifted, vec![(12..22, 2)]);
+    assert_eq!(shifted, vec![(0..10, 1), (12..22, 2)]);
 }
 
 // =============================================================================
@@ -597,6 +598,101 @@ mod markdown_tests {
         expected_result.sort_by_key(sort_key);
 
         assert_eq!(scoped_result, expected_result);
+    }
+}
+
+// Sync-path (try_incremental_parse) scoped-highlights tests
+
+#[cfg(feature = "treesitter")]
+mod sync_parse_tests {
+    use super::super::*;
+    use crate::syntax::loader::LanguageLoader;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tree_sitter::{InputEdit, Parser, Query, QueryCursor};
+
+    fn rust_syntax() -> Syntax {
+        let loader = Arc::new(LanguageLoader::new(PathBuf::from(".")));
+        let loaded = loader.load_language("rust").expect("rust grammar");
+        let highlights_query = loader
+            .load_query("rust", "highlights")
+            .ok()
+            .and_then(|src| Query::new(&loaded.language, &src).ok())
+            .map(Arc::new);
+        Syntax::new(loaded, highlights_query).expect("Syntax::new")
+    }
+
+    fn point_at(source: &[u8], byte: usize) -> tree_sitter::Point {
+        let byte = byte.min(source.len());
+        let row = source[..byte].iter().filter(|&&b| b == b'\n').count();
+        let last_nl = source[..byte]
+            .iter()
+            .rposition(|&b| b == b'\n')
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        tree_sitter::Point {
+            row,
+            column: byte - last_nl,
+        }
+    }
+
+    fn full_highlights(syntax: &Syntax, source: &[u8]) -> IntervalTree<u32> {
+        let query = syntax.highlights_query.as_ref().unwrap();
+        let mut parser = Parser::new();
+        parser.set_language(&syntax.language).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let mut cursor = QueryCursor::new();
+        cursor.set_byte_range(0..source.len());
+        let mut matches = cursor.matches(query, root, source);
+        let mut items = Vec::new();
+        while let Some(m) = matches.next() {
+            for capture in m.captures {
+                items.push((capture.node.byte_range(), capture.index));
+            }
+        }
+        IntervalTree::new(items)
+    }
+
+    fn sorted(tree: &IntervalTree<u32>) -> Vec<(std::ops::Range<usize>, u32)> {
+        let mut items: Vec<_> = tree.iter().map(|(r, v)| (r.clone(), *v)).collect();
+        items.sort_by(|a, b| {
+            a.0.start
+                .cmp(&b.0.start)
+                .then(a.0.end.cmp(&b.0.end))
+                .then(a.1.cmp(&b.1))
+        });
+        items
+    }
+
+    /// The sync path's scoped single-edit highlights must match a full
+    /// recompute, the same guarantee already proven for the async job.
+    #[test]
+    fn test_sync_scoped_highlights_match_full_recompute_after_single_edit() {
+        let mut syntax = rust_syntax();
+        let initial_src = "fn foo() { let a = 1; let b = 2; }";
+        assert!(syntax.incremental_parse(initial_src.as_bytes()));
+
+        let insert_pos = initial_src.find("1;").unwrap() + 1;
+        let mut edited = initial_src.to_string();
+        edited.insert(insert_pos, '1');
+
+        let edit = InputEdit {
+            start_byte: insert_pos,
+            old_end_byte: insert_pos,
+            new_end_byte: insert_pos + 1,
+            start_position: point_at(initial_src.as_bytes(), insert_pos),
+            old_end_position: point_at(initial_src.as_bytes(), insert_pos),
+            new_end_position: point_at(edited.as_bytes(), insert_pos + 1),
+        };
+        syntax.update_tree(&edit);
+
+        let outcome = syntax.try_incremental_parse(edited.as_bytes(), Duration::from_secs(5));
+        assert_eq!(outcome, ParseOutcome::Completed);
+
+        let expected = full_highlights(&syntax, edited.as_bytes());
+        assert_eq!(sorted(&syntax.highlights_snapshot().0), sorted(&expected));
     }
 }
 
