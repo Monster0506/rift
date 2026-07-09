@@ -22,3 +22,6 @@ Thumbs.db
 # Added by cargo
 
 /target
+
+# perf_instrumentation runtime output
+rift-perf.log
