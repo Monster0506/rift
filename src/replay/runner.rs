@@ -36,6 +36,18 @@ pub struct Percentiles {
     pub max: Duration,
 }
 
+/// Total cost of one named perf span, aggregated across every mark.
+#[cfg(feature = "perf_instrumentation")]
+#[derive(Debug, Clone, Copy)]
+pub struct PerfSpanSummary {
+    pub name: &'static str,
+    pub count: usize,
+    pub total: Duration,
+    pub avg: Duration,
+    pub p95: Duration,
+    pub max: Duration,
+}
+
 /// Outcome of running a script to completion.
 #[derive(Debug, Clone, Default)]
 pub struct RunReport {
@@ -60,6 +72,39 @@ impl RunReport {
             p95: sorted[(n * 95 / 100).min(n - 1)],
             max: sorted[n - 1],
         })
+    }
+
+    /// Perf spans from every mark, grouped by name and sorted by total time
+    /// descending, biggest contributors to the run first.
+    #[cfg(feature = "perf_instrumentation")]
+    pub fn perf_summary(&self) -> Vec<PerfSpanSummary> {
+        use std::collections::HashMap;
+
+        let mut by_name: HashMap<&'static str, Vec<Duration>> = HashMap::new();
+        for mark in &self.marks {
+            for ev in &mark.perf_events {
+                by_name.entry(ev.name).or_default().push(ev.duration);
+            }
+        }
+
+        let mut summary: Vec<PerfSpanSummary> = by_name
+            .into_iter()
+            .map(|(name, mut durations)| {
+                durations.sort();
+                let n = durations.len();
+                let total: Duration = durations.iter().sum();
+                PerfSpanSummary {
+                    name,
+                    count: n,
+                    total,
+                    avg: total / n as u32,
+                    p95: durations[(n * 95 / 100).min(n - 1)],
+                    max: durations[n - 1],
+                }
+            })
+            .collect();
+        summary.sort_by(|a, b| b.total.cmp(&a.total));
+        summary
     }
 }
 

@@ -8,4 +8,6 @@ pub mod runner;
 
 pub use backend::ReplayBackend;
 pub use ops::{parse, Assertion, ParseError, ScriptOp};
+#[cfg(feature = "perf_instrumentation")]
+pub use runner::PerfSpanSummary;
 pub use runner::{run, Mark, Percentiles, RunReport, TickTiming};

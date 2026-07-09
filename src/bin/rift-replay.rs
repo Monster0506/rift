@@ -1,5 +1,5 @@
 //! CLI runner for replay scripts: parses a script file, runs it against a
-//! headless `Editor`, and prints marks, key latency, and perf spans.
+//! headless `Editor`, and prints marks, key latency, and a perf breakdown.
 
 use monster_rift::replay::{self, RunReport};
 use std::time::Duration;
@@ -45,13 +45,12 @@ fn print_report(report: &RunReport) {
                 mark.at.saturating_sub(prev)
             );
             prev = mark.at;
-            print_perf_events(mark);
         }
     }
 
     if let Some(p) = report.tick_percentiles() {
         println!(
-            "keys: n={} avg={:.2?} p50={:.2?} p95={:.2?} max={:.2?}",
+            "\nkeys: n={} avg={:.2?} p50={:.2?} p95={:.2?} max={:.2?}",
             report.ticks.len(),
             p.avg,
             p.p50,
@@ -59,14 +58,28 @@ fn print_report(report: &RunReport) {
             p.max
         );
     }
+
+    print_perf_summary(report);
 }
 
 #[cfg(feature = "perf_instrumentation")]
-fn print_perf_events(mark: &replay::Mark) {
-    for ev in &mark.perf_events {
-        println!("      {:<24} {:>10.2?}", ev.name, ev.duration);
+fn print_perf_summary(report: &RunReport) {
+    let summary = report.perf_summary();
+    if summary.is_empty() {
+        return;
+    }
+    println!("\nperf spans (by total time):");
+    println!(
+        "  {:<20} {:>6} {:>10} {:>10} {:>10} {:>10}",
+        "name", "n", "total", "avg", "p95", "max"
+    );
+    for s in &summary {
+        println!(
+            "  {:<20} {:>6} {:>10.2?} {:>10.2?} {:>10.2?} {:>10.2?}",
+            s.name, s.count, s.total, s.avg, s.p95, s.max
+        );
     }
 }
 
 #[cfg(not(feature = "perf_instrumentation"))]
-fn print_perf_events(_mark: &replay::Mark) {}
+fn print_perf_summary(_report: &RunReport) {}
