@@ -86,8 +86,6 @@ impl<T: TerminalBackend> Editor<T> {
                     && self.snap_to_actionable_line(matches!(motion, Motion::Down))
                 {
                     self.update_explorer_preview();
-                    self.update_undotree_preview();
-                    self.update_clipboard_preview();
                     return true;
                 }
 
