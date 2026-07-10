@@ -585,7 +585,8 @@ impl LayerCompositor {
             let start_col = rect.start_col.saturating_sub(2);
             let end_row = (rect.end_row + 2).min(self.rows.saturating_sub(1));
             let end_col = (rect.end_col + 2).min(self.cols.saturating_sub(1));
-            // Iterate over every pixel in the dirty rect
+            // set_cell below already no-ops out of range; these guards only
+            // matter when rows/cols is 0 (saturating_sub above floors at 0).
             for r in start_row..=end_row {
                 if r >= self.rows {
                     continue;

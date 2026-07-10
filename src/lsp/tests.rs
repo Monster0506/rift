@@ -317,6 +317,110 @@ fn shutdown_all_clears_clients_and_kills_the_process() {
     );
 }
 
+#[test]
+fn did_close_stops_tracking_a_previously_opened_document() {
+    use config::LspServerConfig;
+
+    let mut mgr = LspManager::new(None);
+    mgr.register_server(
+        "fake".to_string(),
+        LspServerConfig {
+            command: "ping".to_string(),
+            args: vec!["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
+            extensions: vec![],
+            root_markers: vec![],
+            capabilities: vec![],
+            initialization_options: None,
+            keep_alive: false,
+        },
+    );
+    let path = Path::new("/tmp/fake_close.rs");
+    mgr.did_open(path, "fake", "content");
+    assert!(mgr.is_tracking(path), "should be tracked after did_open");
+
+    mgr.did_close(path);
+    assert!(
+        !mgr.is_tracking(path),
+        "did_close must stop tracking the document"
+    );
+
+    mgr.shutdown_all();
+}
+
+#[test]
+fn requests_outside_declared_capabilities_are_rejected() {
+    use config::{LspCapability, LspServerConfig};
+
+    let mut mgr = LspManager::new(None);
+    mgr.register_server(
+        "fake".to_string(),
+        LspServerConfig {
+            command: "ping".to_string(),
+            args: vec!["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
+            extensions: vec![],
+            root_markers: vec![],
+            capabilities: vec![LspCapability::Hover],
+            initialization_options: None,
+            keep_alive: false,
+        },
+    );
+    let path = Path::new("/tmp/fake_capability.rs");
+    mgr.did_open(path, "fake", "content");
+
+    assert!(
+        mgr.hover(path, 0, 0).is_some(),
+        "hover is declared, so it should be allowed"
+    );
+    assert!(
+        mgr.goto_definition(path, 0, 0).is_none(),
+        "goto_definition is not declared, so it should be rejected"
+    );
+    assert!(
+        mgr.references(path, 0, 0).is_none(),
+        "references is not declared, so it should be rejected"
+    );
+    assert!(
+        mgr.rename(path, 0, 0, "x".to_string()).is_none(),
+        "rename is not declared, so it should be rejected"
+    );
+    assert!(
+        mgr.format(path, 4, true).is_none(),
+        "format is not declared, so it should be rejected"
+    );
+    assert!(
+        mgr.code_action(path, 0, 0, vec![]).is_none(),
+        "code_action is not declared, so it should be rejected"
+    );
+
+    mgr.shutdown_all();
+}
+
+#[test]
+fn a_server_with_no_declared_capabilities_allows_everything() {
+    use config::LspServerConfig;
+
+    let mut mgr = LspManager::new(None);
+    mgr.register_server(
+        "fake".to_string(),
+        LspServerConfig {
+            command: "ping".to_string(),
+            args: vec!["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
+            extensions: vec![],
+            root_markers: vec![],
+            capabilities: vec![],
+            initialization_options: None,
+            keep_alive: false,
+        },
+    );
+    let path = Path::new("/tmp/fake_no_capabilities.rs");
+    mgr.did_open(path, "fake", "content");
+
+    assert!(mgr.hover(path, 0, 0).is_some());
+    assert!(mgr.goto_definition(path, 0, 0).is_some());
+
+    mgr.shutdown_all();
+}
+
 fn process_is_running(pid: u32) -> bool {
     #[cfg(windows)]
     {

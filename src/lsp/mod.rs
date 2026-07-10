@@ -204,6 +204,15 @@ impl LspManager {
         self.registered_servers.insert(language, server);
     }
 
+    /// Whether `language`'s registered server declares `cap`. A server with
+    /// no config on record is assumed to support everything.
+    fn capability_allowed(&self, language: &str, cap: config::LspCapability) -> bool {
+        self.registered_servers
+            .get(language)
+            .map(|c| c.has_capability(&cap))
+            .unwrap_or(true)
+    }
+
     /// Walk up from `file` to find the nearest project root using the given markers.
     fn find_workspace_root(file: &Path, markers: &[String]) -> Option<PathBuf> {
         let mut dir = file.parent()?;
@@ -516,6 +525,9 @@ impl LspManager {
     pub fn goto_definition(&mut self, path: &Path, line: u32, col: u32) -> Option<u64> {
         let uri = path_to_uri(path);
         let language = self.open_docs.get(&uri)?.language.clone();
+        if !self.capability_allowed(&language, config::LspCapability::GotoDefinition) {
+            return None;
+        }
         let client = self.clients.get_mut(&language)?;
 
         let params = serde_json::to_value(TextDocumentPositionParams {
@@ -542,6 +554,9 @@ impl LspManager {
     pub fn references(&mut self, path: &Path, line: u32, col: u32) -> Option<u64> {
         let uri = path_to_uri(path);
         let language = self.open_docs.get(&uri)?.language.clone();
+        if !self.capability_allowed(&language, config::LspCapability::References) {
+            return None;
+        }
         let client = self.clients.get_mut(&language)?;
 
         let params = serde_json::to_value(ReferenceParams {
@@ -571,6 +586,9 @@ impl LspManager {
     pub fn hover(&mut self, path: &Path, line: u32, col: u32) -> Option<u64> {
         let uri = path_to_uri(path);
         let language = self.open_docs.get(&uri)?.language.clone();
+        if !self.capability_allowed(&language, config::LspCapability::Hover) {
+            return None;
+        }
         let client = self.clients.get_mut(&language)?;
 
         let params = serde_json::to_value(TextDocumentPositionParams {
@@ -597,6 +615,9 @@ impl LspManager {
     pub fn rename(&mut self, path: &Path, line: u32, col: u32, new_name: String) -> Option<u64> {
         let uri = path_to_uri(path);
         let language = self.open_docs.get(&uri)?.language.clone();
+        if !self.capability_allowed(&language, config::LspCapability::Rename) {
+            return None;
+        }
         let client = self.clients.get_mut(&language)?;
 
         let params = serde_json::to_value(RenameParams {
@@ -624,6 +645,9 @@ impl LspManager {
     pub fn format(&mut self, path: &Path, tab_size: u32, insert_spaces: bool) -> Option<u64> {
         let uri = path_to_uri(path);
         let language = self.open_docs.get(&uri)?.language.clone();
+        if !self.capability_allowed(&language, config::LspCapability::Format) {
+            return None;
+        }
         let client = self.clients.get_mut(&language)?;
 
         let params = serde_json::to_value(DocumentFormattingParams {
@@ -656,6 +680,9 @@ impl LspManager {
     ) -> Option<u64> {
         let uri = path_to_uri(path);
         let language = self.open_docs.get(&uri)?.language.clone();
+        if !self.capability_allowed(&language, config::LspCapability::CodeActions) {
+            return None;
+        }
         let client = self.clients.get_mut(&language)?;
 
         let pos = LspPosition {

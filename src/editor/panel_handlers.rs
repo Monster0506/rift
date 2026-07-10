@@ -67,6 +67,8 @@ impl<T: TerminalBackend> Editor<T> {
         let entries: std::collections::VecDeque<Vec<crate::character::Character>> =
             self.clipboard_ring.entries().iter().cloned().collect();
         if let Some(doc) = self.document_manager.get_document_mut(layout.dir_doc_id) {
+            // Always true here (the PanelKind::Clipboard check above already
+            // guarantees it); kept as a cheap belt-and-suspenders check.
             if doc.is_clipboard() {
                 let cursor = doc.buffer.cursor();
                 doc.populate_clipboard_buffer(&entries);
@@ -230,6 +232,8 @@ impl<T: TerminalBackend> Editor<T> {
                 .map(|l| l.dir_doc_id)
                 .unwrap_or(u64::MAX),
         ) {
+            // Expected to always be true here (this path only runs while a
+            // clipboard-entry buffer is active); kept as a defensive check.
             if index_doc.is_clipboard() {
                 index_doc.populate_clipboard_buffer(self.clipboard_ring.entries());
             }
