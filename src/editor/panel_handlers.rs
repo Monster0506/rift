@@ -49,9 +49,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn handle_clipboard_entry_close(&mut self) {
-        let layout = match &self.panel_layout {
-            Some(l) if l.kind == PanelKind::Clipboard => l.clone(),
-            _ => return,
+        let layout = match self.panel_layout_of(PanelKind::Clipboard) {
+            Some(l) => l,
+            None => return,
         };
         self.split_tree.set_focus(layout.dir_win_id);
         let _ = self.document_manager.switch_to_document(layout.dir_doc_id);
@@ -60,9 +60,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub fn refresh_clipboard_buffer_if_open(&mut self) {
-        let layout = match &self.panel_layout {
-            Some(l) if l.kind == PanelKind::Clipboard => l.clone(),
-            _ => return,
+        let layout = match self.panel_layout_of(PanelKind::Clipboard) {
+            Some(l) => l,
+            None => return,
         };
         let entries: std::collections::VecDeque<Vec<crate::character::Character>> =
             self.clipboard_ring.entries().iter().cloned().collect();
@@ -80,9 +80,9 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_clipboard_select(&mut self) {
         use crate::document::BufferKind;
 
-        let layout = match &self.panel_layout {
-            Some(l) if l.kind == PanelKind::Clipboard => l.clone(),
-            _ => return,
+        let layout = match self.panel_layout_of(PanelKind::Clipboard) {
+            Some(l) => l,
+            None => return,
         };
 
         let (entry_text, entry_index) = {
@@ -146,9 +146,9 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_clipboard_new(&mut self) {
         use crate::document::BufferKind;
 
-        let layout = match &self.panel_layout {
-            Some(l) if l.kind == PanelKind::Clipboard => l.clone(),
-            _ => return,
+        let layout = match self.panel_layout_of(PanelKind::Clipboard) {
+            Some(l) => l,
+            None => return,
         };
 
         if let Some(preview) = self
@@ -275,9 +275,9 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_location_list_select(&mut self) {
         use crate::document::BufferKind;
 
-        let layout = match &self.panel_layout {
-            Some(l) if l.kind == PanelKind::LocationList => l.clone(),
-            _ => return,
+        let layout = match self.panel_layout_of(PanelKind::LocationList) {
+            Some(l) => l,
+            None => return,
         };
 
         let entry = {
@@ -340,9 +340,9 @@ impl<T: TerminalBackend> Editor<T> {
     fn handle_location_list_code_action(&mut self) {
         use crate::document::BufferKind;
 
-        let layout = match &self.panel_layout {
-            Some(l) if l.kind == PanelKind::LocationList => l.clone(),
-            _ => return,
+        let layout = match self.panel_layout_of(PanelKind::LocationList) {
+            Some(l) => l,
+            None => return,
         };
 
         let entry = {

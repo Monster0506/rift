@@ -618,6 +618,14 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.update_and_render();
     }
 
+    /// The active panel's layout, if one is open and matches `kind`.
+    pub(super) fn panel_layout_of(&self, kind: PanelKind) -> Option<PanelLayout> {
+        match &self.panel_layout {
+            Some(l) if l.kind == kind => Some(l.clone()),
+            _ => None,
+        }
+    }
+
     /// The path that should currently be shown in the explorer preview, used
     /// both to decide whether to spawn a new preview job and to reject stale results.
     pub(super) fn current_explorer_target_path(&self) -> Option<std::path::PathBuf> {
@@ -1027,9 +1035,9 @@ impl<T: TerminalBackend> Editor<T> {
     /// Re-render the undotree buffer off the main thread (fires on every
     /// cursor move in the pane; a large history shouldn't block input).
     pub(super) fn handle_undotree_refresh(&mut self) {
-        let layout = match self.panel_layout.as_ref() {
-            Some(l) if l.kind == PanelKind::UndoTree => l.clone(),
-            _ => return,
+        let layout = match self.panel_layout_of(PanelKind::UndoTree) {
+            Some(l) => l,
+            None => return,
         };
         if let Some(linked_doc) = self.document_manager.get_document(layout.original_doc_id) {
             let job = crate::job_manager::jobs::undotree::UndoTreeRenderJob::new(
