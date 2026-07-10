@@ -712,12 +712,10 @@ impl RenderSystem {
                 ctx.state.settings.editor_bg,
             );
 
-            if anim_row < self.compositor.rows() && anim_col < self.compositor.cols() {
-                self.compositor
-                    .get_layer_mut(LayerPriority::CURSOR)
-                    .set_cell(anim_row, anim_col, cursor_cell);
-                self.last_soft_cursor = Some((anim_row, anim_col));
-            }
+            self.compositor
+                .get_layer_mut(LayerPriority::CURSOR)
+                .set_cell(anim_row, anim_col, cursor_cell);
+            self.last_soft_cursor = Some((anim_row, anim_col));
         } else if let Some((pr, pc)) = self.last_soft_cursor.take() {
             self.compositor
                 .get_layer_mut(LayerPriority::CURSOR)
