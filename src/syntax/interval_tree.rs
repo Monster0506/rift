@@ -120,6 +120,27 @@ impl<T: Clone> IntervalTree<T> {
         self.nodes.iter().map(|n| (&n.range, &n.val))
     }
 
+    /// In-order traversal: same relative ordering as `query`, unlike `iter`
+    /// (which walks `self.nodes` in build order and can reorder same-range ties).
+    fn in_order(&self) -> Vec<(Range<usize>, T)> {
+        let mut results = Vec::with_capacity(self.nodes.len());
+        if let Some(root) = self.root {
+            self.in_order_recursive(root, &mut results);
+        }
+        results
+    }
+
+    fn in_order_recursive(&self, node_idx: usize, results: &mut Vec<(Range<usize>, T)>) {
+        let node = &self.nodes[node_idx];
+        if let Some(left) = node.left {
+            self.in_order_recursive(left, results);
+        }
+        results.push((node.range.clone(), node.val.clone()));
+        if let Some(right) = node.right {
+            self.in_order_recursive(right, results);
+        }
+    }
+
     /// Update every node's range from `get_range` in place, preserving tree topology, then recompute `max` bottom-up.
     pub fn resync(&mut self, mut get_range: impl FnMut(&T) -> Option<Range<usize>>) {
         for node in &mut self.nodes {
@@ -154,16 +175,15 @@ impl<T: Clone> IntervalTree<T> {
         new_end_byte: usize,
     ) -> Vec<(Range<usize>, T)> {
         let delta = new_end_byte as i64 - old_end_byte as i64;
-        self.nodes
-            .iter()
-            .filter_map(|node| {
-                let r = &node.range;
+        self.in_order()
+            .into_iter()
+            .filter_map(|(r, val)| {
                 if r.end <= start_byte {
-                    Some((r.clone(), node.val.clone()))
+                    Some((r, val))
                 } else if r.start >= old_end_byte {
                     let new_start = (r.start as i64 + delta) as usize;
                     let new_end = (r.end as i64 + delta) as usize;
-                    Some((new_start..new_end, node.val.clone()))
+                    Some((new_start..new_end, val))
                 } else {
                     None
                 }

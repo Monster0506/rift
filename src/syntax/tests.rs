@@ -10,6 +10,15 @@ fn test_text_provider_chunks() {
 }
 
 #[test]
+fn test_finalize_highlights_orders_ties_by_later_pattern_first() {
+    // A later-declared query pattern (higher pattern_index) must win over an
+    // earlier one for two captures on the exact same range.
+    let input = vec![(0usize..2, 4u32, 4usize), (0usize..2, 5u32, 10usize)];
+    let out = super::finalize_highlights(input);
+    assert_eq!(out, vec![(0..2, 5), (0..2, 4)]);
+}
+
+#[test]
 fn test_syntax_new_placeholder() {
     // Basic test to ensure TextBuffer is usable
     let buffer = TextBuffer::new(10).unwrap();
@@ -143,6 +152,27 @@ fn test_shift_for_edit_touching_boundaries_are_kept() {
     shifted.sort_by_key(|(r, _)| r.start);
 
     assert_eq!(shifted, vec![(0..10, 1), (12..22, 2)]);
+}
+
+#[test]
+fn test_shift_for_edit_preserves_order_of_same_range_duplicates() {
+    // Two captures on the identical range (e.g. both @constructor and
+    // @function) must keep their relative order through an unrelated edit.
+    let items = vec![
+        (30..40, 1),
+        (50..52, 5),
+        (50..52, 4),
+        (60..70, 2),
+    ];
+    let tree = IntervalTree::new(items);
+
+    let shifted = tree.shift_for_edit(0, 0, 1);
+
+    let dup: Vec<_> = shifted
+        .into_iter()
+        .filter(|(r, _)| *r == (51..53))
+        .collect();
+    assert_eq!(dup, vec![(51..53, 5), (51..53, 4)]);
 }
 
 // =============================================================================

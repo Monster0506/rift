@@ -281,14 +281,15 @@ impl Syntax {
                     tree_sitter::QueryCursorOptions::new().progress_callback(&mut query_progress),
                 );
                 while let Some(m) = matches.next() {
+                    let pattern_index = m.pattern_index;
                     for capture in m.captures {
-                        highlights.push((capture.node.byte_range(), capture.index));
+                        highlights.push((capture.node.byte_range(), capture.index, pattern_index));
                     }
                 }
                 if query_timed_out {
                     return ParseOutcome::Aborted;
                 }
-                self.cached_highlights = IntervalTree::new(highlights);
+                self.cached_highlights = IntervalTree::new(finalize_highlights(highlights));
             }
         }
 
@@ -895,6 +896,21 @@ pub(crate) fn scoped_kept_items<T: Clone>(
         .collect()
 }
 
+/// Orders same-range captures so a later-declared query pattern always wins,
+/// independent of whether the query was scoped or a full scan.
+pub(crate) fn finalize_highlights(
+    mut highlights: Vec<(std::ops::Range<usize>, u32, usize)>,
+) -> Vec<(std::ops::Range<usize>, u32)> {
+    highlights.sort_by(|a, b| {
+        a.0.start
+            .cmp(&b.0.start)
+            .then(a.0.end.cmp(&b.0.end))
+            .then(b.2.cmp(&a.2))
+    });
+    highlights.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
+    highlights.into_iter().map(|(r, c, _)| (r, c)).collect()
+}
+
 /// Recompute a highlights query, scoped to the changed region on a
 /// single-edit incremental reparse, or a full scan of `new_tree` otherwise.
 pub(crate) fn scoped_query_highlights(
@@ -911,35 +927,30 @@ pub(crate) fn scoped_query_highlights(
         None => vec![0..source.len()],
     };
 
-    let mut fresh = Vec::new();
+    let mut fresh: Vec<(std::ops::Range<usize>, u32, usize)> = Vec::new();
     for range in query_ranges {
         let mut cursor = QueryCursor::new();
         cursor.set_byte_range(range);
         let mut matches = cursor.matches(query, root_node, source);
         while let Some(m) = matches.next() {
+            let pattern_index = m.pattern_index;
             for capture in m.captures {
-                fresh.push((capture.node.byte_range(), capture.index));
+                fresh.push((capture.node.byte_range(), capture.index, pattern_index));
             }
         }
     }
 
-    let mut highlights = match scoped {
-        Some((_, edit)) => scoped_kept_items(old_highlights, edit, &fresh),
+    let fresh_ranges: Vec<(std::ops::Range<usize>, u32)> =
+        fresh.iter().map(|(r, c, _)| (r.clone(), *c)).collect();
+    let kept = match scoped {
+        Some((_, edit)) => scoped_kept_items(old_highlights, edit, &fresh_ranges),
         None => Vec::new(),
     };
-    highlights.extend(fresh);
 
-    if scoped.is_some() {
-        highlights.sort_by(|a, b| {
-            a.0.start
-                .cmp(&b.0.start)
-                .then(a.0.end.cmp(&b.0.end))
-                .then(a.1.cmp(&b.1))
-        });
-        highlights.dedup();
-    }
+    let mut highlights = fresh;
+    highlights.extend(kept.into_iter().map(|(r, c)| (r, c, 0)));
 
-    IntervalTree::new(highlights)
+    IntervalTree::new(finalize_highlights(highlights))
 }
 
 /// Byte offsets of every newline in a source buffer, built once per parse so

@@ -196,6 +196,7 @@ impl Job for SyntaxParseJob {
                 None => vec![0..full_bytes.len()],
             };
 
+            let mut fresh: Vec<(std::ops::Range<usize>, u32, usize)> = Vec::new();
             for range in query_ranges {
                 let mut cursor = QueryCursor::new();
                 cursor.set_byte_range(range);
@@ -204,38 +205,27 @@ impl Job for SyntaxParseJob {
                     if signal.is_cancelled() {
                         return;
                     }
+                    let pattern_index = m.pattern_index;
                     for capture in m.captures {
-                        let range = capture.node.byte_range();
-                        // Store index instead of allocating string
-                        let capture_index = capture.index;
-                        highlights.push((range, capture_index));
+                        fresh.push((capture.node.byte_range(), capture.index, pattern_index));
                     }
                 }
             }
 
             // Keep old entries the fresh requery above doesn't overlap; only
             // it can tell whether a boundary-touching range was affected.
+            let fresh_ranges: Vec<(std::ops::Range<usize>, u32)> =
+                fresh.iter().map(|(r, c, _)| (r.clone(), *c)).collect();
             if let Some((_, edit)) = scoped {
-                let kept = crate::syntax::scoped_kept_items(&old_highlights, edit, &highlights);
-                highlights.extend(kept);
+                let kept = crate::syntax::scoped_kept_items(&old_highlights, edit, &fresh_ranges);
+                highlights.extend(kept.into_iter().map(|(r, c)| (r, c, 0)));
             }
-
-            if scoped.is_some() {
-                // set_byte_range matches on a pattern's whole span, so a
-                // scoped requery can re-emit a capture already kept below.
-                highlights.sort_by(|a, b| {
-                    a.0.start
-                        .cmp(&b.0.start)
-                        .then(a.0.end.cmp(&b.0.end))
-                        .then(a.1.cmp(&b.1))
-                });
-                highlights.dedup();
-            }
+            highlights.extend(fresh);
         }
 
         let result = SyntaxParseResult {
             tree,
-            highlights: IntervalTree::new(highlights),
+            highlights: IntervalTree::new(crate::syntax::finalize_highlights(highlights)),
             language_name,
             document_id,
             revision,
@@ -417,6 +407,155 @@ mod tests {
             row,
             column: byte - last_nl,
         }
+    }
+
+    /// Editing inside a string literal must not change the capture (color)
+    /// of an unrelated `Ok(...)` constructor call later on the same line.
+    #[test]
+    fn test_scoped_highlights_do_not_recolor_unrelated_token_on_same_line() {
+        let (language, query) = rust_language_and_query();
+
+        let initial_src = "fn f(s: &str) -> Result<Action, ()> {\n    match s {\n        \"lsp:diagnostics_panel\" => Ok(Action::Editor(EditorAction::LspDiagnosticsPanel)),\n        _ => Ok(Action::Noop),\n    }\n}\n";
+        let buffer1 = make_buffer(initial_src);
+        let source1 = buffer1.to_logical_bytes();
+
+        let mut parser1 = Parser::new();
+        parser1.set_language(&language).unwrap();
+        let tree1 = parser1.parse(source1.as_slice(), None).unwrap();
+        let initial_highlights = full_highlights(&language, &query, source1.as_slice());
+
+        let ok_start = initial_src.find("Ok(Action").unwrap();
+        let ok_range = ok_start..ok_start + 2;
+        let initial_ok_capture: Vec<u32> = initial_highlights
+            .query(ok_range.clone())
+            .into_iter()
+            .filter(|(r, _)| *r == ok_range)
+            .map(|(_, c)| c)
+            .collect();
+
+        // Insert one character right after "lsp" inside the string literal.
+        let insert_pos = initial_src.find("lsp:diagnostics_panel").unwrap() + 3;
+        let mut buffer2 = buffer1.clone();
+        buffer2.set_cursor(insert_pos).unwrap();
+        buffer2.insert_str("x").unwrap();
+        let source2 = buffer2.to_logical_bytes();
+
+        let edit = InputEdit {
+            start_byte: insert_pos,
+            old_end_byte: insert_pos,
+            new_end_byte: insert_pos + 1,
+            start_position: point_at(&source1, insert_pos),
+            old_end_position: point_at(&source1, insert_pos),
+            new_end_position: point_at(&source2, insert_pos + 1),
+        };
+        let mut old_tree_edited = tree1.clone();
+        old_tree_edited.edit(&edit);
+
+        let mut parser2 = Parser::new();
+        parser2.set_language(&language).unwrap();
+        let job = SyntaxParseJob::new(
+            buffer2.clone(),
+            parser2,
+            Some(old_tree_edited),
+            Some(query.clone()),
+            "rust".to_string(),
+            1,
+            buffer2.revision,
+        )
+        .with_highlights_context(initial_highlights.clone(), std::slice::from_ref(&edit));
+
+        let result = run_job(job);
+
+        let expected_highlights = full_highlights(&language, &query, source2.as_slice());
+
+        let shifted_ok_range = (ok_range.start + 1)..(ok_range.end + 1);
+        let scoped_ok: Vec<u32> = result
+            .highlights
+            .query(shifted_ok_range.clone())
+            .into_iter()
+            .filter(|(r, _)| *r == shifted_ok_range)
+            .map(|(_, c)| c)
+            .collect();
+        let expected_ok: Vec<u32> = expected_highlights
+            .query(shifted_ok_range.clone())
+            .into_iter()
+            .filter(|(r, _)| *r == shifted_ok_range)
+            .map(|(_, c)| c)
+            .collect();
+
+        // "Ok" matches both @constructor and @function; the render picks
+        // whichever comes first, so order must match a full recompute.
+        assert_eq!(initial_ok_capture.len(), 2, "test fixture must exercise a dual-capture token");
+        assert_eq!(scoped_ok, expected_ok, "capture order for \"Ok\" diverged after a scoped edit elsewhere on the line");
+
+        assert_eq!(
+            sorted_highlights(&result.highlights),
+            sorted_highlights(&expected_highlights),
+            "scoped highlights diverged from a full recompute after editing inside the string"
+        );
+    }
+
+    #[test]
+    fn test_scoped_highlights_real_file_diagnostics_panel_line() {
+        let (language, query) = rust_language_and_query();
+        let initial_src = include_str!("../../action/mod.rs");
+        let buffer1 = make_buffer(initial_src);
+        let source1 = buffer1.to_logical_bytes();
+
+        let mut parser1 = Parser::new();
+        parser1.set_language(&language).unwrap();
+        let tree1 = parser1.parse(source1.as_slice(), None).unwrap();
+        let initial_highlights = full_highlights(&language, &query, source1.as_slice());
+
+        let insert_pos = initial_src.find("lsp:diagnostics_panel").unwrap() + 3;
+        let mut buffer2 = buffer1.clone();
+        buffer2.set_cursor(insert_pos).unwrap();
+        buffer2.insert_str("x").unwrap();
+        let source2 = buffer2.to_logical_bytes();
+
+        let edit = InputEdit {
+            start_byte: insert_pos,
+            old_end_byte: insert_pos,
+            new_end_byte: insert_pos + 1,
+            start_position: point_at(&source1, insert_pos),
+            old_end_position: point_at(&source1, insert_pos),
+            new_end_position: point_at(&source2, insert_pos + 1),
+        };
+        let mut old_tree_edited = tree1.clone();
+        old_tree_edited.edit(&edit);
+
+        let mut parser2 = Parser::new();
+        parser2.set_language(&language).unwrap();
+        let job = SyntaxParseJob::new(
+            buffer2.clone(),
+            parser2,
+            Some(old_tree_edited),
+            Some(query.clone()),
+            "rust".to_string(),
+            1,
+            buffer2.revision,
+        )
+        .with_highlights_context(initial_highlights.clone(), std::slice::from_ref(&edit));
+
+        let result = run_job(job);
+        let expected_highlights = full_highlights(&language, &query, source2.as_slice());
+
+        // "Ok" sits after the inserted character on the same line, so its
+        // post-edit position is shifted by one byte from its pre-edit offset.
+        let ok_start =
+            initial_src.find("Ok(Action::Editor(EditorAction::LspDiagnosticsPanel").unwrap() + 1;
+        let ok_range = ok_start..ok_start + 2;
+        assert_eq!(
+            result.highlights.query(ok_range.clone()),
+            expected_highlights.query(ok_range),
+            "capture order for \"Ok\" diverged from a full recompute on the real file"
+        );
+
+        assert_eq!(
+            sorted_highlights(&result.highlights),
+            sorted_highlights(&expected_highlights),
+            "scoped highlights diverged from a full recompute on the real file"
+        );
     }
 
     fn full_highlights(language: &tree_sitter::Language, query: &Query, source: &[u8]) -> IntervalTree<u32> {
