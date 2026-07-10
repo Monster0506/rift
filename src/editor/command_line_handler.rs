@@ -3,7 +3,6 @@ use crate::command_line::commands::CommandExecutor;
 use crate::error::RiftError;
 use crate::mode::Mode;
 use crate::search::SearchDirection;
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
 /// Debounce window for re-running the search after undo/redo, coalescing a

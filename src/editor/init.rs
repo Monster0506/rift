@@ -9,7 +9,6 @@ use crate::keymap::KeyMap;
 use crate::mode::Mode;
 use crate::split::tree::SplitTree;
 use crate::state::State;
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 use std::sync::Arc;
 

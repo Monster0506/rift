@@ -2,7 +2,6 @@ use super::Editor;
 use crate::error::{ErrorType, RiftError};
 use crate::render;
 use crate::screen_buffer::FrameStats;
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
 /// Per-frame update_state result: active document, whether a full redraw is

@@ -1,6 +1,5 @@
 use super::Editor;
 use crate::error::{ErrorType, RiftError};
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {

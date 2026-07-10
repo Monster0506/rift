@@ -4,7 +4,6 @@ use crate::command::Command;
 use crate::executor::execute_command;
 use crate::mode::Mode;
 use crate::search::SearchDirection;
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {

@@ -4,7 +4,6 @@ use crate::action::{Action, EditorAction, Motion};
 use crate::command::Command;
 use crate::key::Key;
 use crate::mode::Mode;
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
 /// A multi-key input grammar in progress: the next keypress is consumed by

@@ -2,7 +2,6 @@ use super::Editor;
 use crate::action::{Action, EditorAction, Motion};
 use crate::key::Key;
 use crate::mode::Mode;
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 use crate::text_objects::{object_kind_for_key, Direction, Modifier, TextObjectSpec};
 

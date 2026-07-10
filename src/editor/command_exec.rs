@@ -1,7 +1,6 @@
 use super::Editor;
 use crate::executor::execute_command;
 use crate::mode::Mode;
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {

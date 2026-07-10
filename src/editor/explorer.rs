@@ -1,6 +1,5 @@
 use super::Editor;
 use super::{PanelKind, PanelLayout};
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
 /// Tracks the path and job id of the explorer preview currently in flight,

@@ -3,7 +3,6 @@ use crate::action::{Action, EditorAction};
 use crate::document::DocumentId;
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::search::SearchDirection;
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
 /// Rebase a relative target onto `base_dir` only when it does not already resolve

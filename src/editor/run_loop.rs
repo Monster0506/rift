@@ -4,7 +4,6 @@ use crate::command::Command;
 use crate::error::{ErrorType, RiftError};
 use crate::key_handler::KeyAction;
 use crate::mode::Mode;
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
 /// Milliseconds an ambiguous non-operator key sequence waits for a follow-up

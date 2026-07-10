@@ -1,5 +1,4 @@
 use super::Editor;
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {

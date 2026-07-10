@@ -3,7 +3,6 @@ use crate::buffer::api::BufferView;
 use crate::document::DocumentId;
 use crate::error::RiftError;
 use crate::mode::Mode;
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 use std::sync::Arc;
 
