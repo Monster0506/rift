@@ -4267,6 +4267,43 @@ fn test_explorer_preview_discards_stale_result() {
 }
 
 #[test]
+fn test_explorer_preview_updates_on_real_j_keypress_navigation() {
+    // Interface-mode buffers (the directory pane) resolve Up/Down via the
+    // snap-to-actionable-line fast path, not ordinary Move handling.
+    use crate::replay::ReplayBackend;
+
+    let dir = std::env::temp_dir().join(format!("rift_replay_preview_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("z_file.rs"), "fn main() {}\n").unwrap();
+
+    let backend = ReplayBackend::new(Vec::<u8>::new(), 30, 100);
+    let mut editor = Editor::with_file(backend, None).unwrap();
+    editor.open_explorer(dir.clone());
+    for _ in 0..100 {
+        editor.tick().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    editor.term.push_keys([crate::key::Key::Char('j')]);
+    editor.tick().unwrap();
+    for _ in 0..100 {
+        editor.tick().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    let preview_doc_id = editor.panel_layout.as_ref().unwrap().preview_doc_id;
+    let preview_doc = editor.document_manager.get_document(preview_doc_id).unwrap();
+    let text = String::from_utf8_lossy(&preview_doc.buffer.to_logical_bytes()).to_string();
+
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        text.contains("fn main"),
+        "expected a real 'j' keypress to update the preview pane, got: {text:?}"
+    );
+}
+
+#[test]
 fn test_explorer_preview_populates_for_real_file_and_directory_targets() {
     let dir = std::env::temp_dir().join(format!("rift_preview_e2e_{}", std::process::id()));
     let sub = dir.join("a_subdir");
