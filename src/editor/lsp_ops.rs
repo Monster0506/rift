@@ -631,6 +631,19 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.update_and_render();
     }
 
+    /// Send LSP did_close for `doc_id`, if it has a tracked file path. Call
+    /// before removing the document, since the path won't be readable after.
+    pub(super) fn lsp_notify_close(&mut self, doc_id: crate::document::DocumentId) {
+        if let Some(path) = self
+            .document_manager
+            .get_document(doc_id)
+            .and_then(|doc| doc.path())
+            .map(|p| p.to_path_buf())
+        {
+            self.lsp_manager.did_close(&path);
+        }
+    }
+
     /// Send LSP did_open for the currently active document (if applicable).
     pub(super) fn lsp_notify_open(&mut self) {
         // Collect path, optional syntax language, and content first to avoid

@@ -4391,6 +4391,50 @@ fn test_explorer_preview_first_move_from_blank_writes_to_terminal() {
 }
 
 #[test]
+fn closing_a_document_sends_lsp_did_close() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("closed_doc.rs");
+    std::fs::write(&path, "fn main() {}\n").unwrap();
+    let other_path = dir.path().join("other.rs");
+    std::fs::write(&other_path, "fn other() {}\n").unwrap();
+
+    let mut editor = create_editor();
+    editor.lsp_manager.register_server(
+        "rust".to_string(),
+        crate::lsp::config::LspServerConfig {
+            command: "ping".to_string(),
+            args: vec!["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
+            extensions: vec![],
+            root_markers: vec![],
+            capabilities: vec![],
+            initialization_options: None,
+            keep_alive: false,
+        },
+    );
+
+    // A second buffer keeps do_quit on the "close this buffer" path instead
+    // of the "last buffer: quit the editor" one.
+    editor.open_file(Some(other_path.display().to_string()), false).unwrap();
+    drain_jobs(&mut editor);
+    editor.open_file(Some(path.display().to_string()), false).unwrap();
+    drain_jobs(&mut editor);
+
+    assert!(
+        editor.lsp_manager.is_tracking(&path),
+        "opening the file should start LSP tracking"
+    );
+
+    editor.do_quit(false);
+
+    assert!(
+        !editor.lsp_manager.is_tracking(&path),
+        "closing the buffer must send textDocument/didClose"
+    );
+
+    editor.lsp_manager.shutdown_all();
+}
+
+#[test]
 fn dd_deletes_the_current_line_via_the_operator_doubling_path_not_a_keymap_sequence() {
     use crate::key::Key;
     use crate::keymap::{KeyContext, MatchResult};

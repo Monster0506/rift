@@ -23,6 +23,7 @@ fn resolve_link_path_in(path_str: String, base_dir: Option<&std::path::Path>) ->
 
 impl<T: TerminalBackend> Editor<T> {
     pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
+        self.lsp_notify_close(id);
         self.document_manager.remove_document(id)?;
         if let Some(doc_id) = self.document_manager.active_document_id() {
             self.split_tree.focused_window_mut().document_id = doc_id;
