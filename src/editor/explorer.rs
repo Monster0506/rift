@@ -77,8 +77,8 @@ impl<T: TerminalBackend> Editor<T> {
 
         let (doc_id, line_text, dir_path, entry_info) = {
             let doc = match self.document_manager.active_document() {
-                Some(d) if d.is_directory() => d,
-                _ => return,
+                Some(d) => d,
+                None => return,
             };
             let diff = doc.parse_directory_diff();
             if !diff.renames.is_empty() || !diff.deletes.is_empty() || !diff.creates.is_empty() {
@@ -153,8 +153,8 @@ impl<T: TerminalBackend> Editor<T> {
 
         let (doc_id, parent) = {
             let doc = match self.document_manager.active_document() {
-                Some(d) if d.is_directory() => d,
-                _ => return,
+                Some(d) => d,
+                None => return,
             };
             let parent = match &doc.kind {
                 BufferKind::Directory { path, .. } => path.parent().map(|p| p.to_path_buf()),
@@ -489,8 +489,8 @@ impl<T: TerminalBackend> Editor<T> {
 
         let (entries_snapshot, order) = {
             let doc = match self.document_manager.active_document() {
-                Some(d) if d.is_clipboard() => d,
-                _ => return,
+                Some(d) => d,
+                None => return,
             };
             let entries = match &doc.kind {
                 BufferKind::Clipboard { entries } => entries.clone(),
@@ -853,8 +853,8 @@ impl<T: TerminalBackend> Editor<T> {
         let (linked_doc_id, seq) = {
             let doc_id = self.active_document_id();
             let doc = match self.document_manager.get_document(doc_id) {
-                Some(d) if d.is_undotree() => d,
-                _ => return,
+                Some(d) => d,
+                None => return,
             };
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
@@ -893,8 +893,8 @@ impl<T: TerminalBackend> Editor<T> {
         let doc_id = self.active_document_id();
         let target_line = {
             let doc = match self.document_manager.get_document(doc_id) {
-                Some(d) if d.is_undotree() => d,
-                _ => return,
+                Some(d) => d,
+                None => return,
             };
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor) as i64;
@@ -935,8 +935,8 @@ impl<T: TerminalBackend> Editor<T> {
         } else {
             // Standalone directory buffer
             match self.document_manager.active_document() {
-                Some(d) if d.is_directory() => d.id,
-                _ => return,
+                Some(d) => d.id,
+                None => return,
             }
         };
 
@@ -990,8 +990,8 @@ impl<T: TerminalBackend> Editor<T> {
             }
         } else {
             match self.document_manager.active_document() {
-                Some(d) if d.is_directory() => d.id,
-                _ => return,
+                Some(d) => d.id,
+                None => return,
             }
         };
 
@@ -1047,8 +1047,8 @@ impl<T: TerminalBackend> Editor<T> {
 
         let (dir_doc_id, dir_path, dir_show_hidden, diff) = {
             let doc = match self.document_manager.active_document() {
-                Some(d) if d.is_directory() => d,
-                _ => return,
+                Some(d) => d,
+                None => return,
             };
             let (path, show_hidden) = match &doc.kind {
                 BufferKind::Directory {
