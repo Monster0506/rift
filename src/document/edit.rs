@@ -90,7 +90,6 @@ impl Document {
         let (start_position, history_pos) = self.get_edit_points(start_byte);
 
         self.buffer.insert_char(ch)?;
-        self.mark_dirty();
 
         let added_bytes = ch.len_utf8();
         let new_end_byte = start_byte + added_bytes;
@@ -160,7 +159,6 @@ impl Document {
         let (start_position, history_pos) = self.get_edit_points(start_byte);
 
         self.buffer.insert_str(s)?;
-        self.mark_dirty();
 
         let added_bytes = s.len();
         let new_end_byte = start_byte + added_bytes;
@@ -236,7 +234,6 @@ impl Document {
         let (start_position, history_pos) = self.get_edit_points(start_byte);
 
         self.buffer.insert_chars(chars)?;
-        self.mark_dirty();
 
         let added_bytes: usize = chars.iter().map(|c| c.len_utf8()).sum();
         let new_end_byte = start_byte + added_bytes;
@@ -312,8 +309,6 @@ impl Document {
         let (old_end_position, history_end) = self.get_edit_points(old_end_byte);
 
         if self.buffer.delete_backward() {
-            self.mark_dirty();
-
             self.record_edit(
                 EditOperation::Delete {
                     range: Range::new(history_start, history_end),
@@ -373,8 +368,6 @@ impl Document {
         let (old_end_position, history_end) = self.get_edit_points(old_end_byte);
 
         if self.buffer.delete_forward() {
-            self.mark_dirty();
-
             self.record_edit(
                 EditOperation::Delete {
                     range: Range::new(history_start, history_end),
@@ -444,7 +437,6 @@ impl Document {
         let (old_end_position, history_end) = self.get_edit_points(old_end_byte);
 
         self.buffer.replace_range(pos, count, new_chars);
-        self.mark_dirty();
 
         self.record_edit(
             EditOperation::Replace {
@@ -528,8 +520,6 @@ impl Document {
         self.buffer.delete_range(start, count);
         let new_cursor = start.min(self.buffer.len());
         let _ = self.buffer.set_cursor(new_cursor);
-
-        self.mark_dirty();
 
         self.record_edit(
             EditOperation::Delete {

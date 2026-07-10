@@ -3,7 +3,6 @@ use crate::action::Motion;
 use crate::command::Command;
 use crate::dot_repeat::DotRegister;
 use crate::mode::Mode;
-#[allow(unused_imports)]
 use crate::term::TerminalBackend;
 
 /// Rebuild `cmd` with its embedded count replaced by `count`, for command
@@ -26,10 +25,6 @@ fn with_count_override(cmd: Command, count: usize) -> Option<Command> {
 }
 
 impl<T: TerminalBackend> Editor<T> {
-    pub fn term_mut(&mut self) -> &mut T {
-        &mut self.term
-    }
-
     pub(super) fn execute_operator(
         &mut self,
         op: crate::action::OperatorType,

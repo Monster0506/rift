@@ -162,10 +162,6 @@ impl<T: Clone> IntervalTree<T> {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
-    }
-
     /// Ranges at/before the edit are kept, at/after its old end shift by the
     /// delta, overlapping it are dropped (caller must also filter its fresh requery for touching cases).
     pub fn shift_for_edit(

@@ -2,7 +2,7 @@
 
 use super::Document;
 use crate::buffer::TextBuffer;
-use crate::history::{EditOperation, EditTransaction, Position, ReplayPath};
+use crate::history::{EditOperation, EditTransaction, Position};
 use tree_sitter::InputEdit;
 
 impl Document {
@@ -63,7 +63,6 @@ impl Document {
         }
 
         self.history.undo();
-        self.mark_dirty();
 
         // Restore the pre-edit annotation positions; record how to re-apply
         // (redo) the edit. The buffer was reverted above, so these now align.
@@ -105,8 +104,6 @@ impl Document {
         if let Some(entry) = self.annotation_redo_stack.pop() {
             self.restore_annotations_for_redo(entry);
         }
-
-        self.mark_dirty();
 
         self.selection_set.clear();
         true
@@ -302,19 +299,6 @@ impl Document {
         }
     }
 
-    fn apply_replay_path_to_buffer(buffer: &mut TextBuffer, path: &ReplayPath) {
-        for tx in &path.undo_ops {
-            for op in tx.inverse() {
-                Self::apply_operation_to_buffer(buffer, &op);
-            }
-        }
-        for tx in &path.redo_ops {
-            for op in &tx.ops {
-                Self::apply_operation_to_buffer(buffer, op);
-            }
-        }
-    }
-
     /// Check if undo is available
     pub fn can_undo(&self) -> bool {
         self.history.can_undo()
@@ -355,7 +339,6 @@ impl Document {
                     Self::apply_operation_to_buffer(&mut self.buffer, op);
                 }
             }
-            self.mark_dirty();
             self.selection_set.clear();
             return Ok(());
         }
@@ -378,19 +361,8 @@ impl Document {
                 self.restore_annotations_for_redo(entry);
             }
         }
-        self.mark_dirty();
         self.selection_set.clear();
         Ok(())
-    }
-
-    /// Get a preview of the document at a specific edit sequence
-    pub fn preview_at_seq(&self, seq: u64) -> Result<String, crate::history::UndoError> {
-        let path = self
-            .history
-            .compute_replay_path(self.history.current_seq(), seq)?;
-        let mut preview_buffer = self.buffer.clone();
-        Self::apply_replay_path_to_buffer(&mut preview_buffer, &path);
-        Ok(preview_buffer.to_string())
     }
 
     /// Get the line number where an edit occurred for a specific sequence

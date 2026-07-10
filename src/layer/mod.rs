@@ -33,11 +33,6 @@ impl Rect {
             end_col,
         }
     }
-    /// Check if the rect contains a point
-    pub fn contains_point(&self, row: usize, col: usize) -> bool {
-        row >= self.start_row && row <= self.end_row && col >= self.start_col && col <= self.end_col
-    }
-
     /// Check if two rects intersect
     pub fn intersects(&self, other: &Rect) -> bool {
         self.start_row <= other.end_row
@@ -435,28 +430,6 @@ impl Layer {
         }
     }
 
-    /// Write UTF-8 content at the given position
-    /// Handles multi-byte characters by putting them in a single cell
-    pub fn write_utf8(&mut self, row: usize, col: usize, content: &[u8]) -> bool {
-        // Parse content to string then Character
-        let s = String::from_utf8_lossy(content);
-        if let Some(c) = s.chars().next() {
-            self.set_cell(row, col, Cell::from_char(c))
-        } else {
-            false
-        }
-    }
-
-    /// Write a character at the given position
-    pub fn write_char(&mut self, row: usize, col: usize, ch: char) -> bool {
-        self.set_cell(row, col, Cell::from_char(ch))
-    }
-
-    /// Write a Character at the given position
-    pub fn write_character(&mut self, row: usize, col: usize, ch: Character) -> bool {
-        self.set_cell(row, col, Cell::new(ch))
-    }
-
     /// Fill a row with a character
     pub fn fill_row(&mut self, row: usize, ch: char, fg: Option<Color>, bg: Option<Color>) {
         if row < self.rows {
@@ -559,11 +532,6 @@ impl LayerCompositor {
             }
         }
         removed
-    }
-
-    /// Explicitly mark a layer as dirty (clears it for repopulation)
-    pub fn mark_dirty(&mut self, priority: LayerPriority) {
-        self.clear_layer(priority);
     }
 
     /// Clear all layers
@@ -706,11 +674,6 @@ impl LayerCompositor {
     /// Get the number of columns
     pub fn cols(&self) -> usize {
         self.cols
-    }
-
-    /// Check if any layer needs recompositing
-    pub fn needs_recomposite(&self) -> bool {
-        self.has_dirty()
     }
 }
 

@@ -44,9 +44,6 @@ impl Document {
         Ok(())
     }
 
-    /// No-op; dirty state is tracked via the undo tree.
-    pub fn mark_dirty(&mut self) {}
-
     /// Check if document has unsaved changes
     #[must_use]
     pub fn is_dirty(&self) -> bool {

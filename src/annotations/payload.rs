@@ -49,11 +49,6 @@ pub mod lsp {
     pub fn message(payload: &Value) -> Option<&str> {
         payload.get("message").and_then(Value::as_str)
     }
-
-    /// The rendered tooltip text (`payload.tooltip`), as built by the LSP layer.
-    pub fn tooltip(payload: &Value) -> Option<&str> {
-        super::tooltip(payload)
-    }
 }
 
 #[cfg(test)]

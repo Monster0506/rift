@@ -544,7 +544,6 @@ impl Document {
             self.buffer = new_buffer;
             self.terminal_cursor = Some((cursor_line, cursor_col));
             self.terminal_cell_colors = cell_colors;
-            self.mark_dirty();
         }
     }
 }
