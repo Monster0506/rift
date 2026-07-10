@@ -67,14 +67,10 @@ impl<T: TerminalBackend> Editor<T> {
         let entries: std::collections::VecDeque<Vec<crate::character::Character>> =
             self.clipboard_ring.entries().iter().cloned().collect();
         if let Some(doc) = self.document_manager.get_document_mut(layout.dir_doc_id) {
-            // Always true here (the PanelKind::Clipboard check above already
-            // guarantees it); kept as a cheap belt-and-suspenders check.
-            if doc.is_clipboard() {
-                let cursor = doc.buffer.cursor();
-                doc.populate_clipboard_buffer(&entries);
-                let len = doc.buffer.len();
-                let _ = doc.buffer.set_cursor(cursor.min(len.saturating_sub(1)));
-            }
+            let cursor = doc.buffer.cursor();
+            doc.populate_clipboard_buffer(&entries);
+            let len = doc.buffer.len();
+            let _ = doc.buffer.set_cursor(cursor.min(len.saturating_sub(1)));
         }
         if self.active_document_id() == layout.dir_doc_id {
             let _ = self.update_and_render();
@@ -226,17 +222,13 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         // Repopulate the index buffer so it reflects the edit
-        if let Some(index_doc) = self.document_manager.get_document_mut(
-            self.panel_layout
-                .as_ref()
-                .map(|l| l.dir_doc_id)
-                .unwrap_or(u64::MAX),
-        ) {
-            // Expected to always be true here (this path only runs while a
-            // clipboard-entry buffer is active); kept as a defensive check.
-            if index_doc.is_clipboard() {
-                index_doc.populate_clipboard_buffer(self.clipboard_ring.entries());
-            }
+        if let Some(index_doc) = self
+            .panel_layout
+            .as_ref()
+            .map(|l| l.dir_doc_id)
+            .and_then(|id| self.document_manager.get_document_mut(id))
+        {
+            index_doc.populate_clipboard_buffer(self.clipboard_ring.entries());
         }
 
         self.state.notify(
