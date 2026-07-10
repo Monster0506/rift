@@ -4267,6 +4267,93 @@ fn test_explorer_preview_discards_stale_result() {
 }
 
 #[test]
+fn test_explorer_preview_populates_for_real_file_and_directory_targets() {
+    let dir = std::env::temp_dir().join(format!("rift_preview_e2e_{}", std::process::id()));
+    let sub = dir.join("a_subdir");
+    let _ = std::fs::create_dir_all(&sub);
+    std::fs::write(dir.join("b_file.rs"), "fn main() {}\n").unwrap();
+
+    let mut editor = create_editor();
+    editor.open_explorer(dir.clone());
+    drain_jobs(&mut editor);
+
+    let layout = editor.panel_layout.as_ref().unwrap().clone();
+    let dir_doc_id = layout.dir_doc_id;
+    let preview_doc_id = layout.preview_doc_id;
+
+    // Line 0 is "..", entries are sorted directories-first: line 1 is the subdir.
+    move_explorer_cursor_to_line(&mut editor, dir_doc_id, 1);
+    editor.update_explorer_preview();
+    drain_jobs(&mut editor);
+
+    let preview_doc = editor.document_manager.get_document(preview_doc_id).unwrap();
+    assert!(
+        matches!(preview_doc.kind, crate::document::BufferKind::Directory { .. }),
+        "expected a directory preview for the subdir entry"
+    );
+
+    // Line 2 is the file. Clear the write log so we can inspect exactly what
+    // the incremental (non-forced) render produces, not a forced full redraw.
+    editor.term.clear();
+    move_explorer_cursor_to_line(&mut editor, dir_doc_id, 2);
+    editor.update_explorer_preview();
+    drain_jobs(&mut editor);
+
+    let preview_doc = editor.document_manager.get_document(preview_doc_id).unwrap();
+    let text = String::from_utf8_lossy(&preview_doc.buffer.to_logical_bytes()).to_string();
+    assert!(
+        text.contains("fn main"),
+        "expected the file preview to show its contents, got: {text:?}"
+    );
+
+    let screen = render_ascii(&mut editor);
+    assert!(
+        screen.contains("fn main"),
+        "expected the preview pane to actually render its contents on screen, got:\n{screen}"
+    );
+
+    // The compositor's logical buffer is correct (checked above); now check
+    // what the incremental diff-based render actually wrote to the terminal.
+    let written = editor.term.get_written_string();
+    assert!(
+        written.contains("fn") && written.contains("main"),
+        "expected the incremental terminal write to contain the preview text, got:\n{written}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_explorer_preview_first_move_from_blank_writes_to_terminal() {
+    // The exact real-session sequence: open explorer (preview pane starts
+    // blank, cursor on ".."), then a single move to the first real entry.
+    let dir = std::env::temp_dir().join(format!("rift_preview_firstmove_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    std::fs::write(dir.join("z_file.rs"), "fn main() {}\n").unwrap();
+
+    let mut editor = create_editor();
+    editor.open_explorer(dir.clone());
+    drain_jobs(&mut editor);
+
+    let layout = editor.panel_layout.as_ref().unwrap().clone();
+    let dir_doc_id = layout.dir_doc_id;
+
+    editor.term.clear();
+    move_explorer_cursor_to_line(&mut editor, dir_doc_id, 1);
+    editor.update_explorer_preview();
+    drain_jobs(&mut editor);
+
+    let written = editor.term.get_written_string();
+    assert!(
+        written.contains("fn") && written.contains("main"),
+        "expected the first incremental preview render to write its content \
+         to the terminal, got:\n{written}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn dd_deletes_the_current_line_via_the_operator_doubling_path_not_a_keymap_sequence() {
     use crate::key::Key;
     use crate::keymap::{KeyContext, MatchResult};
