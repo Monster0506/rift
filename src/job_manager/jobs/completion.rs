@@ -130,8 +130,7 @@ impl Job for CompletionJob {
             input: self.input.clone(),
             token_start: parsed.token_start,
         };
-        let _ = sender.send(JobMessage::Custom(id, Box::new(payload)));
-        let _ = sender.send(JobMessage::Finished(id, true));
+        crate::job_manager::send_job_result(&sender, id, Box::new(payload));
     }
 
     fn is_silent(&self) -> bool {

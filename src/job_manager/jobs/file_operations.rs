@@ -119,8 +119,7 @@ impl Job for FileSaveJob {
                         saved_seq: self.saved_seq,
                         path: self.path.clone(),
                     };
-                    let _ = sender.send(JobMessage::Custom(id, Box::new(result)));
-                    let _ = sender.send(JobMessage::Finished(id, true));
+                    crate::job_manager::send_job_result(&sender, id, Box::new(result));
                 } else {
                     // Clean up temp file
                     let _ = fs::remove_file(&temp_path);
@@ -211,8 +210,7 @@ impl Job for FileLoadJob {
         match do_load() {
             Ok(result) => {
                 if !signal.is_cancelled() {
-                    let _ = sender.send(JobMessage::Custom(id, Box::new(result)));
-                    let _ = sender.send(JobMessage::Finished(id, true));
+                    crate::job_manager::send_job_result(&sender, id, Box::new(result));
                 } else {
                     let _ = sender.send(JobMessage::Cancelled(id));
                 }

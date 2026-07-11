@@ -56,9 +56,7 @@ impl Job for CacheWarmingJob {
         // Construct the result
         let result = ByteLineMap::new(line_starts, line_char_starts, self.revision);
 
-        // Send back
-        let _ = sender.send(JobMessage::Custom(id, Box::new(result)));
-        let _ = sender.send(JobMessage::Finished(id, true));
+        crate::job_manager::send_job_result(&sender, id, Box::new(result));
     }
 
     fn is_silent(&self) -> bool {

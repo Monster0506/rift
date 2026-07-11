@@ -66,8 +66,7 @@ impl Job for UndoTreeRenderJob {
             highlights,
         });
 
-        let _ = sender.send(JobMessage::Custom(id, result));
-        let _ = sender.send(JobMessage::Finished(id, true));
+        crate::job_manager::send_job_result(&sender, id, result);
     }
 
     fn is_silent(&self) -> bool {

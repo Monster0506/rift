@@ -90,6 +90,13 @@ pub enum JobMessage {
     TerminalExit(crate::document::DocumentId),
 }
 
+/// Sends a job's successful result, then its Finished message. The common
+/// two-message tail of a job's `run()` once it has produced a payload.
+pub fn send_job_result(sender: &Sender<JobMessage>, id: usize, payload: Box<dyn JobPayload>) {
+    let _ = sender.send(JobMessage::Custom(id, payload));
+    let _ = sender.send(JobMessage::Finished(id, true));
+}
+
 /// Signal used to check if a job has been cancelled.
 #[derive(Debug, Clone)]
 pub struct CancellationSignal {

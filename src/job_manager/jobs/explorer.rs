@@ -92,8 +92,7 @@ impl Job for DirectoryListJob {
                     entries: file_entries,
                 });
 
-                let _ = sender.send(JobMessage::Custom(id, result));
-                let _ = sender.send(JobMessage::Finished(id, true)); // Silent finish
+                crate::job_manager::send_job_result(&sender, id, result);
             }
             Err(e) => {
                 // Empty listing clears "Loading..." before the error notification

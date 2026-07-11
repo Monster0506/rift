@@ -110,8 +110,7 @@ impl Job for ExplorerPreviewJob {
                 dir_entries: Some(entries),
                 file_text: None,
             });
-            let _ = sender.send(JobMessage::Custom(id, result));
-            let _ = sender.send(JobMessage::Finished(id, true));
+            crate::job_manager::send_job_result(&sender, id, result);
         } else {
             // File preview
             let text = match fs::File::open(&self.path) {
@@ -141,8 +140,7 @@ impl Job for ExplorerPreviewJob {
                 dir_entries: None,
                 file_text: Some(text),
             });
-            let _ = sender.send(JobMessage::Custom(id, result));
-            let _ = sender.send(JobMessage::Finished(id, true));
+            crate::job_manager::send_job_result(&sender, id, result);
         }
     }
 

@@ -221,9 +221,7 @@ impl Job for SyntaxParseJob {
             revision,
         };
 
-        let _ = sender.send(JobMessage::Custom(id, Box::new(result)));
-
-        let _ = sender.send(JobMessage::Finished(id, true));
+        crate::job_manager::send_job_result(&sender, id, Box::new(result));
     }
 
     fn is_silent(&self) -> bool {
