@@ -74,10 +74,10 @@ fn push_normalized(
 }
 
 impl Document {
-    /// Create a new empty document
-    pub fn new(id: super::DocumentId) -> Result<Self, RiftError> {
-        let buffer = TextBuffer::new(4096)?;
-        Ok(Document {
+    /// A document with every field at its default value; only `id` and
+    /// `buffer` are meaningful. Callers override fields via `..Self::skeleton(..)`.
+    fn skeleton(id: super::DocumentId, buffer: TextBuffer) -> Document {
+        Document {
             id,
             buffer,
             options: DocumentOptions::default(),
@@ -103,7 +103,13 @@ impl Document {
             annotation_redo_stack: Vec::new(),
             document_version: 0,
             pending_lsp_edits: Vec::new(),
-        })
+        }
+    }
+
+    /// Create a new empty document
+    pub fn new(id: super::DocumentId) -> Result<Self, RiftError> {
+        let buffer = TextBuffer::new(4096)?;
+        Ok(Self::skeleton(id, buffer))
     }
 
     /// Load document from file
@@ -124,34 +130,12 @@ impl Document {
         buffer.move_to_start();
 
         Ok(Document {
-            id,
-            buffer,
             options: DocumentOptions {
                 line_ending,
                 ..DocumentOptions::default()
             },
             file_path: Some(Self::normalize_path(path)),
-            is_read_only: false,
-            interface_mode: false,
-            syntax: None,
-            history: UndoTree::new(),
-            current_transaction: None,
-            transaction_depth: 0,
-            view_state: ViewState::default(),
-            terminal: None,
-            terminal_cursor: None,
-            kind: BufferKind::File,
-            custom_highlights: vec![],
-            plugin_highlights: vec![],
-            terminal_cell_colors: vec![],
-            highlight_slots: std::collections::HashMap::new(),
-            annotations: AnnotationStore::new(),
-            selection_set: crate::selection::SelectionSet::default(),
-            pending_annotation_snapshot: None,
-            annotation_undo_stack: Vec::new(),
-            annotation_redo_stack: Vec::new(),
-            document_version: 0,
-            pending_lsp_edits: Vec::new(),
+            ..Self::skeleton(id, buffer)
         })
     }
 
@@ -168,34 +152,13 @@ impl Document {
 
         Ok((
             Document {
-                id,
-                buffer,
                 options: DocumentOptions {
                     show_line_numbers: false,
                     ..DocumentOptions::default()
                 },
-                file_path: None,
-                is_read_only: false,
-                interface_mode: false,
-                syntax: None,
-                history: UndoTree::new(),
-                current_transaction: None,
-                transaction_depth: 0,
-                view_state: ViewState::default(),
                 terminal: Some(terminal),
-                terminal_cursor: None,
                 kind: BufferKind::Terminal,
-                custom_highlights: vec![],
-                plugin_highlights: vec![],
-                terminal_cell_colors: vec![],
-                highlight_slots: std::collections::HashMap::new(),
-                annotations: AnnotationStore::new(),
-                selection_set: crate::selection::SelectionSet::default(),
-                pending_annotation_snapshot: None,
-                annotation_undo_stack: Vec::new(),
-                annotation_redo_stack: Vec::new(),
-                document_version: 0,
-            pending_lsp_edits: Vec::new(),
+                ..Self::skeleton(id, buffer)
             },
             rx,
         ))
@@ -205,40 +168,19 @@ impl Document {
     pub fn new_directory(id: super::DocumentId, path: PathBuf) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         Ok(Document {
-            id,
-            buffer,
             options: DocumentOptions {
                 show_line_numbers: false,
                 ..DocumentOptions::default()
             },
-            file_path: None,
             // The explorer is the canonical interface-mode buffer: its rows are
             // fs.entry annotations activated through the dispatch registry.
-            is_read_only: false,
             interface_mode: true,
-            syntax: None,
-            history: UndoTree::new(),
-            current_transaction: None,
-            transaction_depth: 0,
-            view_state: ViewState::default(),
-            terminal: None,
-            terminal_cursor: None,
             kind: BufferKind::Directory {
                 path,
                 entries: vec![],
                 show_hidden: false,
             },
-            custom_highlights: vec![],
-            plugin_highlights: vec![],
-            terminal_cell_colors: vec![],
-            highlight_slots: std::collections::HashMap::new(),
-            annotations: AnnotationStore::new(),
-            selection_set: crate::selection::SelectionSet::default(),
-            pending_annotation_snapshot: None,
-            annotation_undo_stack: Vec::new(),
-            annotation_redo_stack: Vec::new(),
-            document_version: 0,
-            pending_lsp_edits: Vec::new(),
+            ..Self::skeleton(id, buffer)
         })
     }
 
@@ -249,37 +191,17 @@ impl Document {
     ) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         Ok(Document {
-            id,
-            buffer,
             options: DocumentOptions {
                 show_line_numbers: false,
                 ..DocumentOptions::default()
             },
-            file_path: None,
             is_read_only: true,
             interface_mode: true,
-            syntax: None,
-            history: UndoTree::new(),
-            current_transaction: None,
-            transaction_depth: 0,
-            view_state: ViewState::default(),
-            terminal: None,
-            terminal_cursor: None,
             kind: BufferKind::UndoTree {
                 linked_doc_id,
                 sequences: vec![],
             },
-            custom_highlights: vec![],
-            plugin_highlights: vec![],
-            terminal_cell_colors: vec![],
-            highlight_slots: std::collections::HashMap::new(),
-            annotations: AnnotationStore::new(),
-            selection_set: crate::selection::SelectionSet::default(),
-            pending_annotation_snapshot: None,
-            annotation_undo_stack: Vec::new(),
-            annotation_redo_stack: Vec::new(),
-            document_version: 0,
-            pending_lsp_edits: Vec::new(),
+            ..Self::skeleton(id, buffer)
         })
     }
 
@@ -289,8 +211,6 @@ impl Document {
         linked: &Document,
     ) -> Result<Self, RiftError> {
         Ok(Document {
-            id,
-            buffer: linked.buffer.clone(),
             options: DocumentOptions {
                 show_line_numbers: false,
                 ..linked.options.clone()
@@ -299,26 +219,8 @@ impl Document {
             // A read-only mirror of the linked file's content, not an actionable
             // interface buffer, so navigation stays line-by-line.
             is_read_only: true,
-            interface_mode: false,
-            syntax: None,
             history: linked.history.clone(),
-            current_transaction: None,
-            transaction_depth: 0,
-            view_state: ViewState::default(),
-            terminal: None,
-            terminal_cursor: None,
-            kind: BufferKind::File,
-            custom_highlights: vec![],
-            plugin_highlights: vec![],
-            terminal_cell_colors: vec![],
-            highlight_slots: std::collections::HashMap::new(),
-            annotations: AnnotationStore::new(),
-            selection_set: crate::selection::SelectionSet::default(),
-            pending_annotation_snapshot: None,
-            annotation_undo_stack: Vec::new(),
-            annotation_redo_stack: Vec::new(),
-            document_version: 0,
-            pending_lsp_edits: Vec::new(),
+            ..Self::skeleton(id, linked.buffer.clone())
         })
     }
 
@@ -326,34 +228,12 @@ impl Document {
     pub fn new_messages(id: super::DocumentId, show_all: bool) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         Ok(Document {
-            id,
-            buffer,
             options: DocumentOptions {
                 show_line_numbers: false,
                 ..DocumentOptions::default()
             },
-            file_path: None,
-            is_read_only: false,
-            interface_mode: false,
-            syntax: None,
-            history: UndoTree::new(),
-            current_transaction: None,
-            transaction_depth: 0,
-            view_state: ViewState::default(),
-            terminal: None,
-            terminal_cursor: None,
             kind: BufferKind::Messages { show_all },
-            custom_highlights: vec![],
-            plugin_highlights: vec![],
-            terminal_cell_colors: vec![],
-            highlight_slots: std::collections::HashMap::new(),
-            annotations: AnnotationStore::new(),
-            selection_set: crate::selection::SelectionSet::default(),
-            pending_annotation_snapshot: None,
-            annotation_undo_stack: Vec::new(),
-            annotation_redo_stack: Vec::new(),
-            document_version: 0,
-            pending_lsp_edits: Vec::new(),
+            ..Self::skeleton(id, buffer)
         })
     }
 
@@ -369,65 +249,20 @@ impl Document {
         let _ = buffer.insert_str(&content);
         buffer.move_to_start();
         Ok(Document {
-            id,
-            buffer,
-            options: DocumentOptions::default(),
-            file_path: None,
-            is_read_only: false,
-            interface_mode: false,
-            syntax: None,
-            history: UndoTree::new(),
-            current_transaction: None,
-            transaction_depth: 0,
-            view_state: ViewState::default(),
-            terminal: None,
-            terminal_cursor: None,
             kind: BufferKind::Scratch { title },
-            custom_highlights: vec![],
-            plugin_highlights: vec![],
-            terminal_cell_colors: vec![],
-            highlight_slots: std::collections::HashMap::new(),
-            annotations: AnnotationStore::new(),
-            selection_set: crate::selection::SelectionSet::default(),
-            pending_annotation_snapshot: None,
-            annotation_undo_stack: Vec::new(),
-            annotation_redo_stack: Vec::new(),
-            document_version: 0,
-            pending_lsp_edits: Vec::new(),
+            ..Self::skeleton(id, buffer)
         })
     }
 
     pub fn new_clipboard(id: super::DocumentId) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         Ok(Document {
-            id,
-            buffer,
             options: DocumentOptions {
                 show_line_numbers: false,
                 ..DocumentOptions::default()
             },
-            file_path: None,
-            is_read_only: false,
-            interface_mode: false,
-            syntax: None,
-            history: UndoTree::new(),
-            current_transaction: None,
-            transaction_depth: 0,
-            view_state: ViewState::default(),
-            terminal: None,
-            terminal_cursor: None,
             kind: BufferKind::Clipboard { entries: vec![] },
-            custom_highlights: vec![],
-            plugin_highlights: vec![],
-            terminal_cell_colors: vec![],
-            highlight_slots: std::collections::HashMap::new(),
-            annotations: AnnotationStore::new(),
-            selection_set: crate::selection::SelectionSet::default(),
-            pending_annotation_snapshot: None,
-            annotation_undo_stack: Vec::new(),
-            annotation_redo_stack: Vec::new(),
-            document_version: 0,
-            pending_lsp_edits: Vec::new(),
+            ..Self::skeleton(id, buffer)
         })
     }
 }
