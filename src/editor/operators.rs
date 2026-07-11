@@ -68,11 +68,7 @@ impl<T: TerminalBackend> Editor<T> {
             .map(|range| crate::clipboard::capture_text(&doc.buffer, &range))
         });
         let has_range = captured.is_some();
-        let in_clipboard = self
-            .document_manager
-            .active_document()
-            .map(|d| d.is_any_clipboard())
-            .unwrap_or(false);
+        let in_clipboard = self.active_doc_is(|d| d.is_any_clipboard());
         if let Some(text) = captured.filter(|s| !s.is_empty()) {
             if !in_clipboard {
                 self.clipboard_ring.push(text);
@@ -147,11 +143,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .active_document()
             .map(|doc| crate::clipboard::capture_current_line(&doc.buffer, count));
-        let in_clipboard = self
-            .document_manager
-            .active_document()
-            .map(|d| d.is_any_clipboard())
-            .unwrap_or(false);
+        let in_clipboard = self.active_doc_is(|d| d.is_any_clipboard());
         if let Some(text) = captured.filter(|s| !s.is_empty()) {
             if !in_clipboard {
                 self.clipboard_ring.push(text);

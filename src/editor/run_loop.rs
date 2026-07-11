@@ -436,41 +436,15 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn resolve_key_context(&self) -> crate::keymap::KeyContext {
         use crate::keymap::KeyContext;
 
-        let is_directory = self
-            .document_manager
-            .active_document()
-            .map(|d| d.is_directory())
-            .unwrap_or(false);
-        let is_undotree = self
-            .document_manager
-            .active_document()
-            .map(|d| d.is_undotree())
-            .unwrap_or(false);
-        let is_clipboard = self
-            .document_manager
-            .active_document()
-            .map(|d| d.is_clipboard())
-            .unwrap_or(false);
-        let is_clipboard_entry = self
-            .document_manager
-            .active_document()
-            .map(|d| matches!(d.kind, crate::document::BufferKind::ClipboardEntry { .. }))
-            .unwrap_or(false);
-        let is_terminal = self
-            .document_manager
-            .active_document()
-            .map(|d| d.is_terminal())
-            .unwrap_or(false);
-        let is_location_list = self
-            .document_manager
-            .active_document()
-            .map(|d| d.is_location_list())
-            .unwrap_or(false);
-        let is_regions = self
-            .document_manager
-            .active_document()
-            .map(|d| d.is_regions())
-            .unwrap_or(false);
+        let is_directory = self.active_doc_is(|d| d.is_directory());
+        let is_undotree = self.active_doc_is(|d| d.is_undotree());
+        let is_clipboard = self.active_doc_is(|d| d.is_clipboard());
+        let is_clipboard_entry = self.active_doc_is(|d| {
+            matches!(d.kind, crate::document::BufferKind::ClipboardEntry { .. })
+        });
+        let is_terminal = self.active_doc_is(|d| d.is_terminal());
+        let is_location_list = self.active_doc_is(|d| d.is_location_list());
+        let is_regions = self.active_doc_is(|d| d.is_regions());
         match self.current_mode {
             Mode::Normal
             | Mode::OperatorPending
