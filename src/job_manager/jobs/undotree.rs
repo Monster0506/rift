@@ -113,15 +113,12 @@ mod tests {
     #[test]
     fn test_undotree_render_job_produces_result() {
         use crate::job_manager::{CancellationSignal, JobMessage};
-        use std::sync::atomic::AtomicBool;
-        use std::sync::{mpsc, Arc};
+        use std::sync::mpsc;
 
         let tree = make_test_tree();
         let job = Box::new(UndoTreeRenderJob::new(42, tree));
         let (tx, rx) = mpsc::channel();
-        let signal = CancellationSignal {
-            cancelled: Arc::new(AtomicBool::new(false)),
-        };
+        let signal = CancellationSignal::new(false);
 
         job.run(1, tx, signal);
 
@@ -140,15 +137,12 @@ mod tests {
     #[test]
     fn test_undotree_render_job_result_content() {
         use crate::job_manager::{CancellationSignal, JobMessage};
-        use std::sync::atomic::AtomicBool;
-        use std::sync::{mpsc, Arc};
+        use std::sync::mpsc;
 
         let tree = make_test_tree();
         let job = Box::new(UndoTreeRenderJob::new(7, tree));
         let (tx, rx) = mpsc::channel();
-        let signal = CancellationSignal {
-            cancelled: Arc::new(AtomicBool::new(false)),
-        };
+        let signal = CancellationSignal::new(false);
 
         job.run(1, tx, signal);
 
@@ -172,14 +166,12 @@ mod tests {
     #[test]
     fn test_undotree_render_job_cancelled_before_run() {
         use crate::job_manager::{CancellationSignal, JobMessage};
-        use std::sync::atomic::AtomicBool;
-        use std::sync::{mpsc, Arc};
+        use std::sync::mpsc;
 
         let tree = make_test_tree();
         let job = Box::new(UndoTreeRenderJob::new(1, tree));
         let (tx, rx) = mpsc::channel();
-        let cancelled = Arc::new(AtomicBool::new(true)); // pre-cancelled
-        let signal = CancellationSignal { cancelled };
+        let signal = CancellationSignal::new(true); // pre-cancelled
 
         job.run(1, tx, signal);
 

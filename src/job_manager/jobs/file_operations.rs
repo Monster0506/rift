@@ -235,12 +235,10 @@ mod tests {
     use super::*;
     use crate::character::Character;
     use crate::job_manager::{CancellationSignal, Job, JobMessage};
-    use std::sync::{atomic::AtomicBool, mpsc, Arc};
+    use std::sync::mpsc;
 
     fn make_signal() -> CancellationSignal {
-        CancellationSignal {
-            cancelled: Arc::new(AtomicBool::new(false)),
-        }
+        CancellationSignal::new(false)
     }
 
     fn run_load_job(path: PathBuf) -> FileLoadResult {

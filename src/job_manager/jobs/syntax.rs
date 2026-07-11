@@ -235,12 +235,10 @@ mod tests {
     use super::*;
     use crate::syntax::loader::LanguageLoader;
     use std::path::PathBuf;
-    use std::sync::{atomic::AtomicBool, mpsc};
+    use std::sync::mpsc;
 
     fn make_signal() -> CancellationSignal {
-        CancellationSignal {
-            cancelled: Arc::new(AtomicBool::new(false)),
-        }
+        CancellationSignal::new(false)
     }
 
     fn rust_language_and_query() -> (tree_sitter::Language, Arc<Query>) {

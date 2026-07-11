@@ -153,13 +153,10 @@ impl Job for ExplorerPreviewJob {
 mod tests {
     use super::*;
     use crate::job_manager::{CancellationSignal, JobMessage, JobPayload};
-    use std::sync::atomic::AtomicBool;
-    use std::sync::{mpsc, Arc};
+    use std::sync::mpsc;
 
     fn make_signal(cancelled: bool) -> CancellationSignal {
-        CancellationSignal {
-            cancelled: Arc::new(AtomicBool::new(cancelled)),
-        }
+        CancellationSignal::new(cancelled)
     }
 
     #[test]
