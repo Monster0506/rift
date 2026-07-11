@@ -261,17 +261,8 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         Box::new(job).run(1, tx, make_signal());
 
-        let mut result = None;
-        for msg in rx {
-            if let JobMessage::Custom(_, payload) = msg {
-                result = payload
-                    .into_any()
-                    .downcast::<SyntaxParseResult>()
-                    .ok()
-                    .map(|b| *b);
-            }
-        }
-        result.expect("SyntaxParseJob did not produce a SyntaxParseResult")
+        *crate::job_manager::jobs::test_support::recv_custom_payload::<SyntaxParseResult>(&rx)
+            .expect("SyntaxParseJob did not produce a SyntaxParseResult")
     }
 
     fn sorted_highlights(tree: &IntervalTree<u32>) -> Vec<(std::ops::Range<usize>, u32)> {

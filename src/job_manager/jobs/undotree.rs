@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn test_undotree_render_job_result_content() {
-        use crate::job_manager::{CancellationSignal, JobMessage};
+        use crate::job_manager::CancellationSignal;
         use std::sync::mpsc;
 
         let tree = make_test_tree();
@@ -146,21 +146,16 @@ mod tests {
 
         job.run(1, tx, signal);
 
-        for msg in rx.try_iter() {
-            if let JobMessage::Custom(_, payload) = msg {
-                let result = payload
-                    .into_any()
-                    .downcast::<UndoTreeRenderResult>()
-                    .expect("payload should be UndoTreeRenderResult");
-                assert_eq!(result.ut_doc_id, 7);
-                assert!(!result.text.is_empty());
-                assert!(!result.sequences.is_empty());
-                // sequences count must match line count
-                assert_eq!(result.sequences.len(), result.text.lines().count());
-                return;
-            }
-        }
-        panic!("no Custom message received");
+        let result =
+            crate::job_manager::jobs::test_support::recv_custom_payload::<UndoTreeRenderResult>(
+                &rx,
+            )
+            .expect("no Custom message received");
+        assert_eq!(result.ut_doc_id, 7);
+        assert!(!result.text.is_empty());
+        assert!(!result.sequences.is_empty());
+        // sequences count must match line count
+        assert_eq!(result.sequences.len(), result.text.lines().count());
     }
 
     #[test]

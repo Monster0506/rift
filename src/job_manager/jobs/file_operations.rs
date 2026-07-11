@@ -247,17 +247,8 @@ mod tests {
         let job = Box::new(FileLoadJob::new(doc_id, path));
         job.run(1, tx, make_signal());
 
-        let mut result = None;
-        for msg in rx {
-            if let JobMessage::Custom(_, payload) = msg {
-                result = payload
-                    .into_any()
-                    .downcast::<FileLoadResult>()
-                    .ok()
-                    .map(|b| *b);
-            }
-        }
-        result.expect("FileLoadJob did not produce a FileLoadResult")
+        *crate::job_manager::jobs::test_support::recv_custom_payload::<FileLoadResult>(&rx)
+            .expect("FileLoadJob did not produce a FileLoadResult")
     }
 
     #[test]

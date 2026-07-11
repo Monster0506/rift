@@ -187,22 +187,10 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         job.run(1, tx, make_signal(false));
 
-        let msgs: Vec<JobMessage> = rx.try_iter().collect();
-        let payload = msgs
-            .into_iter()
-            .find_map(|m| {
-                if let JobMessage::Custom(_, p) = m {
-                    Some(p)
-                } else {
-                    None
-                }
-            })
-            .expect("should have Custom message");
-
-        let result = payload
-            .into_any()
-            .downcast::<ExplorerPreviewResult>()
-            .expect("should be ExplorerPreviewResult");
+        let result = crate::job_manager::jobs::test_support::recv_custom_payload::<
+            ExplorerPreviewResult,
+        >(&rx)
+        .expect("should have Custom message");
 
         assert_eq!(result.right_doc_id, 42);
         assert_eq!(result.path, tmp);
@@ -220,22 +208,10 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         job.run(1, tx, make_signal(false));
 
-        let msgs: Vec<JobMessage> = rx.try_iter().collect();
-        let payload = msgs
-            .into_iter()
-            .find_map(|m| {
-                if let JobMessage::Custom(_, p) = m {
-                    Some(p)
-                } else {
-                    None
-                }
-            })
-            .expect("should have Custom message");
-
-        let result = payload
-            .into_any()
-            .downcast::<ExplorerPreviewResult>()
-            .unwrap();
+        let result = crate::job_manager::jobs::test_support::recv_custom_payload::<
+            ExplorerPreviewResult,
+        >(&rx)
+        .expect("should have Custom message");
         assert!(result.file_text.is_some());
         assert!(
             result
@@ -264,29 +240,19 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         job.run(1, tx, make_signal(false));
 
-        let msgs: Vec<JobMessage> = rx.try_iter().collect();
-        let payload = msgs.into_iter().find_map(|m| {
-            if let JobMessage::Custom(_, p) = m {
-                Some(p)
-            } else {
-                None
-            }
-        });
-        if let Some(payload) = payload {
-            let result = payload
-                .into_any()
-                .downcast::<ExplorerPreviewResult>()
-                .unwrap();
-            if let Some(entries) = result.dir_entries {
-                // All directories should come before all files
-                let mut saw_file = false;
-                for entry in &entries {
-                    if !entry.is_dir {
-                        saw_file = true;
-                    }
-                    if saw_file && entry.is_dir {
-                        panic!("directory found after file - sorting is wrong");
-                    }
+        let result = crate::job_manager::jobs::test_support::recv_custom_payload::<
+            ExplorerPreviewResult,
+        >(&rx)
+        .map(|r| *r);
+        if let Some(entries) = result.and_then(|r| r.dir_entries) {
+            // All directories should come before all files
+            let mut saw_file = false;
+            for entry in &entries {
+                if !entry.is_dir {
+                    saw_file = true;
+                }
+                if saw_file && entry.is_dir {
+                    panic!("directory found after file - sorting is wrong");
                 }
             }
         }
@@ -324,21 +290,10 @@ mod tests {
         let job = Box::new(ExplorerPreviewJob::new(1, path.clone(), false));
         let (tx, rx) = mpsc::channel();
         job.run(1, tx, make_signal(false));
-        let msgs: Vec<JobMessage> = rx.try_iter().collect();
-        let payload = msgs
-            .into_iter()
-            .find_map(|m| {
-                if let JobMessage::Custom(_, p) = m {
-                    Some(p)
-                } else {
-                    None
-                }
-            })
-            .expect("should have Custom message");
-        let result = payload
-            .into_any()
-            .downcast::<ExplorerPreviewResult>()
-            .unwrap();
+        let result = crate::job_manager::jobs::test_support::recv_custom_payload::<
+            ExplorerPreviewResult,
+        >(&rx)
+        .expect("should have Custom message");
         let text = result.file_text.unwrap();
 
         let _ = std::fs::remove_file(&path);
