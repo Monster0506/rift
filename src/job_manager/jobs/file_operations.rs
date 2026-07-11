@@ -5,7 +5,7 @@ use crate::character::Character;
 use crate::document::DocumentId;
 use crate::document::LineEnding;
 use crate::history::EditSeq;
-use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload};
+use crate::job_manager::{CancellationSignal, Job, JobMessage};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -18,17 +18,7 @@ pub struct FileSaveResult {
     pub path: PathBuf,
 }
 
-impl JobPayload for FileSaveResult {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self
-    }
-}
+crate::impl_job_payload!(FileSaveResult);
 
 /// Job to save a file asynchronously
 #[derive(Debug)]
@@ -160,17 +150,7 @@ pub struct FileLoadResult {
     pub is_reload: bool,
 }
 
-impl JobPayload for FileLoadResult {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self
-    }
-}
+crate::impl_job_payload!(FileLoadResult);
 
 /// Job to load a file asynchronously
 #[derive(Debug)]

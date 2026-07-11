@@ -1,5 +1,4 @@
-use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload};
-use std::any::Any;
+use crate::job_manager::{CancellationSignal, Job, JobMessage};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
@@ -19,17 +18,7 @@ pub struct DirectoryListing {
     pub entries: Vec<FileEntry>,
 }
 
-impl JobPayload for DirectoryListing {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-}
+crate::impl_job_payload!(DirectoryListing);
 
 #[derive(Debug)]
 pub struct DirectoryListJob {

@@ -50,6 +50,25 @@ pub trait JobPayload: Any + Send + std::fmt::Debug + 'static {
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
 }
 
+/// Implements `JobPayload`'s downcasting boilerplate for a concrete type.
+/// Not a blanket impl: that also matches `Box<dyn JobPayload>`, silently breaking every downcast.
+#[macro_export]
+macro_rules! impl_job_payload {
+    ($t:ty) => {
+        impl $crate::job_manager::JobPayload for $t {
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+                self
+            }
+        }
+    };
+}
+
 /// Message sent from a background job to the editor.
 #[derive(Debug)]
 pub enum JobMessage {

@@ -7,9 +7,8 @@ use crate::command_line::commands::completion::{
 };
 use crate::command_line::settings::{create_settings_registry, SettingsRegistry};
 use crate::document::definitions::{create_document_settings_registry, DocumentOptions};
-use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload};
+use crate::job_manager::{CancellationSignal, Job, JobMessage};
 use crate::state::UserSettings;
-use std::any::Any;
 use std::sync::{mpsc::Sender, LazyLock};
 
 static SETTINGS_REGISTRY: LazyLock<SettingsRegistry<UserSettings>> =
@@ -25,17 +24,7 @@ pub struct CompletionPayload {
     pub token_start: usize,
 }
 
-impl JobPayload for CompletionPayload {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-}
+crate::impl_job_payload!(CompletionPayload);
 
 #[derive(Debug)]
 pub struct CompletionJob {

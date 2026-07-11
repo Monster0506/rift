@@ -18,17 +18,7 @@ pub struct SyntaxParseResult {
     pub revision: u64,
 }
 
-impl crate::job_manager::JobPayload for SyntaxParseResult {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self
-    }
-}
+crate::impl_job_payload!(SyntaxParseResult);
 
 // Manual Debug because Parser and TextBuffer might not impl Debug
 pub struct SyntaxParseJob {

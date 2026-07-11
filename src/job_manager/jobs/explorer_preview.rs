@@ -1,6 +1,5 @@
 use crate::document::{DirEntry, DocumentId};
-use crate::job_manager::{CancellationSignal, Job, JobMessage, JobPayload};
-use std::any::Any;
+use crate::job_manager::{CancellationSignal, Job, JobMessage};
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
@@ -19,17 +18,7 @@ pub struct ExplorerPreviewResult {
     pub file_text: Option<String>,
 }
 
-impl JobPayload for ExplorerPreviewResult {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-}
+crate::impl_job_payload!(ExplorerPreviewResult);
 
 /// Maximum number of bytes read for a file preview.
 const FILE_PREVIEW_BYTES: usize = 8 * 1024; // 8 KiB
@@ -165,7 +154,7 @@ impl Job for ExplorerPreviewJob {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::job_manager::{CancellationSignal, JobMessage};
+    use crate::job_manager::{CancellationSignal, JobMessage, JobPayload};
     use std::sync::atomic::AtomicBool;
     use std::sync::{mpsc, Arc};
 
