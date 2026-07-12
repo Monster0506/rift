@@ -250,6 +250,20 @@ pub(crate) fn render_content_to_layer_offset(
     col_offset: usize,
 ) -> Result<(), String> {
     crate::perf_span!("render_content", crate::perf::PerfFields::default());
+    let mut frame = crate::paint::PaintFrame::new(layer.rows());
+    render_content_to_paint_frame(&mut frame, ctx, row_offset, col_offset)?;
+    crate::paint::rasterize(&frame, layer);
+    Ok(())
+}
+
+/// Builds the content layer's PaintFrame; render_content_to_layer_offset
+/// rasterizes it onto the actual Layer in a single step.
+fn render_content_to_paint_frame(
+    frame: &mut crate::paint::PaintFrame,
+    ctx: &DrawContext,
+    row_offset: usize,
+    col_offset: usize,
+) -> Result<(), String> {
     let buf = ctx.buf;
     let viewport = ctx.viewport;
     let editor_bg = ctx.state.settings.editor_bg;
@@ -288,7 +302,7 @@ pub(crate) fn render_content_to_layer_offset(
                 None => {
                     if gutter_width > 0 {
                         render_gutter_blank(
-                            layer,
+                            frame,
                             i + row_offset,
                             col_offset,
                             gutter_width,
@@ -297,7 +311,7 @@ pub(crate) fn render_content_to_layer_offset(
                         );
                     }
                     for col in (col_offset + gutter_width)..(col_offset + visible_cols) {
-                        layer.set_cell(
+                        frame.set_cell(
                             i + row_offset,
                             col,
                             Cell::from_char(' ').with_colors(editor_fg, editor_bg),
@@ -319,7 +333,7 @@ pub(crate) fn render_content_to_layer_offset(
             if gutter_width > 0 {
                 if row_info.is_first {
                     render_gutter(
-                        layer,
+                        frame,
                         row_info.logical_line,
                         i + row_offset,
                         col_offset,
@@ -330,7 +344,7 @@ pub(crate) fn render_content_to_layer_offset(
                     );
                 } else {
                     render_gutter_blank(
-                        layer,
+                        frame,
                         i + row_offset,
                         col_offset,
                         gutter_width,
@@ -341,7 +355,7 @@ pub(crate) fn render_content_to_layer_offset(
             }
 
             render_line(
-                layer,
+                frame,
                 ctx,
                 RenderLineConfig {
                     line_num: row_info.logical_line,
@@ -373,7 +387,7 @@ pub(crate) fn render_content_to_layer_offset(
 
             if gutter_width > 0 {
                 render_gutter(
-                    layer,
+                    frame,
                     line_num,
                     i + row_offset,
                     col_offset,
@@ -385,7 +399,7 @@ pub(crate) fn render_content_to_layer_offset(
             }
 
             render_line(
-                layer,
+                frame,
                 ctx,
                 RenderLineConfig {
                     line_num,
@@ -407,7 +421,7 @@ pub(crate) fn render_content_to_layer_offset(
 }
 
 fn render_gutter_blank(
-    layer: &mut Layer,
+    frame: &mut crate::paint::PaintFrame,
     row_idx: usize,
     col_start: usize,
     gutter_width: usize,
@@ -415,7 +429,7 @@ fn render_gutter_blank(
     bg: Option<Color>,
 ) {
     for i in 0..gutter_width {
-        layer.set_cell(
+        frame.set_cell(
             row_idx,
             col_start + i,
             Cell::new(Character::from(' ')).with_colors(fg, bg),
@@ -425,7 +439,7 @@ fn render_gutter_blank(
 
 #[allow(clippy::too_many_arguments)]
 fn render_gutter(
-    layer: &mut Layer,
+    frame: &mut crate::paint::PaintFrame,
     line_num: usize,
     row_idx: usize,
     col_start: usize,
@@ -437,20 +451,20 @@ fn render_gutter(
     if line_num < total_lines {
         let line_str = format!("{:width$}", line_num + 1, width = gutter_width - 1);
         for (i, ch) in line_str.chars().enumerate() {
-            layer.set_cell(
+            frame.set_cell(
                 row_idx,
                 col_start + i,
                 Cell::new(Character::from(ch)).with_colors(fg, bg),
             );
         }
-        layer.set_cell(
+        frame.set_cell(
             row_idx,
             col_start + gutter_width - 1,
             Cell::new(Character::from(' ')).with_colors(fg, bg),
         );
     } else {
         for i in 0..gutter_width {
-            layer.set_cell(
+            frame.set_cell(
                 row_idx,
                 col_start + i,
                 Cell::new(Character::from(' ')).with_colors(fg, bg),
@@ -493,7 +507,7 @@ struct RenderLineConfig {
 }
 
 fn render_line(
-    layer: &mut Layer,
+    frame: &mut crate::paint::PaintFrame,
     ctx: &DrawContext,
     config: RenderLineConfig,
     highlight_idx: &mut usize,
@@ -503,7 +517,7 @@ fn render_line(
     if config.line_num >= buf.get_total_lines() {
         // Render empty line (past end of buffer)
         for col in config.gutter_width..config.visible_cols {
-            layer.set_cell(
+            frame.set_cell(
                 config.row_idx,
                 col,
                 Cell::from_char(' ').with_colors(config.default_fg, config.default_bg),
@@ -618,7 +632,7 @@ fn render_line(
                         if display_col >= config.visible_cols {
                             break;
                         }
-                        layer.set_cell(
+                        frame.set_cell(
                             config.row_idx,
                             display_col,
                             Cell::new(Character::from(ch))
@@ -650,7 +664,7 @@ fn render_line(
                     item.char
                 };
 
-                layer.set_cell(
+                frame.set_cell(
                     config.row_idx,
                     display_col,
                     Cell::new(display_char)
@@ -668,7 +682,7 @@ fn render_line(
                     };
                     for k in 1..visible_width {
                         if display_col + k < config.visible_cols {
-                            layer.set_cell(config.row_idx, display_col + k, empty_cell.clone());
+                            frame.set_cell(config.row_idx, display_col + k, empty_cell.clone());
                         }
                     }
                 }
@@ -685,7 +699,7 @@ fn render_line(
     if let Some(adornments) = ctx.annotation_adornments.filter(|_| reached_line_end) {
         if let Some((_, text, color)) = adornments.iter().find(|(l, _, _)| *l == config.line_num) {
             if tail_col < config.visible_cols {
-                layer.set_cell(
+                frame.set_cell(
                     config.row_idx,
                     tail_col,
                     Cell::from_char(' ').with_colors(config.default_fg, config.default_bg),
@@ -696,7 +710,7 @@ fn render_line(
                 if tail_col >= config.visible_cols {
                     break;
                 }
-                layer.set_cell(
+                frame.set_cell(
                     config.row_idx,
                     tail_col,
                     Cell::new(Character::from(ch)).with_colors(Some(*color), config.default_bg),
@@ -730,7 +744,7 @@ fn render_line(
                     break;
                 }
                 let ch = chars.get(k).copied().unwrap_or(' ');
-                layer.set_cell(
+                frame.set_cell(
                     config.row_idx,
                     col,
                     Cell::new(Character::from(ch)).with_colors(Some(*color), config.default_bg),
@@ -741,7 +755,7 @@ fn render_line(
 
     // Fill remaining line with background
     for col in tail_col..config.visible_cols {
-        layer.set_cell(
+        frame.set_cell(
             config.row_idx,
             col,
             Cell::from_char(' ').with_colors(config.default_fg, config.default_bg),
