@@ -31,6 +31,9 @@ pub struct Viewport {
     visible_rows: usize,
     /// Number of visible columns
     visible_cols: usize,
+    /// Fractional scroll offset in [0.0, 1.0) below top_line; no current
+    /// caller reads this, and top_line() stays integer-only.
+    sub_line_offset: f64,
 }
 
 impl Viewport {
@@ -46,6 +49,7 @@ impl Viewport {
             left_col: 0,
             prev_left_col: 0,
             visible_rows: rows,
+            sub_line_offset: 0.0,
         }
     }
 
@@ -72,6 +76,7 @@ impl Viewport {
         let ideal_top = cursor_line.saturating_sub(half);
         let max_top = total_lines.saturating_sub(content_rows);
         self.top_line = ideal_top.min(max_top);
+        self.sub_line_offset = 0.0;
 
         // --- Horizontal: scroll just enough to keep cursor visible ---
         let content_width = self.visible_cols.saturating_sub(gutter_width);
@@ -103,6 +108,7 @@ impl Viewport {
         let ideal_top = cursor_visual_row.saturating_sub(half);
         let max_top = total_visual_rows.saturating_sub(content_rows);
         self.top_visual_row = ideal_top.min(max_top);
+        self.sub_line_offset = 0.0;
 
         self.left_col = 0;
         self.prev_left_col = 0;
@@ -163,6 +169,7 @@ impl Viewport {
     pub fn set_scroll(&mut self, top_line: usize, left_col: usize) {
         self.top_line = top_line;
         self.left_col = left_col;
+        self.sub_line_offset = 0.0;
         // Mark as needing update to ensure proper rendering
         self.first_update = true;
     }
@@ -175,12 +182,26 @@ impl Viewport {
         let ideal_top = line.saturating_sub(half);
         let max_top = total_lines.saturating_sub(content_rows);
         self.top_line = ideal_top.min(max_top);
+        self.sub_line_offset = 0.0;
         self.first_update = true;
     }
 
     /// Get current scroll position as (top_line, left_col)
     pub fn get_scroll(&self) -> (usize, usize) {
         (self.top_line, self.left_col)
+    }
+
+    /// Fractional scroll offset in [0.0, 1.0] below `top_line`. Always 0.0
+    /// until a future renderer calls `set_sub_line_offset`.
+    #[must_use]
+    pub fn sub_line_offset(&self) -> f64 {
+        self.sub_line_offset
+    }
+
+    /// Set the fractional scroll offset below `top_line`, clamped to
+    /// [0.0, 1.0]. Does not itself move `top_line`.
+    pub fn set_sub_line_offset(&mut self, offset: f64) {
+        self.sub_line_offset = offset.clamp(0.0, 1.0);
     }
 
     pub fn mark_needs_full_redraw(&mut self) {

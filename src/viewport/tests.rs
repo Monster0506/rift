@@ -240,3 +240,43 @@ fn test_viewport_resize_scrolling() {
     assert!(viewport.top_line() <= 50);
     assert!(viewport.top_line() + viewport.visible_rows() > 50);
 }
+
+#[test]
+fn sub_line_offset_defaults_to_zero() {
+    let viewport = Viewport::new(10, 80);
+    assert_eq!(viewport.sub_line_offset(), 0.0);
+}
+
+#[test]
+fn sub_line_offset_is_settable_and_clamped() {
+    let mut viewport = Viewport::new(10, 80);
+    viewport.set_sub_line_offset(0.5);
+    assert_eq!(viewport.sub_line_offset(), 0.5);
+
+    viewport.set_sub_line_offset(-1.0);
+    assert_eq!(viewport.sub_line_offset(), 0.0);
+
+    viewport.set_sub_line_offset(5.0);
+    assert_eq!(viewport.sub_line_offset(), 1.0);
+}
+
+#[test]
+fn integer_scroll_paths_reset_sub_line_offset() {
+    let mut viewport = Viewport::new(10, 80);
+
+    viewport.set_sub_line_offset(0.7);
+    viewport.update(10, 0, 100, 0);
+    assert_eq!(viewport.sub_line_offset(), 0.0);
+
+    viewport.set_sub_line_offset(0.7);
+    viewport.update_visual(10, 0, 100, 0);
+    assert_eq!(viewport.sub_line_offset(), 0.0);
+
+    viewport.set_sub_line_offset(0.7);
+    viewport.set_scroll(3, 0);
+    assert_eq!(viewport.sub_line_offset(), 0.0);
+
+    viewport.set_sub_line_offset(0.7);
+    viewport.center_on(5, 100);
+    assert_eq!(viewport.sub_line_offset(), 0.0);
+}

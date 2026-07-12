@@ -1,22 +1,12 @@
 //! Intermediate paint representation between editor state and the render
-//! backend. Decouples the shared render pipeline from `Layer`'s terminal
-//! cell grid; see `render_abstraction.md`. `rasterize` is the terminal
-//! renderer's own step, turning a `PaintFrame` into `Layer` cells.
-//!
-//! ## paint/ Invariants
-//!
-//! - PaintFrame construction never depends on `crate::term` or `crate::layer::Layer`.
-//! - `PaintFrame::set_cell` preserves Layer::set_cell's overwrite-order semantics:
-//!   replaying a frame's runs in order reproduces the same final cells as writing
-//!   directly to a Layer in the same call order.
+//! backend; see render_abstraction.md. `rasterize` turns a frame into `Layer` cells.
 
 use crate::character::Character;
 use crate::color::Color;
 use crate::layer::{Cell, CellAttrs, Layer};
 
 /// A run of characters sharing one style, in visual order starting at `col`.
-/// Holds `Character` rather than `String` so raw non-UTF8 bytes and control
-/// characters (see `Character::Byte`/`Character::Control`) survive losslessly.
+/// Holds `Character`, not `String`, so raw non-UTF8 bytes survive losslessly.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextRun {
     pub col: usize,
@@ -72,11 +62,8 @@ impl PaintFrame {
         }
     }
 
-    /// Paint a single cell at `(row, col)`. Out-of-bounds rows are ignored,
-    /// matching `Layer::set_cell`'s tolerance for out-of-bounds writes.
-    /// Adjacent same-style writes coalesce onto the previous run; anything
-    /// else opens a new run, so replay order (and therefore final content
-    /// on overwrite) always matches the order `set_cell` was called in.
+    /// Paint a single cell at `(row, col)`; out-of-bounds rows are ignored.
+    /// Adjacent same-style writes coalesce; anything else opens a new run, in call order.
     pub fn set_cell(&mut self, row: usize, col: usize, cell: Cell) {
         let Some(paint_row) = self.rows.get_mut(row) else {
             return;
@@ -117,8 +104,7 @@ impl PaintFrame {
 }
 
 /// The terminal renderer's rasterization step: apply a `PaintFrame`'s runs
-/// onto a `Layer`, in row/run/char order, via the same `Layer::set_cell`
-/// path direct callers used before this frame existed.
+/// onto a `Layer`, in row/run/char order, via `Layer::set_cell`.
 pub fn rasterize(frame: &PaintFrame, layer: &mut Layer) {
     for (row, paint_row) in frame.rows.iter().enumerate() {
         for run in &paint_row.runs {
