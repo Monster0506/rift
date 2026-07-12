@@ -3,7 +3,6 @@
 use super::Document;
 use crate::buffer::TextBuffer;
 use crate::history::{EditOperation, EditTransaction, Position};
-use tree_sitter::InputEdit;
 
 impl Document {
     /// Start a transaction for grouping multiple edits.
@@ -109,8 +108,8 @@ impl Document {
         true
     }
 
-    /// Apply an edit operation (used by undo/redo), informing the syntax tree
-    /// via `InputEdit` so it stays valid for incremental reuse.
+    /// Apply an edit operation (used by undo/redo), notifying the syntax tree
+    /// so it stays valid for incremental reuse.
     fn apply_operation_with_tree_update(&mut self, op: &EditOperation) {
         let (start_char, old_end_char) = match op {
             EditOperation::Insert { position, .. } => {
@@ -143,16 +142,15 @@ impl Document {
         let new_end_byte = self.buffer.char_to_byte(start_char + inserted_chars);
         let new_end_position = self.get_point(new_end_byte);
 
-        let edit = InputEdit {
-            start_byte,
-            old_end_byte,
-            new_end_byte,
-            start_position,
-            old_end_position,
-            new_end_position,
-        };
         if let Some(syntax) = &mut self.syntax {
-            syntax.update_tree(&edit);
+            syntax.notify_edit(
+                start_byte,
+                old_end_byte,
+                new_end_byte,
+                start_position,
+                old_end_position,
+                new_end_position,
+            );
         }
     }
 

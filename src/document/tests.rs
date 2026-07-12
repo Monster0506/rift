@@ -2176,8 +2176,8 @@ fn test_get_edit_points_matches_individual_calls_col0() {
     let offset = 0;
     let (ts_pt, hist_pos) = doc.get_edit_points(offset);
 
-    assert_eq!(ts_pt.row, 0);
-    assert_eq!(ts_pt.column, 0);
+    assert_eq!(ts_pt.0, 0);
+    assert_eq!(ts_pt.1, 0);
     assert_eq!(hist_pos.line, 0);
     assert_eq!(hist_pos.col, 0);
 }
@@ -2191,8 +2191,8 @@ fn test_get_edit_points_matches_individual_calls_midline() {
     let offset = 3;
     let (ts_pt, hist_pos) = doc.get_edit_points(offset);
 
-    assert_eq!(ts_pt.row, 0);
-    assert_eq!(ts_pt.column, 3);
+    assert_eq!(ts_pt.0, 0);
+    assert_eq!(ts_pt.1, 3);
     assert_eq!(hist_pos.line, 0);
     assert_eq!(hist_pos.col, 3);
 }
@@ -2206,8 +2206,8 @@ fn test_get_edit_points_matches_individual_calls_second_line() {
     let offset = 6;
     let (ts_pt, hist_pos) = doc.get_edit_points(offset);
 
-    assert_eq!(ts_pt.row, 1);
-    assert_eq!(ts_pt.column, 0);
+    assert_eq!(ts_pt.0, 1);
+    assert_eq!(ts_pt.1, 0);
     assert_eq!(hist_pos.line, 1);
     assert_eq!(hist_pos.col, 0);
 }
@@ -2223,8 +2223,8 @@ fn test_get_edit_points_multibyte_prefix_diverges_byte_and_char_columns() {
     let byte_offset = doc.buffer.char_to_byte(world_char_start);
     let (ts_pt, hist_pos) = doc.get_edit_points(byte_offset);
 
-    assert_eq!(ts_pt.row, 1);
-    assert_eq!(ts_pt.column, 0);
+    assert_eq!(ts_pt.0, 1);
+    assert_eq!(ts_pt.1, 0);
     assert_eq!(hist_pos.line, 1);
     assert_eq!(hist_pos.col, 0);
 }

@@ -178,7 +178,7 @@ impl Syntax {
         self.dynamic_injection_ranges = IntervalTree::default();
     }
 
-    pub fn update_tree(&mut self, edit: &InputEdit) {
+    fn update_tree(&mut self, edit: &InputEdit) {
         if let Some(tree) = &mut self.tree {
             tree.edit(edit);
         }
@@ -193,6 +193,37 @@ impl Syntax {
             }
         }
         self.pending_edits.push(*edit);
+    }
+
+    /// Notify the syntax tree of an edit, in the caller's own vocabulary
+    /// (byte offsets and row/column pairs) rather than tree-sitter's types.
+    pub fn notify_edit(
+        &mut self,
+        start_byte: usize,
+        old_end_byte: usize,
+        new_end_byte: usize,
+        start_point: (usize, usize),
+        old_end_point: (usize, usize),
+        new_end_point: (usize, usize),
+    ) {
+        let edit = InputEdit {
+            start_byte,
+            old_end_byte,
+            new_end_byte,
+            start_position: tree_sitter::Point {
+                row: start_point.0,
+                column: start_point.1,
+            },
+            old_end_position: tree_sitter::Point {
+                row: old_end_point.0,
+                column: old_end_point.1,
+            },
+            new_end_position: tree_sitter::Point {
+                row: new_end_point.0,
+                column: new_end_point.1,
+            },
+        };
+        self.update_tree(&edit);
     }
 
     // -----------------------------------------------------------------------

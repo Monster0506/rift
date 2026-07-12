@@ -4,19 +4,18 @@ use super::{AnnotationUndo, AnnotationUndoHint, Document};
 use crate::character::Character;
 use crate::error::RiftError;
 use crate::history::{EditOperation, EditTransaction, Position, Range};
-use tree_sitter::{InputEdit, Point};
 
 impl Document {
-    /// Tree-sitter `Point` for a byte offset; `line_index` is char-indexed, so
+    /// (row, byte column) for a byte offset; `line_index` is char-indexed, so
     /// the row lookup and column both need a char/byte conversion.
-    pub(super) fn get_point(&self, byte_offset: usize) -> Point {
+    pub(super) fn get_point(&self, byte_offset: usize) -> (usize, usize) {
         let (point, _) = self.get_edit_points(byte_offset);
         point
     }
 
-    /// Return both the tree-sitter `Point` (byte column) and history `Position`
+    /// Return both the (row, byte column) point and history `Position`
     /// (char column) for the same byte offset.
-    pub(crate) fn get_edit_points(&self, byte_offset: usize) -> (Point, Position) {
+    pub(crate) fn get_edit_points(&self, byte_offset: usize) -> ((usize, usize), Position) {
         let char_offset = self.buffer.byte_to_char(byte_offset);
         let line = self.buffer.line_index.get_line_at(char_offset);
         let line_start_char = self.buffer.line_index.get_start(line).unwrap_or(0);
@@ -24,10 +23,7 @@ impl Document {
         let byte_col = byte_offset.saturating_sub(line_start_byte);
         let char_col = char_offset.saturating_sub(line_start_char);
         (
-            Point {
-                row: line,
-                column: byte_col,
-            },
+            (line, byte_col),
             Position::new(line as u32, char_col as u32),
         )
     }
@@ -120,16 +116,15 @@ impl Document {
 
         let new_end_position = self.get_point(new_end_byte);
 
-        let edit = InputEdit {
-            start_byte,
-            old_end_byte: start_byte,
-            new_end_byte,
-            start_position,
-            old_end_position: start_position,
-            new_end_position,
-        };
         if let Some(syntax) = &mut self.syntax {
-            syntax.update_tree(&edit);
+            syntax.notify_edit(
+                start_byte,
+                start_byte,
+                new_end_byte,
+                start_position,
+                start_position,
+                new_end_position,
+            );
         }
 
         // Maintain byte-offset annotation markers for this edit.
@@ -190,16 +185,15 @@ impl Document {
 
         let new_end_position = self.get_point(new_end_byte);
 
-        let edit = InputEdit {
-            start_byte,
-            old_end_byte: start_byte,
-            new_end_byte,
-            start_position,
-            old_end_position: start_position,
-            new_end_position,
-        };
         if let Some(syntax) = &mut self.syntax {
-            syntax.update_tree(&edit);
+            syntax.notify_edit(
+                start_byte,
+                start_byte,
+                new_end_byte,
+                start_position,
+                start_position,
+                new_end_position,
+            );
         }
 
         // Maintain byte-offset annotation markers for this edit.
@@ -262,16 +256,15 @@ impl Document {
 
         let new_end_position = self.get_point(new_end_byte);
 
-        let edit = InputEdit {
-            start_byte,
-            old_end_byte: start_byte,
-            new_end_byte,
-            start_position,
-            old_end_position: start_position,
-            new_end_position,
-        };
         if let Some(syntax) = &mut self.syntax {
-            syntax.update_tree(&edit);
+            syntax.notify_edit(
+                start_byte,
+                start_byte,
+                new_end_byte,
+                start_position,
+                start_position,
+                new_end_position,
+            );
         }
 
         self.annotations
@@ -326,22 +319,21 @@ impl Document {
                 cursor,
             );
 
-            let edit = InputEdit {
-                start_byte,
-                old_end_byte,
-                new_end_byte: start_byte,
-                start_position,
-                old_end_position,
-                new_end_position: start_position,
-            };
             if let Some(syntax) = &mut self.syntax {
-                syntax.update_tree(&edit);
+                syntax.notify_edit(
+                    start_byte,
+                    old_end_byte,
+                    start_byte,
+                    start_position,
+                    old_end_position,
+                    start_position,
+                );
             }
             self.annotations
                 .on_edit(start_byte, old_end_byte, start_byte);
             // Deleting a newline merges the next line up: renumber line anchors.
             if deleted_char == Character::Newline {
-                self.annotations.on_lines_deleted(start_position.row + 1, 1);
+                self.annotations.on_lines_deleted(start_position.0 + 1, 1);
             }
             return true;
         }
@@ -385,22 +377,21 @@ impl Document {
                 cursor,
             );
 
-            let edit = InputEdit {
-                start_byte,
-                old_end_byte,
-                new_end_byte: start_byte,
-                start_position,
-                old_end_position,
-                new_end_position: start_position,
-            };
             if let Some(syntax) = &mut self.syntax {
-                syntax.update_tree(&edit);
+                syntax.notify_edit(
+                    start_byte,
+                    old_end_byte,
+                    start_byte,
+                    start_position,
+                    old_end_position,
+                    start_position,
+                );
             }
             self.annotations
                 .on_edit(start_byte, old_end_byte, start_byte);
             // Deleting a newline merges the next line up: renumber line anchors.
             if deleted_char == Character::Newline {
-                self.annotations.on_lines_deleted(start_position.row + 1, 1);
+                self.annotations.on_lines_deleted(start_position.0 + 1, 1);
             }
             return true;
         }
@@ -451,16 +442,15 @@ impl Document {
 
         let new_end_byte = self.buffer.char_to_byte(pos + new_chars.len());
         let new_end_position = self.get_point(new_end_byte);
-        let edit = tree_sitter::InputEdit {
-            start_byte,
-            old_end_byte,
-            new_end_byte,
-            start_position,
-            old_end_position,
-            new_end_position,
-        };
         if let Some(syntax) = &mut self.syntax {
-            syntax.update_tree(&edit);
+            syntax.notify_edit(
+                start_byte,
+                old_end_byte,
+                new_end_byte,
+                start_position,
+                old_end_position,
+                new_end_position,
+            );
         }
         self.annotations
             .on_edit(start_byte, old_end_byte, new_end_byte);
@@ -531,16 +521,15 @@ impl Document {
             cursor_before,
         );
 
-        let edit = InputEdit {
-            start_byte,
-            old_end_byte,
-            new_end_byte: start_byte,
-            start_position,
-            old_end_position,
-            new_end_position: start_position,
-        };
         if let Some(syntax) = &mut self.syntax {
-            syntax.update_tree(&edit);
+            syntax.notify_edit(
+                start_byte,
+                old_end_byte,
+                start_byte,
+                start_position,
+                old_end_position,
+                start_position,
+            );
         }
         self.annotations
             .on_edit(start_byte, old_end_byte, start_byte);
