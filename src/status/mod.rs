@@ -260,7 +260,18 @@ impl StatusBar {
     /// Render the status bar to a layer instead of directly to terminal
     /// This allows the status bar to be composited with other layers
     pub fn render_to_layer(layer: &mut Layer, state: &StatusDrawState) {
-        let status_row = layer.rows().saturating_sub(1);
+        let mut frame = crate::paint::PaintFrame::new(layer.rows());
+        Self::render_to_paint_frame(&mut frame, layer.rows(), state);
+        crate::paint::rasterize(&frame, layer);
+    }
+
+    /// Builds the status bar's PaintFrame; render_to_layer rasterizes it.
+    fn render_to_paint_frame(
+        frame: &mut crate::paint::PaintFrame,
+        layer_rows: usize,
+        state: &StatusDrawState,
+    ) {
+        let status_row = layer_rows.saturating_sub(1);
         let visible_cols = state.cols;
 
         let (fg, bg) = if state.reverse_video {
@@ -276,37 +287,37 @@ impl StatusBar {
 
         let mut col = 0;
 
-        layer.write_str_colored(status_row, col, mode_str, fg, bg);
+        frame.write_str_colored(status_row, col, mode_str, fg, bg);
         col += mode_str.len();
 
         if state.is_remote {
             let remote_str = " [R]";
-            layer.write_str_colored(status_row, col, remote_str, fg, bg);
+            frame.write_str_colored(status_row, col, remote_str, fg, bg);
             col += remote_str.len();
         }
 
         if state.pending_count > 0 {
             let count_str = format!(" {}", state.pending_count);
-            layer.write_str_colored(status_row, col, &count_str, fg, bg);
+            frame.write_str_colored(status_row, col, &count_str, fg, bg);
             col += count_str.len();
         }
 
         if let Some(key) = state.pending_key {
             let pending_str = format!(" [{}]", Self::format_key(key));
-            layer.write_str_colored(status_row, col, &pending_str, fg, bg);
+            frame.write_str_colored(status_row, col, &pending_str, fg, bg);
             col += pending_str.len();
         }
 
         if let Some(query) = &state.search_query {
             if !query.is_empty() {
-                layer.set_cell(
+                frame.set_cell(
                     status_row,
                     col,
                     Cell::new(Character::from(' ')).with_colors(fg, bg),
                 );
                 col += 1;
 
-                layer.write_str_colored(
+                frame.write_str_colored(
                     status_row,
                     col,
                     query,
@@ -321,7 +332,7 @@ impl StatusBar {
                     } else {
                         format!(" ?/{}", state.search_total_matches)
                     };
-                    layer.write_str_colored(status_row, col, &stats, fg, bg);
+                    frame.write_str_colored(status_row, col, &stats, fg, bg);
                     col += stats.len();
                 }
             }
@@ -329,7 +340,7 @@ impl StatusBar {
 
         if let Some(lsp) = &state.lsp_status {
             if !lsp.is_empty() {
-                layer.set_cell(
+                frame.set_cell(
                     status_row,
                     col,
                     Cell::new(Character::from(' ')).with_colors(fg, bg),
@@ -342,7 +353,7 @@ impl StatusBar {
                 } else {
                     state.lsp_ok_color.or(Some(Color::Cyan))
                 };
-                layer.write_str_colored(status_row, col, lsp, lsp_color, bg);
+                frame.write_str_colored(status_row, col, lsp, lsp_color, bg);
                 col += lsp.len();
             }
         }
@@ -373,14 +384,14 @@ impl StatusBar {
 
                 let spacing = padded_cols.saturating_sub(truncated.len());
                 for _ in 0..spacing {
-                    layer.set_cell(
+                    frame.set_cell(
                         status_row,
                         col,
                         crate::layer::Cell::new(Character::from(' ')).with_colors(fg, bg),
                     );
                     col += 1;
                 }
-                layer.write_str_colored(status_row, col, &truncated, fg, bg);
+                frame.write_str_colored(status_row, col, &truncated, fg, bg);
                 col += truncated.len();
             }
         } else {
@@ -393,34 +404,34 @@ impl StatusBar {
             if display_name.len() <= available_cols {
                 let spacing = available_cols.saturating_sub(display_name.len() + 1);
                 for _ in 0..spacing {
-                    layer.set_cell(
+                    frame.set_cell(
                         status_row,
                         col,
                         crate::layer::Cell::new(Character::from(' ')).with_colors(fg, bg),
                     );
                     col += 1;
                 }
-                layer.write_str_colored(status_row, col, &display_name, fg, bg);
+                frame.write_str_colored(status_row, col, &display_name, fg, bg);
                 col += display_name.len();
             } else if available_cols > 3 {
                 let truncated =
                     format!("...{}", char_safe_suffix(&display_name, available_cols - 3));
                 let spacing = available_cols.saturating_sub(truncated.len());
                 for _ in 0..spacing {
-                    layer.set_cell(
+                    frame.set_cell(
                         status_row,
                         col,
                         crate::layer::Cell::new(Character::from(' ')).with_colors(fg, bg),
                     );
                     col += 1;
                 }
-                layer.write_str_colored(status_row, col, &truncated, fg, bg);
+                frame.write_str_colored(status_row, col, &truncated, fg, bg);
                 col += truncated.len();
             }
         }
 
         while col < visible_cols {
-            layer.set_cell(
+            frame.set_cell(
                 status_row,
                 col,
                 crate::layer::Cell::new(Character::from(' ')).with_colors(fg, bg),

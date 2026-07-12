@@ -103,6 +103,19 @@ fn rasterize_matches_writing_directly_to_a_layer() {
 }
 
 #[test]
+fn write_str_colored_paints_one_cell_per_char() {
+    let mut frame = PaintFrame::new(1);
+    frame.write_str_colored(0, 2, "hi", Some(Color::Green), None);
+
+    let mut layer = Layer::new(LayerPriority::CONTENT, 1, 6);
+    rasterize(&frame, &mut layer);
+
+    assert_eq!(layer.get_cell(0, 2).unwrap().to_char(), 'h');
+    assert_eq!(layer.get_cell(0, 3).unwrap().to_char(), 'i');
+    assert_eq!(layer.get_cell(0, 3).unwrap().fg, Some(Color::Green));
+}
+
+#[test]
 fn preserves_raw_byte_content_that_is_not_valid_utf8() {
     let mut frame = PaintFrame::new(1);
     frame.set_cell(0, 0, Cell::new(Character::Byte(0xFF)));

@@ -99,6 +99,21 @@ impl PaintFrame {
             attrs: cell.attrs,
         });
     }
+
+    /// Paint `text` starting at `(row, start_col)`, one column per char.
+    /// Mirrors `Layer::write_str_colored`.
+    pub fn write_str_colored(
+        &mut self,
+        row: usize,
+        start_col: usize,
+        text: &str,
+        fg: Option<Color>,
+        bg: Option<Color>,
+    ) {
+        for (i, ch) in text.chars().enumerate() {
+            self.set_cell(row, start_col + i, Cell::from_char(ch).with_colors(fg, bg));
+        }
+    }
 }
 
 /// The terminal renderer's rasterization step: apply a `PaintFrame`'s runs
