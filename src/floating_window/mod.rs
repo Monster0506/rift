@@ -348,9 +348,10 @@ impl FloatingWindow {
         // Get border chars
         let border_chars = border_chars_override.unwrap_or_else(|| self.style.border_chars());
 
+        let mut frame = crate::paint::PaintFrame::new(layer.rows());
         if self.style.border {
             self.render_with_border(
-                layer,
+                &mut frame,
                 content,
                 RenderLayout {
                     start_row,
@@ -364,7 +365,7 @@ impl FloatingWindow {
             );
         } else {
             self.render_without_border(
-                layer,
+                &mut frame,
                 content,
                 RenderLayout {
                     start_row,
@@ -376,6 +377,7 @@ impl FloatingWindow {
                 bg,
             );
         }
+        crate::paint::rasterize(&frame, layer);
     }
 
     /// Render with custom border chars and Cells
@@ -398,9 +400,10 @@ impl FloatingWindow {
         let (fg, bg) = self.style.effective_colors();
         let border_chars = border_chars_override.unwrap_or_else(|| self.style.border_chars());
 
+        let mut frame = crate::paint::PaintFrame::new(layer.rows());
         if self.style.border {
             self.render_cells_with_border(
-                layer,
+                &mut frame,
                 content,
                 RenderLayout {
                     start_row,
@@ -414,7 +417,7 @@ impl FloatingWindow {
             );
         } else {
             self.render_cells_without_border(
-                layer,
+                &mut frame,
                 content,
                 RenderLayout {
                     start_row,
@@ -426,12 +429,13 @@ impl FloatingWindow {
                 bg,
             );
         }
+        crate::paint::rasterize(&frame, layer);
     }
 
     /// Render window content with border (Cells version)
     fn render_cells_with_border(
         &self,
-        layer: &mut Layer,
+        frame: &mut crate::paint::PaintFrame,
         content: &[Vec<Cell>],
         layout: RenderLayout,
         fg: Option<Color>,
@@ -446,14 +450,14 @@ impl FloatingWindow {
         let height = layout.height;
 
         // Top border
-        layer.set_cell(
+        frame.set_cell(
             start_row,
             start_col,
             Cell::from_char(border_chars.top_left).with_colors(fg, bg),
         );
         for i in 0..content_width {
             let col = start_col + 1 + i;
-            layer.set_cell(
+            frame.set_cell(
                 start_row,
                 col,
                 Cell::from_char(border_chars.horizontal).with_colors(fg, bg),
@@ -461,7 +465,7 @@ impl FloatingWindow {
         }
         if width > 1 {
             let col = start_col + width - 1;
-            layer.set_cell(
+            frame.set_cell(
                 start_row,
                 col,
                 Cell::from_char(border_chars.top_right).with_colors(fg, bg),
@@ -473,7 +477,7 @@ impl FloatingWindow {
             let row = start_row + 1 + content_row;
 
             // Left border
-            layer.set_cell(
+            frame.set_cell(
                 row,
                 start_col,
                 Cell::from_char(border_chars.vertical).with_colors(fg, bg),
@@ -490,12 +494,12 @@ impl FloatingWindow {
                     if final_cell.bg.is_none() {
                         final_cell.bg = bg;
                     }
-                    layer.set_cell(row, col, final_cell);
+                    frame.set_cell(row, col, final_cell);
                 }
                 // Pad with spaces
                 for i in line.len().min(content_width)..content_width {
                     let col = start_col + 1 + i;
-                    layer.set_cell(
+                    frame.set_cell(
                         row,
                         col,
                         Cell::new(Character::from(' ')).with_colors(fg, bg),
@@ -505,7 +509,7 @@ impl FloatingWindow {
                 // Empty line - fill with spaces
                 for i in 0..content_width {
                     let col = start_col + 1 + i;
-                    layer.set_cell(
+                    frame.set_cell(
                         row,
                         col,
                         Cell::new(Character::from(' ')).with_colors(fg, bg),
@@ -516,7 +520,7 @@ impl FloatingWindow {
             // Right border
             if width > 1 {
                 let col = start_col + width - 1;
-                layer.set_cell(
+                frame.set_cell(
                     row,
                     col,
                     Cell::from_char(border_chars.vertical).with_colors(fg, bg),
@@ -527,14 +531,14 @@ impl FloatingWindow {
         // Bottom border
         if height > 1 {
             let row = start_row + height - 1;
-            layer.set_cell(
+            frame.set_cell(
                 row,
                 start_col,
                 Cell::from_char(border_chars.bottom_left).with_colors(fg, bg),
             );
             for i in 0..content_width {
                 let col = start_col + 1 + i;
-                layer.set_cell(
+                frame.set_cell(
                     row,
                     col,
                     Cell::from_char(border_chars.horizontal).with_colors(fg, bg),
@@ -542,7 +546,7 @@ impl FloatingWindow {
             }
             if width > 1 {
                 let col = start_col + width - 1;
-                layer.set_cell(
+                frame.set_cell(
                     row,
                     col,
                     Cell::from_char(border_chars.bottom_right).with_colors(fg, bg),
@@ -554,7 +558,7 @@ impl FloatingWindow {
     /// Render window content without border (Cells version)
     fn render_cells_without_border(
         &self,
-        layer: &mut Layer,
+        frame: &mut crate::paint::PaintFrame,
         content: &[Vec<Cell>],
         layout: RenderLayout,
         fg: Option<Color>,
@@ -578,18 +582,18 @@ impl FloatingWindow {
                     if final_cell.bg.is_none() {
                         final_cell.bg = bg;
                     }
-                    layer.set_cell(row, col, final_cell);
+                    frame.set_cell(row, col, final_cell);
                 }
                 // Pad with spaces
                 for i in line.len().min(width)..width {
                     let col = start_col + i;
-                    layer.set_cell(row, col, Cell::from_char(' ').with_colors(fg, bg));
+                    frame.set_cell(row, col, Cell::from_char(' ').with_colors(fg, bg));
                 }
             } else {
                 // Empty line - fill with spaces
                 for i in 0..width {
                     let col = start_col + i;
-                    layer.set_cell(
+                    frame.set_cell(
                         row,
                         col,
                         Cell::new(Character::from(' ')).with_colors(fg, bg),
@@ -602,7 +606,7 @@ impl FloatingWindow {
     /// Render window content with border
     fn render_with_border(
         &self,
-        layer: &mut Layer,
+        frame: &mut crate::paint::PaintFrame,
         content: &[Vec<char>],
         layout: RenderLayout,
         fg: Option<Color>,
@@ -617,14 +621,14 @@ impl FloatingWindow {
         let height = layout.height;
 
         // Top border
-        layer.set_cell(
+        frame.set_cell(
             start_row,
             start_col,
             Cell::from_char(border_chars.top_left).with_colors(fg, bg),
         );
         for i in 0..content_width {
             let col = start_col + 1 + i;
-            layer.set_cell(
+            frame.set_cell(
                 start_row,
                 col,
                 Cell::from_char(border_chars.horizontal).with_colors(fg, bg),
@@ -632,7 +636,7 @@ impl FloatingWindow {
         }
         if width > 1 {
             let col = start_col + width - 1;
-            layer.set_cell(
+            frame.set_cell(
                 start_row,
                 col,
                 Cell::from_char(border_chars.top_right).with_colors(fg, bg),
@@ -644,7 +648,7 @@ impl FloatingWindow {
             let row = start_row + 1 + content_row;
 
             // Left border
-            layer.set_cell(
+            frame.set_cell(
                 row,
                 start_col,
                 Cell::from_char(border_chars.vertical).with_colors(fg, bg),
@@ -654,18 +658,18 @@ impl FloatingWindow {
             if let Some(line) = content.get(content_row) {
                 for (i, &byte) in line.iter().take(content_width).enumerate() {
                     let col = start_col + 1 + i;
-                    layer.set_cell(row, col, Cell::from_char(byte).with_colors(fg, bg));
+                    frame.set_cell(row, col, Cell::from_char(byte).with_colors(fg, bg));
                 }
                 // Pad with spaces
                 for i in line.len().min(content_width)..content_width {
                     let col = start_col + 1 + i;
-                    layer.set_cell(row, col, Cell::from_bytes(b" ").with_colors(fg, bg));
+                    frame.set_cell(row, col, Cell::from_bytes(b" ").with_colors(fg, bg));
                 }
             } else {
                 // Empty line - fill with spaces
                 for i in 0..content_width {
                     let col = start_col + 1 + i;
-                    layer.set_cell(
+                    frame.set_cell(
                         row,
                         col,
                         Cell::new(Character::from(' ')).with_colors(fg, bg),
@@ -676,7 +680,7 @@ impl FloatingWindow {
             // Right border
             if width > 1 {
                 let col = start_col + width - 1;
-                layer.set_cell(
+                frame.set_cell(
                     row,
                     col,
                     Cell::from_char(border_chars.vertical).with_colors(fg, bg),
@@ -687,14 +691,14 @@ impl FloatingWindow {
         // Bottom border
         if height > 1 {
             let row = start_row + height - 1;
-            layer.set_cell(
+            frame.set_cell(
                 row,
                 start_col,
                 Cell::from_char(border_chars.bottom_left).with_colors(fg, bg),
             );
             for i in 0..content_width {
                 let col = start_col + 1 + i;
-                layer.set_cell(
+                frame.set_cell(
                     row,
                     col,
                     Cell::from_char(border_chars.horizontal).with_colors(fg, bg),
@@ -702,7 +706,7 @@ impl FloatingWindow {
             }
             if width > 1 {
                 let col = start_col + width - 1;
-                layer.set_cell(
+                frame.set_cell(
                     row,
                     col,
                     Cell::from_char(border_chars.bottom_right).with_colors(fg, bg),
@@ -714,7 +718,7 @@ impl FloatingWindow {
     /// Render window content without border
     fn render_without_border(
         &self,
-        layer: &mut Layer,
+        frame: &mut crate::paint::PaintFrame,
         content: &[Vec<char>],
         layout: RenderLayout,
         fg: Option<Color>,
@@ -731,18 +735,18 @@ impl FloatingWindow {
             if let Some(line) = content.get(row_offset) {
                 for (i, &byte) in line.iter().take(width).enumerate() {
                     let col = start_col + i;
-                    layer.set_cell(row, col, Cell::from_char(byte).with_colors(fg, bg));
+                    frame.set_cell(row, col, Cell::from_char(byte).with_colors(fg, bg));
                 }
                 // Pad with spaces
                 for i in line.len().min(width)..width {
                     let col = start_col + i;
-                    layer.set_cell(row, col, Cell::from_char(' ').with_colors(fg, bg));
+                    frame.set_cell(row, col, Cell::from_char(' ').with_colors(fg, bg));
                 }
             } else {
                 // Empty line - fill with spaces
                 for i in 0..width {
                     let col = start_col + i;
-                    layer.set_cell(
+                    frame.set_cell(
                         row,
                         col,
                         Cell::new(Character::from(' ')).with_colors(fg, bg),
