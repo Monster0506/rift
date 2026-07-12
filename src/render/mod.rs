@@ -929,7 +929,8 @@ fn render_notifications_to_paint_frame(
     }
 }
 
-/// Render split dividers between windows
+/// Render split dividers between windows. Layer-based, not PaintFrame-based:
+/// highlight_focused_window_border below reads these cells back to recolor them.
 pub(crate) fn render_dividers(
     layer: &mut Layer,
     tree: &crate::split::tree::SplitTree,
@@ -1025,6 +1026,8 @@ fn render_node_dividers(
     }
 }
 
+/// Reads existing divider glyphs back from `layer` to selectively recolor
+/// them, so this reads/writes Layer directly rather than going via PaintFrame.
 pub(crate) fn highlight_focused_window_border(
     layer: &mut Layer,
     layout: &crate::split::layout::WindowLayout,

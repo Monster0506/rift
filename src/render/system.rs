@@ -693,6 +693,8 @@ impl RenderSystem {
         self.cursor_animator.step(ctx.state.settings.cursor_speed);
         let (anim_row, anim_col) = self.cursor_animator.display_pos();
 
+        // Blends against get_composited_cell's post-composite color (all other
+        // layers already rasterized), so this stays Layer-based, not PaintFrame-based.
         if software {
             {
                 let layer = self.compositor.get_layer_mut(LayerPriority::CURSOR);
