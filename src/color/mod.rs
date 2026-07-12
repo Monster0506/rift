@@ -1,8 +1,6 @@
 //! Color system
 //! Provides color types, styles, and extension points for syntax highlighting
 
-use crossterm::style::Color as CrosstermColor;
-
 pub mod buffer;
 pub mod styled;
 pub mod theme;
@@ -52,32 +50,6 @@ pub enum Color {
 }
 
 impl Color {
-    /// Convert to crossterm Color
-    #[must_use]
-    pub fn to_crossterm(self) -> CrosstermColor {
-        match self {
-            Color::Reset => CrosstermColor::Reset,
-            Color::Black => CrosstermColor::Black,
-            Color::DarkGrey => CrosstermColor::DarkGrey,
-            Color::Red => CrosstermColor::Red,
-            Color::DarkRed => CrosstermColor::DarkRed,
-            Color::Green => CrosstermColor::Green,
-            Color::DarkGreen => CrosstermColor::DarkGreen,
-            Color::Yellow => CrosstermColor::Yellow,
-            Color::DarkYellow => CrosstermColor::DarkYellow,
-            Color::Blue => CrosstermColor::Blue,
-            Color::DarkBlue => CrosstermColor::DarkBlue,
-            Color::Magenta => CrosstermColor::Magenta,
-            Color::DarkMagenta => CrosstermColor::DarkMagenta,
-            Color::Cyan => CrosstermColor::Cyan,
-            Color::DarkCyan => CrosstermColor::DarkCyan,
-            Color::White => CrosstermColor::White,
-            Color::Grey => CrosstermColor::Grey,
-            Color::Ansi256(n) => CrosstermColor::AnsiValue(n),
-            Color::Rgb { r, g, b } => CrosstermColor::Rgb { r, g, b },
-        }
-    }
-
     /// Parse a named color ("red", "darkblue", ...) or a `#rrggbb` hex string.
     #[must_use]
     pub fn parse(s: &str) -> Option<Color> {
@@ -106,32 +78,6 @@ impl Color {
             }
             _ => return None,
         })
-    }
-
-    /// Create from crossterm Color
-    #[must_use]
-    pub fn from_crossterm(color: CrosstermColor) -> Self {
-        match color {
-            CrosstermColor::Reset => Color::Reset,
-            CrosstermColor::Black => Color::Black,
-            CrosstermColor::DarkGrey => Color::DarkGrey,
-            CrosstermColor::Red => Color::Red,
-            CrosstermColor::DarkRed => Color::DarkRed,
-            CrosstermColor::Green => Color::Green,
-            CrosstermColor::DarkGreen => Color::DarkGreen,
-            CrosstermColor::Yellow => Color::Yellow,
-            CrosstermColor::DarkYellow => Color::DarkYellow,
-            CrosstermColor::Blue => Color::Blue,
-            CrosstermColor::DarkBlue => Color::DarkBlue,
-            CrosstermColor::Magenta => Color::Magenta,
-            CrosstermColor::DarkMagenta => Color::DarkMagenta,
-            CrosstermColor::Cyan => Color::Cyan,
-            CrosstermColor::DarkCyan => Color::DarkCyan,
-            CrosstermColor::White => Color::White,
-            CrosstermColor::Grey => Color::Grey,
-            CrosstermColor::AnsiValue(n) => Color::Ansi256(n),
-            CrosstermColor::Rgb { r, g, b } => Color::Rgb { r, g, b },
-        }
     }
 }
 

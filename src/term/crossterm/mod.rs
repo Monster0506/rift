@@ -6,7 +6,7 @@ use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute, queue,
-    style::{ResetColor, SetBackgroundColor, SetForegroundColor},
+    style::{Color as CrosstermColor, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{self, ClearType},
 };
 use std::io::{stdout, BufWriter, Write};
@@ -14,6 +14,58 @@ use std::io::{stdout, BufWriter, Write};
 use crate::color::Color;
 use crate::key::Key;
 use crate::term::{ColorTerminal, Size, TerminalBackend};
+
+/// Convert the core `Color` type to crossterm's `Color`.
+#[must_use]
+pub fn color_to_crossterm(color: Color) -> CrosstermColor {
+    match color {
+        Color::Reset => CrosstermColor::Reset,
+        Color::Black => CrosstermColor::Black,
+        Color::DarkGrey => CrosstermColor::DarkGrey,
+        Color::Red => CrosstermColor::Red,
+        Color::DarkRed => CrosstermColor::DarkRed,
+        Color::Green => CrosstermColor::Green,
+        Color::DarkGreen => CrosstermColor::DarkGreen,
+        Color::Yellow => CrosstermColor::Yellow,
+        Color::DarkYellow => CrosstermColor::DarkYellow,
+        Color::Blue => CrosstermColor::Blue,
+        Color::DarkBlue => CrosstermColor::DarkBlue,
+        Color::Magenta => CrosstermColor::Magenta,
+        Color::DarkMagenta => CrosstermColor::DarkMagenta,
+        Color::Cyan => CrosstermColor::Cyan,
+        Color::DarkCyan => CrosstermColor::DarkCyan,
+        Color::White => CrosstermColor::White,
+        Color::Grey => CrosstermColor::Grey,
+        Color::Ansi256(n) => CrosstermColor::AnsiValue(n),
+        Color::Rgb { r, g, b } => CrosstermColor::Rgb { r, g, b },
+    }
+}
+
+/// Convert crossterm's `Color` to the core `Color` type.
+#[must_use]
+pub fn color_from_crossterm(color: CrosstermColor) -> Color {
+    match color {
+        CrosstermColor::Reset => Color::Reset,
+        CrosstermColor::Black => Color::Black,
+        CrosstermColor::DarkGrey => Color::DarkGrey,
+        CrosstermColor::Red => Color::Red,
+        CrosstermColor::DarkRed => Color::DarkRed,
+        CrosstermColor::Green => Color::Green,
+        CrosstermColor::DarkGreen => Color::DarkGreen,
+        CrosstermColor::Yellow => Color::Yellow,
+        CrosstermColor::DarkYellow => Color::DarkYellow,
+        CrosstermColor::Blue => Color::Blue,
+        CrosstermColor::DarkBlue => Color::DarkBlue,
+        CrosstermColor::Magenta => Color::Magenta,
+        CrosstermColor::DarkMagenta => Color::DarkMagenta,
+        CrosstermColor::Cyan => Color::Cyan,
+        CrosstermColor::DarkCyan => Color::DarkCyan,
+        CrosstermColor::White => Color::White,
+        CrosstermColor::Grey => Color::Grey,
+        CrosstermColor::AnsiValue(n) => Color::Ansi256(n),
+        CrosstermColor::Rgb { r, g, b } => Color::Rgb { r, g, b },
+    }
+}
 
 /// Crossterm-based terminal backend implementation, generic over its output
 /// sink so the same ANSI encoding path can target a buffer instead of a TTY.
@@ -170,13 +222,13 @@ impl<W: Write> TerminalBackend for CrosstermBackend<W> {
 
 impl<W: Write> ColorTerminal for CrosstermBackend<W> {
     fn set_foreground_color(&mut self, color: Color) -> Result<(), String> {
-        execute!(self.writer, SetForegroundColor(color.to_crossterm()))
+        execute!(self.writer, SetForegroundColor(color_to_crossterm(color)))
             .map_err(|e| format!("Failed to set foreground color: {e}"))?;
         Ok(())
     }
 
     fn set_background_color(&mut self, color: Color) -> Result<(), String> {
-        execute!(self.writer, SetBackgroundColor(color.to_crossterm()))
+        execute!(self.writer, SetBackgroundColor(color_to_crossterm(color)))
             .map_err(|e| format!("Failed to set background color: {e}"))?;
         Ok(())
     }

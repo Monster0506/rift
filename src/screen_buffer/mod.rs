@@ -598,16 +598,22 @@ impl DoubleBuffer {
 
                 if cell.fg != *current_fg {
                     if let Some(fg) = cell.fg {
-                        queue!(cmd_buf, SetForegroundColor(fg.to_crossterm()))
-                            .map_err(|e| format!("Failed to set fg: {e}"))?;
+                        queue!(
+                            cmd_buf,
+                            SetForegroundColor(crate::term::crossterm::color_to_crossterm(fg))
+                        )
+                        .map_err(|e| format!("Failed to set fg: {e}"))?;
                         *current_fg = Some(fg);
                     }
                 }
 
                 if cell.bg != *current_bg {
                     if let Some(bg) = cell.bg {
-                        queue!(cmd_buf, SetBackgroundColor(bg.to_crossterm()))
-                            .map_err(|e| format!("Failed to set bg: {e}"))?;
+                        queue!(
+                            cmd_buf,
+                            SetBackgroundColor(crate::term::crossterm::color_to_crossterm(bg))
+                        )
+                        .map_err(|e| format!("Failed to set bg: {e}"))?;
                         *current_bg = Some(bg);
                     }
                 }

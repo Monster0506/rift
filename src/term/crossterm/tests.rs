@@ -1,9 +1,38 @@
 //! Tests for crossterm backend
 
+use crate::color::Color;
 use crate::key::Key;
-use crate::term::crossterm::CrosstermBackend;
+use crate::term::crossterm::{color_from_crossterm, color_to_crossterm, CrosstermBackend};
 use crate::term::TerminalBackend;
 use std::mem::ManuallyDrop;
+
+#[test]
+fn test_color_basic() {
+    let red = Color::Red;
+    let crossterm_color = color_to_crossterm(red);
+    let back = color_from_crossterm(crossterm_color);
+    assert_eq!(red, back);
+}
+
+#[test]
+fn test_color_rgb() {
+    let rgb = Color::Rgb {
+        r: 255,
+        g: 128,
+        b: 64,
+    };
+    let crossterm_color = color_to_crossterm(rgb);
+    let back = color_from_crossterm(crossterm_color);
+    assert_eq!(rgb, back);
+}
+
+#[test]
+fn test_color_ansi256() {
+    let ansi = Color::Ansi256(100);
+    let crossterm_color = color_to_crossterm(ansi);
+    let back = color_from_crossterm(crossterm_color);
+    assert_eq!(ansi, back);
+}
 
 #[test]
 fn test_crossterm_backend_new() {
