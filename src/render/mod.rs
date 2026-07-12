@@ -845,6 +845,19 @@ pub(crate) fn render_notifications(
     viewport_rows: usize,
     viewport_cols: usize,
 ) {
+    let mut frame = crate::paint::PaintFrame::new(layer.rows());
+    render_notifications_to_paint_frame(&mut frame, state, viewport_rows, viewport_cols);
+    crate::paint::rasterize(&frame, layer);
+}
+
+/// Builds the notification layer's PaintFrame; render_notifications
+/// rasterizes it onto the actual Layer in a single step.
+fn render_notifications_to_paint_frame(
+    frame: &mut crate::paint::PaintFrame,
+    state: &State,
+    viewport_rows: usize,
+    viewport_cols: usize,
+) {
     use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
     let notifications = state.error_manager.notifications();
@@ -879,7 +892,7 @@ pub(crate) fn render_notifications(
             }
 
             for i in 0..box_width {
-                layer.set_cell(
+                frame.set_cell(
                     current_row,
                     start_col + i,
                     Cell::new(Character::from(' ')).with_colors(Some(fg_color), Some(bg_color)),
@@ -889,7 +902,7 @@ pub(crate) fn render_notifications(
             let mut current_col = start_col + 2;
             for ch in line.chars() {
                 let ch_width = ch.width().unwrap_or(1);
-                layer.set_cell(
+                frame.set_cell(
                     current_row,
                     current_col,
                     Cell::from_char(ch).with_colors(Some(fg_color), Some(bg_color)),
@@ -903,7 +916,7 @@ pub(crate) fn render_notifications(
                         attrs: crate::layer::CellAttrs::default(),
                     };
                     for k in 1..ch_width {
-                        layer.set_cell(current_row, current_col + k, empty_cell.clone());
+                        frame.set_cell(current_row, current_col + k, empty_cell.clone());
                     }
                 }
                 current_col += ch_width;
