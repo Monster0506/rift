@@ -33,6 +33,7 @@ pub mod message;
 pub mod mode;
 pub mod movement;
 pub mod notification;
+pub mod paint;
 pub mod plugin;
 pub mod render;
 pub mod replay;
