@@ -9,6 +9,7 @@ pub mod explorer;
 pub mod explorer_preview;
 pub mod file_operations;
 pub mod fs;
+#[cfg(feature = "treesitter")]
 pub mod syntax;
 pub mod terminal_job;
 pub mod undotree;

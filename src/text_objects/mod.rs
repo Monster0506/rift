@@ -2,8 +2,17 @@ use crate::buffer::TextBuffer;
 use crate::character::Character;
 use crate::wrap::{MotionRange, RangeKind};
 
+#[cfg(feature = "treesitter")]
 mod treesitter;
+#[cfg(feature = "treesitter")]
 pub use treesitter::SyntaxContext;
+
+/// Inert stand-in when tree-sitter is compiled out: text objects that need a
+/// parse tree simply never resolve, so no context value is ever constructed.
+#[cfg(not(feature = "treesitter"))]
+pub struct SyntaxContext<'a> {
+    _marker: std::marker::PhantomData<&'a ()>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Modifier {
@@ -128,6 +137,7 @@ fn compose_nesting(spec_nesting: u8, count: usize) -> u8 {
     (n * c).min(u8::MAX as u32) as u8
 }
 
+#[cfg_attr(not(feature = "treesitter"), allow(unused_variables))]
 pub fn resolve(
     spec: TextObjectSpec,
     buf: &TextBuffer,
@@ -204,8 +214,15 @@ pub fn resolve(
         | ObjectKind::Block
         | ObjectKind::Tag
         | ObjectKind::Number => {
-            let ctx = syntax.as_ref()?;
-            treesitter::resolve(spec.kind, base_modifier, nesting, cursor, buf, ctx)
+            #[cfg(feature = "treesitter")]
+            {
+                let ctx = syntax.as_ref()?;
+                treesitter::resolve(spec.kind, base_modifier, nesting, cursor, buf, ctx)
+            }
+            #[cfg(not(feature = "treesitter"))]
+            {
+                None
+            }
         }
     }?;
 

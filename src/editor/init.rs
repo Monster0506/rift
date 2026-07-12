@@ -156,6 +156,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         // Trigger initial syntax parse
+        #[cfg(feature = "treesitter")]
         if let Some(doc) = editor.document_manager.active_document_mut() {
             if let Some(path) = doc.path() {
                 let path = path.to_path_buf();

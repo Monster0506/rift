@@ -4,6 +4,7 @@ use crate::document::DocumentId;
 use crate::error::RiftError;
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
+#[cfg(feature = "treesitter")]
 use std::sync::Arc;
 
 /// Debounce window for backgrounding a syntax parse after a sync attempt
@@ -21,6 +22,7 @@ pub(super) struct PendingSyntaxReparse {
 }
 
 impl<T: TerminalBackend> Editor<T> {
+    #[cfg(feature = "treesitter")]
     pub(super) fn spawn_syntax_parse_job(
         &mut self,
         doc_id: crate::document::DocumentId,
@@ -62,6 +64,15 @@ impl<T: TerminalBackend> Editor<T> {
         .with_highlights_context(old_highlights, &pending_edits);
 
         Some(self.job_manager.spawn(job))
+    }
+
+    /// No-op when tree-sitter is compiled out: there is no syntax state to reparse.
+    #[cfg(not(feature = "treesitter"))]
+    pub(super) fn spawn_syntax_parse_job(
+        &mut self,
+        _doc_id: crate::document::DocumentId,
+    ) -> Option<usize> {
+        None
     }
 
     /// Schedule a background reparse for `doc_id`, debounced so a burst of
@@ -134,6 +145,7 @@ impl<T: TerminalBackend> Editor<T> {
         &mut self,
         msg: crate::job_manager::JobMessage,
     ) -> Result<(), RiftError> {
+        #[cfg(feature = "treesitter")]
         use crate::job_manager::jobs::syntax::SyntaxParseResult;
         use crate::job_manager::JobMessage;
         // Parser import not needed here
@@ -335,6 +347,7 @@ impl<T: TerminalBackend> Editor<T> {
 
                         let preview_doc_id = res.right_doc_id;
                         let preview_path = res.path.clone();
+                        #[cfg_attr(not(feature = "treesitter"), allow(unused_variables))]
                         let is_file_preview = res.dir_entries.is_none();
                         if let Some(doc) = self.document_manager.get_document_mut(preview_doc_id) {
                             doc.replace_buffer_content("");
@@ -356,6 +369,7 @@ impl<T: TerminalBackend> Editor<T> {
                             }
                         }
 
+                        #[cfg(feature = "treesitter")]
                         if is_file_preview {
                             if let Ok(loaded) = self.language_loader.load_language_for_file(&preview_path) {
                                 let highlights = self
@@ -458,6 +472,7 @@ impl<T: TerminalBackend> Editor<T> {
                         };
 
                         // Re-initialize syntax
+                        #[cfg(feature = "treesitter")]
                         if let Some((_, _, Some(path))) = &warming_data {
                             if let Ok(loaded) = self.language_loader.load_language_for_file(path) {
                                 let highlights = self
@@ -560,6 +575,7 @@ impl<T: TerminalBackend> Editor<T> {
                     Err(p) => p,
                 };
 
+                #[cfg(feature = "treesitter")]
                 match any_payload.downcast::<SyntaxParseResult>() {
                     Ok(result) => {
                         let doc_id = result.document_id;
@@ -640,6 +656,38 @@ impl<T: TerminalBackend> Editor<T> {
                                             "Search cache warmed".to_string(),
                                         );
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Without tree-sitter, no job ever produces a SyntaxParseResult;
+                // go straight to the rest of the downcast chain.
+                #[cfg(not(feature = "treesitter"))]
+                {
+                    // Try CompletionPayload
+                    let any_payload = match any_payload
+                        .downcast::<crate::job_manager::jobs::completion::CompletionPayload>(
+                    ) {
+                        Ok(payload) => {
+                            self.handle_completion_result(*payload);
+                            return Ok(());
+                        }
+                        Err(p) => p,
+                    };
+
+                    // Try ByteLineMap (CacheWarmingJob)
+                    if let Ok(map) = any_payload.downcast::<crate::buffer::byte_map::ByteLineMap>()
+                    {
+                        if let Some(doc) = self.document_manager.active_document_mut() {
+                            if doc.buffer.revision == map.revision {
+                                *doc.buffer.byte_map_cache.borrow_mut() = Some(*map);
+                                if self.state.debug_mode {
+                                    self.state.notify(
+                                        crate::notification::NotificationType::Info,
+                                        "Search cache warmed".to_string(),
+                                    );
                                 }
                             }
                         }
