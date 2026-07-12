@@ -31,7 +31,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.lsp_notify_close(id);
         self.document_manager.remove_document(id)?;
         if let Some(doc_id) = self.document_manager.active_document_id() {
-            self.split_tree.focused_window_mut().document_id = doc_id;
+            self.split_tree.set_focused_document(doc_id);
         }
         self.sync_state_with_active_document();
         Ok(())
@@ -128,7 +128,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         if let Some(doc_id) = self.document_manager.active_document_id() {
-            self.split_tree.focused_window_mut().document_id = doc_id;
+            self.split_tree.set_focused_document(doc_id);
         }
         self.sync_state_with_active_document();
         Ok(())
@@ -144,7 +144,7 @@ impl<T: TerminalBackend> Editor<T> {
         let doc = crate::document::Document::new_scratch(id, title, lines)?;
         self.document_manager.add_document(doc);
         self.document_manager.switch_to_document(id)?;
-        self.split_tree.focused_window_mut().document_id = id;
+        self.split_tree.set_focused_document(id);
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
         self.plugin_host
@@ -185,7 +185,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.document_manager.add_document(doc);
 
         self.document_manager.switch_to_document(id)?;
-        self.split_tree.focused_window_mut().document_id = id;
+        self.split_tree.set_focused_document(id);
 
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();

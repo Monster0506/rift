@@ -180,7 +180,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.plugin_host
                         .dispatch(&crate::plugin::EditorEvent::BufClose { buf: doc_id });
                     if let Some(new_doc_id) = self.document_manager.active_document_id() {
-                        self.split_tree.focused_window_mut().document_id = new_doc_id;
+                        self.split_tree.set_focused_document(new_doc_id);
                         self.plugin_host
                             .dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_doc_id });
                     }
@@ -199,7 +199,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.save_current_view_state();
         self.document_manager.switch_next_tab();
         if let Some(doc_id) = self.document_manager.active_document_id() {
-            self.split_tree.focused_window_mut().document_id = doc_id;
+            self.split_tree.set_focused_document(doc_id);
         }
         self.restore_view_state();
         self.sync_state_with_active_document();
@@ -224,7 +224,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.save_current_view_state();
         self.document_manager.switch_prev_tab();
         if let Some(doc_id) = self.document_manager.active_document_id() {
-            self.split_tree.focused_window_mut().document_id = doc_id;
+            self.split_tree.set_focused_document(doc_id);
         }
         self.restore_view_state();
         self.sync_state_with_active_document();

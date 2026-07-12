@@ -210,9 +210,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let dir_win_id = self.split_tree.focused_window_id();
         let original_doc_id = self.split_tree.focused_window().document_id;
-        if let Some(w) = self.split_tree.windows.get_mut(&dir_win_id) {
-            w.document_id = dir_doc_id;
-        }
+        self.split_tree.set_window_document(dir_win_id, dir_doc_id);
 
         let preview_win_id = self
             .split_tree
@@ -261,9 +259,8 @@ impl<T: TerminalBackend> Editor<T> {
                 self.split_tree.close_window(layout.preview_win_id);
                 self.document_manager
                     .remove_private_document(layout.preview_doc_id);
-                if let Some(w) = self.split_tree.windows.get_mut(&layout.dir_win_id) {
-                    w.document_id = layout.original_doc_id;
-                }
+                self.split_tree
+                    .set_window_document(layout.dir_win_id, layout.original_doc_id);
                 self.document_manager
                     .remove_private_document(layout.dir_doc_id);
                 self.split_tree.set_focus(layout.dir_win_id);
@@ -273,9 +270,8 @@ impl<T: TerminalBackend> Editor<T> {
             }
             PanelKind::UndoTree => {
                 // Reassign the preview window to show the original file before removing preview clone.
-                if let Some(w) = self.split_tree.windows.get_mut(&layout.preview_win_id) {
-                    w.document_id = layout.original_doc_id;
-                }
+                self.split_tree
+                    .set_window_document(layout.preview_win_id, layout.original_doc_id);
                 self.split_tree.close_window(layout.dir_win_id);
                 self.document_manager
                     .remove_private_document(layout.dir_doc_id);
@@ -290,9 +286,8 @@ impl<T: TerminalBackend> Editor<T> {
                 self.split_tree.close_window(layout.preview_win_id);
                 self.document_manager
                     .remove_private_document(layout.preview_doc_id);
-                if let Some(w) = self.split_tree.windows.get_mut(&layout.dir_win_id) {
-                    w.document_id = layout.original_doc_id;
-                }
+                self.split_tree
+                    .set_window_document(layout.dir_win_id, layout.original_doc_id);
                 self.document_manager
                     .remove_private_document(layout.dir_doc_id);
                 self.split_tree.set_focus(layout.dir_win_id);
@@ -346,7 +341,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.state.handle_error(e);
             return;
         }
-        self.split_tree.focused_window_mut().document_id = id;
+        self.split_tree.set_focused_document(id);
 
         self.last_notification_generation = self.state.error_manager.notifications().generation;
 
@@ -395,9 +390,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let index_win_id = self.split_tree.focused_window_id();
         let original_doc_id = self.split_tree.focused_window().document_id;
-        if let Some(w) = self.split_tree.windows.get_mut(&index_win_id) {
-            w.document_id = index_doc_id;
-        }
+        self.split_tree.set_window_document(index_win_id, index_doc_id);
 
         let preview_win_id = self
             .split_tree
@@ -580,9 +573,7 @@ impl<T: TerminalBackend> Editor<T> {
         let cols = size.cols as usize;
 
         let dir_win_id = self.split_tree.focused_window_id();
-        if let Some(w) = self.split_tree.windows.get_mut(&dir_win_id) {
-            w.document_id = ut_id;
-        }
+        self.split_tree.set_window_document(dir_win_id, ut_id);
 
         let preview_win_id = self
             .split_tree

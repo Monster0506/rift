@@ -455,6 +455,18 @@ impl SplitTree {
         self.windows.get_mut(&id)
     }
 
+    /// Point `id`'s window at `doc_id`, if that window exists.
+    pub fn set_window_document(&mut self, id: WindowId, doc_id: DocumentId) {
+        if let Some(w) = self.windows.get_mut(&id) {
+            w.document_id = doc_id;
+        }
+    }
+
+    /// Point the focused window at `doc_id`.
+    pub fn set_focused_document(&mut self, doc_id: DocumentId) {
+        self.focused_window_mut().document_id = doc_id;
+    }
+
     pub fn resize_focused(
         &mut self,
         direction: SplitDirection,

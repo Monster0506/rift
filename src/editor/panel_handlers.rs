@@ -135,9 +135,8 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self
             .document_manager
             .switch_to_document(layout.preview_doc_id);
-        if let Some(w) = self.split_tree.windows.get_mut(&layout.preview_win_id) {
-            w.document_id = layout.preview_doc_id;
-        }
+        self.split_tree
+            .set_window_document(layout.preview_win_id, layout.preview_doc_id);
 
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
@@ -169,9 +168,8 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self
             .document_manager
             .switch_to_document(layout.preview_doc_id);
-        if let Some(w) = self.split_tree.windows.get_mut(&layout.preview_win_id) {
-            w.document_id = layout.preview_doc_id;
-        }
+        self.split_tree
+            .set_window_document(layout.preview_win_id, layout.preview_doc_id);
 
         self.set_mode(crate::mode::Mode::Insert);
         self.sync_state_with_active_document();
