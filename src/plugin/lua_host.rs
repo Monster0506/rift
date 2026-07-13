@@ -2,6 +2,7 @@
 
 use crate::notification::NotificationType;
 use crate::plugin::events::EditorEvent;
+use crate::plugin::lua_value::{value_from_lua_table, value_into_lua};
 use crate::plugin::{PluginFloat, PluginMutation};
 use mlua::prelude::*;
 use std::sync::{Arc, Mutex};
@@ -145,7 +146,7 @@ fn annotation_view_to_table(lua: &Lua, v: &AnnotationView) -> LuaResult<LuaTable
     t.set("end", v.end as i64)?;
     t.set("visible", v.visible)?;
     t.set("interactive", v.interactive)?;
-    if let Ok(p) = v.payload.clone().into_lua(lua) {
+    if let Ok(p) = value_into_lua(v.payload.clone(), lua) {
         t.set("payload", p)?;
     }
     Ok(t)
@@ -522,7 +523,7 @@ impl LuaHost {
                         ));
                     };
                     let payload = match opts.get::<LuaValue>("payload")? {
-                        LuaValue::Table(t) => crate::annotations::Value::from_lua_table(&t)?,
+                        LuaValue::Table(t) => value_from_lua_table(&t)?,
                         _ => crate::annotations::Value::Null,
                     };
                     let presentation = build_presentation(&opts)?;
@@ -580,7 +581,7 @@ impl LuaHost {
                 let sh = Arc::clone(&shared);
                 let f = lua.create_function(move |_, (id, opts): (u64, LuaTable)| {
                     let payload = match opts.get::<LuaValue>("payload")? {
-                        LuaValue::Table(t) => Some(crate::annotations::Value::from_lua_table(&t)?),
+                        LuaValue::Table(t) => Some(value_from_lua_table(&t)?),
                         _ => None,
                     };
                     let visible: Option<bool> = opts.get("visible")?;
@@ -2455,10 +2456,10 @@ end
         let _ = t.set("verb", ctx.verb.as_str());
         let _ = t.set("position", ctx.position as i64);
         let _ = t.set("buffer", ctx.buffer as i64);
-        if let Ok(p) = ctx.payload.clone().into_lua(&self.lua) {
+        if let Ok(p) = value_into_lua(ctx.payload.clone(), &self.lua) {
             let _ = t.set("payload", p);
         }
-        if let Ok(p) = ctx.params.clone().into_lua(&self.lua) {
+        if let Ok(p) = value_into_lua(ctx.params.clone(), &self.lua) {
             let _ = t.set("params", p);
         }
         f.call::<()>(t).is_ok()
@@ -2492,7 +2493,7 @@ end
         let _ = t.set("kind", ctx.kind.as_str());
         let _ = t.set("position", ctx.position as i64);
         let _ = t.set("buffer", ctx.buffer as i64);
-        if let Ok(p) = ctx.payload.clone().into_lua(&self.lua) {
+        if let Ok(p) = value_into_lua(ctx.payload.clone(), &self.lua) {
             let _ = t.set("payload", p);
         }
         f.call::<()>(t).is_ok()

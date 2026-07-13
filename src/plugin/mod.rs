@@ -17,6 +17,7 @@
 
 pub mod events;
 pub mod lua_host;
+mod lua_value;
 
 pub use events::EditorEvent;
 
