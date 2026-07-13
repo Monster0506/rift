@@ -90,6 +90,10 @@ pub struct StatusDrawState {
     pub search_match_index: Option<usize>,
     pub search_total_matches: usize,
     pub reverse_video: bool,
+    /// Whether the status line renders at all; if false the row is blanked.
+    pub show_status_line: bool,
+    pub show_filename: bool,
+    pub show_dirty_indicator: bool,
     /// Theme/Color context
     pub editor_bg: Option<crate::color::Color>,
     pub editor_fg: Option<crate::color::Color>,

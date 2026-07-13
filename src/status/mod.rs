@@ -13,9 +13,6 @@ use crate::color::Color;
 use crate::key::Key;
 use crate::layer::{Cell, Layer};
 use crate::mode::Mode;
-use crate::state::State;
-use crate::term::TerminalBackend;
-use crate::viewport::Viewport;
 
 use crate::render::{CursorInfo, StatusDrawState};
 
@@ -41,123 +38,6 @@ fn char_safe_suffix(s: &str, max_chars: usize) -> &str {
 pub struct StatusBar;
 
 impl StatusBar {
-    /// Render the status bar to the terminal
-    pub fn render<T: TerminalBackend>(
-        term: &mut T,
-        viewport: &Viewport,
-        current_mode: Mode,
-        pending_key: Option<Key>,
-        pending_count: usize,
-        state: &State,
-    ) -> Result<(), String> {
-        let status_row = viewport.visible_rows().saturating_sub(1);
-        term.move_cursor(status_row as u16, 0)?;
-
-        if !state.settings.status_line.show_status_line {
-            for _ in 0..viewport.visible_cols() {
-                term.write(b" ")?;
-            }
-            return Ok(());
-        }
-
-        // Invert colors for status bar (reverse video) if enabled
-        if state.settings.status_line.reverse_video {
-            term.write(b"\x1b[7m")?;
-        }
-
-        let mode_str = Self::format_mode(current_mode);
-        term.write(mode_str.as_bytes())?;
-
-        let mut pending_str = String::new();
-        if pending_count > 0 {
-            pending_str.push_str(&format!(" {}", pending_count));
-        }
-        if let Some(key) = pending_key {
-            pending_str.push(' ');
-            pending_str.push_str(&format!("[{}]", Self::format_key(key)));
-        }
-        if !pending_str.is_empty() {
-            term.write(pending_str.as_bytes())?;
-        }
-
-        let debug_str = if state.debug_mode {
-            Self::format_debug_info(state, current_mode)
-        } else {
-            String::new()
-        };
-
-        let mode_len = mode_str.len();
-        let pending_len = pending_str.len();
-        let used_cols = mode_len + pending_len;
-        let available_cols = viewport.visible_cols().saturating_sub(used_cols);
-
-        if state.debug_mode {
-            let (debug_display, debug_len) = if debug_str.is_empty() {
-                (String::new(), 0)
-            } else {
-                let truncated = if debug_str.len() <= available_cols {
-                    debug_str
-                } else {
-                    format!(
-                        "{}...",
-                        char_safe_prefix(&debug_str, available_cols.saturating_sub(3))
-                    )
-                };
-                let spacing = available_cols.saturating_sub(truncated.len());
-                let spaced = format!("{}{}", " ".repeat(spacing), truncated);
-                (spaced, truncated.len() + spacing)
-            };
-
-            if !debug_display.is_empty() {
-                term.write(debug_display.as_bytes())?;
-            }
-
-            let total_used = mode_len + pending_len + debug_len;
-            let remaining_cols = viewport.visible_cols().saturating_sub(total_used);
-
-            for _ in 0..remaining_cols {
-                term.write(b" ")?;
-            }
-        } else if state.settings.status_line.show_filename {
-            let display_name = if state.is_dirty && state.settings.status_line.show_dirty_indicator
-            {
-                format!("{}*", state.file_name)
-            } else {
-                state.file_name.clone()
-            };
-            let display_len = display_name.len();
-
-            if display_len <= available_cols {
-                let spacing = available_cols.saturating_sub(display_len);
-                for _ in 0..spacing {
-                    term.write(b" ")?;
-                }
-                term.write(display_name.as_bytes())?;
-            } else {
-                let truncated = if available_cols > 3 {
-                    format!("...{}", char_safe_suffix(&display_name, available_cols - 3))
-                } else {
-                    String::new()
-                };
-                let spacing = available_cols.saturating_sub(truncated.len());
-                for _ in 0..spacing {
-                    term.write(b" ")?;
-                }
-                term.write(truncated.as_bytes())?;
-            }
-        } else {
-            for _ in 0..available_cols {
-                term.write(b" ")?;
-            }
-        }
-
-        if state.settings.status_line.reverse_video {
-            term.write(b"\x1b[0m")?;
-        }
-
-        Ok(())
-    }
-
     /// Format mode name for display
     #[must_use]
     pub fn format_mode(mode: Mode) -> &'static str {
@@ -233,30 +113,6 @@ impl StatusBar {
         parts.join(" | ")
     }
 
-    /// Format debug information string.
-    fn format_debug_info(state: &State, _current_mode: Mode) -> String {
-        let mut parts = Vec::new();
-
-        if let Some(path) = &state.file_path {
-            parts.push(format!("File: {}", path));
-        }
-
-        if let Some(key) = state.last_keypress {
-            parts.push(format!("Last: {}", Self::format_key(key)));
-        }
-
-        parts.push(format!(
-            "Pos: {}:{}",
-            state.cursor_pos.0 + 1,
-            state.cursor_pos.1 + 1
-        ));
-
-        parts.push(format!("Lines: {}", state.total_lines));
-        parts.push(format!("Size: {}B", state.buffer_size));
-
-        parts.join(" | ")
-    }
-
     /// Render the status bar to a layer instead of directly to terminal
     /// This allows the status bar to be composited with other layers
     pub fn render_to_layer(layer: &mut Layer, state: &StatusDrawState) {
@@ -273,6 +129,13 @@ impl StatusBar {
     ) {
         let status_row = layer_rows.saturating_sub(1);
         let visible_cols = state.cols;
+
+        if !state.show_status_line {
+            for col in 0..visible_cols {
+                frame.set_cell(status_row, col, Cell::new(Character::from(' ')));
+            }
+            return;
+        }
 
         let (fg, bg) = if state.reverse_video {
             (
@@ -394,8 +257,8 @@ impl StatusBar {
                 frame.write_str_colored(status_row, col, &truncated, fg, bg);
                 col += truncated.len();
             }
-        } else {
-            let display_name = if state.is_dirty {
+        } else if state.show_filename {
+            let display_name = if state.is_dirty && state.show_dirty_indicator {
                 format!("{}*", state.file_name)
             } else {
                 state.file_name.clone()
