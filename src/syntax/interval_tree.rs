@@ -197,3 +197,7 @@ impl<T: Clone> Default for IntervalTree<T> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "interval_tree_tests.rs"]
+mod tests;
