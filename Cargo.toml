@@ -14,9 +14,10 @@ name = "rift"
 path = "src/main.rs"
 
 [features]
-default = ["system_clipboard"]
+default = ["system_clipboard", "plugins"]
 perf_instrumentation = []
 system_clipboard = ["dep:arboard"]
+plugins = ["dep:mlua"]
 treesitter = [
     "dep:tree-sitter",
     "dep:tree-sitter-bash",
@@ -43,7 +44,7 @@ treesitter = [
 ]
 
 [dependencies]
-mlua = { version = "0.10", features = ["lua54", "vendored"] }
+mlua = { version = "0.10", features = ["lua54", "vendored"], optional = true }
 crossterm = "0.28.1"
 monster-regex = "0.2.5"
 streaming-iterator = "0.1.9"

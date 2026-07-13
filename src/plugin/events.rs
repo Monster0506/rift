@@ -122,6 +122,7 @@ pub enum EditorEvent {
 
 impl EditorEvent {
     /// Build a Lua table representing this event's payload.
+    #[cfg(feature = "plugins")]
     pub fn to_lua_table(&self, lua: &mlua::Lua) -> mlua::Result<mlua::Table> {
         let t = lua.create_table()?;
         match self {

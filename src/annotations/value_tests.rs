@@ -54,4 +54,3 @@ fn value_get_and_set_on_map() {
     assert_eq!(v.get("checked"), Some(&Value::Bool(true)));
     assert_eq!(v.get("missing"), None);
 }
-

@@ -2,6 +2,7 @@
 
 use crate::notification::NotificationType;
 use crate::plugin::events::EditorEvent;
+pub use crate::plugin::lua_state::{AnnotationView, BufEntry, BufLinesSource, WinEntry};
 use crate::plugin::lua_value::{value_from_lua_table, value_into_lua};
 use crate::plugin::{PluginFloat, PluginMutation};
 use mlua::prelude::*;
@@ -102,39 +103,6 @@ fn lua_to_json(v: LuaValue) -> Result<serde_json::Value, String> {
     }
 }
 
-/// A lightweight buffer entry for the `rift.get_buf_list()` snapshot.
-#[derive(Debug, Clone)]
-pub struct BufEntry {
-    pub id: usize,
-    pub name: String,
-    pub is_dirty: bool,
-    pub is_current: bool,
-    /// Kind string: "file", "terminal", "directory", "undotree", "messages", etc.
-    pub kind: String,
-    /// Absolute path if the buffer has one.
-    pub path: Option<String>,
-    /// Number of lines in the buffer.
-    pub line_count: usize,
-    pub is_read_only: bool,
-}
-
-/// A read-only view of one annotation for the `rift.annotations` query snapshot.
-#[derive(Debug, Clone)]
-pub struct AnnotationView {
-    pub id: u64,
-    pub kind: String,
-    pub owner: String,
-    /// "point", "range", or "line".
-    pub anchor: &'static str,
-    /// Byte offset (point/range start) or line number (line anchor).
-    pub start: usize,
-    /// Range end byte offset; equals `start` for point/line anchors.
-    pub end: usize,
-    pub payload: crate::annotations::Value,
-    pub visible: bool,
-    pub interactive: bool,
-}
-
 /// Build the Lua table a query function hands back for one annotation.
 fn annotation_view_to_table(lua: &Lua, v: &AnnotationView) -> LuaResult<LuaTable> {
     let t = lua.create_table()?;
@@ -150,14 +118,6 @@ fn annotation_view_to_table(lua: &Lua, v: &AnnotationView) -> LuaResult<LuaTable
         t.set("payload", p)?;
     }
     Ok(t)
-}
-
-/// Deferred source for the active buffer's lines: `update_state` stores a cheap
-/// buffer clone, and the getters materialize `Vec<String>` only when Lua reads.
-pub struct BufLinesSource {
-    pub revision: u64,
-    pub line_count: usize,
-    pub buffer: crate::buffer::TextBuffer,
 }
 
 /// State shared between Lua API closures and the host.
@@ -222,17 +182,6 @@ struct LuaSharedState {
     /// Completed shell commands waiting to be fired as Lua UserEvents.
     /// Each entry is (tag, success, output). Drained in `drain_mutations`.
     pending_shell_events: Vec<(String, bool, String)>,
-}
-
-/// A lightweight entry for the `rift.windows.list()` snapshot.
-#[derive(Debug, Clone)]
-pub struct WinEntry {
-    pub id: u64,
-    pub buf: usize,
-    pub row: usize,
-    pub col: usize,
-    pub rows: usize,
-    pub cols: usize,
 }
 
 impl LuaSharedState {

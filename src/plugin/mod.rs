@@ -16,7 +16,15 @@
 //! dot-repeat.
 
 pub mod events;
+pub mod lua_state;
+
+#[cfg(feature = "plugins")]
 pub mod lua_host;
+#[cfg(not(feature = "plugins"))]
+#[path = "lua_host_stub.rs"]
+pub mod lua_host;
+
+#[cfg(feature = "plugins")]
 mod lua_value;
 
 pub use events::EditorEvent;
@@ -554,9 +562,7 @@ impl PluginHost {
     /// Initialize the Lua VM. Must be called once at startup.
     /// Returns any error string if Lua initialization fails.
     pub fn init_lua(&mut self) -> Option<String> {
-        if let Some(host) = self.lua.take() {
-            drop(host)
-        }
+        self.lua.take();
 
         match lua_host::LuaHost::new() {
             Ok(host) => {
