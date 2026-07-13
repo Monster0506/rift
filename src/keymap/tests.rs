@@ -105,15 +105,6 @@ fn test_overwrite() {
     );
 }
 
-#[test]
-fn test_register_from_str() {
-    let mut map = KeyMap::new();
-    map.register_from_str(KeyContext::Global, Key::Char('j'), "editor:move:down");
-    assert_eq!(
-        map.get_action(KeyContext::Global, Key::Char('j')),
-        Some(&Action::Editor(EditorAction::Move(Motion::Down)))
-    );
-}
 // FileExplorer -> Normal -> Global fallback chain
 
 #[test]

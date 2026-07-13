@@ -35,25 +35,6 @@ fn test_floating_window_content_dimensions() {
 }
 
 #[test]
-fn test_floating_window_render_single_line() {
-    let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
-    let window = FloatingWindow::new(WindowPosition::Bottom, 50, 1).with_border(false);
-
-    window.render_single_line(&mut layer, ":", "test command");
-
-    // Check that content was written to the layer
-    // Window is at bottom, so row 23 (24-1)
-    let pos = window.calculate_position(24, 80);
-    assert_eq!(pos.0, 23); // Bottom row
-
-    // Check content cells
-    let start_col = pos.1 as usize;
-    let cell = layer.get_cell(pos.0 as usize, start_col);
-    assert!(cell.is_some());
-    assert_eq!(cell.unwrap().content, Character::from(':'));
-}
-
-#[test]
 fn test_floating_window_render_multiline() {
     let mut layer = Layer::new(LayerPriority::FLOATING_WINDOW, 24, 80);
     let window = FloatingWindow::new(WindowPosition::Center, 30, 5).with_border(true);

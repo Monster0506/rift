@@ -383,12 +383,3 @@ fn test_is_sentence_end() {
     assert!(!is_sentence_end(','));
     assert!(!is_sentence_end(' '));
 }
-
-#[test]
-fn test_is_paragraph_boundary() {
-    assert!(is_paragraph_boundary(""));
-    assert!(is_paragraph_boundary("   "));
-    assert!(is_paragraph_boundary("\t\t"));
-    assert!(!is_paragraph_boundary("hello"));
-    assert!(!is_paragraph_boundary("  hello  "));
-}

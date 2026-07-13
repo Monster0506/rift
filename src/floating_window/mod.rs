@@ -756,15 +756,6 @@ impl FloatingWindow {
         }
     }
 
-    /// Render a single-line content (convenience method)
-    ///
-    /// `prompt` is displayed at the start, followed by `content`
-    pub fn render_single_line(&self, layer: &mut Layer, prompt: &str, content: &str) {
-        let mut line: Vec<char> = Vec::new();
-        line.extend(prompt.chars());
-        line.extend(content.chars());
-        self.render(layer, &[line]);
-    }
 }
 
 #[cfg(test)]

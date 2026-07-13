@@ -5,7 +5,6 @@ pub use self::trie::{MatchResult, TrieNode};
 use crate::action::Action;
 use crate::key::Key;
 use std::collections::HashMap;
-use std::str::FromStr;
 
 /// Context where input occurs
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -70,15 +69,6 @@ impl KeyMap {
             trie.remove(keys)
         } else {
             false
-        }
-    }
-
-    pub fn register_from_str(&mut self, context: KeyContext, key: Key, action_str: &str) {
-        if let Ok(action) = Action::from_str(action_str) {
-            self.register(context, key, action);
-        } else {
-            // Log error? For now ignore or could return Result
-            eprintln!("Failed to parse action string: {}", action_str);
         }
     }
 

@@ -38,8 +38,3 @@ pub fn is_word_char(c: char) -> bool {
 pub fn is_sentence_end(c: char) -> bool {
     matches!(c, '.' | '!' | '?')
 }
-
-/// Check if a line is a paragraph boundary (empty or whitespace-only)
-pub fn is_paragraph_boundary(line: &str) -> bool {
-    line.trim().is_empty()
-}

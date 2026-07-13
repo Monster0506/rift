@@ -240,22 +240,6 @@ fn test_operation_estimated_size() {
     assert!(delete.estimated_size() > 10);
 }
 
-#[test]
-fn test_operation_description() {
-    let insert = EditOperation::Insert {
-        position: Position::new(0, 0),
-        text: "hi".chars().map(Character::from).collect(),
-        len: 2,
-    };
-    assert!(insert.description().contains("Insert"));
-
-    let delete = EditOperation::Delete {
-        range: Range::new(Position::new(0, 0), Position::new(0, 2)),
-        deleted_text: "hi".chars().map(Character::from).collect(),
-    };
-    assert!(delete.description().contains("Delete"));
-}
-
 // =============================================================================
 // EditTransaction Tests
 // =============================================================================
@@ -437,52 +421,6 @@ fn test_undo_tree_branching() {
 }
 
 #[test]
-fn test_undo_tree_goto_branch() {
-    let mut tree = UndoTree::new();
-
-    // Create branching structure
-    let mut tx1 = EditTransaction::new("Base");
-    tx1.record(EditOperation::Insert {
-        position: Position::new(0, 0),
-        text: "base".chars().map(Character::from).collect(),
-        len: 4,
-    });
-    tree.push(tx1, None); // seq=1
-
-    let mut tx2 = EditTransaction::new("Branch A");
-    tx2.record(EditOperation::Insert {
-        position: Position::new(0, 4),
-        text: vec![Character::from('A')],
-        len: 1,
-    });
-    tree.push(tx2, None); // seq=2
-
-    tree.undo(); // Back to seq=1
-
-    let mut tx3 = EditTransaction::new("Branch B");
-    tx3.record(EditOperation::Insert {
-        position: Position::new(0, 4),
-        text: vec![Character::from('B')],
-        len: 1,
-    });
-    tree.push(tx3, None); // seq=3
-
-    tree.undo(); // Back to seq=1
-
-    // Now at seq=1 with children [2, 3], last_visited_child=1 (pointing to seq=3)
-    // Redo should go to seq=3
-    tree.redo();
-    assert_eq!(tree.current_seq(), 3);
-
-    tree.undo(); // Back to seq=1
-
-    // Switch to branch 0
-    tree.goto_branch(0).unwrap();
-    tree.redo();
-    assert_eq!(tree.current_seq(), 2);
-}
-
-#[test]
 fn test_undo_tree_clear() {
     let mut tree = UndoTree::new();
 
@@ -522,22 +460,6 @@ fn test_document_snapshot() {
 // =============================================================================
 // Additional UndoTree Tests
 // =============================================================================
-
-#[test]
-fn test_undo_tree_memory_tracking() {
-    let mut tree = UndoTree::new();
-    let initial_memory = tree.memory_usage();
-
-    let mut tx = EditTransaction::new("Large insert");
-    tx.record(EditOperation::Insert {
-        position: Position::new(0, 0),
-        text: "a".repeat(1000).chars().map(Character::from).collect(),
-        len: 1000,
-    });
-    tree.push(tx, None);
-
-    assert!(tree.memory_usage() > initial_memory);
-}
 
 #[test]
 fn test_undo_tree_multiple_undo_redo_cycles() {
@@ -638,23 +560,6 @@ fn test_undo_tree_empty_transaction_not_pushed() {
     // Push empty transaction - it should still be pushed (tree doesn't check)
     tree.push(tx, None);
     assert_eq!(tree.current_seq(), 1);
-}
-
-#[test]
-fn test_undo_tree_goto_branch_invalid() {
-    let mut tree = UndoTree::new();
-
-    let mut tx = EditTransaction::new("Edit");
-    tx.record(EditOperation::Insert {
-        position: Position::new(0, 0),
-        text: vec![Character::from('a')],
-        len: 1,
-    });
-    tree.push(tx, None);
-
-    // Try to goto invalid branch
-    let result = tree.goto_branch(5);
-    assert!(result.is_err());
 }
 
 #[test]
@@ -766,18 +671,6 @@ fn test_block_change_operation_inverse() {
         }
         _ => panic!("Expected BlockChange"),
     }
-}
-
-#[test]
-fn test_operation_description_long_text() {
-    let insert = EditOperation::Insert {
-        position: Position::new(0, 0),
-        text: "a".repeat(100).chars().map(Character::from).collect(),
-        len: 100,
-    };
-    let desc = insert.description();
-    assert!(desc.contains("100 chars"));
-    assert!(!desc.contains("aaaa")); // Should not show the actual text
 }
 
 #[test]

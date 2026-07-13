@@ -219,56 +219,6 @@ impl EditOperation {
         }
     }
 
-    /// Describe operation for UI (e.g., "Delete 42 chars")
-    #[must_use]
-    pub fn description(&self) -> String {
-        match self {
-            EditOperation::Insert { text, .. } => {
-                if text.len() <= 20 {
-                    let s: String = text
-                        .iter()
-                        .map(|c| c.to_char_lossy())
-                        .collect::<String>()
-                        .replace('\n', "\\n");
-                    format!("Insert '{}'", s)
-                } else {
-                    format!("Insert {} chars", text.len())
-                }
-            }
-            EditOperation::Delete { deleted_text, .. } => {
-                if deleted_text.len() <= 20 {
-                    let s: String = deleted_text
-                        .iter()
-                        .map(|c| c.to_char_lossy())
-                        .collect::<String>()
-                        .replace('\n', "\\n");
-                    format!("Delete '{}'", s)
-                } else {
-                    format!("Delete {} chars", deleted_text.len())
-                }
-            }
-            EditOperation::Replace {
-                old_text, new_text, ..
-            } => {
-                format!(
-                    "Replace {} chars with {} chars",
-                    old_text.len(),
-                    new_text.len()
-                )
-            }
-            EditOperation::BlockChange {
-                old_content,
-                new_content,
-                ..
-            } => {
-                format!(
-                    "Change {} lines to {} lines",
-                    old_content.len(),
-                    new_content.len()
-                )
-            }
-        }
-    }
 }
 
 // =============================================================================
@@ -380,11 +330,6 @@ impl EditNode {
         }
     }
 
-    /// Create a checkpoint node with snapshot
-    pub fn with_snapshot(mut self, snapshot: DocumentSnapshot) -> Self {
-        self.snapshot = Some(Box::new(snapshot));
-        self
-    }
 }
 
 // =============================================================================
@@ -415,7 +360,6 @@ pub enum UndoError {
     NoUndoAvailable,
     NoRedoAvailable,
     InvalidSeq(EditSeq),
-    InvalidBranch(usize),
 }
 
 impl std::fmt::Display for UndoError {
@@ -424,7 +368,6 @@ impl std::fmt::Display for UndoError {
             UndoError::NoUndoAvailable => write!(f, "No undo available"),
             UndoError::NoRedoAvailable => write!(f, "No redo available"),
             UndoError::InvalidSeq(seq) => write!(f, "Invalid edit sequence: {}", seq),
-            UndoError::InvalidBranch(n) => write!(f, "Invalid branch index: {}", n),
         }
     }
 }
@@ -533,20 +476,6 @@ impl UndoTree {
         self.nodes.get(&child_seq).map(|n| &n.transaction)
     }
 
-    /// Switch to nth child at current branch point
-    pub fn goto_branch(&mut self, n: usize) -> Result<(), UndoError> {
-        let current_node = self
-            .nodes
-            .get_mut(&self.current)
-            .ok_or(UndoError::InvalidSeq(self.current))?;
-
-        if n >= current_node.children.len() {
-            return Err(UndoError::InvalidBranch(n));
-        }
-
-        current_node.last_visited_child = Some(n);
-        Ok(())
-    }
 
     /// Nearest ancestor of `seq` (inclusive) carrying a checkpoint snapshot,
     /// and how many forward ops separate it from `seq`.
@@ -812,11 +741,6 @@ impl UndoTree {
             .get(&self.current)
             .map(|n| !n.children.is_empty())
             .unwrap_or(false)
-    }
-
-    /// Get current memory usage
-    pub fn memory_usage(&self) -> usize {
-        self.total_memory
     }
 
     /// Clear all history (keep only root)
