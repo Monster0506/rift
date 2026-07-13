@@ -127,13 +127,8 @@ impl Job for SyntaxParseJob {
             single_edit,
         } = *self;
 
-        // Parse using logical bytes so tree-sitter node offsets are in the
-        // same coordinate space as the slice we later pass to the query cursor.
-        // Previously this used `text.to_string()` (the rendered representation),
-        // which expands Control characters to "^X" (2 bytes each) while
-        // `to_logical_bytes()` keeps them as a single byte — causing the
-        // "range start index out of range" panic when both representations
-        // were mixed within the same parse/query cycle.
+        // Uses logical bytes, not the rendered form, so tree-sitter offsets match
+        // the query cursor's coordinate space (control chars differ in byte width).
         let text = buffer;
         let source_bytes = {
             crate::perf_span!(
@@ -151,7 +146,11 @@ impl Job for SyntaxParseJob {
                 "syntax_reparse_job_parse",
                 crate::perf::PerfFields {
                     bytes: Some(source_bytes.len() as u32),
-                    tag: Some(if old_tree.is_some() { "incremental" } else { "full" }),
+                    tag: Some(if old_tree.is_some() {
+                        "incremental"
+                    } else {
+                        "full"
+                    }),
                     ..Default::default()
                 }
             );
@@ -181,8 +180,12 @@ impl Job for SyntaxParseJob {
             let root_node = tree.root_node();
             let full_bytes = source_bytes; // same representation as parse
 
+            // Single-range vec matches the Vec<Range<usize>> the scoped arm returns.
+            #[allow(clippy::single_range_in_vec_init)]
             let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
-                Some((prev_tree, edit)) => crate::syntax::scoped_query_ranges(prev_tree, tree, edit),
+                Some((prev_tree, edit)) => {
+                    crate::syntax::scoped_query_ranges(prev_tree, tree, edit)
+                }
                 None => vec![0..full_bytes.len()],
             };
 
@@ -462,8 +465,15 @@ mod tests {
 
         // "Ok" matches both @constructor and @function; the render picks
         // whichever comes first, so order must match a full recompute.
-        assert_eq!(initial_ok_capture.len(), 2, "test fixture must exercise a dual-capture token");
-        assert_eq!(scoped_ok, expected_ok, "capture order for \"Ok\" diverged after a scoped edit elsewhere on the line");
+        assert_eq!(
+            initial_ok_capture.len(),
+            2,
+            "test fixture must exercise a dual-capture token"
+        );
+        assert_eq!(
+            scoped_ok, expected_ok,
+            "capture order for \"Ok\" diverged after a scoped edit elsewhere on the line"
+        );
 
         assert_eq!(
             sorted_highlights(&result.highlights),
@@ -519,8 +529,10 @@ mod tests {
 
         // "Ok" sits after the inserted character on the same line, so its
         // post-edit position is shifted by one byte from its pre-edit offset.
-        let ok_start =
-            initial_src.find("Ok(Action::Editor(EditorAction::LspDiagnosticsPanel").unwrap() + 1;
+        let ok_start = initial_src
+            .find("Ok(Action::Editor(EditorAction::LspDiagnosticsPanel")
+            .unwrap()
+            + 1;
         let ok_range = ok_start..ok_start + 2;
         assert_eq!(
             result.highlights.query(ok_range.clone()),
@@ -535,7 +547,11 @@ mod tests {
         );
     }
 
-    fn full_highlights(language: &tree_sitter::Language, query: &Query, source: &[u8]) -> IntervalTree<u32> {
+    fn full_highlights(
+        language: &tree_sitter::Language,
+        query: &Query,
+        source: &[u8],
+    ) -> IntervalTree<u32> {
         let mut parser = Parser::new();
         parser.set_language(language).unwrap();
         let tree = parser.parse(source, None).unwrap();
@@ -564,7 +580,8 @@ mod tests {
         let mut tree = parser
             .parse(buffer.to_logical_bytes().as_slice(), None)
             .unwrap();
-        let mut highlights = full_highlights(&language, &query, buffer.to_logical_bytes().as_slice());
+        let mut highlights =
+            full_highlights(&language, &query, buffer.to_logical_bytes().as_slice());
 
         // Type this, one character at a time, right before the closing brace.
         let to_type = "    let x = 12345;\n    let y = x + 1;\n";
@@ -612,7 +629,8 @@ mod tests {
 
             // Zero-width ranges are transient error-recovery artifacts of
             // incomplete syntax mid-typing; they can't render, so exclude them.
-            let step_expected = full_highlights(&language, &query, buffer.to_logical_bytes().as_slice());
+            let step_expected =
+                full_highlights(&language, &query, buffer.to_logical_bytes().as_slice());
             let non_empty = |v: Vec<(std::ops::Range<usize>, u32)>| -> Vec<_> {
                 v.into_iter().filter(|(r, _)| !r.is_empty()).collect()
             };

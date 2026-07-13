@@ -259,8 +259,13 @@ impl Syntax {
             };
 
             if let Some((prev_tree, edit)) = scoped {
-                self.cached_highlights =
-                    scoped_query_highlights(query, &tree, source, &self.cached_highlights, Some((prev_tree, edit)));
+                self.cached_highlights = scoped_query_highlights(
+                    query,
+                    &tree,
+                    source,
+                    &self.cached_highlights,
+                    Some((prev_tree, edit)),
+                );
             } else {
                 let root_node = tree.root_node();
                 let mut cursor = QueryCursor::new();
@@ -387,6 +392,8 @@ impl Syntax {
     ) {
         // (content_range, layer_index) pairs: query just the changed region on
         // a single edit, keeping cached ranges the fresh requery doesn't touch.
+        // Single-range vec matches the Vec<Range<usize>> the scoped arm returns.
+        #[allow(clippy::single_range_in_vec_init)]
         let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
             Some((prev_tree, edit)) => scoped_query_ranges(prev_tree, tree, edit),
             None => vec![0..source.len()],
@@ -480,7 +487,13 @@ impl Syntax {
                     (Some(prev), Some((_, edit))) => Some((prev, edit)),
                     _ => None,
                 };
-                scoped_query_highlights(q, &new_tree, source, &layer.cached_highlights, layer_scoped)
+                scoped_query_highlights(
+                    q,
+                    &new_tree,
+                    source,
+                    &layer.cached_highlights,
+                    layer_scoped,
+                )
             } else {
                 IntervalTree::default()
             };
@@ -509,6 +522,8 @@ impl Syntax {
 
         // (content_range, language_name) pairs: query just the changed region
         // on a single edit, keeping cached ranges the fresh requery doesn't touch.
+        // Single-range vec matches the Vec<Range<usize>> the scoped arm returns.
+        #[allow(clippy::single_range_in_vec_init)]
         let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
             Some((prev_tree, edit)) => scoped_query_ranges(prev_tree, tree, edit),
             None => vec![0..source.len()],
@@ -856,7 +871,11 @@ pub(crate) fn scoped_kept_items<T: Clone>(
     old_items
         .shift_for_edit(edit.start_byte, edit.old_end_byte, edit.new_end_byte)
         .into_iter()
-        .filter(|(r, _)| !fresh.iter().any(|(fr, _)| r.start < fr.end && fr.start < r.end))
+        .filter(|(r, _)| {
+            !fresh
+                .iter()
+                .any(|(fr, _)| r.start < fr.end && fr.start < r.end)
+        })
         .collect()
 }
 
@@ -886,6 +905,8 @@ pub(crate) fn scoped_query_highlights(
 ) -> IntervalTree<u32> {
     let root_node = new_tree.root_node();
 
+    // Single-range vec matches the Vec<Range<usize>> the scoped arm returns.
+    #[allow(clippy::single_range_in_vec_init)]
     let query_ranges = match scoped {
         Some((prev_tree, edit)) => scoped_query_ranges(prev_tree, new_tree, edit),
         None => vec![0..source.len()],

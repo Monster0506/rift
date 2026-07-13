@@ -4292,7 +4292,10 @@ fn test_explorer_preview_updates_on_real_j_keypress_navigation() {
     }
 
     let preview_doc_id = editor.panel_layout.as_ref().unwrap().preview_doc_id;
-    let preview_doc = editor.document_manager.get_document(preview_doc_id).unwrap();
+    let preview_doc = editor
+        .document_manager
+        .get_document(preview_doc_id)
+        .unwrap();
     let text = String::from_utf8_lossy(&preview_doc.buffer.to_logical_bytes()).to_string();
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -4323,9 +4326,15 @@ fn test_explorer_preview_populates_for_real_file_and_directory_targets() {
     editor.update_explorer_preview();
     drain_jobs(&mut editor);
 
-    let preview_doc = editor.document_manager.get_document(preview_doc_id).unwrap();
+    let preview_doc = editor
+        .document_manager
+        .get_document(preview_doc_id)
+        .unwrap();
     assert!(
-        matches!(preview_doc.kind, crate::document::BufferKind::Directory { .. }),
+        matches!(
+            preview_doc.kind,
+            crate::document::BufferKind::Directory { .. }
+        ),
         "expected a directory preview for the subdir entry"
     );
 
@@ -4336,7 +4345,10 @@ fn test_explorer_preview_populates_for_real_file_and_directory_targets() {
     editor.update_explorer_preview();
     drain_jobs(&mut editor);
 
-    let preview_doc = editor.document_manager.get_document(preview_doc_id).unwrap();
+    let preview_doc = editor
+        .document_manager
+        .get_document(preview_doc_id)
+        .unwrap();
     let text = String::from_utf8_lossy(&preview_doc.buffer.to_logical_bytes()).to_string();
     assert!(
         text.contains("fn main"),
@@ -4414,9 +4426,13 @@ fn closing_a_document_sends_lsp_did_close() {
 
     // A second buffer keeps do_quit on the "close this buffer" path instead
     // of the "last buffer: quit the editor" one.
-    editor.open_file(Some(other_path.display().to_string()), false).unwrap();
+    editor
+        .open_file(Some(other_path.display().to_string()), false)
+        .unwrap();
     drain_jobs(&mut editor);
-    editor.open_file(Some(path.display().to_string()), false).unwrap();
+    editor
+        .open_file(Some(path.display().to_string()), false)
+        .unwrap();
     drain_jobs(&mut editor);
 
     assert!(

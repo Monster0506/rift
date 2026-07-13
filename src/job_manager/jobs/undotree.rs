@@ -146,11 +146,10 @@ mod tests {
 
         job.run(1, tx, signal);
 
-        let result =
-            crate::job_manager::jobs::test_support::recv_custom_payload::<UndoTreeRenderResult>(
-                &rx,
-            )
-            .expect("no Custom message received");
+        let result = crate::job_manager::jobs::test_support::recv_custom_payload::<
+            UndoTreeRenderResult,
+        >(&rx)
+        .expect("no Custom message received");
         assert_eq!(result.ut_doc_id, 7);
         assert!(!result.text.is_empty());
         assert!(!result.sequences.is_empty());

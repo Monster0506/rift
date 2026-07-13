@@ -295,8 +295,11 @@ impl Document {
         let single_line = |c: &Character| !matches!(c, Character::Newline);
         match op {
             EditOperation::Insert { position, text, .. } => {
-                let units =
-                    self.lsp_position_units_in_line(position.line as usize, position.col as usize, encoding);
+                let units = self.lsp_position_units_in_line(
+                    position.line as usize,
+                    position.col as usize,
+                    encoding,
+                );
                 let pos = LspPosition {
                     line: position.line,
                     character: units,
@@ -310,12 +313,19 @@ impl Document {
                     text,
                 ))
             }
-            EditOperation::Delete { range, deleted_text } => {
+            EditOperation::Delete {
+                range,
+                deleted_text,
+            } => {
                 if range.start.line != range.end.line || !deleted_text.iter().all(single_line) {
                     return None;
                 }
-                let (start, end) =
-                    self.lsp_range_across_removed(range, deleted_text.len(), &deleted_text, encoding);
+                let (start, end) = self.lsp_range_across_removed(
+                    range,
+                    deleted_text.len(),
+                    &deleted_text,
+                    encoding,
+                );
                 Some((LspRange { start, end }, String::new()))
             }
             EditOperation::Replace {
@@ -343,11 +353,17 @@ impl Document {
         removed_len: usize,
         removed_text: &[crate::character::Character],
         encoding: crate::lsp::protocol::PositionEncoding,
-    ) -> (crate::lsp::protocol::LspPosition, crate::lsp::protocol::LspPosition) {
+    ) -> (
+        crate::lsp::protocol::LspPosition,
+        crate::lsp::protocol::LspPosition,
+    ) {
         use crate::lsp::protocol::LspPosition;
 
-        let start_units =
-            self.lsp_position_units_in_line(range.start.line as usize, range.start.col as usize, encoding);
+        let start_units = self.lsp_position_units_in_line(
+            range.start.line as usize,
+            range.start.col as usize,
+            encoding,
+        );
         let prefix = self
             .line_chars(range.start.line as usize)
             .map(|c| c.to_char_lossy())

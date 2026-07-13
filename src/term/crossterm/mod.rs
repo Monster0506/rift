@@ -13,6 +13,7 @@ use std::io::{stdout, BufWriter, Write};
 
 use crate::color::Color;
 use crate::key::Key;
+use crate::screen_buffer::{AttrKind, StyleOp};
 use crate::term::{ColorTerminal, Size, TerminalBackend};
 
 /// Convert the core `Color` type to crossterm's `Color`.
@@ -65,6 +66,54 @@ pub fn color_from_crossterm(color: CrosstermColor) -> Color {
         CrosstermColor::AnsiValue(n) => Color::Ansi256(n),
         CrosstermColor::Rgb { r, g, b } => Color::Rgb { r, g, b },
     }
+}
+
+/// The crossterm `Attribute` for turning one text attribute on or off.
+fn crossterm_attr(kind: AttrKind, on: bool) -> crossterm::style::Attribute {
+    use crossterm::style::Attribute;
+    match (kind, on) {
+        (AttrKind::Bold, true) => Attribute::Bold,
+        (AttrKind::Bold, false) => Attribute::NormalIntensity,
+        (AttrKind::Italic, true) => Attribute::Italic,
+        (AttrKind::Italic, false) => Attribute::NoItalic,
+        (AttrKind::Underline, true) => Attribute::Underlined,
+        (AttrKind::Underline, false) => Attribute::NoUnderline,
+        (AttrKind::Strike, true) => Attribute::CrossedOut,
+        (AttrKind::Strike, false) => Attribute::NotCrossedOut,
+        (AttrKind::Reverse, true) => Attribute::Reverse,
+        (AttrKind::Reverse, false) => Attribute::NoReverse,
+    }
+}
+
+/// Serialize a terminal-agnostic `StyleOp` sequence into ANSI escape bytes.
+/// The one place `screen_buffer`'s diff output meets crossterm's encoder.
+pub fn encode_style_ops(ops: &[StyleOp], buf: &mut Vec<u8>) -> Result<(), String> {
+    use crossterm::style::{Attribute, SetAttribute};
+
+    for op in ops {
+        match *op {
+            StyleOp::ResetColor => {
+                queue!(buf, ResetColor).map_err(|e| format!("Failed to reset colors: {e}"))?;
+            }
+            StyleOp::SetForeground(color) => {
+                queue!(buf, SetForegroundColor(color_to_crossterm(color)))
+                    .map_err(|e| format!("Failed to set fg: {e}"))?;
+            }
+            StyleOp::SetBackground(color) => {
+                queue!(buf, SetBackgroundColor(color_to_crossterm(color)))
+                    .map_err(|e| format!("Failed to set bg: {e}"))?;
+            }
+            StyleOp::SetAttr(kind, on) => {
+                queue!(buf, SetAttribute(crossterm_attr(kind, on)))
+                    .map_err(|e| format!("Failed to set attr: {e}"))?;
+            }
+            StyleOp::ResetAttrs => {
+                queue!(buf, SetAttribute(Attribute::Reset))
+                    .map_err(|e| format!("Failed to reset attrs: {e}"))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Crossterm-based terminal backend implementation, generic over its output

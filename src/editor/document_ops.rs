@@ -24,7 +24,10 @@ fn resolve_link_path_in(path_str: String, base_dir: Option<&std::path::Path>) ->
 impl<T: TerminalBackend> Editor<T> {
     /// Whether the active document (if any) satisfies `pred`; `false` if none is active.
     pub(super) fn active_doc_is(&self, pred: impl Fn(&crate::document::Document) -> bool) -> bool {
-        self.document_manager.active_document().map(pred).unwrap_or(false)
+        self.document_manager
+            .active_document()
+            .map(pred)
+            .unwrap_or(false)
     }
 
     pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {

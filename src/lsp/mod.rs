@@ -786,10 +786,12 @@ impl LspManager {
 
                             // textDocumentSync is either a bare number or an
                             // object with a `change` field; 2 == Incremental.
-                            let sync = result.get("capabilities").and_then(|c| c.get("textDocumentSync"));
-                            let sync_kind = sync
-                                .and_then(|s| s.as_u64())
-                                .or_else(|| sync.and_then(|s| s.get("change")).and_then(|v| v.as_u64()));
+                            let sync = result
+                                .get("capabilities")
+                                .and_then(|c| c.get("textDocumentSync"));
+                            let sync_kind = sync.and_then(|s| s.as_u64()).or_else(|| {
+                                sync.and_then(|s| s.get("change")).and_then(|v| v.as_u64())
+                            });
                             self.incremental_sync
                                 .insert(lang.to_string(), sync_kind == Some(2));
 

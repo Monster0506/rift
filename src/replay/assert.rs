@@ -55,7 +55,7 @@ fn cursor_row_col<W: Write>(ed: &mut Editor<ReplayBackend<W>>) -> (usize, usize)
     let mut lo = 0usize;
     let mut hi = buf.line_count().saturating_sub(1);
     while lo < hi {
-        let mid = lo + (hi - lo + 1) / 2;
+        let mid = lo + (hi - lo).div_ceil(2);
         if buf.line_start(mid) <= pos {
             lo = mid;
         } else {

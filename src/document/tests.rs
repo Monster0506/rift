@@ -100,7 +100,10 @@ fn test_incremental_lsp_change_for_single_char_delete() {
     assert_eq!(range.start.line, 0);
     assert_eq!(range.start.character, 1);
     assert_eq!(range.end.line, 0);
-    assert_eq!(range.end.character, 2, "the removed 'b' is one utf16 unit wide");
+    assert_eq!(
+        range.end.character, 2,
+        "the removed 'b' is one utf16 unit wide"
+    );
     assert_eq!(text, "");
 }
 

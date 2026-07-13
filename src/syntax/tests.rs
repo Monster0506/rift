@@ -158,12 +158,7 @@ fn test_shift_for_edit_touching_boundaries_are_kept() {
 fn test_shift_for_edit_preserves_order_of_same_range_duplicates() {
     // Two captures on the identical range (e.g. both @constructor and
     // @function) must keep their relative order through an unrelated edit.
-    let items = vec![
-        (30..40, 1),
-        (50..52, 5),
-        (50..52, 4),
-        (60..70, 2),
-    ];
+    let items = vec![(30..40, 1), (50..52, 5), (50..52, 4), (60..70, 2)];
     let tree = IntervalTree::new(items);
 
     let shifted = tree.shift_for_edit(0, 0, 1);
@@ -182,7 +177,7 @@ fn test_shift_for_edit_preserves_order_of_same_range_duplicates() {
 #[cfg(feature = "treesitter")]
 mod svelte_tests {
     use super::super::*;
-    use crate::syntax::loader::{LanguageLoader, LoadedLanguage};
+    use crate::syntax::loader::LanguageLoader;
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -594,8 +589,9 @@ mod markdown_tests {
         let mut edited = initial_src.to_string();
         edited.insert(insert_pos, '1');
 
-        let point_at =
-            |src: &str, byte: usize| super::super::NewlineIndex::build(src.as_bytes()).point_at(byte);
+        let point_at = |src: &str, byte: usize| {
+            super::super::NewlineIndex::build(src.as_bytes()).point_at(byte)
+        };
         let edit = InputEdit {
             start_byte: insert_pos,
             old_end_byte: insert_pos,

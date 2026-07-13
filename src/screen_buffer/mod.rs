@@ -14,6 +14,27 @@ use crate::character::Character;
 use crate::color::Color;
 use crate::layer::{Cell, Rect};
 
+/// A single text attribute toggled by a `StyleOp::SetAttr`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttrKind {
+    Bold,
+    Italic,
+    Underline,
+    Strike,
+    Reverse,
+}
+
+/// A terminal-agnostic style change, emitted by the diff serializer below
+/// and turned into escape codes by whichever backend consumes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StyleOp {
+    ResetColor,
+    SetForeground(Color),
+    SetBackground(Color),
+    SetAttr(AttrKind, bool),
+    ResetAttrs,
+}
+
 fn cell_visual_width(cell: &Cell) -> usize {
     match &cell.content {
         Character::Control(_) => 2,
@@ -486,9 +507,6 @@ impl DoubleBuffer {
         &mut self,
         term: &mut T,
     ) -> Result<FrameStats, String> {
-        use crossterm::queue;
-        use crossterm::style::ResetColor;
-
         // Get batched changes
         let (batches, stats) = {
             crate::perf_span!("render_diff", crate::perf::PerfFields::default());
@@ -522,13 +540,12 @@ impl DoubleBuffer {
         }
 
         // Reset colors and attributes at end
-        let mut reset_buf = Vec::new();
-        queue!(reset_buf, ResetColor).map_err(|e| format!("Failed to reset colors: {e}"))?;
+        let mut reset_ops = vec![StyleOp::ResetColor];
         if !current_attrs.is_empty() {
-            use crossterm::style::{Attribute, SetAttribute};
-            queue!(reset_buf, SetAttribute(Attribute::Reset))
-                .map_err(|e| format!("Failed to reset attrs: {e}"))?;
+            reset_ops.push(StyleOp::ResetAttrs);
         }
+        let mut reset_buf = Vec::new();
+        crate::term::crossterm::encode_style_ops(&reset_ops, &mut reset_buf)?;
         term.write(&reset_buf)?;
 
         term.flush().map_err(|e| format!("Failed to flush: {e}"))?;
@@ -549,11 +566,6 @@ impl DoubleBuffer {
         current_attrs: &mut crate::layer::CellAttrs,
         last_cursor_pos: &mut Option<(usize, usize)>,
     ) -> Result<(), String> {
-        use crossterm::queue;
-        use crossterm::style::{
-            Attribute, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
-        };
-
         if batch.cells.is_empty() {
             return Ok(());
         }
@@ -574,6 +586,7 @@ impl DoubleBuffer {
         let mut output = String::with_capacity(batch.cells.len() * 4);
         // Commands buffer for color changes
         let mut cmd_buf = Vec::new();
+        let mut ops: Vec<StyleOp> = Vec::new();
 
         for cell in batch.cells.iter() {
             // Check if we need to change colors or attributes
@@ -584,36 +597,27 @@ impl DoubleBuffer {
                     output.clear();
                 }
 
-                cmd_buf.clear();
+                ops.clear();
 
                 let need_reset = (cell.fg.is_none() && current_fg.is_some())
                     || (cell.bg.is_none() && current_bg.is_some());
 
                 if need_reset {
-                    queue!(cmd_buf, ResetColor)
-                        .map_err(|e| format!("Failed to reset colors: {e}"))?;
+                    ops.push(StyleOp::ResetColor);
                     *current_fg = None;
                     *current_bg = None;
                 }
 
                 if cell.fg != *current_fg {
                     if let Some(fg) = cell.fg {
-                        queue!(
-                            cmd_buf,
-                            SetForegroundColor(crate::term::crossterm::color_to_crossterm(fg))
-                        )
-                        .map_err(|e| format!("Failed to set fg: {e}"))?;
+                        ops.push(StyleOp::SetForeground(fg));
                         *current_fg = Some(fg);
                     }
                 }
 
                 if cell.bg != *current_bg {
                     if let Some(bg) = cell.bg {
-                        queue!(
-                            cmd_buf,
-                            SetBackgroundColor(crate::term::crossterm::color_to_crossterm(bg))
-                        )
-                        .map_err(|e| format!("Failed to set bg: {e}"))?;
+                        ops.push(StyleOp::SetBackground(bg));
                         *current_bg = Some(bg);
                     }
                 }
@@ -623,34 +627,21 @@ impl DoubleBuffer {
                 if cell.attrs != *current_attrs {
                     let a = cell.attrs;
                     let c = *current_attrs;
-                    let mut set = |on: bool, was: bool, yes: Attribute, no: Attribute| {
+                    let set = |ops: &mut Vec<StyleOp>, on: bool, was: bool, kind: AttrKind| {
                         if on != was {
-                            let _ = queue!(cmd_buf, SetAttribute(if on { yes } else { no }));
+                            ops.push(StyleOp::SetAttr(kind, on));
                         }
                     };
-                    set(a.bold, c.bold, Attribute::Bold, Attribute::NormalIntensity);
-                    set(a.italic, c.italic, Attribute::Italic, Attribute::NoItalic);
-                    set(
-                        a.underline,
-                        c.underline,
-                        Attribute::Underlined,
-                        Attribute::NoUnderline,
-                    );
-                    set(
-                        a.strike,
-                        c.strike,
-                        Attribute::CrossedOut,
-                        Attribute::NotCrossedOut,
-                    );
-                    set(
-                        a.reverse,
-                        c.reverse,
-                        Attribute::Reverse,
-                        Attribute::NoReverse,
-                    );
+                    set(&mut ops, a.bold, c.bold, AttrKind::Bold);
+                    set(&mut ops, a.italic, c.italic, AttrKind::Italic);
+                    set(&mut ops, a.underline, c.underline, AttrKind::Underline);
+                    set(&mut ops, a.strike, c.strike, AttrKind::Strike);
+                    set(&mut ops, a.reverse, c.reverse, AttrKind::Reverse);
                     *current_attrs = cell.attrs;
                 }
 
+                cmd_buf.clear();
+                crate::term::crossterm::encode_style_ops(&ops, &mut cmd_buf)?;
                 term.write(&cmd_buf)?;
             }
 

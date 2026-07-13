@@ -390,7 +390,8 @@ impl<T: TerminalBackend> Editor<T> {
 
         let index_win_id = self.split_tree.focused_window_id();
         let original_doc_id = self.split_tree.focused_window().document_id;
-        self.split_tree.set_window_document(index_win_id, index_doc_id);
+        self.split_tree
+            .set_window_document(index_win_id, index_doc_id);
 
         let preview_win_id = self
             .split_tree

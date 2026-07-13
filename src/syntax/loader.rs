@@ -187,7 +187,7 @@ impl LanguageLoader {
 
     /// Test-only entry point exercising the same dedup check as `register_grammar`,
     /// without requiring a caller-supplied dynamic library on disk.
-    #[cfg(test)]
+    #[cfg(all(test, feature = "treesitter"))]
     pub(crate) fn register_grammar_for_test(&self, lang_name: &str, language: Language) -> bool {
         if self
             .dynamic_languages
@@ -216,7 +216,7 @@ impl LanguageLoader {
         true
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "treesitter"))]
     pub(crate) fn loaded_libs_count(&self) -> usize {
         self.loaded_libs
             .lock()
@@ -492,7 +492,7 @@ fn get_bundled_injections_query(lang_name: &str) -> Option<&'static str> {
 }
 
 /// A library path guaranteed loadable on this platform, for test-only use.
-#[cfg(test)]
+#[cfg(all(test, feature = "treesitter"))]
 fn test_lib_path() -> &'static str {
     #[cfg(windows)]
     {
