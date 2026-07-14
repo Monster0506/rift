@@ -101,7 +101,6 @@ impl StatusBar {
         cursor: &CursorInfo,
         total_lines: usize,
         last_keypress: Option<Key>,
-        _debug_mode: bool,
     ) -> String {
         let mut parts = Vec::new();
         if let Some(key) = last_keypress {
@@ -230,7 +229,6 @@ impl StatusBar {
                 &state.cursor,
                 state.total_lines,
                 state.last_keypress,
-                state.debug_mode,
             );
             if !debug_str.is_empty() {
                 let padded_cols = available_cols.saturating_sub(1);
