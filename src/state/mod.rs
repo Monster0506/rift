@@ -309,7 +309,7 @@ impl State {
             last_command: None,
             cursor_pos: (0, 0),
             total_lines: 1,
-            gutter_width: 2,
+            gutter_width: 3,
             next_gutter_threshold: 10,
             buffer_size: 0,
             command_line: String::new(),
@@ -341,7 +341,7 @@ impl State {
             last_command: None,
             cursor_pos: (0, 0),
             total_lines: 1,
-            gutter_width: 2,
+            gutter_width: 3,
             next_gutter_threshold: 10,
             buffer_size: 0,
             command_line: String::new(),
@@ -412,11 +412,11 @@ impl State {
         if total_lines >= self.next_gutter_threshold
             || (total_lines < self.next_gutter_threshold / 10 && self.gutter_width > 2)
         {
-            // Recalculate gutter width: number of digits + 1
+            // Recalculate gutter width: number of digits + 2 (one pad each side)
             self.gutter_width = if total_lines == 0 {
                 0
             } else {
-                total_lines.to_string().len() + 1
+                total_lines.to_string().len() + 2
             };
             // Set next threshold to next power of 10
             let mut threshold = 10;

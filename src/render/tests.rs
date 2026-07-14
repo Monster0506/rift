@@ -808,18 +808,21 @@ fn test_render_line_numbers_enabled() {
         .unwrap();
 
     let content_layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
-    // Gutter width for 2 lines should be 1 (digit) + 1 (padding) = 2
-    // Line 1: "1 "
+    // Gutter width for 2 lines: 1 digit + 2 padding = 3, rendered " 1 "
     assert_eq!(
         content_layer.get_cell(0, 0).unwrap().content,
-        Character::from('1')
-    );
-    assert_eq!(
-        content_layer.get_cell(0, 1).unwrap().content,
         Character::from(' ')
     );
     assert_eq!(
+        content_layer.get_cell(0, 1).unwrap().content,
+        Character::from('1')
+    );
+    assert_eq!(
         content_layer.get_cell(0, 2).unwrap().content,
+        Character::from(' ')
+    );
+    assert_eq!(
+        content_layer.get_cell(0, 3).unwrap().content,
         Character::from('l')
     ); // Content starts here
 }
@@ -920,8 +923,7 @@ fn test_render_line_numbers_gutter_width() {
         .unwrap();
 
     let content_layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
-    // Gutter width: 3 digits + 1 padding = 4
-    // Line 1: "  1 "
+    // Gutter width: 3 digits + 2 padding = 5, rendered "   1 "
     assert_eq!(
         content_layer.get_cell(0, 0).unwrap().content,
         Character::from(' ')
@@ -932,10 +934,14 @@ fn test_render_line_numbers_gutter_width() {
     );
     assert_eq!(
         content_layer.get_cell(0, 2).unwrap().content,
-        Character::from('1')
+        Character::from(' ')
     );
     assert_eq!(
         content_layer.get_cell(0, 3).unwrap().content,
+        Character::from('1')
+    );
+    assert_eq!(
+        content_layer.get_cell(0, 4).unwrap().content,
         Character::from(' ')
     );
 }
@@ -948,7 +954,7 @@ fn test_render_cursor_position_with_line_numbers() {
     buf.move_to_start();
     let mut state = State::new();
     state.settings.show_line_numbers = true;
-    state.update_buffer_stats(10, 4, crate::document::LineEnding::LF); // 2 digits -> gutter 3
+    state.update_buffer_stats(10, 4, crate::document::LineEnding::LF); // 2 digits -> gutter 4
 
     let mut system = RenderSystem::new(10, 80);
 
