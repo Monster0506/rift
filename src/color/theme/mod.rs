@@ -103,7 +103,8 @@ impl SyntaxColors {
 pub struct Theme {
     /// Theme name
     pub name: &'static str,
-    /// Theme variant (light/dark)
+    /// Light/dark classification, exposed for consumers that adapt to it;
+    /// the built-in renderer keys off explicit colors, not this field.
     pub variant: ThemeVariant,
     /// Background color
     pub background: Color,
