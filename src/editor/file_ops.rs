@@ -357,13 +357,8 @@ impl<T: TerminalBackend> Editor<T> {
                 let layouts = self
                     .split_tree
                     .compute_layout(size.rows as usize, size.cols as usize);
-                let total = match direction {
-                    crate::split::tree::SplitDirection::Vertical => size.cols as f64,
-                    crate::split::tree::SplitDirection::Horizontal => size.rows as f64,
-                };
-                let delta_ratio = (delta as f64) / total;
                 self.split_tree
-                    .resize_focused(direction, delta_ratio, &layouts);
+                    .resize_focused(direction, delta as f64, &layouts);
                 self.render_system.viewport.mark_needs_full_redraw();
             }
             SplitSubcommand::Move(dir) => {

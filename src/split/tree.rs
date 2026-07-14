@@ -470,17 +470,24 @@ impl SplitTree {
     pub fn resize_focused(
         &mut self,
         direction: SplitDirection,
-        delta: f64,
-        _layouts: &[super::layout::WindowLayout],
+        delta_cells: f64,
+        layouts: &[super::layout::WindowLayout],
     ) -> bool {
-        Self::resize_node(&mut self.root, self.focused_window, direction, delta)
+        Self::resize_node(
+            &mut self.root,
+            self.focused_window,
+            direction,
+            delta_cells,
+            layouts,
+        )
     }
 
     fn resize_node(
         node: &mut SplitNode,
         target_id: WindowId,
         direction: SplitDirection,
-        delta: f64,
+        delta_cells: f64,
+        layouts: &[super::layout::WindowLayout],
     ) -> bool {
         match node {
             SplitNode::Leaf(_) => false,
@@ -500,9 +507,9 @@ impl SplitTree {
                 // Try deeper first so the innermost matching split is adjusted,
                 // not the outermost ancestor (which would shift all sibling panes).
                 let child_adjusted = if in_first {
-                    Self::resize_node(first, target_id, direction, delta)
+                    Self::resize_node(first, target_id, direction, delta_cells, layouts)
                 } else {
-                    Self::resize_node(second, target_id, direction, delta)
+                    Self::resize_node(second, target_id, direction, delta_cells, layouts)
                 };
 
                 if child_adjusted {
@@ -511,16 +518,55 @@ impl SplitTree {
 
                 // No deeper match in this direction — adjust at this level.
                 if *d == direction {
-                    let new_ratio = if in_first {
-                        *ratio + delta
+                    // Translate the cell delta into a ratio delta via this split's
+                    // on-screen span, so a keystroke resizes the same amount at any depth.
+                    let mut lo = usize::MAX;
+                    let mut hi = 0usize;
+                    Self::accumulate_span(first, direction, layouts, &mut lo, &mut hi);
+                    Self::accumulate_span(second, direction, layouts, &mut lo, &mut hi);
+                    let available = hi.saturating_sub(lo).saturating_sub(1);
+                    let delta_ratio = if available > 0 {
+                        delta_cells / available as f64
                     } else {
-                        *ratio - delta
+                        0.0
+                    };
+                    let new_ratio = if in_first {
+                        *ratio + delta_ratio
+                    } else {
+                        *ratio - delta_ratio
                     };
                     *ratio = new_ratio.clamp(0.1, 0.9);
                     true
                 } else {
                     false
                 }
+            }
+        }
+    }
+
+    // On-screen extent of a subtree along `direction`, accumulated as a bounding
+    // box over its leaves' layouts (min start / max end).
+    fn accumulate_span(
+        node: &SplitNode,
+        direction: SplitDirection,
+        layouts: &[super::layout::WindowLayout],
+        lo: &mut usize,
+        hi: &mut usize,
+    ) {
+        match node {
+            SplitNode::Leaf(id) => {
+                if let Some(l) = layouts.iter().find(|l| l.window_id == *id) {
+                    let (start, end) = match direction {
+                        SplitDirection::Horizontal => (l.row, l.row + l.rows),
+                        SplitDirection::Vertical => (l.col, l.col + l.cols),
+                    };
+                    *lo = (*lo).min(start);
+                    *hi = (*hi).max(end);
+                }
+            }
+            SplitNode::Split { first, second, .. } => {
+                Self::accumulate_span(first, direction, layouts, lo, hi);
+                Self::accumulate_span(second, direction, layouts, lo, hi);
             }
         }
     }

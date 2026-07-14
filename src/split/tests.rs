@@ -353,7 +353,8 @@ fn hsplit_30_70_ratio() {
     let w2 = tree
         .split(SplitDirection::Horizontal, w1, 1, 12, 80)
         .unwrap();
-    tree.resize_focused(SplitDirection::Horizontal, -0.2, &[]);
+    let resize_layouts = tree.compute_layout(21, 80);
+    tree.resize_focused(SplitDirection::Horizontal, -4.0, &resize_layouts);
 
     let layouts = tree.compute_layout(21, 80);
     let l1 = layouts.iter().find(|l| l.window_id == w1).unwrap();
@@ -368,7 +369,8 @@ fn vsplit_60_40_ratio() {
     let mut tree = SplitTree::new(1, 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree.split(SplitDirection::Vertical, w1, 2, 24, 40).unwrap();
-    tree.resize_focused(SplitDirection::Vertical, 0.1, &[]);
+    let resize_layouts = tree.compute_layout(24, 81);
+    tree.resize_focused(SplitDirection::Vertical, 8.0, &resize_layouts);
 
     let layouts = tree.compute_layout(24, 81);
     let l1 = layouts.iter().find(|l| l.window_id == w1).unwrap();
@@ -385,7 +387,8 @@ fn layout_enforces_minimum_rows() {
     let w2 = tree
         .split(SplitDirection::Horizontal, w1, 1, 12, 80)
         .unwrap();
-    tree.resize_focused(SplitDirection::Horizontal, 0.4, &[]);
+    let resize_layouts = tree.compute_layout(9, 80);
+    tree.resize_focused(SplitDirection::Horizontal, 10.0, &resize_layouts);
 
     let layouts = tree.compute_layout(9, 80);
     let l1 = layouts.iter().find(|l| l.window_id == w1).unwrap();
@@ -400,7 +403,8 @@ fn layout_enforces_minimum_cols() {
     let mut tree = SplitTree::new(1, 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree.split(SplitDirection::Vertical, w1, 2, 24, 40).unwrap();
-    tree.resize_focused(SplitDirection::Vertical, 0.4, &[]);
+    let resize_layouts = tree.compute_layout(24, 25);
+    tree.resize_focused(SplitDirection::Vertical, 10.0, &resize_layouts);
 
     let layouts = tree.compute_layout(24, 25);
     let l1 = layouts.iter().find(|l| l.window_id == w1).unwrap();
@@ -543,7 +547,7 @@ fn resize_hsplit() {
     let layouts = tree.compute_layout(25, 80);
 
     tree.set_focus(w1);
-    let result = tree.resize_focused(SplitDirection::Horizontal, 0.1, &layouts);
+    let result = tree.resize_focused(SplitDirection::Horizontal, 2.0, &layouts);
     assert!(result);
 }
 
@@ -558,7 +562,7 @@ fn resize_wrong_direction_returns_false() {
     let layouts = tree.compute_layout(25, 80);
 
     tree.set_focus(w1);
-    let result = tree.resize_focused(SplitDirection::Vertical, 0.1, &layouts);
+    let result = tree.resize_focused(SplitDirection::Vertical, 2.0, &layouts);
     assert!(!result);
 }
 
@@ -602,7 +606,7 @@ fn resize_changes_ratio() {
     let l1_before = before.iter().find(|l| l.window_id == w1).unwrap().rows;
 
     tree.set_focus(w1);
-    tree.resize_focused(SplitDirection::Horizontal, 0.1, &before);
+    tree.resize_focused(SplitDirection::Horizontal, 2.0, &before);
 
     let after = tree.compute_layout(25, 80);
     let l1_after = after.iter().find(|l| l.window_id == w1).unwrap().rows;
@@ -621,8 +625,9 @@ fn resize_clamps_at_bounds() {
         .unwrap();
 
     tree.set_focus(w1);
+    let resize_layouts = tree.compute_layout(25, 80);
     for _ in 0..20 {
-        tree.resize_focused(SplitDirection::Horizontal, 0.1, &[]);
+        tree.resize_focused(SplitDirection::Horizontal, 2.0, &resize_layouts);
     }
 
     let layouts = tree.compute_layout(25, 80);
@@ -773,7 +778,8 @@ fn move_window_no_neighbor_preserves_ratio() {
     let w2 = tree
         .split(SplitDirection::Horizontal, w1, 2, 12, 80)
         .unwrap();
-    tree.resize_focused(SplitDirection::Horizontal, 0.2, &[]);
+    let resize_layouts = tree.compute_layout(25, 80);
+    tree.resize_focused(SplitDirection::Horizontal, 5.0, &resize_layouts);
 
     tree.set_focus(w2);
     let layouts = tree.compute_layout(25, 80);
