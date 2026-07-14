@@ -75,7 +75,6 @@ impl Motion {
         buf: &mut crate::buffer::TextBuffer,
         display_map: Option<&crate::wrap::DisplayMap>,
         op_ctx: crate::wrap::OperatorContext,
-        _tab_width: usize,
         viewport_height: usize,
         last_search_query: Option<&str>,
     ) {

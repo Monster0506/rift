@@ -56,14 +56,12 @@ impl<T: TerminalBackend> Editor<T> {
         let viewport_height = self.render_system.viewport.visible_rows();
         let last_search_query = self.state.last_search_query.clone();
         let captured = self.document_manager.active_document_mut().and_then(|doc| {
-            let tab_width = doc.options.tab_width;
             crate::executor::compute_motion_range(
                 motion,
                 count,
                 doc,
                 viewport_height,
                 last_search_query.as_deref(),
-                tab_width,
             )
             .map(|range| crate::clipboard::capture_text(&doc.buffer, &range))
         });

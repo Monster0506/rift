@@ -49,7 +49,6 @@ pub fn compute_motion_range(
     doc: &mut Document,
     viewport_height: usize,
     last_search_query: Option<&str>,
-    tab_width: usize,
 ) -> Option<crate::wrap::MotionRange> {
     use crate::wrap::{MotionRange, OperatorContext};
 
@@ -97,7 +96,6 @@ pub fn compute_motion_range(
             &mut doc.buffer,
             None,
             OperatorContext::Operator,
-            tab_width,
             viewport_height,
             last_search_query,
         );
@@ -192,7 +190,6 @@ pub fn execute_command(
                     buf,
                     display_map,
                     crate::wrap::OperatorContext::Move,
-                    tab_width,
                     viewport_height,
                     last_search_query,
                 );
@@ -205,7 +202,6 @@ pub fn execute_command(
                 doc,
                 viewport_height,
                 last_search_query,
-                tab_width,
             ) else {
                 return Ok(());
             };
@@ -223,7 +219,6 @@ pub fn execute_command(
                 doc,
                 viewport_height,
                 last_search_query,
-                tab_width,
             ) else {
                 return Ok(());
             };
@@ -279,7 +274,6 @@ pub fn execute_command(
                 doc,
                 viewport_height,
                 last_search_query,
-                tab_width,
             ) else {
                 return Ok(());
             };
