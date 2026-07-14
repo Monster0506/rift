@@ -380,7 +380,6 @@ impl RenderSystem {
                 terminal_cols: ctx.viewport.visible_cols(),
                 cmd_width_ratio: ctx.state.settings.command_line_window.width_ratio,
                 cmd_min_width: ctx.state.settings.command_line_window.min_width,
-                cmd_has_border: ctx.state.settings.command_line_window.border,
                 cmd_height: ctx.state.settings.command_line_window.height,
                 editor_bg: ctx.state.settings.editor_bg,
                 editor_fg: ctx.state.settings.editor_fg,

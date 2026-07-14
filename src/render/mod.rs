@@ -134,8 +134,6 @@ pub struct CompletionMenuDrawState {
     pub cmd_width_ratio: f64,
     /// Command line minimum width
     pub cmd_min_width: usize,
-    /// Whether the command line has a border
-    pub cmd_has_border: bool,
     /// Command line total height in rows (including borders)
     pub cmd_height: usize,
     /// Theme/Color context
