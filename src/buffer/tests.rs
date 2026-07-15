@@ -1,5 +1,201 @@
 use super::*;
 
+// patch_logical_bytes
+
+#[test]
+fn patch_logical_bytes_insert_ascii() {
+    let mut buffer = TextBuffer::new(16).unwrap();
+    buffer.insert_str("hello world").unwrap();
+    let cached = buffer.to_logical_bytes();
+
+    buffer.set_cursor(5).unwrap();
+    buffer.insert_str(", there").unwrap();
+
+    let patched = buffer
+        .patch_logical_bytes(&cached, 5, 5, 5 + ", there".len())
+        .expect("patch should succeed");
+    assert_eq!(patched, buffer.to_logical_bytes());
+    assert_eq!(patched, b"hello, there world");
+}
+
+#[test]
+fn patch_logical_bytes_insert_before_multibyte_run() {
+    // "café" = c(1) a(1) f(1) é(2 bytes). Insert right before the 'é'.
+    let mut buffer = TextBuffer::new(16).unwrap();
+    buffer.insert_str("café").unwrap();
+    let cached = buffer.to_logical_bytes();
+
+    buffer.set_cursor(3).unwrap();
+    buffer.insert_str("X").unwrap();
+
+    let start_byte = 3;
+    let patched = buffer
+        .patch_logical_bytes(&cached, start_byte, start_byte, start_byte + 1)
+        .expect("patch should succeed");
+    assert_eq!(patched, buffer.to_logical_bytes());
+    assert_eq!(patched, "cafXé".as_bytes());
+}
+
+#[test]
+fn patch_logical_bytes_insert_after_multibyte_run() {
+    // Insert immediately after the 'é' in "café".
+    let mut buffer = TextBuffer::new(16).unwrap();
+    buffer.insert_str("café").unwrap();
+    let cached = buffer.to_logical_bytes();
+
+    buffer.set_cursor(4).unwrap();
+    buffer.insert_str("Y").unwrap();
+
+    let start_byte = 5; // 'c','a','f' (3 bytes) + 'é' (2 bytes)
+    let patched = buffer
+        .patch_logical_bytes(&cached, start_byte, start_byte, start_byte + 1)
+        .expect("patch should succeed");
+    assert_eq!(patched, buffer.to_logical_bytes());
+    assert_eq!(patched, "caféY".as_bytes());
+}
+
+#[test]
+fn patch_logical_bytes_delete_multibyte_char() {
+    // Delete the 3-byte CJK character in the middle of "a日b".
+    let mut buffer = TextBuffer::new(16).unwrap();
+    buffer.insert_str("a日b").unwrap();
+    let cached = buffer.to_logical_bytes();
+
+    assert!(buffer.delete_range(1, 1));
+
+    let patched = buffer
+        .patch_logical_bytes(&cached, 1, 1 + '日'.len_utf8(), 1)
+        .expect("patch should succeed");
+    assert_eq!(patched, buffer.to_logical_bytes());
+    assert_eq!(patched, b"ab");
+}
+
+#[test]
+fn patch_logical_bytes_replace_spans_multiple_multibyte_chars() {
+    // Replace "日本" (two 3-byte CJK chars) inside "a日本b" with an emoji (4 bytes).
+    let mut buffer = TextBuffer::new(16).unwrap();
+    buffer.insert_str("a日本b").unwrap();
+    let cached = buffer.to_logical_bytes();
+
+    let chars: Vec<Character> = "🦀".chars().map(Character::from).collect();
+    assert!(buffer.replace_range(1, 2, &chars));
+
+    let old_end_byte = 1 + '日'.len_utf8() + '本'.len_utf8();
+    let new_end_byte = 1 + "🦀".len();
+    let patched = buffer
+        .patch_logical_bytes(&cached, 1, old_end_byte, new_end_byte)
+        .expect("patch should succeed");
+    assert_eq!(patched, buffer.to_logical_bytes());
+    assert_eq!(patched, "a🦀b".as_bytes());
+}
+
+#[test]
+fn patch_logical_bytes_rejects_stale_cache() {
+    let mut buffer = TextBuffer::new(16).unwrap();
+    buffer.insert_str("hello").unwrap();
+    let cached = buffer.to_logical_bytes();
+
+    buffer.set_cursor(5).unwrap();
+    buffer.insert_str(" world").unwrap();
+
+    // old_end_byte beyond the cached buffer's length must be rejected.
+    assert!(buffer.patch_logical_bytes(&cached, 5, 999, 11).is_none());
+}
+
+#[test]
+fn patch_logical_bytes_rejects_non_char_boundary() {
+    // "日" is 3 bytes; splitting it mid-character must be rejected.
+    let mut buffer = TextBuffer::new(16).unwrap();
+    buffer.insert_str("日").unwrap();
+    let cached = buffer.to_logical_bytes();
+
+    assert!(buffer.patch_logical_bytes(&cached, 1, 1, 1).is_none());
+}
+
+#[test]
+fn patch_logical_bytes_matches_full_rebuild_random() {
+    fn next(seed: &mut u64, m: usize) -> usize {
+        *seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((*seed >> 33) as usize) % m.max(1)
+    }
+
+    fn insert_at(buf: &mut TextBuffer, pos: usize, s: &str) -> (usize, usize, usize) {
+        let start_byte = buf.char_to_byte(pos);
+        buf.set_cursor(pos).unwrap();
+        buf.insert_str(s).unwrap();
+        let new_end_byte = buf.char_to_byte(pos + s.chars().count());
+        (start_byte, start_byte, new_end_byte)
+    }
+
+    fn delete_at(buf: &mut TextBuffer, pos: usize, n: usize) -> (usize, usize, usize) {
+        let start_byte = buf.char_to_byte(pos);
+        let old_end_byte = buf.char_to_byte(pos + n);
+        assert!(buf.delete_range(pos, n));
+        (start_byte, old_end_byte, start_byte)
+    }
+
+    fn replace_at(buf: &mut TextBuffer, pos: usize, n: usize, s: &str) -> (usize, usize, usize) {
+        let start_byte = buf.char_to_byte(pos);
+        let old_end_byte = buf.char_to_byte(pos + n);
+        let chars: Vec<Character> = s.chars().map(Character::from).collect();
+        assert!(buf.replace_range(pos, n, &chars));
+        let new_end_byte = buf.char_to_byte(pos + chars.len());
+        (start_byte, old_end_byte, new_end_byte)
+    }
+
+    let mut seed: u64 = 0x1234_5678_9abc_def0;
+    let snippets = [
+        "x",
+        "hello ",
+        "\n",
+        "a\nb",
+        "café",
+        "日本語",
+        "🦀🎉",
+        "  ",
+        "\t",
+    ];
+
+    let mut buffer = TextBuffer::new(64).unwrap();
+    buffer
+        .insert_str(&"the quick brown café fox jumps over 日本語 🦀 lazy dog\n".repeat(6))
+        .unwrap();
+
+    let mut cached = buffer.to_logical_bytes();
+
+    for i in 0..300 {
+        let len = buffer.len();
+        let choice = if len == 0 { 0 } else { next(&mut seed, 3) };
+        let (start_byte, old_end_byte, new_end_byte) = match choice {
+            0 => {
+                let s = snippets[next(&mut seed, snippets.len())];
+                let pos = next(&mut seed, len + 1);
+                insert_at(&mut buffer, pos, s)
+            }
+            1 => {
+                let pos = next(&mut seed, len);
+                let n = (next(&mut seed, 6) + 1).min(len - pos);
+                delete_at(&mut buffer, pos, n)
+            }
+            _ => {
+                let pos = next(&mut seed, len);
+                let n = (next(&mut seed, 6) + 1).min(len - pos);
+                let s = snippets[next(&mut seed, snippets.len())];
+                replace_at(&mut buffer, pos, n, s)
+            }
+        };
+
+        let patched = buffer
+            .patch_logical_bytes(&cached, start_byte, old_end_byte, new_end_byte)
+            .unwrap_or_else(|| panic!("patch_logical_bytes returned None at step {i}"));
+        let full = buffer.to_logical_bytes();
+        assert_eq!(patched, full, "diverged at step {i}");
+        cached = patched;
+    }
+}
+
 #[test]
 fn test_new_buffer() {
     let buffer = TextBuffer::new(10).unwrap();

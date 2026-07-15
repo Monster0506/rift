@@ -18,14 +18,20 @@ pub struct VisualRowInfo {
     pub is_first: bool,
 }
 
-/// Precomputed mapping from visual rows -> buffer positions.
+/// Precomputed mapping from visual rows -> buffer positions. May cover only
+/// a prefix (`complete` is true once it reaches the end of the document).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DisplayMap {
     rows: Vec<VisualRowInfo>,
     line_first_visual: Vec<usize>,
     pub wrap_width: usize,
     pub tab_width: usize,
+    complete: bool,
 }
+
+/// Lines wrapped per lazy-extension step; bounds how much a single
+/// `extend_to_row`/`extend_to_char` call does before rechecking its target.
+const EXTEND_BATCH_LINES: usize = 256;
 
 /// Wrap chunked chars into visual rows, logging each line's first row index
 /// (a trailing newline logs one extra); emit_final_row closes the buffer tail.
@@ -169,7 +175,112 @@ impl DisplayMap {
             line_first_visual,
             wrap_width,
             tab_width,
+            complete: true,
         }
+    }
+
+    /// An empty map that covers nothing yet. Callers extend it on demand via
+    /// `extend_to_row`/`extend_to_char` before reading past what's built.
+    pub fn empty(wrap_width: usize, tab_width: usize) -> Self {
+        DisplayMap {
+            rows: Vec::new(),
+            line_first_visual: Vec::new(),
+            wrap_width,
+            tab_width,
+            complete: false,
+        }
+    }
+
+    /// Whether the map has been extended through the end of the document.
+    pub fn is_complete(&self) -> bool {
+        self.complete
+    }
+
+    /// Wrap the next unwrapped batch of lines and append to `rows`/`line_first_visual`.
+    /// A no-op once `complete`.
+    fn extend_batch(&mut self, buf: &TextBuffer) {
+        if self.complete {
+            return;
+        }
+        let total_lines = buf.get_total_lines();
+        let start_line = self.line_first_visual.len();
+        if start_line >= total_lines {
+            self.complete = true;
+            return;
+        }
+        let end_line = (start_line + EXTEND_BATCH_LINES).min(total_lines);
+        let is_tail = end_line >= total_lines;
+        let start_char = buf.line_index.get_start(start_line).unwrap_or(0);
+        let end_char = if is_tail {
+            buf.len()
+        } else {
+            buf.line_index.get_start(end_line).unwrap_or(buf.len())
+        };
+        let mut remaining = end_char - start_char;
+        let region_chunks =
+            buf.line_index
+                .table
+                .iter_chunks_at(start_char)
+                .map_while(move |chunk| {
+                    if remaining == 0 {
+                        return None;
+                    }
+                    let take = chunk.len().min(remaining);
+                    remaining -= take;
+                    Some(&chunk[..take])
+                });
+        wrap_chars(
+            region_chunks,
+            start_line,
+            start_char,
+            self.wrap_width,
+            self.tab_width,
+            is_tail,
+            &mut self.rows,
+            &mut self.line_first_visual,
+        );
+        // A non-tail batch's trailing newline opens the next (unwrapped) line;
+        // drop that premature entry, exactly as `apply_edit`'s region reuse does.
+        if is_tail {
+            self.complete = true;
+        } else {
+            self.line_first_visual.pop();
+        }
+    }
+
+    /// Extend until at least `min_rows` rows exist, or the document ends.
+    pub fn extend_to_row(&mut self, buf: &TextBuffer, min_rows: usize) {
+        while !self.complete && self.rows.len() < min_rows {
+            self.extend_batch(buf);
+        }
+    }
+
+    /// Extend until a row covering `char_offset` exists, or the document ends.
+    pub fn extend_to_char(&mut self, buf: &TextBuffer, char_offset: usize) {
+        while !self.complete && self.rows.last().is_none_or(|r| r.char_end <= char_offset) {
+            self.extend_batch(buf);
+        }
+    }
+
+    /// Extend fully through the end of the document. Equivalent in cost to
+    /// `DisplayMap::build`; only pay this when the whole document is genuinely needed.
+    pub fn extend_to_end(&mut self, buf: &TextBuffer) {
+        while !self.complete {
+            self.extend_batch(buf);
+        }
+    }
+
+    /// Whether covering `char_offset` plus `extend_margin_rows` rows needs
+    /// wrapping work - lets a shared `Arc<DisplayMap>` skip `Arc::make_mut`.
+    pub fn needs_extension(&self, char_offset: usize, extend_margin_rows: usize) -> bool {
+        if self.complete {
+            return false;
+        }
+        if self.rows.last().is_none_or(|r| r.char_end <= char_offset) {
+            return true;
+        }
+        let row = self.char_to_visual_row(char_offset);
+        self.rows.len() < row + extend_margin_rows + 1
     }
 
     /// Patch the map against post-edit `buf` (`del` chars removed at `pos`,
@@ -261,6 +372,8 @@ impl DisplayMap {
         true
     }
 
+    /// Rows built so far. Equals the true document total once `is_complete()`;
+    /// callers that need the true total unconditionally call `extend_to_end` first.
     pub fn total_visual_rows(&self) -> usize {
         self.rows.len()
     }
@@ -374,6 +487,68 @@ impl DisplayMap {
             pos += 1;
         }
         pos
+    }
+
+    /// Extending counterpart of `char_to_visual_row`: grows the map to cover
+    /// `char_offset` before answering, so the result is always exact.
+    pub fn char_to_visual_row_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
+        self.extend_to_char(buf, char_offset);
+        self.char_to_visual_row(char_offset)
+    }
+
+    /// Extending counterpart of `char_to_visual_col`.
+    pub fn char_to_visual_col_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
+        self.extend_to_char(buf, char_offset);
+        self.char_to_visual_col(char_offset, buf)
+    }
+
+    /// Extending counterpart of `get_visual_row`.
+    pub fn get_visual_row_ext(
+        &mut self,
+        visual_row: usize,
+        buf: &TextBuffer,
+    ) -> Option<&VisualRowInfo> {
+        self.extend_to_row(buf, visual_row + 1);
+        self.get_visual_row(visual_row)
+    }
+
+    /// Extending counterpart of `visual_down`.
+    pub fn visual_down_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
+        self.extend_to_char(buf, char_offset);
+        let cur_row = self.char_to_visual_row(char_offset);
+        self.extend_to_row(buf, cur_row + 2);
+        self.visual_down(char_offset, buf)
+    }
+
+    /// Extending counterpart of `visual_down_to_col`.
+    pub fn visual_down_to_col_ext(
+        &mut self,
+        char_offset: usize,
+        target_col: usize,
+        buf: &TextBuffer,
+    ) -> usize {
+        self.extend_to_char(buf, char_offset);
+        let cur_row = self.char_to_visual_row(char_offset);
+        self.extend_to_row(buf, cur_row + 2);
+        self.visual_down_to_col(char_offset, target_col, buf)
+    }
+
+    /// Extending counterpart of `visual_up` - upward motion never needs new
+    /// wrapping once `char_offset`'s own row is built.
+    pub fn visual_up_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
+        self.extend_to_char(buf, char_offset);
+        self.visual_up(char_offset, buf)
+    }
+
+    /// Extending counterpart of `visual_up_to_col`.
+    pub fn visual_up_to_col_ext(
+        &mut self,
+        char_offset: usize,
+        target_col: usize,
+        buf: &TextBuffer,
+    ) -> usize {
+        self.extend_to_char(buf, char_offset);
+        self.visual_up_to_col(char_offset, target_col, buf)
     }
 }
 
@@ -797,6 +972,187 @@ mod tests {
             // None means a non-contiguous batch was correctly detected - the
             // safe fallback-to-full-rebuild path, nothing to check here.
         }
+    }
+
+    fn lcg_next(seed: &mut u64, m: usize) -> usize {
+        *seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((*seed >> 33) as usize) % m.max(1)
+    }
+
+    /// Drives a lazily-extended `DisplayMap` through randomized out-of-order
+    /// queries, asserting every answer matches a full eager `DisplayMap::build`.
+    fn assert_lazy_matches_full(text: &str, wrap_width: usize, tab_width: usize, seed: u64) {
+        let buf = buf_from(text);
+        let full = DisplayMap::build(&buf, wrap_width, tab_width);
+        let mut lazy = DisplayMap::empty(wrap_width, tab_width);
+        let len = buf.len();
+
+        let mut seed = seed;
+        let mut offsets: Vec<usize> = Vec::new();
+        offsets.push(0);
+        if len > 0 {
+            offsets.push(len - 1);
+            offsets.push(len);
+        }
+        for _ in 0..60 {
+            offsets.push(lcg_next(&mut seed, len + 1));
+        }
+
+        for &off in &offsets {
+            assert_eq!(
+                lazy.char_to_visual_row_ext(off, &buf),
+                full.char_to_visual_row(off),
+                "char_to_visual_row diverged at offset {off} (text={text:?}, width={wrap_width})"
+            );
+            assert_eq!(
+                lazy.char_to_visual_col_ext(off, &buf),
+                full.char_to_visual_col(off, &buf),
+                "char_to_visual_col diverged at offset {off} (text={text:?}, width={wrap_width})"
+            );
+            assert_eq!(
+                lazy.visual_down_ext(off, &buf),
+                full.visual_down(off, &buf),
+                "visual_down diverged at offset {off} (text={text:?}, width={wrap_width})"
+            );
+            assert_eq!(
+                lazy.visual_up_ext(off, &buf),
+                full.visual_up(off, &buf),
+                "visual_up diverged at offset {off} (text={text:?}, width={wrap_width})"
+            );
+            assert_eq!(
+                lazy.visual_down_to_col_ext(off, 3, &buf),
+                full.visual_down_to_col(off, 3, &buf),
+                "visual_down_to_col diverged at offset {off} (text={text:?}, width={wrap_width})"
+            );
+            assert_eq!(
+                lazy.visual_up_to_col_ext(off, usize::MAX, &buf),
+                full.visual_up_to_col(off, usize::MAX, &buf),
+                "visual_up_to_col diverged at offset {off} (text={text:?}, width={wrap_width})"
+            );
+        }
+
+        let full_rows = full.total_visual_rows();
+        for _ in 0..30 {
+            let vr = lcg_next(&mut seed, full_rows + 2);
+            assert_eq!(
+                lazy.get_visual_row_ext(vr, &buf).cloned(),
+                full.get_visual_row(vr).cloned(),
+                "get_visual_row diverged at row {vr} (text={text:?}, width={wrap_width})"
+            );
+        }
+
+        lazy.extend_to_end(&buf);
+        assert_eq!(
+            lazy, full,
+            "fully-extended lazy map must equal a fresh full build (text={text:?}, width={wrap_width})"
+        );
+        assert!(lazy.is_complete());
+        assert_eq!(lazy.total_visual_rows(), full.total_visual_rows());
+    }
+
+    #[test]
+    fn lazy_extension_matches_full_build_basic_sample() {
+        assert_lazy_matches_full(SAMPLE, 8, 4, 0x1111_2222);
+    }
+
+    #[test]
+    fn lazy_extension_matches_full_build_empty_document() {
+        assert_lazy_matches_full("", 10, 4, 0x2222_3333);
+    }
+
+    #[test]
+    fn lazy_extension_matches_full_build_blank_lines_only() {
+        assert_lazy_matches_full("\n\n\n\n\n", 10, 4, 0x3333_4444);
+    }
+
+    #[test]
+    fn lazy_extension_matches_full_build_no_trailing_newline() {
+        assert_lazy_matches_full("first line\nlast has no newline", 8, 4, 0x4444_5555);
+    }
+
+    #[test]
+    fn lazy_extension_matches_full_build_single_huge_word() {
+        let text = "x".repeat(500);
+        assert_lazy_matches_full(&text, 8, 4, 0x5555_6666);
+    }
+
+    #[test]
+    fn lazy_extension_matches_full_build_multibyte_utf8() {
+        assert_lazy_matches_full(
+            "你好世界 hello there\nmore unicode: 日本語のテキストです\n\u{1F600}\u{1F601}\n",
+            6,
+            4,
+            0x6666_7777,
+        );
+    }
+
+    #[test]
+    fn lazy_extension_matches_full_build_tabs_mixed_widths() {
+        assert_lazy_matches_full(
+            "a\tb\tc\td\te\tf\tg\n\ttabbed start\nend",
+            8,
+            4,
+            0x7777_8888,
+        );
+    }
+
+    #[test]
+    fn lazy_extension_matches_full_build_crosses_extend_batch_boundary() {
+        // EXTEND_BATCH_LINES is 256; use enough lines that extension spans
+        // multiple internal batches, exercising the extend loop itself.
+        let text = "the quick brown fox jumps over the lazy dog\n".repeat(600);
+        assert_lazy_matches_full(&text, 10, 4, 0x8888_9999);
+    }
+
+    #[test]
+    fn lazy_extension_matches_full_build_varied_widths() {
+        let text =
+            "the quick brown fox jumps over the lazy dog\nsecond line here\n\nfourth\n".repeat(20);
+        for width in [1usize, 2, 3, 5, 8, 20, 100] {
+            assert_lazy_matches_full(&text, width, 4, 0x9999_aaaa + width as u64);
+        }
+    }
+
+    #[test]
+    fn needs_extension_reflects_whether_extension_would_do_work() {
+        let buf = buf_from(&"line of text here\n".repeat(500));
+        let mut dm = DisplayMap::empty(10, 4);
+        // Nothing built yet: any real request needs extension.
+        assert!(dm.needs_extension(0, 5));
+        dm.extend_to_char(&buf, 0);
+        dm.extend_to_row(&buf, 5);
+        assert!(
+            !dm.needs_extension(0, 4),
+            "already covers offset 0 + margin 4"
+        );
+        assert!(
+            dm.needs_extension(buf.len() - 1, 0),
+            "far offset not yet covered"
+        );
+        dm.extend_to_end(&buf);
+        assert!(
+            !dm.needs_extension(buf.len().saturating_sub(1), 1_000_000),
+            "complete map never needs extension"
+        );
+    }
+
+    #[test]
+    fn lazy_map_starts_empty_and_incomplete() {
+        let dm = DisplayMap::empty(10, 4);
+        assert!(!dm.is_complete());
+        assert_eq!(dm.total_visual_rows(), 0);
+    }
+
+    #[test]
+    fn extend_to_row_stops_at_document_end_rather_than_looping() {
+        let buf = buf_from("only one short line\n");
+        let mut dm = DisplayMap::empty(80, 4);
+        dm.extend_to_row(&buf, 1_000_000);
+        assert!(dm.is_complete());
+        let full = DisplayMap::build(&buf, 80, 4);
+        assert_eq!(dm, full);
     }
 
     #[test]

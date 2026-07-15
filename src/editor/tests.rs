@@ -1404,13 +1404,13 @@ fn test_resolve_display_map_cached_reuses_across_moves() {
     );
     let doc_id = editor.document_manager.active_document_id().unwrap();
 
-    let first = editor.resolve_display_map_cached(doc_id, 20);
+    let first = editor.resolve_display_map_cached(doc_id, 20, 0, 100);
     let rows_first = first.as_ref().map(|m| m.total_visual_rows());
     assert!(rows_first.unwrap() > 2, "long lines should wrap to >2 rows");
 
     // A second call with no mutation must hit the cache and return an identical map.
     let cached_rev = editor.display_map_cache.last().map(|e| e.revision);
-    let second = editor.resolve_display_map_cached(doc_id, 20);
+    let second = editor.resolve_display_map_cached(doc_id, 20, 0, 100);
     assert_eq!(second.map(|m| m.total_visual_rows()), rows_first);
     assert_eq!(
         editor.display_map_cache.last().map(|e| e.revision),
@@ -1428,7 +1428,7 @@ fn test_resolve_display_map_cached_reuses_across_moves() {
     );
     assert_eq!(
         editor
-            .resolve_display_map_cached(doc_id, 20)
+            .resolve_display_map_cached(doc_id, 20, 0, 100)
             .map(|m| m.total_visual_rows()),
         fresh.map(|m| m.total_visual_rows()),
     );
@@ -1444,7 +1444,7 @@ fn test_resolve_display_map_cached_rebuilds_on_tab_width_change() {
     let doc_id = editor.document_manager.active_document_id().unwrap();
 
     let before = editor
-        .resolve_display_map_cached(doc_id, 20)
+        .resolve_display_map_cached(doc_id, 20, 0, 100)
         .map(|m| m.tab_width);
     assert_eq!(before, Some(4), "default tab width");
 
@@ -1457,7 +1457,7 @@ fn test_resolve_display_map_cached_rebuilds_on_tab_width_change() {
         .options
         .tab_width = 8;
     let after = editor
-        .resolve_display_map_cached(doc_id, 20)
+        .resolve_display_map_cached(doc_id, 20, 0, 100)
         .map(|m| m.tab_width);
     assert_eq!(
         after,
@@ -1476,13 +1476,13 @@ fn test_resolve_display_map_cached_keeps_entries_per_width() {
     let doc_id = editor.document_manager.active_document_id().unwrap();
     editor.display_map_cache.clear();
 
-    let narrow = editor.resolve_display_map_cached(doc_id, 15);
-    let wide = editor.resolve_display_map_cached(doc_id, 30);
+    let narrow = editor.resolve_display_map_cached(doc_id, 15, 0, 100);
+    let wide = editor.resolve_display_map_cached(doc_id, 30, 0, 100);
     assert_eq!(editor.display_map_cache.len(), 2, "one entry per width");
 
     // Re-resolving either width must be a cache hit: same Arc, no rebuild.
-    let narrow_again = editor.resolve_display_map_cached(doc_id, 15);
-    let wide_again = editor.resolve_display_map_cached(doc_id, 30);
+    let narrow_again = editor.resolve_display_map_cached(doc_id, 15, 0, 100);
+    let wide_again = editor.resolve_display_map_cached(doc_id, 30, 0, 100);
     assert!(std::sync::Arc::ptr_eq(
         narrow.as_ref().unwrap(),
         narrow_again.as_ref().unwrap()
@@ -1492,6 +1492,167 @@ fn test_resolve_display_map_cached_keeps_entries_per_width() {
         wide_again.as_ref().unwrap()
     ));
     assert_eq!(editor.display_map_cache.len(), 2);
+}
+
+#[test]
+fn test_display_map_stays_partial_for_large_document_small_viewport() {
+    let mut editor = create_editor_sized(10, 30);
+    let text = "the quick brown fox jumps over the lazy dog\n".repeat(2000);
+    set_content(&mut editor, &text);
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.update_and_render().unwrap();
+
+    let doc_id = editor.document_manager.active_document_id().unwrap();
+    let content_width = editor.split_tree.focused_window().viewport.visible_cols();
+    let dm = editor
+        .resolve_display_map_cached(doc_id, content_width, 0, 0)
+        .expect("soft wrap is on by default");
+    assert!(
+        !dm.is_complete(),
+        "a small viewport into a large document must not eagerly wrap the whole thing"
+    );
+    assert!(
+        dm.total_visual_rows() < 2000,
+        "only a window around the viewport should be built, got {} rows",
+        dm.total_visual_rows()
+    );
+}
+
+#[test]
+fn test_lazy_display_map_extends_correctly_for_far_cursor_jump() {
+    let mut editor = create_editor_sized(10, 30);
+    let text = "the quick brown fox jumps over the lazy dog\n".repeat(800);
+    set_content(&mut editor, &text);
+    editor.update_and_render().unwrap();
+
+    let doc_id = editor.document_manager.active_document_id().unwrap();
+    let content_width = editor.split_tree.focused_window().viewport.visible_cols();
+
+    // Jump the cursor far into the document, like `G` or a distant `/search` match.
+    let far_char = {
+        let doc = editor.document_manager.get_document(doc_id).unwrap();
+        doc.buffer.len() * 3 / 4
+    };
+    editor
+        .active_document()
+        .buffer
+        .set_cursor(far_char)
+        .unwrap();
+    editor.update_and_render().unwrap();
+
+    let dm = editor
+        .resolve_display_map_cached(doc_id, content_width, far_char, 0)
+        .unwrap();
+    let actual_row = dm.char_to_visual_row(far_char);
+
+    let doc = editor.document_manager.get_document(doc_id).unwrap();
+    let reference = super::resolve_display_map(
+        doc,
+        content_width,
+        editor.state.settings.soft_wrap,
+        editor.state.settings.wrap_width,
+    )
+    .unwrap();
+    assert_eq!(
+        actual_row,
+        reference.char_to_visual_row(far_char),
+        "a far cursor jump must land on the exact row a full build would report"
+    );
+}
+
+#[test]
+fn test_edit_on_partial_display_map_stays_correct() {
+    let mut editor = create_editor_sized(10, 30);
+    editor.state.settings.show_line_numbers = false;
+    let text = "the quick brown fox jumps over the lazy dog\n".repeat(800);
+    set_content(&mut editor, &text);
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.update_and_render().unwrap();
+
+    let doc_id = editor.document_manager.active_document_id().unwrap();
+    let content_width = editor.split_tree.focused_window().viewport.visible_cols();
+
+    // Sanity: the map must still be partial (small viewport, huge doc).
+    let dm_before = editor
+        .resolve_display_map_cached(doc_id, content_width, 0, 0)
+        .unwrap();
+    assert!(!dm_before.is_complete());
+
+    // apply_edit's own precondition refuses to patch a partial map, so this
+    // falls back to a (still lazy) rebuild rather than corrupting anything.
+    editor.current_mode = Mode::Insert;
+    editor.execute_buffer_command(crate::command::Command::InsertChar('X'));
+
+    let doc = editor.document_manager.get_document(doc_id).unwrap();
+    let mut reference = super::resolve_display_map(
+        doc,
+        content_width,
+        editor.state.settings.soft_wrap,
+        editor.state.settings.wrap_width,
+    )
+    .unwrap();
+    reference.extend_to_end(&doc.buffer);
+
+    let mut actual = editor
+        .resolve_display_map_cached(doc_id, content_width, 0, 0)
+        .unwrap();
+    {
+        let doc = editor.document_manager.get_document(doc_id).unwrap();
+        std::sync::Arc::make_mut(&mut actual).extend_to_end(&doc.buffer);
+    }
+    assert_eq!(
+        *actual, reference,
+        "post-edit map, once fully extended, must match a fresh full build"
+    );
+}
+
+#[test]
+fn test_large_count_down_motion_matches_full_build_reference() {
+    let mut editor = create_editor_sized(10, 30);
+    editor.state.settings.show_line_numbers = false;
+    let text = "the quick brown fox jumps over the lazy dog\n".repeat(500);
+    set_content(&mut editor, &text);
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.current_mode = Mode::Normal;
+    editor.update_and_render().unwrap();
+
+    let doc_id = editor.document_manager.active_document_id().unwrap();
+    let content_width = editor.split_tree.focused_window().viewport.visible_cols();
+
+    // A count far larger than the viewport (and larger than one internal
+    // extension batch) forces the motion itself to extend the map on demand.
+    let count = 137usize;
+    let expected = {
+        let doc = editor.document_manager.get_document(doc_id).unwrap();
+        let reference = super::resolve_display_map(
+            doc,
+            content_width,
+            editor.state.settings.soft_wrap,
+            editor.state.settings.wrap_width,
+        )
+        .unwrap();
+        let mut pos = 0usize;
+        for _ in 0..count {
+            pos = reference.visual_down(pos, &doc.buffer);
+        }
+        pos
+    };
+
+    editor.execute_buffer_command(crate::command::Command::Move(
+        crate::action::Motion::Down,
+        count,
+    ));
+
+    let actual = editor
+        .document_manager
+        .get_document(doc_id)
+        .unwrap()
+        .buffer
+        .cursor();
+    assert_eq!(
+        actual, expected,
+        "a large-count j must land exactly where a full-build reference would"
+    );
 }
 
 #[test]

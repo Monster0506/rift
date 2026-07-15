@@ -16,6 +16,9 @@ pub struct SyntaxParseResult {
     /// Buffer revision at spawn time; the caller must discard this result if
     /// the live revision has since moved on, or a stale parse can clobber newer state.
     pub revision: u64,
+    /// Logical bytes this job parsed from, cached by the caller so a future
+    /// job can patch it instead of rebuilding from scratch.
+    pub logical_bytes: Vec<u8>,
 }
 
 crate::impl_job_payload!(SyntaxParseResult);
@@ -29,13 +32,16 @@ pub struct SyntaxParseJob {
     language_name: String,
     document_id: u64,
     revision: u64,
+    /// Prior logical-bytes buffer and the single edit since it was captured,
+    /// if any — lets `run()` patch instead of a full `to_logical_bytes()` rebuild.
+    cached_logical_bytes: Option<Arc<Vec<u8>>>,
+    single_edit: Option<InputEdit>,
     /// Keeps `parser`'s language's backing dynamic library alive for the job's
     /// lifetime; runs on a background thread detached from the `Syntax` that spawned it.
     _lib: Option<Arc<RawLib>>,
     /// Highlights as of `old_tree`, plus the single edit since then (if
     /// exactly one landed); otherwise the highlights query rescans everything.
     old_highlights: IntervalTree<u32>,
-    single_edit: Option<InputEdit>,
 }
 
 impl std::fmt::Debug for SyntaxParseJob {
@@ -45,6 +51,10 @@ impl std::fmt::Debug for SyntaxParseJob {
             .field("buffer_len", &self.buffer.len())
             .field("has_old_tree", &self.old_tree.is_some())
             .field("has_query", &self.highlights_query.is_some())
+            .field(
+                "has_cached_logical_bytes",
+                &self.cached_logical_bytes.is_some(),
+            )
             .finish()
     }
 }
@@ -67,9 +77,10 @@ impl SyntaxParseJob {
             language_name,
             document_id,
             revision,
+            cached_logical_bytes: None,
+            single_edit: None,
             _lib: None,
             old_highlights: IntervalTree::default(),
-            single_edit: None,
         }
     }
 
@@ -92,6 +103,17 @@ impl SyntaxParseJob {
             [edit] => Some(*edit),
             _ => None,
         };
+        self
+    }
+    /// Attach a prior logical-bytes buffer and the edit since it was captured,
+    /// so `run()` can patch instead of rebuilding; `None`/`None` forces a full rebuild.
+    pub fn with_incremental_bytes(
+        mut self,
+        cached_logical_bytes: Option<Arc<Vec<u8>>>,
+        single_edit: Option<tree_sitter::InputEdit>,
+    ) -> Self {
+        self.cached_logical_bytes = cached_logical_bytes;
+        self.single_edit = single_edit;
         self
     }
 }
@@ -122,23 +144,36 @@ impl Job for SyntaxParseJob {
             language_name,
             document_id,
             revision,
+            cached_logical_bytes,
+            single_edit,
             _lib,
             old_highlights,
-            single_edit,
         } = *self;
 
         // Uses logical bytes, not the rendered form, so tree-sitter offsets match
         // the query cursor's coordinate space (control chars differ in byte width).
         let text = buffer;
         let source_bytes = {
+            let will_patch = cached_logical_bytes.is_some() && single_edit.is_some();
             crate::perf_span!(
                 "syntax_reparse_job_to_bytes",
                 crate::perf::PerfFields {
                     bytes: Some(text.byte_len() as u32),
+                    tag: Some(if will_patch { "patch_attempt" } else { "full" }),
                     ..Default::default()
                 }
             );
-            text.to_logical_bytes()
+            match (&cached_logical_bytes, &single_edit) {
+                (Some(cached), Some(edit)) => text
+                    .patch_logical_bytes(
+                        cached,
+                        edit.start_byte,
+                        edit.old_end_byte,
+                        edit.new_end_byte,
+                    )
+                    .unwrap_or_else(|| text.to_logical_bytes()),
+                _ => text.to_logical_bytes(),
+            }
         };
 
         let tree = {
@@ -178,7 +213,6 @@ impl Job for SyntaxParseJob {
                 }
             );
             let root_node = tree.root_node();
-            let full_bytes = source_bytes; // same representation as parse
 
             // Single-range vec matches the Vec<Range<usize>> the scoped arm returns.
             #[allow(clippy::single_range_in_vec_init)]
@@ -186,14 +220,14 @@ impl Job for SyntaxParseJob {
                 Some((prev_tree, edit)) => {
                     crate::syntax::scoped_query_ranges(prev_tree, tree, edit)
                 }
-                None => vec![0..full_bytes.len()],
+                None => vec![0..source_bytes.len()],
             };
 
             let mut fresh: Vec<(std::ops::Range<usize>, u32, usize)> = Vec::new();
             for range in query_ranges {
                 let mut cursor = QueryCursor::new();
                 cursor.set_byte_range(range);
-                let mut matches = cursor.matches(query, root_node, full_bytes.as_slice());
+                let mut matches = cursor.matches(query, root_node, source_bytes.as_slice());
                 while let Some(m) = matches.next() {
                     if signal.is_cancelled() {
                         return;
@@ -222,6 +256,7 @@ impl Job for SyntaxParseJob {
             language_name,
             document_id,
             revision,
+            logical_bytes: source_bytes,
         };
 
         crate::job_manager::send_job_result(&sender, id, Box::new(result));
@@ -236,7 +271,8 @@ impl Job for SyntaxParseJob {
 #[cfg(feature = "treesitter")]
 mod tests {
     use super::*;
-    use crate::syntax::loader::LanguageLoader;
+    use crate::syntax::loader::{LanguageLoader, LoadedLanguage};
+    use crate::syntax::Syntax;
     use std::path::PathBuf;
     use std::sync::mpsc;
 
@@ -643,5 +679,79 @@ mod tests {
 
         let expected = full_highlights(&language, &query, buffer.to_logical_bytes().as_slice());
         assert_eq!(sorted_highlights(&highlights), sorted_highlights(&expected));
+    }
+
+    fn rust_parser() -> Parser {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .expect("set rust language");
+        parser
+    }
+
+    fn rust_syntax() -> Syntax {
+        let lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+        Syntax::new(LoadedLanguage::bundled(lang, "rust"), None).expect("Syntax::new")
+    }
+
+    /// Patch path wired up as `Syntax`/`editor::jobs` would drive it must
+    /// match a full `to_logical_bytes()` rebuild of the edited buffer.
+    #[test]
+    fn patch_path_matches_full_rebuild_end_to_end() {
+        let mut buffer = TextBuffer::new(64).unwrap();
+        buffer
+            .insert_str("fn main() {\n    let x = 1;\n}\n")
+            .unwrap();
+        let mut syntax = rust_syntax();
+
+        let job1 = SyntaxParseJob::new(
+            buffer.clone(),
+            rust_parser(),
+            syntax.tree.clone(),
+            None,
+            "rust".to_string(),
+            0,
+            buffer.revision,
+        );
+        let result1 = run_job(job1);
+        assert_eq!(result1.logical_bytes, buffer.to_logical_bytes());
+        assert!(result1.tree.is_some());
+        syntax.update_from_result(result1);
+
+        // Insert one character right after 'x', mirroring how `document::edit`
+        // derives an edit and calls `Syntax::notify_edit`.
+        let insert_pos = 21;
+        let start_byte = buffer.char_to_byte(insert_pos);
+        buffer.set_cursor(insert_pos).unwrap();
+        buffer.insert_str("y").unwrap();
+        syntax.notify_edit(
+            start_byte,
+            start_byte,
+            start_byte + 1,
+            (0, 0),
+            (0, 0),
+            (0, 0),
+        );
+
+        let (cached_logical_bytes, single_edit) = syntax.incremental_logical_bytes();
+        assert!(
+            cached_logical_bytes.is_some() && single_edit.is_some(),
+            "a single edit after a completed parse should surface a patchable cache"
+        );
+
+        let job2 = SyntaxParseJob::new(
+            buffer.clone(),
+            rust_parser(),
+            syntax.tree.clone(),
+            None,
+            "rust".to_string(),
+            0,
+            buffer.revision,
+        )
+        .with_incremental_bytes(cached_logical_bytes, single_edit);
+
+        let result2 = run_job(job2);
+        assert_eq!(result2.logical_bytes, buffer.to_logical_bytes());
+        assert!(result2.tree.is_some());
     }
 }

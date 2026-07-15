@@ -622,45 +622,46 @@ fn render_content_to_paint_frame(
 
             if !policy.paints(i) {
                 // Already correct from a scroll blit - advance cursors past
-                // it without the expensive per-character decorator work.
-                let boundary = row_info.char_end;
+                // it. search_matches is char-indexed; the rest are byte-indexed.
+                let char_boundary = row_info.char_end;
+                let byte_boundary = buf.char_to_byte(row_info.char_end);
                 advance_idx_past(
                     ctx.highlights.unwrap_or(&[]),
                     &mut highlight_idx,
-                    boundary,
+                    byte_boundary,
                     |(r, _)| r.end,
                 );
-                advance_idx_past(search_matches, &mut search_match_idx, boundary, |m| {
+                advance_idx_past(search_matches, &mut search_match_idx, char_boundary, |m| {
                     m.range.end
                 });
                 advance_idx_past(
                     ctx.annotation_styles.unwrap_or(&[]),
                     &mut annotation_style_idx,
-                    boundary,
+                    byte_boundary,
                     |(r, _)| r.end,
                 );
                 advance_idx_past(
                     ctx.injection_highlights.unwrap_or(&[]),
                     &mut injection_idx,
-                    boundary,
+                    byte_boundary,
                     |(r, _)| r.end,
                 );
                 advance_idx_past(
                     ctx.custom_highlights.unwrap_or(&[]),
                     &mut custom_color_idx,
-                    boundary,
+                    byte_boundary,
                     |(r, _)| r.end,
                 );
                 advance_idx_past(
                     ctx.terminal_cell_colors.unwrap_or(&[]),
                     &mut terminal_color_idx,
-                    boundary,
+                    byte_boundary,
                     |(r, _)| r.end,
                 );
                 advance_idx_past(
                     ctx.plugin_highlights.unwrap_or(&[]),
                     &mut plugin_highlight_idx,
-                    boundary,
+                    byte_boundary,
                     |(r, _)| r.end,
                 );
                 crate::perf_row_blit_skipped!();

@@ -445,6 +445,49 @@ impl TextBuffer {
         self.line_index.table.to_logical_bytes()
     }
 
+    /// Patch a cached `to_logical_bytes()` result over `[start_byte, old_end_byte)`
+    /// with the current buffer's bytes for `[start_byte, new_end_byte)`; `None` on any check failure.
+    pub fn patch_logical_bytes(
+        &self,
+        cached: &[u8],
+        start_byte: usize,
+        old_end_byte: usize,
+        new_end_byte: usize,
+    ) -> Option<Vec<u8>> {
+        if start_byte > old_end_byte || old_end_byte > cached.len() || new_end_byte < start_byte {
+            return None;
+        }
+
+        let start_char = self.byte_to_char(start_byte);
+        let new_end_char = self.byte_to_char(new_end_byte);
+        if new_end_char < start_char
+            || self.char_to_byte(start_char) != start_byte
+            || self.char_to_byte(new_end_char) != new_end_byte
+        {
+            return None;
+        }
+
+        let mut replacement = Vec::with_capacity(new_end_byte - start_byte);
+        for ch in self.iter_at(start_char).take(new_end_char - start_char) {
+            ch.encode_utf8(&mut replacement);
+        }
+        if replacement.len() != new_end_byte - start_byte {
+            return None;
+        }
+
+        let mut patched =
+            Vec::with_capacity(start_byte + replacement.len() + cached.len() - old_end_byte);
+        patched.extend_from_slice(&cached[..start_byte]);
+        patched.extend_from_slice(&replacement);
+        patched.extend_from_slice(&cached[old_end_byte..]);
+
+        if patched.len() != self.byte_len() {
+            return None;
+        }
+
+        Some(patched)
+    }
+
     /// Get an iterator over the characters
     pub fn iter(&self) -> crate::buffer::rope::PieceTableIterator<'_> {
         self.line_index.table.iter()

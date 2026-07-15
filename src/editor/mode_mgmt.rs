@@ -74,7 +74,7 @@ impl<T: TerminalBackend> Editor<T> {
                     (doc.options.expand_tabs, doc.options.tab_width)
                 };
                 let viewport_height = self.render_system.viewport.visible_rows();
-                let display_map = {
+                let mut display_map = {
                     let doc = self.document_manager.active_document().unwrap();
                     let gutter_width = if self.state.settings.show_line_numbers {
                         self.state.gutter_width
@@ -106,7 +106,7 @@ impl<T: TerminalBackend> Editor<T> {
                     tab_width,
                     viewport_height,
                     self.state.last_search_query.as_deref(),
-                    display_map.as_ref(),
+                    display_map.as_mut(),
                 );
                 self.set_mode(Mode::Insert);
             }

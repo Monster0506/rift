@@ -180,7 +180,7 @@ pub fn execute_command(
     tab_width: usize,
     viewport_height: usize,
     last_search_query: Option<&str>,
-    display_map: Option<&DisplayMap>,
+    mut display_map: Option<&mut DisplayMap>,
 ) -> Result<(), RiftError> {
     match cmd {
         Command::Move(motion, count) => {
@@ -188,7 +188,7 @@ pub fn execute_command(
             for _ in 0..count {
                 motion.apply(
                     buf,
-                    display_map,
+                    display_map.as_deref_mut(),
                     crate::wrap::OperatorContext::Move,
                     viewport_height,
                     last_search_query,

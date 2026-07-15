@@ -148,6 +148,7 @@ mod svelte_tests {
             language_name: syntax.language_name.clone(),
             document_id: 0,
             revision: 0,
+            logical_bytes: Vec::new(),
         };
         syntax.update_from_result(result);
 
@@ -611,5 +612,162 @@ mod register_grammar_tests {
 
         let resolved = loader.load_language("dup_lang").expect("dup_lang resolves");
         assert_eq!(resolved.name, "dup_lang");
+    }
+}
+
+// Incremental logical-bytes cache bookkeeping (single-edit patch fast path)
+
+#[cfg(feature = "treesitter")]
+mod incremental_logical_bytes_tests {
+    use super::super::*;
+    use crate::syntax::loader::LoadedLanguage;
+    use tree_sitter::{InputEdit, Point};
+
+    fn rust_syntax() -> Syntax {
+        let lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+        Syntax::new(LoadedLanguage::bundled(lang, "rust"), None).expect("Syntax::new")
+    }
+
+    fn insert_edit(byte: usize, len: usize) -> InputEdit {
+        InputEdit {
+            start_byte: byte,
+            old_end_byte: byte,
+            new_end_byte: byte + len,
+            start_position: Point::default(),
+            old_end_position: Point::default(),
+            new_end_position: Point::default(),
+        }
+    }
+
+    fn fake_result(syntax: &Syntax, logical_bytes: Vec<u8>, revision: u64) -> SyntaxParseResult {
+        SyntaxParseResult {
+            tree: None,
+            highlights: IntervalTree::default(),
+            language_name: syntax.language_name.clone(),
+            document_id: 0,
+            revision,
+            logical_bytes,
+        }
+    }
+
+    #[test]
+    fn no_cache_before_first_parse() {
+        let syntax = rust_syntax();
+        let (bytes, edit) = syntax.incremental_logical_bytes();
+        assert!(bytes.is_none());
+        assert!(edit.is_none());
+    }
+
+    #[test]
+    fn no_edit_after_fresh_parse_still_has_no_pending_edit() {
+        let mut syntax = rust_syntax();
+        syntax.update_from_result(fake_result(&syntax, b"fn main() {}".to_vec(), 0));
+        // Cache exists but zero edits landed since it was captured, so there
+        // is nothing to patch -- callers still fall back to a full rebuild.
+        let (bytes, edit) = syntax.incremental_logical_bytes();
+        assert!(bytes.is_none());
+        assert!(edit.is_none());
+    }
+
+    #[test]
+    fn single_edit_surfaces_cached_bytes_and_edit() {
+        let mut syntax = rust_syntax();
+        syntax.update_from_result(fake_result(&syntax, b"fn main() {}".to_vec(), 0));
+
+        let edit = insert_edit(3, 1);
+        syntax.update_tree(&edit);
+
+        let (bytes, got_edit) = syntax.incremental_logical_bytes();
+        assert_eq!(
+            bytes.as_deref().map(Vec::as_slice),
+            Some(b"fn main() {}".as_slice())
+        );
+        assert_eq!(got_edit, Some(edit));
+    }
+
+    #[test]
+    fn second_edit_before_reparse_falls_back_to_full_rebuild() {
+        let mut syntax = rust_syntax();
+        syntax.update_from_result(fake_result(&syntax, b"fn main() {}".to_vec(), 0));
+
+        syntax.update_tree(&insert_edit(3, 1));
+        syntax.update_tree(&insert_edit(5, 2));
+
+        let (bytes, edit) = syntax.incremental_logical_bytes();
+        assert!(bytes.is_none(), "batched edits must force a full rebuild");
+        assert!(edit.is_none());
+    }
+
+    #[test]
+    fn completed_parse_resets_pending_edit_tracking() {
+        let mut syntax = rust_syntax();
+        syntax.update_from_result(fake_result(&syntax, b"fn main() {}".to_vec(), 0));
+        syntax.update_tree(&insert_edit(3, 1));
+
+        // A background job completes and reports the freshly rebuilt bytes.
+        syntax.update_from_result(fake_result(&syntax, b"fn nmain() {}".to_vec(), 1));
+
+        let (bytes, edit) = syntax.incremental_logical_bytes();
+        assert!(
+            bytes.is_none(),
+            "no edits landed since the new cache was captured"
+        );
+        assert!(edit.is_none());
+
+        syntax.update_tree(&insert_edit(0, 1));
+        let (bytes, edit) = syntax.incremental_logical_bytes();
+        assert_eq!(
+            bytes.as_deref().map(Vec::as_slice),
+            Some(b"fn nmain() {}".as_slice())
+        );
+        assert!(edit.is_some());
+    }
+
+    #[test]
+    fn invalidate_trees_clears_cache_and_forces_full_rebuild() {
+        let mut syntax = rust_syntax();
+        syntax.update_from_result(fake_result(&syntax, b"fn main() {}".to_vec(), 0));
+        syntax.update_tree(&insert_edit(3, 1));
+
+        syntax.invalidate_trees();
+
+        let (bytes, edit) = syntax.incremental_logical_bytes();
+        assert!(bytes.is_none());
+        assert!(edit.is_none());
+
+        // A later single edit still can't be patched: there is no cached
+        // baseline left to patch it against.
+        syntax.update_tree(&insert_edit(0, 1));
+        let (bytes, edit) = syntax.incremental_logical_bytes();
+        assert!(bytes.is_none());
+        assert!(edit.is_none());
+    }
+
+    /// A sync parse resets `pending_edits` but not `cached_logical_bytes`,
+    /// so it must not make a later single edit look like the only one.
+    #[test]
+    fn sync_parse_between_edits_does_not_mask_the_earlier_one() {
+        let mut syntax = rust_syntax();
+        syntax.update_from_result(fake_result(&syntax, b"fn main() {}".to_vec(), 0));
+
+        syntax.update_tree(&insert_edit(3, 1));
+
+        // A successful sync parse resets `pending_edits` (highlight scoping)
+        // without touching `cached_logical_bytes`.
+        assert_eq!(
+            syntax.try_incremental_parse(b"fn Xmain() {}", std::time::Duration::from_secs(1)),
+            crate::syntax::ParseOutcome::Completed
+        );
+        assert!(syntax.single_pending_edit().is_none());
+
+        syntax.update_tree(&insert_edit(9, 1));
+
+        let (bytes, edit) = syntax.incremental_logical_bytes();
+        assert!(
+            bytes.is_none(),
+            "two edits landed since cached_logical_bytes was captured, even \
+             though the sync parse reset the unrelated highlight-scoping tracker"
+        );
+        assert!(edit.is_none());
     }
 }

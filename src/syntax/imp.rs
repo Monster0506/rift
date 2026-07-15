@@ -33,6 +33,9 @@ pub struct Syntax {
     pub highlights_query: Option<Arc<Query>>,
     pub language_name: String,
     cached_highlights: IntervalTree<u32>,
+    /// Logical bytes from the last completed parse, so a background job can
+    /// patch them instead of a full `to_logical_bytes()` rebuild.
+    cached_logical_bytes: Option<Arc<Vec<u8>>>,
     /// Keeps `language`'s backing dynamic library alive for as long as this
     /// `Syntax` (and any `Tree`/`Parser` derived from it) may exist.
     lib: Option<Arc<super::loader::RawLib>>,
@@ -55,9 +58,12 @@ pub struct Syntax {
     /// Optional loader used to create dynamic injection layers.
     language_loader: Option<Arc<super::loader::LanguageLoader>>,
 
-    /// Edits since `cached_highlights` was last fully replaced, so a
-    /// background job can shift the still-valid part instead of requerying.
+    /// Edits since `cached_highlights` was last replaced, reset by any
+    /// successful parse (sync or async), for background highlight scoping.
     pending_edits: Vec<InputEdit>,
+    /// Edits since `cached_logical_bytes` was captured - only reset when
+    /// that cache itself refreshes (a sync-only parse leaves it stale).
+    logical_bytes_pending_edits: Vec<InputEdit>,
 }
 
 impl Syntax {
@@ -72,6 +78,7 @@ impl Syntax {
             highlights_query,
             language_name: loaded.name,
             cached_highlights: IntervalTree::default(),
+            cached_logical_bytes: None,
             lib: loaded.lib,
             injections_query: None,
             injection_capture_langs: Vec::new(),
@@ -81,6 +88,7 @@ impl Syntax {
             dynamic_injection_ranges: IntervalTree::default(),
             language_loader: None,
             pending_edits: Vec::new(),
+            logical_bytes_pending_edits: Vec::new(),
         })
     }
 
@@ -96,6 +104,17 @@ impl Syntax {
         match self.pending_edits.as_slice() {
             [edit] => Some(*edit),
             _ => None,
+        }
+    }
+
+    /// Cached logical bytes plus the edit since capture, for a job to patch;
+    /// `None` if there's no cache yet or more than one edit has landed.
+    pub fn incremental_logical_bytes(&self) -> (Option<Arc<Vec<u8>>>, Option<InputEdit>) {
+        match self.logical_bytes_pending_edits.as_slice() {
+            [edit] if self.cached_logical_bytes.is_some() => {
+                (self.cached_logical_bytes.clone(), Some(*edit))
+            }
+            _ => (None, None),
         }
     }
 
@@ -125,7 +144,9 @@ impl Syntax {
         }
         self.tree = result.tree;
         self.cached_highlights = result.highlights;
+        self.cached_logical_bytes = Some(Arc::new(result.logical_bytes));
         self.pending_edits.clear();
+        self.logical_bytes_pending_edits.clear();
     }
 
     /// Discard all cached trees and highlights after a non-incremental change (e.g. undo/redo).
@@ -133,7 +154,9 @@ impl Syntax {
     pub fn invalidate_trees(&mut self) {
         self.tree = None;
         self.cached_highlights = IntervalTree::default();
+        self.cached_logical_bytes = None;
         self.pending_edits.clear();
+        self.logical_bytes_pending_edits.clear();
         for layer in &mut self.injection_layers {
             layer.tree = None;
             layer.cached_highlights = IntervalTree::default();
@@ -163,6 +186,7 @@ impl Syntax {
             }
         }
         self.pending_edits.push(*edit);
+        self.logical_bytes_pending_edits.push(*edit);
     }
 
     /// Notify the syntax tree of an edit, in the caller's own vocabulary

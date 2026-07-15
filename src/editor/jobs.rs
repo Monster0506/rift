@@ -50,6 +50,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let (old_highlights, pending_edits) = syntax.highlights_snapshot();
+        let (cached_logical_bytes, single_edit) = syntax.incremental_logical_bytes();
 
         let job = SyntaxParseJob::new(
             buffer,
@@ -61,7 +62,8 @@ impl<T: TerminalBackend> Editor<T> {
             doc.buffer.revision,
         )
         .with_lib(syntax.lib())
-        .with_highlights_context(old_highlights, &pending_edits);
+        .with_highlights_context(old_highlights, &pending_edits)
+        .with_incremental_bytes(cached_logical_bytes, single_edit);
 
         Some(self.job_manager.spawn(job))
     }

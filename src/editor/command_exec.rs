@@ -13,7 +13,7 @@ impl<T: TerminalBackend> Editor<T> {
         {
             let viewport_height = self.render_system.viewport.visible_rows();
 
-            let (doc_id, content_width) = {
+            let (doc_id, content_width, cursor) = {
                 let doc = self.document_manager.active_document().unwrap();
                 let gutter_width = if self.state.settings.show_line_numbers {
                     self.state.gutter_width
@@ -27,10 +27,11 @@ impl<T: TerminalBackend> Editor<T> {
                     .visible_cols()
                     .saturating_sub(gutter_width)
                     .max(1);
-                (doc.id, content_width)
+                (doc.id, content_width, doc.buffer.cursor())
             };
 
-            let display_map = self.resolve_display_map_cached(doc_id, content_width);
+            let mut display_map =
+                self.resolve_display_map_cached(doc_id, content_width, cursor, viewport_height);
 
             let cursor_before = self
                 .document_manager
@@ -49,7 +50,7 @@ impl<T: TerminalBackend> Editor<T> {
                 tab_width,
                 viewport_height,
                 self.state.last_search_query.as_deref(),
-                display_map.as_deref(),
+                display_map.as_mut().map(std::sync::Arc::make_mut),
             );
 
             // Record insert-mode mutations for dot-repeat
@@ -64,7 +65,17 @@ impl<T: TerminalBackend> Editor<T> {
 
                 // Refresh the display-map cache with the post-mutation revision so
                 // subsequent non-mutating commands in the same frame get cache hits.
-                let _ = self.resolve_display_map_cached(doc_id, content_width);
+                let cursor_after = self
+                    .document_manager
+                    .active_document()
+                    .map(|d| d.buffer.cursor())
+                    .unwrap_or(0);
+                let _ = self.resolve_display_map_cached(
+                    doc_id,
+                    content_width,
+                    cursor_after,
+                    viewport_height,
+                );
             }
 
             // Collect event info from doc before taking mutable borrows.

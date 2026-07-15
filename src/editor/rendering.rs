@@ -83,6 +83,12 @@ impl<T: TerminalBackend> Editor<T> {
             0
         };
 
+        let cursor_char = self
+            .document_manager
+            .get_document(doc_id)
+            .map(|d| d.buffer.cursor())
+            .unwrap_or(0);
+        let visible_rows = self.render_system.viewport.visible_rows();
         let display_map = {
             let content_width = self
                 .render_system
@@ -91,12 +97,13 @@ impl<T: TerminalBackend> Editor<T> {
                 .saturating_sub(gutter_width)
                 .max(1);
             crate::perf_span!("display_map_resolve", crate::perf::PerfFields::default());
-            self.resolve_display_map_cached(doc_id, content_width)
+            self.resolve_display_map_cached(doc_id, content_width, cursor_char, visible_rows)
         };
 
         let needs_clear = if let Some(ref dm) = display_map {
-            let doc = self.document_manager.get_document(doc_id).unwrap();
-            let visual_row = dm.char_to_visual_row(doc.buffer.cursor());
+            // Already extended by resolve_display_map_cached to cover cursor_char
+            // plus a screen's worth of rows, so no further extension needed here.
+            let visual_row = dm.char_to_visual_row(cursor_char);
             let total_visual = dm.total_visual_rows();
             self.render_system
                 .viewport
@@ -196,13 +203,14 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Resolve the display map through the per-(doc, width) cache; entries are
-    /// reused when revision and wrap/tab params match (`:set wrap` doesn't bump revision).
-    /// A cached map that is exactly one buffer edit behind is patched in place.
+    /// Resolve the display map through the per-(doc, width) cache, grown in
+    /// place to lazily cover `cursor_char` plus `extend_margin_rows` rows.
     pub(super) fn resolve_display_map_cached(
         &mut self,
         doc_id: crate::document::DocumentId,
         content_width: usize,
+        cursor_char: usize,
+        extend_margin_rows: usize,
     ) -> Option<std::sync::Arc<crate::wrap::DisplayMap>> {
         use std::sync::Arc;
         const CACHE_CAP: usize = 8;
@@ -213,6 +221,7 @@ impl<T: TerminalBackend> Editor<T> {
         let params = super::resolve_wrap_params(doc, content_width, soft_wrap, wrap_width);
         let edits = doc.buffer.take_char_edits();
 
+        let mut map: Option<Arc<crate::wrap::DisplayMap>> = None;
         let slot = self
             .display_map_cache
             .iter()
@@ -226,28 +235,19 @@ impl<T: TerminalBackend> Editor<T> {
             };
             if valid {
                 if entry.revision == revision {
-                    let map = entry.map.clone();
-                    self.display_map_cache.push(entry);
-                    return map;
-                }
-                // Every logged edit accounted for by the revision delta (no
-                // foreign mutation slipped in): rewrap only the affected lines.
-                if entry.revision.wrapping_add(edits.len() as u64) == revision {
+                    map = entry.map;
+                } else if entry.revision.wrapping_add(edits.len() as u64) == revision {
+                    // Every logged edit accounted for by the revision delta (no
+                    // foreign mutation slipped in): rewrap only the affected lines.
                     if let Some(combined) = combine_char_edits(&edits) {
-                        if let Some(mut map) = entry.map {
-                            if Arc::make_mut(&mut map).apply_edit(
+                        if let Some(mut m) = entry.map {
+                            if Arc::make_mut(&mut m).apply_edit(
                                 &doc.buffer,
                                 combined.pos,
                                 combined.del,
                                 combined.ins,
                             ) {
-                                self.display_map_cache.push(super::DisplayMapCacheEntry {
-                                    doc_id,
-                                    revision,
-                                    content_width,
-                                    map: Some(map.clone()),
-                                });
-                                return Some(map);
+                                map = Some(m);
                             }
                         }
                     }
@@ -255,8 +255,25 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        let map =
-            params.map(|(w, tw)| Arc::new(crate::wrap::DisplayMap::build(&doc.buffer, w, tw)));
+        let mut map = match map {
+            Some(m) => Some(m),
+            None => params.map(|(w, tw)| Arc::new(crate::wrap::DisplayMap::empty(w, tw))),
+        };
+
+        // Check via shared &DisplayMap first: Arc::make_mut clones unconditionally
+        // if another Arc to the same map is alive, even if nothing needs growing.
+        let already_covered = map
+            .as_deref()
+            .is_some_and(|m| !m.needs_extension(cursor_char, extend_margin_rows));
+        if !already_covered {
+            if let Some(m) = map.as_mut() {
+                let mm = Arc::make_mut(m);
+                mm.extend_to_char(&doc.buffer, cursor_char);
+                let row = mm.char_to_visual_row(cursor_char);
+                mm.extend_to_row(&doc.buffer, row + extend_margin_rows + 1);
+            }
+        }
+
         if self.display_map_cache.len() >= CACHE_CAP {
             self.display_map_cache.remove(0);
         }
@@ -636,7 +653,12 @@ impl<T: TerminalBackend> Editor<T> {
 
             if soft_wrap {
                 let content_width = layout.cols.saturating_sub(gutter_width).max(1);
-                if let Some(dm) = self.resolve_display_map_cached(doc_id, content_width) {
+                if let Some(dm) = self.resolve_display_map_cached(
+                    doc_id,
+                    content_width,
+                    cursor_pos,
+                    layout.rows + 1,
+                ) {
                     let cursor_visual_row = dm.char_to_visual_row(cursor_pos);
                     let total_visual = dm.total_visual_rows();
                     if let Some(window) = self.split_tree.get_window_mut(layout.window_id) {
@@ -670,22 +692,32 @@ impl<T: TerminalBackend> Editor<T> {
         let mut window_maps: Vec<Option<std::sync::Arc<crate::wrap::DisplayMap>>> =
             Vec::with_capacity(layouts.len());
         for layout in &layouts {
-            let key = self
-                .split_tree
-                .get_window(layout.window_id)
+            let window = self.split_tree.get_window(layout.window_id);
+            let cursor_pos = window.map(|w| w.cursor_position).unwrap_or(0);
+            let key = window
                 .map(|w| w.document_id)
                 .and_then(|doc_id| self.window_map_key(doc_id, layout.cols));
-            window_maps
-                .push(key.and_then(|(doc_id, cw)| self.resolve_display_map_cached(doc_id, cw)));
+            window_maps.push(key.and_then(|(doc_id, cw)| {
+                self.resolve_display_map_cached(doc_id, cw, cursor_pos, layout.rows + 1)
+            }));
         }
         let focused_display_map = {
             let focused_id = self.split_tree.focused_window_id();
             match layouts.iter().position(|l| l.window_id == focused_id) {
                 Some(i) => window_maps[i].clone(),
                 None => {
-                    let doc_id = self.split_tree.focused_window().document_id;
+                    let focused = self.split_tree.focused_window();
+                    let doc_id = focused.document_id;
+                    let cursor_pos = focused.cursor_position;
                     self.window_map_key(doc_id, total_cols)
-                        .and_then(|(doc_id, cw)| self.resolve_display_map_cached(doc_id, cw))
+                        .and_then(|(doc_id, cw)| {
+                            self.resolve_display_map_cached(
+                                doc_id,
+                                cw,
+                                cursor_pos,
+                                content_rows + 1,
+                            )
+                        })
                 }
             }
         };

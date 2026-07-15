@@ -73,7 +73,7 @@ impl Motion {
     pub fn apply(
         self,
         buf: &mut crate::buffer::TextBuffer,
-        display_map: Option<&crate::wrap::DisplayMap>,
+        display_map: Option<&mut crate::wrap::DisplayMap>,
         op_ctx: crate::wrap::OperatorContext,
         viewport_height: usize,
         last_search_query: Option<&str>,
@@ -88,8 +88,9 @@ impl Motion {
             Motion::Up => {
                 if op_ctx == crate::wrap::OperatorContext::Move {
                     if let Some(dm) = display_map {
-                        let col = buf.latch_desired_col(dm.char_to_visual_col(buf.cursor(), buf));
-                        let new_pos = dm.visual_up_to_col(buf.cursor(), col, buf);
+                        let col =
+                            buf.latch_desired_col(dm.char_to_visual_col_ext(buf.cursor(), buf));
+                        let new_pos = dm.visual_up_to_col_ext(buf.cursor(), col, buf);
                         let _ = buf.set_cursor(new_pos);
                         return;
                     }
@@ -99,8 +100,9 @@ impl Motion {
             Motion::Down => {
                 if op_ctx == crate::wrap::OperatorContext::Move {
                     if let Some(dm) = display_map {
-                        let col = buf.latch_desired_col(dm.char_to_visual_col(buf.cursor(), buf));
-                        let new_pos = dm.visual_down_to_col(buf.cursor(), col, buf);
+                        let col =
+                            buf.latch_desired_col(dm.char_to_visual_col_ext(buf.cursor(), buf));
+                        let new_pos = dm.visual_down_to_col_ext(buf.cursor(), col, buf);
                         let _ = buf.set_cursor(new_pos);
                         return;
                     }

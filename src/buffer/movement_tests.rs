@@ -15,8 +15,8 @@ fn apply_motion(motion: Motion, buf: &mut TextBuffer) {
 }
 
 fn apply_motion_wrap(motion: Motion, buf: &mut TextBuffer, wrap_width: usize) {
-    let dm = DisplayMap::build(buf, wrap_width, 4);
-    motion.apply(buf, Some(&dm), OperatorContext::Move, 20, None);
+    let mut dm = DisplayMap::build(buf, wrap_width, 4);
+    motion.apply(buf, Some(&mut dm), OperatorContext::Move, 20, None);
 }
 
 #[test]
