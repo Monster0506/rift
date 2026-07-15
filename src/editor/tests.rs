@@ -4897,6 +4897,107 @@ fn scroll_latency_wrapped_markdown() {
     }
 }
 
+/// Feed a vim-notation key sequence through the real keymap, not
+/// `handle_action` directly - catches keymap/context wiring gaps too.
+fn feed_keys(editor: &mut Editor<MockTerminal>, seq: &str) {
+    use crate::action::{Action, EditorAction};
+    use crate::key::Key;
+    use crate::keymap::{KeyContext, MatchResult};
+
+    let keys = crate::key::parse_key_sequence(seq).expect("valid key sequence");
+    for key in keys {
+        if matches!(editor.current_mode, Mode::Search | Mode::Command) {
+            match key {
+                Key::Char(c) => {
+                    editor.state.append_to_command_line(c);
+                    continue;
+                }
+                Key::Enter => {
+                    editor.handle_action(&Action::Editor(EditorAction::Submit));
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
+        let context = if editor.current_mode.is_visual() {
+            KeyContext::Visual
+        } else {
+            KeyContext::Normal
+        };
+        if let MatchResult::Exact(action) | MatchResult::Ambiguous(action) =
+            editor.keymap.lookup(context, &[key])
+        {
+            let action = action.clone();
+            editor.handle_action(&action);
+        }
+    }
+}
+
+/// Dirty-row scroll blit must be behaviorally invisible: a scrolling editor
+/// must render exactly what a fresh full render would, at every step.
+#[test]
+fn dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
+    let paragraph = "The quick brown fox jumps over the lazy dog again and again near the riverbank while the sun sets slowly behind the distant hills. ";
+    let mut text = String::new();
+    for i in 0..80 {
+        text.push_str(&format!("line {i}: {paragraph}\n"));
+    }
+
+    let steps: &[&str] = &[
+        "j",
+        "jjjjj",
+        "jjjjj",
+        "jjjjj",
+        "kk",
+        "G",
+        "gg",
+        "jjjjjjjjjjjjjjjjjjjj",
+        "/fox<CR>",
+        "n",
+        "n",
+        "kkkkkkkkk",
+        "G",
+        "jjj",
+        "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+    ];
+
+    let build_to = |n: usize| -> Editor<MockTerminal> {
+        let mut editor = create_editor_sized(20, 80);
+        load_text(&mut editor, &text);
+        for step in &steps[..n] {
+            feed_keys(&mut editor, step);
+        }
+        editor
+    };
+
+    let mut live = build_to(0);
+    let mut any_blit_engaged = false;
+
+    for (i, step) in steps.iter().enumerate() {
+        feed_keys(&mut live, step);
+        let live_output = render_ascii(&mut live);
+        if live.render_system.content_blit_key.is_some() {
+            any_blit_engaged = true;
+        }
+
+        let mut fresh = build_to(i + 1);
+        let fresh_output = render_ascii(&mut fresh);
+
+        assert_eq!(
+            live_output, fresh_output,
+            "step {i} (\"{step}\"): incrementally-scrolled (blit-eligible) render \
+             diverged from a fresh full render at the same cursor position"
+        );
+    }
+
+    assert!(
+        any_blit_engaged,
+        "test setup problem: the blit path never engaged across any step - \
+         this test would pass trivially without actually exercising it"
+    );
+}
+
 #[cfg(feature = "treesitter")]
 fn measure_type(editor: &mut Editor<MockTerminal>, label: &str, n: usize) {
     use std::time::Instant;

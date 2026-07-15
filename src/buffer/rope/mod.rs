@@ -28,8 +28,8 @@ pub struct Piece {
 
 #[derive(Clone, Debug)]
 struct Node {
-    left: Option<Box<Node>>,
-    right: Option<Box<Node>>,
+    left: Option<Arc<Node>>,
+    right: Option<Arc<Node>>,
     piece: Piece,
 
     // Metadata
@@ -46,7 +46,7 @@ struct Node {
 pub struct PieceTable {
     original: Arc<Vec<Character>>,
     add: Vec<Character>,
-    root: Option<Box<Node>>,
+    root: Option<Arc<Node>>,
 }
 
 impl PieceTable {
@@ -60,7 +60,7 @@ impl PieceTable {
         };
 
         let root = if len > 0 {
-            Some(Box::new(Node {
+            Some(Arc::new(Node {
                 left: None,
                 right: None,
                 piece,
@@ -126,7 +126,7 @@ impl PieceTable {
             len: text.len(),
         };
 
-        let new_node = Box::new(Node {
+        let new_node = Arc::new(Node {
             left: None,
             right: None,
             piece: new_piece,
@@ -159,7 +159,7 @@ impl PieceTable {
         self.add.extend_from_slice(text);
         let (new_nl, new_bytes) = count_stats(text);
 
-        let new_node = Box::new(Node {
+        let new_node = Arc::new(Node {
             left: None,
             right: None,
             piece: Piece {
@@ -617,17 +617,19 @@ impl std::fmt::Display for PieceTable {
 /// Must be called BEFORE the new chars are appended to the add buffer.
 /// Returns true if the extension succeeded; false if a new piece is needed.
 fn extend_last_piece(
-    node: &mut Box<Node>,
+    node: &mut Arc<Node>,
     add_end: usize,
     added_len: usize,
     added_nl: usize,
     added_bytes: usize,
 ) -> bool {
-    if let Some(ref mut right) = node.right {
+    if node.right.is_some() {
+        let node_mut = Arc::make_mut(node);
+        let right = node_mut.right.as_mut().unwrap();
         if extend_last_piece(right, add_end, added_len, added_nl, added_bytes) {
-            node.len += added_len;
-            node.byte_len += added_bytes;
-            node.newlines += added_nl;
+            node_mut.len += added_len;
+            node_mut.byte_len += added_bytes;
+            node_mut.newlines += added_nl;
             return true;
         }
         return false;
@@ -635,12 +637,13 @@ fn extend_last_piece(
 
     // This is the rightmost node.
     if node.piece.source == BufferSource::Add && node.piece.start + node.piece.len == add_end {
-        node.piece.len += added_len;
-        node.piece_newlines += added_nl;
-        node.piece_byte_len += added_bytes;
-        node.len += added_len;
-        node.byte_len += added_bytes;
-        node.newlines += added_nl;
+        let node_mut = Arc::make_mut(node);
+        node_mut.piece.len += added_len;
+        node_mut.piece_newlines += added_nl;
+        node_mut.piece_byte_len += added_bytes;
+        node_mut.len += added_len;
+        node_mut.byte_len += added_bytes;
+        node_mut.newlines += added_nl;
         true
     } else {
         false
@@ -649,16 +652,18 @@ fn extend_last_piece(
 
 /// Attempt to shrink the rightmost piece by `count` chars from its tail.
 fn trim_last_piece(
-    node: &mut Box<Node>,
+    node: &mut Arc<Node>,
     count: usize,
     original: &[Character],
     add: &[Character],
 ) -> Option<(usize, usize)> {
-    if let Some(ref mut right) = node.right {
+    if node.right.is_some() {
+        let node_mut = Arc::make_mut(node);
+        let right = node_mut.right.as_mut().unwrap();
         if let Some((removed_nl, removed_bytes)) = trim_last_piece(right, count, original, add) {
-            node.len -= count;
-            node.byte_len -= removed_bytes;
-            node.newlines -= removed_nl;
+            node_mut.len -= count;
+            node_mut.byte_len -= removed_bytes;
+            node_mut.newlines -= removed_nl;
             return Some((removed_nl, removed_bytes));
         }
         return None;
@@ -668,12 +673,13 @@ fn trim_last_piece(
         let slice = get_piece_slice(&node.piece, original, add);
         let (removed_nl, removed_bytes) = count_stats(&slice[node.piece.len - count..]);
 
-        node.piece.len -= count;
-        node.piece_newlines -= removed_nl;
-        node.piece_byte_len -= removed_bytes;
-        node.len -= count;
-        node.byte_len -= removed_bytes;
-        node.newlines -= removed_nl;
+        let node_mut = Arc::make_mut(node);
+        node_mut.piece.len -= count;
+        node_mut.piece_newlines -= removed_nl;
+        node_mut.piece_byte_len -= removed_bytes;
+        node_mut.len -= count;
+        node_mut.byte_len -= removed_bytes;
+        node_mut.newlines -= removed_nl;
         Some((removed_nl, removed_bytes))
     } else {
         None
@@ -682,27 +688,27 @@ fn trim_last_piece(
 
 // --- Tree Operations ---
 
-fn height(node: &Option<Box<Node>>) -> usize {
+fn height(node: &Option<Arc<Node>>) -> usize {
     node.as_ref().map_or(0, |n| n.height)
 }
 
-fn update(node: &mut Box<Node>) {
+fn update(node: &mut Arc<Node>) {
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
     let right_len = node.right.as_ref().map_or(0, |n| n.len);
-    node.len = left_len + node.piece.len + right_len;
-
     let left_byte_len = node.left.as_ref().map_or(0, |n| n.byte_len);
     let right_byte_len = node.right.as_ref().map_or(0, |n| n.byte_len);
-    node.byte_len = left_byte_len + node.piece_byte_len + right_byte_len;
-
     let left_nl = node.left.as_ref().map_or(0, |n| n.newlines);
     let right_nl = node.right.as_ref().map_or(0, |n| n.newlines);
-    node.newlines = left_nl + node.piece_newlines + right_nl;
+    let h = 1 + max(height(&node.left), height(&node.right));
 
-    node.height = 1 + max(height(&node.left), height(&node.right));
+    let node_mut = Arc::make_mut(node);
+    node_mut.len = left_len + node_mut.piece.len + right_len;
+    node_mut.byte_len = left_byte_len + node_mut.piece_byte_len + right_byte_len;
+    node_mut.newlines = left_nl + node_mut.piece_newlines + right_nl;
+    node_mut.height = h;
 }
 
-fn balance(mut node: Box<Node>) -> Box<Node> {
+fn balance(mut node: Arc<Node>) -> Arc<Node> {
     update(&mut node);
     let balance_factor = height(&node.left) as isize - height(&node.right) as isize;
 
@@ -723,44 +729,44 @@ fn balance(mut node: Box<Node>) -> Box<Node> {
     node
 }
 
-fn rotate_right(mut node: Box<Node>) -> Box<Node> {
-    let mut new_root = node.left.take().unwrap();
-    node.left = new_root.right.take();
+fn rotate_right(mut node: Arc<Node>) -> Arc<Node> {
+    let mut new_root = Arc::make_mut(&mut node).left.take().unwrap();
+    Arc::make_mut(&mut node).left = Arc::make_mut(&mut new_root).right.take();
     update(&mut node);
-    new_root.right = Some(node);
+    Arc::make_mut(&mut new_root).right = Some(node);
     update(&mut new_root);
     new_root
 }
 
-fn rotate_left(mut node: Box<Node>) -> Box<Node> {
-    let mut new_root = node.right.take().unwrap();
-    node.right = new_root.left.take();
+fn rotate_left(mut node: Arc<Node>) -> Arc<Node> {
+    let mut new_root = Arc::make_mut(&mut node).right.take().unwrap();
+    Arc::make_mut(&mut node).right = Arc::make_mut(&mut new_root).left.take();
     update(&mut node);
-    new_root.left = Some(node);
+    Arc::make_mut(&mut new_root).left = Some(node);
     update(&mut new_root);
     new_root
 }
 
-fn rotate_left_right(mut node: Box<Node>) -> Box<Node> {
-    let left = node.left.take().unwrap();
-    node.left = Some(rotate_left(left));
+fn rotate_left_right(mut node: Arc<Node>) -> Arc<Node> {
+    let left = Arc::make_mut(&mut node).left.take().unwrap();
+    Arc::make_mut(&mut node).left = Some(rotate_left(left));
     rotate_right(node)
 }
 
-fn rotate_right_left(mut node: Box<Node>) -> Box<Node> {
-    let right = node.right.take().unwrap();
-    node.right = Some(rotate_right(right));
+fn rotate_right_left(mut node: Arc<Node>) -> Arc<Node> {
+    let right = Arc::make_mut(&mut node).right.take().unwrap();
+    Arc::make_mut(&mut node).right = Some(rotate_right(right));
     rotate_left(node)
 }
 
 // --- Split and Merge ---
 
 fn split(
-    root: Option<Box<Node>>,
+    root: Option<Arc<Node>>,
     pos: usize,
     original: &[Character],
     add: &[Character],
-) -> (Option<Box<Node>>, Option<Box<Node>>) {
+) -> (Option<Arc<Node>>, Option<Arc<Node>>) {
     match root {
         None => (None, None),
         Some(mut node) => {
@@ -768,35 +774,40 @@ fn split(
 
             if pos < left_len {
                 // Split in left child
-                let (l, r) = split(node.left.take(), pos, original, add);
-                node.left = r;
+                let taken_left = Arc::make_mut(&mut node).left.take();
+                let (l, r) = split(taken_left, pos, original, add);
+                Arc::make_mut(&mut node).left = r;
                 update_node_metadata(&mut node, original, add);
                 (l, Some(node))
             } else if pos > left_len + node.piece.len {
                 // Split in right child
+                let taken_right = Arc::make_mut(&mut node).right.take();
                 let (l, r) = split(
-                    node.right.take(),
+                    taken_right,
                     pos - (left_len + node.piece.len),
                     original,
                     add,
                 );
-                node.right = l;
+                Arc::make_mut(&mut node).right = l;
                 update_node_metadata(&mut node, original, add);
                 (Some(node), r)
             } else {
                 // Split in this node's piece
                 let offset = pos - left_len;
-                let right_child = node.right.take();
-                let left_child = node.left.take();
+                let node_mut = Arc::make_mut(&mut node);
+                let right_child = node_mut.right.take();
+                let left_child = node_mut.left.take();
 
                 if offset == 0 {
-                    node.left = None;
-                    node.right = right_child;
+                    let node_mut = Arc::make_mut(&mut node);
+                    node_mut.left = None;
+                    node_mut.right = right_child;
                     update_node_metadata(&mut node, original, add);
                     (left_child, Some(node))
                 } else if offset == node.piece.len {
-                    node.left = left_child;
-                    node.right = None;
+                    let node_mut = Arc::make_mut(&mut node);
+                    node_mut.left = left_child;
+                    node_mut.right = None;
                     update_node_metadata(&mut node, original, add);
                     (Some(node), right_child)
                 } else {
@@ -812,7 +823,7 @@ fn split(
                         len: node.piece.len - offset,
                     };
 
-                    let n1 = Box::new(Node {
+                    let n1 = Arc::new(Node {
                         left: left_child,
                         right: None,
                         piece: p1,
@@ -826,7 +837,7 @@ fn split(
                     let mut n1 = n1;
                     update_node_metadata(&mut n1, original, add);
 
-                    let n2 = Box::new(Node {
+                    let n2 = Arc::new(Node {
                         left: None,
                         right: right_child,
                         piece: p2,
@@ -847,7 +858,7 @@ fn split(
     }
 }
 
-fn merge(left: Option<Box<Node>>, right: Option<Box<Node>>) -> Option<Box<Node>> {
+fn merge(left: Option<Arc<Node>>, right: Option<Arc<Node>>) -> Option<Arc<Node>> {
     match (left, right) {
         (None, r) => r,
         (l, None) => l,
@@ -858,49 +869,54 @@ fn merge(left: Option<Box<Node>>, right: Option<Box<Node>>) -> Option<Box<Node>>
     }
 }
 
-fn delete_max(mut node: Box<Node>) -> (Option<Box<Node>>, Box<Node>) {
-    if let Some(right) = node.right.take() {
+fn delete_max(mut node: Arc<Node>) -> (Option<Arc<Node>>, Arc<Node>) {
+    let node_mut = Arc::make_mut(&mut node);
+    if let Some(right) = node_mut.right.take() {
         let (new_right, max) = delete_max(right);
-        node.right = new_right;
+        Arc::make_mut(&mut node).right = new_right;
         (Some(balance(node)), max)
     } else {
-        (node.left.take(), node)
+        let left = node_mut.left.take();
+        (left, node)
     }
 }
 
 fn join_with_root(
-    left: Option<Box<Node>>,
-    mut center: Box<Node>,
-    right: Option<Box<Node>>,
-) -> Box<Node> {
+    left: Option<Arc<Node>>,
+    mut center: Arc<Node>,
+    right: Option<Arc<Node>>,
+) -> Arc<Node> {
     let lh = height(&left);
     let rh = height(&right);
 
     if (lh as isize - rh as isize).abs() <= 1 {
-        center.left = left;
-        center.right = right;
+        let center_mut = Arc::make_mut(&mut center);
+        center_mut.left = left;
+        center_mut.right = right;
         update(&mut center);
         center
     } else if lh > rh {
         let mut left_node = left.unwrap();
-        let new_right = join_with_root(left_node.right.take(), center, right);
-        left_node.right = Some(new_right);
+        let taken_right = Arc::make_mut(&mut left_node).right.take();
+        let new_right = join_with_root(taken_right, center, right);
+        Arc::make_mut(&mut left_node).right = Some(new_right);
         balance(left_node)
     } else {
         let mut right_node = right.unwrap();
-        let new_left = join_with_root(left, center, right_node.left.take());
-        right_node.left = Some(new_left);
+        let taken_left = Arc::make_mut(&mut right_node).left.take();
+        let new_left = join_with_root(left, center, taken_left);
+        Arc::make_mut(&mut right_node).left = Some(new_left);
         balance(right_node)
     }
 }
 
 fn insert_node(
-    root: Option<Box<Node>>,
+    root: Option<Arc<Node>>,
     pos: usize,
-    new_node: Box<Node>,
+    new_node: Arc<Node>,
     original: &[Character],
     add: &[Character],
-) -> Option<Box<Node>> {
+) -> Option<Arc<Node>> {
     let (left, right) = split(root, pos, original, add);
     Some(join_with_root(left, new_node, right))
 }
@@ -930,27 +946,25 @@ fn get_piece_slice<'a>(
     }
 }
 
-fn update_node_metadata(node: &mut Box<Node>, original: &[Character], add: &[Character]) {
+fn update_node_metadata(node: &mut Arc<Node>, original: &[Character], add: &[Character]) {
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
     let right_len = node.right.as_ref().map_or(0, |n| n.len);
-    node.len = left_len + node.piece.len + right_len;
-
     let left_byte_len = node.left.as_ref().map_or(0, |n| n.byte_len);
     let right_byte_len = node.right.as_ref().map_or(0, |n| n.byte_len);
+    let left_nl = node.left.as_ref().map_or(0, |n| n.newlines);
+    let right_nl = node.right.as_ref().map_or(0, |n| n.newlines);
+    let h = 1 + max(height(&node.left), height(&node.right));
 
     let slice = get_piece_slice(&node.piece, original, add);
     let (piece_nl, piece_bytes) = count_stats(slice);
 
-    node.piece_newlines = piece_nl;
-    node.piece_byte_len = piece_bytes;
-
-    node.byte_len = left_byte_len + piece_bytes + right_byte_len;
-
-    let left_nl = node.left.as_ref().map_or(0, |n| n.newlines);
-    let right_nl = node.right.as_ref().map_or(0, |n| n.newlines);
-    node.newlines = left_nl + piece_nl + right_nl;
-
-    node.height = 1 + max(height(&node.left), height(&node.right));
+    let node_mut = Arc::make_mut(node);
+    node_mut.len = left_len + node_mut.piece.len + right_len;
+    node_mut.piece_newlines = piece_nl;
+    node_mut.piece_byte_len = piece_bytes;
+    node_mut.byte_len = left_byte_len + piece_bytes + right_byte_len;
+    node_mut.newlines = left_nl + piece_nl + right_nl;
+    node_mut.height = h;
 }
 
 fn collect_chars(

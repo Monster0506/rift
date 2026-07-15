@@ -219,10 +219,8 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
             return None;
         }
 
-        // Safety: The regex engine must only request byte positions that are on a character
-        // boundary. Positions that fall in the middle of a multi-byte UTF-8 sequence are
-        // invalid and will cause `char_at` to return `None` (see the `current_byte > offset_in_line`
-        // guard below). In debug builds we assert eagerly so mis-aligned calls surface quickly.
+        // The regex engine must only request byte positions on a char boundary;
+        // debug builds assert eagerly so mis-aligned calls surface quickly.
         #[cfg(debug_assertions)]
         {
             let (debug_line_idx, debug_offset) = self.find_line_for_byte(pos).unwrap_or((0, 0));
@@ -244,18 +242,14 @@ impl<'a, B: BufferView + ?Sized> Haystack for BufferHaystack<'a, B> {
 
         let (line_idx, offset_in_line) = self.find_line_for_byte(pos)?;
 
-        // Critical Optimization: Use cached char start for the line
-        // buffer.line_start(i) is slow for huge lines/files (O(N) scan).
-        // line_char_starts[line_idx] is O(1) lookup.
+        // line_char_starts gives O(1) lookup vs buffer.line_start's O(N) scan.
         let line_start_char_idx = self.line_char_starts[line_idx];
 
         // offset_in_line is byte offset within the line.
         // We need to find the character at that byte offset.
 
         let mut current_byte = 0;
-        // Start iterating from the *line start* (using fast iter_at via char index)
-        // buffer.iter_at is O(log N)
-        // This avoids scanning from the beginning of a huge piece.
+        // O(log N) iter_at from the line start avoids scanning from the piece start.
         let iter = self.buffer.iter_at(line_start_char_idx);
 
         for c in iter {

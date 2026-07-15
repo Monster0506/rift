@@ -24,7 +24,7 @@ fn screen_diffing(c: &mut Criterion) {
                 }
                 buf
             },
-            |buf| {
+            |mut buf| {
                 // Compute batches (the expensive part of diffing)
                 black_box(buf.get_batched_changes());
             },
@@ -47,7 +47,7 @@ fn screen_diffing(c: &mut Criterion) {
                 buf.swap();
                 buf
             },
-            |buf| {
+            |mut buf| {
                 black_box(buf.get_batched_changes());
             },
             criterion::BatchSize::SmallInput,

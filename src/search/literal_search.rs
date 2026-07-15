@@ -30,10 +30,8 @@ where
     let pattern_len = pattern_chars.len();
     let first_char = pattern_chars[0];
 
-    // A candidate near a chunk end may not have the full pattern in this chunk;
-    // those fall back to `check_match_slow` (via `iter_at`), which crosses chunk
-    // boundaries so no match is missed. The inline fast path is taken only when
-    // `remaining_in_chunk >= pattern_len`.
+    // Candidates near a chunk end fall back to check_match_slow (crosses chunk
+    // boundaries); the inline fast path needs remaining_in_chunk >= pattern_len.
     let chunk_iter = view.iter_chunks_at(start_pos);
     let mut current_pos = start_pos;
 

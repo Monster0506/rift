@@ -7,15 +7,15 @@ fn make_host() -> LuaHost {
 }
 
 /// Build a deferred lines source from text lines, as the editor would.
-fn lines_source(lines: &[&str]) -> Option<BufLinesSource> {
+fn lines_source(lines: &[&str]) -> BufSourceUpdate {
     let text = lines.join("\n");
     let mut buffer = crate::buffer::TextBuffer::new(text.len().max(16)).unwrap();
     buffer.insert_str(&text).unwrap();
-    Some(BufLinesSource {
+    BufSourceUpdate::Set(Box::new(BufLinesSource {
         revision: buffer.revision,
         line_count: buffer.get_total_lines(),
         buffer,
-    })
+    }))
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn test_annotations_query_reads_snapshot() {
             AnnotationView {
                 id: 1,
                 kind: "ui.checkbox".into(),
-                owner: "plugin".into(),
+                owner: "plugin",
                 anchor: "range",
                 start: 2,
                 end: 5,
@@ -124,7 +124,7 @@ fn test_annotations_query_reads_snapshot() {
             AnnotationView {
                 id: 2,
                 kind: "md.link".into(),
-                owner: "plugin".into(),
+                owner: "plugin",
                 anchor: "point",
                 start: 10,
                 end: 10,
@@ -140,6 +140,7 @@ fn test_annotations_query_reads_snapshot() {
             r#"
             local a = rift.annotations.get(1)
             assert(a and a.kind == "ui.checkbox", "get by id")
+            assert(a.owner == "plugin", "owner tag round-trips")
             assert(a.payload.checked == true, "payload round-trips")
             assert(a.start == 2 and a["end"] == 5, "range offsets")
             assert(rift.annotations.get(99) == nil, "missing id -> nil")
@@ -454,7 +455,7 @@ fn test_get_cursor_returns_1indexed_row() {
     host.update_state(
         1,
         "file".to_string(),
-        None,
+        BufSourceUpdate::Cleared,
         (4, 2),
         4,
         true,
@@ -490,7 +491,7 @@ fn test_current_buf_returns_id() {
     host.update_state(
         42,
         "file".to_string(),
-        None,
+        BufSourceUpdate::Cleared,
         (0, 0),
         4,
         true,

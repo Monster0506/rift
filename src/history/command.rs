@@ -1,7 +1,5 @@
-//! Command and search history with prefix matching
-//!
-//! Provides in-memory history for command line and search inputs.
-//! Supports prefix-based navigation (typing "o" then Up finds "open file").
+//! In-memory command/search history with prefix-based navigation
+//! (typing "o" then Up finds "open file").
 
 /// Command history with prefix matching support
 #[derive(Debug, Clone)]
@@ -35,11 +33,8 @@ impl CommandHistory {
         }
     }
 
-    /// Add a command to history
-    ///
-    /// - Skips empty commands
-    /// - Skips consecutive duplicates
-    /// - Resets navigation state
+    /// Add a command to history; skips empty/consecutive-duplicate commands
+    /// and resets navigation state.
     pub fn add(&mut self, command: String) {
         // Skip empty commands
         if command.is_empty() {
@@ -64,18 +59,15 @@ impl CommandHistory {
         self.reset_navigation();
     }
 
-    /// Start navigation if not already started
-    ///
-    /// Call this before prev/next to capture the current input line
+    /// Start navigation (if not already started), capturing the current input
+    /// line before the first prev/next call.
     pub fn start_navigation(&mut self, current_line: String) {
         if self.original_line.is_none() {
             self.original_line = Some(current_line);
         }
     }
 
-    /// Navigate to previous (older) matching history entry
-    ///
-    /// Returns the matching entry, or None if no match found
+    /// Navigate to the previous (older) matching history entry, or None if no match found.
     pub fn prev_match(&mut self) -> Option<&str> {
         if self.items.is_empty() {
             return None;
@@ -101,9 +93,8 @@ impl CommandHistory {
         None
     }
 
-    /// Navigate to next (newer) matching history entry
-    ///
-    /// Returns the matching entry, or the original line if returning to present
+    /// Navigate to the next (newer) matching history entry, or the original
+    /// line if returning to present.
     pub fn next_match(&mut self) -> Option<&str> {
         let idx = self.history_index?;
 
@@ -122,9 +113,7 @@ impl CommandHistory {
         self.original_line.as_deref()
     }
 
-    /// Reset navigation state
-    ///
-    /// Clears history_index and original_line, but keeps items
+    /// Reset navigation state, clearing history_index and original_line but keeping items.
     pub fn reset_navigation(&mut self) {
         self.history_index = None;
         self.original_line = None;

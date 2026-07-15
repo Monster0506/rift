@@ -25,7 +25,7 @@ mod operators;
 mod panel_handlers;
 mod pending_grammar;
 mod plugin_ops;
-mod rendering;
+pub(crate) mod rendering;
 mod run_loop;
 mod text_object_input;
 

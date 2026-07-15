@@ -73,9 +73,7 @@ impl<T> ComponentStorage<T> {
     }
 }
 
-/// The World that holds all entities and components
-///
-/// This is a persistent world that tracks versions of components.
+/// Persistent world holding all entities and components, tracking component versions.
 #[derive(Debug)]
 pub struct World {
     next_entity_id: u64,

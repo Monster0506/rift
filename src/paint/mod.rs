@@ -45,11 +45,22 @@ pub struct SelectionPaint {
 }
 
 /// A screen's worth of paint output, in row/col units (not yet pixels).
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct PaintFrame {
     pub rows: Vec<PaintRow>,
     pub cursor: Option<CursorPaint>,
     pub selections: Vec<SelectionPaint>,
+    /// Pool of emptied `TextRun.chars` buffers reused across `reset()` calls
+    /// instead of allocating fresh; excluded from `PartialEq` as an internal cache.
+    char_buf_pool: Vec<Vec<Character>>,
+}
+
+impl PartialEq for PaintFrame {
+    fn eq(&self, other: &Self) -> bool {
+        self.rows == other.rows
+            && self.cursor == other.cursor
+            && self.selections == other.selections
+    }
 }
 
 impl PaintFrame {
@@ -59,6 +70,37 @@ impl PaintFrame {
             rows: vec![PaintRow::default(); rows],
             cursor: None,
             selections: Vec::new(),
+            char_buf_pool: Vec::new(),
+        }
+    }
+
+    /// Clear this frame for reuse at `rows` rows, keeping row/run allocations
+    /// and pooling emptied `chars` buffers instead of dropping them.
+    pub fn reset(&mut self, rows: usize) {
+        if self.rows.len() < rows {
+            self.rows.resize_with(rows, PaintRow::default);
+        } else {
+            self.rows.truncate(rows);
+        }
+        for row in &mut self.rows {
+            for mut run in row.runs.drain(..) {
+                run.chars.clear();
+                self.char_buf_pool.push(run.chars);
+            }
+        }
+        self.cursor = None;
+        self.selections.clear();
+    }
+
+    /// Clear a single row for reuse, pooling its runs' `chars` buffers -
+    /// unlike `reset()`, leaves every other row untouched.
+    pub fn reset_row(&mut self, row: usize) {
+        let Some(paint_row) = self.rows.get_mut(row) else {
+            return;
+        };
+        for mut run in paint_row.runs.drain(..) {
+            run.chars.clear();
+            self.char_buf_pool.push(run.chars);
         }
     }
 
@@ -78,9 +120,11 @@ impl PaintFrame {
                 return;
             }
         }
+        let mut chars = self.char_buf_pool.pop().unwrap_or_default();
+        chars.push(cell.content);
         paint_row.runs.push(TextRun {
             col,
-            chars: vec![cell.content],
+            chars,
             fg: cell.fg,
             bg: cell.bg,
             attrs: cell.attrs,
@@ -106,12 +150,23 @@ impl PaintFrame {
 /// The terminal renderer's rasterization step: apply a `PaintFrame`'s runs
 /// onto a `Layer`, in row/run/char order, via `Layer::set_cell`.
 pub fn rasterize(frame: &PaintFrame, layer: &mut Layer) {
+    rasterize_offset(frame, layer, 0, 0);
+}
+
+/// Like `rasterize`, but composites `frame` (local row/col coordinates)
+/// into `layer` shifted by `row_offset`/`col_offset`.
+pub fn rasterize_offset(
+    frame: &PaintFrame,
+    layer: &mut Layer,
+    row_offset: usize,
+    col_offset: usize,
+) {
     for (row, paint_row) in frame.rows.iter().enumerate() {
         for run in &paint_row.runs {
             for (i, &content) in run.chars.iter().enumerate() {
                 layer.set_cell(
-                    row,
-                    run.col + i,
+                    row + row_offset,
+                    run.col + i + col_offset,
                     Cell {
                         content,
                         fg: run.fg,

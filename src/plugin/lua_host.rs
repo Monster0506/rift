@@ -107,8 +107,8 @@ fn lua_to_json(v: LuaValue) -> Result<serde_json::Value, String> {
 fn annotation_view_to_table(lua: &Lua, v: &AnnotationView) -> LuaResult<LuaTable> {
     let t = lua.create_table()?;
     t.set("id", v.id)?;
-    t.set("kind", v.kind.as_str())?;
-    t.set("owner", v.owner.as_str())?;
+    t.set("kind", v.kind.as_ref())?;
+    t.set("owner", v.owner)?;
     t.set("anchor", v.anchor)?;
     t.set("start", v.start as i64)?;
     t.set("end", v.end as i64)?;
@@ -118,6 +118,16 @@ fn annotation_view_to_table(lua: &Lua, v: &AnnotationView) -> LuaResult<LuaTable
         t.set("payload", p)?;
     }
     Ok(t)
+}
+
+/// How `update_state` should treat the shared buffer snapshot this call.
+pub enum BufSourceUpdate {
+    /// The buffer hasn't changed since the last sync; keep the existing snapshot.
+    Unchanged,
+    /// There's no active document; drop any existing snapshot.
+    Cleared,
+    /// The buffer changed; replace the snapshot with this one.
+    Set(Box<BufLinesSource>),
 }
 
 /// State shared between Lua API closures and the host.
@@ -2274,7 +2284,7 @@ end
         &self,
         buf_id: usize,
         buf_kind: String,
-        source: Option<BufLinesSource>,
+        source: BufSourceUpdate,
         cursor: (usize, usize),
         tab_width: usize,
         expand_tabs: bool,
@@ -2297,7 +2307,11 @@ end
         let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
         s.buf_id = buf_id;
         s.buf_kind = buf_kind;
-        s.buf_source = source;
+        match source {
+            BufSourceUpdate::Unchanged => {}
+            BufSourceUpdate::Cleared => s.buf_source = None,
+            BufSourceUpdate::Set(src) => s.buf_source = Some(*src),
+        }
         s.cursor = cursor;
         s.tab_width = tab_width;
         s.expand_tabs = expand_tabs;

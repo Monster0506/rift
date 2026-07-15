@@ -437,9 +437,7 @@ fn test_layer_dirty_rects_capping() {
     let mut layer = Layer::new(LayerPriority::CONTENT, 20, 20);
     layer.mark_clean();
 
-    // Add 11 non-overlapping, non-adjacent rects
-    // These are far enough apart that the smart merger won't proactively merge them
-    // unless forced by the cap.
+    // 11 non-overlapping rects, spaced so the merger won't merge them unless forced by the cap.
     for i in 0..11 {
         layer.add_dirty_rect(Rect::new(i * 2, i * 2, i * 2, i * 2));
     }

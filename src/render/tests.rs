@@ -9,8 +9,8 @@ use crate::layer::{CellAttrs, CellStyle};
 use crate::layer::{Layer, LayerPriority};
 use crate::mode::Mode;
 use crate::render::{
-    calculate_cursor_column, calculate_cursor_column_at, CursorInfo, RenderState, RenderSystem,
-    StatusDrawState,
+    calculate_cursor_column, calculate_cursor_column_at, scroll_blit_delta, ContentBlitKey,
+    CursorInfo, RenderState, RenderSystem, StatusDrawState,
 };
 use crate::state::State;
 use crate::status::StatusBar;
@@ -201,7 +201,8 @@ fn test_render_status_bar_normal_mode_layer() {
 
     let statusdrawstate = create_default_statusdrawstate();
 
-    StatusBar::render_to_layer(&mut layer, &statusdrawstate);
+    let mut paint_frame = crate::paint::PaintFrame::new(0);
+    StatusBar::render_to_layer(&mut layer, &statusdrawstate, &mut paint_frame);
 
     // Check that "NORMAL" was written to the layer
     // Status bar is at last row (9), mode is at start
@@ -217,7 +218,8 @@ fn test_render_status_bar_insert_mode_layer() {
     let mut statusdrawstate = create_default_statusdrawstate();
     statusdrawstate.mode = Mode::Insert;
 
-    StatusBar::render_to_layer(&mut layer, &statusdrawstate);
+    let mut paint_frame = crate::paint::PaintFrame::new(0);
+    StatusBar::render_to_layer(&mut layer, &statusdrawstate, &mut paint_frame);
 
     // Check that content was written to the layer
     let cell = layer.get_cell(9, 0);
@@ -230,7 +232,8 @@ fn test_render_status_bar_pending_key_layer() {
     let mut statusdrawstate = create_default_statusdrawstate();
     statusdrawstate.pending_key = Some(Key::Ctrl(b'd'));
 
-    StatusBar::render_to_layer(&mut layer, &statusdrawstate);
+    let mut paint_frame = crate::paint::PaintFrame::new(0);
+    StatusBar::render_to_layer(&mut layer, &statusdrawstate, &mut paint_frame);
 
     // Should have pending key indicator
     let cell = layer.get_cell(9, 0);
@@ -1671,4 +1674,145 @@ fn test_highlights_hash_detects_capture_change_on_same_range() {
         hash_before, hash_after,
         "changing only a highlight's capture index must change highlights_hash"
     );
+}
+
+fn base_blit_key() -> ContentBlitKey {
+    ContentBlitKey {
+        revision: 1,
+        buf_len: 100,
+        tab_width: 4,
+        show_line_numbers: false,
+        gutter_width: 0,
+        left_col: 0,
+        visible_rows: 50,
+        visible_cols: 80,
+        has_display_map: true,
+        editor_bg: None,
+        editor_fg: None,
+        highlights_hash: 0,
+        injection_hash: 0,
+        custom_highlights_hash: 0,
+        terminal_colors_hash: 0,
+        plugin_highlights_hash: 0,
+        annotation_styles_hash: 0,
+        search_matches_hash: 0,
+        annotation_inline_hash: 0,
+        annotation_adornments_hash: 0,
+        annotation_concealed_hash: 0,
+        scroll_top: 10,
+    }
+}
+
+#[test]
+fn scroll_blit_delta_allows_a_pure_scroll() {
+    let old = base_blit_key();
+    let new = ContentBlitKey {
+        scroll_top: 13,
+        ..base_blit_key()
+    };
+    assert_eq!(scroll_blit_delta(&old, &new), Some(3));
+
+    let new_up = ContentBlitKey {
+        scroll_top: 6,
+        ..base_blit_key()
+    };
+    assert_eq!(scroll_blit_delta(&old, &new_up), Some(-4));
+}
+
+#[test]
+fn scroll_blit_delta_rejects_no_display_map() {
+    let old = ContentBlitKey {
+        has_display_map: false,
+        ..base_blit_key()
+    };
+    let new = ContentBlitKey {
+        has_display_map: false,
+        scroll_top: 13,
+        ..base_blit_key()
+    };
+    assert_eq!(scroll_blit_delta(&old, &new), None);
+}
+
+#[test]
+fn scroll_blit_delta_rejects_zero_delta() {
+    let old = base_blit_key();
+    let new = base_blit_key();
+    assert_eq!(scroll_blit_delta(&old, &new), None);
+}
+
+#[test]
+fn scroll_blit_delta_rejects_a_shift_with_no_overlap() {
+    let old = base_blit_key();
+    let new = ContentBlitKey {
+        scroll_top: old.scroll_top + old.visible_rows,
+        ..base_blit_key()
+    };
+    assert_eq!(scroll_blit_delta(&old, &new), None);
+}
+
+#[test]
+fn scroll_blit_delta_rejects_a_revision_change() {
+    let old = base_blit_key();
+    let new = ContentBlitKey {
+        revision: old.revision + 1,
+        scroll_top: 13,
+        ..base_blit_key()
+    };
+    assert_eq!(scroll_blit_delta(&old, &new), None);
+}
+
+type BlitKeyMutator = Box<dyn Fn(&mut ContentBlitKey)>;
+
+#[test]
+fn scroll_blit_delta_rejects_any_hash_or_structural_change() {
+    let old = base_blit_key();
+    let mutators: Vec<BlitKeyMutator> = vec![
+        Box::new(|k| k.tab_width += 1),
+        Box::new(|k| k.show_line_numbers = !k.show_line_numbers),
+        Box::new(|k| k.gutter_width += 1),
+        Box::new(|k| k.left_col += 1),
+        Box::new(|k| k.visible_rows += 1),
+        Box::new(|k| k.visible_cols += 1),
+        Box::new(|k| k.editor_bg = Some(Color::Red)),
+        Box::new(|k| k.editor_fg = Some(Color::Red)),
+        Box::new(|k| k.highlights_hash += 1),
+        Box::new(|k| k.injection_hash += 1),
+        Box::new(|k| k.custom_highlights_hash += 1),
+        Box::new(|k| k.terminal_colors_hash += 1),
+        Box::new(|k| k.plugin_highlights_hash += 1),
+        Box::new(|k| k.annotation_styles_hash += 1),
+        Box::new(|k| k.search_matches_hash += 1),
+        Box::new(|k| k.annotation_inline_hash += 1),
+        Box::new(|k| k.annotation_adornments_hash += 1),
+        Box::new(|k| k.annotation_concealed_hash += 1),
+        Box::new(|k| k.buf_len += 1),
+    ];
+    for (i, mutate) in mutators.iter().enumerate() {
+        let mut new = base_blit_key();
+        new.scroll_top = 13;
+        mutate(&mut new);
+        assert_eq!(
+            scroll_blit_delta(&old, &new),
+            None,
+            "mutator {i} should have rejected the blit"
+        );
+    }
+}
+
+#[test]
+fn scroll_blit_delta_rejects_placeholder_to_loaded_transition() {
+    // apply_loaded_content resets revision to 0 rather than bumping it, so
+    // placeholder and loaded content can otherwise compute an identical key.
+    let placeholder = ContentBlitKey {
+        revision: 0,
+        buf_len: 0,
+        ..base_blit_key()
+    };
+    let loaded = ContentBlitKey {
+        revision: 0,
+        buf_len: 5000,
+        scroll_top: placeholder.scroll_top,
+        ..base_blit_key()
+    };
+    assert_eq!(scroll_blit_delta(&placeholder, &loaded), None);
 }

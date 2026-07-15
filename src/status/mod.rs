@@ -114,10 +114,16 @@ impl StatusBar {
 
     /// Render the status bar to a layer instead of directly to terminal
     /// This allows the status bar to be composited with other layers
-    pub fn render_to_layer(layer: &mut Layer, state: &StatusDrawState) {
-        let mut frame = crate::paint::PaintFrame::new(layer.rows());
-        Self::render_to_paint_frame(&mut frame, layer.rows(), state);
-        crate::paint::rasterize(&frame, layer);
+    /// `frame` is caller-owned scratch space, reset here rather than
+    /// allocated fresh each call - see `PaintFrame::reset`.
+    pub fn render_to_layer(
+        layer: &mut Layer,
+        state: &StatusDrawState,
+        frame: &mut crate::paint::PaintFrame,
+    ) {
+        frame.reset(layer.rows());
+        Self::render_to_paint_frame(frame, layer.rows(), state);
+        crate::paint::rasterize(frame, layer);
     }
 
     /// Builds the status bar's PaintFrame; render_to_layer rasterizes it.

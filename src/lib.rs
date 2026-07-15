@@ -78,3 +78,41 @@ macro_rules! perf_span {
         let _span = $crate::perf::PerfSpan::new($name, $fields);
     };
 }
+
+/// Count a `.clone()` at a hot render-path call site when `perf_instrumentation`
+/// is enabled; expands to just `$val` (the clone itself) otherwise.
+#[macro_export]
+macro_rules! perf_clone {
+    ($val:expr) => {{
+        #[cfg(feature = "perf_instrumentation")]
+        $crate::perf::count_clone();
+        $val
+    }};
+}
+
+/// Count one fast-forward cursor advance step; a no-op unless
+/// `perf_instrumentation` is enabled. Deterministic, unlike timing spans.
+#[macro_export]
+macro_rules! perf_cursor_advance {
+    () => {
+        #[cfg(feature = "perf_instrumentation")]
+        $crate::perf::count_cursor_advance();
+    };
+}
+
+/// Count one visible content row as painted (full pipeline) or skipped
+/// (dirty-row scroll blit); a no-op unless `perf_instrumentation` is enabled.
+#[macro_export]
+macro_rules! perf_row_painted {
+    () => {
+        #[cfg(feature = "perf_instrumentation")]
+        $crate::perf::count_row_painted();
+    };
+}
+#[macro_export]
+macro_rules! perf_row_blit_skipped {
+    () => {
+        #[cfg(feature = "perf_instrumentation")]
+        $crate::perf::count_row_blit_skipped();
+    };
+}

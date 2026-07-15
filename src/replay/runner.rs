@@ -182,7 +182,34 @@ pub fn run<W: Write>(ops: &[ScriptOp], writer: W) -> Result<RunReport, RiftError
     // session, so a bare "does this file open" check is a valid script.
     start(&mut editor, &mut writer, &mut open_path, rows, cols)?;
 
+    if let Some(ed) = editor.as_mut() {
+        drain_background_jobs(ed, BACKGROUND_JOB_DRAIN_TIMEOUT);
+    }
+
     Ok(report)
+}
+
+/// Cap on how long [`drain_background_jobs`] will wait for background job
+/// threads to finish before giving up and reporting on whatever state exists.
+const BACKGROUND_JOB_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Ticks until every job thread finishes, so a still-mid-flight background
+/// parse gets measured instead of silently killed by process exit. Gives up after `timeout`.
+fn drain_background_jobs<W: Write>(ed: &mut Editor<ReplayBackend<W>>, timeout: Duration) {
+    let start = Instant::now();
+    while ed.job_manager.any_job_thread_alive() {
+        if start.elapsed() >= timeout {
+            eprintln!(
+                "rift-replay: gave up waiting for background jobs after {:?} - report may still undercount in-flight work",
+                timeout
+            );
+            return;
+        }
+        if ed.tick().is_err() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(IDLE_POLL_MS));
+    }
 }
 
 fn start<W: Write>(

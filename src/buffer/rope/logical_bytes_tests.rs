@@ -26,9 +26,7 @@ fn test_to_logical_bytes_unicode() {
 
 #[test]
 fn test_to_logical_bytes_mixed() {
-    // Control char: \x01.
-    // render() -> "^A" (2 bytes: 0x5E, 0x41)
-    // to_logical_bytes() -> 0x01 (1 byte)
+    // \x01 renders as "^A" (2 bytes) but to_logical_bytes() yields 0x01 (1 byte).
     let mut pt = PieceTable::new(Vec::new());
     pt.insert(0, &[Character::Control(1)]); // ^A
 

@@ -30,13 +30,23 @@ impl<T: TerminalBackend> Editor<T> {
         ) = if let Some(doc) = self.document_manager.active_document() {
             let buf_id = doc.id as usize;
             let buf_kind = doc.kind.kind_str().to_string();
-            // Cheap deferred source: a plugin that never reads lines pays only
-            // the buffer clone, not a full per-keystroke line materialization.
-            let source = Some(crate::plugin::lua_host::BufLinesSource {
-                revision: doc.buffer.revision,
-                line_count: doc.buffer.get_total_lines(),
-                buffer: doc.buffer.clone(),
-            });
+            // The buffer clone is the expensive part of this snapshot; skip it
+            // when the buffer hasn't changed since the last sync.
+            let source = if self
+                .plugin_host
+                .synced_buf_matches(doc.id, doc.buffer.revision)
+            {
+                crate::plugin::lua_host::BufSourceUpdate::Unchanged
+            } else {
+                self.plugin_host.set_synced_buf(doc.id, doc.buffer.revision);
+                crate::plugin::lua_host::BufSourceUpdate::Set(Box::new(
+                    crate::plugin::lua_host::BufLinesSource {
+                        revision: doc.buffer.revision,
+                        line_count: doc.buffer.get_total_lines(),
+                        buffer: doc.buffer.clone(),
+                    },
+                ))
+            };
             let (row, col) = {
                 let cursor = doc.buffer.cursor();
                 let row = doc.buffer.line_index.get_line_at(cursor);
@@ -65,10 +75,11 @@ impl<T: TerminalBackend> Editor<T> {
                 line_ending,
             )
         } else {
+            self.plugin_host.clear_synced_buf();
             (
                 0,
                 "file".to_string(),
-                None,
+                crate::plugin::lua_host::BufSourceUpdate::Cleared,
                 (0, 0),
                 None,
                 None,
@@ -180,9 +191,16 @@ impl<T: TerminalBackend> Editor<T> {
         );
 
         // Refresh the annotation query snapshot + the next id add{} will claim.
+        // Skipped when neither the document nor its annotations changed since
+        // the last sync, mirroring the buffer-clone skip above.
         use crate::annotations::Anchor;
         use crate::plugin::lua_host::AnnotationView;
-        let (annotations, next_id) = if let Some(doc) = self.document_manager.active_document() {
+        if let Some(doc) = self.document_manager.active_document() {
+            let revision = doc.annotations.revision();
+            if self.plugin_host.synced_annotations_match(doc.id, revision) {
+                return;
+            }
+            self.plugin_host.set_synced_annotations(doc.id, revision);
             let views = doc
                 .annotations
                 .iter()
@@ -194,8 +212,8 @@ impl<T: TerminalBackend> Editor<T> {
                     };
                     AnnotationView {
                         id: a.id,
-                        kind: a.kind.as_str().to_string(),
-                        owner: a.owner.as_str().to_string(),
+                        kind: a.kind.as_arc(),
+                        owner: a.owner.as_str(),
                         anchor,
                         start,
                         end,
@@ -205,11 +223,12 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 })
                 .collect();
-            (views, doc.annotations.peek_next_id())
+            let next_id = doc.annotations.peek_next_id();
+            self.plugin_host.lua_set_annotations(views, next_id);
         } else {
-            (Vec::new(), 1)
-        };
-        self.plugin_host.lua_set_annotations(annotations, next_id);
+            self.plugin_host.clear_synced_annotations();
+            self.plugin_host.lua_set_annotations(Vec::new(), 1);
+        }
     }
 
     pub(super) fn adjust_plugin_highlights_for_edits(&mut self) {

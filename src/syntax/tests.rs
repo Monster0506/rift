@@ -1,5 +1,3 @@
-use super::interval_tree::IntervalTree;
-
 #[test]
 fn test_finalize_highlights_orders_ties_by_later_pattern_first() {
     // A later-declared query pattern (higher pattern_index) must win over an

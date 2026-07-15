@@ -21,8 +21,12 @@ pub struct BufEntry {
 #[derive(Debug, Clone)]
 pub struct AnnotationView {
     pub id: u64,
-    pub kind: String,
-    pub owner: String,
+    /// Cheap `Arc` clone of the annotation's `Kind` - avoids a per-annotation
+    /// string allocation when materializing this snapshot (see `Kind`).
+    pub kind: std::sync::Arc<str>,
+    /// Owner tag, always one of a fixed literal set (`AnnotationOwner::as_str`),
+    /// so no allocation is needed to carry it here.
+    pub owner: &'static str,
     /// "point", "range", or "line".
     pub anchor: &'static str,
     /// Byte offset (point/range start) or line number (line anchor).

@@ -867,3 +867,98 @@ fn test_viewport_restricted_queries_exclude_offscreen_annotations() {
     let concealed = store.concealed_ranges(0..100);
     assert_eq!(concealed, vec![(10, 15)]);
 }
+
+// Revision counter (external staleness gate for the Lua snapshot sync)
+
+#[test]
+fn test_revision_unchanged_on_true_noop_calls() {
+    let mut store = AnnotationStore::new();
+    store.create_directory_entry(1, 1);
+    let rev = store.revision();
+
+    // Zero-count line deletion and a zero-width edit are documented no-ops.
+    store.on_lines_deleted(5, 0);
+    store.on_line_inserted(100);
+    store.undo_line_inserted(100);
+    store.on_edit(3, 3, 3);
+    store.update(999, |a| a.visible = false); // no such id
+
+    assert_eq!(
+        store.revision(),
+        rev,
+        "calls that touch nothing must not bump revision"
+    );
+}
+
+#[test]
+fn test_revision_bumps_on_add_remove_update() {
+    let mut store = AnnotationStore::new();
+    let rev0 = store.revision();
+
+    let id = store.add(Annotation::new(
+        Kind::new("a.x"),
+        Anchor::point(0),
+        AnnotationOwner::User,
+    ));
+    let rev1 = store.revision();
+    assert_ne!(rev1, rev0, "add must bump revision");
+
+    store.update(id, |a| a.visible = false);
+    let rev2 = store.revision();
+    assert_ne!(
+        rev2, rev1,
+        "update must bump revision even for non-index fields"
+    );
+
+    store.remove(id);
+    let rev3 = store.revision();
+    assert_ne!(rev3, rev2, "remove must bump revision");
+}
+
+#[test]
+fn test_revision_bumps_on_line_shift_methods() {
+    let mut store = AnnotationStore::new();
+    store.create_directory_entry(2, 1);
+    let rev0 = store.revision();
+
+    store.on_lines_deleted(0, 1);
+    let rev1 = store.revision();
+    assert_ne!(rev1, rev0, "on_lines_deleted must bump revision");
+
+    store.on_line_inserted(0);
+    let rev2 = store.revision();
+    assert_ne!(rev2, rev1, "on_line_inserted must bump revision");
+
+    store.undo_line_inserted(0);
+    let rev3 = store.revision();
+    assert_ne!(rev3, rev2, "undo_line_inserted must bump revision");
+}
+
+#[test]
+fn test_revision_bumps_on_edit_with_positional_annotations() {
+    let mut store = AnnotationStore::new();
+    store.add(Annotation::new(
+        Kind::new("a.x"),
+        Anchor::point(10),
+        AnnotationOwner::User,
+    ));
+    let rev0 = store.revision();
+    store.on_edit(0, 0, 5);
+    assert_ne!(rev0, store.revision(), "on_edit must bump revision");
+}
+
+#[test]
+fn test_revision_bumps_on_clear_and_restore() {
+    let mut store = AnnotationStore::new();
+    store.create_directory_entry(1, 1);
+    let snapshot = store.snapshot();
+    let rev0 = store.revision();
+
+    store.clear();
+    let rev1 = store.revision();
+    assert_ne!(rev1, rev0, "clear must bump revision");
+
+    store.restore(snapshot);
+    let rev2 = store.revision();
+    assert_ne!(rev2, rev1, "restore must bump revision");
+}

@@ -78,7 +78,8 @@ impl AnnotationOwner {
     }
 
     /// Stable string tag for the owner (provenance), e.g. for the Lua snapshot.
-    pub fn as_str(&self) -> &str {
+    /// Always one of a fixed set of literals, regardless of variant data.
+    pub fn as_str(&self) -> &'static str {
         match self {
             AnnotationOwner::System => "system",
             AnnotationOwner::Lsp => "lsp",
@@ -257,6 +258,9 @@ pub struct AnnotationStore {
     /// Stale flag for `by_id` + `line_index` alone (a plain O(n) pass), so
     /// line-anchor edit tracking never pays to rebuild the interval tree.
     aux_dirty: std::cell::Cell<bool>,
+    /// Bumped on every observable mutation, mirroring `TextBuffer::revision`,
+    /// so snapshot consumers (the Lua host) can skip re-materializing unchanged state.
+    revision: u64,
 }
 
 impl Default for AnnotationStore {
@@ -276,13 +280,22 @@ impl AnnotationStore {
             line_index: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             index_dirty: std::cell::Cell::new(true),
             aux_dirty: std::cell::Cell::new(true),
+            revision: 0,
         }
     }
 
     /// Mark both the interval tree and the id/line-bucket structures stale.
-    fn invalidate_index(&self) {
+    /// Also bumps `revision`, since every caller of this represents an
+    /// observable change to the annotation set.
+    fn invalidate_index(&mut self) {
         self.index_dirty.set(true);
         self.aux_dirty.set(true);
+        self.revision += 1;
+    }
+
+    /// Monotonic count of observable mutations, for external staleness gates.
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// Whether the interval tree index is currently stale. Test-only.
@@ -396,8 +409,12 @@ impl AnnotationStore {
         if let Some(a) = self.annotations.iter_mut().find(|a| a.id == id) {
             let before = (a.anchor, a.is_interactive());
             f(a);
+            // `f` may change fields (e.g. payload) that don't affect the
+            // index but are still externally observable - always bump.
+            self.revision += 1;
             if (a.anchor, a.is_interactive()) != before {
-                self.invalidate_index();
+                self.index_dirty.set(true);
+                self.aux_dirty.set(true);
             }
             true
         } else {
@@ -953,6 +970,7 @@ impl AnnotationStore {
         if affected.is_empty() {
             return;
         }
+        self.revision += 1;
 
         let mut to_remove: std::collections::HashSet<AnnotationId> =
             std::collections::HashSet::new();
@@ -1003,6 +1021,7 @@ impl AnnotationStore {
         if affected.is_empty() {
             return;
         }
+        self.revision += 1;
 
         {
             let by_id = self.by_id.borrow();
@@ -1039,6 +1058,7 @@ impl AnnotationStore {
         if affected.is_empty() {
             return;
         }
+        self.revision += 1;
 
         {
             let by_id = self.by_id.borrow();
@@ -1067,6 +1087,7 @@ impl AnnotationStore {
         if start == old_end && start == new_end {
             return;
         }
+        self.revision += 1;
         let deletes = old_end > start;
 
         let mut to_remove: Vec<AnnotationId> = Vec::new();

@@ -371,6 +371,12 @@ impl JobManager {
     pub fn total_spawned(&self) -> usize {
         self.next_job_id - 1
     }
+
+    /// Whether any spawned job's OS thread is still executing, checked via
+    /// the thread handle so it's accurate even if the caller isn't draining.
+    pub fn any_job_thread_alive(&self) -> bool {
+        self.jobs.values().any(|h| !h.handle.is_finished())
+    }
 }
 
 impl Default for JobManager {

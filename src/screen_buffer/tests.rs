@@ -87,6 +87,38 @@ fn test_double_buffer_detects_changes() {
 }
 
 #[test]
+fn get_batched_changes_reuses_pooled_cell_buffers_without_stale_content() {
+    let mut buffer = DoubleBuffer::new(1, 5);
+    buffer.swap(); // Past the initial forced full-redraw frame.
+
+    // First frame: a 3-cell batch. Simulate render_to_terminal consuming it
+    // and returning the (cleared) buffer to the pool, as the real caller does.
+    buffer.set_cell(0, 0, Cell::from_char('a'));
+    buffer.set_cell(0, 1, Cell::from_char('b'));
+    buffer.set_cell(0, 2, Cell::from_char('c'));
+    let (mut batches, _) = buffer.get_batched_changes();
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].cells.len(), 3);
+    for mut batch in batches.drain(..) {
+        batch.cells.clear();
+        buffer.cell_batch_pool.push(batch.cells);
+    }
+    assert!(
+        !buffer.cell_batch_pool.is_empty(),
+        "the emptied batch buffer should have been pooled"
+    );
+    buffer.swap();
+
+    // Second frame: a shorter 1-cell batch reusing the pooled buffer must not
+    // show leftover cells from the batch's previous life.
+    buffer.set_cell(0, 0, Cell::from_char('z'));
+    let (batches, _) = buffer.get_batched_changes();
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].cells.len(), 1);
+    assert_eq!(batches[0].cells[0].content, Character::from('z'));
+}
+
+#[test]
 fn test_double_buffer_no_changes_detected() {
     let mut buffer = DoubleBuffer::new(3, 3);
 
@@ -333,7 +365,7 @@ fn test_cell_batch_end_col() {
     let batch = CellBatch {
         row: 0,
         start_col: 5,
-        cells: vec![&cell, &cell, &cell],
+        cells: vec![cell.clone(), cell.clone(), cell],
     };
     assert_eq!(batch.end_col(), 8);
 }
@@ -469,7 +501,7 @@ fn fill_row(buffer: &mut DoubleBuffer, row: usize, ch: char) {
 }
 
 /// Rows whose cells changed according to the pending diff.
-fn changed_rows(buffer: &DoubleBuffer) -> Vec<usize> {
+fn changed_rows(buffer: &mut DoubleBuffer) -> Vec<usize> {
     let (batches, _) = buffer.get_batched_changes();
     let mut rows: Vec<usize> = batches.iter().map(|b| b.row).collect();
     rows.dedup();
@@ -503,7 +535,7 @@ fn apply_scroll_up_repaints_only_the_new_bottom_row() {
     assert!(out.contains("\u{1b}[r"), "resets the region: {out:?}");
 
     assert_eq!(
-        changed_rows(&buffer),
+        changed_rows(&mut buffer),
         vec![4],
         "only the newly exposed row should repaint"
     );
@@ -529,7 +561,7 @@ fn apply_scroll_down_repaints_only_the_new_top_row() {
         .expect("no io error");
     assert!(applied);
     assert!(term.get_written_string().contains("\u{1b}[1T"));
-    assert_eq!(changed_rows(&buffer), vec![0]);
+    assert_eq!(changed_rows(&mut buffer), vec![0]);
 }
 
 #[test]

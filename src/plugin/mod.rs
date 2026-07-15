@@ -341,6 +341,12 @@ pub struct PluginHost {
     /// True once any Lua plugin file or `:lua` snippet has run. Editor-state
     /// snapshots are skipped until then (nothing Lua-side can read them).
     lua_used: std::cell::Cell<bool>,
+    /// `(doc_id, buffer.revision)` last synced to Lua, so an unchanged buffer
+    /// isn't re-cloned into a fresh snapshot every sync.
+    last_synced_buf: std::cell::Cell<Option<(u64, u64)>>,
+    /// `(doc_id, annotations.revision)` last synced to Lua, so an unchanged
+    /// annotation set isn't re-snapshotted every sync.
+    last_synced_annotations: std::cell::Cell<Option<(u64, u64)>>,
 }
 
 impl PluginHost {
@@ -360,6 +366,8 @@ impl PluginHost {
             cursor_hold: CursorHoldState::new(cursor_hold_polls),
             lua: None,
             lua_used: std::cell::Cell::new(false),
+            last_synced_buf: std::cell::Cell::new(None),
+            last_synced_annotations: std::cell::Cell::new(None),
         }
     }
 
@@ -371,6 +379,38 @@ impl PluginHost {
     /// Record that Lua code is about to run for the first time.
     pub fn mark_lua_used(&self) {
         self.lua_used.set(true);
+    }
+
+    /// Whether `doc_id` at `revision` is the same buffer state last synced to
+    /// Lua, so the caller can skip re-cloning it into a fresh snapshot.
+    pub fn synced_buf_matches(&self, doc_id: u64, revision: u64) -> bool {
+        self.last_synced_buf.get() == Some((doc_id, revision))
+    }
+
+    /// Record `doc_id` at `revision` as the buffer state just synced to Lua.
+    pub fn set_synced_buf(&self, doc_id: u64, revision: u64) {
+        self.last_synced_buf.set(Some((doc_id, revision)));
+    }
+
+    /// Forget the last-synced buffer, e.g. when there's no active document.
+    pub fn clear_synced_buf(&self) {
+        self.last_synced_buf.set(None);
+    }
+
+    /// Whether `doc_id` at annotation-store `revision` is the same state
+    /// last synced to Lua, so the caller can skip rebuilding the snapshot.
+    pub fn synced_annotations_match(&self, doc_id: u64, revision: u64) -> bool {
+        self.last_synced_annotations.get() == Some((doc_id, revision))
+    }
+
+    /// Record `doc_id` at annotation-store `revision` as just synced to Lua.
+    pub fn set_synced_annotations(&self, doc_id: u64, revision: u64) {
+        self.last_synced_annotations.set(Some((doc_id, revision)));
+    }
+
+    /// Forget the last-synced annotations, e.g. when there's no active document.
+    pub fn clear_synced_annotations(&self) {
+        self.last_synced_annotations.set(None);
     }
 
     /// Register a handler for a named event.
@@ -579,7 +619,7 @@ impl PluginHost {
         &self,
         buf_id: usize,
         buf_kind: String,
-        source: Option<lua_host::BufLinesSource>,
+        source: lua_host::BufSourceUpdate,
         cursor: (usize, usize),
         tab_width: usize,
         expand_tabs: bool,

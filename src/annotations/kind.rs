@@ -2,19 +2,27 @@
 //! Open strings like "lsp.diagnostic"; bulk ops query by prefix, no closed enum.
 
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// An annotation kind: a namespaced string like `"lsp.diagnostic"` or `"ui.button"`.
+/// Backed by `Arc<str>` so cloning a `Kind` (e.g. into a Lua snapshot view) is
+/// a refcount bump, not a fresh string allocation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Kind(String);
+pub struct Kind(Arc<str>);
 
 impl Kind {
     pub fn new(s: impl Into<String>) -> Self {
-        Kind(s.into())
+        Kind(Arc::from(s.into()))
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// A cheap `Arc` clone of the underlying string data.
+    pub fn as_arc(&self) -> Arc<str> {
+        self.0.clone()
     }
 
     /// The leading namespace segment (text before the first `.`), e.g. `"lsp"`
@@ -26,19 +34,19 @@ impl Kind {
     /// Whether this kind equals or begins with `prefix` (e.g. "lsp." matches
     /// "lsp.diagnostic"). Basis for clear_by_kind_prefix / query_kind.
     pub fn matches_prefix(&self, prefix: &str) -> bool {
-        self.0 == prefix || self.0.starts_with(prefix)
+        &*self.0 == prefix || self.0.starts_with(prefix)
     }
 }
 
 impl From<&str> for Kind {
     fn from(s: &str) -> Self {
-        Kind(s.to_string())
+        Kind(Arc::from(s))
     }
 }
 
 impl From<String> for Kind {
     fn from(s: String) -> Self {
-        Kind(s)
+        Kind(Arc::from(s))
     }
 }
 

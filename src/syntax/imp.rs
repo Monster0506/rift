@@ -1,5 +1,3 @@
-#[cfg(test)]
-use super::interval_tree;
 use super::ParseOutcome;
 use crate::error::RiftError;
 use crate::job_manager::jobs::syntax::SyntaxParseResult;
@@ -10,9 +8,7 @@ use std::sync::Arc;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{InputEdit, Parser, Query, QueryCursor, Tree};
 
-// ---------------------------------------------------------------------------
 // Injection layer
-// ---------------------------------------------------------------------------
 
 /// A single embedded-language layer (e.g. TypeScript inside a Svelte <script>).
 pub struct InjectedLayer {
@@ -27,15 +23,10 @@ pub struct InjectedLayer {
     pub lib: Option<Arc<super::loader::RawLib>>,
 }
 
-// ---------------------------------------------------------------------------
 // Syntax
-// ---------------------------------------------------------------------------
 
-/// Per-document syntax state.
-///
-/// The *host* language is the language declared in the outer grammar (e.g. Svelte).
-/// *Injection layers* are re-parsed sub-regions using a different grammar
-/// (e.g. TypeScript inside `<script>`, CSS inside `<style>`).
+/// Per-document syntax state: the host grammar plus injection layers
+/// (sub-regions re-parsed with a different grammar, e.g. TS inside `<script>`).
 pub struct Syntax {
     pub language: tree_sitter::Language,
     pub tree: Option<Tree>,
@@ -54,9 +45,8 @@ pub struct Syntax {
     /// index into `injection_layers`, so a single-edit reparse can reuse them.
     static_injection_ranges: IntervalTree<usize>,
 
-    // --- Dynamic injection support (Markdown: injection.language + injection.content) ---
-    /// Layers created on demand at parse time, cached by language name across
-    /// parses so queries and trees are reused instead of rebuilt from scratch.
+    // Dynamic injection support (Markdown: injection.language + injection.content)
+    /// Layers created on demand, cached by language name so queries/trees are reused.
     dynamic_injection_layers: HashMap<String, InjectedLayer>,
     /// Content ranges discovered by the last dynamic-injection scan, keyed by
     /// language, so a single-edit reparse can shift and reuse them.
@@ -127,9 +117,7 @@ impl Syntax {
         self.injection_layers = layers;
     }
 
-    // -----------------------------------------------------------------------
     // Update from background job result
-    // -----------------------------------------------------------------------
 
     pub fn update_from_result(&mut self, result: SyntaxParseResult) {
         if result.language_name != self.language_name {
@@ -208,15 +196,10 @@ impl Syntax {
         self.update_tree(&edit);
     }
 
-    // -----------------------------------------------------------------------
     // Parsing
-    // -----------------------------------------------------------------------
 
-    /// Time-budgeted incremental parse: tries to parse and re-highlight the
-    /// host grammar synchronously, aborting if it exceeds `budget`.
-    ///
-    /// On `Aborted`, `self.tree`/`self.cached_highlights` are left untouched
-    /// (the caller should fall back to a background `SyntaxParseJob`).
+    /// Time-budgeted incremental parse, aborting if it exceeds `budget`. On
+    /// `Aborted`, tree/highlights are untouched; caller falls back to a background job.
     pub fn try_incremental_parse(
         &mut self,
         source: &[u8],
@@ -403,8 +386,9 @@ impl Syntax {
         query: &Query,
         scoped: Option<(&Tree, InputEdit)>,
     ) {
-        // (content_range, layer_index) pairs: query just the changed region on
-        // a single edit, keeping cached ranges the fresh requery doesn't touch.
+        // clippy's single_range_in_vec_init suggestion collects into the
+        // wrong type (Vec<usize> not Vec<Range<usize>>) - keep the real Vec.
+        #[allow(clippy::single_range_in_vec_init)]
         let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
             Some((prev_tree, edit)) => scoped_query_ranges(prev_tree, tree, edit),
             None => vec![0..source.len()],
@@ -514,9 +498,8 @@ impl Syntax {
         }
     }
 
-    /// Dynamic injection protocol: `injection.language` capture text names the language;
-    /// `injection.content` capture gives the byte range to parse.
-    /// Used by Markdown (fenced code blocks with arbitrary language tags).
+    /// Dynamic injection protocol used by Markdown: `injection.language`
+    /// names the language, `injection.content` gives the byte range to parse.
     fn parse_dynamic_injections(
         &mut self,
         source: &[u8],
@@ -531,8 +514,9 @@ impl Syntax {
             None => return,
         };
 
-        // (content_range, language_name) pairs: query just the changed region
-        // on a single edit, keeping cached ranges the fresh requery doesn't touch.
+        // clippy's single_range_in_vec_init suggestion collects into the
+        // wrong type (Vec<usize> not Vec<Range<usize>>) - keep the real Vec.
+        #[allow(clippy::single_range_in_vec_init)]
         let query_ranges: Vec<std::ops::Range<usize>> = match scoped {
             Some((prev_tree, edit)) => scoped_query_ranges(prev_tree, tree, edit),
             None => vec![0..source.len()],
@@ -685,9 +669,7 @@ impl Syntax {
         }
     }
 
-    // -----------------------------------------------------------------------
     // Highlight queries
-    // -----------------------------------------------------------------------
 
     /// Host grammar highlights for a byte range (or the full document).
     pub fn highlights(
@@ -704,9 +686,8 @@ impl Syntax {
         }
     }
 
-    /// All injection layer highlights (both static and dynamic) as `(byte_range, capture_name)` pairs.
-    ///
-    /// Includes static layers (Svelte/HTML) and dynamic layers (Markdown code blocks).
+    /// All injection layer highlights (static and dynamic) as
+    /// `(byte_range, capture_name)` pairs.
     pub fn injection_highlights_named(
         &self,
         range: Option<std::ops::Range<usize>>,
@@ -762,14 +743,10 @@ impl Syntax {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Public factory
-// ---------------------------------------------------------------------------
 
-/// Build a `Syntax` instance with injection layers pre-configured from the loader.
-///
-/// For static injection grammars (Svelte, HTML), pre-creates `InjectedLayer` objects.
-/// For dynamic injection grammars (Markdown), stores the loader for lazy layer creation.
+/// Build a `Syntax` with injection layers pre-configured from the loader:
+/// pre-created for static grammars (Svelte/HTML), lazy for dynamic ones (Markdown).
 pub fn build_syntax(
     loaded: LoadedLanguage,
     highlights_query: Option<Arc<Query>>,
@@ -827,9 +804,7 @@ pub fn build_syntax(
     Ok(syntax)
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 /// Normalize common language tag aliases used in fenced code blocks.
 fn normalize_lang_name(name: &str) -> String {
@@ -914,6 +889,9 @@ pub(crate) fn scoped_query_highlights(
 ) -> IntervalTree<u32> {
     let root_node = new_tree.root_node();
 
+    // clippy's single_range_in_vec_init suggestion collects into Vec<usize>,
+    // not Vec<Range<usize>> - wrong type here, so this stays a real Vec.
+    #[allow(clippy::single_range_in_vec_init)]
     let query_ranges = match scoped {
         Some((prev_tree, edit)) => scoped_query_ranges(prev_tree, new_tree, edit),
         None => vec![0..source.len()],

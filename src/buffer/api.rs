@@ -1,40 +1,5 @@
-//! Rift – Buffer abstraction layer
-//!
-//! This module defines the traits for a text buffer abstraction, decoupling
-//! the editor core from the storage representation. Implementations may use
-//! gap buffers, ropes, piece tables, or other data structures.
-//!
-//! ## Indexing model
-//!
-//! All offsets are **code-point based** using Unicode scalar values (U+XXXX).
-//! This is not grapheme clusters; emoji sequences, combining marks, and other
-//! multi-code-point constructs count as multiple positions. This is a known
-//! limitation; grapheme-aware editing would require a separate API layer.
-//!
-//! ## Implementor requirement
-//!
-//! Implementations **must** provide O(log n) or better code-point to byte
-//! offset mapping. This is essential for `set_cursor`, `move_left/right`, and
-//! deletion operations. Ropes and piece tables should maintain cumulative
-//! code-point counts per node or segment and use binary search.
-//!
-//! Known gap: the rope only finds the target piece in O(log n); an in-piece
-//! scan degrades this to O(piece_len). See `char_to_byte` in `buffer::rope`.
-//!
-//! ## Revision semantics
-//!
-//! Revision increments only on text mutations (insert, delete) or when a
-//! transaction commits. Cursor movement—whether via `set_cursor`, `move_left`,
-//! or `move_up`—does **not** increment revision. Navigation is not an edit,
-//! keeping undo/redo history clean and preventing pure cursor movement from
-//! triggering unnecessary re-renders.
-//!
-//! ## Bulk operations
-//!
-//! Paste, undo/redo, and macro replay are implemented using transactions.
-//! Multiple edits within a transaction commit atomically as a single revision
-//! increment. This ensures logical units of work appear as single entries in
-//! undo history and prevents rendering from seeing intermediate states.
+//! Buffer abstraction traits decoupling the editor core from storage. Offsets
+//! are code-point based; revision increments only on mutation/commit, never on cursor movement.
 
 use crate::character::Character;
 use crate::error::RiftError;
@@ -103,10 +68,8 @@ pub trait BufferView {
     }
 }
 
-/// Builder for accumulating operations in a transaction.
-///
-/// Operations do not increment revision until the transaction commits.
-/// All offsets are code-point based.
+/// Builder for accumulating operations in a transaction. Code-point based
+/// offsets; operations do not increment revision until the transaction commits.
 pub trait TransactionBuilder {
     /// Set cursor to `pos` (code-point offset).
     fn set_cursor(&mut self, pos: usize) -> Result<(), RiftError>;
@@ -176,14 +139,8 @@ pub trait BufferMut {
     /// Does not increment revision (navigation is not an edit).
     fn move_down(&mut self, lines: usize) -> bool;
 
-    /// Execute a batch of operations atomically as a single revision increment.
-    ///
-    /// The closure receives a `TransactionBuilder` and can perform multiple
-    /// edits. If the closure returns `Ok(())`, all changes are committed and
-    /// revision increments by exactly 1. If it returns `Err`, changes are
-    /// rolled back and revision is unchanged.
-    ///
-    /// Essential for paste, undo/redo, and macro replay.
+    /// Execute a batch of operations atomically as a single revision increment,
+    /// or rolls back with revision unchanged if the closure returns `Err`.
     fn transaction<F>(&mut self, f: F) -> Result<(), RiftError>
     where
         F: FnOnce(&mut dyn TransactionBuilder) -> Result<(), RiftError>;

@@ -191,3 +191,45 @@ fn test_delete_across_pieces() {
     pt.delete(3..12);
     assert_eq!(pt.to_string(), "Parrt3");
 }
+
+#[test]
+fn test_clone_then_mutate_is_independent() {
+    let mut pt = PieceTable::new(Vec::new());
+    pt.insert(0, &chars("Hello World"));
+
+    let mut clone1 = pt.clone();
+    pt.insert(5, &chars(", there"));
+    assert_eq!(pt.to_string(), "Hello, there World");
+    assert_eq!(clone1.to_string(), "Hello World");
+
+    clone1.delete(5..11);
+    assert_eq!(clone1.to_string(), "Hello");
+    assert_eq!(pt.to_string(), "Hello, there World");
+}
+
+#[test]
+fn test_mutate_original_after_clone_does_not_affect_clone() {
+    let mut pt = PieceTable::new(Vec::new());
+    pt.insert(0, &chars("ABCDEFGHIJ"));
+
+    let clone1 = pt.clone();
+    pt.delete(2..8);
+    assert_eq!(pt.to_string(), "ABIJ");
+    assert_eq!(clone1.to_string(), "ABCDEFGHIJ");
+}
+
+#[test]
+fn test_many_clones_diverge_independently() {
+    let mut pt = PieceTable::new(Vec::new());
+    pt.insert(0, &chars("0123456789"));
+
+    let mut clones: Vec<PieceTable> = (0..5).map(|_| pt.clone()).collect();
+    for (i, c) in clones.iter_mut().enumerate() {
+        c.insert(0, &chars(&format!("[{i}]")));
+    }
+
+    assert_eq!(pt.to_string(), "0123456789");
+    for (i, c) in clones.iter().enumerate() {
+        assert_eq!(c.to_string(), format!("[{i}]0123456789"));
+    }
+}

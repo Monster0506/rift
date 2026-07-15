@@ -1,10 +1,7 @@
 use std::collections::HashMap;
 
-/// Cache for materialized line strings to optimize regex search.
-///
-/// This cache stores UTF-8 `String` representations of lines.
-/// It is sensitive to buffer revisions; if the revision changes, the cache
-/// is considered stale and is cleared.
+/// Cache of materialized line strings for regex search, keyed to buffer
+/// revision - stale (revision-mismatched) entries are cleared on access.
 #[derive(Debug, Default, Clone)]
 pub struct LineCache {
     cache: HashMap<usize, String>,
@@ -19,9 +16,8 @@ impl LineCache {
         }
     }
 
-    /// Retrieve a line from the cache or insert it if missing.
-    ///
-    /// If `current_rev` differs from the stored revision, the cache is cleared first.
+    /// Retrieve a line from the cache or insert it if missing; clears the
+    /// cache first if `current_rev` differs from the stored revision.
     pub fn get_or_insert(
         &mut self,
         line_idx: usize,

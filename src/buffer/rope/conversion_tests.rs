@@ -12,9 +12,7 @@ fn create_table(text: &str) -> PieceTable {
 #[test]
 fn test_ascii_conversion() {
     let pt = create_table("Hello");
-    // 'H' (0) -> byte 0
-    // 'e' (1) -> byte 1
-    // ...
+    // ASCII: char index equals byte offset.
     assert_eq!(pt.char_to_byte(0), 0);
     assert_eq!(pt.char_to_byte(1), 1);
     assert_eq!(pt.char_to_byte(5), 5); // End of buffer
@@ -26,9 +24,7 @@ fn test_ascii_conversion() {
 
 #[test]
 fn test_unicode_conversion() {
-    // "A" (1 byte) + "🦀" (4 bytes) + "B" (1 byte)
-    // Chars: 0='A', 1='🦀', 2='B'
-    // Bytes: 0='A', 1..5='🦀', 5='B'
+    // Chars 0='A',1='🦀',2='B' -> bytes 0='A',1..5='🦀',5='B'.
     let pt = create_table("A🦀B");
 
     // char -> byte
@@ -51,9 +47,7 @@ fn test_unicode_conversion() {
 
 #[test]
 fn test_complex_mixed() {
-    // "a" (1) + "é" (2: c3 a9) + "€" (3: e2 82 ac)
-    // Chars: 0='a', 1='é', 2='€'
-    // Bytes: 0, 1(start é), 3(start €), 6(end)
+    // Chars 0='a',1='é',2='€' -> bytes 0,1(start é),3(start €),6(end).
     let pt = create_table("aé€");
 
     assert_eq!(pt.char_to_byte(0), 0);

@@ -12,63 +12,31 @@ pub enum Direction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Logical unit used to describe cursor movement, selection, and edit scope.
-///
-/// A `Granularity` represents *how much* content an operation applies to,
-/// independent of direction. It is used by commands such as move, select,
-/// delete, and change to express intent without encoding UI- or
-/// representation-specific behavior.
-///
-/// Granularities are ordered conceptually from finest (`Character`) to
-/// coarsest (`Document`), but no ordering is implied by the enum itself.
-/// Implementations may choose appropriate semantics as long as the unit
-/// boundaries are stable and intuitive.
+/// How much content move/select/delete/change applies to, independent of
+/// direction. Ordered conceptually finest (`Character`) to coarsest (`Document`).
 pub enum Granularity {
-    /// A single Unicode scalar value (code point).
-    ///
-    /// This is the smallest addressable unit in the buffer model. It does not
-    /// correspond to grapheme clusters; combined characters, emoji sequences,
-    /// and other multi-code-point constructs count as multiple characters.
+    /// A single Unicode scalar value; does not correspond to grapheme
+    /// clusters, so combined characters count as multiple.
     Character,
 
-    /// A contiguous sequence of non-separator characters.
-    ///
-    /// Word boundaries are implementation-defined, but typically follow
-    /// Unicode word boundary rules or editor conventions such as splitting on
-    /// whitespace and punctuation.
+    /// A contiguous run of non-separator characters (word-boundary rules
+    /// are implementation-defined).
     Word,
 
-    /// A sentence of natural language text.
-    ///
-    /// Sentence boundaries are implementation-defined and commonly detected
-    /// using punctuation such as '.', '!', or '?' followed by whitespace.
-    /// This granularity is primarily intended for prose-oriented editing.
+    /// A natural-language sentence, boundaries typically detected via
+    /// '.', '!', or '?' followed by whitespace.
     Sentence,
 
-    /// A logical line of text.
-    ///
-    /// Lines are delimited by newline characters in the underlying buffer and
-    /// do not account for soft wrapping or visual layout.
+    /// A logical (newline-delimited) line; does not account for soft wrapping.
     Line,
 
-    /// A paragraph of text.
-    ///
-    /// Paragraphs are typically delimited by one or more blank lines. This
-    /// granularity represents a higher-level structural unit than `Line` and
-    /// is useful for both prose and code editing.
+    /// A paragraph, typically delimited by one or more blank lines.
     Paragraph,
 
-    /// A page-sized region of the document.
-    ///
-    /// The exact size of a page is implementation-defined and commonly maps to
-    /// a viewport-sized vertical movement, similar to Page Up and Page Down.
+    /// A viewport-sized vertical region, like Page Up/Page Down.
     Page,
 
-    /// The entire document.
-    ///
-    /// This granularity spans from the start of the buffer to the end and is
-    /// used for operations such as moving to the beginning or end of the file
-    /// or selecting all content.
+    /// The entire document, start to end.
     Document,
 }
 

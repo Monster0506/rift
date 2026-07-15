@@ -1,25 +1,5 @@
-//! Movement semantics for all navigation operations
-//!
-//! This module centralizes the logic for determining movement boundaries
-//! (words, sentences, paragraphs) across all editor modes.
-//!
-//! ## Design
-//!
-//! Movement is based on character categories:
-//! - **Whitespace**: spaces, tabs, newlines
-//! - **Alphanumeric**: letters, numbers, and underscore
-//! - **Symbol**: all other characters (punctuation, operators, etc.)
-//!
-//! This means:
-//! - `hello_world` is ONE word (underscore is alphanumeric)
-//! - `foo->bar` is THREE words: `foo`, `->`, `bar`
-//! - The same semantics apply in insert mode, command mode, and search mode
-//!
-//! ## Modules
-//!
-//! - [`classify`] - Character classification functions
-//! - [`boundaries`] - String-based word boundary detection (for command line)
-//! - [`buffer`] - Buffer-based word movement (for insert mode)
+//! Movement boundary logic (words, sentences, paragraphs) shared across editor
+//! modes. Categorizes chars as whitespace/alphanumeric(+`_`)/symbol, so `foo->bar` is 3 words.
 
 pub mod boundaries;
 pub mod buffer;

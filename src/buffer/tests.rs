@@ -139,22 +139,14 @@ fn test_move_up_down() {
     assert!(buffer.move_up());
     assert_eq!(buffer.get_line(), 1);
 
-    // Cursor was at 10.
-    // Move up:
-    // Prev line (1) start: 4. End: 7.
-    // Col: 2 (since line 2 start is 8, cursor 10 -> col 2).
-    // Target: min(4+2, 7) = 6.
-    // Index 6 is '6'.
+    // Cursor was 10 (col 2 on line 2); line 1 spans 4..7, so target is min(4+2,7)=6.
     assert_eq!(buffer.cursor(), 6);
     assert_eq!(buffer.char_at(buffer.cursor()), Some(Character::from('6')));
 
     // Move up to line 0
     assert!(buffer.move_up());
     assert_eq!(buffer.get_line(), 0);
-    // Prev line (0) start: 0. End: 3.
-    // Col: 2 (from previous step, cursor 6 - line start 4 = 2).
-    // Target: min(0+2, 3) = 2.
-    // Index 2 is '2'.
+    // Col 2 carried over (cursor 6 - line start 4); line 0 spans 0..3, target min(0+2,3)=2.
     assert_eq!(buffer.cursor(), 2);
     assert_eq!(buffer.char_at(buffer.cursor()), Some(Character::from('2')));
 
@@ -300,11 +292,7 @@ fn test_move_sentence_forward_multiline() {
 
     // Should move past newline and find sentence end on next line
     assert!(buffer.move_sentence_forward());
-    // "Line 2 with dot." is 16 chars.
-    // 14 (start of line 2) + 16 = 30.
-    // Dot is at 29. Next char is '\n' (at 30).
-    // Skips whitespace (newline).
-    // Should end up at start of Line 3 (31).
+    // Dot is at 29, newline at 30; skipping trailing whitespace lands at Line 3's start, 31.
     assert_eq!(buffer.cursor(), 31);
 }
 

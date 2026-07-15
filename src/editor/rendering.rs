@@ -33,6 +33,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// State-update phase: syncs viewport/cursor/document-derived state ahead of
     /// rendering. No cell composition or layer writes happen here.
     fn update_state(&mut self) -> Option<FrameState> {
+        crate::perf_span!("update_state", crate::perf::PerfFields::default());
         self.flush_pending_text_changed();
         self.flush_pending_cursor_moved();
         // Fire cursor enter/leave annotation hooks for any transition this frame.
@@ -89,6 +90,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .visible_cols()
                 .saturating_sub(gutter_width)
                 .max(1);
+            crate::perf_span!("display_map_resolve", crate::perf::PerfFields::default());
             self.resolve_display_map_cached(doc_id, content_width)
         };
 
@@ -135,6 +137,10 @@ impl<T: TerminalBackend> Editor<T> {
     /// Recompute `ui.selection.*` annotations from the active Visual region
     /// (if any) and the active document's banked `SelectionSet`.
     pub(super) fn update_selection_highlights(&mut self) {
+        crate::perf_span!(
+            "update_selection_highlights",
+            crate::perf::PerfFields::default()
+        );
         let is_visual = self.current_mode.is_visual();
         let visual_anchor = self.visual_anchor;
         let visual_kind = self.current_mode.visual_range_kind();
@@ -161,9 +167,13 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
+        #[cfg(feature = "perf_instrumentation")]
+        let _frame_guard = crate::perf::begin_frame();
+
         let Some((_doc_id, needs_clear, display_map, scroll_hint)) = self.update_state() else {
             return Ok(());
         };
+
         self.update_selection_highlights();
 
         self.render_plugin_float();
@@ -220,18 +230,25 @@ impl<T: TerminalBackend> Editor<T> {
                     self.display_map_cache.push(entry);
                     return map;
                 }
-                // Exactly one edit behind: rewrap only the affected lines.
-                if edits.len() == 1 && entry.revision.wrapping_add(1) == revision {
-                    if let Some(mut map) = entry.map {
-                        let e = edits[0];
-                        if Arc::make_mut(&mut map).apply_edit(&doc.buffer, e.pos, e.del, e.ins) {
-                            self.display_map_cache.push(super::DisplayMapCacheEntry {
-                                doc_id,
-                                revision,
-                                content_width,
-                                map: Some(map.clone()),
-                            });
-                            return Some(map);
+                // Every logged edit accounted for by the revision delta (no
+                // foreign mutation slipped in): rewrap only the affected lines.
+                if entry.revision.wrapping_add(edits.len() as u64) == revision {
+                    if let Some(combined) = combine_char_edits(&edits) {
+                        if let Some(mut map) = entry.map {
+                            if Arc::make_mut(&mut map).apply_edit(
+                                &doc.buffer,
+                                combined.pos,
+                                combined.del,
+                                combined.ins,
+                            ) {
+                                self.display_map_cache.push(super::DisplayMapCacheEntry {
+                                    doc_id,
+                                    revision,
+                                    content_width,
+                                    map: Some(map.clone()),
+                                });
+                                return Some(map);
+                            }
                         }
                     }
                 }
@@ -271,6 +288,10 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Render the clipboard ring tooltip to the TOOLTIP layer.
     pub(super) fn render_clipboard_tooltip(&mut self) {
+        crate::perf_span!(
+            "render_clipboard_tooltip",
+            crate::perf::PerfFields::default()
+        );
         let selected = self
             .post_paste_state
             .as_ref()
@@ -322,6 +343,7 @@ impl<T: TerminalBackend> Editor<T> {
         display_map: Option<&crate::wrap::DisplayMap>,
         scroll_hint: Option<(usize, usize, isize)>,
     ) -> Result<(), RiftError> {
+        crate::perf_span!("render_single_window", crate::perf::PerfFields::default());
         let Editor {
             document_manager,
             render_system,
@@ -491,6 +513,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// If a plugin float is open, render it into the POPUP layer.
     /// Clears the layer once when a float is closed.
     pub(super) fn render_plugin_float(&mut self) {
+        crate::perf_span!("render_plugin_float", crate::perf::PerfFields::default());
         if self.plugin_host.has_open_float() {
             let layer = self
                 .render_system
@@ -509,6 +532,10 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn update_window_viewports(&mut self) {
+        crate::perf_span!(
+            "update_window_viewports",
+            crate::perf::PerfFields::default()
+        );
         let global_show_line_numbers = self.state.settings.show_line_numbers;
         let soft_wrap = self.state.settings.soft_wrap;
 
@@ -626,6 +653,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn render_multi_window(&mut self, needs_clear: bool) -> Result<(), RiftError> {
+        crate::perf_span!("render_multi_window", crate::perf::PerfFields::default());
         use crate::layer::LayerPriority;
 
         let size = self
@@ -681,13 +709,35 @@ impl<T: TerminalBackend> Editor<T> {
             render_system.compositor.resize(total_rows, total_cols);
         }
 
+        // A changed window SET clears the whole layer as a safety net (a
+        // leftover window fragment is worse than one extra full clear).
+        let resolvable_window_ids: std::collections::HashSet<_> = layouts
+            .iter()
+            .filter(|l| {
+                split_tree
+                    .get_window(l.window_id)
+                    .is_some_and(|w| document_manager.get_document(w.document_id).is_some())
+            })
+            .map(|l| l.window_id)
+            .collect();
+        // `needs_clear` (from `mark_needs_full_redraw()`) also invalidates
+        // every window's cache, same as an actual window-set change.
+        let window_set_changed = needs_clear
+            || resolvable_window_ids.len() != render_system.window_paint_caches.len()
+            || !resolvable_window_ids
+                .iter()
+                .all(|id| render_system.window_paint_caches.contains_key(id));
+
         let content_layer = render_system
             .compositor
             .get_layer_mut(LayerPriority::CONTENT);
-        content_layer.clear();
+        if window_set_changed {
+            content_layer.clear();
+        }
 
         let focused_id = split_tree.focused_window_id();
         let focused_doc_id = split_tree.focused_window().document_id;
+        let mut rendered_window_ids = std::collections::HashSet::new();
 
         for (layout, display_map) in layouts.iter().zip(&window_maps) {
             let window = match split_tree.get_window(layout.window_id) {
@@ -843,12 +893,39 @@ impl<T: TerminalBackend> Editor<T> {
                 },
             };
 
+            let window_cache = render_system
+                .window_paint_caches
+                .entry(layout.window_id)
+                .or_insert_with(|| crate::render::system::WindowPaintCache {
+                    frame: crate::paint::PaintFrame::new(0),
+                    blit_key: None,
+                    layout: layout.clone(),
+                });
+            if window_cache.layout != *layout || window_set_changed {
+                // Moved/resized or the window set changed (layer cleared
+                // above) - force a real paint/blit, never the no-op skip.
+                window_cache.blit_key = None;
+                window_cache.layout = layout.clone();
+            }
+
             let content_layer = render_system
                 .compositor
                 .get_layer_mut(LayerPriority::CONTENT);
-            render::render_content_to_layer_offset(content_layer, &ctx, layout.row, layout.col)
-                .map_err(|e| RiftError::new(ErrorType::Renderer, "RENDER_FAILED", e))?;
+            render::render_content_to_layer_offset(
+                content_layer,
+                &ctx,
+                layout.row,
+                layout.col,
+                &mut window_cache.frame,
+                Some(&mut window_cache.blit_key),
+            )
+            .map_err(|e| RiftError::new(ErrorType::Renderer, "RENDER_FAILED", e))?;
+            rendered_window_ids.insert(layout.window_id);
         }
+
+        render_system
+            .window_paint_caches
+            .retain(|id, _| rendered_window_ids.contains(id));
 
         let divider_fg = state
             .settings
@@ -955,6 +1032,10 @@ impl<T: TerminalBackend> Editor<T> {
     /// Render a hover tooltip for the annotation under the cursor (e.g. an LSP
     /// diagnostic message) into the TOOLTIP layer. Clears it when there is none.
     pub(super) fn render_annotation_tooltip(&mut self) {
+        crate::perf_span!(
+            "render_annotation_tooltip",
+            crate::perf::PerfFields::default()
+        );
         use crate::color::Color;
         use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
         use crate::layer::{Cell, LayerPriority};
@@ -1032,6 +1113,10 @@ impl<T: TerminalBackend> Editor<T> {
     /// Render a pending-changes tooltip at the top of the screen when a directory
     /// buffer has unsaved edits. Clears the HOVER layer when there is nothing to show.
     pub(super) fn render_explorer_diff_tooltip(&mut self) {
+        crate::perf_span!(
+            "render_explorer_diff_tooltip",
+            crate::perf::PerfFields::default()
+        );
         use crate::color::Color;
         use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
         use crate::layer::{Cell, LayerPriority};
@@ -1118,5 +1203,166 @@ impl<T: TerminalBackend> Editor<T> {
             .get_layer_mut(LayerPriority::HOVER);
         layer.clear();
         window.render_cells(layer, &rows);
+    }
+}
+
+/// Collapse a batch of same-frame char edits into the single net edit
+/// `DisplayMap::apply_edit` expects; `None` if not one contiguous region.
+pub(crate) fn combine_char_edits(
+    edits: &[crate::buffer::CharEdit],
+) -> Option<crate::buffer::CharEdit> {
+    let first = *edits.first()?;
+    if edits.len() == 1 {
+        return Some(first);
+    }
+
+    let mut left = first.pos;
+    let mut right_orig = first.pos + first.del;
+    let mut right_cur = first.pos + first.ins;
+
+    for e in &edits[1..] {
+        if e.pos > right_cur || e.pos + e.del < left {
+            return None;
+        }
+        if e.pos < left {
+            left = e.pos;
+        }
+        right_orig += (e.pos + e.del).saturating_sub(right_cur);
+        right_cur = e.pos + e.ins + right_cur.saturating_sub(e.pos + e.del);
+    }
+
+    Some(crate::buffer::CharEdit {
+        pos: left,
+        del: right_orig - left,
+        ins: right_cur - left,
+    })
+}
+
+#[cfg(test)]
+mod combine_char_edits_tests {
+    use super::combine_char_edits;
+    use crate::buffer::CharEdit;
+
+    fn edit(pos: usize, del: usize, ins: usize) -> CharEdit {
+        CharEdit { pos, del, ins }
+    }
+
+    #[test]
+    fn empty_returns_none() {
+        assert_eq!(combine_char_edits(&[]), None);
+    }
+
+    #[test]
+    fn single_edit_passes_through_unchanged() {
+        let e = edit(10, 2, 3);
+        assert_eq!(combine_char_edits(&[e]), Some(e));
+    }
+
+    #[test]
+    fn descending_single_char_deletes_combine() {
+        // Rightmost-first, as Transaction::inverse() replays an undone insert.
+        let edits = [edit(9, 1, 0), edit(8, 1, 0), edit(7, 1, 0)];
+        assert_eq!(combine_char_edits(&edits), Some(edit(7, 3, 0)));
+    }
+
+    #[test]
+    fn fixed_position_single_char_deletes_combine() {
+        // Repeated forward-delete at an unmoving cursor.
+        let edits = [edit(5, 1, 0), edit(5, 1, 0), edit(5, 1, 0)];
+        assert_eq!(combine_char_edits(&edits), Some(edit(5, 3, 0)));
+    }
+
+    #[test]
+    fn ascending_single_char_inserts_combine() {
+        let edits = [edit(4, 0, 1), edit(5, 0, 1), edit(6, 0, 1)];
+        assert_eq!(combine_char_edits(&edits), Some(edit(4, 0, 3)));
+    }
+
+    #[test]
+    fn ascending_deletes_are_rejected() {
+        // Not a real observed pattern; would skip characters if combined.
+        let edits = [edit(5, 1, 0), edit(6, 1, 0), edit(7, 1, 0)];
+        assert_eq!(combine_char_edits(&edits), None);
+    }
+
+    #[test]
+    fn descending_inserts_are_rejected() {
+        let edits = [edit(6, 0, 1), edit(5, 0, 1), edit(4, 0, 1)];
+        assert_eq!(combine_char_edits(&edits), None);
+    }
+
+    #[test]
+    fn delete_then_insert_same_position_combines_as_replace() {
+        // A single-char replace as two ops (delete then insert at the same
+        // spot) touches one contiguous region, so it should combine.
+        let edits = [edit(5, 1, 0), edit(5, 0, 1)];
+        assert_eq!(combine_char_edits(&edits), Some(edit(5, 1, 1)));
+    }
+
+    #[test]
+    fn adjacent_multi_char_edits_of_different_sizes_combine() {
+        // The `dd` shape: a bulk line-content delete followed by a separate
+        // 1-char newline delete immediately to its left, in current coords.
+        let edits = [edit(1202714, 1362, 0), edit(1202713, 1, 0)];
+        assert_eq!(combine_char_edits(&edits), Some(edit(1202713, 1363, 0)));
+    }
+
+    #[test]
+    fn adjacent_multi_char_inserts_of_different_sizes_combine() {
+        // The undo-of-`dd` shape: mirror of the above, both re-insertions.
+        let edits = [edit(1202713, 0, 1), edit(1202714, 0, 1362)];
+        assert_eq!(combine_char_edits(&edits), Some(edit(1202713, 0, 1363)));
+    }
+
+    #[test]
+    fn multi_char_single_edits_with_a_gap_are_rejected() {
+        // [5,8) and [2,4) don't touch - a real 1-char gap at position 4.
+        let edits = [edit(5, 3, 0), edit(2, 2, 0)];
+        assert_eq!(combine_char_edits(&edits), None);
+    }
+
+    #[test]
+    fn non_contiguous_deletes_are_rejected() {
+        let edits = [edit(9, 1, 0), edit(5, 1, 0)];
+        assert_eq!(combine_char_edits(&edits), None);
+    }
+
+    #[test]
+    fn descending_then_repeated_delete_combines() {
+        // Undo of "open a line, then type": descending char-deletes (the
+        // typed text reversed) plus one more delete at the same landing spot.
+        let edits = [
+            edit(3, 1, 0),
+            edit(2, 1, 0),
+            edit(1, 1, 0),
+            edit(0, 1, 0),
+            edit(0, 1, 0),
+        ];
+        assert_eq!(combine_char_edits(&edits), Some(edit(0, edits.len(), 0)));
+    }
+
+    #[test]
+    fn repeated_then_ascending_insert_combines() {
+        // Mirror of the above, for redoing the same transaction.
+        let edits = [edit(0, 0, 1), edit(0, 0, 1), edit(1, 0, 1), edit(2, 0, 1)];
+        assert_eq!(combine_char_edits(&edits), Some(edit(0, 0, edits.len())));
+    }
+
+    #[test]
+    fn interleaved_zero_and_descending_deletes_combine() {
+        let edits = [
+            edit(5, 1, 0),
+            edit(5, 1, 0),
+            edit(4, 1, 0),
+            edit(4, 1, 0),
+            edit(3, 1, 0),
+        ];
+        assert_eq!(combine_char_edits(&edits), Some(edit(3, edits.len(), 0)));
+    }
+
+    #[test]
+    fn a_jump_larger_than_one_is_rejected() {
+        let edits = [edit(9, 1, 0), edit(7, 1, 0)];
+        assert_eq!(combine_char_edits(&edits), None);
     }
 }

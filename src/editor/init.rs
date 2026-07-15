@@ -12,6 +12,17 @@ use crate::state::State;
 use crate::term::TerminalBackend;
 use std::sync::Arc;
 
+/// Number of base-10 digits in `n` (matches `n.to_string().len()` without
+/// allocating - called every frame from `sync_state_with_active_document`).
+fn decimal_digit_count(mut n: usize) -> usize {
+    let mut count = 1;
+    while n >= 10 {
+        n /= 10;
+        count += 1;
+    }
+    count
+}
+
 impl<T: TerminalBackend> Editor<T> {
     /// Create a new editor instance
     pub fn new(terminal: T) -> Result<Self, RiftError> {
@@ -299,7 +310,7 @@ impl<T: TerminalBackend> Editor<T> {
         // Update gutter width
         if self.state.settings.show_line_numbers {
             // 1 space padding on each side
-            self.state.gutter_width = total_lines.to_string().len() + 2;
+            self.state.gutter_width = decimal_digit_count(total_lines) + 2;
         } else {
             self.state.gutter_width = 0;
         }

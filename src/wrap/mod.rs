@@ -601,6 +601,204 @@ mod tests {
         }
     }
 
+    /// A rightmost-first single-char delete run: collapsing it into one net
+    /// `apply_edit` call must match applying it incrementally and a full rebuild.
+    #[test]
+    fn apply_edit_combined_delete_matches_full_rebuild() {
+        let mut buf = buf_from(SAMPLE);
+        let mut map = DisplayMap::build(&buf, 8, 4);
+        let (pos, del, ins) = insert_at(&mut buf, 6, "ABCDE");
+        assert!(map.apply_edit(&buf, pos, del, ins));
+
+        for p in (6..11).rev() {
+            assert!(buf.delete_range(p, 1));
+        }
+        assert!(
+            map.apply_edit(&buf, 6, 5, 0),
+            "combined delete apply_edit refused"
+        );
+        let full = DisplayMap::build(&buf, 8, 4);
+        assert_eq!(map, full, "combined delete diverged from full rebuild");
+    }
+
+    /// A single-char delete run at a fixed position, mirroring repeated
+    /// forward-delete (`<Del>`) at an unmoving cursor.
+    #[test]
+    fn apply_edit_combined_fixed_position_delete_matches_full_rebuild() {
+        let mut buf = buf_from(SAMPLE);
+        let mut map = DisplayMap::build(&buf, 8, 4);
+        let (pos, del, ins) = insert_at(&mut buf, 6, "ABCDE");
+        assert!(map.apply_edit(&buf, pos, del, ins));
+
+        for _ in 0..5 {
+            assert!(buf.delete_range(6, 1));
+        }
+        assert!(
+            map.apply_edit(&buf, 6, 5, 0),
+            "combined fixed-position delete apply_edit refused"
+        );
+        let full = DisplayMap::build(&buf, 8, 4);
+        assert_eq!(map, full, "combined delete diverged from full rebuild");
+    }
+
+    /// An ascending single-char insert run, mirroring forward typing or a
+    /// redone multi-char insert, one character at a time.
+    #[test]
+    fn apply_edit_combined_insert_matches_full_rebuild() {
+        let mut buf = buf_from(SAMPLE);
+        let mut map = DisplayMap::build(&buf, 8, 4);
+
+        let start = 6;
+        for (i, ch) in "ABCDE".chars().enumerate() {
+            insert_at(&mut buf, start + i, &ch.to_string());
+        }
+        assert!(
+            map.apply_edit(&buf, start, 0, 5),
+            "combined insert apply_edit refused"
+        );
+        let full = DisplayMap::build(&buf, 8, 4);
+        assert_eq!(map, full, "combined insert diverged from full rebuild");
+    }
+
+    /// Undo of "open a line, then type": N descending char-deletes (typed
+    /// text reversed) plus one more delete landing back at the newline's spot.
+    #[test]
+    fn apply_edit_combined_descending_then_repeat_matches_full_rebuild() {
+        let mut buf = buf_from(SAMPLE);
+        let mut map = DisplayMap::build(&buf, 8, 4);
+
+        let (pos, del, ins) = insert_at(&mut buf, 6, "\n");
+        assert!(map.apply_edit(&buf, pos, del, ins));
+        for (i, ch) in "ABCDE".chars().enumerate() {
+            let (pos, del, ins) = insert_at(&mut buf, 7 + i, &ch.to_string());
+            assert!(map.apply_edit(&buf, pos, del, ins));
+        }
+
+        for p in (7..12).rev() {
+            assert!(buf.delete_range(p, 1));
+        }
+        assert!(buf.delete_range(6, 1));
+        assert!(
+            map.apply_edit(&buf, 6, 6, 0),
+            "combined descending-then-repeat apply_edit refused"
+        );
+        let full = DisplayMap::build(&buf, 8, 4);
+        assert_eq!(
+            map, full,
+            "combined descending-then-repeat diverged from full rebuild"
+        );
+    }
+
+    /// The `dd` shape (bulk line delete + adjacent newline delete), combined
+    /// via the real `combine_char_edits`, not a hand-computed triple.
+    #[test]
+    fn combine_char_edits_handles_dd_shaped_batch() {
+        use crate::buffer::CharEdit;
+        use crate::editor::rendering::combine_char_edits;
+
+        let text = format!("{}line to delete\nnext\n", "pad ".repeat(20));
+        let mut buf = buf_from(&text);
+        let mut map = DisplayMap::build(&buf, 12, 4);
+
+        let line_start = text.find("line to delete").unwrap();
+        let line_len = "line to delete\n".len();
+        assert!(buf.delete_range(line_start, line_len - 1));
+        assert!(buf.delete_range(line_start, 1));
+        let edits = [
+            CharEdit {
+                pos: line_start,
+                del: line_len - 1,
+                ins: 0,
+            },
+            CharEdit {
+                pos: line_start,
+                del: 1,
+                ins: 0,
+            },
+        ];
+
+        let combined = combine_char_edits(&edits).expect("dd shape should combine");
+        assert!(map.apply_edit(&buf, combined.pos, combined.del, combined.ins));
+        let full = DisplayMap::build(&buf, 12, 4);
+        assert_eq!(
+            map, full,
+            "dd-shaped combined edit diverged from full rebuild"
+        );
+    }
+
+    /// Randomized batches of 2-6 edits near a moving anchor: every batch
+    /// `combine_char_edits` accepts must match a from-scratch rebuild.
+    #[test]
+    fn combine_char_edits_matches_full_rebuild_across_random_batches() {
+        use crate::buffer::CharEdit;
+        use crate::editor::rendering::combine_char_edits;
+
+        fn next(seed: &mut u64, m: usize) -> usize {
+            *seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((*seed >> 33) as usize) % m.max(1)
+        }
+
+        let mut seed: u64 = 0x1357_9bdf_2468_ace0;
+        let inserts = ["x", "hi", "\n", "wrap-me", "  ", "a\nb"];
+
+        for trial in 0..300 {
+            let mut buf = buf_from(&"the quick brown fox jumps over the lazy dog\n".repeat(6));
+            let mut map = DisplayMap::build(&buf, 10, 4);
+
+            let n_edits = 2 + next(&mut seed, 5); // 2..=6
+            let mut edits: Vec<CharEdit> = Vec::new();
+            let mut anchor = next(&mut seed, buf.len().max(1));
+
+            for _ in 0..n_edits {
+                let len = buf.len();
+                if len == 0 {
+                    break;
+                }
+                let gap = if next(&mut seed, 4) == 0 {
+                    next(&mut seed, 5) + 1
+                } else {
+                    0
+                };
+                let pos = (anchor + gap).min(len);
+                let (p, d, i) = if next(&mut seed, 2) == 0 {
+                    let s = inserts[next(&mut seed, inserts.len())];
+                    insert_at(&mut buf, pos, s)
+                } else {
+                    let n = (next(&mut seed, 5) + 1).min(len - pos);
+                    if n == 0 {
+                        continue;
+                    }
+                    delete_at(&mut buf, pos, n)
+                };
+                edits.push(CharEdit {
+                    pos: p,
+                    del: d,
+                    ins: i,
+                });
+                anchor = p + i;
+            }
+            if edits.is_empty() {
+                continue;
+            }
+
+            if let Some(combined) = combine_char_edits(&edits) {
+                assert!(
+                    map.apply_edit(&buf, combined.pos, combined.del, combined.ins),
+                    "trial {trial}: apply_edit refused a combined edit"
+                );
+                let full = DisplayMap::build(&buf, 10, 4);
+                assert_eq!(
+                    map, full,
+                    "trial {trial}: combined-edit map diverged from full rebuild (edits={edits:?})"
+                );
+            }
+            // None means a non-contiguous batch was correctly detected - the
+            // safe fallback-to-full-rebuild path, nothing to check here.
+        }
+    }
+
     #[test]
     fn test_range_kind_blockwise_variant_exists() {
         let _blockwise = RangeKind::Blockwise;

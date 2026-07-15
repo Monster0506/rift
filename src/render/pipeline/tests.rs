@@ -40,6 +40,19 @@ fn test_tab_layout() {
 }
 
 #[test]
+fn test_tab_layout_wide_and_zero_width_unicode_chars() {
+    // Non-ASCII must skip the ASCII width-1 fast path: CJK is width 2, combining mark width 0.
+    let input = chars("\u{4E2D}\u{0301}a").into_iter(); // '中' (CJK), combining acute, 'a'
+    let layout = TabLayout::new(input, 4);
+    let items: Vec<LayoutItem> = layout.collect();
+
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0].width, 2, "CJK ideograph must be width 2");
+    assert_eq!(items[1].width, 0, "combining mark must be width 0");
+    assert_eq!(items[2].width, 1, "ASCII 'a' must still be width 1");
+}
+
+#[test]
 fn test_search_decorator() {
     let input = chars("hello world").into_iter();
     // Match "world" (offset 6..11)
@@ -113,7 +126,8 @@ fn test_presentation_decorator_applies_fg_bg_attrs() {
             },
         },
     )];
-    let items: Vec<RenderItem> = PresentationDecorator::new(input, &styles).collect();
+    let mut idx = 0;
+    let items: Vec<RenderItem> = PresentationDecorator::new(input, &styles, &mut idx).collect();
     assert!(items[0].fg.is_none() && items[0].bg.is_none(), "'a' before");
     assert_eq!(items[1].fg, Some(Color::Blue));
     assert_eq!(items[1].bg, Some(Color::Black));
@@ -137,9 +151,54 @@ fn test_presentation_decorator_fg_only_leaves_bg() {
             attrs: Default::default(),
         },
     )];
-    let items: Vec<RenderItem> = PresentationDecorator::new(input, &styles).collect();
+    let mut idx = 0;
+    let items: Vec<RenderItem> = PresentationDecorator::new(input, &styles, &mut idx).collect();
     assert_eq!(items[0].fg, Some(Color::Red));
     assert!(items[0].bg.is_none(), "bg untouched when style bg is None");
+}
+
+#[test]
+fn test_presentation_decorator_cursor_carries_over_across_calls() {
+    // A second decorator sharing the same `idx` must not re-scan from the
+    // start, and must still apply a style starting after the first call ended.
+    use crate::layer::CellStyle;
+    let styles: Vec<(std::ops::Range<usize>, CellStyle)> = vec![
+        (
+            0..2,
+            CellStyle {
+                fg: Some(Color::Red),
+                bg: None,
+                attrs: Default::default(),
+            },
+        ),
+        (
+            10..12,
+            CellStyle {
+                fg: Some(Color::Blue),
+                bg: None,
+                attrs: Default::default(),
+            },
+        ),
+    ];
+    let mut idx = 0;
+
+    // First "row": covers byte offsets 0..2, consumes the first style.
+    let first_input = chars("ab");
+    let first_items: Vec<RenderItem> =
+        PresentationDecorator::new(first_input.into_iter(), &styles, &mut idx).collect();
+    assert_eq!(first_items[0].fg, Some(Color::Red));
+    assert_eq!(idx, 0, "idx should not advance past a style still in range");
+
+    // Second "row" at byte offset 10 - cursor must not be stuck/corrupted from the first call.
+    let mut second_item = RenderItem::new(Character::from('z'), 10, 1, 10);
+    second_item = PresentationDecorator::new(std::iter::once(second_item), &styles, &mut idx)
+        .next()
+        .unwrap();
+    assert_eq!(
+        second_item.fg,
+        Some(Color::Blue),
+        "cursor must correctly find the second style after carrying over"
+    );
 }
 
 // ColorDecorator tests
@@ -148,7 +207,8 @@ fn test_presentation_decorator_fg_only_leaves_bg() {
 fn test_color_decorator_no_highlights_no_color() {
     let input = chars("hello").into_iter();
     let highlights: Vec<(std::ops::Range<usize>, Color)> = vec![];
-    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
+    let mut idx = 0;
+    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights, &mut idx).collect();
     assert_eq!(items.len(), 5);
     for item in &items {
         assert!(item.fg.is_none(), "no highlights -> no color");
@@ -159,7 +219,8 @@ fn test_color_decorator_no_highlights_no_color() {
 fn test_color_decorator_full_range_colored() {
     let input = chars("abc").into_iter();
     let highlights = vec![(0..3, Color::Red)];
-    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
+    let mut idx = 0;
+    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights, &mut idx).collect();
     assert_eq!(items.len(), 3);
     for item in &items {
         assert_eq!(item.fg, Some(Color::Red));
@@ -171,7 +232,8 @@ fn test_color_decorator_partial_range_colors_only_matching() {
     let input = chars("abcde").into_iter();
     // Only "bc" (offsets 1..3) should be colored
     let highlights = vec![(1..3, Color::Blue)];
-    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
+    let mut idx = 0;
+    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights, &mut idx).collect();
     assert_eq!(items.len(), 5);
     assert!(items[0].fg.is_none(), "'a' before range");
     assert_eq!(items[1].fg, Some(Color::Blue), "'b' in range");
@@ -187,7 +249,8 @@ fn test_color_decorator_multiple_ranges() {
         (0..2, Color::Red),   // "ab" -> red
         (3..5, Color::Green), // "de" -> green
     ];
-    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
+    let mut idx = 0;
+    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights, &mut idx).collect();
     assert_eq!(items[0].fg, Some(Color::Red));
     assert_eq!(items[1].fg, Some(Color::Red));
     assert!(items[2].fg.is_none(), "'c' between ranges");
@@ -200,7 +263,8 @@ fn test_color_decorator_advances_past_expired_range() {
     // Range 0..2 ends before offset 3. The decorator should skip it and apply range 3..5.
     let input = chars("abcde").into_iter();
     let highlights = vec![(0..2, Color::Red), (3..5, Color::Yellow)];
-    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
+    let mut idx = 0;
+    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights, &mut idx).collect();
     assert_eq!(items[3].fg, Some(Color::Yellow));
     assert_eq!(items[4].fg, Some(Color::Yellow));
 }
@@ -210,7 +274,8 @@ fn test_color_decorator_range_starts_after_all_items() {
     let input = chars("ab").into_iter();
     // Range starts at offset 10, beyond any item
     let highlights = vec![(10..12, Color::Cyan)];
-    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
+    let mut idx = 0;
+    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights, &mut idx).collect();
     for item in &items {
         assert!(item.fg.is_none(), "range beyond input -> no color applied");
     }
@@ -221,7 +286,8 @@ fn test_color_decorator_single_char_range() {
     let input = chars("xyz").into_iter();
     // Only 'y' at offset 1
     let highlights = vec![(1..2, Color::Magenta)];
-    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
+    let mut idx = 0;
+    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights, &mut idx).collect();
     assert!(items[0].fg.is_none());
     assert_eq!(items[1].fg, Some(Color::Magenta));
     assert!(items[2].fg.is_none());
@@ -244,8 +310,9 @@ fn test_color_decorator_overwrites_existing_fg() {
         })
         .collect();
     let highlights = vec![(0..2, Color::Red)];
+    let mut idx = 0;
     let items: Vec<RenderItem> =
-        ColorDecorator::new(pre_colored.into_iter(), &highlights).collect();
+        ColorDecorator::new(pre_colored.into_iter(), &highlights, &mut idx).collect();
     // ColorDecorator should overwrite with Red
     assert_eq!(items[0].fg, Some(Color::Red));
     assert_eq!(items[1].fg, Some(Color::Red));
@@ -255,7 +322,9 @@ fn test_color_decorator_overwrites_existing_fg() {
 fn test_color_decorator_empty_input() {
     let input: Vec<RenderItem> = vec![];
     let highlights = vec![(0..5, Color::Blue)];
-    let items: Vec<RenderItem> = ColorDecorator::new(input.into_iter(), &highlights).collect();
+    let mut idx = 0;
+    let items: Vec<RenderItem> =
+        ColorDecorator::new(input.into_iter(), &highlights, &mut idx).collect();
     assert!(items.is_empty());
 }
 
@@ -263,7 +332,8 @@ fn test_color_decorator_empty_input() {
 fn test_color_decorator_adjacent_ranges_no_gap() {
     let input = chars("abcd").into_iter();
     let highlights = vec![(0..2, Color::Red), (2..4, Color::Blue)];
-    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
+    let mut idx = 0;
+    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights, &mut idx).collect();
     assert_eq!(items[0].fg, Some(Color::Red));
     assert_eq!(items[1].fg, Some(Color::Red));
     assert_eq!(items[2].fg, Some(Color::Blue));
@@ -274,7 +344,8 @@ fn test_color_decorator_adjacent_ranges_no_gap() {
 fn test_color_decorator_preserves_byte_offset() {
     let input = chars("hello").into_iter();
     let highlights = vec![(0..5, Color::Green)];
-    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
+    let mut idx = 0;
+    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights, &mut idx).collect();
     for (i, item) in items.iter().enumerate() {
         assert_eq!(item.byte_offset, i, "byte_offset must not change");
     }
@@ -284,7 +355,8 @@ fn test_color_decorator_preserves_byte_offset() {
 fn test_color_decorator_preserves_char_values() {
     let input = chars("rust").into_iter();
     let highlights = vec![(0..4, Color::Yellow)];
-    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights).collect();
+    let mut idx = 0;
+    let items: Vec<RenderItem> = ColorDecorator::new(input, &highlights, &mut idx).collect();
     let result: String = items
         .iter()
         .map(|i| match i.char {

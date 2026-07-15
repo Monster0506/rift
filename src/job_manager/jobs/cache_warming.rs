@@ -31,11 +31,7 @@ impl Job for CacheWarmingJob {
         let mut current_byte_offset = 0;
         let mut current_char_offset = 0;
 
-        // We only need to check for newlines.
-        // PieceTableChunkIterator yields &[Character].
-        // Character can be Char(char) or Byte(u8).
-        // Newline is Character::Newline (which is effectively '\n').
-
+        // Only Character::Newline matters here; PieceTableChunkIterator yields &[Character].
         for chunk in self.piece_table.chunks() {
             if signal.is_cancelled() {
                 return;

@@ -443,7 +443,7 @@ impl Layer {
     pub fn fill_rect(&mut self, rect: Rect, cell: Cell) {
         for row in rect.start_row..=rect.end_row.min(self.rows.saturating_sub(1)) {
             for col in rect.start_col..=rect.end_col.min(self.cols.saturating_sub(1)) {
-                self.set_cell(row, col, cell.clone());
+                self.set_cell(row, col, crate::perf_clone!(cell.clone()));
             }
         }
     }
@@ -458,7 +458,7 @@ impl Layer {
             for c in 0..self.cols.min(new_cols) {
                 let old_idx = self.idx(r, c);
                 let new_idx = r * new_cols + c;
-                new_cells[new_idx] = self.cells[old_idx].clone();
+                new_cells[new_idx] = crate::perf_clone!(self.cells[old_idx].clone());
             }
         }
 
@@ -590,19 +590,30 @@ impl LayerCompositor {
                 for c in start_col..=end_col {
                     // Re-evaluate this pixel's final value by iterating Top-Down (highest priority first)
                     // This allows early exit (occlusion culling)
-                    let mut final_cell: Option<Cell> = None;
+                    let mut final_cell: Option<&Cell> = None;
 
                     for layer in self.layers.values().rev() {
                         if let Some(cell) = layer.get_cell(r, c) {
-                            final_cell = Some(cell.clone());
+                            final_cell = Some(cell);
                             break;
                         }
                     }
 
-                    if let Some(cell) = final_cell {
+                    // Skip the write (and its dirty-rect expansion) when
+                    // recompositing this pixel didn't actually change it.
+                    let unchanged = match (final_cell, self.buffer.get_cell(r, c)) {
+                        (Some(new), Some(old)) => new == old,
+                        (None, Some(old)) => *old == Cell::empty(),
+                        _ => false,
+                    };
+                    if !unchanged {
+                        // perf_clone! expands to more than `.clone()` when
+                        // perf_instrumentation is on - not a plain map_clone.
+                        #[allow(clippy::map_clone)]
+                        let cell = final_cell
+                            .map(|c| crate::perf_clone!(c.clone()))
+                            .unwrap_or_else(Cell::empty);
                         self.buffer.set_cell(r, c, cell);
-                    } else {
-                        self.buffer.set_cell(r, c, Cell::empty());
                     }
                 }
             }
@@ -629,7 +640,9 @@ impl LayerCompositor {
             self.composite();
         }
         if row < self.rows && col < self.cols {
-            Some(self.buffer.current_slice()[row * self.cols + col].clone())
+            Some(crate::perf_clone!(self.buffer.current_slice()
+                [row * self.cols + col]
+                .clone()))
         } else {
             None
         }

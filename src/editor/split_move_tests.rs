@@ -7,14 +7,22 @@ use crate::test_utils::MockTerminal;
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
+/// Drains job messages until every spawned job thread has actually finished
+/// (checked via the thread handle, not just one `recv_timeout` miss).
 fn process_jobs(editor: &mut Editor<MockTerminal>) {
-    use std::time::Duration;
-    while let Ok(msg) = editor
-        .job_manager
-        .receiver()
-        .recv_timeout(Duration::from_millis(100))
-    {
-        editor.handle_job_message(msg).unwrap();
+    use std::time::{Duration, Instant};
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        while let Ok(msg) = editor
+            .job_manager
+            .receiver()
+            .recv_timeout(Duration::from_millis(50))
+        {
+            editor.handle_job_message(msg).unwrap();
+        }
+        if !editor.job_manager.any_job_thread_alive() || Instant::now() >= deadline {
+            break;
+        }
     }
 }
 

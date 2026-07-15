@@ -1,25 +1,9 @@
-//! String-based movement boundary detection
-//!
-//! These functions work with strings for command line, search mode, etc.
+//! String-based movement boundary detection, for command line/search mode.
 
 use super::classify::{classify_char, CharClass};
 
-/// Find the next word boundary position going forward
-///
-/// # Arguments
-/// * `text` - The string to navigate in
-/// * `start` - Starting cursor position (character index)
-///
-/// # Returns
-/// The new cursor position after moving forward by one word
-///
-/// # Examples
-/// ```rust
-/// use monster_rift::movement::boundaries::next_word;
-///
-/// assert_eq!(next_word("hello world", 0), 6);
-/// assert_eq!(next_word("foo->bar", 0), 3);
-/// ```
+/// Find the next word boundary position going forward from `start`
+/// (a character index into `text`).
 pub fn next_word(text: &str, start: usize) -> usize {
     let chars: Vec<char> = text.chars().collect();
     let len = chars.len();
@@ -46,22 +30,8 @@ pub fn next_word(text: &str, start: usize) -> usize {
     pos
 }
 
-/// Find the previous word boundary position going backward
-///
-/// # Arguments
-/// * `text` - The string to navigate in
-/// * `start` - Starting cursor position (character index)
-///
-/// # Returns
-/// The new cursor position after moving backward by one word
-///
-/// # Examples
-/// ```
-/// use monster_rift::movement::boundaries::prev_word;
-///
-/// assert_eq!(prev_word("hello world", 11), 6);
-/// assert_eq!(prev_word("foo->bar", 8), 5);
-/// ```
+/// Find the previous word boundary position going backward from `start`
+/// (a character index into `text`).
 pub fn prev_word(text: &str, start: usize) -> usize {
     if start == 0 {
         return 0;
@@ -91,4 +61,21 @@ pub fn prev_word(text: &str, start: usize) -> usize {
     }
 
     pos
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn next_word_basic() {
+        assert_eq!(next_word("hello world", 0), 6);
+        assert_eq!(next_word("foo->bar", 0), 3);
+    }
+
+    #[test]
+    fn prev_word_basic() {
+        assert_eq!(prev_word("hello world", 11), 6);
+        assert_eq!(prev_word("foo->bar", 8), 5);
+    }
 }

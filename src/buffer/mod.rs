@@ -28,7 +28,7 @@ pub struct ByteEdit {
 
 /// A mutation in character coordinates: `del` chars removed at `pos`, then
 /// `ins` chars inserted there. Consumed by incremental caches.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CharEdit {
     pub pos: usize,
     pub del: usize,

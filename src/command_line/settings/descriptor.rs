@@ -98,24 +98,15 @@ impl From<SettingError> for crate::error::RiftError {
     }
 }
 
-/// Setter function signature
-///
-/// Function pointers (not trait objects) for static dispatch.
-/// Receives parsed and validated `SettingValue`, never raw strings.
+/// Setter function pointer (static dispatch), receiving parsed/validated `SettingValue`.
 pub type SettingSetter<T> = fn(&mut T, SettingValue) -> Result<(), SettingError>;
 
-/// Getter function signature
-///
-/// Returns the current value of the setting as a string suitable for display
-/// in tab completion. Only required for non-discrete types (Integer, Float, Color);
-/// use `None` for Boolean and Enum settings, which complete their full variant list.
+/// Getter returning the current value as a display string for tab completion;
+/// `None` for Boolean/Enum settings, which complete their full variant list instead.
 pub type SettingGetter<T> = fn(&T) -> String;
 
-/// Setting descriptor
-///
-/// Minimal configuration: name, aliases, type, setter, and optional getter.
-/// Name encodes path (e.g., "`command_line_window.width_ratio`" for nested settings).
-/// Setter handles mutation; getter provides current value for tab completion.
+/// Name, aliases, type, setter, and optional getter for one setting. Name
+/// encodes path (e.g. "`command_line_window.width_ratio`") for nested settings.
 #[derive(Debug, Clone)]
 pub struct SettingDescriptor<T> {
     /// Canonical setting name (e.g., "expandtabs" or "`command_line_window.width_ratio`")

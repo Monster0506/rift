@@ -35,35 +35,41 @@ impl RenderItem {
     }
 }
 
-/// Source that yields characters from a line in the buffer
-pub struct LineSource<'a> {
-    chars: Box<dyn Iterator<Item = Character> + 'a>,
+/// Source that yields characters from a line in the buffer. Generic over the
+/// char iterator (not `Box<dyn Iterator>`) so the decorator chain on top monomorphizes and inlines.
+pub struct LineSource<'a, I: Iterator<Item = Character>> {
+    chars: I,
     current_byte_offset: usize,
     current_char_offset: usize,
+    _marker: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a> LineSource<'a> {
-    pub fn new(buf: &'a TextBuffer, line_idx: usize) -> Self {
-        let line_start = buf.line_index.get_start(line_idx).unwrap_or(0);
-        let line_end = buf
-            .line_index
-            .get_end(line_idx, buf.len())
-            .unwrap_or(buf.len());
+/// Free function so the concrete `impl Iterator` type `buf.chars()` returns
+/// can be captured via return-position `impl Trait` without being named.
+pub fn new_line_source<'a>(
+    buf: &'a TextBuffer,
+    line_idx: usize,
+) -> LineSource<'a, impl Iterator<Item = Character> + 'a> {
+    let line_start = buf.line_index.get_start(line_idx).unwrap_or(0);
+    let line_end = buf
+        .line_index
+        .get_end(line_idx, buf.len())
+        .unwrap_or(buf.len());
 
-        let chars = Box::new(buf.chars(line_start..line_end));
-        let current_byte_offset = buf.char_to_byte(line_start);
-        // line_start is already an absolute code-point offset
-        let current_char_offset = line_start;
+    let chars = buf.chars(line_start..line_end);
+    let current_byte_offset = buf.char_to_byte(line_start);
+    // line_start is already an absolute code-point offset
+    let current_char_offset = line_start;
 
-        Self {
-            chars,
-            current_byte_offset,
-            current_char_offset,
-        }
+    LineSource {
+        chars,
+        current_byte_offset,
+        current_char_offset,
+        _marker: std::marker::PhantomData,
     }
 }
 
-impl<'a> Iterator for LineSource<'a> {
+impl<'a, I: Iterator<Item = Character>> Iterator for LineSource<'a, I> {
     type Item = RenderItem;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -117,6 +123,7 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for SyntaxDecorator<'a, I> {
         while *self.idx < self.highlights.len() {
             if self.highlights[*self.idx].0.end <= item.byte_offset {
                 *self.idx += 1;
+                crate::perf_cursor_advance!();
             } else {
                 break;
             }
@@ -154,7 +161,7 @@ pub struct InjectionDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     /// Sorted by range start. Each entry is (byte_range, capture_name).
     highlights: &'a [(std::ops::Range<usize>, String)],
-    idx: usize,
+    idx: &'a mut usize,
     syntax_colors: Option<&'a crate::color::theme::SyntaxColors>,
 }
 
@@ -162,12 +169,13 @@ impl<'a, I: Iterator<Item = RenderItem>> InjectionDecorator<'a, I> {
     pub fn new(
         input: I,
         highlights: &'a [(std::ops::Range<usize>, String)],
+        idx: &'a mut usize,
         syntax_colors: Option<&'a crate::color::theme::SyntaxColors>,
     ) -> Self {
         Self {
             input,
             highlights,
-            idx: 0,
+            idx,
             syntax_colors,
         }
     }
@@ -179,15 +187,16 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for InjectionDecorator<'a, I> 
     fn next(&mut self) -> Option<Self::Item> {
         let mut item = self.input.next()?;
 
-        while self.idx < self.highlights.len() {
-            if self.highlights[self.idx].0.end <= item.byte_offset {
-                self.idx += 1;
+        while *self.idx < self.highlights.len() {
+            if self.highlights[*self.idx].0.end <= item.byte_offset {
+                *self.idx += 1;
+                crate::perf_cursor_advance!();
             } else {
                 break;
             }
         }
 
-        for (range, name) in self.highlights.iter().skip(self.idx) {
+        for (range, name) in self.highlights.iter().skip(*self.idx) {
             if range.start > item.byte_offset {
                 break;
             }
@@ -210,15 +219,19 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for InjectionDecorator<'a, I> 
 pub struct ColorDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     highlights: &'a [(std::ops::Range<usize>, Color)],
-    idx: usize,
+    idx: &'a mut usize,
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> ColorDecorator<'a, I> {
-    pub fn new(input: I, highlights: &'a [(std::ops::Range<usize>, Color)]) -> Self {
+    pub fn new(
+        input: I,
+        highlights: &'a [(std::ops::Range<usize>, Color)],
+        idx: &'a mut usize,
+    ) -> Self {
         Self {
             input,
             highlights,
-            idx: 0,
+            idx,
         }
     }
 }
@@ -230,14 +243,15 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for ColorDecorator<'a, I> {
         let mut item = self.input.next()?;
 
         // Advance past expired ranges
-        while self.idx < self.highlights.len()
-            && self.highlights[self.idx].0.end <= item.byte_offset
+        while *self.idx < self.highlights.len()
+            && self.highlights[*self.idx].0.end <= item.byte_offset
         {
-            self.idx += 1;
+            *self.idx += 1;
+            crate::perf_cursor_advance!();
         }
 
-        if self.idx < self.highlights.len() {
-            let (range, color) = &self.highlights[self.idx];
+        if *self.idx < self.highlights.len() {
+            let (range, color) = &self.highlights[*self.idx];
             if range.start <= item.byte_offset {
                 item.fg = Some(*color);
             }
@@ -247,21 +261,21 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for ColorDecorator<'a, I> {
     }
 }
 
-/// Decorator applying generic annotation presentation styles (fg and/or bg).
-/// Spans are sorted and non-overlapping (flattened by precedence upstream).
+/// Decorator applying generic annotation presentation styles (sorted,
+/// non-overlapping spans). `idx` is caller-owned so the fast-forward cursor carries over across rows.
 pub struct PresentationDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     styles: &'a [(std::ops::Range<usize>, crate::layer::CellStyle)],
-    idx: usize,
+    idx: &'a mut usize,
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> PresentationDecorator<'a, I> {
-    pub fn new(input: I, styles: &'a [(std::ops::Range<usize>, crate::layer::CellStyle)]) -> Self {
-        Self {
-            input,
-            styles,
-            idx: 0,
-        }
+    pub fn new(
+        input: I,
+        styles: &'a [(std::ops::Range<usize>, crate::layer::CellStyle)],
+        idx: &'a mut usize,
+    ) -> Self {
+        Self { input, styles, idx }
     }
 }
 
@@ -270,11 +284,12 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for PresentationDecorator<'a, 
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut item = self.input.next()?;
-        while self.idx < self.styles.len() && self.styles[self.idx].0.end <= item.byte_offset {
-            self.idx += 1;
+        while *self.idx < self.styles.len() && self.styles[*self.idx].0.end <= item.byte_offset {
+            *self.idx += 1;
+            crate::perf_cursor_advance!();
         }
-        if self.idx < self.styles.len() {
-            let (range, style) = &self.styles[self.idx];
+        if *self.idx < self.styles.len() {
+            let (range, style) = &self.styles[*self.idx];
             if range.start <= item.byte_offset {
                 if let Some(fg) = style.fg {
                     item.fg = Some(fg);
@@ -340,16 +355,12 @@ pub fn contrasting_color(bg: Color) -> Color {
 pub struct TerminalColorDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     colors: &'a [crate::color::CellColorSpan],
-    idx: usize,
+    idx: &'a mut usize,
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> TerminalColorDecorator<'a, I> {
-    pub fn new(input: I, colors: &'a [crate::color::CellColorSpan]) -> Self {
-        Self {
-            input,
-            colors,
-            idx: 0,
-        }
+    pub fn new(input: I, colors: &'a [crate::color::CellColorSpan], idx: &'a mut usize) -> Self {
+        Self { input, colors, idx }
     }
 }
 
@@ -360,12 +371,13 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for TerminalColorDecorator<'a,
         let mut item = self.input.next()?;
 
         // Advance past expired ranges.
-        while self.idx < self.colors.len() && self.colors[self.idx].0.end <= item.byte_offset {
-            self.idx += 1;
+        while *self.idx < self.colors.len() && self.colors[*self.idx].0.end <= item.byte_offset {
+            *self.idx += 1;
+            crate::perf_cursor_advance!();
         }
 
-        if self.idx < self.colors.len() {
-            let (range, (fg, bg)) = &self.colors[self.idx];
+        if *self.idx < self.colors.len() {
+            let (range, (fg, bg)) = &self.colors[*self.idx];
             if range.start <= item.byte_offset {
                 if let Some(c) = fg {
                     item.fg = Some(*c);
@@ -384,15 +396,19 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for TerminalColorDecorator<'a,
 pub struct PluginHighlightDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     highlights: &'a [(std::ops::Range<usize>, Color)],
-    idx: usize,
+    idx: &'a mut usize,
 }
 
 impl<'a, I: Iterator<Item = RenderItem>> PluginHighlightDecorator<'a, I> {
-    pub fn new(input: I, highlights: &'a [(std::ops::Range<usize>, Color)]) -> Self {
+    pub fn new(
+        input: I,
+        highlights: &'a [(std::ops::Range<usize>, Color)],
+        idx: &'a mut usize,
+    ) -> Self {
         Self {
             input,
             highlights,
-            idx: 0,
+            idx,
         }
     }
 }
@@ -404,14 +420,15 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for PluginHighlightDecorator<'
         let mut item = self.input.next()?;
 
         // Advance past expired ranges
-        while self.idx < self.highlights.len()
-            && self.highlights[self.idx].0.end <= item.byte_offset
+        while *self.idx < self.highlights.len()
+            && self.highlights[*self.idx].0.end <= item.byte_offset
         {
-            self.idx += 1;
+            *self.idx += 1;
+            crate::perf_cursor_advance!();
         }
 
-        if self.idx < self.highlights.len() {
-            let (range, bg) = &self.highlights[self.idx];
+        if *self.idx < self.highlights.len() {
+            let (range, bg) = &self.highlights[*self.idx];
             if range.start <= item.byte_offset {
                 item.bg = Some(*bg);
                 item.fg = Some(contrasting_color(*bg));
@@ -449,6 +466,7 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for SearchDecorator<'a, I> {
         while *self.idx < self.matches.len() {
             if self.matches[*self.idx].range.end <= item.char_offset {
                 *self.idx += 1;
+                crate::perf_cursor_advance!();
             } else {
                 break;
             }
@@ -504,6 +522,9 @@ impl<I: Iterator<Item = RenderItem>> Iterator for TabLayout<I> {
             self.tab_width - (self.visual_col % self.tab_width)
         } else {
             match item.char {
+                // Always printable ASCII here (see From<char> for Character), so
+                // always width 1 - skips the Unicode width-table lookup.
+                Character::Unicode(c) if c.is_ascii() => 1,
                 Character::Unicode(c) => UnicodeWidthChar::width(c).unwrap_or(0),
                 Character::Byte(_) => 4,    // \xNN
                 Character::Control(_) => 2, // ^C

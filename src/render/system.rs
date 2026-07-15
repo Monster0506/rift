@@ -15,6 +15,17 @@ use crate::mode::Mode;
 use crate::status::StatusBar;
 use crate::term::CursorShape;
 
+/// One window's persistent paint state in multi-window rendering - see
+/// `RenderSystem::window_paint_caches`.
+#[derive(Debug)]
+pub(crate) struct WindowPaintCache {
+    pub(crate) frame: crate::paint::PaintFrame,
+    pub(crate) blit_key: Option<crate::render::ContentBlitKey>,
+    /// This window's layout as of its last render; a mismatch means it
+    /// moved/resized and the cache is stale.
+    pub(crate) layout: crate::split::layout::WindowLayout,
+}
+
 /// Hash annotation presentation style spans without allocating: each style's
 /// fields are fed directly into the hasher instead of Debug-formatting to a String.
 fn hash_annotation_styles(spans: &[(std::ops::Range<usize>, CellStyle)]) -> u64 {
@@ -99,6 +110,24 @@ pub struct RenderSystem {
     last_soft_cursor: Option<(usize, usize)>,
     last_cursor_shape: Option<CursorShape>,
     cursor_animator: crate::cursor::CursorAnimator,
+
+    /// Reused across `render_content_to_layer[_offset]` calls instead of
+    /// allocating a fresh `PaintFrame` every call - see `PaintFrame::reset`.
+    pub(crate) content_paint_frame: crate::paint::PaintFrame,
+    /// Identity of the last successful single-window content paint, enabling
+    /// a dirty-row scroll blit on the next call - see `ContentBlitKey`.
+    pub(crate) content_blit_key: Option<crate::render::ContentBlitKey>,
+    /// One persistent paint frame + blit key per visible split window,
+    /// keyed by `WindowId` - lets each window reuse the skip/blit machinery.
+    pub(crate) window_paint_caches:
+        std::collections::HashMap<crate::split::window::WindowId, WindowPaintCache>,
+    /// Reused across `StatusBar::render_to_layer` calls, same reasoning as
+    /// `content_paint_frame`.
+    status_paint_frame: crate::paint::PaintFrame,
+
+    /// Reused across `render()` calls to gather+sort entities without
+    /// allocating fresh; both fields are `Copy`, so no borrow of `self.world`.
+    render_order: Vec<(crate::render::ecs::EntityId, crate::layer::LayerPriority)>,
 }
 
 /// Finds the 1-based index of the search match containing (or starting at)
@@ -133,6 +162,11 @@ impl RenderSystem {
             last_soft_cursor: None,
             last_cursor_shape: None,
             cursor_animator: crate::cursor::CursorAnimator::new(),
+            content_paint_frame: crate::paint::PaintFrame::new(0),
+            content_blit_key: None,
+            window_paint_caches: std::collections::HashMap::new(),
+            status_paint_frame: crate::paint::PaintFrame::new(0),
+            render_order: Vec::new(),
         }
     }
 
@@ -163,6 +197,8 @@ impl RenderSystem {
         self.last_soft_cursor = None;
         self.last_cursor_shape = None;
         self.cursor_animator.reset();
+        self.content_blit_key = None;
+        self.window_paint_caches.clear();
     }
 
     /// Update the ECS world components based on current context
@@ -211,7 +247,7 @@ impl RenderSystem {
             ),
             editor_bg: ctx.state.settings.editor_bg,
             editor_fg: ctx.state.settings.editor_fg,
-            theme: ctx.state.settings.theme.clone(),
+            theme: crate::perf_clone!(ctx.state.settings.theme.clone()),
             highlights_hash: ctx
                 .state
                 .settings
@@ -270,7 +306,7 @@ impl RenderSystem {
             pending_key: ctx.pending_key,
             pending_count: ctx.pending_count,
             last_keypress: ctx.state.last_keypress,
-            file_name: ctx.state.file_name.clone(),
+            file_name: crate::perf_clone!(ctx.state.file_name.clone()),
             is_dirty: ctx.state.is_dirty,
             cursor: crate::render::CursorInfo {
                 row: ctx.state.cursor_pos.0,
@@ -279,7 +315,7 @@ impl RenderSystem {
             total_lines: ctx.state.total_lines,
             debug_mode: ctx.state.debug_mode,
             cols: ctx.viewport.visible_cols(),
-            search_query: ctx.state.last_search_query.clone(),
+            search_query: crate::perf_clone!(ctx.state.last_search_query.clone()),
             search_match_index,
             search_total_matches,
             reverse_video: ctx.state.settings.status_line.reverse_video,
@@ -288,7 +324,7 @@ impl RenderSystem {
             show_dirty_indicator: ctx.state.settings.status_line.show_dirty_indicator,
             editor_bg: ctx.state.settings.editor_bg,
             editor_fg: ctx.state.settings.editor_fg,
-            lsp_status: ctx.state.lsp_status.clone(),
+            lsp_status: crate::perf_clone!(ctx.state.lsp_status.clone()),
             lsp_ok_color: ctx
                 .state
                 .settings
@@ -328,7 +364,7 @@ impl RenderSystem {
                 .expect("entity not initialized: call update_world before draw");
 
             let command_state = CommandDrawState {
-                content: ctx.state.command_line.clone(),
+                content: crate::perf_clone!(ctx.state.command_line.clone()),
                 cursor: crate::render::CursorInfo {
                     row: 0,
                     col: ctx.state.command_line_cursor,
@@ -374,7 +410,7 @@ impl RenderSystem {
                 candidates: session
                     .candidates
                     .iter()
-                    .map(|c| (c.text.clone(), c.description.clone()))
+                    .map(|c| crate::perf_clone!((c.text.clone(), c.description.clone())))
                     .collect(),
                 selected: session.selected,
                 terminal_cols: ctx.viewport.visible_cols(),
@@ -432,7 +468,7 @@ impl RenderSystem {
         }
 
         // Clone viewport to avoid simultaneous borrow of self in update_world
-        let viewport = self.viewport.clone();
+        let viewport = crate::perf_clone!(self.viewport.clone());
         let skip_content = state.skip_content;
         let scroll_hint = state.scroll_hint;
         let cursor_row_offset = state.cursor_row_offset;
@@ -470,27 +506,25 @@ impl RenderSystem {
             self.last_render_version = 0;
         }
 
-        // Gather entities to render
-        let mut render_entities: Vec<_> = self
-            .world
-            .entities()
-            .iter()
-            .filter_map(|&e| {
-                if let (Some(renderable), Some(layer)) =
-                    (self.world.renderables.get(e), self.world.layers.get(e))
-                {
-                    Some((e, renderable, layer))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        render_entities.sort_by(|a, b| a.2.cmp(b.2));
+        // `render_order` holds only `Copy` data, so it's a persistent field
+        // reused here instead of a fresh `Vec` collected every frame.
+        self.render_order.clear();
+        self.render_order.extend(
+            self.world
+                .entities()
+                .iter()
+                .filter_map(|&e| self.world.layers.get(e).map(|&layer| (e, layer))),
+        );
+        self.render_order.sort_by_key(|&(_, layer)| layer);
 
         let mut command_cursor_info = None;
 
-        for (_entity, renderable, priority) in render_entities {
+        for i in 0..self.render_order.len() {
+            let (_entity, priority) = self.render_order[i];
+            let Some(renderable) = self.world.renderables.get(_entity) else {
+                continue;
+            };
+            let priority = &priority;
             let version = self.world.renderables.get_version(_entity).unwrap_or(0);
             let layer_needs_redraw =
                 version > self.last_render_version || self.last_render_version == 0;
@@ -501,6 +535,8 @@ impl RenderSystem {
                         crate::render::render_content_to_layer(
                             self.compositor.get_layer_mut(*priority),
                             &ctx,
+                            &mut self.content_paint_frame,
+                            Some(&mut self.content_blit_key),
                         )
                         .map_err(|e| {
                             RiftError::new(crate::error::ErrorType::Renderer, "RENDER_FAILED", e)
@@ -510,14 +546,19 @@ impl RenderSystem {
                 Renderable::StatusBar(state) => {
                     if layer_needs_redraw {
                         self.compositor.clear_layer(*priority);
-                        StatusBar::render_to_layer(self.compositor.get_layer_mut(*priority), state);
+                        StatusBar::render_to_layer(
+                            self.compositor.get_layer_mut(*priority),
+                            state,
+                            &mut self.status_paint_frame,
+                        );
                     }
                 }
                 Renderable::Window(state) => {
                     if layer_needs_redraw {
                         self.compositor.clear_layer(*priority);
                         let layer = self.compositor.get_layer_mut(*priority);
-                        let default_border_chars = ctx.state.settings.default_border_chars.clone();
+                        let default_border_chars =
+                            crate::perf_clone!(ctx.state.settings.default_border_chars.clone());
 
                         let (window_row, window_col, _, offset) = CommandLine::render_to_layer(
                             layer,

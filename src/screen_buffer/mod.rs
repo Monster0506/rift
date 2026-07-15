@@ -1,14 +1,5 @@
-//! Double-buffered screen buffer for efficient terminal rendering
-//!
-//! This module provides a generic double-buffering implementation that tracks
-//! changes between frames and produces minimal diffs for rendering.
-//!
-//! ## screen_buffer/ Invariants
-//!
-//! - The buffer maintains two frames: current and previous
-//! - Only cells that differ between frames are marked for rendering
-//! - First frame always produces a full-screen diff
-//! - Resize operations force a full redraw on next diff
+//! Double-buffered screen buffer: tracks current/previous frames and produces
+//! minimal diffs for terminal rendering; first frame and resizes force a full redraw.
 
 use crate::character::Character;
 use crate::color::Color;
@@ -78,26 +69,25 @@ pub struct CellChange<'a> {
 
 /// A batch of consecutive cell changes on the same row
 #[derive(Debug, Clone)]
-pub struct CellBatch<'a> {
+pub struct CellBatch {
     /// Row position (0-indexed)
     pub row: usize,
     /// Starting column position (0-indexed)
     pub start_col: usize,
-    /// The cells to render (consecutive)
-    pub cells: Vec<&'a Cell>,
+    /// The cells to render (consecutive), owned rather than `Vec<&Cell>` so
+    /// it can be pooled across frames instead of allocated fresh (see `cell_batch_pool`).
+    pub cells: Vec<Cell>,
 }
 
-impl<'a> CellBatch<'a> {
+impl CellBatch {
     /// Get the ending column (exclusive)
     pub fn end_col(&self) -> usize {
         self.start_col + self.cells.len()
     }
 }
 
-/// Double-buffered screen buffer
-///
-/// Maintains current and previous frame buffers to compute minimal diffs
-/// for efficient terminal rendering.
+/// Maintains current and previous frame buffers to compute minimal diffs for
+/// efficient terminal rendering.
 pub struct DoubleBuffer {
     /// Current frame buffer (flat)
     current: Vec<Cell>,
@@ -111,6 +101,15 @@ pub struct DoubleBuffer {
     force_full_redraw: bool,
     /// Dirty rectangle for the current frame
     frame_dirty_rect: Option<Rect>,
+
+    /// Scratch buffers reused across `render_to_terminal` calls instead of
+    /// allocating fresh per cell-batch - see `flush_cell_batch`.
+    scratch_output: String,
+    scratch_cmd_buf: Vec<u8>,
+    scratch_ops: Vec<StyleOp>,
+    /// Pool of emptied `CellBatch.cells` buffers, returned by
+    /// `render_to_terminal` and reused by `get_batched_changes`.
+    cell_batch_pool: Vec<Vec<Cell>>,
 }
 
 impl DoubleBuffer {
@@ -126,6 +125,10 @@ impl DoubleBuffer {
             cols,
             force_full_redraw: true, // First frame is always full
             frame_dirty_rect: None,
+            scratch_output: String::new(),
+            scratch_cmd_buf: Vec::new(),
+            scratch_ops: Vec::new(),
+            cell_batch_pool: Vec::new(),
         }
     }
 
@@ -145,15 +148,8 @@ impl DoubleBuffer {
         row * self.cols + col
     }
 
-    /// Get mutable access to the current buffer (logic adapter for existing code)
-    /// Note: This reconstructs a Vec<Vec<Cell>> view which is expensive.
-    /// Existing code expects &mut Vec<Vec<Cell>>.
-    /// To support flattening without breaking massive API changes, we provide specific accessors
-    /// and a temporary adapter if absolutely needed, OR update callsites.
-    ///
-    /// checking `src/layer/mod.rs` - `composite` accesses buffer via `current_mut() -> &mut Vec<Vec<Cell>>`
-    /// We MUST update `LayerCompositor::composite` to use `set_cell` or direct slice access.
-    /// For now, let's provide a way to get mutable slice.
+    /// Mutable access to the flat current buffer, for callers (e.g.
+    /// `LayerCompositor::composite`) that need direct slice access.
     pub fn current_slice_mut(&mut self) -> &mut [Cell] {
         &mut self.current
     }
@@ -203,7 +199,7 @@ impl DoubleBuffer {
                 if col_idx >= self.cols {
                     break;
                 }
-                self.current[start + col_idx] = cell.clone();
+                self.current[start + col_idx] = crate::perf_clone!(cell.clone());
             }
         }
         // Mark full screen dirty on copy
@@ -227,7 +223,7 @@ impl DoubleBuffer {
             for c in 0..self.cols.min(new_cols) {
                 let old_idx = self.idx(r, c);
                 let new_idx = r * new_cols + c;
-                new_current[new_idx] = self.current[old_idx].clone();
+                new_current[new_idx] = crate::perf_clone!(self.current[old_idx].clone());
             }
         }
 
@@ -287,7 +283,7 @@ impl DoubleBuffer {
 
     /// Get batched changes for efficient rendering
     /// Groups consecutive changed cells on the same row
-    pub fn get_batched_changes(&self) -> (Vec<CellBatch<'_>>, FrameStats) {
+    pub fn get_batched_changes(&mut self) -> (Vec<CellBatch>, FrameStats) {
         let mut batches = Vec::new();
         let mut stats = FrameStats {
             total_cells: self.rows * self.cols,
@@ -310,6 +306,10 @@ impl DoubleBuffer {
             return (batches, stats);
         };
 
+        // Each open batch pulls from `cell_batch_pool` and moves straight into
+        // the `CellBatch` when closed - no per-batch clone needed.
+        let mut current_cells: Option<Vec<Cell>> = None;
+
         for row_idx in start_row..=end_row {
             // Ensure bounds
             if row_idx >= self.rows {
@@ -318,7 +318,6 @@ impl DoubleBuffer {
 
             let row_start_idx = self.idx(row_idx, 0);
             let mut batch_start: Option<usize> = None;
-            let mut batch_cells: Vec<&Cell> = Vec::new();
 
             // Optimization: Only scan potentially dirty columns
             for col_idx in start_col..=end_col {
@@ -331,9 +330,8 @@ impl DoubleBuffer {
                 let prev = &self.previous[idx];
                 let mut changed = self.force_full_redraw || curr != prev;
 
-                // Force-include the tail column of any multi-column character
-                // (e.g. the padding space after ^M) so stale terminal output
-                // from the previous render is overwritten.
+                // Force-include the tail column of a multi-column char (e.g.
+                // padding after ^M) so stale terminal output is overwritten.
                 if !changed && col_idx > start_col {
                     let prev_idx = row_start_idx + col_idx - 1;
                     if cell_visual_width(&self.previous[prev_idx]) > 1
@@ -347,14 +345,15 @@ impl DoubleBuffer {
                     stats.changed_cells += 1;
                     if batch_start.is_none() {
                         batch_start = Some(col_idx);
+                        current_cells = Some(self.cell_batch_pool.pop().unwrap_or_default());
                     }
-                    batch_cells.push(curr);
+                    current_cells.as_mut().unwrap().push(curr.clone());
                 } else if let Some(start) = batch_start {
                     // End of batch
                     batches.push(CellBatch {
                         row: row_idx,
                         start_col: start,
-                        cells: std::mem::take(&mut batch_cells),
+                        cells: current_cells.take().unwrap(),
                     });
                     batch_start = None;
                 }
@@ -365,7 +364,7 @@ impl DoubleBuffer {
                 batches.push(CellBatch {
                     row: row_idx,
                     start_col: start,
-                    cells: batch_cells,
+                    cells: current_cells.take().unwrap(),
                 });
             }
         }
@@ -424,7 +423,7 @@ impl DoubleBuffer {
             for r in top..=bottom - k {
                 let (dst, src) = (r * self.cols, (r + k) * self.cols);
                 for c in 0..self.cols {
-                    self.previous[dst + c] = self.previous[src + c].clone();
+                    self.previous[dst + c] = crate::perf_clone!(self.previous[src + c].clone());
                 }
             }
             for r in bottom - k + 1..=bottom {
@@ -434,7 +433,7 @@ impl DoubleBuffer {
             for r in (top + k..=bottom).rev() {
                 let (dst, src) = (r * self.cols, (r - k) * self.cols);
                 for c in 0..self.cols {
-                    self.previous[dst + c] = self.previous[src + c].clone();
+                    self.previous[dst + c] = crate::perf_clone!(self.previous[src + c].clone());
                 }
             }
             for r in top..top + k {
@@ -507,6 +506,12 @@ impl DoubleBuffer {
         &mut self,
         term: &mut T,
     ) -> Result<FrameStats, String> {
+        // Taken out (not borrowed) so get_batched_changes's &self borrow never
+        // overlaps a &mut self.scratch_* access; put back before returning.
+        let mut output = std::mem::take(&mut self.scratch_output);
+        let mut cmd_buf = std::mem::take(&mut self.scratch_cmd_buf);
+        let mut ops = std::mem::take(&mut self.scratch_ops);
+
         // Get batched changes
         let (batches, stats) = {
             crate::perf_span!("render_diff", crate::perf::PerfFields::default());
@@ -514,6 +519,9 @@ impl DoubleBuffer {
         };
 
         if batches.is_empty() {
+            self.scratch_output = output;
+            self.scratch_cmd_buf = cmd_buf;
+            self.scratch_ops = ops;
             return Ok(stats);
         }
 
@@ -528,16 +536,29 @@ impl DoubleBuffer {
         let mut current_attrs = crate::layer::CellAttrs::default();
         let mut last_cursor_pos: Option<(usize, usize)> = None;
 
-        for batch in batches {
-            self.flush_cell_batch(
-                term,
-                &batch,
-                &mut current_fg,
-                &mut current_bg,
-                &mut current_attrs,
-                &mut last_cursor_pos,
-            )?;
-        }
+        let result = (|| -> Result<(), String> {
+            for mut batch in batches {
+                Self::flush_cell_batch(
+                    term,
+                    &batch,
+                    &mut current_fg,
+                    &mut current_bg,
+                    &mut current_attrs,
+                    &mut last_cursor_pos,
+                    &mut output,
+                    &mut cmd_buf,
+                    &mut ops,
+                )?;
+                batch.cells.clear();
+                self.cell_batch_pool.push(batch.cells);
+            }
+            Ok(())
+        })();
+
+        self.scratch_output = output;
+        self.scratch_cmd_buf = cmd_buf;
+        self.scratch_ops = ops;
+        result?;
 
         // Reset colors and attributes at end
         let mut reset_ops = vec![StyleOp::ResetColor];
@@ -556,15 +577,19 @@ impl DoubleBuffer {
         Ok(stats)
     }
 
-    /// Flush a batch of consecutive changed cells to the terminal
+    /// Flush a batch of consecutive changed cells to the terminal; `output`/
+    /// `cmd_buf`/`ops` are caller-owned scratch space, cleared not reallocated.
+    #[allow(clippy::too_many_arguments)]
     fn flush_cell_batch<T: crate::term::TerminalBackend>(
-        &self,
         term: &mut T,
         batch: &CellBatch,
         current_fg: &mut Option<Color>,
         current_bg: &mut Option<Color>,
         current_attrs: &mut crate::layer::CellAttrs,
         last_cursor_pos: &mut Option<(usize, usize)>,
+        output: &mut String,
+        cmd_buf: &mut Vec<u8>,
+        ops: &mut Vec<StyleOp>,
     ) -> Result<(), String> {
         if batch.cells.is_empty() {
             return Ok(());
@@ -582,11 +607,9 @@ impl DoubleBuffer {
             term.move_cursor(batch.row as u16, batch.start_col as u16)?;
         }
 
-        // Use String buffer for formatting Character
-        let mut output = String::with_capacity(batch.cells.len() * 4);
-        // Commands buffer for color changes
-        let mut cmd_buf = Vec::new();
-        let mut ops: Vec<StyleOp> = Vec::new();
+        output.clear();
+        cmd_buf.clear();
+        ops.clear();
 
         for cell in batch.cells.iter() {
             // Check if we need to change colors or attributes
@@ -632,22 +655,22 @@ impl DoubleBuffer {
                             ops.push(StyleOp::SetAttr(kind, on));
                         }
                     };
-                    set(&mut ops, a.bold, c.bold, AttrKind::Bold);
-                    set(&mut ops, a.italic, c.italic, AttrKind::Italic);
-                    set(&mut ops, a.underline, c.underline, AttrKind::Underline);
-                    set(&mut ops, a.strike, c.strike, AttrKind::Strike);
-                    set(&mut ops, a.reverse, c.reverse, AttrKind::Reverse);
+                    set(ops, a.bold, c.bold, AttrKind::Bold);
+                    set(ops, a.italic, c.italic, AttrKind::Italic);
+                    set(ops, a.underline, c.underline, AttrKind::Underline);
+                    set(ops, a.strike, c.strike, AttrKind::Strike);
+                    set(ops, a.reverse, c.reverse, AttrKind::Reverse);
                     *current_attrs = cell.attrs;
                 }
 
                 cmd_buf.clear();
-                crate::term::crossterm::encode_style_ops(&ops, &mut cmd_buf)?;
-                term.write(&cmd_buf)?;
+                crate::term::crossterm::encode_style_ops(ops, cmd_buf)?;
+                term.write(cmd_buf)?;
             }
 
             // Render Character to string buffer
             cell.content
-                .render(&mut output)
+                .render(output)
                 .map_err(|e| format!("Failed to render character: {e}"))?;
 
             terminal_col += cell_visual_width(cell);

@@ -35,15 +35,18 @@ impl<T: TerminalBackend> Editor<T> {
     /// Per-frame staleness check: a memo hit is free; an edit, undo, or doc
     /// switch arms the debounce instead of re-searching inline.
     pub(super) fn refresh_search_highlights_if_stale(&mut self) {
-        match self.state.last_search_query.clone() {
+        match self.state.last_search_query.as_deref() {
             Some(query) => {
                 let Some(doc) = self.document_manager.active_document() else {
                     return;
                 };
-                let key = (doc.id, doc.buffer.revision, query);
-                if self.search_highlights_synced.as_ref() != Some(&key)
-                    && self.pending_search_refresh.is_none()
-                {
+                let synced = self
+                    .search_highlights_synced
+                    .as_ref()
+                    .is_some_and(|(id, rev, q)| {
+                        *id == doc.id && *rev == doc.buffer.revision && q == query
+                    });
+                if !synced && self.pending_search_refresh.is_none() {
                     self.schedule_search_refresh();
                 }
             }
@@ -52,18 +55,24 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn update_search_highlights(&mut self) {
-        if let Some(query) = self.state.last_search_query.clone() {
+        if let Some(query) = self.state.last_search_query.as_deref() {
             let doc = self.document_manager.active_document_mut().unwrap();
             // Called every frame; skip the full re-search and annotation
             // rebuild when the doc, its content, and the query are unchanged.
-            let key = (doc.id, doc.buffer.revision, query.clone());
-            if self.search_highlights_synced.as_ref() == Some(&key) {
+            let synced = self
+                .search_highlights_synced
+                .as_ref()
+                .is_some_and(|(id, rev, q)| {
+                    *id == doc.id && *rev == doc.buffer.revision && q == query
+                });
+            if synced {
                 return;
             }
-            match doc.find_all_matches(&query) {
+            match doc.find_all_matches(query) {
                 Ok((matches, _)) => {
                     // Render highlights through ui.search annotations, not a decorator.
                     doc.sync_search_annotations(&matches, None);
+                    let key = (doc.id, doc.buffer.revision, query.to_string());
                     self.state.search_matches = matches;
                     self.search_highlights_synced = Some(key);
                 }

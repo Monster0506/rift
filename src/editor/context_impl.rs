@@ -41,11 +41,8 @@ impl<T: TerminalBackend> crate::editor_api::EditorContext for Editor<T> {
     }
 
     fn perform_search(&mut self, query: &str, direction: crate::search::SearchDirection) {
-        // Update state logic if needed, or rely on caller?
-        // Editor::perform_search updates highlights but doesn't set last_search_query in state.
-        // ComponentAction::ExecuteSearch did that manually.
-        // It's safer if perform_search does it if we want it to persist.
-        // But let's stick to calling the method.
+        // Editor::perform_search updates highlights but not last_search_query in
+        // state; callers needing that set must do it themselves.
         self.perform_search(query, direction, false);
     }
 
