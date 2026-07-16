@@ -5159,6 +5159,180 @@ fn dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
     );
 }
 
+/// Content layer cells only - the composited/cursor-inclusive buffer would
+/// give false-positive diffs, since the cursor animates independently.
+#[cfg(feature = "treesitter")]
+fn content_cell_grid(editor: &mut Editor<MockTerminal>) -> Vec<Vec<crate::layer::Cell>> {
+    editor.update_and_render().unwrap();
+    let layer = editor
+        .render_system
+        .compositor
+        .get_layer(crate::layer::LayerPriority::CONTENT)
+        .expect("content layer exists after a render");
+    let rows = layer.rows();
+    let cols = layer.cols();
+    (0..rows)
+        .map(|r| {
+            (0..cols)
+                .map(|c| {
+                    layer
+                        .get_cell(r, c)
+                        .cloned()
+                        .unwrap_or_else(crate::layer::Cell::empty)
+                })
+                .collect()
+        })
+        .collect()
+}
+
+#[cfg(feature = "treesitter")]
+fn assert_content_grids_match(
+    live: &[Vec<crate::layer::Cell>],
+    fresh: &[Vec<crate::layer::Cell>],
+    step: usize,
+    label: &str,
+) {
+    assert_eq!(
+        live.len(),
+        fresh.len(),
+        "step {step} (\"{label}\"): content-layer row count mismatch"
+    );
+    for (r, (lrow, frow)) in live.iter().zip(fresh.iter()).enumerate() {
+        assert_eq!(
+            lrow.len(),
+            frow.len(),
+            "step {step} (\"{label}\"): row {r} col count mismatch"
+        );
+        for (c, (lc, fc)) in lrow.iter().zip(frow.iter()).enumerate() {
+            assert_eq!(
+                lc, fc,
+                "step {step} (\"{label}\"): content-layer cell (color/attrs included) \
+                 mismatch at row {r} col {c}"
+            );
+        }
+    }
+}
+
+/// Same property as `dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step`
+/// but for non-wrap mode, comparing full `Cell` structs so a byte/char mixup shows up.
+#[cfg(feature = "treesitter")]
+#[test]
+fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
+    use crate::annotations::{
+        Adornment, Anchor, Annotation, AnnotationOwner, Kind, Placement, Presentation,
+    };
+    use crate::syntax::build_syntax;
+    use std::sync::Arc;
+
+    // A blank, zero-capture stretch keeps highlights_hash stable so the
+    // row-skip blit gets real chances to engage despite viewport-scoped highlighting.
+    let mut lines: Vec<String> = Vec::new();
+    lines.push("// cafe accented comment: café 日本語 emoji 🦀 multi-byte".to_string());
+    lines.push("fn build() -> i32 {".to_string());
+    for i in 0..20 {
+        lines.push(format!("    let x{i} = {i}; // plain ascii line {i}"));
+    }
+    for _ in 0..40 {
+        lines.push(String::new());
+    }
+    lines.push(format!(
+        "    let long = \"{}\"; // wider than the viewport",
+        "A".repeat(150)
+    ));
+    lines.push("\tlet tabbed = 2; // line starting with a tab".to_string());
+    lines.push("    x0 + x1".to_string());
+    lines.push("}".to_string());
+    let text = lines.join("\n") + "\n";
+
+    let leading_anchor = text
+        .find("x10 = 10")
+        .expect("marker line present in fixture");
+
+    let steps: &[&str] = &[
+        "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj",
+        "j",
+        "j",
+        "j",
+        "kk",
+        "jj",
+        "j",
+        "G",
+        "gg",
+        "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj",
+        "j",
+        "j",
+        "/x15<CR>",
+        "n",
+        "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj",
+        "j",
+        "kkkkk",
+    ];
+
+    let build_to = |n: usize| -> Editor<MockTerminal> {
+        let mut editor = create_editor_sized(20, 80);
+        editor.state.settings.soft_wrap = false;
+        load_text(&mut editor, &text);
+
+        let loader = editor.language_loader.clone();
+        let loaded = loader.load_language("rust").expect("rust grammar");
+        let highlights = loader
+            .load_query("rust", "highlights")
+            .ok()
+            .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+            .map(Arc::new);
+        let syntax = build_syntax(loaded, highlights, loader.clone()).expect("build_syntax");
+        editor.active_document().set_syntax(syntax);
+        editor.do_incremental_syntax_parse();
+
+        editor.active_document().annotations.add(
+            Annotation::new(
+                Kind::new("ui.x"),
+                Anchor::point(leading_anchor),
+                AnnotationOwner::User,
+            )
+            .with_presentation(
+                Presentation::default().with_adornment(Adornment::new(">>", Placement::Leading)),
+            ),
+        );
+
+        for step in &steps[..n] {
+            feed_keys(&mut editor, step);
+        }
+        editor
+    };
+
+    let mut live = build_to(0);
+    let mut any_blit_engaged = false;
+    #[cfg(feature = "perf_instrumentation")]
+    let skipped_before = crate::perf::row_paint_counts().1;
+
+    for (i, step) in steps.iter().enumerate() {
+        feed_keys(&mut live, step);
+        let live_grid = content_cell_grid(&mut live);
+        if live.render_system.content_blit_key.is_some() {
+            any_blit_engaged = true;
+        }
+
+        let mut fresh = build_to(i + 1);
+        let fresh_grid = content_cell_grid(&mut fresh);
+
+        assert_content_grids_match(&live_grid, &fresh_grid, i, step);
+    }
+
+    assert!(
+        any_blit_engaged,
+        "test setup problem: the blit path never engaged across any step - \
+         this test would pass trivially without actually exercising it"
+    );
+    #[cfg(feature = "perf_instrumentation")]
+    assert!(
+        crate::perf::row_paint_counts().1 > skipped_before,
+        "test setup problem: no non-wrap row was ever skipped via the scroll \
+         blit across any step - this test would pass trivially without \
+         actually exercising the row-skip path"
+    );
+}
+
 #[cfg(feature = "treesitter")]
 fn measure_type(editor: &mut Editor<MockTerminal>, label: &str, n: usize) {
     use std::time::Instant;

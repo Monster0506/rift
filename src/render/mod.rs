@@ -241,11 +241,6 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
 /// If `old`/`new` differ only in `scroll_top` with a shift small enough to
 /// leave overlap, returns the row delta to blit by; `None` means full render.
 fn scroll_blit_delta(old: &ContentBlitKey, new: &ContentBlitKey) -> Option<isize> {
-    if !new.has_display_map {
-        // Non-wrap-mode row boundaries aren't implemented for the blit path
-        // yet (see PERF_LOOP_LOG.md) - always fall back to a full render.
-        return None;
-    }
     let same_except_scroll = ContentBlitKey {
         scroll_top: old.scroll_top,
         ..new.clone()
@@ -713,9 +708,8 @@ fn render_content_to_paint_frame(
             );
         }
     } else {
-        // Blit isn't implemented for non-wrap mode, so every row here is
-        // always freshly painted.
-        debug_assert!(matches!(policy, RowPolicy::All));
+        // Non-wrap mode: one row per logical line, so a scroll blit may reuse
+        // rows whose line hasn't changed - see `find_line_render_boundary`.
         let top_line = viewport.top_line();
         let search_matches = ctx.search_matches();
         let first_visible_char = buf.line_index.get_start(top_line).unwrap_or(0);
@@ -731,7 +725,68 @@ fn render_content_to_paint_frame(
 
         for i in 0..visible_rows {
             let line_num = top_line + i;
+            let config = RenderLineConfig {
+                line_num,
+                row_idx: i,
+                gutter_width,
+                visible_cols,
+                default_fg: editor_fg,
+                default_bg: editor_bg,
+                segment_left_col: None,
+                segment_content_cols: None,
+            };
+
+            if !policy.paints(i) {
+                // Already correct from a scroll blit - advance cursors past
+                // it. search_matches is char-indexed; the rest are byte-indexed.
+                if let Some(char_boundary) = find_line_render_boundary(ctx, &config) {
+                    let byte_boundary = buf.char_to_byte(char_boundary);
+                    advance_idx_past(
+                        ctx.highlights.unwrap_or(&[]),
+                        &mut highlight_idx,
+                        byte_boundary,
+                        |(r, _)| r.end,
+                    );
+                    advance_idx_past(search_matches, &mut search_match_idx, char_boundary, |m| {
+                        m.range.end
+                    });
+                    advance_idx_past(
+                        ctx.annotation_styles.unwrap_or(&[]),
+                        &mut annotation_style_idx,
+                        byte_boundary,
+                        |(r, _)| r.end,
+                    );
+                    advance_idx_past(
+                        ctx.injection_highlights.unwrap_or(&[]),
+                        &mut injection_idx,
+                        byte_boundary,
+                        |(r, _)| r.end,
+                    );
+                    advance_idx_past(
+                        ctx.custom_highlights.unwrap_or(&[]),
+                        &mut custom_color_idx,
+                        byte_boundary,
+                        |(r, _)| r.end,
+                    );
+                    advance_idx_past(
+                        ctx.terminal_cell_colors.unwrap_or(&[]),
+                        &mut terminal_color_idx,
+                        byte_boundary,
+                        |(r, _)| r.end,
+                    );
+                    advance_idx_past(
+                        ctx.plugin_highlights.unwrap_or(&[]),
+                        &mut plugin_highlight_idx,
+                        byte_boundary,
+                        |(r, _)| r.end,
+                    );
+                }
+                crate::perf_row_blit_skipped!();
+                continue;
+            }
+
             crate::perf_row_painted!();
+            frame.reset_row(i);
 
             if gutter_width > 0 {
                 render_gutter(
@@ -749,16 +804,7 @@ fn render_content_to_paint_frame(
             render_line(
                 frame,
                 ctx,
-                RenderLineConfig {
-                    line_num,
-                    row_idx: i,
-                    gutter_width,
-                    visible_cols,
-                    default_fg: editor_fg,
-                    default_bg: editor_bg,
-                    segment_left_col: None,
-                    segment_content_cols: None,
-                },
+                config,
                 &mut highlight_idx,
                 &mut search_match_idx,
                 &mut annotation_style_idx,
@@ -860,6 +906,103 @@ struct RenderLineConfig {
     segment_content_cols: Option<usize>,
 }
 
+/// Content-column budget for a row, shared by `render_line` and
+/// `find_line_render_boundary` so both agree on where content is clipped.
+fn line_content_cols(ctx: &DrawContext, config: &RenderLineConfig) -> usize {
+    let buf = ctx.buf;
+    let base_content_cols = config
+        .segment_content_cols
+        .unwrap_or_else(|| config.visible_cols.saturating_sub(config.gutter_width));
+    let line_start_b = buf.line_index.get_start(config.line_num).unwrap_or(0);
+    let line_end_b = buf
+        .line_index
+        .get_end(config.line_num, buf.len())
+        .unwrap_or(buf.len());
+    let leading_extra: usize = ctx
+        .annotation_inline
+        .unwrap_or(&[])
+        .iter()
+        .filter(|(s, _e, _t, _c, lead)| *lead && *s >= line_start_b && *s < line_end_b)
+        .map(|(_s, _e, text, _c, _l)| text.chars().count())
+        .sum();
+    (base_content_cols + leading_extra).min(config.visible_cols.saturating_sub(config.gutter_width))
+}
+
+/// Char offset one past the last char `render_line` would pull from the
+/// decorator chain, via a bare `TabLayout` with no color decorators attached.
+fn find_line_render_boundary(ctx: &DrawContext, config: &RenderLineConfig) -> Option<usize> {
+    let buf = ctx.buf;
+    if config.line_num >= buf.get_total_lines() {
+        return None;
+    }
+
+    let line_start_char = buf.line_index.get_start(config.line_num).unwrap_or(0);
+    let line_end_char = buf
+        .line_index
+        .get_end(config.line_num, buf.len())
+        .unwrap_or(buf.len());
+    let content_cols = line_content_cols(ctx, config);
+    let left_col = config
+        .segment_left_col
+        .unwrap_or_else(|| ctx.viewport.left_col());
+    let inline = ctx.annotation_inline.unwrap_or(&[]);
+    let concealed = ctx.annotation_concealed.unwrap_or(&[]);
+
+    let layout = TabLayout::new(
+        pipeline::new_line_source(buf, config.line_num),
+        ctx.tab_width,
+    );
+    let mut rendered_col = 0usize;
+    let mut current_visual_col = 0usize;
+    let mut last_pulled_char: Option<usize> = None;
+
+    for (k, item) in layout.enumerate() {
+        last_pulled_char = Some(line_start_char + k);
+
+        if rendered_col >= content_cols {
+            break;
+        }
+        if item.char == Character::Newline {
+            break;
+        }
+        if concealed
+            .iter()
+            .any(|(s, e)| item.byte_offset >= *s && item.byte_offset < *e)
+        {
+            continue;
+        }
+
+        let width = item.width;
+        let next_visual_col = current_visual_col + width;
+
+        // Mirror render_line's own budget consumption exactly (including the
+        // leading-adornment char loop), so rendered_col tracks in lockstep.
+        if next_visual_col > left_col {
+            let plan = plan_glyph_draw(width, current_visual_col, left_col);
+            let mut display_col = rendered_col + config.gutter_width;
+            for (start, _end, text, _color, is_leading) in inline {
+                if *is_leading && *start == item.byte_offset {
+                    for _ch in text.chars() {
+                        if display_col >= config.visible_cols {
+                            break;
+                        }
+                        display_col += 1;
+                        rendered_col += 1;
+                    }
+                }
+            }
+            rendered_col += plan.visible_width;
+        }
+        current_visual_col = next_visual_col;
+    }
+
+    Some(
+        last_pulled_char
+            .map_or(line_start_char, |c| c + 1)
+            .min(line_end_char),
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_line(
     frame: &mut crate::paint::PaintFrame,
@@ -923,25 +1066,7 @@ fn render_line(
     // Layout
     let layout = TabLayout::new(presented, ctx.tab_width);
 
-    let base_content_cols = config
-        .segment_content_cols
-        .unwrap_or_else(|| config.visible_cols.saturating_sub(config.gutter_width));
-    // Leading adornments insert virtual columns, so widen the draw budget by their
-    // total width on this line (the segment is sized to buffer content only).
-    let line_start_b = buf.line_index.get_start(config.line_num).unwrap_or(0);
-    let line_end_b = buf
-        .line_index
-        .get_end(config.line_num, buf.len())
-        .unwrap_or(buf.len());
-    let leading_extra: usize = ctx
-        .annotation_inline
-        .unwrap_or(&[])
-        .iter()
-        .filter(|(s, _e, _t, _c, lead)| *lead && *s >= line_start_b && *s < line_end_b)
-        .map(|(_s, _e, text, _c, _l)| text.chars().count())
-        .sum();
-    let content_cols = (base_content_cols + leading_extra)
-        .min(config.visible_cols.saturating_sub(config.gutter_width));
+    let content_cols = line_content_cols(ctx, &config);
     let mut rendered_col = 0;
 
     let left_col = config

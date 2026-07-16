@@ -1720,7 +1720,9 @@ fn scroll_blit_delta_allows_a_pure_scroll() {
 }
 
 #[test]
-fn scroll_blit_delta_rejects_no_display_map() {
+fn scroll_blit_delta_allows_non_wrap_pure_scroll() {
+    // Non-wrap mode is blit-eligible too now - only wrap<->non-wrap
+    // transitions must reject (see the has_display_map mutator below).
     let old = ContentBlitKey {
         has_display_map: false,
         ..base_blit_key()
@@ -1730,7 +1732,7 @@ fn scroll_blit_delta_rejects_no_display_map() {
         scroll_top: 13,
         ..base_blit_key()
     };
-    assert_eq!(scroll_blit_delta(&old, &new), None);
+    assert_eq!(scroll_blit_delta(&old, &new), Some(3));
 }
 
 #[test]
@@ -1786,6 +1788,7 @@ fn scroll_blit_delta_rejects_any_hash_or_structural_change() {
         Box::new(|k| k.annotation_adornments_hash += 1),
         Box::new(|k| k.annotation_concealed_hash += 1),
         Box::new(|k| k.buf_len += 1),
+        Box::new(|k| k.has_display_map = !k.has_display_map),
     ];
     for (i, mutate) in mutators.iter().enumerate() {
         let mut new = base_blit_key();
@@ -1815,4 +1818,112 @@ fn scroll_blit_delta_rejects_placeholder_to_loaded_transition() {
         ..base_blit_key()
     };
     assert_eq!(scroll_blit_delta(&placeholder, &loaded), None);
+}
+
+/// Non-wrap row-skip with `left_col > 0` and growing byte/char divergence
+/// per line - a boundary mixup would show as a wrong skipped-row color.
+#[test]
+fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() {
+    use crate::search::SearchMatch;
+    use std::ops::Range;
+
+    let mut text = String::new();
+    for i in 0..20 {
+        text.push_str(&format!(
+            "café\tline_{i}_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_filler\n"
+        ));
+    }
+
+    let mut buf = TextBuffer::new(text.len() + 16).unwrap();
+    buf.insert_str(&text).unwrap();
+
+    // Byte-indexed; "line_" sits after a growing multi-byte prefix per line.
+    let custom_highlights: Vec<(Range<usize>, Color)> = text
+        .match_indices("line_")
+        .map(|(b, m)| (b..b + m.len(), Color::Red))
+        .collect();
+    // Char-indexed, same divergence-inducing shape.
+    let search_matches: Vec<SearchMatch> = text
+        .match_indices("filler")
+        .map(|(b, m)| {
+            let char_start = text[..b].chars().count();
+            let char_end = text[..b + m.len()].chars().count();
+            SearchMatch {
+                range: char_start..char_end,
+            }
+        })
+        .collect();
+
+    let mut state = State::new();
+    state.update_buffer_stats(20, buf.len(), crate::document::LineEnding::LF);
+    state.search_matches = search_matches;
+
+    let render_once = |system: &mut RenderSystem, term: &mut MockTerminal| {
+        system
+            .render(
+                term,
+                RenderState {
+                    buf: &buf,
+                    current_mode: Mode::Normal,
+                    pending_key: None,
+                    pending_count: 0,
+                    state: &state,
+                    needs_clear: true,
+                    tab_width: 4,
+                    highlights: None,
+                    capture_map: None,
+                    injection_highlights: None,
+                    skip_content: false,
+                    cursor_row_offset: 0,
+                    cursor_col_offset: 0,
+                    cursor_viewport: None,
+                    terminal_cursor: None,
+                    custom_highlights: Some(&custom_highlights),
+                    plugin_highlights: None,
+                    annotation_styles: None,
+                    annotation_adornments: None,
+                    annotation_inline: None,
+                    annotation_concealed: None,
+                    terminal_cell_colors: None,
+                    show_line_numbers: false,
+                    display_map: None,
+                    scroll_hint: None,
+                },
+            )
+            .unwrap();
+    };
+
+    // left_col=6 straddles the tab's 4-wide expansion (visual cols 4..8) -
+    // the exact case the boundary walk must replicate via plan_glyph_draw.
+    let mut system = RenderSystem::new(10, 30);
+    let mut term = MockTerminal::new(10, 30);
+    system.viewport.set_scroll(0, 6);
+    render_once(&mut system, &mut term);
+
+    system.viewport.set_scroll(3, 6);
+    render_once(&mut system, &mut term);
+    assert!(
+        system.content_blit_key.is_some(),
+        "test setup problem: blit cache never populated"
+    );
+
+    let mut fresh_system = RenderSystem::new(10, 30);
+    let mut fresh_term = MockTerminal::new(10, 30);
+    fresh_system.viewport.set_scroll(3, 6);
+    render_once(&mut fresh_system, &mut fresh_term);
+
+    let live_layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
+    let fresh_layer = fresh_system
+        .compositor
+        .get_layer_mut(LayerPriority::CONTENT);
+    for row in 0..10 {
+        for col in 0..30 {
+            assert_eq!(
+                live_layer.get_cell(row, col),
+                fresh_layer.get_cell(row, col),
+                "row {row} col {col}: blitted (left_col=6, tabs, multi-byte) \
+                 content diverged from a fresh full render"
+            );
+        }
+    }
 }

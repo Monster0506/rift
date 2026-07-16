@@ -777,7 +777,7 @@ fn split(
                 let taken_left = Arc::make_mut(&mut node).left.take();
                 let (l, r) = split(taken_left, pos, original, add);
                 Arc::make_mut(&mut node).left = r;
-                update_node_metadata(&mut node, original, add);
+                update(&mut node);
                 (l, Some(node))
             } else if pos > left_len + node.piece.len {
                 // Split in right child
@@ -789,7 +789,7 @@ fn split(
                     add,
                 );
                 Arc::make_mut(&mut node).right = l;
-                update_node_metadata(&mut node, original, add);
+                update(&mut node);
                 (Some(node), r)
             } else {
                 // Split in this node's piece
@@ -802,13 +802,13 @@ fn split(
                     let node_mut = Arc::make_mut(&mut node);
                     node_mut.left = None;
                     node_mut.right = right_child;
-                    update_node_metadata(&mut node, original, add);
+                    update(&mut node);
                     (left_child, Some(node))
                 } else if offset == node.piece.len {
                     let node_mut = Arc::make_mut(&mut node);
                     node_mut.left = left_child;
                     node_mut.right = None;
-                    update_node_metadata(&mut node, original, add);
+                    update(&mut node);
                     (Some(node), right_child)
                 } else {
                     // Actual split of the piece
