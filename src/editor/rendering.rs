@@ -466,6 +466,12 @@ impl<T: TerminalBackend> Editor<T> {
             })
             .collect();
 
+        let syntax_generation = doc.syntax.as_ref().map_or(0, |s| {
+            render::mix_generation(s.highlights_generation(), s.injection_generation())
+        });
+        let annotations_revision = doc.annotations.revision();
+        let kind_registry_generation = kind_registry.generation();
+
         let state = render::RenderState {
             buf: &doc.buffer,
             state,
@@ -520,6 +526,9 @@ impl<T: TerminalBackend> Editor<T> {
             show_line_numbers: doc.options.show_line_numbers,
             display_map,
             scroll_hint,
+            syntax_generation,
+            annotations_revision,
+            kind_registry_generation,
         };
 
         let _ = render_system.render(term, state)?;
@@ -868,6 +877,12 @@ impl<T: TerminalBackend> Editor<T> {
                 })
                 .collect();
 
+            let syntax_generation = doc.syntax.as_ref().map_or(0, |s| {
+                render::mix_generation(s.highlights_generation(), s.injection_generation())
+            });
+            let annotations_revision = doc.annotations.revision();
+            let kind_registry_generation = kind_registry.generation();
+
             let ctx = render::DrawContext {
                 buf: &doc.buffer,
                 viewport: &window.viewport,
@@ -923,6 +938,9 @@ impl<T: TerminalBackend> Editor<T> {
                 } else {
                     Some(&[])
                 },
+                syntax_generation,
+                annotations_revision,
+                kind_registry_generation,
             };
 
             let window_cache = render_system
@@ -1054,6 +1072,11 @@ impl<T: TerminalBackend> Editor<T> {
             show_line_numbers: focused_doc.options.show_line_numbers,
             display_map: focused_display_map.as_deref(),
             scroll_hint: None,
+            // Cursor-only overlay (skip_content): compute_content_blit_key
+            // is never reached from this state, so these are never read.
+            syntax_generation: 0,
+            annotations_revision: 0,
+            kind_registry_generation: 0,
         };
 
         let _ = render_system.render(term, render_state)?;

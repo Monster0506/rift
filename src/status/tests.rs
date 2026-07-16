@@ -39,7 +39,8 @@ fn default_state() -> StatusDrawState {
 /// back as plain text (blank cells become spaces).
 fn render_row_text(state: &StatusDrawState, rows: usize, cols: usize) -> String {
     let mut layer = Layer::new(LayerPriority::STATUS_BAR, rows, cols);
-    StatusBar::render_to_layer(&mut layer, state);
+    let mut paint_frame = crate::paint::PaintFrame::new(0);
+    StatusBar::render_to_layer(&mut layer, state, &mut paint_frame);
     let row = rows.saturating_sub(1);
     (0..cols)
         .map(|col| {
@@ -144,7 +145,8 @@ fn test_status_bar_render_debug_with_pending() {
 fn test_status_bar_render_fills_line() {
     let state = default_state();
     let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
-    StatusBar::render_to_layer(&mut layer, &state);
+    let mut paint_frame = crate::paint::PaintFrame::new(0);
+    StatusBar::render_to_layer(&mut layer, &state, &mut paint_frame);
 
     // The status row should be painted edge to edge, including the last column.
     assert!(layer.get_cell(9, 0).is_some());
@@ -157,7 +159,8 @@ fn test_status_bar_render_reverse_video() {
     state.reverse_video = true;
 
     let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
-    StatusBar::render_to_layer(&mut layer, &state);
+    let mut paint_frame = crate::paint::PaintFrame::new(0);
+    StatusBar::render_to_layer(&mut layer, &state, &mut paint_frame);
 
     let cell = layer.get_cell(9, 0).unwrap();
     // Reverse video swaps in Black-on-White when no theme colors are set.
@@ -170,7 +173,8 @@ fn test_status_bar_render_reverse_video_off() {
     let state = default_state();
 
     let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
-    StatusBar::render_to_layer(&mut layer, &state);
+    let mut paint_frame = crate::paint::PaintFrame::new(0);
+    StatusBar::render_to_layer(&mut layer, &state, &mut paint_frame);
 
     let cell = layer.get_cell(9, 0).unwrap();
     assert_eq!(cell.fg, None);

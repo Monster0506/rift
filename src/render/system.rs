@@ -497,6 +497,9 @@ impl RenderSystem {
             display_map: state.display_map,
             gutter_width_override: None,
             search_matches_override: None,
+            syntax_generation: state.syntax_generation,
+            annotations_revision: state.annotations_revision,
+            kind_registry_generation: state.kind_registry_generation,
         };
 
         // Update the ECS world

@@ -5058,6 +5058,43 @@ fn scroll_latency_wrapped_markdown() {
     }
 }
 
+/// Drains jobs until every thread has finished (checked via the thread
+/// handle, not one `recv_timeout` miss) - a job can outlive a short poll.
+#[cfg(feature = "treesitter")]
+fn drain_jobs_until_idle(editor: &mut Editor<MockTerminal>) {
+    use std::time::{Duration, Instant};
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        while let Ok(msg) = editor
+            .job_manager
+            .receiver()
+            .recv_timeout(Duration::from_millis(50))
+        {
+            let _ = editor.handle_job_message(msg);
+        }
+        if !editor.job_manager.any_job_thread_alive() || Instant::now() >= deadline {
+            break;
+        }
+    }
+}
+
+/// A sync parse can abort under load, leaving only a debounce timer armed
+/// rather than a running job - forces the background parse to run now.
+#[cfg(feature = "treesitter")]
+fn ensure_syntax_parsed(editor: &mut Editor<MockTerminal>) {
+    let has_tree = editor
+        .active_document()
+        .syntax
+        .as_ref()
+        .is_some_and(|s| s.tree.is_some());
+    if has_tree {
+        return;
+    }
+    let doc_id = editor.active_document().id;
+    editor.spawn_syntax_parse_job_immediate(doc_id);
+    drain_jobs_until_idle(editor);
+}
+
 /// Feed a vim-notation key sequence through the real keymap, not
 /// `handle_action` directly - catches keymap/context wiring gaps too.
 fn feed_keys(editor: &mut Editor<MockTerminal>, seq: &str) {
@@ -5283,6 +5320,8 @@ fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
         let syntax = build_syntax(loaded, highlights, loader.clone()).expect("build_syntax");
         editor.active_document().set_syntax(syntax);
         editor.do_incremental_syntax_parse();
+        drain_jobs_until_idle(&mut editor);
+        ensure_syntax_parsed(&mut editor);
 
         editor.active_document().annotations.add(
             Annotation::new(
@@ -5331,6 +5370,235 @@ fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
          blit across any step - this test would pass trivially without \
          actually exercising the row-skip path"
     );
+}
+
+/// A real Rust source with captures on nearly every line (no blank-stretch
+/// workaround) - the shape that most severely defeats a viewport-scoped snapshot.
+#[cfg(feature = "treesitter")]
+#[test]
+fn wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_on_densely_highlighted_document() {
+    use crate::syntax::build_syntax;
+    use std::sync::Arc;
+
+    let mut lines: Vec<String> = vec![
+        "use std::collections::HashMap;".to_string(),
+        String::new(),
+        "/// A small cache keyed by id, evicting once past capacity.".to_string(),
+        "pub struct Cache {".to_string(),
+        "    entries: HashMap<u32, String>, // café 日本語 comment".to_string(),
+        "    capacity: usize,".to_string(),
+        "}".to_string(),
+        String::new(),
+        "impl Cache {".to_string(),
+    ];
+    for i in 0..12 {
+        lines.push(format!(
+            "    /// Insert entry {i}, evicting if the cache is full."
+        ));
+        lines.push(format!(
+            "    pub fn insert_{i}(&mut self, key: u32, value: String) -> bool {{"
+        ));
+        lines.push(format!(
+            "        if self.entries.len() >= self.capacity {{ // check {i}"
+        ));
+        lines.push(format!("            return false; // rejected at {i}"));
+        lines.push("        }".to_string());
+        lines.push(format!(
+            "        self.entries.insert(key, value); // inserted {i}"
+        ));
+        lines.push("        true".to_string());
+        lines.push("    }".to_string());
+        lines.push(String::new());
+    }
+    lines.push(format!(
+        "    const NOTE: &str = \"{}\"; // wider than the viewport",
+        "x".repeat(150)
+    ));
+    lines.push("}".to_string());
+    let text = lines.join("\n") + "\n";
+
+    let steps: &[&str] = &[
+        "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj",
+        "j",
+        "j",
+        "j",
+        "kk",
+        "jj",
+        "j",
+        "G",
+        "gg",
+        "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj",
+        "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj",
+        "j",
+        "j",
+        "/insert_20<CR>",
+        "n",
+        "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj",
+        "j",
+        "kkkkk",
+    ];
+
+    let build_to = |n: usize| -> Editor<MockTerminal> {
+        let mut editor = create_editor_sized(20, 80);
+        load_text(&mut editor, &text);
+
+        let loader = editor.language_loader.clone();
+        let loaded = loader.load_language("rust").expect("rust grammar");
+        let highlights = loader
+            .load_query("rust", "highlights")
+            .ok()
+            .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+            .map(Arc::new);
+        let syntax = build_syntax(loaded, highlights, loader.clone()).expect("build_syntax");
+        editor.active_document().set_syntax(syntax);
+        editor.do_incremental_syntax_parse();
+        drain_jobs_until_idle(&mut editor);
+        ensure_syntax_parsed(&mut editor);
+
+        for step in &steps[..n] {
+            feed_keys(&mut editor, step);
+        }
+        editor
+    };
+
+    let mut live = build_to(0);
+    let mut any_blit_engaged = false;
+    #[cfg(feature = "perf_instrumentation")]
+    let (painted_before, skipped_before) = crate::perf::row_paint_counts();
+
+    for (i, step) in steps.iter().enumerate() {
+        feed_keys(&mut live, step);
+        let live_grid = content_cell_grid(&mut live);
+        if live.render_system.content_blit_key.is_some() {
+            any_blit_engaged = true;
+        }
+
+        let mut fresh = build_to(i + 1);
+        let fresh_grid = content_cell_grid(&mut fresh);
+
+        assert_content_grids_match(&live_grid, &fresh_grid, i, step);
+    }
+
+    assert!(
+        any_blit_engaged,
+        "test setup problem: the blit path never engaged across any step - \
+         this test would pass trivially without actually exercising it"
+    );
+    #[cfg(feature = "perf_instrumentation")]
+    {
+        let (painted_after, skipped_after) = crate::perf::row_paint_counts();
+        let (painted, skipped) = (
+            painted_after - painted_before,
+            skipped_after - skipped_before,
+        );
+        let total = painted + skipped;
+        eprintln!(
+            "wrap densely-highlighted row-skip rate: painted={painted} skipped={skipped} \
+             total={total} rate={:.1}%",
+            100.0 * skipped as f64 / total.max(1) as f64
+        );
+        assert!(
+            skipped > 0,
+            "test setup problem: no wrap-mode row was ever skipped via the scroll \
+             blit across any step on a densely-highlighted document - this test \
+             would pass trivially without actually exercising the row-skip path"
+        );
+    }
+}
+
+/// The blit must never reuse a row when an underlying source actually
+/// changed mid-scroll, even in an otherwise blit-eligible frame.
+#[cfg(feature = "treesitter")]
+#[test]
+fn scroll_blit_repaints_when_annotations_or_theme_change_mid_scroll() {
+    use crate::annotations::{
+        Anchor, Annotation, AnnotationOwner, Kind, Presentation, StyleOverride,
+    };
+    use crate::color::theme::SyntaxColors;
+    use crate::color::Color;
+    use crate::syntax::build_syntax;
+    use std::sync::Arc;
+
+    let mut lines: Vec<String> = Vec::new();
+    for i in 0..60 {
+        lines.push(format!(
+            "    let value_{i}: u32 = {i}; // line {i} has real content"
+        ));
+    }
+    let text = lines.join("\n") + "\n";
+    let style_anchor = text.find("value_5:").expect("marker line present");
+
+    enum Step {
+        Keys(&'static str),
+        StyleValue5,
+        SwapTheme,
+    }
+
+    let steps: &[Step] = &[
+        Step::Keys("jjjjjjjjjj"),
+        Step::Keys("jjjjj"),
+        Step::StyleValue5,
+        Step::Keys("jjjjj"),
+        Step::SwapTheme,
+        Step::Keys("jjjjj"),
+        Step::Keys("kkkkkkkkkkkkkkkkkkkkk"),
+    ];
+
+    let apply_step = |editor: &mut Editor<MockTerminal>, step: &Step| match step {
+        Step::Keys(seq) => feed_keys(editor, seq),
+        Step::StyleValue5 => {
+            editor.active_document().annotations.add(
+                Annotation::new(
+                    Kind::new("ui.mid_scroll_test"),
+                    Anchor::range(style_anchor, style_anchor + 7),
+                    AnnotationOwner::User,
+                )
+                .with_presentation(Presentation::with_style(StyleOverride {
+                    fg: Some(Color::Red),
+                    ..Default::default()
+                })),
+            );
+        }
+        Step::SwapTheme => {
+            editor.state.settings.theme = Some("mid-scroll-alt".to_string());
+            editor.state.settings.syntax_colors =
+                Some(SyntaxColors::from_base_colors(&[("comment", Color::Green)]));
+        }
+    };
+
+    let build_to = |n: usize| -> Editor<MockTerminal> {
+        let mut editor = create_editor_sized(20, 80);
+        load_text(&mut editor, &text);
+
+        let loader = editor.language_loader.clone();
+        let loaded = loader.load_language("rust").expect("rust grammar");
+        let highlights = loader
+            .load_query("rust", "highlights")
+            .ok()
+            .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+            .map(Arc::new);
+        let syntax = build_syntax(loaded, highlights, loader.clone()).expect("build_syntax");
+        editor.active_document().set_syntax(syntax);
+        editor.do_incremental_syntax_parse();
+        drain_jobs_until_idle(&mut editor);
+        ensure_syntax_parsed(&mut editor);
+
+        for step in &steps[..n] {
+            apply_step(&mut editor, step);
+        }
+        editor
+    };
+
+    let mut live = build_to(0);
+    for (i, step) in steps.iter().enumerate() {
+        apply_step(&mut live, step);
+        let live_grid = content_cell_grid(&mut live);
+
+        let mut fresh = build_to(i + 1);
+        let fresh_grid = content_cell_grid(&mut fresh);
+
+        assert_content_grids_match(&live_grid, &fresh_grid, i, "mid-scroll mutation");
+    }
 }
 
 #[cfg(feature = "treesitter")]

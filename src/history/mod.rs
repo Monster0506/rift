@@ -218,7 +218,6 @@ impl EditOperation {
             }
         }
     }
-
 }
 
 // =============================================================================
@@ -329,7 +328,6 @@ impl EditNode {
             timestamp: SystemTime::now(),
         }
     }
-
 }
 
 // =============================================================================
@@ -475,7 +473,6 @@ impl UndoTree {
         // Return transaction to apply
         self.nodes.get(&child_seq).map(|n| &n.transaction)
     }
-
 
     /// Nearest ancestor of `seq` (inclusive) carrying a checkpoint snapshot,
     /// and how many forward ops separate it from `seq`.

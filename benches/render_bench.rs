@@ -132,6 +132,9 @@ fn render_loop(c: &mut Criterion) {
                     show_line_numbers: true,
                     display_map: None,
                     scroll_hint: None,
+                    syntax_generation: 0,
+                    annotations_revision: 0,
+                    kind_registry_generation: 0,
                 };
 
                 // Measure the full render pass

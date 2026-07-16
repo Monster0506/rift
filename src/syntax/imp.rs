@@ -64,6 +64,12 @@ pub struct Syntax {
     /// Edits since `cached_logical_bytes` was captured - only reset when
     /// that cache itself refreshes (a sync-only parse leaves it stale).
     logical_bytes_pending_edits: Vec<InputEdit>,
+    /// Bumped only when `cached_highlights` is actually replaced, never on
+    /// a read - lets callers detect real changes, not a shifted query window.
+    highlights_generation: u64,
+    /// Bumped only when any injection layer's cached highlights are replaced
+    /// (static or dynamic), for the same reason as `highlights_generation`.
+    injection_generation: u64,
 }
 
 impl Syntax {
@@ -89,7 +95,21 @@ impl Syntax {
             language_loader: None,
             pending_edits: Vec::new(),
             logical_bytes_pending_edits: Vec::new(),
+            highlights_generation: 0,
+            injection_generation: 0,
         })
+    }
+
+    /// Monotonic count of `cached_highlights` (host grammar) replacements,
+    /// for external staleness gates that must not react to mere queries.
+    pub fn highlights_generation(&self) -> u64 {
+        self.highlights_generation
+    }
+
+    /// Monotonic count of injection-layer highlight replacements (static or
+    /// dynamic), same reasoning as `highlights_generation`.
+    pub fn injection_generation(&self) -> u64 {
+        self.injection_generation
     }
 
     /// Snapshot of the current highlights and the edits applied since they
@@ -134,6 +154,7 @@ impl Syntax {
         self.injections_query = Some(injections_query);
         self.injection_capture_langs = capture_langs;
         self.injection_layers = layers;
+        self.injection_generation += 1;
     }
 
     // Update from background job result
@@ -144,6 +165,7 @@ impl Syntax {
         }
         self.tree = result.tree;
         self.cached_highlights = result.highlights;
+        self.highlights_generation += 1;
         self.cached_logical_bytes = Some(Arc::new(result.logical_bytes));
         self.pending_edits.clear();
         self.logical_bytes_pending_edits.clear();
@@ -154,6 +176,7 @@ impl Syntax {
     pub fn invalidate_trees(&mut self) {
         self.tree = None;
         self.cached_highlights = IntervalTree::default();
+        self.highlights_generation += 1;
         self.cached_logical_bytes = None;
         self.pending_edits.clear();
         self.logical_bytes_pending_edits.clear();
@@ -169,6 +192,7 @@ impl Syntax {
             layer.byte_ranges.clear();
         }
         self.dynamic_injection_ranges = IntervalTree::default();
+        self.injection_generation += 1;
     }
 
     fn update_tree(&mut self, edit: &InputEdit) {
@@ -286,6 +310,7 @@ impl Syntax {
                     &self.cached_highlights,
                     Some((prev_tree, edit)),
                 );
+                self.highlights_generation += 1;
             } else {
                 let root_node = tree.root_node();
                 let mut cursor = QueryCursor::new();
@@ -315,6 +340,7 @@ impl Syntax {
                     return ParseOutcome::Aborted;
                 }
                 self.cached_highlights = IntervalTree::new(finalize_highlights(highlights));
+                self.highlights_generation += 1;
             }
         }
 
@@ -347,6 +373,7 @@ impl Syntax {
                     }
                 }
                 self.cached_highlights = IntervalTree::new(highlights);
+                self.highlights_generation += 1;
             }
             self.tree = Some(tree);
 
@@ -394,6 +421,9 @@ impl Syntax {
         let lang_idx = cap_names.iter().position(|n| n == "injection.language");
         let content_idx = cap_names.iter().position(|n| n == "injection.content");
 
+        // Either branch replaces at least one layer's cached highlights, so
+        // a single bump per dispatch covers both protocols.
+        self.injection_generation += 1;
         if let (Some(li), Some(ci)) = (lang_idx, content_idx) {
             self.parse_dynamic_injections(source, &tree, &query, li as u32, ci as u32, scoped);
         } else {

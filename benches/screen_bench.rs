@@ -36,14 +36,8 @@ fn screen_diffing(c: &mut Criterion) {
         b.iter_batched(
             || {
                 let mut buf = setup_buffer();
-                // Render once to make current == previous
-                // We simulate this by manually setting previous via swap mechanics or just calling render
-                // But DoubleBuffer doesn't expose easy sync without render.
-                // We'll rely on the fact that a fresh buffer with no changes might be "changed" if force_redraw is true.
-                // So we need to ensure force_redraw is false.
-
-                // Hack: we can't easily clear force_redraw without calling render_to_terminal or swap.
-                // We'll use swap() to clear the flag since it's public.
+                // swap() is the only public way to clear force_redraw without
+                // a full render_to_terminal call.
                 buf.swap();
                 buf
             },

@@ -755,7 +755,6 @@ impl FloatingWindow {
             }
         }
     }
-
 }
 
 #[cfg(test)]

@@ -253,6 +253,9 @@ fn test_render_does_not_clear_screen() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -298,6 +301,9 @@ fn test_render_cursor_positioning() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -342,6 +348,9 @@ fn test_render_empty_buffer() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -389,6 +398,9 @@ fn test_render_multiline_buffer() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -439,6 +451,9 @@ fn test_render_file_loaded_at_start() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -500,6 +515,9 @@ fn test_render_viewport_scrolling() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -546,6 +564,9 @@ fn test_render_viewport_edge_cases() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -591,6 +612,9 @@ fn test_render_large_buffer() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -644,6 +668,9 @@ fn test_render_cursor_at_viewport_boundaries() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -697,6 +724,9 @@ fn test_render_cursor_at_viewport_boundaries() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -781,6 +811,9 @@ fn test_render_line_numbers_enabled() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -845,6 +878,9 @@ fn test_render_line_numbers_disabled() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -896,6 +932,9 @@ fn test_render_line_numbers_gutter_width() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -965,6 +1004,9 @@ fn test_render_cursor_position_with_line_numbers() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -1009,6 +1051,9 @@ fn test_no_redraw_on_noop() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -1058,6 +1103,9 @@ fn test_no_redraw_on_noop() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -1146,6 +1194,9 @@ fn test_tab_rendered_as_space_not_raw_tab() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -1212,6 +1263,9 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -1268,6 +1322,9 @@ fn test_wide_char_straddling_left_col_renders_as_space() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -1325,6 +1382,9 @@ fn test_zero_width_char_does_not_write_stray_cell() {
         .render(
             &mut term,
             RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
                 buf: &buf,
                 current_mode: Mode::Normal,
                 pending_key: None,
@@ -1498,8 +1558,12 @@ fn inline_render_state<'a>(
     buf: &'a TextBuffer,
     state: &'a State,
     inline: &'a [(usize, usize, String, Color, bool)],
+    annotations_revision: u64,
 ) -> RenderState<'a> {
     RenderState {
+        syntax_generation: 0,
+        annotations_revision,
+        kind_registry_generation: 0,
         buf,
         current_mode: Mode::Normal,
         pending_key: None,
@@ -1540,14 +1604,15 @@ fn test_inline_annotation_change_triggers_content_redraw() {
     let inline_v2 = vec![(0usize, 0usize, "BB".to_string(), Color::Red, true)];
 
     system
-        .render(&mut term, inline_render_state(&buf, &state, &inline_v1))
+        .render(&mut term, inline_render_state(&buf, &state, &inline_v1, 1))
         .unwrap();
     let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
     let first_char_v1 = layer.get_cell(0, 0).unwrap().content;
 
-    // Same revision, scroll, etc, only the inline virtual text changed.
+    // Same scroll etc; annotations_revision bumps the way a real annotation
+    // store would for this change, since only the virtual text itself differs.
     system
-        .render(&mut term, inline_render_state(&buf, &state, &inline_v2))
+        .render(&mut term, inline_render_state(&buf, &state, &inline_v2, 2))
         .unwrap();
     let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
     let first_char_v2 = layer.get_cell(0, 0).unwrap().content;
@@ -1572,6 +1637,9 @@ fn render_state_with_highlights<'a>(
     highlights: &'a [(std::ops::Range<usize>, u32)],
 ) -> RenderState<'a> {
     RenderState {
+        syntax_generation: 0,
+        annotations_revision: 0,
+        kind_registry_generation: 0,
         buf,
         current_mode: Mode::Normal,
         pending_key: None,
@@ -1689,15 +1757,12 @@ fn base_blit_key() -> ContentBlitKey {
         has_display_map: true,
         editor_bg: None,
         editor_fg: None,
-        highlights_hash: 0,
-        injection_hash: 0,
+        syntax_generation: 0,
         custom_highlights_hash: 0,
         terminal_colors_hash: 0,
         plugin_highlights_hash: 0,
-        annotation_styles_hash: 0,
         search_matches_hash: 0,
-        annotation_inline_hash: 0,
-        annotation_adornments_hash: 0,
+        annotation_presentation_generation: 0,
         annotation_concealed_hash: 0,
         scroll_top: 10,
     }
@@ -1777,15 +1842,12 @@ fn scroll_blit_delta_rejects_any_hash_or_structural_change() {
         Box::new(|k| k.visible_cols += 1),
         Box::new(|k| k.editor_bg = Some(Color::Red)),
         Box::new(|k| k.editor_fg = Some(Color::Red)),
-        Box::new(|k| k.highlights_hash += 1),
-        Box::new(|k| k.injection_hash += 1),
+        Box::new(|k| k.syntax_generation += 1),
         Box::new(|k| k.custom_highlights_hash += 1),
         Box::new(|k| k.terminal_colors_hash += 1),
         Box::new(|k| k.plugin_highlights_hash += 1),
-        Box::new(|k| k.annotation_styles_hash += 1),
+        Box::new(|k| k.annotation_presentation_generation += 1),
         Box::new(|k| k.search_matches_hash += 1),
-        Box::new(|k| k.annotation_inline_hash += 1),
-        Box::new(|k| k.annotation_adornments_hash += 1),
         Box::new(|k| k.annotation_concealed_hash += 1),
         Box::new(|k| k.buf_len += 1),
         Box::new(|k| k.has_display_map = !k.has_display_map),
@@ -1863,6 +1925,9 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
             .render(
                 term,
                 RenderState {
+                    syntax_generation: 0,
+                    annotations_revision: 0,
+                    kind_registry_generation: 0,
                     buf: &buf,
                     current_mode: Mode::Normal,
                     pending_key: None,

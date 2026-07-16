@@ -196,13 +196,9 @@ pub fn execute_command(
             }
         }
         Command::Delete(motion, count) => {
-            let Some(range) = compute_motion_range(
-                motion,
-                count,
-                doc,
-                viewport_height,
-                last_search_query,
-            ) else {
+            let Some(range) =
+                compute_motion_range(motion, count, doc, viewport_height, last_search_query)
+            else {
                 return Ok(());
             };
             let (delete_start, delete_end) = range_to_offsets(&range, doc, true);
@@ -213,13 +209,9 @@ pub fn execute_command(
             }
         }
         Command::Change(motion, count) => {
-            let Some(range) = compute_motion_range(
-                motion,
-                count,
-                doc,
-                viewport_height,
-                last_search_query,
-            ) else {
+            let Some(range) =
+                compute_motion_range(motion, count, doc, viewport_height, last_search_query)
+            else {
                 return Ok(());
             };
             let (delete_start, delete_end) = range_to_offsets(&range, doc, true);

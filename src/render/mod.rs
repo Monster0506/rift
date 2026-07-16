@@ -90,15 +90,18 @@ pub(crate) struct ContentBlitKey {
     has_display_map: bool,
     editor_bg: Option<Color>,
     editor_fg: Option<Color>,
-    highlights_hash: u64,
-    injection_hash: u64,
+    /// `Syntax::highlights_generation`/`injection_generation`, combined -
+    /// changes only on a real reparse, never when the query window shifts.
+    syntax_generation: u64,
     custom_highlights_hash: u64,
     terminal_colors_hash: u64,
     plugin_highlights_hash: u64,
-    annotation_styles_hash: u64,
     search_matches_hash: u64,
-    annotation_inline_hash: u64,
-    annotation_adornments_hash: u64,
+    /// `AnnotationStore::revision()` combined with the active theme and
+    /// `KindRegistry::generation()` - see `compute_content_blit_key`.
+    annotation_presentation_generation: u64,
+    /// Content hash of the queried, cursor-line-excluded concealed-range
+    /// slice - see its call site for why this stays hash-based, not a generation.
     annotation_concealed_hash: u64,
     /// `top_visual_row` under soft wrap, `top_line` otherwise - the one field
     /// a scroll blit is allowed to see change.
@@ -140,55 +143,8 @@ fn hash_search_matches(matches: &[crate::search::SearchMatch]) -> u64 {
     h
 }
 
-/// Content hash of inline/leading adornment virtual text.
-fn hash_inline_adornments(items: &[InlineAdornment]) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut h: u64 = items.len() as u64;
-    for (start, end, text, color, leading) in items {
-        h = h
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(*start as u64);
-        h = h
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(*end as u64 + 1);
-        for b in text.bytes() {
-            h = h
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(b as u64 + 1);
-        }
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        color.hash(&mut hasher);
-        leading.hash(&mut hasher);
-        h = h
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(hasher.finish());
-    }
-    h
-}
-
-/// Content hash of trailing line adornments.
-fn hash_line_adornments(items: &[(usize, String, Color)]) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut h: u64 = items.len() as u64;
-    for (line, text, color) in items {
-        h = h
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(*line as u64);
-        for b in text.bytes() {
-            h = h
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(b as u64 + 1);
-        }
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        color.hash(&mut hasher);
-        h = h
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(hasher.finish());
-    }
-    h
-}
-
-/// Content hash of concealed (zero-width-dropped) byte ranges.
+/// Content hash of concealed (zero-width-dropped) byte ranges - the queried,
+/// cursor-line-excluded slice itself; see `ContentBlitKey::annotation_concealed_hash`.
 fn hash_concealed_ranges(items: &[(usize, usize)]) -> u64 {
     let mut h: u64 = items.len() as u64;
     for (s, e) in items {
@@ -196,6 +152,24 @@ fn hash_concealed_ranges(items: &[(usize, usize)]) -> u64 {
         h = h
             .wrapping_mul(6364136223846793005)
             .wrapping_add(*e as u64 + 1);
+    }
+    h
+}
+
+/// Combine two generation-like values into one, order-sensitive so a change
+/// to either input changes the result.
+pub(crate) fn mix_generation(a: u64, b: u64) -> u64 {
+    a.wrapping_mul(6364136223846793005).wrapping_add(b)
+}
+
+/// Content hash of a byte string (e.g. a theme name), for folding a small
+/// piece of identity into a generation value without cloning it.
+fn hash_bytes(bytes: &[u8]) -> u64 {
+    let mut h: u64 = bytes.len() as u64;
+    for b in bytes {
+        h = h
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(*b as u64 + 1);
     }
     h
 }
@@ -212,6 +186,13 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
     } else {
         ctx.viewport.top_line()
     };
+    // Annotation presentation resolves color through theme + kind-registry
+    // defaults on top of the annotation set - all three must be folded in.
+    let theme_hash = hash_bytes(ctx.state.settings.theme.as_deref().unwrap_or("").as_bytes());
+    let annotation_presentation_generation = mix_generation(
+        mix_generation(ctx.annotations_revision, theme_hash),
+        ctx.kind_registry_generation,
+    );
     ContentBlitKey {
         revision: ctx.buf.revision,
         buf_len: ctx.buf.len(),
@@ -224,15 +205,12 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
         has_display_map: ctx.display_map.is_some(),
         editor_bg: ctx.state.settings.editor_bg,
         editor_fg: ctx.state.settings.editor_fg,
-        highlights_hash: hash_ranged_spans(ctx.highlights.unwrap_or(&[])),
-        injection_hash: hash_ranged_spans(ctx.injection_highlights.unwrap_or(&[])),
+        syntax_generation: ctx.syntax_generation,
         custom_highlights_hash: hash_ranged_spans(ctx.custom_highlights.unwrap_or(&[])),
         terminal_colors_hash: hash_ranged_spans(ctx.terminal_cell_colors.unwrap_or(&[])),
         plugin_highlights_hash: hash_ranged_spans(ctx.plugin_highlights.unwrap_or(&[])),
-        annotation_styles_hash: hash_ranged_spans(ctx.annotation_styles.unwrap_or(&[])),
         search_matches_hash: hash_search_matches(ctx.search_matches()),
-        annotation_inline_hash: hash_inline_adornments(ctx.annotation_inline.unwrap_or(&[])),
-        annotation_adornments_hash: hash_line_adornments(ctx.annotation_adornments.unwrap_or(&[])),
+        annotation_presentation_generation,
         annotation_concealed_hash: hash_concealed_ranges(ctx.annotation_concealed.unwrap_or(&[])),
         scroll_top,
     }
@@ -388,6 +366,14 @@ pub struct RenderState<'a> {
     /// Vertical scroll this frame as `(top, bottom, delta)` content rows, so
     /// the compositor can ride the terminal's scroll region.
     pub scroll_hint: Option<(usize, usize, isize)>,
+    /// Combined `Syntax::highlights_generation`/`injection_generation` -
+    /// distinguishes a real reparse from a shifted viewport query window.
+    pub syntax_generation: u64,
+    /// `AnnotationStore::revision()` of the active document.
+    pub annotations_revision: u64,
+    /// `KindRegistry::generation()`, so a plugin changing a kind's default
+    /// presentation invalidates annotation-derived styling.
+    pub kind_registry_generation: u64,
 }
 
 /// Context for rendering passed to helpers
@@ -419,6 +405,12 @@ pub struct DrawContext<'a> {
     /// When set, use these matches instead of state.search_matches for this pane.
     /// Pass `Some(&[])` for non-active panes to suppress cross-pane highlights.
     pub search_matches_override: Option<&'a [crate::search::SearchMatch]>,
+    /// See `RenderState::syntax_generation`.
+    pub syntax_generation: u64,
+    /// See `RenderState::annotations_revision`.
+    pub annotations_revision: u64,
+    /// See `RenderState::kind_registry_generation`.
+    pub kind_registry_generation: u64,
 }
 
 impl<'a> DrawContext<'a> {

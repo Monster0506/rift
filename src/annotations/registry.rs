@@ -107,13 +107,22 @@ pub struct KindDefaults {
 #[derive(Default)]
 pub struct KindRegistry {
     defaults: HashMap<String, KindDefaults>,
+    /// Bumped on every mutation, for external staleness gates that must not
+    /// react to mere lookups.
+    generation: u64,
 }
 
 impl KindRegistry {
     pub fn new() -> Self {
         Self {
             defaults: HashMap::new(),
+            generation: 0,
         }
+    }
+
+    /// Monotonic count of mutations to this registry's defaults.
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// A registry preloaded with sensible defaults for core kinds.
@@ -143,14 +152,17 @@ impl KindRegistry {
 
     pub fn register(&mut self, key: impl Into<String>, defaults: KindDefaults) {
         self.defaults.insert(key.into(), defaults);
+        self.generation += 1;
     }
 
     pub fn set_presentation(&mut self, key: impl Into<String>, presentation: super::Presentation) {
         self.defaults.entry(key.into()).or_default().presentation = Some(presentation);
+        self.generation += 1;
     }
 
     pub fn set_description(&mut self, key: impl Into<String>, description: impl Into<String>) {
         self.defaults.entry(key.into()).or_default().description = Some(description.into());
+        self.generation += 1;
     }
 
     fn resolve(&self, kind: &Kind) -> Option<&KindDefaults> {

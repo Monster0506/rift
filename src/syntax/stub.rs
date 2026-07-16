@@ -43,6 +43,16 @@ impl Syntax {
         Vec::new()
     }
 
+    /// Always 0: this stub never parses, so highlights never change.
+    pub fn highlights_generation(&self) -> u64 {
+        0
+    }
+
+    /// Always 0: this stub never parses, so injections never change.
+    pub fn injection_generation(&self) -> u64 {
+        0
+    }
+
     pub fn try_incremental_parse(
         &mut self,
         _source: &[u8],
