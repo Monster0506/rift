@@ -758,6 +758,20 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         vec![ww, Key::Ctrl(b'w')],
         Action::Editor(EditorAction::RunCommand(":split :w".to_string())),
     );
+    // <C-w><C-h/j/k/l> are vim-standard aliases for <C-w>h/j/k/l, for users
+    // who keep Ctrl held down through the whole chord.
+    for (ch, cmd) in [
+        (b'h', ":split :l"),
+        (b'j', ":split :d"),
+        (b'k', ":split :u"),
+        (b'l', ":split :r"),
+    ] {
+        keymap.register_sequence(
+            KeyContext::Normal,
+            vec![ww, Key::Ctrl(ch)],
+            Action::Editor(EditorAction::RunCommand(cmd.to_string())),
+        );
+    }
     keymap.register_sequence(
         KeyContext::Normal,
         vec![Key::Char('g'), Key::Char('g')],

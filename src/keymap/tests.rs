@@ -368,3 +368,38 @@ fn test_operator_pending_text_objects_not_in_trie() {
         "'h' should be reachable in OperatorPending via Normal fallthrough"
     );
 }
+
+#[test]
+fn test_ctrl_w_ctrl_hjkl_match_ctrl_w_hjkl() {
+    let mut map = KeyMap::new();
+    register_defaults(&mut map);
+    let ww = Key::Ctrl(b'w');
+
+    for ch in [b'h', b'j', b'k', b'l'] {
+        let plain = map.lookup(KeyContext::Normal, &[ww, Key::Char(ch as char)]);
+        let ctrl = map.lookup(KeyContext::Normal, &[ww, Key::Ctrl(ch)]);
+
+        assert!(
+            matches!(plain, MatchResult::Exact(_)),
+            "<C-w>{} should be bound by default",
+            ch as char
+        );
+        assert_eq!(
+            plain, ctrl,
+            "<C-w><C-{0}> should resolve to the same action as <C-w>{0}",
+            ch as char
+        );
+    }
+}
+
+#[test]
+fn test_ctrl_w_ctrl_h_is_a_prefix_after_just_ctrl_w() {
+    let mut map = KeyMap::new();
+    register_defaults(&mut map);
+
+    assert_eq!(
+        map.lookup(KeyContext::Normal, &[Key::Ctrl(b'w')]),
+        MatchResult::Prefix,
+        "<C-w> alone should still be a pending prefix, not swallowed by the <C-h/j/k/l> aliases"
+    );
+}

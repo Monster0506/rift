@@ -37,6 +37,12 @@ mod tests;
 #[cfg(test)]
 mod split_move_tests;
 
+#[cfg(test)]
+mod split_nav_stress_tests;
+
+#[cfg(test)]
+mod insert_typing_stress_tests;
+
 use crate::command_line::commands::CommandParser;
 use crate::command_line::settings::SettingsRegistry;
 use crate::document::{Document, DocumentId};
