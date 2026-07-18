@@ -473,20 +473,24 @@ pub(crate) fn render_content_to_layer_offset(
 
     let new_key = compute_content_blit_key(ctx, painted_rows);
 
-    // Nothing changed since the last render of this frame/cache pair -
-    // matters for multi-window, which has no outer ECS-version gate.
-    if let Some(cache) = &blit_cache {
-        if frame.rows.len() == frame_rows && cache.as_ref() == Some(&new_key) {
-            return Ok(());
+    if !ctx.needs_clear {
+        if let Some(cache) = &blit_cache {
+            if frame.rows.len() == frame_rows && cache.as_ref() == Some(&new_key) {
+                return Ok(());
+            }
         }
     }
 
-    let blit_delta = match &blit_cache {
-        Some(cache) => cache
-            .as_ref()
-            .filter(|_| frame.rows.len() == frame_rows)
-            .and_then(|old_key| scroll_blit_delta(old_key, &new_key)),
-        None => None,
+    let blit_delta = if ctx.needs_clear {
+        None
+    } else {
+        match &blit_cache {
+            Some(cache) => cache
+                .as_ref()
+                .filter(|_| frame.rows.len() == frame_rows)
+                .and_then(|old_key| scroll_blit_delta(old_key, &new_key)),
+            None => None,
+        }
     };
 
     let policy = if let Some(delta) = blit_delta {

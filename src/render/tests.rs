@@ -1992,3 +1992,89 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
         }
     }
 }
+
+#[test]
+fn needs_clear_forces_repaint_even_when_blit_key_is_unchanged() {
+    let text = "hello world\nsecond line\n";
+    let mut buf = TextBuffer::new(text.len() + 16).unwrap();
+    buf.insert_str(text).unwrap();
+
+    let mut state = State::new();
+    state.update_buffer_stats(2, buf.len(), crate::document::LineEnding::LF);
+
+    let render_once = |system: &mut RenderSystem, term: &mut MockTerminal| {
+        system
+            .render(
+                term,
+                RenderState {
+                    syntax_generation: 0,
+                    annotations_revision: 0,
+                    kind_registry_generation: 0,
+                    buf: &buf,
+                    current_mode: Mode::Normal,
+                    pending_key: None,
+                    pending_count: 0,
+                    state: &state,
+                    needs_clear: true,
+                    tab_width: 4,
+                    highlights: None,
+                    capture_map: None,
+                    injection_highlights: None,
+                    skip_content: false,
+                    cursor_row_offset: 0,
+                    cursor_col_offset: 0,
+                    cursor_viewport: None,
+                    terminal_cursor: None,
+                    custom_highlights: None,
+                    plugin_highlights: None,
+                    annotation_styles: None,
+                    annotation_adornments: None,
+                    annotation_inline: None,
+                    annotation_concealed: None,
+                    terminal_cell_colors: None,
+                    show_line_numbers: false,
+                    display_map: None,
+                    scroll_hint: None,
+                },
+            )
+            .unwrap();
+    };
+
+    let mut system = RenderSystem::new(10, 30);
+    let mut term = MockTerminal::new(10, 30);
+    render_once(&mut system, &mut term);
+
+    // Simulate the leftover content a multi-window split render would have
+    // left behind: corrupt a cell the next render should legitimately own.
+    let corrupt = Cell::new(Character::Unicode('X'));
+    {
+        let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
+        layer.set_cell(0, 0, corrupt.clone());
+    }
+    assert_eq!(
+        system
+            .compositor
+            .get_layer_mut(LayerPriority::CONTENT)
+            .get_cell(0, 0)
+            .unwrap()
+            .content,
+        corrupt.content,
+        "test setup problem: corruption didn't take"
+    );
+
+    // Same cursor/scroll/doc state as the first render, so the blit key is
+    // unchanged - only `needs_clear` distinguishes this from a true no-op.
+    render_once(&mut system, &mut term);
+
+    let repainted = system
+        .compositor
+        .get_layer_mut(LayerPriority::CONTENT)
+        .get_cell(0, 0)
+        .unwrap();
+    assert_ne!(
+        repainted.content, corrupt.content,
+        "needs_clear=true must force a full repaint even when the blit key \
+         matches the previous frame, or leftover content (e.g. from a closed \
+         split) survives on screen"
+    );
+}
