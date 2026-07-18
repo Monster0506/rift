@@ -183,12 +183,13 @@ impl Job for FileLoadJob {
     }
 
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
-        let do_load = || -> Result<FileLoadResult, std::io::Error> {
-            let bytes = fs::read(&self.path)?;
+        let do_load = || -> Result<FileLoadResult, crate::error::RiftError> {
+            let bytes = crate::fs_backend::backend().read_file(&self.path)?;
 
             if signal.is_cancelled() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Interrupted,
+                return Err(crate::error::RiftError::new(
+                    crate::error::ErrorType::Io,
+                    "CANCELLED",
                     "Cancelled",
                 ));
             }
@@ -216,10 +217,10 @@ impl Job for FileLoadJob {
                 }
             }
             Err(e) => {
-                if e.kind() == std::io::ErrorKind::Interrupted {
+                if e.code == "CANCELLED" {
                     let _ = sender.send(JobMessage::Cancelled(id));
                 } else {
-                    let _ = sender.send(JobMessage::Error(id, e.to_string()));
+                    let _ = sender.send(JobMessage::Error(id, e.message));
                 }
             }
         }

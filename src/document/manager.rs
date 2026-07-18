@@ -6,10 +6,7 @@ use std::path::{Path, PathBuf};
 /// Whether `path`'s parent directory exists, so a path can only be opened as
 /// a new file if no missing directories would need to be created for it.
 pub(crate) fn parent_dir_missing(path: &Path) -> bool {
-    match path.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => !parent.exists(),
-        _ => false,
-    }
+    crate::fs_backend::backend().parent_dir_missing(path)
 }
 
 /// Manages multiple open documents (tabs)
@@ -289,38 +286,18 @@ impl DocumentManager {
     /// Find if a document with the given path is already open
     /// Returns the tab index if found
     fn find_open_document(&self, path: &Path) -> Option<usize> {
-        let normalized_path = Self::normalize_path(path);
+        let normalized_path = crate::fs_backend::backend().canonicalize(path);
 
+        // doc.path() is already normalized (set_path/from_bytes do it at
+        // write time), so only the incoming target needs it here.
         for (idx, &id) in self.tab_order.iter().enumerate() {
             if let Some(doc) = self.documents.get(&id) {
-                if let Some(doc_path) = doc.path() {
-                    let doc_normalized = Self::normalize_path(doc_path);
-                    if doc_normalized == normalized_path {
-                        return Some(idx);
-                    }
+                if doc.path() == Some(normalized_path.as_path()) {
+                    return Some(idx);
                 }
             }
         }
         None
-    }
-
-    /// Normalize a path to an absolute path for consistent comparison.
-    /// Uses canonicalize for existing files, or constructs absolute path for new files.
-    fn normalize_path(path: &Path) -> PathBuf {
-        // Try canonicalize first (works if file exists)
-        if let Ok(canonical) = std::fs::canonicalize(path) {
-            return canonical;
-        }
-
-        // File doesn't exist yet - construct absolute path manually
-        if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            // Prepend current working directory
-            std::env::current_dir()
-                .map(|cwd| cwd.join(path))
-                .unwrap_or_else(|_| path.to_path_buf())
-        }
     }
 
     /// Open a file from disk, or create a new one if it doesn't exist

@@ -1,5 +1,4 @@
 use crate::job_manager::{CancellationSignal, Job, JobMessage};
-use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
@@ -47,51 +46,27 @@ impl Job for DirectoryListJob {
             return;
         }
 
-        match fs::read_dir(&self.path) {
-            Ok(entries) => {
-                let mut file_entries = Vec::new();
-
-                for entry in entries.flatten() {
-                    if signal.is_cancelled() {
-                        return;
-                    }
-                    let path = entry.path();
-                    let file_name = entry.file_name();
-                    let name_str = file_name.to_string_lossy().to_string();
-
-                    // Filter hidden
-                    if !self.show_hidden && name_str.starts_with('.') {
-                        continue;
-                    }
-                    // TODO: Filter gitignore (requires parsing .gitignore in parent dirs)
-
-                    let metadata = entry.metadata().ok();
-                    let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-                    let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
-
-                    file_entries.push(FileEntry {
-                        path,
-                        name: name_str,
-                        is_dir,
-                        size,
-                    });
-                }
-
-                // Sort: Directories first, then alphabetical
-                file_entries.sort_by(|a, b| {
-                    if a.is_dir != b.is_dir {
-                        return b.is_dir.cmp(&a.is_dir);
-                    }
-                    // Case-insensitive sort
-                    a.name.to_lowercase().cmp(&b.name.to_lowercase())
-                });
-
+        // TODO: Filter gitignore (requires parsing .gitignore in parent dirs)
+        match crate::fs_backend::backend().list_children(&self.path) {
+            Ok(children) => {
+                let mut file_entries: Vec<FileEntry> = children
+                    .into_iter()
+                    .filter(|c| self.show_hidden || !c.name.starts_with('.'))
+                    .map(|c| FileEntry {
+                        path: self.path.join(&c.name),
+                        name: c.name,
+                        is_dir: c.is_dir,
+                        size: 0,
+                    })
+                    .collect();
+                // Directories first, then alphabetical (case-insensitive),
+                // each name lowercased exactly once for the sort key.
+                file_entries.sort_by_cached_key(|e| (!e.is_dir, e.name.to_lowercase()));
                 let result = Box::new(DirectoryListing {
                     doc_id: self.doc_id,
                     path: self.path,
                     entries: file_entries,
                 });
-
                 crate::job_manager::send_job_result(&sender, id, result);
             }
             Err(e) => {
@@ -102,7 +77,7 @@ impl Job for DirectoryListJob {
                     entries: vec![],
                 });
                 let _ = sender.send(JobMessage::Custom(id, result));
-                let _ = sender.send(JobMessage::Error(id, e.to_string()));
+                let _ = sender.send(JobMessage::Error(id, e.message));
             }
         }
     }

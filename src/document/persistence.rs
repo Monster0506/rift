@@ -69,16 +69,7 @@ impl Document {
 
     /// Normalize a path to an absolute path.
     pub(super) fn normalize_path(path: &Path) -> PathBuf {
-        if let Ok(canonical) = std::fs::canonicalize(path) {
-            return canonical;
-        }
-        if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            std::env::current_dir()
-                .map(|cwd| cwd.join(path))
-                .unwrap_or_else(|_| path.to_path_buf())
-        }
+        crate::fs_backend::backend().canonicalize(path)
     }
 
     /// Get display name for UI (filename or "[No Name]")
@@ -165,41 +156,19 @@ impl Document {
         self.history.mark_saved_at(saved_seq);
     }
 
-    /// Atomic write to file
+    /// Write to file via `fs_backend`, so this goes through whichever
+    /// implementation is registered for this target.
     fn write_to_file(&self, path: &Path) -> Result<(), RiftError> {
-        use std::fs;
-        use std::io::Write;
-
-        let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        let temp_path = parent.join(format!(
-            "{}~",
-            path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
-        ));
-
-        let write_result = (|| -> Result<(), RiftError> {
-            let mut file = fs::File::create(&temp_path)?;
-            let line_ending_bytes = self.options.line_ending.as_bytes();
-
-            for i in 0..self.buffer.get_total_lines() {
-                let line_bytes = self.buffer.get_line_bytes(i);
-                file.write_all(&line_bytes)?;
-                if i < self.buffer.get_total_lines() - 1 {
-                    file.write_all(line_ending_bytes)?;
-                }
+        let mut content = Vec::new();
+        let line_ending_bytes = self.options.line_ending.as_bytes();
+        let total_lines = self.buffer.get_total_lines();
+        for i in 0..total_lines {
+            content.extend_from_slice(&self.buffer.get_line_bytes(i));
+            if i < total_lines - 1 {
+                content.extend_from_slice(line_ending_bytes);
             }
-            file.sync_all()?;
-            Ok(())
-        })();
-
-        if let Err(e) = write_result {
-            // Best-effort cleanup: the original file is untouched (the
-            // rename below hasn't happened), so leave no stray `<name>~`.
-            let _ = fs::remove_file(&temp_path);
-            return Err(e);
         }
-
-        fs::rename(&temp_path, path)?;
-        Ok(())
+        crate::fs_backend::backend().write_file(path, &content)
     }
 }
 

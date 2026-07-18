@@ -1,7 +1,5 @@
 use crate::document::{DirEntry, DocumentId};
 use crate::job_manager::{CancellationSignal, Job, JobMessage};
-use std::fs;
-use std::io::Read;
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
@@ -66,42 +64,31 @@ impl Job for ExplorerPreviewJob {
             return;
         }
 
-        if self.path.is_dir() {
-            // Directory preview: list entries
-            let mut entries = Vec::new();
-            if let Ok(read_dir) = fs::read_dir(&self.path) {
-                for entry in read_dir.flatten() {
-                    if signal.is_cancelled() {
-                        return;
-                    }
-                    let name = entry.file_name().to_string_lossy().into_owned();
-                    if !self.show_hidden && name.starts_with('.') {
-                        continue;
-                    }
-                    let is_dir = entry.metadata().map(|m| m.is_dir()).unwrap_or(false);
-                    entries.push(DirEntry {
-                        path: entry.path(),
-                        is_dir,
-                        id: 0,
-                    });
-                }
-            }
-            entries.sort_by(|a, b| {
-                if a.is_dir != b.is_dir {
-                    return b.is_dir.cmp(&a.is_dir);
-                }
-                a.path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_lowercase()
-                    .cmp(
-                        &b.path
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .to_lowercase(),
-                    )
+        let fs = crate::fs_backend::backend();
+
+        if fs.is_dir(&self.path) {
+            let mut entries: Vec<DirEntry> = fs
+                .list_children(&self.path)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|c| self.show_hidden || !c.name.starts_with('.'))
+                .map(|c| DirEntry {
+                    path: self.path.join(&c.name),
+                    is_dir: c.is_dir,
+                    id: 0,
+                })
+                .collect();
+            // sort_by_cached_key computes each entry's lowercase name
+            // exactly once, keeping large listings fast.
+            entries.sort_by_cached_key(|e| {
+                (
+                    !e.is_dir,
+                    e.path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_lowercase(),
+                )
             });
 
             let result = Box::new(ExplorerPreviewResult {
@@ -112,22 +99,16 @@ impl Job for ExplorerPreviewJob {
             });
             crate::job_manager::send_job_result(&sender, id, result);
         } else {
-            // File preview
-            let text = match fs::File::open(&self.path) {
+            let text = match fs.read_file_prefix(&self.path, FILE_PREVIEW_BYTES) {
                 Err(_) => "<cannot open file>".to_string(),
-                Ok(mut file) => {
-                    let mut buf = vec![0u8; FILE_PREVIEW_BYTES];
-                    let n = file.read(&mut buf).unwrap_or(0);
-                    let slice = &buf[..n];
-                    match decode_preview_text(slice) {
-                        Some(s) => s
-                            .lines()
-                            .take(FILE_PREVIEW_LINES)
-                            .collect::<Vec<_>>()
-                            .join("\n"),
-                        None => "<binary file>".to_string(),
-                    }
-                }
+                Ok(bytes) => match decode_preview_text(&bytes) {
+                    Some(s) => s
+                        .lines()
+                        .take(FILE_PREVIEW_LINES)
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                    None => "<binary file>".to_string(),
+                },
             };
 
             if signal.is_cancelled() {

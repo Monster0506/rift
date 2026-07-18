@@ -283,32 +283,35 @@ fn complete_plugin_args(
     }
 }
 
+/// Directory entries for completion, as (name, is_dir) pairs.
+fn completion_entries(dir: &str) -> Option<Vec<(String, bool)>> {
+    let entries = crate::fs_backend::backend()
+        .list_children(std::path::Path::new(dir))
+        .ok()?;
+    Some(entries.into_iter().map(|e| (e.name, e.is_dir)).collect())
+}
+
 fn complete_filepath(
     dir: &str,
     file_prefix: &str,
     filter: PathFilter,
     signal: &CancellationSignal,
 ) -> CompletionResult {
-    let read_dir = match std::fs::read_dir(dir) {
-        Ok(rd) => rd,
-        Err(_) => return CompletionResult::empty(),
+    let Some(entries) = completion_entries(dir) else {
+        return CompletionResult::empty();
     };
 
     let prefix_lower = file_prefix.to_lowercase();
     let mut candidates: Vec<CompletionCandidate> = Vec::new();
 
-    for entry in read_dir.flatten() {
+    for (name_str, is_dir) in entries {
         if signal.is_cancelled() {
             return CompletionResult::empty();
         }
 
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
         if !name_str.to_lowercase().starts_with(&prefix_lower) {
             continue;
         }
-
-        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
 
         match filter {
             PathFilter::FilesOnly if is_dir => continue,
@@ -320,7 +323,7 @@ fn complete_filepath(
             if is_dir {
                 format!("{}/", name_str)
             } else {
-                name_str.to_string()
+                name_str.clone()
             }
         } else {
             let dir_clean = dir.trim_end_matches('/');

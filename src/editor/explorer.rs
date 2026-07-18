@@ -10,20 +10,6 @@ pub(super) struct PendingExplorerPreview {
     pub(super) job_id: usize,
 }
 
-fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
-    let mut out = std::path::PathBuf::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::ParentDir => {
-                out.pop();
-            }
-            std::path::Component::CurDir => {}
-            c => out.push(c),
-        }
-    }
-    out
-}
-
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn reload_directory_buffer(
         &mut self,
@@ -121,7 +107,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
         let target_path = dir_path.join(&entry_name);
-        if target_path.is_dir() {
+        if crate::fs_backend::backend().is_dir(&target_path) {
             self.reload_directory_buffer(doc_id, target_path);
         } else if let Err(e) = self.open_file(Some(target_path.display().to_string()), false) {
             self.state.handle_error(e);
@@ -1043,7 +1029,6 @@ impl<T: TerminalBackend> Editor<T> {
     /// Apply the diff from a directory buffer to the filesystem.
     pub(super) fn apply_directory_diff(&mut self) {
         use crate::document::BufferKind;
-        use std::fs;
 
         let (dir_doc_id, dir_path, dir_show_hidden, diff) = {
             let doc = match self.document_manager.active_document() {
@@ -1063,105 +1048,8 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        let mut errors: Vec<String> = Vec::new();
-        let mut applied = 0usize;
+        let errors = apply_directory_diff_to_fs(&dir_path, &diff);
 
-        // Renames — run synchronously so the reload sees the final state
-        for (old_path, new_name) in &diff.renames {
-            let new_path = old_path.parent().unwrap_or(&dir_path).join(new_name);
-            // Guard: moving a directory inside itself is never valid.
-            if old_path.is_dir() {
-                let old_canonical = fs::canonicalize(old_path).unwrap_or_else(|_| old_path.clone());
-                let new_parent_raw = new_path.parent().unwrap_or(&new_path);
-                let new_canonical = fs::canonicalize(new_parent_raw)
-                    .unwrap_or_else(|_| normalize_path(new_parent_raw));
-                if new_canonical.starts_with(&old_canonical) {
-                    errors.push(format!(
-                        "rename {:?}: destination is inside the source",
-                        old_path.file_name().unwrap_or_default()
-                    ));
-                    continue;
-                }
-            }
-            if let Some(parent) = new_path.parent() {
-                if let Err(e) = fs::create_dir_all(parent) {
-                    errors.push(format!("mkdir {:?}: {}", parent, e));
-                    continue;
-                }
-            }
-            let result = fs::rename(old_path, &new_path).or_else(|_| {
-                // Cross-device fallback: copy then delete
-                crate::job_manager::jobs::fs::FsCopyJob::copy_recursive_pub(old_path, &new_path)
-                    .and_then(|_| {
-                        if old_path.is_dir() {
-                            fs::remove_dir_all(old_path)
-                        } else {
-                            fs::remove_file(old_path)
-                        }
-                    })
-            });
-            match result {
-                Ok(_) => applied += 1,
-                Err(e) => errors.push(format!(
-                    "rename {:?}: {}",
-                    old_path.file_name().unwrap_or_default(),
-                    e
-                )),
-            }
-        }
-
-        // Deletes
-        for path in &diff.deletes {
-            let result = if path.is_dir() {
-                fs::remove_dir_all(path)
-            } else {
-                fs::remove_file(path)
-            };
-            match result {
-                Ok(_) => applied += 1,
-                Err(e) => errors.push(format!(
-                    "delete {:?}: {}",
-                    path.file_name().unwrap_or_default(),
-                    e
-                )),
-            }
-        }
-
-        // Creates
-        for name in &diff.creates {
-            let is_dir = name.ends_with('/');
-            let clean_name = name.trim_end_matches('/');
-            // Guard: reject path traversal in create names.
-            if std::path::Path::new(clean_name)
-                .components()
-                .any(|c| c == std::path::Component::ParentDir)
-            {
-                errors.push(format!(
-                    "create {:?}: path traversal not allowed",
-                    clean_name
-                ));
-                continue;
-            }
-            let new_path = dir_path.join(clean_name);
-            let result = if is_dir {
-                fs::create_dir_all(&new_path)
-            } else {
-                if let Some(parent) = new_path.parent() {
-                    fs::create_dir_all(parent).ok();
-                }
-                fs::File::create(&new_path).map(|_| ())
-            };
-            match result {
-                Ok(_) => applied += 1,
-                Err(e) => errors.push(format!(
-                    "create {:?}: {}",
-                    new_path.file_name().unwrap_or_default(),
-                    e
-                )),
-            }
-        }
-
-        let _ = applied;
         for err in errors {
             self.state
                 .notify(crate::notification::NotificationType::Error, err);
@@ -1175,4 +1063,80 @@ impl<T: TerminalBackend> Editor<T> {
         );
         self.job_manager.spawn(reload);
     }
+}
+
+fn apply_directory_diff_to_fs(
+    dir_path: &std::path::Path,
+    diff: &crate::document::DirectoryDiff,
+) -> Vec<String> {
+    let fs = crate::fs_backend::backend();
+    let mut errors: Vec<String> = Vec::new();
+
+    // Renames — run synchronously so the reload sees the final state
+    for (old_path, new_name) in &diff.renames {
+        let new_path = old_path.parent().unwrap_or(dir_path).join(new_name);
+        // Guard: moving a directory inside itself is never valid.
+        if fs.is_dir(old_path) {
+            let old_canonical = fs.canonicalize(old_path);
+            let new_parent_raw = new_path.parent().unwrap_or(&new_path);
+            let new_canonical = fs.canonicalize(new_parent_raw);
+            if new_canonical.starts_with(&old_canonical) {
+                errors.push(format!(
+                    "rename {:?}: destination is inside the source",
+                    old_path.file_name().unwrap_or_default()
+                ));
+                continue;
+            }
+        }
+        if let Err(e) = fs.rename(old_path, &new_path) {
+            errors.push(format!(
+                "rename {:?}: {}",
+                old_path.file_name().unwrap_or_default(),
+                e.message
+            ));
+        }
+    }
+
+    // Deletes
+    for path in &diff.deletes {
+        if let Err(e) = fs.delete_recursive(path) {
+            errors.push(format!(
+                "delete {:?}: {}",
+                path.file_name().unwrap_or_default(),
+                e.message
+            ));
+        }
+    }
+
+    // Creates
+    for name in &diff.creates {
+        let is_dir = name.ends_with('/');
+        let clean_name = name.trim_end_matches('/');
+        // Guard: reject path traversal in create names.
+        if std::path::Path::new(clean_name)
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+        {
+            errors.push(format!(
+                "create {:?}: path traversal not allowed",
+                clean_name
+            ));
+            continue;
+        }
+        let new_path = dir_path.join(clean_name);
+        let result = if is_dir {
+            fs.create_dir(&new_path)
+        } else {
+            fs.create_file(&new_path)
+        };
+        if let Err(e) = result {
+            errors.push(format!(
+                "create {:?}: {}",
+                new_path.file_name().unwrap_or_default(),
+                e.message
+            ));
+        }
+    }
+
+    errors
 }
