@@ -11,6 +11,7 @@ pub mod file_operations;
 pub mod fs;
 #[cfg(feature = "treesitter")]
 pub mod syntax;
+#[cfg(feature = "terminal_emulation")]
 pub mod terminal_job;
 pub mod undotree;
 

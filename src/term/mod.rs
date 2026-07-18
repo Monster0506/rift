@@ -85,6 +85,20 @@ pub trait ColorTerminal: TerminalBackend {
 }
 
 pub mod crossterm;
+
+#[cfg(feature = "terminal_emulation")]
 pub mod terminal;
+#[cfg(not(feature = "terminal_emulation"))]
+#[path = "terminal_stub.rs"]
+pub mod terminal;
+
 pub use terminal::Terminal;
-pub use terminal::TerminalEvent;
+
+/// Events raised by a PTY-backed terminal buffer. Available regardless of the
+/// `terminal_emulation` feature so channel plumbing doesn't need its own gate.
+#[derive(Debug, Clone)]
+pub enum TerminalEvent {
+    Title(String),
+    Wakeup,
+    ChildExit(i32),
+}

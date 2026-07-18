@@ -193,11 +193,16 @@ impl<T: TerminalBackend> Editor<T> {
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
 
-        let job = crate::job_manager::jobs::terminal_job::TerminalInputJob {
-            document_id: id,
-            rx,
-        };
-        self.job_manager.spawn(job);
+        #[cfg(feature = "terminal_emulation")]
+        {
+            let job = crate::job_manager::jobs::terminal_job::TerminalInputJob {
+                document_id: id,
+                rx,
+            };
+            self.job_manager.spawn(job);
+        }
+        #[cfg(not(feature = "terminal_emulation"))]
+        let _ = rx;
 
         Ok(())
     }
