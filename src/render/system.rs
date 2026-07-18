@@ -731,7 +731,11 @@ impl RenderSystem {
 
         let software = crate::cursor::is_software_cursor(ctx.current_mode);
 
-        if software {
+        let pane_vp = cursor_viewport.unwrap_or(&viewport);
+        let viewport_scrolled = pane_vp.top_line() != pane_vp.prev_top_line()
+            || pane_vp.top_visual_row() != pane_vp.prev_top_visual_row();
+
+        if software && !viewport_scrolled {
             self.cursor_animator.set_target(cursor_row, cursor_col);
         } else {
             self.cursor_animator.snap_to(cursor_row, cursor_col);
