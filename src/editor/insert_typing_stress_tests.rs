@@ -88,9 +88,11 @@ fn drain(editor: &mut Editor<QueueTerminal>) {
 
 /// A ~10k-line, code-shaped buffer -- matching the shape `render_bench`
 /// uses for its full-frame render measurement, for a comparable baseline.
+/// `.txt`, deliberately: `.rs` would pull in treesitter and LSP tracking
+/// based on whatever's in this machine's real plugin config, not a clean number.
 fn realistic_file() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = dir.path().join("big.rs");
+    let path = dir.path().join("big.txt");
     let mut content = String::new();
     for i in 0..10_000 {
         content.push_str(&format!(
@@ -129,6 +131,22 @@ fn rapid_insert_mode_typing_keeps_up_on_a_large_file() {
     let start = std::time::Instant::now();
     drain(&mut editor);
     let elapsed = start.elapsed();
+
+    #[cfg(feature = "perf_instrumentation")]
+    {
+        let mut stats = crate::perf::span_stats();
+        stats.sort_by(|a, b| {
+            (b.1.avg_ms * b.1.count as f64).total_cmp(&(a.1.avg_ms * a.1.count as f64))
+        });
+        for (name, s) in stats {
+            eprintln!(
+                "  {name}: count={} avg_ms={:.4} total_ms={:.1}",
+                s.count,
+                s.avg_ms,
+                s.avg_ms * s.count as f64
+            );
+        }
+    }
 
     assert_eq!(editor.current_mode, Mode::Insert);
     let end_len = editor

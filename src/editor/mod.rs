@@ -239,6 +239,9 @@ pub struct Editor<T: TerminalBackend> {
     pending_explorer_preview: Option<explorer::PendingExplorerPreview>,
     /// When startup finished its first contentful paint, for perf reporting.
     pub(crate) startup_first_paint: Option<crate::time::Instant>,
+    /// Keys since the last real render, so a burst that keeps the terminal's
+    /// input queue non-empty coalesces into one render instead of one per key.
+    pub(super) unrendered_key_count: usize,
 }
 
 /// One `display_map_cache` slot. `map` is `None` when wrap is off for the

@@ -13,6 +13,10 @@ type FrameState = (
     Option<(usize, usize, isize)>,
 );
 
+/// Force a real render at least this often during a burst, so a very long
+/// one still gives periodic visual feedback instead of looking hung.
+const MAX_UNRENDERED_KEYS: usize = 32;
+
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_state_and_render(
         &mut self,
@@ -26,6 +30,18 @@ impl<T: TerminalBackend> Editor<T> {
         // Update input tracking (happens during state update, not input handling)
         self.state.update_keypress(keypress);
         self.state.update_command(command);
+
+        // Nothing on the input path reads back rendered output, so a burst
+        // that outruns rendering can coalesce into one render, not one per key.
+        self.unrendered_key_count += 1;
+        let more_input_queued = self
+            .term
+            .poll(std::time::Duration::from_millis(0))
+            .unwrap_or(false);
+        if more_input_queued && self.unrendered_key_count < MAX_UNRENDERED_KEYS {
+            return Ok(());
+        }
+        self.unrendered_key_count = 0;
 
         self.update_and_render()
     }

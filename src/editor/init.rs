@@ -146,6 +146,7 @@ impl<T: TerminalBackend> Editor<T> {
             search_highlights_synced: None,
             pending_explorer_preview: None,
             startup_first_paint: None,
+            unrendered_key_count: 0,
         };
 
         // Register default keymaps
