@@ -21,6 +21,7 @@ pub mod error;
 pub mod eval;
 pub mod executor;
 pub mod floating_window;
+pub mod fs_backend;
 pub mod history;
 #[cfg(feature = "ipc")]
 pub mod ipc;
