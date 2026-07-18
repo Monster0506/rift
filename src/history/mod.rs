@@ -9,8 +9,8 @@
 pub mod command;
 
 use crate::character::Character;
+use crate::time::SystemTime;
 use std::collections::HashMap;
-use std::time::SystemTime;
 
 /// Unique sequential identifier for each edit
 pub type EditSeq = u64;

@@ -234,7 +234,7 @@ impl Document {
 
             let time = entry.time();
             let secs = time
-                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .duration_since(crate::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
             let h = secs / 3600 % 24;

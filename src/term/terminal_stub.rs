@@ -1,6 +1,5 @@
-//! No-op `Terminal` used when `terminal_emulation` is disabled (e.g. wasm builds).
-//! `new` always fails, so `Document.terminal` stays permanently `None`; the rest of
-//! the API exists only so call sites elsewhere don't need their own feature gate.
+//! No-op `Terminal` for when `terminal_emulation` is disabled. `new` always
+//! fails, so the rest of the API exists only so callers don't need their own gate.
 
 use super::TerminalEvent;
 use std::sync::mpsc;

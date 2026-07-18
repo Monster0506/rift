@@ -277,7 +277,7 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                         // For non-operators, wait for more keys (subject to timeout).
                         self.pending_keys_started_at
-                            .get_or_insert_with(std::time::Instant::now);
+                            .get_or_insert_with(crate::time::Instant::now);
                         self.update_state_and_render(
                             key_press,
                             crate::key_handler::KeyAction::Continue,
@@ -288,7 +288,7 @@ impl<T: TerminalBackend> Editor<T> {
                     MatchResult::Prefix => {
                         // Wait for more keys (subject to timeout).
                         self.pending_keys_started_at
-                            .get_or_insert_with(std::time::Instant::now);
+                            .get_or_insert_with(crate::time::Instant::now);
                         self.update_state_and_render(
                             key_press,
                             crate::key_handler::KeyAction::Continue,

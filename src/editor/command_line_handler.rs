@@ -17,14 +17,14 @@ impl<T: TerminalBackend> Editor<T> {
             self.update_search_highlights();
             return;
         }
-        self.pending_search_refresh = Some(std::time::Instant::now() + SEARCH_REFRESH_DEBOUNCE);
+        self.pending_search_refresh = Some(crate::time::Instant::now() + SEARCH_REFRESH_DEBOUNCE);
     }
 
     /// Fire an elapsed search-refresh deadline. Called once per run-loop tick.
     pub(super) fn poll_pending_search_refresh(&mut self) {
         let due = self
             .pending_search_refresh
-            .is_some_and(|d| std::time::Instant::now() >= d);
+            .is_some_and(|d| crate::time::Instant::now() >= d);
         if due {
             self.pending_search_refresh = None;
             self.update_search_highlights();

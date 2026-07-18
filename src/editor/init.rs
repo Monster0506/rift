@@ -160,7 +160,7 @@ impl<T: TerminalBackend> Editor<T> {
         // First contentful paint: show the buffer before syntax setup, plugin
         // event dispatch, and job spawns; highlights/annotations repaint later.
         let _ = editor.update_and_render();
-        editor.startup_first_paint = Some(std::time::Instant::now());
+        editor.startup_first_paint = Some(crate::time::Instant::now());
 
         // Trigger background search cache warming for initial document
         if let Some(doc) = editor.document_manager.active_document() {

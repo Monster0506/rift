@@ -2,8 +2,9 @@
 //! Manages popup notifications for the user
 
 use crate::error::ErrorSeverity;
+use crate::time::{Instant, SystemTime};
 use std::collections::VecDeque;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::Duration;
 
 /// Maximum number of entries retained in the persistent message log.
 /// Oldest entries are dropped once this cap is exceeded.

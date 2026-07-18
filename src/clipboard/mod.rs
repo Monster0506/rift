@@ -196,7 +196,7 @@ pub fn read_system_clipboard_text() -> Option<String> {
 #[derive(Default)]
 pub struct SystemClipboardCache {
     text: Option<String>,
-    last_refreshed: Option<std::time::Instant>,
+    last_refreshed: Option<crate::time::Instant>,
     /// Number of completed reads, for tests to observe refresh behavior.
     read_count: u32,
 }
@@ -215,7 +215,7 @@ impl SystemClipboardCache {
         }
         self.text = read_system_clipboard_text();
         self.read_count += 1;
-        self.last_refreshed = Some(std::time::Instant::now());
+        self.last_refreshed = Some(crate::time::Instant::now());
     }
 
     pub fn text(&self) -> Option<&str> {

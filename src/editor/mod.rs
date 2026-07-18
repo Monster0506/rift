@@ -150,7 +150,7 @@ pub struct Editor<T: TerminalBackend> {
     pending_grammar: Option<pending_grammar::PendingGrammar>,
     /// When `Some`, `pending_keys` is non-empty waiting on a non-operator
     /// Ambiguous/Prefix match; cleared once resolved or flushed by timeout.
-    pending_keys_started_at: Option<std::time::Instant>,
+    pending_keys_started_at: Option<crate::time::Instant>,
     /// Set while `ys` is waiting for its motion/text-object before the delimiter
     /// char. Carries the delimiter-repeat count captured when the first `s` fired.
     pending_surround_add: Option<usize>,
@@ -224,7 +224,7 @@ pub struct Editor<T: TerminalBackend> {
         std::collections::HashMap<crate::document::DocumentId, jobs::PendingSyntaxReparse>,
     /// Deadline for a debounced search-highlight refresh after undo/redo, so
     /// a burst of undos pays one full-buffer re-search instead of one each.
-    pending_search_refresh: Option<std::time::Instant>,
+    pending_search_refresh: Option<crate::time::Instant>,
     /// (doc id, buffer revision, query) of the last search-highlight sync, so
     /// the per-frame call skips the full re-search when nothing changed.
     search_highlights_synced: Option<(crate::document::DocumentId, u64, String)>,
@@ -232,7 +232,7 @@ pub struct Editor<T: TerminalBackend> {
     /// in-flight job id, so cursor moves dedupe/cancel instead of piling up jobs.
     pending_explorer_preview: Option<explorer::PendingExplorerPreview>,
     /// When startup finished its first contentful paint, for perf reporting.
-    pub(crate) startup_first_paint: Option<std::time::Instant>,
+    pub(crate) startup_first_paint: Option<crate::time::Instant>,
 }
 
 /// One `display_map_cache` slot. `map` is `None` when wrap is off for the

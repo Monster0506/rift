@@ -19,10 +19,8 @@ perf_instrumentation = []
 system_clipboard = ["dep:arboard"]
 plugins = ["dep:mlua"]
 terminal_emulation = ["dep:alacritty_terminal"]
-# Language server client (spawns local subprocesses over stdio) and the
-# IPC daemon/remote-connect layer. Both need OS process/socket access, so
-# they're off by default on targets without that (e.g. wasm). lsp's broker
-# subcommand reuses ipc's session directory/token helpers, hence the dep.
+# LSP client and IPC daemon/remote-connect layer, both needing OS process/
+# socket access; lsp depends on ipc for the broker's session helpers.
 lsp = ["ipc"]
 ipc = []
 treesitter = [
@@ -87,6 +85,10 @@ arboard = { version = "3.6.1", features = ["wayland-data-control"], optional = t
 serde_json = "1.0.149"
 serde = { version = "1.0.228", features = ["derive", "rc"] }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# std's Instant/SystemTime panic on wasm32; drop-in replacement backed by
+# performance.now()/Date.now(). See src/time.rs.
+web-time = "1.1"
 
 [dev-dependencies]
 criterion = { version = "0.8.1", features = ["html_reports"] }

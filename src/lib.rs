@@ -48,6 +48,7 @@ pub mod status;
 pub mod syntax;
 pub mod term;
 pub mod text_objects;
+pub mod time;
 pub mod transport;
 pub mod undotree_view;
 pub mod viewport;

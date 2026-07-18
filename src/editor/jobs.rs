@@ -18,7 +18,7 @@ const SYNTAX_REPARSE_DEBOUNCE: std::time::Duration = std::time::Duration::from_m
 #[derive(Default)]
 pub(super) struct PendingSyntaxReparse {
     /// When set, the debounce timer is running; fires once `Instant::now() >= deadline`.
-    debounce_deadline: Option<std::time::Instant>,
+    debounce_deadline: Option<crate::time::Instant>,
     in_flight_job: Option<usize>,
 }
 
@@ -83,7 +83,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// Called when a sync `try_incremental_parse` aborts on its time budget.
     pub(super) fn debounce_syntax_reparse(&mut self, doc_id: DocumentId) {
         let entry = self.pending_syntax_reparse.entry(doc_id).or_default();
-        entry.debounce_deadline = Some(std::time::Instant::now() + SYNTAX_REPARSE_DEBOUNCE);
+        entry.debounce_deadline = Some(crate::time::Instant::now() + SYNTAX_REPARSE_DEBOUNCE);
     }
 
     /// Cancel any pending/in-flight background reparse for `doc_id` because a
@@ -118,7 +118,7 @@ impl<T: TerminalBackend> Editor<T> {
     /// job (if any) and spawn a fresh one for the document's latest content.
     /// Called once per frame from the run loop.
     pub(super) fn poll_pending_syntax_reparse(&mut self) {
-        let now = std::time::Instant::now();
+        let now = crate::time::Instant::now();
         let due: Vec<DocumentId> = self
             .pending_syntax_reparse
             .iter()

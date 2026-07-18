@@ -43,7 +43,7 @@ pub fn find_all(
             ..Default::default()
         }
     );
-    let t0 = std::time::Instant::now();
+    let t0 = crate::time::Instant::now();
 
     let tier = classify_query(query);
 
@@ -60,7 +60,7 @@ pub fn find_all(
             // compares against the actual characters the user intends to match.
             let pattern = unescape_literal(&pattern_raw);
 
-            let t1 = std::time::Instant::now();
+            let t1 = crate::time::Instant::now();
             let mut matches = Vec::new();
             let mut start_pos = 0;
 
@@ -87,7 +87,7 @@ pub fn find_all(
                 matches.push(m.clone());
                 start_pos = m.range.end;
             }
-            let t3 = std::time::Instant::now();
+            let t3 = crate::time::Instant::now();
             Ok((
                 matches,
                 SearchStats {
@@ -112,7 +112,7 @@ pub fn find_all(
 fn find_all_materialized(
     buffer: &impl BufferView,
     query: &str,
-    t0: std::time::Instant,
+    t0: crate::time::Instant,
 ) -> Result<(Vec<SearchMatch>, SearchStats), RiftError> {
     if let Some(lit) = required_literal(query) {
         if find_literal(buffer, &lit, 0).is_none() {
@@ -121,13 +121,13 @@ fn find_all_materialized(
     }
 
     let (re, _) = compile_regex(query)?;
-    let t1 = std::time::Instant::now();
+    let t1 = crate::time::Instant::now();
 
     let mut text = String::with_capacity(buffer.len());
     for c in buffer.iter_at(0) {
         text.push(c.to_char_lossy());
     }
-    let t2 = std::time::Instant::now();
+    let t2 = crate::time::Instant::now();
 
     // Engine byte offsets -> absolute char offsets; matches are ascending and
     // non-overlapping, so one forward cursor keeps the conversion O(N).
@@ -142,7 +142,7 @@ fn find_all_materialized(
             range: base_char..end_char,
         });
     }
-    let t3 = std::time::Instant::now();
+    let t3 = crate::time::Instant::now();
 
     Ok((
         matches,
@@ -353,9 +353,9 @@ pub fn find_next(
         }
     }
 
-    let t0 = std::time::Instant::now();
+    let t0 = crate::time::Instant::now();
     let (re, _) = compile_regex(query)?;
-    let t1 = std::time::Instant::now();
+    let t1 = crate::time::Instant::now();
 
     // Run the regex over a contiguous `&str`, far faster than the streaming
     // `BufferHaystack` (whose per-char probes are O(log N) tree descents). Lossy
@@ -369,7 +369,7 @@ pub fn find_next(
         text.push(c.to_char_lossy());
     }
     let start_byte = start_byte.unwrap_or(text.len());
-    let t2 = std::time::Instant::now();
+    let t2 = crate::time::Instant::now();
 
     let result = match direction {
         SearchDirection::Forward => {
@@ -405,7 +405,7 @@ pub fn find_next(
         }
     };
 
-    let t3 = std::time::Instant::now();
+    let t3 = crate::time::Instant::now();
 
     Ok((
         result,
@@ -475,9 +475,9 @@ fn find_next_literal(
     query: &str,
     direction: SearchDirection,
 ) -> Result<(Option<SearchMatch>, SearchStats), RiftError> {
-    let t0 = std::time::Instant::now();
+    let t0 = crate::time::Instant::now();
     let (pattern, check_anchor) = literal_pattern(query);
-    let t1 = std::time::Instant::now();
+    let t1 = crate::time::Instant::now();
 
     let result = match direction {
         SearchDirection::Forward => {
@@ -507,7 +507,7 @@ fn find_next_literal(
         }
     };
 
-    let t2 = std::time::Instant::now();
+    let t2 = crate::time::Instant::now();
     Ok((
         result,
         SearchStats {
