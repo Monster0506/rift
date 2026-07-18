@@ -1941,6 +1941,35 @@ impl LuaHost {
             api.set("lsp", lsp)?;
         }
 
+        // Stand-in rift.lsp when `lsp` is off: entry points stay callable
+        // (as no-ops) so a plugin referencing rift.lsp.* doesn't hard-error.
+        #[cfg(not(feature = "lsp"))]
+        {
+            let lsp = lua.create_table()?;
+            let noop = lua.create_function(|_, _: LuaMultiValue| -> LuaResult<()> { Ok(()) })?;
+            for name in [
+                "register",
+                "goto_definition",
+                "references",
+                "hover",
+                "rename",
+                "rename_dialog",
+                "diagnostics_panel",
+                "format",
+                "code_action",
+                "diagnostic_next",
+                "diagnostic_prev",
+            ] {
+                lsp.set(name, noop.clone())?;
+            }
+            let empty_diagnostics =
+                lua.create_function(|lua, _: LuaMultiValue| -> LuaResult<LuaTable> {
+                    lua.create_table()
+                })?;
+            lsp.set("get_diagnostics", empty_diagnostics)?;
+            api.set("lsp", lsp)?;
+        }
+
         {
             let f = lua.create_function(|lua, path: String| {
                 let path = path.replace('\\', "/");

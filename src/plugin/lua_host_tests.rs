@@ -1053,3 +1053,58 @@ fn test_json_decode_rejects_deeply_nested_input() {
     );
     assert!(check.is_none(), "{:?}", check);
 }
+
+#[cfg(feature = "lsp")]
+#[test]
+fn test_lsp_register_queues_mutation() {
+    let host = make_host();
+    let err = host.exec(
+        r#"
+        rift.lsp.register({
+            language = "rust",
+            command = "rust-analyzer",
+        })
+    "#,
+    );
+    assert!(err.is_none(), "{:?}", err);
+
+    let mutations = host.drain_mutations();
+    assert_eq!(mutations.len(), 1);
+    match &mutations[0] {
+        PluginMutation::LspRegisterServer { language, config } => {
+            assert_eq!(language, "rust");
+            assert_eq!(config.command, "rust-analyzer");
+        }
+        other => panic!("expected LspRegisterServer, got {:?}", other),
+    }
+}
+
+/// Without the `lsp` feature, `rift.lsp` is a table of no-ops rather than
+/// missing entirely, so a plugin written for a full build doesn't hard-error.
+#[cfg(not(feature = "lsp"))]
+#[test]
+fn test_lsp_stub_functions_are_callable_and_no_op() {
+    let host = make_host();
+    let err = host.exec(
+        r#"
+        rift.lsp.register({ language = "rust", command = "rust-analyzer" })
+        rift.lsp.goto_definition()
+        rift.lsp.references()
+        rift.lsp.hover()
+        rift.lsp.rename("new_name")
+        rift.lsp.rename_dialog()
+        rift.lsp.diagnostics_panel()
+        rift.lsp.format()
+        rift.lsp.code_action()
+        rift.lsp.diagnostic_next()
+        rift.lsp.diagnostic_prev()
+        local diags = rift.lsp.get_diagnostics()
+        assert(type(diags) == "table" and #diags == 0)
+    "#,
+    );
+    assert!(err.is_none(), "{:?}", err);
+    assert!(
+        host.drain_mutations().is_empty(),
+        "stub rift.lsp functions must not queue any mutation"
+    );
+}
