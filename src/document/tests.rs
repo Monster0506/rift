@@ -1521,6 +1521,31 @@ fn test_from_file_normalizes_crlf() {
 }
 
 #[test]
+fn test_from_bytes_matches_from_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bytes.txt");
+    let content = b"line1\r\nline2".to_vec();
+    std::fs::write(&path, &content).unwrap();
+
+    let from_file = Document::from_file(1, &path).unwrap();
+    let from_bytes = Document::from_bytes(2, Some(&path), content).unwrap();
+
+    assert_eq!(from_bytes.buffer.to_string(), from_file.buffer.to_string());
+    assert_eq!(
+        from_bytes.options.line_ending,
+        from_file.options.line_ending
+    );
+    assert_eq!(from_bytes.file_path, from_file.file_path);
+}
+
+#[test]
+fn test_from_bytes_without_path_has_no_file_path() {
+    let doc = Document::from_bytes(1, None, b"hello".to_vec()).unwrap();
+    assert_eq!(doc.buffer.to_string(), "hello");
+    assert_eq!(doc.file_path, None);
+}
+
+#[test]
 fn test_undo_redo_restores_annotation_marker_positions() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
     let mut doc = Document::new(1).unwrap();

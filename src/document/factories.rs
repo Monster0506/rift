@@ -115,8 +115,17 @@ impl Document {
     /// Load document from file
     pub fn from_file(id: super::DocumentId, path: impl AsRef<Path>) -> Result<Self, RiftError> {
         let path = path.as_ref();
-        let bytes = std::fs::read(path)?;
+        let bytes = crate::fs_backend::backend().read_file(path)?;
+        Self::from_bytes(id, Some(path), bytes)
+    }
 
+    /// Build a document from raw bytes already in memory, skipping the
+    /// filesystem read. `path` sets the document's file path, if any.
+    pub fn from_bytes(
+        id: super::DocumentId,
+        path: Option<&Path>,
+        bytes: Vec<u8>,
+    ) -> Result<Self, RiftError> {
         // Bulk construction: the chars vec becomes the piece table's original
         // slice directly, skipping the general insert path and its copies.
         let (chars, line_ending, starts) = decode_file_bytes(&bytes);
@@ -134,7 +143,7 @@ impl Document {
                 line_ending,
                 ..DocumentOptions::default()
             },
-            file_path: Some(Self::normalize_path(path)),
+            file_path: path.map(Self::normalize_path),
             ..Self::skeleton(id, buffer)
         })
     }
