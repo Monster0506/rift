@@ -4563,6 +4563,7 @@ fn test_explorer_preview_first_move_from_blank_writes_to_terminal() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[cfg(feature = "lsp")]
 #[test]
 fn closing_a_document_sends_lsp_did_close() {
     let dir = tempfile::tempdir().unwrap();

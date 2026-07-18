@@ -12,6 +12,7 @@ fn test_new_doc_is_file_kind() {
     assert!(matches!(doc.kind, BufferKind::File));
 }
 
+#[cfg(feature = "lsp")]
 #[test]
 fn test_lsp_char_offset_handles_astral_and_non_ascii() {
     let mut doc = Document::new(1).unwrap();
@@ -43,6 +44,7 @@ fn test_lsp_char_offset_handles_astral_and_non_ascii() {
 
 /// The same `character` value must decode differently per negotiated
 /// encoding, proving it's respected rather than hardcoded to one unit.
+#[cfg(feature = "lsp")]
 #[test]
 fn test_lsp_position_units_differ_by_negotiated_encoding() {
     use crate::lsp::protocol::PositionEncoding;
@@ -66,6 +68,7 @@ fn test_lsp_position_units_differ_by_negotiated_encoding() {
     assert_eq!(doc.lsp_char_offset_in_line(0, 7, PositionEncoding::Utf8), 3);
 }
 
+#[cfg(feature = "lsp")]
 #[test]
 fn test_incremental_lsp_change_for_single_char_insert() {
     use crate::lsp::protocol::PositionEncoding;
@@ -85,6 +88,7 @@ fn test_incremental_lsp_change_for_single_char_insert() {
     assert_eq!(text, "b");
 }
 
+#[cfg(feature = "lsp")]
 #[test]
 fn test_incremental_lsp_change_for_single_char_delete() {
     use crate::lsp::protocol::PositionEncoding;
@@ -107,6 +111,7 @@ fn test_incremental_lsp_change_for_single_char_delete() {
     assert_eq!(text, "");
 }
 
+#[cfg(feature = "lsp")]
 #[test]
 fn test_incremental_lsp_change_positions_a_non_bmp_char_correctly() {
     use crate::lsp::protocol::PositionEncoding;
@@ -126,6 +131,7 @@ fn test_incremental_lsp_change_positions_a_non_bmp_char_correctly() {
     assert_eq!(text, "");
 }
 
+#[cfg(feature = "lsp")]
 #[test]
 fn test_incremental_lsp_change_falls_back_for_multiple_edits() {
     use crate::lsp::protocol::PositionEncoding;
@@ -140,6 +146,7 @@ fn test_incremental_lsp_change_falls_back_for_multiple_edits() {
     );
 }
 
+#[cfg(feature = "lsp")]
 #[test]
 fn test_incremental_lsp_change_falls_back_for_multiline_delete() {
     use crate::lsp::protocol::PositionEncoding;

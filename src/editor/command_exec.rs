@@ -101,6 +101,7 @@ impl<T: TerminalBackend> Editor<T> {
                     // Defer TextChangedCoarse to the next render cycle so multiple
                     // mutations within a single frame produce only one event.
                     self.pending_text_changed = Some(buf);
+                    #[cfg(feature = "lsp")]
                     self.lsp_notify_change();
                 }
 

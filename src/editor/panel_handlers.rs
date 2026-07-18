@@ -263,13 +263,16 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn handle_location_list_action(&mut self, id: &str) {
         match id {
+            #[cfg(feature = "lsp")]
             "location_list:select" => self.handle_location_list_select(),
+            #[cfg(feature = "lsp")]
             "location_list:code_action" => self.handle_location_list_code_action(),
             "location_list:close" => self.close_split_panel(),
             _ => {}
         }
     }
 
+    #[cfg(feature = "lsp")]
     fn handle_location_list_select(&mut self) {
         use crate::document::BufferKind;
 
@@ -335,6 +338,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Space on a diagnostic entry — send a code action request scoped to that diagnostic.
+    #[cfg(feature = "lsp")]
     fn handle_location_list_code_action(&mut self) {
         use crate::document::BufferKind;
 

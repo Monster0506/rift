@@ -145,6 +145,7 @@ pub enum PluginMutation {
         fn_name: String,
     },
     /// Register a language server for a filetype (plugin-provided config).
+    #[cfg(feature = "lsp")]
     LspRegisterServer {
         language: String,
         config: crate::lsp::config::LspServerConfig,

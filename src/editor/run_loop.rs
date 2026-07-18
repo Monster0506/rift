@@ -52,13 +52,16 @@ impl<T: TerminalBackend> Editor<T> {
         self.poll_pending_search_refresh();
 
         // Poll LSP messages
-        let lsp_msgs = self.lsp_manager.poll();
-        let had_lsp = !lsp_msgs.is_empty();
-        for msg in lsp_msgs {
-            self.handle_lsp_message(msg);
-        }
-        if had_lsp {
-            let _ = self.update_and_render();
+        #[cfg(feature = "lsp")]
+        {
+            let lsp_msgs = self.lsp_manager.poll();
+            let had_lsp = !lsp_msgs.is_empty();
+            for msg in lsp_msgs {
+                self.handle_lsp_message(msg);
+            }
+            if had_lsp {
+                let _ = self.update_and_render();
+            }
         }
 
         let current_gen = self.state.error_manager.notifications().generation;

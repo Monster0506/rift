@@ -14,11 +14,17 @@ name = "rift"
 path = "src/main.rs"
 
 [features]
-default = ["system_clipboard", "plugins", "terminal_emulation"]
+default = ["system_clipboard", "plugins", "terminal_emulation", "lsp", "ipc"]
 perf_instrumentation = []
 system_clipboard = ["dep:arboard"]
 plugins = ["dep:mlua"]
 terminal_emulation = ["dep:alacritty_terminal"]
+# Language server client (spawns local subprocesses over stdio) and the
+# IPC daemon/remote-connect layer. Both need OS process/socket access, so
+# they're off by default on targets without that (e.g. wasm). lsp's broker
+# subcommand reuses ipc's session directory/token helpers, hence the dep.
+lsp = ["ipc"]
+ipc = []
 treesitter = [
     "dep:tree-sitter",
     "dep:tree-sitter-bash",

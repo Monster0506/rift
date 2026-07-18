@@ -126,11 +126,17 @@ impl<T: TerminalBackend> Editor<T> {
             system_clipboard_cache: crate::clipboard::SystemClipboardCache::new(),
             post_paste_state: None,
             pending_cursor_entry: None,
+            #[cfg(feature = "lsp")]
             lsp_manager: crate::lsp::LspManager::new(std::env::current_dir().ok()),
+            #[cfg(feature = "lsp")]
             lsp_diagnostics: std::collections::HashMap::new(),
+            #[cfg(feature = "lsp")]
             lsp_ready_servers: std::collections::HashSet::new(),
+            #[cfg(feature = "lsp")]
             pending_code_actions: Vec::new(),
+            #[cfg(feature = "lsp")]
             rename_context: None,
+            #[cfg(feature = "lsp")]
             pending_goto_target: None,
             dispatch_registry: crate::annotations::registry::DispatchRegistry::with_builtins(),
             kind_registry: crate::annotations::registry::KindRegistry::with_core(),
@@ -210,6 +216,7 @@ impl<T: TerminalBackend> Editor<T> {
                         filetype,
                     });
                 editor.apply_plugin_mutations();
+                #[cfg(feature = "lsp")]
                 editor.lsp_notify_open();
             }
         }

@@ -3,6 +3,14 @@
 
 pub use crate::plugin::lua_state::{AnnotationView, BufEntry, BufLinesSource, WinEntry};
 
+/// Stand-in for the real `lua_host::BufSourceUpdate`; carried through so
+/// callers don't need their own feature gate just to build the update.
+pub enum BufSourceUpdate {
+    Unchanged,
+    Cleared,
+    Set(Box<BufLinesSource>),
+}
+
 /// Stand-in for the real `LuaHost`; holds no state since there is no VM.
 #[derive(Debug, Default)]
 pub struct LuaHost;
@@ -19,7 +27,7 @@ impl LuaHost {
         &self,
         _buf_id: usize,
         _buf_kind: String,
-        _source: Option<BufLinesSource>,
+        _source: BufSourceUpdate,
         _cursor: (usize, usize),
         _tab_width: usize,
         _expand_tabs: bool,

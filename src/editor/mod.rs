@@ -18,6 +18,7 @@ mod handle_action;
 mod history;
 mod init;
 mod jobs;
+#[cfg(feature = "lsp")]
 mod lsp_ops;
 mod mode_mgmt;
 mod multi_region;
@@ -188,20 +189,26 @@ pub struct Editor<T: TerminalBackend> {
     /// restore the cursor to once the listing arrives.
     pending_cursor_entry: Option<String>,
     /// LSP integration layer.
+    #[cfg(feature = "lsp")]
     pub lsp_manager: crate::lsp::LspManager,
     /// Cached LSP diagnostics per document URI for navigation ([d / ]d).
+    #[cfg(feature = "lsp")]
     lsp_diagnostics: std::collections::HashMap<String, Vec<crate::lsp::protocol::LspDiagnostic>>,
     /// Languages whose server has completed initialization and indexing.
     /// Diagnostic notifications are suppressed until the language appears here.
+    #[cfg(feature = "lsp")]
     lsp_ready_servers: std::collections::HashSet<String>,
     /// Code actions returned by the last textDocument/codeAction request.
     /// Used to apply the selection from the code-action picker panel.
+    #[cfg(feature = "lsp")]
     pending_code_actions: Vec<serde_json::Value>,
     /// Stored position when LSP rename dialog was opened (path, line, col).
+    #[cfg(feature = "lsp")]
     rename_context: Option<(std::path::PathBuf, u32, u32)>,
     /// Deferred goto-definition target: set when the destination file wasn't open
     /// yet and had to be loaded asynchronously. The FileLoadResult handler applies
     /// it once the buffer is populated. Tuple is (doc_id, line, col), 0-indexed.
+    #[cfg(feature = "lsp")]
     pending_goto_target: Option<(crate::document::DocumentId, usize, usize)>,
     /// Resolves annotation (kind, verb) activations to handlers (design.md sec 9.2).
     pub dispatch_registry: crate::annotations::registry::DispatchRegistry,

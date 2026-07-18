@@ -167,6 +167,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.should_quit = true;
         } else {
             let doc_id = self.active_document_id();
+            #[cfg(feature = "lsp")]
             self.lsp_notify_close(doc_id);
             let result = if force {
                 self.document_manager.remove_document_force(doc_id)

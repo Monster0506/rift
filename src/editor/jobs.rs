@@ -1,4 +1,5 @@
 use super::Editor;
+#[cfg(feature = "lsp")]
 use crate::buffer::api::BufferView;
 use crate::document::DocumentId;
 use crate::error::RiftError;
@@ -437,6 +438,7 @@ impl<T: TerminalBackend> Editor<T> {
                                 path: res.path.clone(),
                             });
                         self.apply_plugin_mutations();
+                        #[cfg(feature = "lsp")]
                         self.lsp_manager.did_save(&res.path, None);
 
                         if self.pending_quit_job_id == Some(id) {
@@ -532,12 +534,14 @@ impl<T: TerminalBackend> Editor<T> {
                         }
 
                         // Notify LSP after opening a new (non-reload) file
+                        #[cfg(feature = "lsp")]
                         if !res.is_reload {
                             self.lsp_notify_open();
                         }
 
                         // Apply any deferred goto-definition jump that was stashed
                         // because the file wasn't open when the LSP response arrived.
+                        #[cfg(feature = "lsp")]
                         if let Some((goto_doc, goto_line, goto_col)) =
                             self.pending_goto_target.take()
                         {

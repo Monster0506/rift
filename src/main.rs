@@ -38,15 +38,18 @@ fn main() {
     let args = cli::parse();
 
     // Internal mode: proxy one language server for editors to reattach to.
+    #[cfg(feature = "lsp")]
     if let Some(key) = args.lsp_broker {
         monster_rift::lsp::broker::run(&key);
     }
 
+    #[cfg(feature = "ipc")]
     if args.list_sessions {
         monster_rift::ipc::session::print_newest();
     }
 
     // daemon mode
+    #[cfg(feature = "ipc")]
     if args.daemon {
         if args.detach {
             if let Err(e) = monster_rift::ipc::daemon::detach() {
@@ -72,6 +75,7 @@ fn main() {
     };
 
     // --connect [user@]host: SSH to find or start a session, then attach via tunnel.
+    #[cfg(feature = "ipc")]
     if let Some(target) = args.connect {
         if let Err(e) = monster_rift::ipc::client::connect_remote(&target, args.file, backend) {
             eprintln!("connect error: {e}");

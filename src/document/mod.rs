@@ -12,6 +12,7 @@ mod search;
 mod selection_render;
 
 use crate::annotations::AnnotationStore;
+#[cfg(feature = "lsp")]
 use crate::buffer::api::BufferView;
 use crate::buffer::TextBuffer;
 use crate::history::{EditSeq, EditTransaction, UndoTree};
@@ -254,6 +255,7 @@ impl Document {
 
     /// Convert an LSP `Position.character` on `line` (in `encoding`'s units)
     /// to a code-point offset. Use before indexing any LSP position.
+    #[cfg(feature = "lsp")]
     pub fn lsp_char_offset_in_line(
         &self,
         line: usize,
@@ -266,6 +268,7 @@ impl Document {
 
     /// Convert a code-point offset on `line` to `encoding`'s wire units. Use
     /// before sending any cursor/selection position to an LSP server.
+    #[cfg(feature = "lsp")]
     pub fn lsp_position_units_in_line(
         &self,
         line: usize,
@@ -278,6 +281,7 @@ impl Document {
 
     /// Drain edits since the last call as one incremental LSP change, only if
     /// exactly one landed and it's a single-line insert/delete/replace (else None: fall back to full sync).
+    #[cfg(feature = "lsp")]
     pub fn take_incremental_lsp_changes(
         &mut self,
         encoding: crate::lsp::protocol::PositionEncoding,
@@ -347,6 +351,7 @@ impl Document {
 
     /// LSP start/end for a range since removed: `start` reads the still-valid
     /// current prefix; `end` chains that prefix with the removed text itself.
+    #[cfg(feature = "lsp")]
     fn lsp_range_across_removed(
         &self,
         range: crate::history::Range,
@@ -390,6 +395,7 @@ impl Document {
         self.pending_lsp_edits.clear();
     }
 
+    #[cfg(feature = "lsp")]
     fn line_chars(&self, line: usize) -> impl Iterator<Item = crate::character::Character> + '_ {
         let start = self.buffer.line_start(line);
         let end = if line + 1 < self.buffer.line_count() {

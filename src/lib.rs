@@ -22,12 +22,14 @@ pub mod eval;
 pub mod executor;
 pub mod floating_window;
 pub mod history;
+#[cfg(feature = "ipc")]
 pub mod ipc;
 pub mod job_manager;
 pub mod key;
 pub mod key_handler;
 pub mod keymap;
 pub mod layer;
+#[cfg(feature = "lsp")]
 pub mod lsp;
 pub mod message;
 pub mod mode;

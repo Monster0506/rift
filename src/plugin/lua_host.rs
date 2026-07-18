@@ -69,6 +69,7 @@ fn build_presentation(opts: &LuaTable) -> LuaResult<Option<crate::annotations::P
     Ok(Some(pres))
 }
 
+#[cfg(feature = "lsp")]
 fn lua_to_json(v: LuaValue) -> Result<serde_json::Value, String> {
     match v {
         LuaValue::Nil => Ok(serde_json::Value::Null),
@@ -1709,6 +1710,7 @@ impl LuaHost {
         }
 
         // rift.lsp - Language Server Protocol sub-table
+        #[cfg(feature = "lsp")]
         {
             let lsp = lua.create_table()?;
 

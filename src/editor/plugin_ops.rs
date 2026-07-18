@@ -147,7 +147,11 @@ impl<T: TerminalBackend> Editor<T> {
         let focused_win_id = self.split_tree.focused_window_id();
         let previous_win_id = self.split_tree.previous_window;
 
-        let lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>> = self
+        #[cfg(feature = "lsp")]
+        let lsp_diagnostics: std::collections::HashMap<
+            String,
+            Vec<(u32, u32, u32, String)>,
+        > = self
             .lsp_diagnostics
             .iter()
             .map(|(uri, diags)| {
@@ -165,6 +169,11 @@ impl<T: TerminalBackend> Editor<T> {
                 (uri.clone(), entries)
             })
             .collect();
+        #[cfg(not(feature = "lsp"))]
+        let lsp_diagnostics: std::collections::HashMap<
+            String,
+            Vec<(u32, u32, u32, String)>,
+        > = std::collections::HashMap::new();
 
         self.plugin_host.lua_update_state(
             buf_id,
@@ -749,6 +758,7 @@ impl<T: TerminalBackend> Editor<T> {
                         );
                     }
                 }
+                #[cfg(feature = "lsp")]
                 PluginMutation::LspRegisterServer { language, config } => {
                     self.lsp_manager.register_server(language, config);
                 }
@@ -779,9 +789,12 @@ impl<T: TerminalBackend> Editor<T> {
                         let col = cursor.saturating_sub(doc.buffer.line_index.get_line_start(line));
                         (line as u32, col as u32)
                     });
+                    #[cfg(feature = "lsp")]
                     if let (Some(path), Some((line, col))) = (path, pos) {
                         self.lsp_manager.rename(&path, line, col, new_name);
                     }
+                    #[cfg(not(feature = "lsp"))]
+                    let _ = (path, pos, new_name);
                 }
                 PluginMutation::LspRenameDialog => {
                     self.handle_action(&crate::action::Action::Editor(
