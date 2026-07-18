@@ -4,7 +4,7 @@
 pub mod actions;
 mod annotations_ops;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "terminal_emulation"))]
 mod terminal_tests;
 
 mod command_exec;
