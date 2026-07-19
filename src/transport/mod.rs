@@ -6,13 +6,22 @@ use serde::Serialize;
 /// attacker/bug-controlled `Content-Length` from an untrusted peer.
 pub const MAX_FRAME_LEN: usize = 256 * 1024 * 1024;
 
-/// Serialize `msg` as JSON, write `Content-Length: N\r\n\r\n` then the body, then flush.
-pub fn write_framed<W: Write, T: Serialize>(writer: &mut W, msg: &T) -> std::io::Result<()> {
+/// Serialize `msg` as JSON and return it as one `Content-Length: N\r\n\r\n<body>`
+/// buffer, ready to hand to a writer (or a channel to one on another thread).
+pub fn frame_message<T: Serialize>(msg: &T) -> std::io::Result<Vec<u8>> {
     let body = serde_json::to_vec(msg)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     let header = format!("Content-Length: {}\r\n\r\n", body.len());
-    writer.write_all(header.as_bytes())?;
-    writer.write_all(&body)?;
+    let mut framed = Vec::with_capacity(header.len() + body.len());
+    framed.extend_from_slice(header.as_bytes());
+    framed.extend_from_slice(&body);
+    Ok(framed)
+}
+
+/// Serialize `msg` as JSON, write `Content-Length: N\r\n\r\n` then the body, then flush.
+pub fn write_framed<W: Write, T: Serialize>(writer: &mut W, msg: &T) -> std::io::Result<()> {
+    let framed = frame_message(msg)?;
+    writer.write_all(&framed)?;
     writer.flush()
 }
 
@@ -84,6 +93,15 @@ mod tests {
         write_framed(&mut buf, &msg).unwrap();
         let s = String::from_utf8(buf).unwrap();
         assert!(s.starts_with("Content-Length: 2\r\n\r\n"));
+    }
+
+    #[test]
+    fn frame_message_matches_what_write_framed_would_write() {
+        let msg = serde_json::json!({"method": "ping", "params": {"x": 42}});
+        let mut via_write: Vec<u8> = Vec::new();
+        write_framed(&mut via_write, &msg).unwrap();
+        let via_frame = frame_message(&msg).unwrap();
+        assert_eq!(via_frame, via_write);
     }
 
     #[test]
