@@ -1,9 +1,5 @@
-//! Command line tab completion logic
-//! Pure functions.  Filesystem completion is handled by CompletionJob.
-//!
-//! Command resolution is designed so any correctly registered command works:
-//! the leading `:` is stripped from tokens, and `resolve_command_descriptor`
-//! matches by exact name/alias, then single name prefix, then single alias prefix.
+//! Command line tab completion logic (pure functions; filesystem completion is handled by CompletionJob).
+//! `resolve_command_descriptor` strips the leading `:` and matches by exact name/alias, then name prefix, then alias prefix.
 
 use crate::command_line::commands::definitions::{CompletionHint, COMMANDS};
 use crate::command_line::commands::{CommandDescriptor, MatchResult};
@@ -244,9 +240,8 @@ pub fn parse_context(
     }
 }
 
-/// Shared name+alias completion: same prefix and same-first-letter alias rule as
-/// command and setting parsing. Used by both complete_from_descriptors and
-/// complete_setting_name so parsing and completion stay identical.
+/// Shared name+alias completion (same prefix/alias rule as command and setting parsing), used
+/// by both complete_from_descriptors and complete_setting_name so parsing and completion stay identical.
 fn candidates_from_name_aliases(
     name: &str,
     aliases: &[&str],

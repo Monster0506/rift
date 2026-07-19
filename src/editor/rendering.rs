@@ -234,6 +234,7 @@ impl<T: TerminalBackend> Editor<T> {
         let wrap_width = self.state.settings.wrap_width;
         let doc = self.document_manager.get_document_mut(doc_id)?;
         let revision = doc.buffer.revision;
+        let buf_len = doc.buffer.len();
         let params = super::resolve_wrap_params(doc, content_width, soft_wrap, wrap_width);
         let edits = doc.buffer.take_char_edits();
 
@@ -250,7 +251,7 @@ impl<T: TerminalBackend> Editor<T> {
                 _ => false,
             };
             if valid {
-                if entry.revision == revision {
+                if entry.revision == revision && entry.buf_len == buf_len {
                     map = entry.map;
                 } else if entry.revision.wrapping_add(edits.len() as u64) == revision {
                     // Every logged edit accounted for by the revision delta (no
@@ -296,6 +297,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.display_map_cache.push(super::DisplayMapCacheEntry {
             doc_id,
             revision,
+            buf_len,
             content_width,
             map: map.clone(),
         });
@@ -444,8 +446,8 @@ impl<T: TerminalBackend> Editor<T> {
             .as_ref()
             .map(|s| s.injection_highlights_named(Some(start_byte..end_byte)));
 
-        // Generic annotation presentation overlay (design.md sec 8), restricted
-        // to the visible viewport rather than a full-document scan.
+        // Generic annotation presentation overlay, restricted to the visible
+        // viewport rather than a full-document scan.
         let annotation_styles = doc.annotations.presentation_spans(
             state.settings.syntax_colors.as_ref(),
             Some(kind_registry),

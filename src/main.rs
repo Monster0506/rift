@@ -1,20 +1,5 @@
-//! Rift - A terminal-based text editor
-//! Main entry point
-//! # Rift Invariants
-//!
-//! These invariants define the architectural and semantic guarantees of Rift.
-//! They are non-negotiable unless the design is intentionally revised.
-//!
-//! Breaking an invariant to fix a bug indicates a design error, not an
-//! implementation shortcut.
-/// ## main/ Invariants
-///
-/// - The editor core never depends on terminal implementation details.
-/// - All mutations of text flow through `Command` execution.
-/// - Rendering is a pure read of editor state and buffer contents.
-/// - Input handling never mutates editor state directly.
-/// - Panics or early exits always restore terminal state.
-/// - Editor behavior is deterministic for a given sequence of commands.
+//! Rift - a terminal-based text editor. Main entry point: text mutation
+//! flows through `Command` execution, so rendering is a pure read of state.
 mod cli;
 
 use monster_rift::editor::Editor;

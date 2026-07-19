@@ -26,9 +26,7 @@ fn test_command_line_render_to_layer() {
         },
     );
 
-    // Check window position is centered
-    // Default width ratio is 0.5, so width = 40, centered at (80-40)/2 = 20
-    // Default height is 3, so centered at (24-3)/2 = 10 (or close)
+    // Default width ratio 0.5 and height 3 center the window around (20, 10).
     assert!((15..=25).contains(&window_col));
     assert!((8..=12).contains(&window_row));
     assert!(cmd_width >= 30);
@@ -106,10 +104,7 @@ fn test_command_line_cursor_position_clamped() {
     let _ = 10;
     let command_line = "very long command line that exceeds width";
 
-    // cmd_width = 10. Border=true (implied).
-    // available_cmd = 10 - 2 - 1 = 7.
-    // len = 41.
-    // offset = 41 - 7 + 1 = 35.
+    // offset = len(41) - available_cmd(10 - 2 - 1 = 7) + 1 = 35, with border=true.
     let offset = 35;
     let (_, cursor_col) =
         CommandLine::calculate_cursor_position(window_pos, command_line.len(), offset, true);

@@ -1,8 +1,5 @@
-//! Soft-wrap display mapping
-//!
-//! DisplayMap converts between logical buffer lines and visual rows on screen.
-//! A logical line longer than the content width is split into multiple visual rows.
-//! j/k use visual rows; dj/cj use logical lines.
+//! Soft-wrap display mapping: `DisplayMap` splits a logical line wider than
+//! the content width into multiple visual rows. j/k use visual rows, dj/cj logical.
 
 use crate::buffer::TextBuffer;
 use crate::character::Character;

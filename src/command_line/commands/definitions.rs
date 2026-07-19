@@ -1025,9 +1025,8 @@ const BUFFER_SUBS: &[CommandDescriptor] = &[
     },
 ];
 
-// Each LSP subcommand factory re-wraps itself as Unknown { name: "lsp", args: [subcmd, ...rest] }
-// so the executor maps it to PluginCommand { name: "lsp", args: [subcmd, ...] } and the Lua
-// handler registered as "lsp" receives the subcommand as its first argument.
+// Re-wraps as Unknown { name: "lsp", args: [subcmd, ...] } so the executor maps it to
+// PluginCommand, and the Lua "lsp" handler gets the subcommand as its first argument.
 
 fn parse_lsp_sub(subcmd: &str, extra: &[&str]) -> ParsedCommand {
     let mut args = vec![subcmd.to_string()];

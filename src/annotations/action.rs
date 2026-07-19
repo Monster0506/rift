@@ -1,4 +1,4 @@
-//! Interaction descriptors for annotations (design.md sec 9).
+//! Interaction descriptors for annotations.
 //! Serializable: an annotation says what can be done, never how (no closures).
 
 use super::kind::Kind;

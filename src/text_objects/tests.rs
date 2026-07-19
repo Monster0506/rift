@@ -280,9 +280,8 @@ fn nest_count_selects_grandparent() {
 
 #[test]
 fn leading_count_composes_with_nest_count_for_brackets() {
-    // "((((ab))))", cursor at 'a' (pos 4): a leading count of 2 composed
-    // with a typed nest-count of 2 (2di2() reaches composed nesting 4, the
-    // outermost pair.
+    // "((((ab))))", cursor at 'a' (pos 4): leading count 2 composed with
+    // typed nest-count 2 gives nesting 4, reaching the outermost pair.
     let spec = TextObjectSpec {
         modifier: Modifier::Inner,
         direction: Direction::Current,
@@ -324,9 +323,8 @@ fn inner_sentence_cursor_on_terminator_selects_sentence_it_closes() {
 
 #[test]
 fn leading_count_extends_paragraph_across_n_groups() {
-    // Two single-line paragraphs separated by a blank line; a blank-line run
-    // counts as its own group, so 3ip from the first line is needed to reach
-    // into "second" (group 1 = "first", group 2 = blank line, group 3 = "second").
+    // A blank-line run counts as its own group, so 3ip is needed to reach
+    // "second" (groups: "first", blank line, "second").
     let r = res_count(inner(ObjectKind::Paragraph), "first\n\nsecond\n", 0, 3).unwrap();
     let buf = buf_from("first\n\nsecond\n");
     let second_line_start = buf.line_index.get_start(2).unwrap();

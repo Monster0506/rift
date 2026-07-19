@@ -1,14 +1,5 @@
-//! Command executor
-//! Executes editor commands on the buffer
-//!
-//! ## executor/ Invariants
-//!
-//! - The executor mutates buffer and editor state only.
-//! - Each command application is atomic.
-//! - Mode changes are not handled here unless explicitly documented.
-//! - Executor behavior is independent of key bindings.
-//! - Executor never inspects raw input or terminal state.
-//! - Commands are applied strictly in sequence.
+//! Command executor: applies editor commands to the buffer atomically and in sequence.
+//! Mutates buffer/editor state only; is independent of key bindings and never inspects raw input or terminal state.
 
 use crate::action::Motion;
 use crate::buffer::TextBuffer;
@@ -38,11 +29,7 @@ fn calculate_current_column(buf: &TextBuffer, tab_width: usize) -> usize {
 }
 
 /// Compute the byte range that a motion-operator pair would affect, without applying it.
-///
-/// Temporarily moves the cursor to simulate the motion, records the resulting
-/// range, then restores the cursor. The document is otherwise not mutated.
-///
-/// Returns `None` if the motion produces an empty range (no movement).
+/// Temporarily moves the cursor to simulate the motion, records the range, then restores the cursor; returns `None` if the range is empty.
 pub fn compute_motion_range(
     motion: Motion,
     count: usize,
@@ -117,13 +104,8 @@ pub fn compute_motion_range(
     }
 }
 
-/// Converts a resolved `MotionRange` into a half-open `(start, end)` char
-/// offset pair. Shared by `Delete`, `Change`, and `AddSurround`.
-///
-/// `consume_trailing_newline` controls the Linewise end boundary: deletion
-/// wants to remove the line terminator too (so the line itself disappears),
-/// while surround-insertion wants to stop before it (so the delimiter lands
-/// inside the line, not on the line that follows).
+/// Converts a resolved `MotionRange` into a half-open `(start, end)` char offset pair, shared by
+/// `Delete`/`Change`/`AddSurround`. `consume_trailing_newline` controls whether the Linewise end includes the line terminator.
 fn range_to_offsets(
     range: &crate::wrap::MotionRange,
     doc: &Document,

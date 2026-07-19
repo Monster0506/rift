@@ -1,13 +1,5 @@
-//! Layer compositing system
-//! Manages rendering of UI components at different z-levels
-//!
-//! ## layer/ Invariants
-//!
-//! - Layers are rendered in priority order (lowest first, highest on top).
-//! - Each layer renders independently without knowledge of other layers.
-//! - Transparent cells (None) show through to lower layers.
-//! - The compositor manages all layer creation and compositing.
-//! - Layer modifications only affect that layer's buffer.
+//! Layer compositing: UI components render independently onto z-ordered
+//! layers (lowest first); transparent cells show through to the layer below.
 
 use crate::character::Character;
 use crate::color::Color;
@@ -219,9 +211,7 @@ impl Default for Cell {
     }
 }
 
-/// A single rendering layer
-/// Each layer contains a grid of optional cells.
-/// None means transparent (shows through to lower layer).
+/// A single rendering layer: a grid of optional cells, `None` = transparent.
 #[derive(Debug, Clone)]
 pub struct Layer {
     /// The priority (z-order) of this layer

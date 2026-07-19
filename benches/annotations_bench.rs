@@ -1,10 +1,5 @@
-//! Marker / annotation-store cost under heavy editing (design.md sec 16).
-//!
-//! The interactive-annotations redesign replaced line-only edit tracking with
-//! gravity-aware markers and a lazily-rebuilt interval index. These benchmarks
-//! guard the two costs that matter at interactive scale: shifting many markers
-//! per edit, and re-querying the index (point/range/next-interactive) after the
-//! edits invalidate it.
+//! Marker / annotation-store cost under heavy editing: shifting many gravity-
+//! aware markers per edit, and re-querying the interval index after edits invalidate it.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::hint::black_box;

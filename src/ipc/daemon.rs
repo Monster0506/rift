@@ -182,9 +182,8 @@ pub fn detach() -> anyhow::Result<()> {
         extern "C" {
             fn setsid() -> i32;
         }
-        // Safety: setsid is async-signal-safe; calling it in the child after fork
-        // creates a new session, detaching from the parent's controlling terminal
-        // so the daemon survives SIGHUP when the SSH session that started it closes.
+        // setsid (async-signal-safe) detaches from the controlling terminal so
+        // the daemon survives SIGHUP when the starting SSH session closes.
         unsafe {
             Command::new(&exe)
                 .args(&args)

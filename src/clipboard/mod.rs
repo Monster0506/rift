@@ -1,11 +1,5 @@
-//! Clipboard ring buffer and tooltip
-//!
-//! ## clipboard/ Invariants
-//!
-//! - `ClipboardRing` is pure storage with no UI coupling.
-//! - `ClipboardTooltip` is a pure renderer; it owns no state.
-//! - The ring always stores the most recent entry at index 0.
-//! - Default capacity is 10; adjustable via `clipboard.size` setting.
+//! Clipboard ring buffer and tooltip. `ClipboardRing` is pure storage with
+//! the most recent entry at index 0 (default capacity 10, via `clipboard.size`); `ClipboardTooltip` is a stateless renderer.
 
 use std::collections::VecDeque;
 
@@ -230,10 +224,8 @@ impl SystemClipboardCache {
 pub struct ClipboardTooltip;
 
 impl ClipboardTooltip {
-    /// Render the clipboard ring tooltip near the cursor.
-    ///
-    /// `selected` is the ring index currently staged for paste. `sys_clip` is
-    /// the last [`SystemClipboardCache`] read, not read live here.
+    /// Renders the tooltip near the cursor. `selected` is the ring index staged
+    /// for paste; `sys_clip` is the last [`SystemClipboardCache`] read, not read live here.
     pub fn render(
         ring: &ClipboardRing,
         selected: usize,

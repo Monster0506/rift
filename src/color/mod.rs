@@ -154,15 +154,12 @@ impl Default for ColorStyle {
 /// Extension trait for syntax highlighting
 /// Future syntax highlighters can implement this trait
 pub trait SyntaxHighlighter {
-    /// Get the color style for a character at the given position
-    ///
-    /// Returns None if no special styling should be applied
+    /// Get the color style for a character at the given position.
+    /// Returns None if no special styling should be applied.
     fn get_style(&self, line: usize, column: usize) -> Option<ColorStyle>;
 
-    /// Get color spans for an entire line
-    ///
-    /// This is more efficient than calling `get_style` for each character
-    /// Returns a vector of (`start_col`, `end_col`, style) tuples
+    /// Get color spans for an entire line as (`start_col`, `end_col`, style)
+    /// tuples; more efficient than calling `get_style` per character.
     fn get_line_spans(&self, line: usize, line_length: usize) -> Vec<(usize, usize, ColorStyle)> {
         let mut spans = Vec::new();
         let mut current_start = 0;

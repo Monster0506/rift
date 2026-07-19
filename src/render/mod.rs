@@ -1,18 +1,7 @@
-//! Rendering system
-//! Handles drawing the editor UI to the terminal using layers
+//! Rendering: draws the editor UI to the terminal using layers. A pure,
+//! side-effect-free read of already-updated state -- always safe to full-redraw.
 
 use crate::buffer::api::BufferView;
-/// ## render/ Invariants
-///
-/// - Rendering reads editor state and buffer contents only.
-/// - Rendering never mutates editor, buffer, cursor, or viewport state.
-/// - Rendering performs no input handling.
-/// - Rendering tolerates invalid state but never corrects it.
-/// - Displayed cursor position always matches buffer cursor position.
-/// - A full redraw is always safe.
-/// - Viewport must be updated before calling render functions (viewport updates happen
-///   in the state update phase, not during rendering).
-/// - All rendering is layer-based and composited before output to terminal.
 use crate::buffer::TextBuffer;
 use crate::character::Character;
 use crate::color::Color;
@@ -60,9 +49,8 @@ pub struct ContentDrawState {
     /// Hash of the active conceal ranges (which depend on the cursor line), so
     /// moving onto/off a concealed line redraws. Zero when nothing is concealed.
     pub conceal_hash: u64,
-    /// Hash of the generic annotation presentation spans (ui.selection.*,
-    /// ui.link, etc.) so changes to them (e.g. Visual-mode selection) redraw
-    /// even when no buffer edit or scroll occurred.
+    /// Hash of generic annotation presentation spans (ui.selection.*, ui.link,
+    /// etc.), so e.g. a Visual-mode selection redraws with no edit or scroll.
     pub annotation_styles_hash: u64,
     /// Hash of inline/adornment virtual text (e.g. LSP inlay hints), so changes
     /// redraw even when every other field stays the same.

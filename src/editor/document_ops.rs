@@ -52,16 +52,9 @@ impl<T: TerminalBackend> Editor<T> {
         resolve_link_path_in(path_str, base.as_deref())
     }
 
-    /// Open a file in a new document or reload the current one
-    ///
-    /// If file_path is Some, it opens that file (or creates a new document for
-    /// it if not found). If file_path is None, it reloads the current active
-    /// document.
+    /// Open `file_path` in a new document (async load if not already open,
+    /// else switch to it), or reload the current active document if `None`.
     pub fn open_file(&mut self, file_path: Option<String>, force: bool) -> Result<(), RiftError> {
-        // Logic split: if path provided, check if open. If not open, async load.
-        // If path provided and open, switch to it (via manager).
-        // If no path, reload active (async).
-
         if let Some(path_str) = file_path {
             let path_str = self.resolve_link_path(path_str);
             let path = std::path::PathBuf::from(&path_str);

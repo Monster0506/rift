@@ -1,19 +1,5 @@
-//! Plugin system for Rift.
-//!
-//! This module implements the plugin infrastructure in two stages:
-//!
-//! - **Stage 1** (this file): The event bus. All editor events flow through
-//!   [`PluginHost::dispatch`]. Handlers are registered as Rust closures for now;
-//!   the Lua runtime will be wired in on top of this foundation.
-//!
-//! - **Stage 2** (future): Lua VM (`mlua`) + external-process RPC over stdio.
-//!
-//! ## Invariant
-//!
-//! The plugin host never mutates editor state directly. Mutations requested by
-//! plugins are queued as [`PluginMutation`] values and applied by the main loop
-//! via the normal `execute_command` path, preserving undo history and
-//! dot-repeat.
+//! Plugin system for Rift: an event bus ([`PluginHost::dispatch`]) with Rust closure handlers today, a Lua VM layer to come.
+//! Invariant: the host never mutates editor state directly; mutations are queued as [`PluginMutation`] and applied via `execute_command`, preserving undo/dot-repeat.
 
 pub mod events;
 pub mod lua_state;
@@ -68,10 +54,8 @@ pub enum PluginMutation {
         end: usize,
         lines: Vec<String>,
     },
-    /// Add a foreground color highlight over a character range in the active buffer.
-    /// Line numbers are 1-indexed; columns are 0-indexed.
-    /// `color` is a named color ("red", "green", …) or an HTML hex string ("#rrggbb").
-    /// `slot` identifies the plugin handler that owns this highlight.
+    /// Add a foreground color highlight over a character range (lines 1-indexed, columns 0-indexed).
+    /// `color` is a named color or hex string; `slot` identifies the owning plugin handler.
     AddHighlight {
         slot: u32,
         start_line: usize,
@@ -137,8 +121,7 @@ pub enum PluginMutation {
         query_src: String,
     },
     /// Load a tree-sitter grammar from a compiled shared library at runtime.
-    /// `so_path` is the filesystem path to the `.so` / `.dll` / `.dylib`.
-    /// `fn_name` is the exported C symbol, e.g. `"tree_sitter_toml"`.
+    /// `so_path` is the `.so`/`.dll`/`.dylib` path; `fn_name` is the exported C symbol (e.g. `"tree_sitter_toml"`).
     RegisterGrammar {
         lang_name: String,
         so_path: String,
@@ -210,9 +193,8 @@ pub enum PluginMutation {
     /// Create an in-memory buffer with no disk path, populated with `lines`,
     /// and switch to it. Fires `BufOpen` once applied, same as a file load.
     CreateScratchBuf { name: String, lines: Vec<String> },
-    /// Reload the active buffer's content from disk, discarding in-memory
-    /// edits if `force`. The Lua-facing counterpart of `open_file(None, _)`,
-    /// which `rift.open_file` cannot reach since its `path` is mandatory.
+    /// Reload the active buffer's content from disk, discarding in-memory edits if `force`.
+    /// The Lua-facing counterpart of `open_file(None, _)`, unreachable via `rift.open_file` since its `path` is mandatory.
     ReloadBuffer { force: bool },
 }
 
@@ -231,13 +213,13 @@ pub struct AnnotationActionCtx {
     pub kind: String,
     pub verb: String,
     pub payload: crate::annotations::Value,
-    /// The activated action's serializable args (design.md sec 9.1).
+    /// The activated action's serializable args.
     pub params: crate::annotations::Value,
     pub position: usize,
     pub buffer: u64,
 }
 
-/// Context passed to a Lua cursor enter/leave hook (design.md sec 12).
+/// Context passed to a Lua cursor enter/leave hook.
 #[derive(Debug, Clone)]
 pub struct AnnotationHoverCtx {
     pub annotation_id: u64,
@@ -313,13 +295,8 @@ impl CursorHoldState {
     }
 }
 
-/// Central plugin coordinator. Owned by the `Editor`.
-///
-/// Responsibilities:
-/// - Dispatch [`EditorEvent`]s to registered handlers
-/// - Queue [`PluginMutation`]s returned by handlers
-/// - Track cursor-hold idle state
-/// - Hold registered commands and keymap actions
+/// Central plugin coordinator, owned by the `Editor`: dispatches [`EditorEvent`]s to handlers,
+/// queues [`PluginMutation`]s, tracks cursor-hold idle state, and holds registered commands/actions.
 pub struct PluginHost {
     /// Handlers indexed by event name for O(1) lookup.
     handlers: std::collections::HashMap<&'static str, Vec<Handler>>,
@@ -351,10 +328,8 @@ pub struct PluginHost {
 }
 
 impl PluginHost {
-    /// Create a new plugin host.
-    ///
-    /// `cursor_hold_polls` — number of idle main-loop polls before
-    /// `CursorHold` fires. At the default 16 ms poll rate, 25 polls ≈ 400 ms.
+    /// Create a new plugin host. `cursor_hold_polls` is the number of idle main-loop polls
+    /// before `CursorHold` fires (at the default 16ms poll rate, 25 polls = ~400ms).
     pub fn new(cursor_hold_polls: u32) -> Self {
         Self {
             handlers: std::collections::HashMap::new(),
@@ -414,19 +389,8 @@ impl PluginHost {
         self.last_synced_annotations.set(None);
     }
 
-    /// Register a handler for a named event.
-    ///
-    /// `event_name` must match one of the strings returned by
-    /// [`EditorEvent::name`], e.g. `"BufSavePost"`.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// host.on("BufSavePost", |ev| {
-    ///     if let EditorEvent::BufSavePost { path, .. } = ev {
-    ///         eprintln!("saved: {}", path.display());
-    ///     }
-    /// });
-    /// ```
+    /// Register a handler for a named event. `event_name` must match one of the strings
+    /// returned by [`EditorEvent::name`], e.g. `"BufSavePost"`.
     pub fn on<F>(&mut self, event_name: &'static str, handler: F)
     where
         F: Fn(&EditorEvent) + Send + 'static,
@@ -438,7 +402,6 @@ impl PluginHost {
     }
 
     /// Register a handler for a `:CommandName [args...]` ex-command.
-    ///
     /// `name` is case-insensitive. Returns the registered name in lowercase.
     pub fn register_command<F>(&mut self, name: &str, handler: F) -> String
     where
@@ -495,7 +458,6 @@ impl PluginHost {
     }
 
     /// Register a handler for `Action::Editor(EditorAction::PluginAction(id))`.
-    ///
     /// Call with the same `id` string you pass to `EditorAction::PluginAction`.
     pub fn register_action<F>(&mut self, id: &str, handler: F)
     where
@@ -543,11 +505,8 @@ impl PluginHost {
         val
     }
 
-    /// Render the open float (if any) into the given layer.
-    ///
-    /// `fg` and `bg` should be the editor's current theme colors so the float
-    /// blends with the rest of the UI instead of relying on the terminal's
-    /// default reverse-video colors.
+    /// Render the open float (if any) into the given layer. `fg`/`bg` should be the editor's
+    /// current theme colors so the float blends with the UI instead of using reverse-video defaults.
     pub fn render_float_into_layer(
         &self,
         layer: &mut crate::layer::Layer,
@@ -565,9 +524,8 @@ impl PluginHost {
         let rows = layer.rows();
         let cols = layer.cols();
 
-        // Size the window to fit content using unicode display width, bounded by
-        // terminal dimensions. Using `.len()` (byte length) here would give wrong
-        // widths for CJK or other multi-byte characters.
+        // Size to fit content using unicode display width, not `.len()` (byte length),
+        // which would give wrong widths for CJK or other multi-byte characters.
         let content_w = float
             .lines
             .iter()
@@ -713,10 +671,7 @@ impl PluginHost {
         lua.exec(code)
     }
 
-    /// Dispatch an event to all registered handlers.
-    ///
-    /// Handlers run synchronously on the calling thread (the main loop).
-    /// Any mutations they return are applied via [`apply_mutation`].
+    /// Dispatch an event to all registered handlers, applying any returned mutations via [`apply_mutation`].
     /// Invoke a Lua annotation action handler. Returns `true` if one ran.
     pub fn invoke_annotation_action(&self, ctx: &AnnotationActionCtx) -> bool {
         match &self.lua {
@@ -756,11 +711,8 @@ impl PluginHost {
         }
     }
 
-    /// Called on every idle frame (no input). Fires `CursorHold` if the cursor
-    /// has been stationary long enough.
-    ///
-    /// Returns the event to dispatch, if any, so the caller can call
-    /// `dispatch()` with it (avoiding a double-borrow).
+    /// Called on every idle frame (no input); fires `CursorHold` if the cursor has been stationary
+    /// long enough. Returns the event to dispatch, if any, so the caller avoids a double-borrow.
     pub fn tick_idle(&mut self) -> Option<EditorEvent> {
         self.cursor_hold
             .tick()
@@ -779,9 +731,8 @@ impl PluginHost {
         self.mutation_queue.push(mutation);
     }
 
-    /// Apply a mutation immediately (used internally by command/action handlers).
-    /// Float open/close mutations are applied directly to `open_float`; all
-    /// others are queued for the main loop.
+    /// Apply a mutation immediately (used internally by command/action handlers). Float open/close
+    /// mutations are applied directly to `open_float`; all others are queued for the main loop.
     pub fn apply_mutation(&mut self, mutation: PluginMutation) {
         match mutation {
             PluginMutation::OpenFloat(f) => {

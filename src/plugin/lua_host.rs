@@ -161,9 +161,8 @@ struct LuaSharedState {
     file_path: Option<String>,
     /// Snapshot of all open buffers with rich metadata.
     buf_list: Vec<BufEntry>,
-    /// Slot ID assigned to the handler currently being dispatched.
-    /// Each `rift.on()` registration gets a unique stable slot so that
-    /// `clear_highlights()` only affects that handler's highlights.
+    /// Slot ID of the handler currently dispatching, so `clear_highlights()`
+    /// only affects that handler's own highlights.
     current_slot: u32,
     /// Counter used to assign unique slot IDs when `rift.on()` is called.
     next_slot: u32,
@@ -282,11 +281,8 @@ impl LuaHost {
             os_table.set("execute", err_fn)?;
         }
 
-        // Internal handler registry table: _rift_handlers[event_name] = { {slot=n,fn=f}, ... }
-        // _rift_slot_events[slot_id] = event_name  (for rift.off lookup)
-        // _rift_slot_plugin[slot_id] = plugin_name (ownership tracking)
-        // _rift_plugin_slots[plugin_name] = [slot_ids]  (reverse index for unload)
-        // _rift_plugin_keymaps[plugin_name] = [{mode, keys}] (keymap ownership)
+        // Internal handler/registration tables: _rift_handlers[event] = {{slot,fn}},
+        // _rift_slot_{events,plugin}[slot] and _rift_plugin_{slots,keymaps}[plugin] index them for rift.off/unload.
         lua.globals().set("_rift_handlers", lua.create_table()?)?;
         lua.globals()
             .set("_rift_slot_events", lua.create_table()?)?;
@@ -299,8 +295,8 @@ impl LuaHost {
         // _rift_action_handlers["<kind>\0<verb>"] = fn(ctx)  (annotation actions)
         lua.globals()
             .set("_rift_action_handlers", lua.create_table()?)?;
-        // _rift_enter_handlers[kind] / _rift_leave_handlers[kind] = fn(ctx)
-        // (cursor enters/leaves an annotation of that kind, design.md sec 12).
+        // _rift_enter_handlers[kind] / _rift_leave_handlers[kind] = fn(ctx),
+        // when the cursor enters/leaves an annotation of that kind.
         lua.globals()
             .set("_rift_enter_handlers", lua.create_table()?)?;
         lua.globals()
@@ -773,8 +769,7 @@ impl LuaHost {
         }
 
         // rift.register_command(name, fn [, description [, arg_type]])
-        // description - shown in tab completion dropdown
-        // arg_type    - drives argument completion: "file", "dir"
+        // arg_type drives argument completion: "file", "dir"
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(
@@ -873,10 +868,8 @@ impl LuaHost {
             api.set("emit", f)?;
         }
 
-        // rift.spawn_shell(cmd, tag)
-        // Run a shell command asynchronously. When it completes, a UserEvent
-        // with name="ShellDone", tag=<tag>, success=<bool>, output=<string>
-        // is fired on all registered UserEvent handlers.
+        // rift.spawn_shell(cmd, tag): runs asynchronously; on completion fires a
+        // UserEvent name="ShellDone", tag=<tag>, success=<bool>, output=<string>.
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (cmd, tag): (String, String)| {
@@ -1017,8 +1010,7 @@ impl LuaHost {
         }
 
         // rift.add_highlight(start_line, start_col, end_line, end_col, color)
-        // line numbers are 1-indexed; columns are 0-indexed
-        // color: named ("red", "green", ...) or hex ("#rrggbb")
+        // lines are 1-indexed, columns 0-indexed; color is named or hex ("#rrggbb")
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(
@@ -1385,9 +1377,7 @@ impl LuaHost {
         }
 
         // rift.search(needle [, opts]) -> array of {row, col_start, col_end}
-        // Literal search over the current buffer lines.
-        // row is 1-indexed; col_start/col_end are 0-indexed byte offsets within the line.
-        // opts.whole_word = true  - only match when surrounded by non-word characters.
+        // Literal search, 1-indexed rows/0-indexed cols; opts.whole_word restricts to word boundaries.
         {
             let sh = Arc::clone(&shared);
             let f =
@@ -1455,10 +1445,8 @@ impl LuaHost {
             api.set("exec_action", f)?;
         }
 
-        // rift.map(mode, keys, action) - register a key binding
-        // mode: "n" | "i" | "c" | "s" | "g"
-        // keys: vim notation, e.g. "<C-p>", "gg", "<leader>s"
-        // action: action string, e.g. "editor:save", or a registered plugin action id
+        // rift.map(mode, keys, action) - register a key binding.
+        // mode: "n"|"i"|"c"|"s"|"g"; keys: vim notation e.g. "<C-p>"; action: action string or plugin action id.
         {
             let sh = Arc::clone(&shared);
             let f =
@@ -1907,8 +1895,7 @@ impl LuaHost {
             }
 
             // rift.lsp.get_diagnostics([uri]) -> array of {line, col, severity, message}
-            // uri is optional; if omitted, uses the active file's URI.
-            // severity: 1=error, 2=warning, 3=info, 4=hint
+            // uri defaults to the active file; severity: 1=error, 2=warning, 3=info, 4=hint
             {
                 let sh = Arc::clone(&shared);
                 let f = lua.create_function(move |lua, uri: Option<String>| {
@@ -2404,10 +2391,8 @@ end
                             continue;
                         }
                     };
-                    // Set current_slot before the handler runs so that
-                    // clear_highlights()/add_highlight() tag mutations with the right slot.
-                    // Restore the prior value after so a reentrant dispatch (e.g. via
-                    // rift.emit) doesn't leave current_slot pointing at an inner handler.
+                    // Tag current_slot for this handler's mutations, then restore the
+                    // prior value so reentrant dispatch (e.g. rift.emit) doesn't corrupt it.
                     let prev_slot = {
                         let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
                         let prev = s.current_slot;
@@ -2460,7 +2445,7 @@ end
     }
 
     /// Invoke the Lua cursor enter/leave hook for an annotation kind, if registered.
-    /// `enter` selects the handler table; true if a handler ran (design.md sec 12).
+    /// `enter` selects the handler table; true if a handler ran.
     pub fn invoke_annotation_hook(
         &self,
         enter: bool,
@@ -2579,10 +2564,8 @@ end
         true
     }
 
-    /// Load all `.lua` files in `dir`, and set `package.path` to include it.
-    /// Returns a list of error strings (empty means all loaded OK).
-    /// Load all top-level `.lua` files in `dir`, in lexicographic order.
-    /// Does not recurse into subdirectories. Does not modify `package.path`.
+    /// Load all top-level `.lua` files in `dir`, in lexicographic order (no recursion,
+    /// no `package.path` change). Returns error strings; empty means all loaded OK.
     pub fn load_dir(&self, dir: &std::path::Path) -> Vec<String> {
         let mut errors = Vec::new();
 
@@ -2641,9 +2624,8 @@ end
         result
     }
 
-    /// Drain all mutations queued by Lua API calls.
-    /// Also fires any pending shell-completion events as Lua UserEvents
-    /// before draining, so their handlers can queue further mutations.
+    /// Drain all mutations queued by Lua API calls. Fires pending shell-completion
+    /// events as Lua UserEvents first, so their handlers can queue further mutations.
     pub fn drain_mutations(&self) -> Vec<PluginMutation> {
         let pending = {
             let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());

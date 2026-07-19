@@ -52,9 +52,7 @@ fn test_get_end() {
 fn test_get_line_at() {
     let mut idx = LineIndex::new();
     idx.insert(0, &chars("A\nB\nC"));
-    // 0: 'A', 1: '\n' -> Line 0
-    // 2: 'B', 3: '\n' -> Line 1
-    // 4: 'C'          -> Line 2
+    // "A\nB\nC": offsets 0-1 are line 0, 2-3 are line 1, 4 is line 2.
 
     assert_eq!(idx.get_line_at(0), 0);
     assert_eq!(idx.get_line_at(1), 0); // Newline belongs to line 0

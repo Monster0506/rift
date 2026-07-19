@@ -356,9 +356,7 @@ fn test_gutter_thresholds() {
     assert_eq!(state.gutter_width, 5);
     assert_eq!(state.next_gutter_threshold, 1000);
 
-    // Reversion logic: if < threshold / 10
-    // At 100, threshold is 1000. 1000/10 = 100.
-    // Drop to 99. 99 < 100 is true. Should revert to width 4.
+    // Dropping to 99 lines is below threshold(1000)/10 = 100, so it reverts.
     state.update_buffer_stats(99, 100, crate::document::LineEnding::LF);
     assert_eq!(state.gutter_width, 4);
     assert_eq!(state.next_gutter_threshold, 100);

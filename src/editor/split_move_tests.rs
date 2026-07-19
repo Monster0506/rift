@@ -477,9 +477,8 @@ fn compositor_cell_fg(editor: &mut Editor<MockTerminal>, row: usize, col: usize)
     cells.get(row * cols + col).and_then(|c| c.fg)
 }
 
-// Layout (80×50 terminal): A row=0 col=0 rows=24 cols=40,
-//   B row=0 col=41 rows=24 cols=39, C row=25 col=0 rows=24 cols=80.
-// Vertical divider at col 40, horizontal divider at row 24.
+// Layout (80x50 terminal): A row=0 col=0 rows=24 cols=40, B row=0 col=41
+// rows=24 cols=39, C row=25 col=0 rows=24 cols=80 (dividers at col 40/row 24).
 #[test]
 fn active_window_border_is_highlighted() {
     let (_dir, pa, pb, pc) = make_files();

@@ -291,9 +291,7 @@ fn test_execute_insert_tab_not_expanded() {
     assert_eq!(text.as_bytes()[0], b'\t');
 }
 
-// =============================================================================
 // Undo/Redo Executor Tests
-// =============================================================================
 
 #[test]
 fn test_execute_undo_command() {

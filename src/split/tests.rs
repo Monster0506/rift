@@ -2,9 +2,7 @@ use super::layout::WindowLayout;
 use super::navigation::Direction;
 use super::tree::{SplitDirection, SplitTree};
 
-// ============================================================
-// Tree construction & manipulation
-// ============================================================
+// --- Tree construction & manipulation ---
 
 #[test]
 fn single_window_tree() {
@@ -158,9 +156,7 @@ fn close_focused_window_focuses_sibling_not_arbitrary_window() {
     );
 }
 
-// ============================================================
-// Focus management
-// ============================================================
+// --- Focus management ---
 
 #[test]
 fn set_focus_works() {
@@ -181,9 +177,7 @@ fn set_focus_invalid_id_returns_false() {
     assert!(!tree.set_focus(999));
 }
 
-// ============================================================
-// Document queries
-// ============================================================
+// --- Document queries ---
 
 #[test]
 fn windows_for_document() {
@@ -215,9 +209,7 @@ fn all_window_ids_returns_all() {
     assert_eq!(ids, vec![w1, w2, w3]);
 }
 
-// ============================================================
-// Per-window cursor
-// ============================================================
+// --- Per-window cursor ---
 
 #[test]
 fn new_split_copies_cursor_for_same_doc() {
@@ -260,9 +252,7 @@ fn independent_cursor_positions() {
     assert_eq!(tree.get_window(w2).unwrap().cursor_position, 50);
 }
 
-// ============================================================
-// Layout computation
-// ============================================================
+// --- Layout computation ---
 
 #[test]
 fn single_window_full_screen() {
@@ -465,9 +455,7 @@ fn layout_rows_cols_sum_to_total() {
     }
 }
 
-// ============================================================
-// Navigation
-// ============================================================
+// --- Navigation ---
 
 #[test]
 fn navigate_hsplit_up_down() {
@@ -532,9 +520,7 @@ fn navigate_four_windows() {
     assert_eq!(tree.navigate(Direction::Down, &layouts), Some(w4));
 }
 
-// ============================================================
-// Resize
-// ============================================================
+// --- Resize ---
 
 #[test]
 fn resize_hsplit() {
@@ -638,9 +624,7 @@ fn resize_clamps_at_bounds() {
     assert!(_l2.rows >= 3);
 }
 
-// ============================================================
-// Previous window tracking
-// ============================================================
+// --- Previous window tracking ---
 
 #[test]
 fn set_focus_tracks_previous() {
@@ -678,9 +662,7 @@ fn focus_previous_returns_none_when_no_history() {
     assert_eq!(tree.focus_previous(), None);
 }
 
-// ============================================================
-// Window exchange
-// ============================================================
+// --- Window exchange ---
 
 #[test]
 fn exchange_windows_swaps_documents() {
@@ -708,9 +690,7 @@ fn exchange_windows_same_id_returns_false() {
     assert!(!tree.exchange_windows(w1, w1));
 }
 
-// ============================================================
-// Window move
-// ============================================================
+// --- Window move ---
 
 #[test]
 fn move_window_single_window_returns_false() {
@@ -882,9 +862,8 @@ fn demo3_left_neighbor_swap() {
 
 #[test]
 fn demo8_up_joins_top_row_between() {
-    // H(V(w1,w2), [w3]) + Up -> V(V(w1,[w3]), w2).
-    // w3 (full-width bottom) moves up, lands between w1 and w2.
-    // After: all 3 in one row; w3 between w1 (left) and w2 (right).
+    // H(V(w1,w2), [w3]) + Up -> V(V(w1,[w3]), w2): w3 moves up and lands
+    // between w1 and w2, so all 3 end up in one row.
     let (mut tree, w1, w2, w3) = three_window_tree();
     tree.set_focus(w3);
     let layouts = tree.compute_layout(48, 80);

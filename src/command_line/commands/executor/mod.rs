@@ -149,13 +149,8 @@ impl std::fmt::Debug for ExecutionResult {
 pub struct CommandExecutor;
 
 impl CommandExecutor {
-    /// Execute a parsed command
-    ///
-    /// Modifies state as needed and returns the execution result
-    ///
-    /// Note: Write commands do NOT perform file I/O here.
-    /// They return Success/WriteAndQuit, and the editor is responsible
-    /// for calling Document::save() or Document::save_as().
+    /// Execute a parsed command. Write commands do NOT perform file I/O here --
+    /// they return Success/WriteAndQuit, and the editor calls Document::save[_as]().
     pub fn execute(
         command: ParsedCommand,
         state: &mut State,

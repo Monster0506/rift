@@ -2056,9 +2056,8 @@ fn cursor_snaps_instead_of_animating_across_a_viewport_jump() {
     render_once(&mut system, &mut term, &buf, true);
     assert_eq!(system.last_soft_cursor(), Some((0, 0)));
 
-    // Frame 2: cursor jumps to line 1991 (0-indexed; "line 1992" 1-indexed) -
-    // a `goto_line`-style jump, not incremental movement. The viewport
-    // recenters around it in one step.
+    // Frame 2: cursor jumps to line 1991 (goto_line-style, not incremental);
+    // the viewport recenters around it in one step.
     let target_line = 1991;
     let target_offset = buf.line_index.get_start(target_line).unwrap();
     let _ = buf.set_cursor(target_offset);

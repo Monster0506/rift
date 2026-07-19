@@ -145,16 +145,8 @@ pub struct JobHandle {
 /// Trait defining a background job.
 /// Jobs must be Send + 'static to be moved into a thread.
 pub trait Job: Send + std::fmt::Debug + 'static {
-    /// Run the job.
-    ///
-    /// # Arguments
-    /// * `id` - The unique ID assigned to this job.
-    /// * `sender` - Channel to send messages back to the editor.
-    ///
-    /// # Invariants
-    /// * The job MUST NOT access global editor state.
-    /// * The job SHOULD check `sender.send(...)` results AND `cancellation_signal.is_cancelled()`.
-    /// * If cancelled, the job SHOULD exit as soon as possible.
+    /// Run the job, sending messages back to the editor over `sender`. Must not access global
+    /// editor state; should check `sender.send` results and the signal, exiting promptly if cancelled.
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal);
 
     /// Whether this job should trigger notifications in the editor.
@@ -315,8 +307,7 @@ impl JobManager {
         }
     }
 
-    /// Clean up finished/failed/cancelled jobs.
-    /// This joins the threads to release resources.
+    /// Clean up finished/failed/cancelled jobs, joining their threads to release resources.
     /// Returns a list of cleaned up IDs.
     pub fn cleanup_finished_jobs(&mut self) -> Vec<usize> {
         let mut finished_ids = Vec::new();
@@ -342,8 +333,7 @@ impl JobManager {
         finished_ids
     }
 
-    /// Cancel a specific job.
-    /// This sets the cancellation flag and marks the state as Cancelled.
+    /// Cancel a specific job: sets the cancellation flag and marks the state as Cancelled.
     /// The job thread is expected to notice the flag and exit.
     pub fn cancel_job(&mut self, id: usize) {
         if let Some(job) = self.jobs.get_mut(&id) {

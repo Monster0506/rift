@@ -1,15 +1,5 @@
-//! Key handler
-//! Processes keypresses and determines what actions to take
-//! Handles special keys that need immediate processing before command translation
-
-/// ## `key_handler`/ Invariants
-///
-/// - Key handlers translate input events into `Command`s.
-/// - Key handlers never mutate buffer or editor state directly.
-/// - Key handlers are mode-aware but buffer-agnostic.
-/// - Multi-key sequences are handled entirely within this layer.
-/// - Invalid or incomplete sequences yield `Noop` or deferred input.
-/// - Key handling is deterministic.
+//! Key handler: processes keypresses into actions, handling special keys and multi-key
+//! sequences before command translation. Deterministic; never mutates buffer/editor state directly.
 use crate::key::Key;
 use crate::mode::Mode;
 

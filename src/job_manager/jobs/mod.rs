@@ -1,8 +1,5 @@
-//! Job modules
-//!
-//! # Usage
-//!
-//! Import `Job` and `JobPayload` in any test file (including nested test modules):
+//! Job modules. Import `Job` and `JobPayload` from here in any test file,
+//! including nested test modules.
 pub mod cache_warming;
 pub mod completion;
 pub mod explorer;

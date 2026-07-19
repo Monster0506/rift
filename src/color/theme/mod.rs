@@ -4,45 +4,16 @@
 use super::Color;
 use crate::state::UserSettings;
 
-/// Theme handler trait for applying themes
-///
-/// This trait allows themes to be extended to apply more than just background/foreground colors.
-/// In the future, themes can include:
-/// - Status bar colors
-/// - Selection highlight colors
-/// - Cursor colors
-/// - Command line window colors
-/// - Border colors
-/// - Syntax highlighting colors
-/// - etc.
+/// Theme handler trait, allowing themes to be extended to apply more than
+/// just background/foreground colors (status bar, selection, cursor, etc.)
 pub trait ThemeHandler {
-    /// Apply a theme to the given settings
-    ///
-    /// This is called whenever a theme is changed via `:set theme <name>`.
-    /// The handler is responsible for applying all theme properties to the settings.
+    /// Apply a theme to the given settings; called whenever a theme is
+    /// changed via `:set theme <name>`.
     fn apply_theme(&self, theme: &Theme, settings: &mut UserSettings);
 }
 
-/// Default theme handler implementation
-///
-/// Currently applies background and foreground colors, but can be extended
-/// to handle additional theme properties as they are added to the Theme struct.
-///
-/// Example of future extension:
-/// ```rust,ignore
-/// impl ThemeHandler for DefaultThemeHandler {
-///     fn apply_theme(&self, theme: &Theme, settings: &mut UserSettings) {
-///         settings.theme = Some(theme.name.to_string());
-///         settings.editor_bg = Some(theme.background);
-///         settings.editor_fg = Some(theme.foreground);
-///         settings.status_bar_bg = Some(theme.status_bar_bg);
-///         settings.status_bar_fg = Some(theme.status_bar_fg);
-///         settings.selection_bg = Some(theme.selection_bg);
-///         settings.cursor_color = Some(theme.cursor_color);
-///         // etc.
-///     }
-/// }
-/// ```
+/// Default theme handler; applies background and foreground colors, and can
+/// be extended to handle additional theme properties as they're added.
 pub struct DefaultThemeHandler;
 
 impl ThemeHandler for DefaultThemeHandler {

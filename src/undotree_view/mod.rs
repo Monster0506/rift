@@ -1,5 +1,3 @@
-//! Undo Tree Visualization
-//!
 //! Renders the undo history as a vertical "git-graph" style tree.
 
 use crate::character::Character;
@@ -152,10 +150,8 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
 }
 
 type Highlights = Vec<(std::ops::Range<usize>, crate::color::Color)>;
-/// Render the undo tree to plain text for use in a buffer.
-/// Returns `(text, sequences, highlights)` where:
-/// - `sequences[i]` is the EditSeq for line i (u64::MAX for connector lines)
-/// - `highlights` is a list of `(byte_range, Color)` pairs for per-character coloring
+/// Render the undo tree to plain text for use in a buffer. Returns `(text, sequences, highlights)`:
+/// `sequences[i]` is the EditSeq for line i (u64::MAX for connector lines); `highlights` are `(byte_range, Color)` pairs.
 pub fn render_tree_to_text(tree: &UndoTree) -> (String, Vec<EditSeq>, Highlights) {
     let (lines, sequences, _cursor) = render_tree(tree);
     let mut text = String::new();

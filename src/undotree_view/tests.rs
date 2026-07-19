@@ -68,11 +68,7 @@ fn test_cursor_position_on_merge() {
 
     let (lines, _, cursor_row) = render_tree(&tree);
 
-    // In descending order:
-    // 3: Tip
-    // 2: Tip
-    // 1: Merge of 3 and 2. Should produce a connector line, THEN the node line.
-    // 0: Parent of 1
+    // Descending: 3 and 2 are tips, 1 is their merge (connector then node line), 0 is 1's parent.
 
     // If there is a connector line, Node 1 will be on a later line.
     // The cursor should point to Node 1's line (containing "@"), NOT the connector line.

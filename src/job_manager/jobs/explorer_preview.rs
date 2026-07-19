@@ -35,12 +35,8 @@ fn decode_preview_text(slice: &[u8]) -> Option<&str> {
     }
 }
 
-/// Background job that produces a preview for the file-explorer right pane.
-///
-/// - If `path` is a directory it reads the entries and returns them.
-/// - If `path` is a (text) file it reads the first few KiB and returns
-///   a line-trimmed preview string.
-/// - Binary files are represented by a placeholder message.
+/// Background job producing a file-explorer right-pane preview: directory
+/// entries, a trimmed text snippet, or a placeholder message for binary files.
 #[derive(Debug)]
 pub struct ExplorerPreviewJob {
     right_doc_id: DocumentId,

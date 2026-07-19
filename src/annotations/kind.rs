@@ -1,12 +1,11 @@
-//! Namespaced annotation kinds (design.md sec 4).
+//! Namespaced annotation kinds.
 //! Open strings like "lsp.diagnostic"; bulk ops query by prefix, no closed enum.
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 /// An annotation kind: a namespaced string like `"lsp.diagnostic"` or `"ui.button"`.
-/// Backed by `Arc<str>` so cloning a `Kind` (e.g. into a Lua snapshot view) is
-/// a refcount bump, not a fresh string allocation.
+/// Backed by `Arc<str>`, so cloning it is a refcount bump, not an allocation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Kind(Arc<str>);

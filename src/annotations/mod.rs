@@ -284,9 +284,8 @@ impl AnnotationStore {
         }
     }
 
-    /// Mark both the interval tree and the id/line-bucket structures stale.
-    /// Also bumps `revision`, since every caller of this represents an
-    /// observable change to the annotation set.
+    /// Mark the interval tree and id/line-bucket structures stale, and bump
+    /// `revision` since every caller represents an observable change.
     fn invalidate_index(&mut self) {
         self.index_dirty.set(true);
         self.aux_dirty.set(true);
@@ -402,9 +401,8 @@ impl AnnotationStore {
         id
     }
 
-    /// Mutate the annotation with the given id in place. Returns `false` if no
-    /// such annotation exists. Skips the index rebuild when neither the anchor
-    /// nor interactivity changed, since those are all the index depends on.
+    /// Mutate the annotation with the given id in place (`false` if not found).
+    /// Skips the index rebuild when neither anchor nor interactivity changed.
     pub fn update(&mut self, id: AnnotationId, f: impl FnOnce(&mut Annotation)) -> bool {
         if let Some(a) = self.annotations.iter_mut().find(|a| a.id == id) {
             let before = (a.anchor, a.is_interactive());
@@ -508,10 +506,8 @@ impl AnnotationStore {
         out
     }
 
-    /// Inline (Overlay/Leading) adornments as (start, end, text, color, is_leading);
-    /// Overlay end = range end (or point width), Leading end = start (insertion).
-    ///
-    /// Restricted to annotations overlapping `range` via the interval index.
+    /// Inline (Overlay/Leading) adornments overlapping `range` as (start, end,
+    /// text, color, is_leading); Overlay end = range end, Leading end = start.
     pub fn inline_adornments(
         &self,
         colors: Option<&crate::color::theme::SyntaxColors>,

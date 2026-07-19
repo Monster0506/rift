@@ -1,7 +1,5 @@
-//! Dot-repeat state management
-//!
-//! Encapsulates the register and recording state needed to replay
-//! the last repeatable action with the `.` key.
+//! Dot-repeat state: the register and recording state needed to replay the
+//! last repeatable action with the `.` key.
 
 use crate::command::Command;
 

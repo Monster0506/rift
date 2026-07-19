@@ -1,4 +1,4 @@
-//! Typed read helpers over the generic Value payload (design.md sec 6).
+//! Typed read helpers over the generic Value payload.
 //! Pure functions, never a second storage path.
 
 use super::value::Value;

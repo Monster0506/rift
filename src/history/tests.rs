@@ -1,8 +1,6 @@
 use super::*;
 
-// =============================================================================
 // CommandHistory Tests
-// =============================================================================
 
 #[test]
 fn test_command_history_add_and_len() {
@@ -132,9 +130,7 @@ fn test_command_history_add_resets_navigation() {
     assert_eq!(history.prev_match(), Some("cmd2"));
 }
 
-// =============================================================================
 // Position and Range Tests
-// =============================================================================
 
 #[test]
 fn test_position_new() {
@@ -153,9 +149,7 @@ fn test_range_is_empty() {
     assert!(!non_empty.is_empty());
 }
 
-// =============================================================================
 // EditOperation Tests
-// =============================================================================
 
 #[test]
 fn test_insert_operation_inverse() {
@@ -240,9 +234,7 @@ fn test_operation_estimated_size() {
     assert!(delete.estimated_size() > 10);
 }
 
-// =============================================================================
 // EditTransaction Tests
-// =============================================================================
 
 #[test]
 fn test_transaction_new() {
@@ -298,9 +290,7 @@ fn test_transaction_inverse() {
     }
 }
 
-// =============================================================================
 // UndoTree Tests
-// =============================================================================
 
 #[test]
 fn test_undo_tree_new() {
@@ -443,9 +433,7 @@ fn test_undo_tree_clear() {
     assert!(!tree.can_redo());
 }
 
-// =============================================================================
 // DocumentSnapshot Tests
-// =============================================================================
 
 #[test]
 fn test_document_snapshot() {
@@ -457,9 +445,7 @@ fn test_document_snapshot() {
     assert_eq!(snap.line_count, 3); // "Hello", "World", ""
 }
 
-// =============================================================================
 // Additional UndoTree Tests
-// =============================================================================
 
 #[test]
 fn test_undo_tree_multiple_undo_redo_cycles() {
@@ -696,9 +682,7 @@ fn test_redo_at_leaf_returns_none() {
     assert!(tree.redo().is_none());
 }
 
-// =============================================================================
 // goto_seq Tests
-// =============================================================================
 
 #[test]
 fn test_goto_seq_same_position() {
@@ -796,10 +780,7 @@ fn test_goto_seq_to_root() {
 fn test_goto_seq_cross_branch() {
     let mut tree = UndoTree::new();
 
-    // Create branching structure:
-    // 0 -> 1 -> 2
-    //      |
-    //      +-> 3
+    // Branching structure: 0 -> 1 -> 2, with 1 also branching to -> 3.
 
     let mut tx1 = EditTransaction::new("Edit 1");
     tx1.record(EditOperation::Insert {
@@ -897,10 +878,7 @@ fn test_goto_seq_updates_last_visited_child() {
 fn test_compute_replay_path() {
     let mut tree = UndoTree::new();
 
-    // Create branching structure:
-    // 0 -> 1 -> 2
-    //      |
-    //      +-> 3
+    // Branching structure: 0 -> 1 -> 2, with 1 also branching to -> 3.
 
     let mut tx1 = EditTransaction::new("Edit 1");
     tx1.record(EditOperation::Insert {
@@ -1002,9 +980,7 @@ fn test_compute_replay_path_ignores_a_distant_checkpoint() {
     assert!(replay.redo_ops.is_empty());
 }
 
-// =============================================================================
 // saved_seq Tests
-// =============================================================================
 
 #[test]
 fn test_new_tree_is_at_saved() {
@@ -1093,18 +1069,12 @@ fn test_clear_resets_saved_seq() {
     assert!(tree.is_at_saved());
 }
 
-// =============================================================================
 // goto_seq Branch Navigation Tests
-// =============================================================================
 
 #[test]
 fn test_goto_seq_cross_branch_content() {
-    // Build: 0 -> 1 (A) -> 2 (B) -> 3 (C)
-    //                   \-> 4 (D)   (branch from seq=1 after undoing to seq=2... wait,
-    //                                branch from seq=2 after undoing back)
-    // Actually: 0 -> 1 -> 2 -> 3 (linear A,B,C), then undo to seq=2, push D (seq=4)
-    // Tree:  0 -> 1 -> 2 -> 3
-    //                   \-> 4
+    // Build linear A,B,C (0->1->2->3), then undo to seq=2 and push D as a
+    // branch (seq=4), giving tree 0->1->2->3 with 2 also branching to ->4.
     let mut tree = UndoTree::new();
 
     let mut tx_a = EditTransaction::new("A");

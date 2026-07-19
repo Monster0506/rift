@@ -68,9 +68,7 @@ impl LanguageLoader {
         }
     }
 
-    // -------------------------------------------------------------------------
     // Dynamic registration (called from plugin mutations)
-    // -------------------------------------------------------------------------
 
     pub fn register_filetype(&self, ext: &str, lang_name: &str) {
         let mut reg = self.dynamic.write().unwrap_or_else(|e| e.into_inner());
@@ -79,8 +77,7 @@ impl LanguageLoader {
     }
 
     /// Return the language name for a file path from the filetype registry alone,
-    /// without requiring a tree-sitter grammar to be available. Returns `None` for
-    /// files with no extension or an unrecognised extension.
+    /// without requiring a tree-sitter grammar. `None` for no/unrecognised extension.
     pub fn language_name_for_file(&self, path: &Path) -> Option<String> {
         let ext = path.extension()?.to_str()?;
         // Dynamic registry (from plugins) takes priority.
@@ -131,14 +128,8 @@ impl LanguageLoader {
             .insert(lang_name.to_string(), query_src.to_string());
     }
 
-    /// Load a tree-sitter grammar from a shared library at runtime.
-    ///
-    /// `so_path`: path to the compiled `.so` / `.dll` / `.dylib`.
-    /// `fn_name`: exported C symbol, e.g. `"tree_sitter_toml"`.
-    ///
-    /// The library is kept alive for the lifetime of this `LanguageLoader`.
-    /// After a successful call, `lang_name` can be used with `register_filetype`
-    /// and `register_language_query` from Lua like any built-in language.
+    /// Load a tree-sitter grammar from a shared library (`so_path`, with exported
+    /// C symbol `fn_name`) at runtime; kept alive for the loader's lifetime.
     #[cfg(feature = "treesitter")]
     pub fn register_grammar(
         &self,
@@ -247,9 +238,7 @@ impl LanguageLoader {
             .len()
     }
 
-    // -------------------------------------------------------------------------
     // Language loading
-    // -------------------------------------------------------------------------
 
     /// Load a language based on file extension, checking the dynamic registry first.
     pub fn load_language_for_file(&self, path: &Path) -> Result<LoadedLanguage, RiftError> {
@@ -327,9 +316,7 @@ impl LanguageLoader {
         ))
     }
 
-    // -------------------------------------------------------------------------
     // Query loading
-    // -------------------------------------------------------------------------
 
     /// Load a highlights query, checking dynamic overrides first.
     #[allow(unused_variables)]
@@ -396,9 +383,7 @@ impl LanguageLoader {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Bundled grammar tables
-// ---------------------------------------------------------------------------
 
 #[cfg(feature = "treesitter")]
 fn get_bundled_language(lang_name: &str) -> Option<(Language, &'static str)> {
@@ -492,11 +477,8 @@ fn get_bundled_language(lang_name: &str) -> Option<(Language, &'static str)> {
     }
 }
 
-/// Built-in injections queries for bundled grammars.
-///
-/// The capture name in these queries is the target language name.
-/// Our simplified injection protocol maps capture name -> language,
-/// avoiding the need to parse `#set! injection.language` predicates.
+/// Built-in injections queries for bundled grammars. The capture name is the
+/// target language, avoiding the need to parse `#set! injection.language`.
 fn get_bundled_injections_query(lang_name: &str) -> Option<&'static str> {
     match lang_name {
         "svelte" => Some(
