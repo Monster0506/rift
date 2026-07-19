@@ -676,16 +676,17 @@ impl<T: TerminalBackend> Editor<T> {
             doc.discard_pending_lsp_changes();
             return;
         };
-        if !self.lsp_manager.is_tracking(&path) {
+        let uri = crate::lsp::protocol::path_to_uri(&path);
+        if !self.lsp_manager.is_tracking_uri(&uri) {
             doc.discard_pending_lsp_changes();
             return;
         }
 
-        let encoding = self.lsp_manager.position_encoding_for_path(&path);
-        if self.lsp_manager.supports_incremental_sync(&path) {
+        let encoding = self.lsp_manager.position_encoding_for_uri(&uri);
+        if self.lsp_manager.supports_incremental_sync_uri(&uri) {
             if let Some((range, text)) = doc.take_incremental_lsp_changes(encoding) {
                 self.lsp_manager
-                    .did_change_incremental(&path, vec![(range, text)]);
+                    .did_change_incremental_uri(&uri, vec![(range, text)]);
                 return;
             }
         } else {
@@ -694,7 +695,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let doc = self.document_manager.active_document().unwrap();
         let content = String::from_utf8_lossy(&doc.buffer.to_logical_bytes()).into_owned();
-        self.lsp_manager.did_change(&path, &content);
+        self.lsp_manager.did_change_uri(&uri, &content);
     }
 
     /// Open the diagnostics panel for the current document.
