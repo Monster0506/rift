@@ -171,9 +171,17 @@ impl LspManager {
         &self,
         path: &Path,
     ) -> crate::lsp::protocol::PositionEncoding {
-        let uri = path_to_uri(path);
+        self.position_encoding_for_uri(&path_to_uri(path))
+    }
+
+    /// Same as `position_encoding_for_path`, for a caller that already has
+    /// the URI (avoids recomputing it on a hot per-keystroke path).
+    pub(crate) fn position_encoding_for_uri(
+        &self,
+        uri: &str,
+    ) -> crate::lsp::protocol::PositionEncoding {
         self.open_docs
-            .get(&uri)
+            .get(uri)
             .and_then(|s| self.position_encodings.get(&s.language))
             .copied()
             .unwrap_or_default()
@@ -399,17 +407,24 @@ impl LspManager {
     /// True when a did_change for `path` would actually reach a live client,
     /// so callers can skip materializing the document content otherwise.
     pub fn is_tracking(&self, path: &Path) -> bool {
-        let uri = path_to_uri(path);
+        self.is_tracking_uri(&path_to_uri(path))
+    }
+
+    /// Same as `is_tracking`, for a caller that already has the URI.
+    pub(crate) fn is_tracking_uri(&self, uri: &str) -> bool {
         self.open_docs
-            .get(&uri)
+            .get(uri)
             .is_some_and(|state| self.clients.contains_key(&state.language))
     }
 
     /// Notify the server that a document's content changed.
     pub fn did_change(&mut self, path: &Path, content: &str) {
-        let uri = path_to_uri(path);
+        self.did_change_uri(&path_to_uri(path), content);
+    }
 
-        let (language, version) = match self.open_docs.get_mut(&uri) {
+    /// Same as `did_change`, for a caller that already has the URI.
+    pub(crate) fn did_change_uri(&mut self, uri: &str, content: &str) {
+        let (language, version) = match self.open_docs.get_mut(uri) {
             Some(state) => {
                 state.version += 1;
                 (state.language.clone(), state.version)
@@ -422,24 +437,33 @@ impl LspManager {
             None => return,
         };
 
-        let params = serde_json::to_value(DidChangeTextDocumentParams {
-            text_document: VersionedTextDocumentIdentifier { uri, version },
+        let params = DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: uri.to_string(),
+                version,
+            },
             content_changes: vec![TextDocumentContentChangeEvent {
                 range: None,
                 text: content.to_string(),
             }],
-        })
-        .unwrap_or(Value::Null);
+        };
 
-        client.send_notification("textDocument/didChange", params);
+        client.send_notification_typed("textDocument/didChange", &params);
     }
 
     /// Notify the server of incremental changes (applied in order) instead of
     /// resending the document. Only call when `supports_incremental_sync` is true.
     pub fn did_change_incremental(&mut self, path: &Path, changes: Vec<(LspRange, String)>) {
-        let uri = path_to_uri(path);
+        self.did_change_incremental_uri(&path_to_uri(path), changes);
+    }
 
-        let (language, version) = match self.open_docs.get_mut(&uri) {
+    /// Same as `did_change_incremental`, for a caller that already has the URI.
+    pub(crate) fn did_change_incremental_uri(
+        &mut self,
+        uri: &str,
+        changes: Vec<(LspRange, String)>,
+    ) {
+        let (language, version) = match self.open_docs.get_mut(uri) {
             Some(state) => {
                 state.version += 1;
                 (state.language.clone(), state.version)
@@ -460,21 +484,27 @@ impl LspManager {
             })
             .collect();
 
-        let params = serde_json::to_value(DidChangeTextDocumentParams {
-            text_document: VersionedTextDocumentIdentifier { uri, version },
+        let params = DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: uri.to_string(),
+                version,
+            },
             content_changes,
-        })
-        .unwrap_or(Value::Null);
+        };
 
-        client.send_notification("textDocument/didChange", params);
+        client.send_notification_typed("textDocument/didChange", &params);
     }
 
     /// Whether the server handling `path` negotiated incremental document
     /// sync (defaults to false -- full-document sync -- until negotiated).
     pub fn supports_incremental_sync(&self, path: &Path) -> bool {
-        let uri = path_to_uri(path);
+        self.supports_incremental_sync_uri(&path_to_uri(path))
+    }
+
+    /// Same as `supports_incremental_sync`, for a caller that already has the URI.
+    pub(crate) fn supports_incremental_sync_uri(&self, uri: &str) -> bool {
         self.open_docs
-            .get(&uri)
+            .get(uri)
             .and_then(|s| self.incremental_sync.get(&s.language))
             .copied()
             .unwrap_or(false)
