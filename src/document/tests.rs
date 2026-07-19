@@ -133,16 +133,121 @@ fn test_incremental_lsp_change_positions_a_non_bmp_char_correctly() {
 
 #[cfg(feature = "lsp")]
 #[test]
-fn test_incremental_lsp_change_falls_back_for_multiple_edits() {
+fn test_incremental_lsp_change_combines_chaining_inserts() {
+    // Two single-char inserts landing back-to-back (the common rapid-typing
+    // case) must combine into one incremental diff, not force a full resync.
     use crate::lsp::protocol::PositionEncoding;
     let mut doc = Document::new(1).unwrap();
     let _ = doc.insert_str("a");
     let _ = doc.insert_str("b");
 
+    let (range, text) = doc
+        .take_incremental_lsp_changes(PositionEncoding::Utf16)
+        .expect("two chaining inserts must combine into one incremental change");
+    assert_eq!(range.start.line, 0);
+    assert_eq!(range.start.character, 0);
+    assert_eq!(range.end.line, 0);
+    assert_eq!(
+        range.end.character, 0,
+        "a pure insert's range is zero-width"
+    );
+    assert_eq!(text, "ab");
+}
+
+#[cfg(feature = "lsp")]
+#[test]
+fn test_incremental_lsp_change_combines_three_chaining_inserts() {
+    use crate::lsp::protocol::PositionEncoding;
+    let mut doc = Document::new(1).unwrap();
+    let _ = doc.insert_str("a");
+    let _ = doc.insert_str("b");
+    let _ = doc.insert_str("c");
+
+    let (range, text) = doc
+        .take_incremental_lsp_changes(PositionEncoding::Utf16)
+        .expect("three chaining inserts must combine into one incremental change");
+    assert_eq!(range.start.character, 0);
+    assert_eq!(range.end.character, 0);
+    assert_eq!(text, "abc");
+}
+
+#[cfg(feature = "lsp")]
+#[test]
+fn test_incremental_lsp_change_combines_insert_run_spanning_a_newline() {
+    // The run's own inserted text can cross a line boundary as long as each
+    // insert still lands exactly where the previous one's text ended.
+    use crate::lsp::protocol::PositionEncoding;
+    let mut doc = Document::new(1).unwrap();
+    let _ = doc.insert_str("x\n");
+    let _ = doc.insert_str("y");
+
+    let (range, text) = doc
+        .take_incremental_lsp_changes(PositionEncoding::Utf16)
+        .expect("an insert run crossing a newline must still combine");
+    assert_eq!(range.start.line, 0);
+    assert_eq!(range.start.character, 0);
+    assert_eq!(range.end.line, 0);
+    assert_eq!(range.end.character, 0);
+    assert_eq!(text, "x\ny");
+}
+
+#[cfg(feature = "lsp")]
+#[test]
+fn test_incremental_lsp_change_falls_back_when_inserts_are_not_adjacent() {
+    // Two inserts that don't chain (the second isn't positioned right after
+    // where the first one's text ended) must still fall back to full sync.
+    use crate::lsp::protocol::PositionEncoding;
+    let mut doc = Document::new(1).unwrap();
+    let _ = doc.insert_str("aaaa");
+    let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
+
+    let _ = doc.buffer.set_cursor(0);
+    let _ = doc.insert_char('X'); // now: "Xaaaa", cursor after X
+    let _ = doc.buffer.set_cursor(5);
+    let _ = doc.insert_char('Y'); // unrelated position, doesn't chain from X's insert
+
     assert!(
         doc.take_incremental_lsp_changes(PositionEncoding::Utf16)
             .is_none(),
-        "two edits since the last drain must fall back to full sync"
+        "non-adjacent inserts must fall back to full sync"
+    );
+}
+
+#[cfg(feature = "lsp")]
+#[test]
+fn test_incremental_lsp_change_falls_back_for_mixed_insert_and_delete() {
+    use crate::lsp::protocol::PositionEncoding;
+    let mut doc = Document::new(1).unwrap();
+    let _ = doc.insert_str("ab");
+    let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
+
+    let _ = doc.insert_char('c'); // "abc"
+    doc.delete_backward(); // back to "ab" -- one insert, one delete pending
+
+    assert!(
+        doc.take_incremental_lsp_changes(PositionEncoding::Utf16)
+            .is_none(),
+        "a mixed insert+delete batch must fall back to full sync"
+    );
+}
+
+#[cfg(feature = "lsp")]
+#[test]
+fn test_incremental_lsp_change_falls_back_for_multiple_deletes() {
+    // Deliberately not combined (deletes aren't handled by the insert-run
+    // combiner): still falls back, same as before this batch existed.
+    use crate::lsp::protocol::PositionEncoding;
+    let mut doc = Document::new(1).unwrap();
+    let _ = doc.insert_str("abc");
+    let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
+
+    doc.delete_backward();
+    doc.delete_backward();
+
+    assert!(
+        doc.take_incremental_lsp_changes(PositionEncoding::Utf16)
+            .is_none(),
+        "multiple deletes must still fall back to full sync"
     );
 }
 

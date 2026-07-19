@@ -279,8 +279,8 @@ impl Document {
         encoding.units_for_char_offset(chars, char_offset)
     }
 
-    /// Drain edits since the last call as one incremental LSP change, only if
-    /// exactly one landed and it's a single-line insert/delete/replace (else None: fall back to full sync).
+    /// Drain edits since the last call as one incremental LSP change: a
+    /// single-line insert/delete/replace, or a chained run of inserts. Anything else returns `None`, meaning full sync.
     #[cfg(feature = "lsp")]
     pub fn take_incremental_lsp_changes(
         &mut self,
@@ -291,7 +291,27 @@ impl Document {
         use crate::lsp::protocol::{LspPosition, LspRange};
 
         let mut ops = std::mem::take(&mut self.pending_lsp_edits);
-        if ops.len() != 1 {
+        if ops.len() > 1 {
+            let (position, text) = combine_insert_run(&ops)?;
+            let units = self.lsp_position_units_in_line(
+                position.line as usize,
+                position.col as usize,
+                encoding,
+            );
+            let pos = LspPosition {
+                line: position.line,
+                character: units,
+            };
+            let text: String = text.iter().map(Character::to_char_lossy).collect();
+            return Some((
+                LspRange {
+                    start: pos.clone(),
+                    end: pos,
+                },
+                text,
+            ));
+        }
+        if ops.is_empty() {
             return None;
         }
         let op = ops.pop().unwrap();
@@ -437,6 +457,59 @@ impl Document {
             self.is_read_only = true;
         }
     }
+}
+
+/// The document position immediately after inserting `text` at `start`,
+/// tracking line/col across any newlines `text` itself contains.
+#[cfg(feature = "lsp")]
+fn advance_position(
+    start: crate::history::Position,
+    text: &[crate::character::Character],
+) -> crate::history::Position {
+    let mut line = start.line;
+    let mut col = start.col;
+    for ch in text {
+        if matches!(ch, crate::character::Character::Newline) {
+            line += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+    }
+    crate::history::Position { line, col }
+}
+
+/// Combine a chained run of `Insert` ops (each landing where the previous
+/// one ended) into one start position and concatenated text. `None` otherwise.
+#[cfg(feature = "lsp")]
+fn combine_insert_run(
+    ops: &[crate::history::EditOperation],
+) -> Option<(crate::history::Position, Vec<crate::character::Character>)> {
+    use crate::history::EditOperation;
+
+    let EditOperation::Insert {
+        position: first_pos,
+        text: first_text,
+        ..
+    } = ops.first()?
+    else {
+        return None;
+    };
+
+    let mut combined = first_text.clone();
+    let mut expected_next = advance_position(*first_pos, first_text);
+    for op in &ops[1..] {
+        let EditOperation::Insert { position, text, .. } = op else {
+            return None;
+        };
+        if *position != expected_next {
+            return None;
+        }
+        combined.extend_from_slice(text);
+        expected_next = advance_position(*position, text);
+    }
+
+    Some((*first_pos, combined))
 }
 
 #[cfg(test)]
