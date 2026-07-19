@@ -75,7 +75,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
 
                 // Interface-mode buffers snap vertical motion between actionable
-                // lines, else fall through to ordinary motion (design.md sec 9.4).
+                // lines, else fall through to ordinary motion.
                 if self.current_mode == Mode::Normal
                     && matches!(motion, Motion::Up | Motion::Down)
                     && self.active_doc_is(|d| d.is_interface_mode())
@@ -1128,7 +1128,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// `v`/`V`/`Ctrl-V`: start a fresh active region at the cursor, or if it sits inside a
-    /// banked region of the same kind, pop that back out with its original direction (design.md S3).
+    /// banked region of the same kind, pop that back out with its original direction.
     pub(super) fn enter_visual_or_resume(&mut self, mode: Mode) -> bool {
         let Some(kind) = mode.visual_range_kind() else {
             return false;

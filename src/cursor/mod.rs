@@ -1,16 +1,5 @@
-//! Software cursor rendering
-//!
-//! Two rendering strategies, chosen by mode:
-//!
-//! Normal / OperatorPending  ->  SOFTWARE BLOCK
-//!   A compositor cell at the cursor position: same character, fg/bg inverted.
-//!   The terminal cursor stays hidden.  No escape-sequence cursor at all.
-//!
-//! Insert / Command / Search / Rename / …  ->  TERMINAL BAR
-//!   The terminal cursor is shown at the cursor position with the DECSCUSR
-//!   "steady bar" shape (\e[6 q).  The terminal draws a thin vertical bar ON
-//!   TOP of whatever character is in that cell — the character is never
-//!   replaced, never hidden.  This is identical to how Neovim does it.
+//! Software cursor: Normal/OperatorPending inverts a compositor cell (terminal
+//! cursor hidden); Insert/Command/Search/Rename shows a real DECSCUSR bar.
 
 use crate::character::Character;
 use crate::color::Color;

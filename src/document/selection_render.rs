@@ -4,10 +4,8 @@
 use super::Document;
 use crate::selection::Region;
 
-// 24-bit RGB for the widest color range (confirmed truecolor-capable
-// terminal); not the ANSI named Blue, which renders as a dark, easy-to-miss
-// navy. Banked and active regions share this color so the selection reads
-// as one consistent highlight, not a rainbow.
+// 24-bit RGB, not ANSI Blue (too dark/navy). Banked and active regions
+// share this color so the selection reads as one highlight, not a rainbow.
 const SELECTION_BG: crate::color::Color = crate::color::Color::Rgb {
     r: 100,
     g: 160,

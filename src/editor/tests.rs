@@ -1495,6 +1495,79 @@ fn test_resolve_display_map_cached_keeps_entries_per_width() {
 }
 
 #[test]
+fn test_resolve_display_map_cached_detects_placeholder_to_loaded_swap() {
+    // Mirrors the real open-file flow: render the empty placeholder (caching
+    // a "complete" empty map), then swap in loaded content at revision 0.
+    let mut editor = create_editor_sized(24, 80);
+    let doc_id = editor.document_manager.active_document_id().unwrap();
+    editor.resolve_display_map_cached(doc_id, 80, 0, 100);
+    assert_eq!(
+        editor
+            .document_manager
+            .get_document(doc_id)
+            .unwrap()
+            .buffer
+            .revision,
+        0
+    );
+
+    let loaded_text = "line one\nline two\nline three\n";
+    let (chars, line_ending, starts) = crate::document::decode_file_bytes(loaded_text.as_bytes());
+    let piece_table = crate::buffer::rope::PieceTable::new(chars);
+    let line_index =
+        crate::buffer::line_index::LineIndex::from_table_with_starts(piece_table, starts);
+    editor
+        .document_manager
+        .get_document_mut(doc_id)
+        .unwrap()
+        .apply_loaded_content(line_index, line_ending);
+
+    let dm = editor
+        .resolve_display_map_cached(doc_id, 80, 0, 100)
+        .unwrap();
+    let doc = editor.document_manager.get_document(doc_id).unwrap();
+    let fresh = super::resolve_display_map(
+        doc,
+        80,
+        editor.state.settings.soft_wrap,
+        editor.state.settings.wrap_width,
+    );
+    assert_eq!(
+        dm.total_visual_rows(),
+        fresh.unwrap().total_visual_rows(),
+        "the cache must detect the placeholder-to-loaded swap and rebuild, \
+         not reuse the stale empty map for the newly loaded content"
+    );
+}
+
+#[test]
+fn test_opening_a_file_shows_its_content_immediately_not_after_a_later_edit() {
+    // End-to-end version of the swap above, through the same two-render
+    // sequence the real open-file job completion handler uses.
+    let mut editor = create_editor_sized(24, 80);
+    let doc_id = editor.document_manager.active_document_id().unwrap();
+    editor.force_full_redraw().unwrap();
+
+    let loaded_text = "line one\nline two\nline three\n";
+    let (chars, line_ending, starts) = crate::document::decode_file_bytes(loaded_text.as_bytes());
+    let piece_table = crate::buffer::rope::PieceTable::new(chars);
+    let line_index =
+        crate::buffer::line_index::LineIndex::from_table_with_starts(piece_table, starts);
+    editor
+        .document_manager
+        .get_document_mut(doc_id)
+        .unwrap()
+        .apply_loaded_content(line_index, line_ending);
+    editor.force_full_redraw().unwrap();
+
+    let screen = render_ascii(&mut editor);
+    assert!(
+        screen.contains("line one") && screen.contains("line two") && screen.contains("line three"),
+        "loaded content must be visible on screen right after load, not only after a later edit:\n{screen}"
+    );
+}
+
+#[test]
 fn test_display_map_stays_partial_for_large_document_small_viewport() {
     let mut editor = create_editor_sized(10, 30);
     let text = "the quick brown fox jumps over the lazy dog\n".repeat(2000);
@@ -4228,9 +4301,8 @@ fn visual_highlight_redraws_on_a_frame_after_the_initial_one() {
     load_text(&mut editor, "hello world");
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    // Render once first, mirroring the real run loop's initial-open render --
-    // ContentDrawState's redraw check only catches an annotation-only change
-    // (no buffer edit, no scroll) if something hashes the annotation spans.
+    // Render once first, mirroring the real run loop's initial-open render:
+    // redraw detection only catches an annotation-only change if spans are hashed.
     editor.update_and_render().unwrap();
 
     let feed_key = |editor: &mut Editor<MockTerminal>, key: Key| {

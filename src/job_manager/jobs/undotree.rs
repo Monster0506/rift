@@ -20,10 +20,8 @@ pub struct UndoTreeRenderResult {
 
 crate::impl_job_payload!(UndoTreeRenderResult);
 
-/// Job that renders an undo-tree to text in a background thread.
-///
-/// Takes a snapshot (clone) of the `UndoTree` — the potentially expensive
-/// `render_tree_to_text` call therefore never blocks the main thread.
+/// Job that renders an undo-tree to text in a background thread, on a cloned
+/// snapshot so the expensive `render_tree_to_text` call never blocks the main thread.
 pub struct UndoTreeRenderJob {
     ut_doc_id: DocumentId,
     tree: UndoTree,

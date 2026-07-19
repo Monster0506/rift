@@ -1,4 +1,4 @@
-//! Optional presentation for annotations (design.md sec 8).
+//! Optional presentation for annotations.
 //! A hint the compositor composes on top of base color/syntax.
 
 use crate::color::Color;

@@ -1,13 +1,5 @@
-//! Piece Table implementation backed by a Rope (AVL Tree)
-//!
-//! This module provides a `PieceTable` that manages text using a piece table data structure.
-//! The pieces are stored in a balanced binary tree (AVL) to ensure O(log N) performance
-//! for insertions, deletions, and lookups.
-//!
-//! It supports:
-//! - Efficient insertion and deletion
-//! - Line counting and indexing via tree metadata
-//! - Immutable buffer backing (Original) and append-only buffer (Add)
+//! Piece table backed by a Rope (AVL tree) for O(log N) insertion, deletion,
+//! and line indexing, with immutable Original and append-only Add buffers.
 
 use crate::character::Character;
 use std::cmp::max;
@@ -279,10 +271,8 @@ impl PieceTable {
         get_line_at_pos(self.root.as_deref(), pos, &self.original, &self.add)
     }
 
-    /// Convert character index to byte offset.
-    ///
-    /// O(log n) to the target piece, then O(piece_len) within it (no
-    /// per-piece prefix-sum cache yet) -- see `buffer::api`'s module doc.
+    /// Convert character index to byte offset. O(log n) to the target piece, then
+    /// O(piece_len) within it (no per-piece prefix-sum cache yet); see `buffer::api`'s module doc.
     pub fn char_to_byte(&self, char_index: usize) -> usize {
         if char_index >= self.len() {
             return self.byte_len();
@@ -290,10 +280,8 @@ impl PieceTable {
         get_byte_offset_recursive(self.root.as_deref(), char_index, &self.original, &self.add)
     }
 
-    /// Convert byte offset to character index
-    /// Returns the index of the character containing the byte, or the char starting at that byte.
-    ///
-    /// Same O(piece_len) in-piece scan caveat as [`Self::char_to_byte`].
+    /// Convert byte offset to character index (the char containing the byte, or
+    /// starting at it). Same O(piece_len) in-piece scan caveat as [`Self::char_to_byte`].
     pub fn byte_to_char(&self, byte_offset: usize) -> usize {
         if byte_offset >= self.byte_len() {
             return self.len();
@@ -608,14 +596,8 @@ impl std::fmt::Display for PieceTable {
     }
 }
 
-/// Attempt to extend the rightmost piece in-place.
-///
-/// Checks whether the rightmost node's piece is an Add-buffer piece that ends
-/// exactly at `add_end` (the current tail of the add buffer). If so, increments
-/// its length and propagates the metadata change up the path to root.
-///
-/// Must be called BEFORE the new chars are appended to the add buffer.
-/// Returns true if the extension succeeded; false if a new piece is needed.
+/// Extend the rightmost piece in-place if it's an Add-buffer piece ending at `add_end`.
+/// Must be called BEFORE new chars are appended to the add buffer; false if a new piece is needed.
 fn extend_last_piece(
     node: &mut Arc<Node>,
     add_end: usize,

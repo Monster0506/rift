@@ -234,7 +234,7 @@ fn test_annotations_on_action_registers_and_invokes() {
     assert!(host
         .exec("assert(_G.ran_cmd == 'cargo test foo')")
         .is_none());
-    // The action's serializable params reach the handler (design.md sec 9.1).
+    // The action's serializable params reach the handler.
     assert!(host.exec("assert(_G.ran_param == 'file')").is_none());
 }
 

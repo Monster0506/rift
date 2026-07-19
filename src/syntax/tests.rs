@@ -33,9 +33,7 @@ fn test_byte_to_point_matches_reference_scan() {
     }
 }
 
-// =============================================================================
 // Svelte / injection highlighting tests
-// =============================================================================
 
 #[cfg(feature = "treesitter")]
 mod svelte_tests {
@@ -274,9 +272,7 @@ mod svelte_tests {
     }
 }
 
-// =============================================================================
 // Markdown code-block injection tests
-// =============================================================================
 
 #[cfg(feature = "treesitter")]
 mod markdown_tests {

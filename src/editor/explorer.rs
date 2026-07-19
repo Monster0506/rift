@@ -153,9 +153,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Open a 2-panel file explorer centred on `dir`.
-    ///
-    /// Layout after call:  [left: dir | right: preview]
+    /// Open a 2-panel file explorer centred on `dir`: [left: dir | right: preview].
     pub fn open_explorer(&mut self, dir: std::path::PathBuf) {
         // If already active, just focus the dir pane.
         if let Some(ref layout) = self.panel_layout.clone() {

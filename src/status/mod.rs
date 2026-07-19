@@ -1,12 +1,5 @@
-//! Status bar management
-//! Handles rendering and formatting of the editor status bar
-//!
-//! ## status/ Invariants
-//!
-//! - Status content is derived entirely from editor state.
-//! - Status rendering does not influence editor behavior.
-//! - Status display is optional and failure-tolerant.
-//! - Status never consumes input or commands.
+//! Status bar management: renders and formats the editor status bar from
+//! editor state; never influences behavior or consumes input/commands.
 
 use crate::character::Character;
 use crate::color::Color;
@@ -112,10 +105,8 @@ impl StatusBar {
         parts.join(" | ")
     }
 
-    /// Render the status bar to a layer instead of directly to terminal
-    /// This allows the status bar to be composited with other layers
-    /// `frame` is caller-owned scratch space, reset here rather than
-    /// allocated fresh each call - see `PaintFrame::reset`.
+    /// Render the status bar to a layer so it can be composited with others.
+    /// `frame` is caller-owned scratch space, reset here rather than allocated fresh - see `PaintFrame::reset`.
     pub fn render_to_layer(
         layer: &mut Layer,
         state: &StatusDrawState,

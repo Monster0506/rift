@@ -1,5 +1,5 @@
-//! Multi-region, non-contiguous selection set (visual-mode-design.md). Regions are plain
-//! char-offset pairs; any edit outside the set-aware drivers clears the set.
+//! Multi-region, non-contiguous selection set. Regions are plain char-offset
+//! pairs; any edit outside the set-aware drivers clears the set.
 
 use crate::buffer::TextBuffer;
 use crate::wrap::RangeKind;
@@ -159,9 +159,8 @@ impl SelectionSet {
         if last.kind == RangeKind::Blockwise {
             return None;
         }
-        // buffer_span, not span: Linewise must match the whole line's text,
-        // not the raw anchor/cursor range (which collapses to one char when
-        // anchor == cursor, e.g. right after pressing V without moving).
+        // buffer_span, not span: Linewise must match the whole line's text, not the raw
+        // anchor/cursor range (which collapses to one char when anchor == cursor).
         let (last_start, last_end) = last.buffer_span(buf);
         let needle: String = buf
             .chars(last_start..last_end)

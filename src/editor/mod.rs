@@ -211,21 +211,20 @@ pub struct Editor<T: TerminalBackend> {
     /// Stored position when LSP rename dialog was opened (path, line, col).
     #[cfg(feature = "lsp")]
     rename_context: Option<(std::path::PathBuf, u32, u32)>,
-    /// Deferred goto-definition target: set when the destination file wasn't open
-    /// yet and had to be loaded asynchronously. The FileLoadResult handler applies
-    /// it once the buffer is populated. Tuple is (doc_id, line, col), 0-indexed.
+    /// Deferred goto-definition target (doc_id, line, col; 0-indexed) for a
+    /// destination file that had to load asynchronously first.
     #[cfg(feature = "lsp")]
     pending_goto_target: Option<(crate::document::DocumentId, usize, usize)>,
-    /// Resolves annotation (kind, verb) activations to handlers (design.md sec 9.2).
+    /// Resolves annotation (kind, verb) activations to handlers.
     pub dispatch_registry: crate::annotations::registry::DispatchRegistry,
     /// Per-kind presentation/description defaults applied at render and hover time
-    /// when an annotation supplies none (design.md sec 4).
+    /// when an annotation supplies none.
     pub kind_registry: crate::annotations::registry::KindRegistry,
     /// Id of the annotation the cursor currently rests on, tracked so cursor
-    /// enter/leave hooks fire once per transition (design.md sec 12).
+    /// enter/leave hooks fire once per transition.
     hovered_annotation: Option<crate::annotations::AnnotationId>,
     /// Debounced background syntax reparse state per document, keyed off a
-    /// sync `try_incremental_parse` exceeding its time budget (design.md #1).
+    /// sync `try_incremental_parse` exceeding its time budget.
     pending_syntax_reparse:
         std::collections::HashMap<crate::document::DocumentId, jobs::PendingSyntaxReparse>,
     /// Deadline for a debounced search-highlight refresh after undo/redo, so
@@ -249,6 +248,9 @@ pub struct Editor<T: TerminalBackend> {
 struct DisplayMapCacheEntry {
     doc_id: DocumentId,
     revision: u64,
+    /// `apply_loaded_content` resets revision to 0 rather than bumping it, so
+    /// a placeholder-to-loaded swap needs this too (see `ContentBlitKey`).
+    buf_len: usize,
     content_width: usize,
     map: Option<std::sync::Arc<crate::wrap::DisplayMap>>,
 }
@@ -271,7 +273,7 @@ pub enum PanelKind {
     Clipboard,
     /// Diagnostics or references location list.
     LocationList,
-    /// `gv` regions list (visual-mode-design.md S4).
+    /// `gv` regions list.
     Regions,
 }
 

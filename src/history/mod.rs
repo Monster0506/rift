@@ -1,10 +1,5 @@
-//! Undo/Redo history management with undo tree
-//!
-//! This module provides a transaction-centric undo tree where:
-//! - Every user command is one atomic undo entry (transaction)
-//! - Transactions may contain multiple low-level edits
-//! - Branches preserve alternative edit histories
-//! - Checkpoints enable efficient navigation to distant states
+//! Undo/Redo history management with a transaction-centric undo tree: each
+//! user command is one atomic entry, branches preserve alternative histories.
 
 pub mod command;
 
@@ -15,9 +10,7 @@ use std::collections::HashMap;
 /// Unique sequential identifier for each edit
 pub type EditSeq = u64;
 
-// =============================================================================
 // Position and Range Types
-// =============================================================================
 
 /// Position in document (line, column)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -50,9 +43,7 @@ impl Range {
     }
 }
 
-// =============================================================================
 // Edit Operations
-// =============================================================================
 
 /// A single atomic edit operation in the document
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -220,9 +211,7 @@ impl EditOperation {
     }
 }
 
-// =============================================================================
 // Transaction
-// =============================================================================
 
 /// Transaction groups multiple edits into one undo entry
 #[derive(Clone, Debug, Default)]
@@ -269,9 +258,7 @@ impl EditTransaction {
     }
 }
 
-// =============================================================================
 // Snapshot for Checkpoints
-// =============================================================================
 
 /// Snapshot for checkpoint nodes (delta strategy)
 #[derive(Clone, Debug)]
@@ -297,9 +284,7 @@ impl DocumentSnapshot {
     }
 }
 
-// =============================================================================
 // Edit Node
-// =============================================================================
 
 /// A node in the undo tree
 #[derive(Clone, Debug)]
@@ -330,9 +315,7 @@ impl EditNode {
     }
 }
 
-// =============================================================================
 // Replay Path
-// =============================================================================
 
 /// Describes how to reach a specific edit via replay
 #[derive(Debug, Clone)]
@@ -348,9 +331,7 @@ pub struct ReplayPath {
     pub snapshot_restore: Option<DocumentSnapshot>,
 }
 
-// =============================================================================
 // Undo Tree
-// =============================================================================
 
 /// Error type for undo tree operations
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -583,10 +564,8 @@ impl UndoTree {
         })
     }
 
-    /// Jump to edit #n via checkpoint+replay
-    ///
-    /// Returns a ReplayPath describing the undo/redo operations needed.
-    /// The caller is responsible for applying these operations to the buffer.
+    /// Jump to edit #n via checkpoint+replay. Returns a ReplayPath; the
+    /// caller is responsible for applying the operations to the buffer.
     pub fn goto_seq(&mut self, target: EditSeq) -> Result<ReplayPath, UndoError> {
         // Compute path first
         let path = self.compute_replay_path(self.current, target)?;

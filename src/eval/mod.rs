@@ -1,17 +1,5 @@
-//! Integer expression evaluator for settings values.
-//!
-//! Supports standard arithmetic (`+`, `-`, `*`, `/`) with correct precedence,
-//! parentheses, integer literals, and caller-supplied keyword substitution.
-//!
-//! Keywords are resolved via a closure at evaluation time, so dynamic values
-//! like `auto` (terminal width) can be substituted without storing the width
-//! in the setting itself.
-//!
-//! # Example
-//! ```rust,ignore
-//! let width = eval("auto / 2 + 5", &|kw| if kw == "auto" { Some(120) } else { None });
-//! assert_eq!(width, Ok(65));
-//! ```
+//! Integer expression evaluator for settings values: arithmetic, parens, and
+//! keywords like `auto` resolved via a caller closure, e.g. `"auto / 2 + 5"`.
 
 pub fn eval(input: &str, lookup: &dyn Fn(&str) -> Option<usize>) -> Result<usize, String> {
     let tokens = tokenize(input)?;

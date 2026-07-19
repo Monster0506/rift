@@ -135,9 +135,8 @@ impl Terminal {
             rows: rows as usize,
             cols: cols as usize,
         };
-        // Resize the alacritty Term grid synchronously so that read_screen()
-        // called immediately after sees content at the new dimensions rather
-        // than the stale old-width content (the EventLoop resize is async).
+        // Resize the alacritty Term grid synchronously so read_screen() called immediately after
+        // sees the new dimensions rather than stale content (the EventLoop resize is async).
         self.term.lock().resize(new_dims);
         // Also notify the EventLoop so the OS PTY gets TIOCSWINSZ / ConPTY
         // resize and the shell receives SIGWINCH and redraws.

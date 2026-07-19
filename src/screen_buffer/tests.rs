@@ -397,9 +397,8 @@ fn test_double_buffer_dirty_rect_expansion() {
     let (batches, stats) = buffer.get_batched_changes();
     assert_eq!(stats.changed_cells, 2);
 
-    // The dirty rect should have expanded to cover (0,0) to (9,9)
-    // Correctness check: we FOUND the changes.
-    // If dirty rect logic was broken (e.g. stayed at 0,0), we wouldn't find 9,9.
+    // The dirty rect should have expanded to cover (0,0) to (9,9); if it
+    // stayed at (0,0) instead, we wouldn't find the change at (9,9) below.
 
     let contents: Vec<char> = batches
         .iter()

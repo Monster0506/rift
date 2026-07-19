@@ -102,8 +102,8 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// `n`/`N` when the `SelectionSet` is non-empty: cycle the cursor between banked
-    /// regions instead of repeat-find/search (design.md S3, context-sensitive on n/N).
+    /// `n`/`N` when the `SelectionSet` is non-empty: cycle the cursor between
+    /// banked regions instead of repeat-find/search.
     pub(super) fn cycle_to_region(&mut self, forward: bool) -> bool {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
@@ -313,7 +313,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// `r<ch>` against a non-empty `SelectionSet`: fill each region's exact
-    /// range with `ch`, ignoring any numeric count (design.md S5.3).
+    /// range with `ch`, ignoring any numeric count.
     pub(super) fn try_run_set_aware_replace_char(&mut self, ch: char) -> bool {
         let is_empty = self
             .document_manager
@@ -446,8 +446,8 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
-    /// `p`/`P` (and `PutSystemClipboard`) against a non-empty `SelectionSet`:
-    /// insert the same `text` at every region, after its end for `p`, before its start for `P`. Non-destructive (design.md S5.7).
+    /// `p`/`P` (and `PutSystemClipboard`) against a non-empty `SelectionSet`: insert
+    /// `text` at every region (after its end for `p`, before its start for `P`). Non-destructive.
     pub(super) fn try_run_set_aware_put(&mut self, before: bool, text: &[Character]) -> bool {
         let is_empty = self
             .document_manager

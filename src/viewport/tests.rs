@@ -195,9 +195,8 @@ fn test_viewport_horizontal_scrolling_with_gutter() {
     viewport.update(0, 0, total_lines, gutter_width);
     assert_eq!(viewport.left_col(), 0);
 
-    // 2. Cursor at end of visible content
-    // content width 15, indices 0-14 visible from left_col 0.
-    // so cursor at 14 should strictly fit.
+    // 2. Cursor at end of visible content: width 15 makes indices 0-14
+    // visible from left_col 0, so cursor at 14 should strictly fit.
     viewport.update(0, 14, total_lines, gutter_width);
     assert_eq!(viewport.left_col(), 0);
 
@@ -224,11 +223,8 @@ fn test_viewport_resize_scrolling() {
     // Update with same cursor position
     viewport.update(50, 0, total_lines, 0);
 
-    // Top line should have adjusted to keep cursor visible in smaller viewport
-    // Cursor at 50. Visible rows 5. Content rows 4 (1 for status).
-    // Max top line for cursor 50 is 50 - (4-1) = 47.
-    // Min top line is 50 - 0 = 50 (if cursor at top).
-    // So top line should be between 47 and 50.
+    // Top line should adjust to keep cursor 50 visible: content rows = 4
+    // (5 visible - 1 status), so top line should land between 47 and 50.
     assert!(viewport.top_line() >= 47);
     assert!(viewport.top_line() <= 50);
 

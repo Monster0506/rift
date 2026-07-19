@@ -1,4 +1,4 @@
-//! Generic serializable annotation payload (design.md sec 3).
+//! Generic serializable annotation payload.
 //! Maps 1:1 to Lua tables and to JSON; holds no in-process handles.
 
 use serde::de::{Deserializer, MapAccess, SeqAccess, Visitor};

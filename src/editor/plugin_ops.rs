@@ -199,9 +199,8 @@ impl<T: TerminalBackend> Editor<T> {
             lsp_diagnostics,
         );
 
-        // Refresh the annotation query snapshot + the next id add{} will claim.
-        // Skipped when neither the document nor its annotations changed since
-        // the last sync, mirroring the buffer-clone skip above.
+        // Refresh the annotation query snapshot + next id, skipped when unchanged
+        // since the last sync (mirrors the buffer-clone skip above).
         use crate::annotations::Anchor;
         use crate::plugin::lua_host::AnnotationView;
         if let Some(doc) = self.document_manager.active_document() {

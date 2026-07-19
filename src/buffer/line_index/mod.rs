@@ -1,8 +1,5 @@
-//! Wrapper around PieceTable to replace the old LineIndex
-//!
-//! This struct now serves as the primary storage and indexing engine,
-//! though for now it maintains compatibility with the old LineIndex API
-//! where possible.
+//! Line indexing on top of `PieceTable`: the primary text storage, with a
+//! lazily-built char-offset-per-line index maintained incrementally.
 
 use super::rope::PieceTable;
 use crate::character::Character;

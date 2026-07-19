@@ -5,11 +5,8 @@ use super::descriptor::{SettingDescriptor, SettingError, SettingType, SettingVal
 use crate::command_line::commands::{CommandDef, CommandRegistry, ExecutionResult, MatchResult};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 
-/// Settings registry
-///
-/// Holds static setting descriptors and provides:
-/// - Option registry building (for parser)
-/// - Setting execution (for executor)
+/// Holds static setting descriptors; provides option registry building
+/// (for the parser) and setting execution (for the executor).
 #[derive(Clone, Copy)]
 pub struct SettingsRegistry<T: 'static> {
     /// Static array of setting descriptors
@@ -30,10 +27,8 @@ impl<T> SettingsRegistry<T> {
         self.settings
     }
 
-    /// Build `CommandRegistry` for option name matching
-    ///
-    /// Generates a `CommandRegistry` from all setting descriptors,
-    /// enabling prefix matching and alias resolution for option names.
+    /// Builds a `CommandRegistry` from all setting descriptors, enabling
+    /// prefix matching and alias resolution for option names.
     #[must_use]
     pub fn build_option_registry(&self) -> CommandRegistry {
         let mut registry = CommandRegistry::new();
@@ -47,10 +42,8 @@ impl<T> SettingsRegistry<T> {
         registry
     }
 
-    /// Parse string value to `SettingValue` using `SettingType`
-    ///
-    /// Handles parsing and validation according to the setting type.
-    /// Returns typed `SettingValue` or structured error.
+    /// Parses and validates a string value into a `SettingValue` per the
+    /// given `SettingType`, or returns a structured error.
     pub(crate) fn parse_value(ty: &SettingType, value: &str) -> Result<SettingValue, SettingError> {
         match ty {
             SettingType::Boolean => {
@@ -148,12 +141,8 @@ impl<T> SettingsRegistry<T> {
         }
     }
 
-    /// Parse a color string to a Color value
-    /// Supports:
-    /// - Color names: black, red, green, yellow, blue, magenta, cyan, white, grey, darkred, etc.
-    /// - RGB: rgb(255,128,64) or #ff8040
-    /// - 256-color: ansi256(100) or just 100
-    /// - Reset: reset, default, none
+    /// Parses a color string: named colors, `rgb(255,128,64)`/`#ff8040`,
+    /// `ansi256(100)`/bare `100`, or reset/default/none.
     fn parse_color(value: &str) -> Result<SettingValue, SettingError> {
         use crate::color::Color;
         let val_lower = value.to_lowercase().trim().to_string();
@@ -248,14 +237,8 @@ impl<T> SettingsRegistry<T> {
         Ok(SettingValue::Color(color))
     }
 
-    /// Execute a setting by name with string value
-    ///
-    /// Flow:
-    /// 1. Resolve option name using registry matching (handles aliases, prefixes)
-    /// 2. Find descriptor by matched name
-    /// 3. Parse string value to `SettingValue` using `SettingType`
-    /// 4. Call setter function with typed value
-    /// 5. Return `ExecutionResult`
+    /// Resolves the name via registry matching (aliases/prefixes), finds
+    /// its descriptor, parses the value, and calls the setter.
     pub fn execute_setting(
         &self,
         name: &str,

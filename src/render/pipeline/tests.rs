@@ -20,10 +20,8 @@ fn chars(s: &str) -> Vec<RenderItem> {
 
 #[test]
 fn test_tab_layout() {
-    // "a\tb" with tab_width 4
-    // 'a' (width 1, col 1)
-    // '\t' (width 3 -> 4, col 4)
-    // 'b' (width 1, col 5)
+    // "a\tb" with tab_width 4: 'a' is col 1, '\t' expands 1->4 (width 3),
+    // 'b' lands at col 5.
     let input = chars("a\tb").into_iter();
     let layout = TabLayout::new(input, 4);
     let items: Vec<LayoutItem> = layout.collect();
@@ -77,10 +75,8 @@ fn test_search_decorator() {
 
 #[test]
 fn test_search_decorator_multibyte_unicode() {
-    // "日本語" — each char is 3 bytes in UTF-8
-    // char offsets: 日=0, 本=1, 語=2
-    // byte offsets: 日=0, 本=3, 語=6
-    // Match "語" at char offset 2..3 (byte offset 6..9)
+    // "日本語": each char is 3 bytes in UTF-8, so char offset 2 ("語") is
+    // byte offset 6; match range 2..3 (chars) is byte range 6..9.
     let input = chars("日本語").into_iter();
     let matches = vec![SearchMatch { range: 2..3 }];
     let mut matches_idx = 0;

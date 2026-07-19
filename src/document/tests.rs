@@ -964,12 +964,8 @@ fn set_buffer_text(doc: &mut Document, text: &str) {
     let _ = doc.insert_str(text);
 }
 
-/// Simulate a user-edited directory buffer state for testing.
-///
-/// Parses lines like `"../\n/001 a.txt\n/002 b.txt"`:
-/// - Lines with a `/NNN ` prefix record an annotation entry at that line in the store.
-/// - The buffer is populated with the plain text (no prefix bytes).
-///
+/// Simulate a user-edited directory buffer state for testing: lines with a `/NNN `
+/// prefix record an annotation entry, then the buffer is populated with the plain text.
 fn set_annotated_buffer(doc: &mut Document, text: &str) {
     let lines: Vec<&str> = text.split('\n').collect();
     let mut plain_lines: Vec<&str> = Vec::new();
@@ -1146,9 +1142,8 @@ fn test_parse_diff_multiple_deletes() {
 
 #[test]
 fn test_parse_diff_rename_to_subdirectory_path() {
-    // User edits the name of "test" to "Playground/test" — a rename into a subdirectory.
-    // This is achieved by editing the text in the entry's buffer line directly.
-    // Expected: test (id=2) renamed to Playground/test; Playground (id=1) unchanged.
+    // Renaming "test" to "Playground/test" moves it into a subdirectory: test (id=2)
+    // should be renamed to Playground/test, while Playground (id=1) stays unchanged.
     let mut doc = make_populated_directory_doc("/tmp", &[("Playground", true), ("test", false)]);
     set_annotated_buffer(&mut doc, "../\n/001 Playground/\n/002 Playground/test");
 
@@ -1183,9 +1178,8 @@ fn test_parse_diff_rename_to_subdirectory_path() {
 
 #[test]
 fn test_parse_diff_rename_into_dir_while_dir_line_removed_does_not_delete_dir() {
-    // Bug: user changes "test" -> "Playground/test" AND removes the "Playground/" line.
-    // The old dir entry (id=1) must be protected from deletion because it is the parent
-    // of the rename destination — removing it would wipe the file that was just moved in.
+    // "test" is renamed to "Playground/test" and the "Playground/" line is removed; the old
+    // dir entry (id=1) must be protected from deletion since deleting it would wipe the moved file.
     let mut doc = make_populated_directory_doc("/tmp", &[("Playground", true), ("test", false)]);
     // Buffer after user edit: Playground/ line gone, test line rewritten as Playground/test.
     set_annotated_buffer(&mut doc, "../\n/002 Playground/test");
@@ -1207,10 +1201,8 @@ fn test_parse_diff_rename_into_dir_while_dir_line_removed_does_not_delete_dir() 
 
 #[test]
 fn test_parse_diff_dir_entry_replaced_with_path_is_create_not_rename() {
-    // User changes the "Playground/" line to "Playground/newfolder/newfile".
-    // The annotation still maps that line to the Playground/ directory, but the
-    // new text has an internal slash — it should be treated as a create, not a
-    // rename of the directory to an invalid path.
+    // "Playground/" is rewritten to "Playground/newfolder/newfile"; the internal slash means
+    // this must be treated as a create, not a rename of the directory to an invalid path.
     let mut doc = make_populated_directory_doc("/tmp", &[("Playground", true)]);
     set_annotated_buffer(&mut doc, "../\n/001 Playground/newfolder/newfile");
 
@@ -2090,9 +2082,8 @@ fn test_parse_diff_reorder_without_rename_produces_no_diff() {
 
 #[test]
 fn test_parse_diff_entry_with_zero_id_silently_ignored() {
-    // A line with prefix "/000 " — id 0 is the sentinel "no ID"; the parser has no entry
-    // for id=0 in its map (entries start at id=1), so the line is silently ignored —
-    // it does NOT appear in creates, renames, or deletes.
+    // "/000 " uses id 0, the sentinel for "no ID"; since entries start at id=1 the parser
+    // has no matching entry, so the line is silently ignored (no create/rename/delete).
     let mut doc = make_populated_directory_doc("/tmp", &[("real.txt", false)]);
     // Replace buffer with annotation-encoded /000 prefix (id=0 not in map -> silently ignored).
     set_annotated_buffer(&mut doc, "../\n/001 real.txt\n/000 ghost.txt");
@@ -2211,9 +2202,8 @@ fn wrap_resolve_floors_to_one() {
 
 #[test]
 fn test_parse_diff_dotdot_line_is_always_filtered() {
-    // The "../" skip applies to every line, not just the first.
-    // A user who types "../" as a new entry has it silently dropped — it can never
-    // become a create, which prevents accidental parent-directory operations.
+    // The "../" skip applies to every line, not just the first: typing "../" as a new entry
+    // is silently dropped rather than becoming a create, preventing accidental parent-dir ops.
     let mut doc = make_populated_directory_doc("/tmp", &[("a.txt", false)]);
     set_annotated_buffer(&mut doc, "../\n/001 a.txt\n../");
 
@@ -2249,9 +2239,8 @@ fn test_parse_diff_rename_to_empty_visible_name_is_ignored() {
     set_annotated_buffer(&mut doc, "../\n/001 ");
 
     let diff = doc.parse_directory_diff();
-    // trim_end_matches('/') on "" is still ""; new_name == "" ≠ "a.txt" -> would produce rename to "".
-    // This is a known edge case: the rename target is empty, which apply_directory_diff must guard.
-    // Here we just verify the diff is consistent (either no rename or exactly one rename to "").
+    // trim_end_matches('/') on "" is still "", so new_name could end up "" instead of "a.txt";
+    // this is a known edge case, so we just verify the diff stays consistent either way.
     if !diff.renames.is_empty() {
         assert_eq!(
             diff.renames[0].1, "",

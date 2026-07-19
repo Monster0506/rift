@@ -100,14 +100,8 @@ impl CommandRegistry {
         self
     }
 
-    /// Match an input string to a command
-    ///
-    /// Matching order:
-    /// 1. Exact match against command name or explicit alias
-    /// 2. Check if input is an explicit alias
-    /// 3. Shortest unambiguous prefix match
-    /// 4. Return ambiguous if multiple matches
-    /// 5. Return unknown if no match
+    /// Match an input string to a command: exact name/alias, then shortest
+    /// unambiguous prefix, else ambiguous (multiple matches) or unknown.
     #[must_use]
     pub fn match_command(&self, input: &str) -> MatchResult {
         let input = input.trim();

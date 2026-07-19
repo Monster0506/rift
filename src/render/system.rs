@@ -640,9 +640,8 @@ impl RenderSystem {
             } else {
                 0
             };
-            // Use the focused pane's viewport for row/col clamping when available,
-            // so the cursor never escapes the pane boundary and corrupts the outer
-            // terminal (especially in multi-window / vsplit layouts).
+            // Use the focused pane's viewport for row/col clamping when available, so the cursor
+            // never escapes the pane boundary and corrupts the outer terminal (multi-window / vsplit).
             let pane_vp = cursor_viewport.unwrap_or(&viewport);
             let max_content_row = pane_vp.visible_rows().saturating_sub(2);
             let clamped_row = term_row.min(max_content_row);
@@ -810,10 +809,8 @@ impl RenderSystem {
     }
 }
 
-/// Render the completion dropdown menu onto a layer using FloatingWindow.
-///
-/// The menu is positioned directly below the command line window, matching its
-/// horizontal position and width.
+/// Render the completion dropdown menu onto a layer using FloatingWindow, positioned directly
+/// below the command line window, matching its horizontal position and width.
 fn render_completion_menu(
     layer: &mut crate::layer::Layer,
     state: &crate::render::CompletionMenuDrawState,

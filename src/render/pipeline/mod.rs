@@ -153,10 +153,8 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for SyntaxDecorator<'a, I> {
     }
 }
 
-/// Decorator that applies injection-layer highlights using capture names.
-///
-/// Sits immediately after `SyntaxDecorator` and overrides its colour in any
-/// byte range belonging to an injected language (TypeScript in Svelte, etc.).
+/// Applies injection-layer highlights using capture names, sitting right
+/// after `SyntaxDecorator` to override colour in injected-language byte ranges.
 pub struct InjectionDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     /// Sorted by range start. Each entry is (byte_range, capture_name).
@@ -349,9 +347,8 @@ pub fn contrasting_color(bg: Color) -> Color {
     }
 }
 
-/// Decorator that applies per-character terminal fg+bg colors.
-/// Used exclusively for `BufferKind::Terminal` documents where every cell in the
-/// alacritty grid can carry its own foreground and background color.
+/// Applies per-character terminal fg+bg colors, used exclusively for
+/// `BufferKind::Terminal` documents where every alacritty grid cell has its own colors.
 pub struct TerminalColorDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     colors: &'a [crate::color::CellColorSpan],

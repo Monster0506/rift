@@ -1,4 +1,4 @@
-//! Dispatch registry resolving (kind, verb) to a handler (design.md sec 9.2).
+//! Dispatch registry resolving (kind, verb) to a handler.
 //! Data-only handlers keep activation serializable and IPC-reachable.
 
 use super::kind::{well_known, Kind};
@@ -95,7 +95,7 @@ impl DispatchRegistry {
 }
 
 /// Per-kind defaults: presentation applied when an annotation sets none, and a
-/// description used as a fallback hover tooltip (design.md sec 4).
+/// description used as a fallback hover tooltip.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct KindDefaults {
     pub presentation: Option<super::Presentation>,

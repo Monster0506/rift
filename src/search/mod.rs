@@ -106,9 +106,7 @@ pub fn find_all(
 }
 
 /// Find all matches by materializing the buffer into one contiguous `&str` and
-/// running the regex over it. Multiline mode (forced in `compile_regex`) keeps
-/// `^`/`$` line-scoped. O(N), unlike the old per-line scan whose per-line
-/// `line_start` was O(N) on a single-piece buffer (overall O(N^2)).
+/// running the regex over it in one O(N) pass, vs. the old O(N^2) per-line scan.
 fn find_all_materialized(
     buffer: &impl BufferView,
     query: &str,
@@ -239,9 +237,7 @@ fn extract_pattern(query: &str) -> String {
 }
 
 /// Returns true if `pattern` is a plain literal with no unescaped regex metacharacters.
-///
-/// Backslash-escaped metacharacters (`\.`, `\[`, `\\`) count as literal; real regex
-/// constructs (classes, quantifiers, anchors, alternation, groups, `\b`) do not.
+/// Backslash-escaped metacharacters (`\.`, `\[`, `\\`) count as literal; regex constructs don't.
 fn is_literal(pattern: &str) -> bool {
     // Metacharacters that, when unescaped, make a pattern non-literal.
     const UNESCAPED_SPECIALS: &str = ".^$*+?()[]{}|";
@@ -294,13 +290,8 @@ fn unescape_literal(pattern: &str) -> String {
     out
 }
 
-/// Longest mandatory ASCII literal run in a pattern: top-level unquantified
-/// `Literal` nodes only (excludes groups, alternation, optionals, repetition), so
-/// it must appear verbatim in every match. Lowercased for case-insensitive
-/// comparison (the most permissive check, so it never rejects a real match).
-///
-/// Used as a rejection gate: if this literal is absent from the buffer, the
-/// pattern cannot match and the engine is skipped. `None` if no run >= 2 chars.
+/// Longest mandatory ASCII literal run (top-level unquantified nodes, lowercased) that
+/// must appear in every match; used to skip the engine when absent. `None` if run < 2 chars.
 fn required_literal(query: &str) -> Option<String> {
     let pattern = extract_pattern(query);
     let ast = Parser::new(&pattern, monster_regex::Flags::default())
@@ -357,9 +348,8 @@ pub fn find_next(
     let (re, _) = compile_regex(query)?;
     let t1 = crate::time::Instant::now();
 
-    // Run the regex over a contiguous `&str`, far faster than the streaming
-    // `BufferHaystack` (whose per-char probes are O(log N) tree descents). Lossy
-    // chars match the haystack byte model, so offsets are identical.
+    // Run over a contiguous `&str`, far faster than the streaming `BufferHaystack`
+    // (O(log N) per-char tree descents). Lossy chars keep offsets identical.
     let mut text = String::with_capacity(buffer.len());
     let mut start_byte = None;
     for (i, c) in buffer.iter_at(0).enumerate() {

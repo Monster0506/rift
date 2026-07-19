@@ -32,9 +32,8 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::TerminalScrollback(-10)),
     );
 
-    // FileExplorer (Directory buffer) Defaults
-    // Normal motions fall through to KeyContext::Normal via the fallback chain.
-    // Only directory-specific bindings are registered here.
+    // FileExplorer (Directory buffer) Defaults. Normal motions fall through to KeyContext::Normal
+    // via the fallback chain; only directory-specific bindings are registered here.
     keymap.register(
         KeyContext::FileExplorer,
         Key::Enter,
@@ -852,7 +851,7 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         vec![Key::Char('['), Key::Char('d')],
         Action::Editor(EditorAction::LspDiagnosticPrev),
     );
-    // Interactive annotation navigation + activation (design.md sec 9.4).
+    // Interactive annotation navigation + activation.
     keymap.register_sequence(
         KeyContext::Normal,
         vec![Key::Char(']'), Key::Char('a')],
@@ -908,7 +907,7 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Buffer("location_list:code_action".to_string()),
     );
 
-    // `gv` regions list window (visual-mode-design.md S4).
+    // `gv` regions list window.
     keymap.register_sequence(
         KeyContext::Normal,
         vec![Key::Char('g'), Key::Char('v')],

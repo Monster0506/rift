@@ -1,5 +1,5 @@
 //! Editor-side annotation interactivity: activation dispatch and navigation.
-//! Resolves the annotation under the cursor to a handler (design.md sec 9).
+//! Resolves the annotation under the cursor to a handler.
 
 use super::Editor;
 use crate::annotations::registry::{Builtin, Handler};
@@ -194,7 +194,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// Detect cursor enter/leave transitions over annotations and fire the
-    /// matching Lua hooks once per change (design.md sec 12). Called each frame.
+    /// matching Lua hooks once per change. Called each frame.
     pub fn update_annotation_hover(&mut self) {
         // The annotation under the cursor (offset first, then line-anchored).
         let current = {

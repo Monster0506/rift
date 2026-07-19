@@ -1,14 +1,5 @@
-//! Floating window component
-//! Reusable overlay window that renders to layers
-//!
-//! ## `floating_window`/ Invariants
-//!
-//! - Floating windows never mutate editor or buffer state.
-//! - Floating windows are positioned relative to layer/terminal coordinates.
-//! - Window content is provided externally and rendered as-is.
-//! - Window rendering is layer-native - always renders to a Layer.
-//! - Window dimensions are constrained to layer/terminal size.
-//! - Window position is validated to ensure it fits within bounds.
+//! Reusable overlay window component that renders to a Layer without
+//! mutating editor or buffer state.
 
 use crate::color::Color;
 use crate::constants;
@@ -172,10 +163,8 @@ impl WindowStyle {
     }
 }
 
-/// Floating window configuration
-///
-/// A floating window is a rectangular overlay that can be rendered on a layer.
-/// It supports optional borders, custom colors, and various positioning options.
+/// A rectangular overlay window, rendered on a layer, with optional borders,
+/// custom colors, and various positioning options.
 #[derive(Debug, Clone)]
 pub struct FloatingWindow {
     /// Window position
@@ -301,14 +290,8 @@ impl FloatingWindow {
         }
     }
 
-    /// Render the floating window to a layer
-    ///
-    /// This is the primary rendering method. The window is rendered to the provided
-    /// layer at the calculated position based on the layer dimensions.
-    ///
-    /// # Arguments
-    /// * `layer` - The layer to render to
-    /// * `content` - Content lines (each line is a byte vector)
+    /// Render the floating window to `layer` at the position calculated from
+    /// the layer's dimensions, using `content` as the line-by-line body.
     pub fn render(&self, layer: &mut Layer, content: &[Vec<char>]) {
         self.render_with_border_chars(layer, content, None)
     }
@@ -318,12 +301,8 @@ impl FloatingWindow {
         self.render_cells_with_border_chars(layer, content, None)
     }
 
-    /// Render the floating window to a layer with optional border character override
-    ///
-    /// # Arguments
-    /// * `layer` - The layer to render to
-    /// * `content` - Content lines (each line is a byte vector)
-    /// * `border_chars_override` - Optional override for border characters
+    /// Like [`Self::render`], but `border_chars_override` optionally
+    /// overrides the window's configured border characters.
     pub fn render_with_border_chars(
         &self,
         layer: &mut Layer,

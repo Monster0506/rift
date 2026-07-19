@@ -1,12 +1,8 @@
 //! Command line management
 //! Handles rendering, cursor positioning, and command parsing for the command line input window
 
-//! ## `command_line`/ Invariants
-//!
-//! - Command line rendering only displays state, never mutates it.
-//! - Command line is only rendered when in Command mode.
-//! - Cursor positioning is calculated based on window dimensions and content.
-//! - Window dimensions are constrained to terminal size.
+//! Rendering only displays state (never mutates it) and only runs in Command
+//! mode; cursor position is derived from window dimensions and content.
 
 use crate::color::Color;
 use crate::floating_window::{BorderChars, FloatingWindow, WindowPosition, WindowStyle};
@@ -30,10 +26,8 @@ pub struct RenderOptions<'a> {
 pub struct CommandLine;
 
 impl CommandLine {
-    /// Render the command line window to a layer and return cursor position information
-    /// Returns `(window_row, window_col, cmd_width)` for cursor positioning
-    ///
-    /// This is the layer-based rendering method.
+    /// Render the command line window to a layer; returns
+    /// `(window_row, window_col, cmd_width)` for cursor positioning.
     pub fn render_to_layer(
         layer: &mut Layer,
         viewport: &Viewport,

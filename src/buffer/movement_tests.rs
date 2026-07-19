@@ -261,13 +261,11 @@ fn test_till_char_backward_adjacent_target_stays_put() {
     assert_eq!(buf.cursor(), 1);
 }
 
-// desired_col tests from design.md
+// desired_col tests
 
 #[test]
 fn test_desired_col_basic_restore() {
-    // "hello world" row=0 (col 10 reachable)
-    // "hi"          row=1
-    // "hello world" row=2
+    // Rows: "hello world" (col 10 reachable), "hi", "hello world".
     let mut buf = create_buffer("hello world\nhi\nhello world");
     buf.set_cursor(10).unwrap(); // col 10 on row 0
     assert_eq!(buf.desired_col(), None);
@@ -283,10 +281,7 @@ fn test_desired_col_basic_restore() {
 
 #[test]
 fn test_desired_col_persists_across_multiple_short_lines() {
-    // "long line here" row=0 (col 13 reachable)
-    // "x"             row=1
-    // "y"             row=2
-    // "long line here" row=3
+    // Rows: "long line here" (col 13 reachable), "x", "y", "long line here".
     let mut buf = create_buffer("long line here\nx\ny\nlong line here");
     buf.set_cursor(13).unwrap(); // col 13 on row 0
     assert_eq!(buf.desired_col(), None);
@@ -355,9 +350,8 @@ fn test_desired_col_zero_clears() {
 
 #[test]
 fn test_desired_col_wrap_dollar_jk_restores_eol() {
-    // Regression: after $jk the cursor landed at line 2's visual EOL col
-    // instead of at EOL of line 0. wrap_width=80 keeps lines unbroken so the
-    // test exercises the visual path without confounding intra-line wrapping.
+    // Regression: after $jk the cursor landed at line 2's EOL col instead of
+    // line 0's. wrap_width=80 keeps lines unbroken to isolate the visual path.
     let mut buf = create_buffer("hello world\nhi\nhello world");
     apply_motion(Motion::EndOfLine, &mut buf);
     let eol = buf.cursor();
@@ -425,9 +419,8 @@ fn test_desired_col_wrap_horizontal_clears() {
 
 #[test]
 fn test_desired_col_wrap_intra_line_wrapping() {
-    // A long logical line wraps into two visual rows. j/k move between visual
-    // rows (same logical line) and desired_col is preserved.
-    // "hello world" with wrap_width=6 produces rows: ["hello ", "world"].
+    // A long logical line wraps into two visual rows; j/k move between them
+    // and desired_col is preserved. wrap_width=6 splits "hello world" as ["hello ", "world"].
     let mut buf = create_buffer("hello world\nshort");
     buf.set_cursor(2).unwrap(); // visual col 2 ('l') on first segment
 

@@ -108,9 +108,8 @@ pub struct LspManager {
     indexing_ended: HashMap<String, usize>,
     /// language -> human-readable server name (e.g. "rust-analyzer"), set on initialize
     server_names: HashMap<String, String>,
-    /// When indexing_tokens last dropped to 0. ServerReady is emitted after a 600ms grace
-    /// period so that tokens arriving in rapid succession (like rust-analyzer's quick
-    /// initial Fetching -> Building CrateGraph sequence) don't trigger premature readiness.
+    /// When indexing_tokens last dropped to 0. ServerReady fires after a 600ms
+    /// grace period so rapid token bursts don't trigger premature readiness.
     indexing_idle_since: HashMap<String, std::time::Instant>,
     /// Documents queued for didOpen before their server's initialize handshake completes.
     /// language -> list of (uri, params) waiting to be sent.
@@ -237,12 +236,8 @@ impl LspManager {
         }
     }
 
-    /// Get or start the LSP client for a given language. Returns `None` if no
-    /// server is registered for that language.
-    ///
-    /// `file_hint` is the path of the file being opened; it is used to locate
-    /// the nearest project root (Cargo.toml / .git / …) so the server receives
-    /// an accurate `rootUri` on first start.
+    /// Get or start the LSP client for a language (`None` if unregistered).
+    /// `file_hint` locates the nearest project root for the initial `rootUri`.
     fn ensure_client(
         &mut self,
         language: &str,
@@ -916,10 +911,8 @@ impl LspManager {
                                         language: lang.to_string(),
                                         message: "end".to_string(),
                                     });
-                                    // Start the idle timer: ServerReady fires after 600ms of
-                                    // no new begin events, guarding against rapid token bursts
-                                    // (e.g. rust-analyzer's quick initial Fetching finishing
-                                    // before Building CrateGraph has even started).
+                                    // Start the idle timer: ServerReady fires after 600ms
+                                    // of no new begin events, guarding against token bursts.
                                     if *counter == 0 {
                                         self.indexing_idle_since
                                             .entry(lang.clone())

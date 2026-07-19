@@ -430,9 +430,8 @@ pub struct CodeActionContext {
 pub fn path_to_uri(path: &std::path::Path) -> String {
     let path_str = path.to_string_lossy();
     if cfg!(windows) {
-        // Strip the extended-length path prefix that std::fs::canonicalize adds on
-        // Windows (\\?\C:\... or \\?\UNC\server\share), so we always emit a clean
-        // file:///c:/... URI instead of file:////C:/...
+        // Strip the extended-length path prefix std::fs::canonicalize adds on Windows
+        // (\\?\C:\... or \\?\UNC\...), so we emit file:///c:/... not file:////C:/...
         let stripped: std::borrow::Cow<str> = if let Some(s) = path_str.strip_prefix(r"\\?\UNC\") {
             format!("//{}", s).into()
         } else if let Some(s) = path_str.strip_prefix(r"\\?\") {
@@ -454,9 +453,8 @@ pub fn path_to_uri(path: &std::path::Path) -> String {
     }
 }
 
-/// Normalize a file URI for use as a HashMap key.
-/// On Windows, drive letters are case-insensitive so `file:///C:/` and
-/// `file:///c:/` must resolve to the same key.
+/// Normalize a file URI for use as a HashMap key (Windows drive letters
+/// are case-insensitive, so `file:///C:/` and `file:///c:/` must match).
 pub fn normalize_uri(uri: &str) -> String {
     if cfg!(windows) {
         uri.to_lowercase()

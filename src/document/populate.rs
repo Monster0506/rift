@@ -30,9 +30,7 @@ impl Document {
     }
 
     /// Populate (or repopulate) this directory buffer from a fresh directory listing.
-    ///
-    /// Entry IDs are stored in the annotation store rather than embedded as bytes in the
-    /// buffer. The buffer contains only the visible filenames.
+    /// Entry IDs live in the annotation store, not the buffer; the buffer holds only filenames.
     pub fn populate_directory_buffer(&mut self, mut entries: Vec<DirEntry>) {
         use crate::color::Color;
 
@@ -102,7 +100,6 @@ impl Document {
     }
 
     /// Recompute `custom_highlights` from the current buffer state for directory buffers.
-    ///
     /// Called before each render so that highlights stay accurate after user edits.
     pub fn recompute_directory_highlights(&mut self) {
         use crate::color::Color;
@@ -393,11 +390,8 @@ impl Document {
         order
     }
 
-    /// Parse the current buffer content of a directory buffer and produce a diff.
-    ///
-    /// Queries the annotation store for each line to find the entry ID, then compares
-    /// the visible buffer text against the original entry path to detect renames,
-    /// deletes, and creates.
+    /// Parse the current buffer content of a directory buffer and produce a diff, by
+    /// comparing each line's annotation-store entry ID against its visible buffer text.
     pub fn parse_directory_diff(&self) -> DirectoryDiff {
         let (entries, dir_path) = match &self.kind {
             BufferKind::Directory { entries, path, .. } => (entries, path),

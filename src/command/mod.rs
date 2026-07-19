@@ -1,12 +1,5 @@
-//! Editor commands
-//!
-//! ## command/ Invariants
-//!
-//! - `Command` represents editor-level intent, not key-level input.
-//! - Commands contain no terminal- or platform-specific concepts.
-//! - All data required to apply a command is contained within the command.
-//! - Commands are immutable once created.
-//! - Adding a new command requires explicit executor support.
+//! Editor commands: immutable, platform-agnostic editor-level intent (not
+//! key-level input), self-contained enough to apply without extra context.
 use crate::action::Motion;
 
 pub mod input;

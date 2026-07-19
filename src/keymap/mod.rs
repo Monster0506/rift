@@ -72,10 +72,8 @@ impl KeyMap {
         }
     }
 
-    /// Returns the parent context for fallback lookup.
-    /// `FileExplorer` and `UndoTree` fall through to `Normal` so standard vim motions
-    /// work without re-registering every binding.
-    /// `Terminal` falls through to `Insert` since it is always in input mode.
+    /// Parent context for fallback lookup: `FileExplorer`/`UndoTree` fall
+    /// through to `Normal`, `Terminal` to `Insert` (always in input mode).
     fn parent_context(context: KeyContext) -> Option<KeyContext> {
         match context {
             KeyContext::OperatorPending => Some(KeyContext::Normal),

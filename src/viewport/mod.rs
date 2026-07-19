@@ -1,14 +1,8 @@
 //! Viewport management
 //! Handles the visible portion of the text buffer
 
-//! ## viewport/ Invariants
-//!
-//! - The viewport represents a window into buffer content.
-//! - The viewport never mutates buffer contents.
-//! - The cursor is always visible within the viewport.
-//! - Viewport dimensions reflect the current terminal size.
-//! - Viewport updates are explicit and predictable.
-//! - Viewport logic is independent of rendering mechanics.
+//! The viewport is a read-only window into buffer content, sized to the terminal, that never
+//! mutates the buffer; it keeps the cursor visible and stays independent of rendering mechanics.
 
 /// Viewport manages which portion of the buffer is visible
 #[derive(Debug, Clone, PartialEq)]
@@ -53,11 +47,8 @@ impl Viewport {
         }
     }
 
-    /// Update viewport based on cursor position and total lines.
-    /// Keeps the cursor vertically centered whenever the document is large enough;
-    /// clamps naturally at the top and bottom edges.
-    /// Returns true if a full terminal redraw is required (first update after a
-    /// reset); plain scrolls repaint through the double-buffer cell diff.
+    /// Update viewport based on cursor position and total lines, keeping the cursor vertically
+    /// centered. Returns true if a full redraw is required; plain scrolls diff through the double-buffer.
     pub fn update(
         &mut self,
         cursor_line: usize,

@@ -1,17 +1,9 @@
-//! Editor state management
-//! Centralized state for editor settings, debug mode, and runtime information
+//! Centralized editor state: settings, debug mode, runtime info. Mirrors
+//! exactly one focused buffer at a time (other buffers can be open in splits).
 
 use crate::color::{Color, Theme};
 use crate::command::Command;
 use crate::command_line::commands::completion::CompletionCandidate;
-/// ## state/ Invariants
-///
-/// - Editor mode is explicit and globally consistent.
-/// - State transitions occur only through well-defined control flow.
-/// - `State` mirrors exactly one focused buffer at a time; other buffers can
-///   be open concurrently in other split windows.
-/// - Editor state is never partially updated.
-/// - State changes are observable by the renderer but never influenced by it.
 use crate::document::LineEnding;
 use crate::error::manager::ErrorManager;
 use crate::error::RiftError;

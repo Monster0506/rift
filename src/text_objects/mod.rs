@@ -1266,10 +1266,8 @@ fn any_quote_insert_pair(
     best
 }
 
-/// Maps a surround key to its `(open, close)` delimiter strings, per
-/// design.md's pairing table, each repeated `count` times. Opening bracket
-/// chars get an inner space pad; closing chars, letter aliases, and quotes
-/// never pad.
+/// Maps a surround key to its `(open, close)` delimiter strings, each repeated
+/// `count` times. Opening bracket chars get an inner space pad; others don't.
 pub fn surround_strings(ch: char, count: usize) -> Option<(String, String)> {
     let (open, close) = match ch {
         '(' | ')' | 'b' => ('(', ')'),
@@ -1293,12 +1291,8 @@ pub fn surround_strings(ch: char, count: usize) -> Option<(String, String)> {
     }
 }
 
-/// Locates an existing surround pair enclosing the cursor for `ds`/`cs`,
-/// returning the half-open delete ranges for the opening and closing
-/// delimiters. `count` expands each boundary outward over up to `count - 1`
-/// further consecutive occurrences of the same delimiter char (so `2ds"` on
-/// `""text""` removes both quotes on each side), clamping gracefully when
-/// fewer repeats are actually present.
+/// Locates a surround pair enclosing the cursor for `ds`/`cs`, returning
+/// open/close delete ranges; `count` expands over further delimiter occurrences.
 pub fn resolve_surround_pair(
     ch: char,
     buf: &TextBuffer,

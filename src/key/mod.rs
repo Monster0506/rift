@@ -32,21 +32,16 @@ pub enum Key {
     Escape,
     Tab,
     ShiftTab,
-    /// Space pressed with the Shift modifier (terminal support varies; see
-    /// visual-mode-design.md S3 -- rebind via the keymap if yours never sends it).
+    /// Space pressed with the Shift modifier (terminal support varies --
+    /// rebind via the keymap if yours never sends it).
     ShiftSpace,
     /// System events
     Resize(u16, u16),
 }
 
 impl Key {
-    /// Convert key to VT100/xterm byte sequence for PTY input.
-    ///
-    /// Sequences follow the CSI (Control Sequence Introducer) convention:
-    ///   - Cursor keys:  ESC [ {suffix}          e.g. ESC [ A  (up)
-    ///   - Modified keys: ESC [ 1 ; {mod} {suffix}  where mod: 2=Shift, 3=Alt, 5=Ctrl
-    ///   - Tilde keys:   ESC [ {num} ~            e.g. ESC [ 3 ~  (delete)
-    ///   - Single byte:  direct control character
+    /// Convert key to VT100/xterm byte sequence for PTY input, following the
+    /// CSI convention (cursor keys, modified keys, tilde keys, or a single byte).
     pub fn to_vt100_bytes(&self) -> Vec<u8> {
         match self {
             // Printable character -> UTF-8 encoding
@@ -96,10 +91,8 @@ impl Key {
     }
 }
 
-/// Parse a vim-notation key sequence string into a list of `Key`s.
-/// Supports `<Esc>`, `<CR>`, `<BS>`, `<Tab>`, `<Up>`, `<Down>`, `<Left>`, `<Right>`,
-/// `<Home>`, `<End>`, `<PageUp>`, `<PageDown>`, `<Del>`, `<C-x>`, `<A-x>`, and bare characters.
-/// Returns `None` if any token is unrecognised.
+/// Parse a vim-notation key sequence (e.g. `<Esc>`, `<C-x>`, bare chars) into
+/// a list of `Key`s. Returns `None` if any token is unrecognised.
 pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
     let mut keys = Vec::new();
     let mut chars = s.chars().peekable();

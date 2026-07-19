@@ -59,22 +59,7 @@ pub mod wrap;
 pub mod test_utils;
 
 /// Time a lexical scope and record a [`crate::perf::PerfEvent`] on exit.
-///
-/// Compiles to nothing when the `perf_instrumentation` feature is disabled —
-/// including the `$fields` expression, so there is truly zero overhead.
-///
-/// # Example
-/// ```rust,ignore
-/// use monster_rift::{perf_span, perf::PerfFields};
-///
-/// fn render(rows: u32) {
-///     let _span = perf_span!(
-///         "render_frame",
-///         PerfFields { lines: Some(rows), ..Default::default() }
-///     );
-///     // work …
-/// }
-/// ```
+/// Compiles to nothing (including `$fields`) when `perf_instrumentation` is off.
 #[macro_export]
 macro_rules! perf_span {
     ($name:expr, $fields:expr) => {

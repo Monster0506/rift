@@ -12,9 +12,8 @@ use std::sync::Arc;
 /// exceeds its time budget — coalesces rapid keystrokes into one job.
 const SYNTAX_REPARSE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(40);
 
-/// Tracks a document's outstanding background syntax reparse, so a burst of
-/// edits debounces into one job and a stale in-flight job gets cancelled
-/// before a fresh one is spawned.
+/// Tracks a document's outstanding background syntax reparse, so a burst of edits debounces
+/// into one job and a stale in-flight job gets cancelled before a fresh one is spawned.
 #[derive(Default)]
 pub(super) struct PendingSyntaxReparse {
     /// When set, the debounce timer is running; fires once `Instant::now() >= deadline`.
@@ -78,9 +77,8 @@ impl<T: TerminalBackend> Editor<T> {
         None
     }
 
-    /// Schedule a background reparse for `doc_id`, debounced so a burst of
-    /// edits within [`SYNTAX_REPARSE_DEBOUNCE`] coalesces into one job.
-    /// Called when a sync `try_incremental_parse` aborts on its time budget.
+    /// Schedule a background reparse for `doc_id`, debounced so a burst of edits within
+    /// [`SYNTAX_REPARSE_DEBOUNCE`] coalesces into one job (called when a sync parse aborts on its time budget).
     pub(super) fn debounce_syntax_reparse(&mut self, doc_id: DocumentId) {
         let entry = self.pending_syntax_reparse.entry(doc_id).or_default();
         entry.debounce_deadline = Some(crate::time::Instant::now() + SYNTAX_REPARSE_DEBOUNCE);
@@ -96,9 +94,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Spawn a background reparse immediately (bypassing the debounce timer),
-    /// cancelling any job already in flight for this doc first. Used for
-    /// discrete one-shot triggers like undo/redo, not routine typing.
+    /// Spawn a background reparse immediately (bypassing the debounce timer), cancelling any
+    /// job already in flight for this doc. Used for one-shot triggers like undo/redo, not routine typing.
     pub(super) fn spawn_syntax_parse_job_immediate(&mut self, doc_id: DocumentId) {
         if let Some(entry) = self.pending_syntax_reparse.get(&doc_id) {
             if let Some(old_job) = entry.in_flight_job {
@@ -114,9 +111,8 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Fire any debounce timers that have elapsed: cancel a stale in-flight
-    /// job (if any) and spawn a fresh one for the document's latest content.
-    /// Called once per frame from the run loop.
+    /// Fire any elapsed debounce timers: cancel a stale in-flight job (if any) and spawn a
+    /// fresh one for the document's latest content. Called once per frame from the run loop.
     pub(super) fn poll_pending_syntax_reparse(&mut self) {
         let now = crate::time::Instant::now();
         let due: Vec<DocumentId> = self

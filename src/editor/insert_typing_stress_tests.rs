@@ -86,10 +86,8 @@ fn drain(editor: &mut Editor<QueueTerminal>) {
     }
 }
 
-/// A ~10k-line, code-shaped buffer -- matching the shape `render_bench`
-/// uses for its full-frame render measurement, for a comparable baseline.
-/// `.txt`, deliberately: `.rs` would pull in treesitter and LSP tracking
-/// based on whatever's in this machine's real plugin config, not a clean number.
+/// A ~10k-line, code-shaped buffer matching `render_bench`'s shape. `.txt`,
+/// deliberately: `.rs` would pull in treesitter/LSP from this machine's config.
 fn realistic_file() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("big.txt");

@@ -60,9 +60,8 @@ impl<T: TerminalBackend> Editor<T> {
             document_manager.add_document(new_doc);
         }
 
-        // Initialize terminal (clears screen, enters raw mode, etc.)
-        // We do this AFTER loading the document so we don't mess up the terminal
-        // if loading fails
+        // Init terminal (clears screen, enters raw mode) AFTER loading the
+        // document, so a load failure doesn't leave the terminal messed up.
         terminal.init()?;
 
         // Get terminal size
@@ -350,9 +349,8 @@ impl<T: TerminalBackend> Editor<T> {
             ));
         }
 
-        // Load bundled runtime plugins first so they are available to user
-        // config.  riftpm.lua in particular must be loaded before init.lua so
-        // that `require("riftpm")` works from the user's config.
+        // Load bundled plugins before user config; riftpm.lua in particular
+        // must load before init.lua so `require("riftpm")` works.
         for dir in plugin_dirs() {
             if let Some(err) = self.plugin_host.lua_load_dir(&dir).into_iter().next() {
                 return Err(RiftError::new(

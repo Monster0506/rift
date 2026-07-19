@@ -1,7 +1,4 @@
-//! Text Buffer implementation backed by a Piece Table
-//!
-//! This module provides a `TextBuffer` that manages text using a piece table data structure.
-//! It supports efficient insertion and deletion, and handles line indexing.
+//! `TextBuffer`: a piece-table-backed text store with line indexing.
 
 use crate::buffer::api::BufferView;
 use crate::character::Character;
@@ -283,11 +280,8 @@ impl TextBuffer {
         Ok(())
     }
 
-    /// Delete `count` characters starting at `start`, in a single rope operation.
-    ///
-    /// This is O(log N) vs O(N log N) for a character-by-character loop.
-    /// Cursor is clamped: if it was inside the deleted region it moves to `start`;
-    /// if it was after the region it shifts back by `count`.
+    /// Delete `count` characters starting at `start`, in a single O(log N) rope
+    /// operation. Cursor is clamped into or shifted back out of the deleted region.
     pub fn delete_range(&mut self, start: usize, count: usize) -> bool {
         if count == 0 {
             return false;

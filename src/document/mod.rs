@@ -178,8 +178,8 @@ pub struct Document {
     pub options: DocumentOptions,
     file_path: Option<PathBuf>,
     pub is_read_only: bool,
-    /// Interface-mode buffer (design.md sec 9.4): read-only, vertical navigation
-    /// snaps between actionable lines (magit/explorer/undotree as buffers).
+    /// Interface-mode buffer: read-only, vertical navigation snaps between
+    /// actionable lines (magit/explorer/undotree as buffers).
     pub interface_mode: bool,
     pub syntax: Option<Syntax>,
     pub history: UndoTree,
@@ -196,7 +196,7 @@ pub struct Document {
         std::collections::HashMap<u32, Vec<(std::ops::Range<usize>, crate::color::Color)>>,
     /// Structured metadata sidecar.
     pub annotations: AnnotationStore,
-    /// Non-contiguous multi-region selection set (visual-mode-design.md).
+    /// Non-contiguous multi-region selection set.
     pub selection_set: crate::selection::SelectionSet,
     /// Full annotation snapshot captured before a transaction, restored on undo.
     pending_annotation_snapshot: Option<Vec<crate::annotations::Annotation>>,
@@ -206,7 +206,7 @@ pub struct Document {
     /// Redo stack, mirror of the undo stack.
     annotation_redo_stack: Vec<AnnotationUndo>,
     /// Monotonic edit sequence number, incremented once per applied edit.
-    /// Lets producers reconcile stale annotation positions (design.md sec 11).
+    /// Lets producers reconcile stale annotation positions.
     document_version: u64,
     /// Edits recorded since the last `take_lsp_edits`, for an LSP client to
     /// express as incremental changes instead of resending the whole document.
@@ -445,7 +445,7 @@ impl Document {
     }
 
     /// Whether this buffer is in interface mode (read-only + snapping
-    /// navigation between actionable regions, design.md sec 9.4).
+    /// navigation between actionable regions).
     pub fn is_interface_mode(&self) -> bool {
         self.interface_mode
     }
