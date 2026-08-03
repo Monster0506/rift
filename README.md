@@ -39,10 +39,8 @@ Todo:
 - operator pending improvements (indent, format, case, etc.)
 - animations
 
-Known issues:
-- 4 byte unicode characters are not able to be inserted on windows (this is a crossterm issue on windows, idk man)
-
 ## Fixed stuff (lightly tracked):
+- 4 byte unicode characters are not able to be inserted on windows (this is a crossterm issue on windows, resolved by patching a fix)
 - TOCTOU Race Condition between file check and file open
 - Gap Buffer uses a lot of `unsafe`. Write more debug asserts
 - inefficient string construction wrap_text in render loop
