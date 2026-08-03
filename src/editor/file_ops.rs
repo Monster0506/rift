@@ -10,6 +10,7 @@ impl<T: TerminalBackend> Editor<T> {
                 BufferKind::File => {
                     let save_info = {
                         let doc = self.document_manager.active_document_mut().unwrap();
+                        doc.commit_pending_ghost();
                         doc.path().map(|p| (doc.id, p.to_path_buf()))
                     };
                     if let Some((buf_id, path)) = save_info {
@@ -69,6 +70,9 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn do_save_and_quit(&mut self) {
+        if let Some(doc) = self.document_manager.active_document_mut() {
+            doc.commit_pending_ghost();
+        }
         let res = {
             let doc = self.document_manager.active_document().unwrap();
             if doc.has_path() {

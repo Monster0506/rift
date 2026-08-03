@@ -106,7 +106,7 @@ pub fn compute_motion_range(
 
 /// Converts a resolved `MotionRange` into a half-open `(start, end)` char offset pair, shared by
 /// `Delete`/`Change`/`AddSurround`. `consume_trailing_newline` controls whether the Linewise end includes the line terminator.
-fn range_to_offsets(
+pub(crate) fn range_to_offsets(
     range: &crate::wrap::MotionRange,
     doc: &Document,
     consume_trailing_newline: bool,
