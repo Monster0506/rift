@@ -6,6 +6,8 @@ I use this daily and primarily.
 
 ## Implemented:
 - Quite a lot more than the below items, I just haven't updated this in a while due to actually working on it.
+- Configurable GhostCut-style delete
+- Visual selection with multi-select, selection buffer, and forward search selection.
 - Optimistic-sync incremental syntax parsing: typing tries a time-budgeted synchronous tree-sitter parse first, falling back to a debounced background job (with cancel-and-respawn of any stale in-flight parse) only when the budget is exceeded
 - Remote daemon mode (`rift --daemon`): editor runs as a headless TCP server; clients attach via `rift --connect [user@]host` over an SSH tunnel, with token auth and JSON+RPC framing
 - Annotation presentation layer: faces/styles plus adornments rendered as leading, trailing (end-of-line), overlay, or conceal (hidden) virtual text, composed over base syntax by priority
