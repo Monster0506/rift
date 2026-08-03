@@ -80,7 +80,7 @@ pub fn is_alive(pid: u32) -> bool {
 
 pub fn generate_token() -> String {
     let mut bytes = [0u8; 32];
-    getrandom::getrandom(&mut bytes).expect("os rng failed");
+    getrandom::fill(&mut bytes).expect("os rng failed");
     let mut s = String::with_capacity(64);
     for b in bytes {
         use std::fmt::Write;

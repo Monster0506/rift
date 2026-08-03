@@ -19,8 +19,10 @@ impl EventListener for TerminalListener {
             Event::Title(t) => {
                 let _ = self.0.send(TerminalEvent::Title(t));
             }
-            Event::ChildExit(code) => {
-                let _ = self.0.send(TerminalEvent::ChildExit(code));
+            Event::ChildExit(status) => {
+                let _ = self
+                    .0
+                    .send(TerminalEvent::ChildExit(status.code().unwrap_or(-1)));
             }
             _ => {}
         }
