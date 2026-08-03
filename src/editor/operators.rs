@@ -55,7 +55,7 @@ impl<T: TerminalBackend> Editor<T> {
         // Capture text to ring before any destructive operation, and for yank.
         let viewport_height = self.render_system.viewport.visible_rows();
         let last_search_query = self.state.last_search_query.clone();
-        let captured = self.document_manager.active_document_mut().and_then(|doc| {
+        let motion_range = self.document_manager.active_document_mut().and_then(|doc| {
             crate::executor::compute_motion_range(
                 motion,
                 count,
@@ -63,7 +63,11 @@ impl<T: TerminalBackend> Editor<T> {
                 viewport_height,
                 last_search_query.as_deref(),
             )
-            .map(|range| crate::clipboard::capture_text(&doc.buffer, &range))
+        });
+        let captured = motion_range.clone().and_then(|range| {
+            self.document_manager
+                .active_document()
+                .map(|doc| crate::clipboard::capture_text(&doc.buffer, &range))
         });
         let has_range = captured.is_some();
         let in_clipboard = self.active_doc_is(|d| d.is_any_clipboard());
@@ -78,7 +82,35 @@ impl<T: TerminalBackend> Editor<T> {
             crate::action::OperatorType::Delete => {
                 let command = crate::command::Command::Delete(motion, count);
                 self.set_mode(Mode::Normal);
-                let result = self.execute_buffer_command(command);
+                // Commit any pending ghost, then recompute fresh: reusing
+                // `motion_range` would target offsets from before that shift.
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    doc.commit_pending_ghost();
+                }
+                let fresh_range = self.document_manager.active_document_mut().and_then(|doc| {
+                    crate::executor::compute_motion_range(
+                        motion,
+                        count,
+                        doc,
+                        viewport_height,
+                        last_search_query.as_deref(),
+                    )
+                });
+                let mut ghosted_doc = None;
+                if let Some(range) = fresh_range {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        let (start, end) = crate::executor::range_to_offsets(&range, doc, true);
+                        if end > start {
+                            doc.create_ghosts(&[(start, end)]);
+                            let _ = doc.buffer.set_cursor(start);
+                            ghosted_doc = Some(doc.id);
+                        }
+                    }
+                }
+                let result = ghosted_doc.is_some();
+                if let Some(id) = ghosted_doc {
+                    self.document_manager.set_most_recent_ghost_doc(Some(id));
+                }
                 if result && !self.dot_repeat.is_replaying() && command.is_repeatable() {
                     self.dot_repeat.record_single(command);
                 }
@@ -153,7 +185,39 @@ impl<T: TerminalBackend> Editor<T> {
             crate::action::OperatorType::Delete => {
                 let command = crate::command::Command::DeleteLine(count);
                 self.set_mode(Mode::Normal);
-                let result = self.execute_buffer_command(command);
+                let mut ghosted_doc = None;
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    // Commit any pending ghost first: its commit can shift the
+                    // buffer, so the line range below must reflect that.
+                    doc.commit_pending_ghost();
+                    doc.buffer.move_to_line_start();
+                    let start = doc.buffer.cursor();
+                    let mut reached_last_line = false;
+                    for _ in 0..count.max(1) {
+                        if !doc.buffer.move_down() {
+                            reached_last_line = true;
+                            break;
+                        }
+                    }
+                    let (ghost_start, ghost_end) = if !reached_last_line {
+                        (start, doc.buffer.cursor())
+                    } else {
+                        doc.buffer.move_to_line_end();
+                        let end = doc.buffer.cursor();
+                        // Last line: ghost the preceding newline too, mirroring
+                        // DeleteLine's extra delete_backward for that case.
+                        if start > 0 { (start - 1, end) } else { (start, end) }
+                    };
+                    let _ = doc.buffer.set_cursor(ghost_start);
+                    if ghost_end > ghost_start {
+                        doc.create_ghosts(&[(ghost_start, ghost_end)]);
+                        ghosted_doc = Some(doc.id);
+                    }
+                }
+                let result = ghosted_doc.is_some();
+                if let Some(id) = ghosted_doc {
+                    self.document_manager.set_most_recent_ghost_doc(Some(id));
+                }
                 if result && !self.dot_repeat.is_replaying() && command.is_repeatable() {
                     self.dot_repeat.record_single(command);
                 }

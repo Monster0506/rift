@@ -276,20 +276,57 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         match op {
-            OperatorType::Delete => self.apply_to_each_region(|editor, region| {
-                let Some(doc) = editor.document_manager.active_document_mut() else {
-                    return false;
+            OperatorType::Delete => {
+                let batch = {
+                    let Some(doc) = self.document_manager.active_document_mut() else {
+                        return false;
+                    };
+                    doc.selection_set.take_for_batch(&doc.buffer)
                 };
-                let (start, end) = region.buffer_span(&doc.buffer);
-                let text: Vec<Character> = doc.buffer.chars(start..end).collect();
-                if doc.delete_range(start, end).is_err() {
+                if batch.is_empty() {
                     return false;
                 }
-                if !text.is_empty() {
-                    editor.clipboard_ring.push(text);
+                // Commit any pending ghost first: its commit can shift the
+                // buffer, so regions below must resolve against it after.
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    doc.commit_pending_ghost();
                 }
-                true
-            }),
+                let ranges: Vec<(usize, usize)> = {
+                    let Some(doc) = self.document_manager.active_document() else {
+                        return false;
+                    };
+                    batch
+                        .iter()
+                        .map(|region| region.buffer_span(&doc.buffer))
+                        .filter(|&(s, e)| s < e)
+                        .collect()
+                };
+                if ranges.is_empty() {
+                    return false;
+                }
+                for &(start, end) in &ranges {
+                    let Some(doc) = self.document_manager.active_document() else {
+                        continue;
+                    };
+                    let text: Vec<Character> = doc.buffer.chars(start..end).collect();
+                    self.clipboard_ring.push(text);
+                }
+                self.refresh_clipboard_buffer_if_open();
+                // Cursor lands on the lowest-offset region's start, matching
+                // apply_to_each_region's highest-offset-first delete order.
+                let cursor_target = ranges.iter().map(|&(s, _)| s).min();
+                let ghosted_doc = self.document_manager.active_document_mut().map(|doc| {
+                    doc.create_ghosts(&ranges);
+                    if let Some(pos) = cursor_target {
+                        let _ = doc.buffer.set_cursor(pos);
+                    }
+                    doc.id
+                });
+                if let Some(id) = ghosted_doc {
+                    self.document_manager.set_most_recent_ghost_doc(Some(id));
+                }
+                ghosted_doc.is_some()
+            }
             OperatorType::Yank => self.apply_to_each_region(|editor, region| {
                 let Some(doc) = editor.document_manager.active_document() else {
                     return false;

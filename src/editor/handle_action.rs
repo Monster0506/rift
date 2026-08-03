@@ -210,6 +210,9 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::EnterNormalMode => {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    doc.commit_pending_ghost();
+                }
                 if self.current_mode.is_visual() {
                     if let (Some(anchor), Some(kind)) =
                         (self.visual_anchor, self.current_mode.visual_range_kind())
@@ -633,28 +636,59 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             EditorAction::Put { before } => {
-                if let Some(text) = self.clipboard_ring.most_recent().map(|s| s.to_owned()) {
-                    if self.try_run_set_aware_put(*before, &text) {
-                        self.finish_region_build(Some(action.clone()));
-                        return true;
+                // Capture the same-location-paste check before any commit
+                // touches the buffer or moves the cursor.
+                let active_doc_id = self.document_manager.active_document_id();
+                let cursor_before_resolve = self
+                    .document_manager
+                    .active_document()
+                    .map(|d| d.buffer.cursor());
+                let ghost_move = self
+                    .document_manager
+                    .most_recent_ghost_doc()
+                    .and_then(|doc_id| {
+                        let doc = self.document_manager.get_document(doc_id)?;
+                        let (text, live_start) = doc.most_recent_ghost()?;
+                        Some((doc_id, text.to_vec(), live_start))
+                    });
+                // Drain every document's ghosts before any insert/transaction
+                // call, or the mutation hook races Put's own move-finalize.
+                self.commit_all_pending_ghosts();
+
+                let (text, same_location_origin) = match &ghost_move {
+                    Some((doc_id, text, live_start)) => {
+                        let same_location = Some(*doc_id) == active_doc_id
+                            && cursor_before_resolve == Some(*live_start);
+                        (text.clone(), same_location.then_some(*live_start))
                     }
-                    let original_cursor = self
-                        .document_manager
-                        .active_document()
-                        .map(|d| d.buffer.cursor())
-                        .unwrap_or(0);
-                    let result = self.insert_text_at_cursor(&text, *before);
-                    if result {
-                        self.post_paste_state = Some(PostPasteState {
-                            ring_index: 0,
-                            before: *before,
-                            original_cursor,
-                        });
-                    }
-                    result
-                } else {
-                    false
+                    None => match self.clipboard_ring.most_recent() {
+                        Some(t) => (t.to_owned(), None),
+                        None => return false,
+                    },
+                };
+
+                if self.try_run_set_aware_put(*before, &text) {
+                    self.finish_region_build(Some(action.clone()));
+                    return true;
                 }
+                let original_cursor = self
+                    .document_manager
+                    .active_document()
+                    .map(|d| d.buffer.cursor())
+                    .unwrap_or(0);
+                let result = if let Some(origin) = same_location_origin {
+                    self.insert_ghost_text_verbatim(&text, origin)
+                } else {
+                    self.insert_text_at_cursor(&text, *before)
+                };
+                if result {
+                    self.post_paste_state = Some(PostPasteState {
+                        ring_index: 0,
+                        before: *before,
+                        original_cursor,
+                    });
+                }
+                result
             }
 
             EditorAction::CyclePaste { forward } => {
@@ -1151,6 +1185,34 @@ impl<T: TerminalBackend> Editor<T> {
         self.visual_anchor = Some(cursor);
         self.expand_history.clear();
         self.set_mode(mode);
+        true
+    }
+
+    /// Commit every open document's pending ghost cut as an ordinary delete.
+    /// Put is the only globally-resolving event; the rest touch one document.
+    fn commit_all_pending_ghosts(&mut self) {
+        let doc_ids: Vec<crate::document::DocumentId> =
+            self.document_manager.iter_documents().map(|d| d.id).collect();
+        for id in doc_ids {
+            if let Some(doc) = self.document_manager.get_document_mut(id) {
+                doc.commit_pending_ghost();
+            }
+        }
+        self.document_manager.set_most_recent_ghost_doc(None);
+    }
+
+    /// Insert `text` at `pos` verbatim and leave the cursor on `pos`: a true
+    /// no-op restore (`ddp` with no intervening motion must not move it).
+    fn insert_ghost_text_verbatim(&mut self, text: &[crate::character::Character], pos: usize) -> bool {
+        let Some(doc) = self.document_manager.active_document_mut() else {
+            return false;
+        };
+        let _ = doc.buffer.set_cursor(pos);
+        doc.begin_transaction("Put");
+        let _ = doc.insert_characters(text);
+        doc.commit_transaction();
+        let _ = doc.buffer.set_cursor(pos);
+        self.do_incremental_syntax_parse();
         true
     }
 

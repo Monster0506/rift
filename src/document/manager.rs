@@ -20,6 +20,9 @@ pub struct DocumentManager {
     /// Next available document ID
     next_document_id: DocumentId,
     private_document_ids: HashSet<DocumentId>,
+    /// Which document holds the most recently created ghost cut, for Put's
+    /// "paste this specific cut back" resolution.
+    most_recent_ghost_doc: Option<DocumentId>,
 }
 
 impl DocumentManager {
@@ -31,7 +34,18 @@ impl DocumentManager {
             current_tab: 0,
             next_document_id: 1,
             private_document_ids: HashSet::new(),
+            most_recent_ghost_doc: None,
         }
+    }
+
+    /// Which document holds the most recently created ghost cut, if any.
+    pub fn most_recent_ghost_doc(&self) -> Option<DocumentId> {
+        self.most_recent_ghost_doc
+    }
+
+    /// Record which document holds the most recently created ghost cut.
+    pub fn set_most_recent_ghost_doc(&mut self, id: Option<DocumentId>) {
+        self.most_recent_ghost_doc = id;
     }
 
     /// Add a document and make it active

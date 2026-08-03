@@ -5,8 +5,12 @@ use crate::buffer::TextBuffer;
 use crate::history::{EditOperation, EditTransaction, Position};
 
 impl Document {
-    /// Start a transaction for grouping multiple edits.
+    /// Start a transaction for grouping multiple edits. A fresh top-level
+    /// transaction first commits any ghost cut still pending on this document.
     pub fn begin_transaction(&mut self, description: impl Into<String>) {
+        if self.transaction_depth == 0 {
+            self.commit_pending_ghost();
+        }
         self.transaction_depth += 1;
         if self.transaction_depth == 1 {
             let mut tx = EditTransaction::new(description);
@@ -42,6 +46,7 @@ impl Document {
 
     /// Undo the last edit. Returns true if successful.
     pub fn undo(&mut self) -> bool {
+        self.commit_pending_ghost();
         if !self.history.can_undo() {
             return false;
         }
@@ -75,6 +80,7 @@ impl Document {
 
     /// Redo the last undone edit. Returns true if successful.
     pub fn redo(&mut self) -> bool {
+        self.commit_pending_ghost();
         if !self.history.can_redo() {
             return false;
         }
@@ -320,6 +326,7 @@ impl Document {
 
     /// Navigate to a specific edit sequence in the undo tree
     pub fn goto_seq(&mut self, target: u64) -> Result<(), crate::history::UndoError> {
+        self.commit_pending_ghost();
         let replay_path = self.history.goto_seq(target)?;
 
         if let Some(snapshot) = &replay_path.snapshot_restore {

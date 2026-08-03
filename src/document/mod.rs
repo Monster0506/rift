@@ -4,6 +4,7 @@
 pub mod definitions;
 mod edit;
 mod factories;
+mod ghost;
 mod history;
 pub mod manager;
 mod persistence;
@@ -66,6 +67,15 @@ pub struct DirectoryDiff {
     pub renames: Vec<(PathBuf, String)>,
     pub deletes: Vec<PathBuf>,
     pub creates: Vec<String>,
+}
+
+/// A deferred `d`-cut: `text` still sits in the buffer, greyed out, until
+/// something resolves it into a real delete (see `Document::commit_pending_ghost`).
+pub struct GhostCut {
+    pub start: usize,
+    pub end: usize,
+    pub text: Vec<crate::character::Character>,
+    pub annotation_id: crate::annotations::AnnotationId,
 }
 
 /// A single entry in a location list (diagnostics, references, etc.)
@@ -211,6 +221,9 @@ pub struct Document {
     /// Edits recorded since the last `take_lsp_edits`, for an LSP client to
     /// express as incremental changes instead of resending the whole document.
     pending_lsp_edits: Vec<crate::history::EditOperation>,
+    /// Deferred `d`-cuts not yet materialized into real deletes. A banked or
+    /// visual-selection delete produces multiple entries from one cut action.
+    pub pending_ghost: Vec<GhostCut>,
 }
 
 impl Document {

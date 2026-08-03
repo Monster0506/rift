@@ -1010,6 +1010,7 @@ fn test_dt_on_char_not_found_does_nothing() {
 
     assert_eq!(editor.active_document().buffer.len(), 6);
     assert_eq!(editor.active_document().buffer.cursor(), 0);
+    assert!(editor.active_document().pending_ghost.is_empty());
 }
 
 #[test]
@@ -1028,6 +1029,7 @@ fn test_dt_does_not_cross_line_boundary() {
 
     assert_eq!(editor.active_document().buffer.to_string(), "bcdef\naXXa\n");
     assert_eq!(editor.active_document().buffer.cursor(), 0);
+    assert!(editor.active_document().pending_ghost.is_empty());
 }
 
 #[test]
@@ -1044,7 +1046,13 @@ fn test_dtf_on_abcdef_leaves_f_only() {
         Motion::TillCharForward('f'),
     )));
 
+    // The cut is ghosted, not applied yet: content is untouched.
+    assert_eq!(editor.active_document().buffer.to_string(), "abcdef");
+    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer.to_string(), "f");
+    assert!(editor.active_document().pending_ghost.is_empty());
 }
 
 #[test]
@@ -1061,6 +1069,8 @@ fn test_dta_with_second_a_leaves_only_that_a() {
         Motion::TillCharForward('a'),
     )));
 
+    assert_eq!(editor.active_document().buffer.to_string(), "abca");
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer.to_string(), "a");
 }
 
@@ -1090,6 +1100,11 @@ fn test_dg_deletes_from_cursor_to_end_of_file() {
     )));
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
+    // Ghosted, not applied yet.
+    assert_eq!(editor.active_document().buffer.len(), 18);
+    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer.len(), 0);
 }
 
@@ -1099,6 +1114,7 @@ fn test_dg_with_count_deletes_to_specific_line() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "line1\nline2\nline3\nline4\n");
+    let lines_before = editor.active_document().buffer.get_total_lines();
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -1106,10 +1122,288 @@ fn test_dg_with_count_deletes_to_specific_line() {
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
+    // Ghosted, not applied yet.
+    assert_eq!(
+        editor.active_document().buffer.get_total_lines(),
+        lines_before
+    );
+    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     let doc = editor.active_document();
     assert!(!doc.buffer.is_empty());
     let remaining = doc.buffer.get_total_lines();
     assert!(remaining <= 3);
+}
+
+#[test]
+fn new_cut_commits_the_previously_pending_ghost_first() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    assert_eq!(editor.active_document().buffer.to_string(), "abcdef");
+    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+
+    // A second cut before the first ever resolves must commit "a" for real
+    // first, then ghost only the new range.
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "bcdef");
+    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    assert_eq!(editor.active_document().buffer.to_string(), "cdef");
+}
+
+#[test]
+fn escape_commits_every_entry_in_a_multi_region_ghost_list() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 1, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 6, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    assert_eq!(editor.active_document().buffer.to_string(), "0123456789");
+    assert_eq!(editor.active_document().pending_ghost.len(), 2);
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    assert_eq!(editor.active_document().buffer.to_string(), "234789");
+    assert!(editor.active_document().pending_ghost.is_empty());
+}
+
+#[test]
+fn entering_insert_mode_resolves_a_pending_ghost_via_the_mutation_hook() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    assert_eq!(editor.active_document().buffer.to_string(), "abcdef");
+    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
+
+    assert!(editor.active_document().pending_ghost.is_empty());
+    assert_eq!(editor.active_document().buffer.to_string(), "bcdef");
+}
+
+#[test]
+fn undo_with_a_pending_ghost_materializes_then_undoes_it_in_one_step() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    assert_eq!(editor.active_document().buffer.to_string(), "abcdef");
+
+    assert!(editor.active_document().undo());
+    assert_eq!(editor.active_document().buffer.to_string(), "abcdef");
+    assert!(editor.active_document().pending_ghost.is_empty());
+}
+
+#[test]
+fn save_commits_pending_ghost_before_writing() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    assert_eq!(editor.active_document().buffer.to_string(), "abcdef");
+    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+
+    editor.do_save();
+
+    assert_eq!(editor.active_document().buffer.to_string(), "bcdef");
+    assert!(editor.active_document().pending_ghost.is_empty());
+}
+
+#[test]
+fn same_location_paste_restores_the_cut_byte_identical() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.pending_count = 3;
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "abcdef",
+        "ghosted, not applied yet"
+    );
+
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "abcdef",
+        "p immediately after d{{motion}} restores byte-identical, not vim's normal after-cursor reflow"
+    );
+    assert_eq!(
+        editor.active_document().buffer.cursor(),
+        0,
+        "a true no-op restore must not move the cursor either"
+    );
+}
+
+#[test]
+fn put_drains_every_documents_pending_ghost_but_inserts_only_the_most_recent() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+    let doc1_id = editor.active_document_id();
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    assert_eq!(editor.active_document().buffer.to_string(), "abcdef");
+
+    let mut doc2 = crate::document::Document::new(editor.document_manager.next_id()).unwrap();
+    let _ = doc2.buffer.insert_str("xyz");
+    doc2.buffer.move_to_start();
+    editor.document_manager.add_document(doc2);
+    let doc2_id = editor.document_manager.active_document_id().unwrap();
+    editor.split_tree.set_focused_document(doc2_id);
+    assert_ne!(doc1_id, doc2_id);
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    assert_eq!(editor.active_document().buffer.to_string(), "xyz");
+
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
+
+    // doc1's ghost was drained as an ordinary delete -- "a" is gone for good.
+    let doc1 = editor.document_manager.get_document(doc1_id).unwrap();
+    assert_eq!(doc1.buffer.to_string(), "bcdef");
+    assert!(doc1.pending_ghost.is_empty());
+
+    // doc2's ghost was the most recent: its own text pasted back in place.
+    let doc2 = editor.document_manager.get_document(doc2_id).unwrap();
+    assert_eq!(doc2.buffer.to_string(), "xyz");
+    assert!(doc2.pending_ghost.is_empty());
+}
+
+#[test]
+fn ddp_with_no_intervening_motion_does_not_move_the_cursor() {
+    use crate::action::{Action, EditorAction, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "A\nB\nC\n");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "A\nB\nC\n",
+        "ddp with no intervening motion is a true no-op"
+    );
+    assert_eq!(
+        editor.active_document().buffer.cursor(),
+        0,
+        "ddp must not move the cursor when nothing moved in between"
+    );
+}
+
+#[test]
+fn dd_paste_before_with_no_intervening_motion_does_not_move_the_cursor() {
+    use crate::action::{Action, EditorAction, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "A\nB\nC\n");
+    editor.active_document().buffer.set_cursor(0).unwrap();
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: true }));
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "A\nB\nC\n",
+        "ddP with no intervening motion is a true no-op too"
+    );
+    assert_eq!(
+        editor.active_document().buffer.cursor(),
+        0,
+        "ddP must not move the cursor either"
+    );
+}
+
+#[test]
+fn same_location_paste_before_does_not_move_the_cursor_either() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.pending_count = 3;
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+
+    editor.handle_action(&Action::Editor(EditorAction::Put { before: true }));
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "abcdef",
+        "P immediately after d{{motion}} restores byte-identical too"
+    );
+    assert_eq!(
+        editor.active_document().buffer.cursor(),
+        0,
+        "same-location P must not move the cursor either"
+    );
 }
 
 #[test]
@@ -1839,6 +2133,7 @@ fn leading_count_composes_with_nest_count_through_full_key_path() {
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('('));
 
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     // Composed nesting (leading 2 * typed 2 = 4) reaches the outermost pair.
     assert_eq!(editor.active_document().buffer.to_string(), "()");
 }
@@ -2974,11 +3269,15 @@ fn set_aware_delete_removes_every_banked_region_as_one_op() {
         OperatorType::Delete,
     )));
 
-    assert_eq!(editor.active_document().buffer.to_string(), "\n\n\n");
+    // Ghosted, not applied yet.
+    assert_eq!(editor.active_document().buffer.to_string(), "foo\n\nfoofoo\n");
     assert!(
         editor.active_document().selection_set.is_empty(),
         "set clears after the batch"
     );
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    assert_eq!(editor.active_document().buffer.to_string(), "\n\n\n");
 }
 
 #[test]
@@ -3001,6 +3300,9 @@ fn set_aware_delete_is_one_undo_step() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
+    assert_eq!(editor.active_document().buffer.to_string(), "0123456789");
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer.to_string(), "234789");
 
     assert!(editor.active_document().undo());
@@ -3062,13 +3364,14 @@ fn visual_d_commits_active_region_then_runs_the_batch() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
+    assert_eq!(editor.current_mode, Mode::Normal);
 
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(
         editor.active_document().buffer.to_string(),
         "234789",
         "both the just-committed and pre-banked region deleted as one batch"
     );
-    assert_eq!(editor.current_mode, Mode::Normal);
 }
 
 #[test]
@@ -3636,8 +3939,10 @@ fn dot_repeat_destructive_group_reselects_without_reexecuting() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    assert_eq!(editor.active_document().buffer.to_string(), " (b)");
     assert!(editor.active_document().selection_set.is_empty());
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    assert_eq!(editor.active_document().buffer.to_string(), " (b)");
 
     editor.active_document().buffer.set_cursor(1).unwrap(); // land inside "(b)"
     editor.execute_dot_repeat();
@@ -3669,6 +3974,7 @@ fn dd_with_leading_count_deletes_n_lines() {
         OperatorType::Delete,
     )));
 
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer.to_string(), "four\n");
 }
 
@@ -3686,11 +3992,13 @@ fn dd_count_does_not_leak_into_next_motion() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
+    assert_eq!(editor.pending_count, 0, "count must not survive past dd");
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(
         editor.active_document().buffer.to_string(),
         "three\nfour\nfive\n"
     );
-    assert_eq!(editor.pending_count, 0, "count must not survive past dd");
 
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Down)));
     assert_eq!(
@@ -3732,6 +4040,7 @@ fn operator_count_and_motion_count_multiply_not_concatenate() {
     editor.pending_count = 3;
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::NextWord)));
 
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer.to_string(), "seven eight");
 }
 
@@ -3986,6 +4295,8 @@ fn regions_window_operator_redirects_to_the_source_document() {
         editor.panel_layout.is_none(),
         "firing an operator from the window closes it"
     );
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(
         editor
             .document_manager
@@ -4011,6 +4322,7 @@ fn visual_block_renders_and_edits_identically_to_charwise() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
 
     assert_eq!(
         editor.active_document().buffer.to_string(),
@@ -4040,12 +4352,13 @@ fn issue_worked_example_full_sequence_including_delete() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
+    assert!(editor.active_document().selection_set.is_empty());
 
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(
         editor.active_document().buffer.to_string(),
         "llo\nworld\noo\n"
     );
-    assert!(editor.active_document().selection_set.is_empty());
 }
 
 #[test]
@@ -4708,6 +5021,9 @@ fn dd_deletes_the_current_line_via_the_operator_doubling_path_not_a_keymap_seque
     feed_key(&mut editor, Key::Char('d'));
     feed_key(&mut editor, Key::Char('d'));
 
+    editor.handle_action(&crate::action::Action::Editor(
+        crate::action::EditorAction::EnterNormalMode,
+    ));
     assert_eq!(
         editor.active_document().buffer.to_string(),
         "second\nthird\n",
