@@ -1407,6 +1407,97 @@ fn same_location_paste_before_does_not_move_the_cursor_either() {
 }
 
 #[test]
+fn cursor_can_rest_at_a_ghosts_start_but_nowhere_else_inside_it() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+
+    // Ghost "abc" (0..3); creation itself must land on the one legal spot.
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.pending_count = 3;
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    assert_eq!(editor.active_document().buffer.cursor(), 0);
+
+    // A single-char Right tries to land at offset 1, inside the ghost -- it
+    // must skip clean through to offset 3, never resting at 1 or 2.
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+    assert_eq!(
+        editor.active_document().buffer.cursor(),
+        3,
+        "forward motion into a ghost must skip to just past its far edge"
+    );
+}
+
+#[test]
+fn cursor_skips_backward_to_a_ghosts_start_from_beyond_it() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+
+    // Ghost "abc" (0..3).
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.pending_count = 3;
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+
+    editor.active_document().buffer.set_cursor(3).unwrap();
+    // A single-char Left tries to land at offset 2, inside the ghost --
+    // backward travel must land on the ghost's start (0), not stop partway.
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Left)));
+    assert_eq!(editor.active_document().buffer.cursor(), 0);
+}
+
+#[test]
+fn cursor_skips_over_each_ghost_in_a_multi_region_pending_list() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 2, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 7, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    assert_eq!(editor.active_document().pending_ghost.len(), 2);
+
+    // Region::span() is anchor..=cursor, so these ghost "0..3" and "5..8";
+    // moving right must skip straight through both ghosted spans.
+    editor.active_document().buffer.set_cursor(0).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        crate::action::Motion::Right,
+    )));
+    assert_eq!(
+        editor.active_document().buffer.cursor(),
+        3,
+        "must skip past the first ghost (0..3)"
+    );
+
+    editor.active_document().buffer.set_cursor(5).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        crate::action::Motion::Right,
+    )));
+    assert_eq!(
+        editor.active_document().buffer.cursor(),
+        8,
+        "must skip past the second ghost (5..8) too"
+    );
+}
+
+#[test]
 fn test_g_outside_operator_pending_just_moves_cursor() {
     use crate::action::{Action, EditorAction};
     use crate::buffer::api::BufferView;

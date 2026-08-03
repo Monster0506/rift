@@ -107,4 +107,20 @@ impl Document {
         let restored = cursor_before.saturating_sub(shift).min(self.buffer.len());
         let _ = self.buffer.set_cursor(restored);
     }
+
+    /// A pending ghost's own start is its only landable position; skip a
+    /// cursor landed elsewhere inside one onward or back, per travel from `from`.
+    pub fn skip_cursor_over_ghosts(&mut self, from: usize) {
+        for _ in 0..self.pending_ghost.len().max(1) {
+            let cursor = self.buffer.cursor();
+            let landing = self.pending_ghost.iter().find_map(|ghost| {
+                let (start, end) = self.ghost_live_range(ghost.annotation_id)?;
+                (cursor > start && cursor < end).then_some(if from <= start { end } else { start })
+            });
+            let Some(target) = landing else {
+                break;
+            };
+            let _ = self.buffer.set_cursor(target.min(self.buffer.len()));
+        }
+    }
 }
