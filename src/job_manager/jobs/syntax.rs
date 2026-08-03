@@ -154,7 +154,8 @@ impl Job for SyntaxParseJob {
         // the query cursor's coordinate space (control chars differ in byte width).
         let text = buffer;
         let source_bytes = {
-            let _will_patch = cached_logical_bytes.is_some() && single_edit.is_some();
+            #[cfg_attr(not(feature = "perf_instrumentation"), allow(unused_variables))]
+            let will_patch = cached_logical_bytes.is_some() && single_edit.is_some();
             crate::perf_span!(
                 "syntax_reparse_job_to_bytes",
                 crate::perf::PerfFields {
