@@ -49,7 +49,7 @@ treesitter = [
 ]
 
 [dependencies]
-mlua = { version = "0.10", features = ["lua54", "vendored"], optional = true }
+mlua = { version = "0.12", features = ["lua54", "vendored"], optional = true }
 crossterm = "0.28.1"
 monster-regex = "0.2.5"
 streaming-iterator = "0.1.9"
