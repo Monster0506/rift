@@ -8,7 +8,25 @@ use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
+    /// Dispatch `action`, then snap the cursor off any pending ghost it may
+    /// have landed inside of (only the ghost's own start is landable).
     pub(super) fn handle_action(&mut self, action: &crate::action::Action) -> bool {
+        let before = self
+            .document_manager
+            .active_document()
+            .map(|d| (d.id, d.buffer.cursor()));
+        let result = self.handle_action_inner(action);
+        if let Some((doc_id, cursor_before)) = before {
+            if self.document_manager.active_document_id() == Some(doc_id) {
+                if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                    doc.skip_cursor_over_ghosts(cursor_before);
+                }
+            }
+        }
+        result
+    }
+
+    fn handle_action_inner(&mut self, action: &crate::action::Action) -> bool {
         use crate::action::{Action, EditorAction};
 
         let editor_action = match action {
