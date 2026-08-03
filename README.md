@@ -6,112 +6,26 @@ I use this daily and primarily.
 
 ## Implemented:
 - Quite a lot more than the below items, I just haven't updated this in a while due to actually working on it.
+- Vim-style modal editing: normal/insert/visual/command modes, operators (d/c/y), dot repeat, granular motions
+- Multi-select visual selection with a selection buffer and forward-search selection
 - Configurable GhostCut-style delete
-- Visual selection with multi-select, selection buffer, and forward search selection.
-- Optimistic-sync incremental syntax parsing: typing tries a time-budgeted synchronous tree-sitter parse first, falling back to a debounced background job (with cancel-and-respawn of any stale in-flight parse) only when the budget is exceeded
-- Remote daemon mode (`rift --daemon`): editor runs as a headless TCP server; clients attach via `rift --connect [user@]host` over an SSH tunnel, with token auth and JSON+RPC framing
-- Annotation presentation layer: faces/styles plus adornments rendered as leading, trailing (end-of-line), overlay, or conceal (hidden) virtual text, composed over base syntax by priority
-- LSP client: diagnostics with inline annotations, go to definition, find references, hover documentation, rename, document formatting, code actions (with resolve)
-- LSP status bar integration: error/warning counts with color coding per language server
-- Plugins can configure LSP server initialization options via the Lua API
-- Block cursor in Normal/OperatorPending mode (software-rendered, inverted colors)
-- Animated cursor with exponential smoothing (`appearance.cursor_speed`)
-- Annotation framework for document-level inline metadata (used by LSP diagnostics)
-- Annotations carry a generic JSON-like payload, namespaced kinds (`lsp.diagnostic`, `fs.entry`, ...), and an owner (system/lsp/plugin/user) that governs authority
-- Interactive annotations with action verbs, default-action activation, and `next`/`prev` interactive navigation, all backed by an interval-tree index for O(log n) queries
-- Markers with per-endpoint gravity and stickiness (delete vs. persist) so annotations track edits and survive (or vanish with) the text they anchor to
-- Lua annotation API (`rift.annotations.add/remove/update/get/at/in_range`) with enter/leave cursor events and action handlers, so plugins can author and respond to annotations
-- Annotation state is snapshotted into undo/redo, so undoing restores annotations alongside text
-- `f`/`F`/`t`/`T` character-find motions with `N`/`n` repeat
-- `D` to delete to end of line
-- `{N}G` to jump to line N
-- Terminal scrollback buffer
-- Highlight active split pane
-- `H` in file explorer to toggle hidden (dotfile) visibility
-- Plugin support for arbitrary language syntax grammars (register via Lua API)
-- SQL syntax highlighting (tree-sitter)
-- Alt key modifier support in keybindings
-- Expanded plugin API: buffer metadata, navigation, richer event hooks
-- Clipboard ring buffer with multi-entry history (configurable size via `clipboard.size`)
-- System clipboard integration (read/write via arboard, shown in clipboard tooltip)
-- `clipboard.size` setting and `:clipboard` command to view ring
-- `:luareload` command to reload plugins without restarting
-- Plugin system (Lua, with user-defined events)
-- CLI args: `-v`/`--version`, `+N` jump to line, `+` jump to last line, `+/pattern` search on open, `-c cmd` run ex command on open
-- `o` / `O` to open a new line below/above in normal mode
-- Soft line wrapping (setlocal wrap, with highly optimized rendering)
-- Messages buffer (:messages to view editor messages)
-- Everything-is-a-buffer architecture (file explorer, undotree, terminal, etc. are all buffers)
-- BOM stripping and correct UTF-8 decoding on file load
-- Multi-width unicode character rendering
-- Count indicator in command-line completion
-- Command-line completion engine (commands, subcommands, settings, setting values, file paths)
-- vertical and horizontal splits (:split, :vsplit)
-- split navigation (Ctrl+W h/j/k/l), resize (`<`/`>`/`,`/`.`), freeze
-- split equalization (`:equalize`, `Ctrl+W =`) with `split.equalize_proportional` mode (equal vs. proportional redistribution)
-- split moving (H/J/K/L to move pane in a direcion)
-- terminal emulator (:terminal, via alacritty_terminal)
-- change command (c, C)
-- dot repeat (.)
-- smart dirty indicator (tracks saved state in undotree)
-- capital insert commands (I, A)
-- Undotree preview with change-focused scrolling
-- Fancy undotree (with colors and syntax highlighting)
-- persistent buffer state across file switches (dirty, undotree, etc.)
-- command and search history (with up/down navigation)
-- File explorer (ranger-style: open, new, delete, rename, copy, toggle hidden, metadata, bulk ops)
-- ^W to delete back a word in insert/command/search
-- benchmarking infrastructure (buffer, render, search, movement, syntax, history, screen, job, input)
-- Treesitter (bash, c, c++, c#, css, go, html, java, js, json, lua, markdown, php, python, ruby, rust, typescript, yaml, zig)
-- Async treesitter highlighting on background thread
-- threaded job manager for async operations
-- smartcase search
-- search index warming (background cache)
-- fast search: sub-15ms on a 1MB buffer (zooooom)
-- granular movement (word, sentence, paragraph, big word)
-- Character abstraction for proper unicode handling (not just u8/char)
-- O(log N) byte/char length synchronization
-- interval trees for syntax metadata
-- input box component
-- select view with scrolling
-- operator pending mode (d, c, y with motions)
-- search + replace
-- Custom regex engine (monster-regex)
-- Polling instead of blocking input
-- Resizing
-- Buffer next/previous/ls
-- Notify clear and clear all
-- setting and command descriptions
-- make command pattern more like settings design pattern (this took way too long)
-- Not a gap buffer anymore! We now use a rope with a piece table
-- dirty rectangles
-- :edit filename to open a new document (:e to reload from disk)
-- Multi-document support
-- setlocal for document-level settings
-- dumb gutter to avoid recalcing unless total lines changes significantly
-- crlf and lf support
-- add redraw command
-- component level dirty flags to avoid clearing and repopulating full layers
-- line indexing improvements
-- line numbers
-- colorizing and themes
-- status bar to indicate filename, dirty
-- notification system
-- parse bang commands and pass the number of bangs
-- hook notifications up to actual errors and warnings
-- buffer composition
-- double buffer rendering
-- layer system for rendering
-- various settings
-- command mode
-- insert mode
-- basic cursor movement
-- Save File (async)
-- Save As
-- Open File
-- Syntax highlighting
-- Undo and redo with hybrid delta+checkpointing approach
-- debug mode toggle
+- Rope + piece-table text buffer with hybrid delta/checkpoint undo and a fancy undotree
+- Custom regex engine (monster-regex) powering search and replace
+- Async tree-sitter syntax highlighting across 19+ languages, with time-budgeted incremental parsing
+- LSP client: diagnostics, go-to-definition, find references, hover, rename, formatting, code actions
+- Annotation framework for inline document metadata (used by LSP diagnostics, extensible via plugins)
+- Lua plugin system with a rich API (annotations, buffer metadata, navigation, event hooks)
+- Remote daemon mode: run headless, connect over SSH with token auth
+- Vertical/horizontal splits with resize, equalize, freeze, and directional pane moving
+- Integrated terminal emulator (`:terminal`)
+- Ranger-style file explorer (open, rename, delete, copy, bulk ops, hidden-file toggle)
+- Clipboard ring buffer with system clipboard integration
+- Fast search (sub-15ms on a 1MB buffer) with smartcase and background index warming
+- Full Unicode support: multi-width rendering, correct decoding, BOM stripping
+- Command-line completion for commands, settings, and file paths
+- Command and search history with navigation
+- Everything-is-a-buffer architecture (explorer, undotree, terminal all buffers)
+- Async, non-blocking I/O via a threaded job manager
 
 Todo:
 - registers + unified yank/paste/delete
