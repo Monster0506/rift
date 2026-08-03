@@ -398,6 +398,18 @@ fn set_lsp_debug_log(settings: &mut UserSettings, value: SettingValue) -> Result
     }
 }
 
+fn set_ghost_cut(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Bool(b) => {
+            settings.ghost_cut = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
+    }
+}
+
 pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line.borderstyle",
@@ -603,6 +615,15 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         description: "Show LSP protocol debug messages as notifications",
         ty: SettingType::Boolean,
         set: set_lsp_debug_log,
+        get: None,
+        needs_full_redraw: false,
+    },
+    SettingDescriptor {
+        name: "ghostcut",
+        aliases: &["gc"],
+        description: "Defer d-cuts into a ghosted span until something resolves them, instead of deleting immediately",
+        ty: SettingType::Boolean,
+        set: set_ghost_cut,
         get: None,
         needs_full_redraw: false,
     },

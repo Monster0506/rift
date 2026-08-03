@@ -1498,6 +1498,97 @@ fn cursor_skips_over_each_ghost_in_a_multi_region_pending_list() {
 }
 
 #[test]
+fn set_noghostcut_makes_dw_delete_immediately() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+    editor.execute_command_line("set noghostcut".to_string());
+    assert!(!editor.state.settings.ghost_cut);
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.pending_count = 3;
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "def",
+        "d{{motion}} deletes right away with ghostcut off"
+    );
+    assert!(editor.active_document().pending_ghost.is_empty());
+}
+
+#[test]
+fn set_noghostcut_makes_dd_delete_immediately() {
+    use crate::action::{Action, EditorAction, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "one\ntwo\nthree\n");
+    editor.execute_command_line("set noghostcut".to_string());
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "two\nthree\n");
+    assert!(editor.active_document().pending_ghost.is_empty());
+}
+
+#[test]
+fn set_noghostcut_makes_banked_region_delete_immediate() {
+    use crate::action::{Action, EditorAction, OperatorType};
+    use crate::selection::Region;
+    use crate::wrap::RangeKind;
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "0123456789");
+    editor.execute_command_line("set noghostcut".to_string());
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(0, 1, RangeKind::Charwise));
+    editor
+        .active_document()
+        .selection_set
+        .bank(Region::new(5, 6, RangeKind::Charwise));
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+
+    assert_eq!(editor.active_document().buffer.to_string(), "234789");
+    assert!(editor.active_document().pending_ghost.is_empty());
+}
+
+#[test]
+fn set_ghostcut_can_be_re_enabled() {
+    use crate::action::{Action, EditorAction, Motion, OperatorType};
+
+    let mut editor = create_editor();
+    load_text(&mut editor, "abcdef");
+    editor.execute_command_line("set noghostcut".to_string());
+    editor.execute_command_line("set ghostcut".to_string());
+    assert!(editor.state.settings.ghost_cut);
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        OperatorType::Delete,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
+
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "abcdef",
+        "ghosted, not applied yet"
+    );
+    assert_eq!(editor.active_document().pending_ghost.len(), 1);
+}
+
+#[test]
 fn test_g_outside_operator_pending_just_moves_cursor() {
     use crate::action::{Action, EditorAction};
     use crate::buffer::api::BufferView;
