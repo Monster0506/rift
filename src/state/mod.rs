@@ -106,6 +106,9 @@ pub struct UserSettings {
     pub cursor_speed: f64,
     /// Emit LSP protocol events as info notifications for debugging
     pub lsp_debug_log: bool,
+    /// Defer `d`-cuts into a ghosted span until something resolves them;
+    /// when off, `d` deletes right away, as before the ghost-cut feature.
+    pub ghost_cut: bool,
 }
 
 impl UserSettings {
@@ -131,6 +134,7 @@ impl UserSettings {
             cursor_color: None,
             cursor_speed: 0.8,
             lsp_debug_log: false,
+            ghost_cut: true,
         };
 
         // Apply default Dark theme
