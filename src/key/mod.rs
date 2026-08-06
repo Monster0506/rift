@@ -92,7 +92,8 @@ impl Key {
 }
 
 /// Parse a vim-notation key sequence (e.g. `<Esc>`, `<C-x>`, bare chars) into
-/// a list of `Key`s. Returns `None` if any token is unrecognised.
+/// a list of `Key`s. Use `<lt>` for a literal `<`; `>` needs no escaping.
+/// Returns `None` if any token is unrecognised.
 pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
     let mut keys = Vec::new();
     let mut chars = s.chars().peekable();
@@ -139,6 +140,8 @@ pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
                 Key::Char(' ')
             } else if low == "s-space" || low == "shiftspace" {
                 Key::ShiftSpace
+            } else if low == "lt" {
+                Key::Char('<')
             } else if low.starts_with("c-") && low.len() == 3 {
                 let ch = low.chars().nth(2)?;
                 Key::Ctrl(ch as u8)
@@ -171,4 +174,24 @@ fn csi(suffix: u8, modifier: Option<u8>) -> Vec<u8> {
 /// Build a CSI tilde sequence: `ESC [ {num} ~`
 fn csi_tilde(num: u8) -> Vec<u8> {
     vec![0x1b, b'[', b'0' + num, b'~']
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lt_escapes_to_literal_char() {
+        assert_eq!(parse_key_sequence("<lt>"), Some(vec![Key::Char('<')]));
+    }
+
+    #[test]
+    fn gt_needs_no_escaping() {
+        assert_eq!(parse_key_sequence(">"), Some(vec![Key::Char('>')]));
+    }
+
+    #[test]
+    fn bare_lt_without_closing_gt_is_invalid() {
+        assert_eq!(parse_key_sequence("<"), None);
+    }
 }
