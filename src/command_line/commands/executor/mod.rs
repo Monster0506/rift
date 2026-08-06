@@ -185,16 +185,16 @@ impl CommandExecutor {
                 bangs: _,
             } => local::execute_local_command(command, state, document, document_settings_registry),
             ParsedCommand::Write { path, bangs: _ } => {
-                // Set the path in state if provided (for :w filename)
                 if let Some(ref file_path) = path {
+                    document.set_path(file_path);
                     state.set_file_path(Some(file_path.clone()));
                 }
                 // Editor will check if path exists and call Document::save()
                 ExecutionResult::Write
             }
             ParsedCommand::WriteQuit { path, bangs: _ } => {
-                // Set the path in state if provided (for :wq filename)
                 if let Some(ref file_path) = path {
+                    document.set_path(file_path);
                     state.set_file_path(Some(file_path.clone()));
                 }
                 // Editor will check if path exists, call Document::save(), then quit
