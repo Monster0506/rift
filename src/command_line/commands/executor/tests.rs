@@ -851,6 +851,7 @@ fn test_execute_write_with_path() {
     );
     assert_eq!(result, ExecutionResult::Write);
     assert_eq!(state.file_path, Some("test.txt".to_string()));
+    assert!(document.path().unwrap().ends_with("test.txt"));
 }
 
 #[test]
@@ -866,6 +867,7 @@ fn test_execute_write_updates_path() {
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(1).unwrap();
+    document.set_path("old.txt");
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -875,6 +877,7 @@ fn test_execute_write_updates_path() {
     );
     assert_eq!(result, ExecutionResult::Write);
     assert_eq!(state.file_path, Some("new.txt".to_string()));
+    assert!(document.path().unwrap().ends_with("new.txt"));
 }
 
 #[test]
@@ -919,6 +922,7 @@ fn test_execute_write_quit_with_path() {
     );
     assert_eq!(result, ExecutionResult::WriteAndQuit);
     assert_eq!(state.file_path, Some("test.txt".to_string()));
+    assert!(document.path().unwrap().ends_with("test.txt"));
 }
 
 #[test]
@@ -934,6 +938,7 @@ fn test_execute_write_quit_updates_path() {
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
     let mut document = Document::new(1).unwrap();
+    document.set_path("old.txt");
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -943,6 +948,7 @@ fn test_execute_write_quit_updates_path() {
     );
     assert_eq!(result, ExecutionResult::WriteAndQuit);
     assert_eq!(state.file_path, Some("new.txt".to_string()));
+    assert!(document.path().unwrap().ends_with("new.txt"));
 }
 
 #[test]
