@@ -444,6 +444,19 @@ impl Document {
         matches!(self.kind, BufferKind::Regions { .. })
     }
 
+    /// Whether deletes on this buffer may defer through a ghost-cut annotation
+    pub fn ghost_cut_allowed(&self) -> bool {
+        !matches!(
+            self.kind,
+            BufferKind::Terminal
+                | BufferKind::Directory { .. }
+                | BufferKind::Regions { .. }
+                | BufferKind::Messages { .. }
+                | BufferKind::Clipboard { .. }
+                | BufferKind::UndoTree { .. }
+        )
+    }
+
     /// Check if this document is any clipboard-related buffer
     pub fn is_any_clipboard(&self) -> bool {
         matches!(

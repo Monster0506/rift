@@ -228,8 +228,12 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::EnterNormalMode => {
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    doc.commit_pending_ghost();
+                let committed_prior = self
+                    .document_manager
+                    .active_document_mut()
+                    .is_some_and(|doc| doc.commit_pending_ghost());
+                if committed_prior {
+                    self.do_incremental_syntax_parse();
                 }
                 if self.current_mode.is_visual() {
                     if let (Some(anchor), Some(kind)) =
@@ -1209,11 +1213,21 @@ impl<T: TerminalBackend> Editor<T> {
     /// Commit every open document's pending ghost cut as an ordinary delete.
     /// Put is the only globally-resolving event; the rest touch one document.
     fn commit_all_pending_ghosts(&mut self) {
-        let doc_ids: Vec<crate::document::DocumentId> =
-            self.document_manager.iter_documents().map(|d| d.id).collect();
+        let doc_ids: Vec<crate::document::DocumentId> = self
+            .document_manager
+            .iter_documents()
+            .map(|d| d.id)
+            .collect();
+        let active_id = self.document_manager.active_document().map(|d| d.id);
         for id in doc_ids {
-            if let Some(doc) = self.document_manager.get_document_mut(id) {
-                doc.commit_pending_ghost();
+            let Some(doc) = self.document_manager.get_document_mut(id) else {
+                continue;
+            };
+            if !doc.commit_pending_ghost() {
+                continue;
+            }
+            if Some(id) != active_id {
+                self.debounce_syntax_reparse(id);
             }
         }
         self.document_manager.set_most_recent_ghost_doc(None);
@@ -1221,7 +1235,11 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Insert `text` at `pos` verbatim and leave the cursor on `pos`: a true
     /// no-op restore (`ddp` with no intervening motion must not move it).
-    fn insert_ghost_text_verbatim(&mut self, text: &[crate::character::Character], pos: usize) -> bool {
+    fn insert_ghost_text_verbatim(
+        &mut self,
+        text: &[crate::character::Character],
+        pos: usize,
+    ) -> bool {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
         };
