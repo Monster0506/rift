@@ -70,11 +70,11 @@ impl Document {
     }
 
     /// Commit every pending ghost as an ordinary delete in one transaction.
-    /// Reads each ghost's live annotation position, not its (possibly stale) cached `start`/`end`.
-    pub fn commit_pending_ghost(&mut self) {
+    /// Returns whether a delete was applied, so callers know whether to reparse.
+    pub fn commit_pending_ghost(&mut self) -> bool {
         let ghosts = std::mem::take(&mut self.pending_ghost);
         if ghosts.is_empty() {
-            return;
+            return false;
         }
         let mut ranges: Vec<(usize, usize)> = Vec::with_capacity(ghosts.len());
         for ghost in &ghosts {
@@ -84,14 +84,14 @@ impl Document {
             self.annotations.remove(ghost.annotation_id);
         }
         if ranges.is_empty() {
-            return;
+            return false;
         }
         // Highest-offset-first so each delete's shift never invalidates an
         // earlier range's already-captured live position.
         ranges.sort_unstable_by(|a, b| b.0.cmp(&a.0));
 
         let cursor_before = self.buffer.cursor();
-        self.begin_transaction("Ghost cut");
+        self.begin_transaction("Delete");
         for &(start, end) in &ranges {
             let _ = self.delete_range(start, end);
         }
@@ -106,6 +106,7 @@ impl Document {
             .sum();
         let restored = cursor_before.saturating_sub(shift).min(self.buffer.len());
         let _ = self.buffer.set_cursor(restored);
+        true
     }
 
     /// A pending ghost's own start is its only landable position; skip a

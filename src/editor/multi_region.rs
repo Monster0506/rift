@@ -288,8 +288,12 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 // Commit any pending ghost first: its commit can shift the
                 // buffer, so regions below must resolve against it after.
-                if let Some(doc) = self.document_manager.active_document_mut() {
-                    doc.commit_pending_ghost();
+                let committed_prior = self
+                    .document_manager
+                    .active_document_mut()
+                    .is_some_and(|doc| doc.commit_pending_ghost());
+                if committed_prior {
+                    self.do_incremental_syntax_parse();
                 }
                 let ranges: Vec<(usize, usize)> = {
                     let Some(doc) = self.document_manager.active_document() else {
@@ -312,7 +316,11 @@ impl<T: TerminalBackend> Editor<T> {
                     self.clipboard_ring.push(text);
                 }
                 self.refresh_clipboard_buffer_if_open();
-                if self.state.settings.ghost_cut {
+                let ghost_allowed = self
+                    .document_manager
+                    .active_document()
+                    .is_some_and(|doc| doc.ghost_cut_allowed());
+                if self.state.settings.ghost_cut && ghost_allowed {
                     // Cursor lands on the lowest-offset region's start, matching
                     // apply_to_each_region's highest-offset-first delete order.
                     let cursor_target = ranges.iter().map(|&(s, _)| s).min();

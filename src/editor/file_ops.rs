@@ -8,11 +8,17 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.active_document() {
             match &doc.kind {
                 BufferKind::File => {
-                    let save_info = {
+                    let (save_info, committed_prior) = {
                         let doc = self.document_manager.active_document_mut().unwrap();
-                        doc.commit_pending_ghost();
-                        doc.path().map(|p| (doc.id, p.to_path_buf()))
+                        let committed_prior = doc.commit_pending_ghost();
+                        (
+                            doc.path().map(|p| (doc.id, p.to_path_buf())),
+                            committed_prior,
+                        )
                     };
+                    if committed_prior {
+                        self.do_incremental_syntax_parse();
+                    }
                     if let Some((buf_id, path)) = save_info {
                         self.plugin_host
                             .dispatch(&crate::plugin::EditorEvent::BufSavePre {
@@ -70,8 +76,12 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn do_save_and_quit(&mut self) {
-        if let Some(doc) = self.document_manager.active_document_mut() {
-            doc.commit_pending_ghost();
+        let committed_prior = self
+            .document_manager
+            .active_document_mut()
+            .is_some_and(|doc| doc.commit_pending_ghost());
+        if committed_prior {
+            self.do_incremental_syntax_parse();
         }
         let res = {
             let doc = self.document_manager.active_document().unwrap();

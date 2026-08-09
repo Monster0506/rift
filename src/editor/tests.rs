@@ -2821,6 +2821,8 @@ fn set_aware_delete_keeps_syntax_highlights_in_sync() {
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
+    assert!(!editor.active_document().pending_ghost.is_empty());
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer.to_string(), "");
 
     let after_set_aware_delete = editor
@@ -3452,7 +3454,10 @@ fn set_aware_delete_removes_every_banked_region_as_one_op() {
     )));
 
     // Ghosted, not applied yet.
-    assert_eq!(editor.active_document().buffer.to_string(), "foo\n\nfoofoo\n");
+    assert_eq!(
+        editor.active_document().buffer.to_string(),
+        "foo\n\nfoofoo\n"
+    );
     assert!(
         editor.active_document().selection_set.is_empty(),
         "set clears after the batch"

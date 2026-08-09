@@ -82,27 +82,33 @@ impl<T: TerminalBackend> Editor<T> {
             crate::action::OperatorType::Delete => {
                 let command = crate::command::Command::Delete(motion, count);
                 self.set_mode(Mode::Normal);
-                let result = if self.state.settings.ghost_cut {
+                let ghost_allowed = self
+                    .document_manager
+                    .active_document()
+                    .is_some_and(|doc| doc.ghost_cut_allowed());
+                let result = if self.state.settings.ghost_cut && ghost_allowed {
                     // Commit any pending ghost, then recompute fresh: reusing
                     // `motion_range` would target offsets from before that shift.
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.commit_pending_ghost();
+                    let committed_prior = self
+                        .document_manager
+                        .active_document_mut()
+                        .is_some_and(|doc| doc.commit_pending_ghost());
+                    if committed_prior {
+                        self.do_incremental_syntax_parse();
                     }
-                    let fresh_range =
-                        self.document_manager.active_document_mut().and_then(|doc| {
-                            crate::executor::compute_motion_range(
-                                motion,
-                                count,
-                                doc,
-                                viewport_height,
-                                last_search_query.as_deref(),
-                            )
-                        });
+                    let fresh_range = self.document_manager.active_document_mut().and_then(|doc| {
+                        crate::executor::compute_motion_range(
+                            motion,
+                            count,
+                            doc,
+                            viewport_height,
+                            last_search_query.as_deref(),
+                        )
+                    });
                     let mut ghosted_doc = None;
                     if let Some(range) = fresh_range {
                         if let Some(doc) = self.document_manager.active_document_mut() {
-                            let (start, end) =
-                                crate::executor::range_to_offsets(&range, doc, true);
+                            let (start, end) = crate::executor::range_to_offsets(&range, doc, true);
                             if end > start {
                                 doc.create_ghosts(&[(start, end)]);
                                 let _ = doc.buffer.set_cursor(start);
@@ -191,12 +197,17 @@ impl<T: TerminalBackend> Editor<T> {
             crate::action::OperatorType::Delete => {
                 let command = crate::command::Command::DeleteLine(count);
                 self.set_mode(Mode::Normal);
-                let result = if self.state.settings.ghost_cut {
+                let ghost_allowed = self
+                    .document_manager
+                    .active_document()
+                    .is_some_and(|doc| doc.ghost_cut_allowed());
+                let result = if self.state.settings.ghost_cut && ghost_allowed {
                     let mut ghosted_doc = None;
+                    let mut committed_prior = false;
                     if let Some(doc) = self.document_manager.active_document_mut() {
                         // Commit any pending ghost first: its commit can shift the
                         // buffer, so the line range below must reflect that.
-                        doc.commit_pending_ghost();
+                        committed_prior = doc.commit_pending_ghost();
                         doc.buffer.move_to_line_start();
                         let start = doc.buffer.cursor();
                         let mut reached_last_line = false;
@@ -213,13 +224,20 @@ impl<T: TerminalBackend> Editor<T> {
                             let end = doc.buffer.cursor();
                             // Last line: ghost the preceding newline too, mirroring
                             // DeleteLine's extra delete_backward for that case.
-                            if start > 0 { (start - 1, end) } else { (start, end) }
+                            if start > 0 {
+                                (start - 1, end)
+                            } else {
+                                (start, end)
+                            }
                         };
                         let _ = doc.buffer.set_cursor(ghost_start);
                         if ghost_end > ghost_start {
                             doc.create_ghosts(&[(ghost_start, ghost_end)]);
                             ghosted_doc = Some(doc.id);
                         }
+                    }
+                    if committed_prior {
+                        self.do_incremental_syntax_parse();
                     }
                     if let Some(id) = ghosted_doc {
                         self.document_manager.set_most_recent_ghost_doc(Some(id));
