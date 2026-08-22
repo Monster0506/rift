@@ -246,3 +246,15 @@ fn shift_space_translates_to_key_shift_space() {
     let event = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::SHIFT);
     assert_eq!(translate_key_event(event), crate::key::Key::ShiftSpace);
 }
+
+#[test]
+fn ctrl_shift_char_normalizes_to_lowercase_ctrl_byte() {
+    use crate::term::crossterm::translate_key_event;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let event = KeyEvent::new(
+        KeyCode::Char('H'),
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    );
+    assert_eq!(translate_key_event(event), crate::key::Key::Ctrl(b'h'));
+}
