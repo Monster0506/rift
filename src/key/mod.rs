@@ -7,6 +7,8 @@ pub enum Key {
     Char(char),
     /// Control key combination (e.g., Ctrl+A)
     Ctrl(u8),
+    /// Control+Shift combination (e.g., Ctrl+Shift+S)
+    CtrlShift(u8),
     /// Alt key combination (e.g., Alt+A)
     Alt(u8),
     /// Arrow keys
@@ -32,8 +34,7 @@ pub enum Key {
     Escape,
     Tab,
     ShiftTab,
-    /// Space pressed with the Shift modifier (terminal support varies --
-    /// rebind via the keymap if yours never sends it).
+    /// Space pressed with the Shift modifier
     ShiftSpace,
     /// System events
     Resize(u16, u16),
@@ -52,6 +53,9 @@ impl Key {
 
             // Ctrl+key -> mask to control range (0x00–0x1F)
             Key::Ctrl(c) => vec![c & 0x1f],
+
+            // Ctrl+Shift+key
+            Key::CtrlShift(c) => vec![c & 0x1f],
 
             // Alt+key -> ESC prefix followed by the character
             Key::Alt(c) => vec![0x1b, *c],
@@ -142,6 +146,9 @@ pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
                 Key::ShiftSpace
             } else if low == "lt" {
                 Key::Char('<')
+            } else if low.starts_with("c-s-") && low.len() == 5 {
+                let ch = low.chars().nth(4)?;
+                Key::CtrlShift(ch as u8)
             } else if low.starts_with("c-") && low.len() == 3 {
                 let ch = low.chars().nth(2)?;
                 Key::Ctrl(ch as u8)

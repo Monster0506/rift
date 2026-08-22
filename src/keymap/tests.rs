@@ -393,6 +393,29 @@ fn test_ctrl_w_ctrl_hjkl_match_ctrl_w_hjkl() {
 }
 
 #[test]
+fn test_ctrl_w_ctrl_shift_hjkl_match_ctrl_w_hjkl() {
+    // Regression: on backends that report Shift independently of Ctrl
+    // (Windows), <C-w>H typed fast enough that Ctrl is still physically
+    // held for the H keystroke produces Key::CtrlShift(b'h'), not
+    // Key::Char('H') or Key::Ctrl(b'h'). Without this alias the chord
+    // would silently fail to match anything.
+    let mut map = KeyMap::new();
+    register_defaults(&mut map);
+    let ww = Key::Ctrl(b'w');
+
+    for ch in [b'h', b'j', b'k', b'l'] {
+        let plain = map.lookup(KeyContext::Normal, &[ww, Key::Char(ch as char)]);
+        let ctrl_shift = map.lookup(KeyContext::Normal, &[ww, Key::CtrlShift(ch)]);
+
+        assert_eq!(
+            plain, ctrl_shift,
+            "<C-w><C-S-{0}> should resolve to the same action as <C-w>{0}",
+            ch as char
+        );
+    }
+}
+
+#[test]
 fn test_ctrl_w_ctrl_h_is_a_prefix_after_just_ctrl_w() {
     let mut map = KeyMap::new();
     register_defaults(&mut map);

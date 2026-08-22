@@ -13,6 +13,7 @@ pub fn vim_to_key(k: Key) -> String {
         Key::Char('<') => "<lt>".into(),
         Key::Char(c) => c.to_string(),
         Key::Ctrl(c) => format!("<C-{}>", (c as char).to_ascii_lowercase()),
+        Key::CtrlShift(c) => format!("<C-S-{}>", (c as char).to_ascii_lowercase()),
         Key::Alt(c) => format!("<A-{}>", (c as char).to_ascii_lowercase()),
         Key::Escape => "<Esc>".into(),
         Key::Enter => "<Enter>".into(),
@@ -78,6 +79,15 @@ pub fn key_to_vim(s: &str) -> Option<Key> {
         _ => {}
     }
     let inner = s.strip_prefix('<')?.strip_suffix('>')?;
+    if let Some(rest) = inner
+        .strip_prefix("C-S-")
+        .or_else(|| inner.strip_prefix("S-C-"))
+    {
+        if rest.len() == 1 {
+            let c = rest.chars().next()?.to_ascii_lowercase() as u8;
+            return Some(Key::CtrlShift(c));
+        }
+    }
     if let Some(rest) = inner.strip_prefix("C-") {
         if rest.len() == 1 {
             let c = rest.chars().next()?.to_ascii_lowercase() as u8;
@@ -107,6 +117,13 @@ mod tests {
     fn lt_is_escaped() {
         assert_eq!(vim_to_key(Key::Char('<')), "<lt>");
         assert_eq!(key_to_vim("<lt>"), Some(Key::Char('<')));
+    }
+
+    #[test]
+    fn ctrl_shift_round_trips() {
+        assert_eq!(vim_to_key(Key::CtrlShift(b't')), "<C-S-t>");
+        assert_eq!(key_to_vim("<C-S-t>"), Some(Key::CtrlShift(b't')));
+        assert_eq!(key_to_vim("<S-C-t>"), Some(Key::CtrlShift(b't')));
     }
 
     #[test]

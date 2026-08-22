@@ -248,7 +248,7 @@ fn shift_space_translates_to_key_shift_space() {
 }
 
 #[test]
-fn ctrl_shift_char_normalizes_to_lowercase_ctrl_byte() {
+fn ctrl_shift_char_produces_ctrl_shift_with_lowercase_byte() {
     use crate::term::crossterm::translate_key_event;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -256,5 +256,14 @@ fn ctrl_shift_char_normalizes_to_lowercase_ctrl_byte() {
         KeyCode::Char('H'),
         KeyModifiers::CONTROL | KeyModifiers::SHIFT,
     );
+    assert_eq!(translate_key_event(event), crate::key::Key::CtrlShift(b'h'));
+}
+
+#[test]
+fn plain_ctrl_char_still_normalizes_case_without_shift() {
+    use crate::term::crossterm::translate_key_event;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let event = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::CONTROL);
     assert_eq!(translate_key_event(event), crate::key::Key::Ctrl(b'h'));
 }

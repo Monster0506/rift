@@ -301,7 +301,9 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
             if ch == '\r' || ch == '\n' {
                 return Key::Enter;
             }
-            if ctrl {
+            if ctrl && shift {
+                Key::CtrlShift((ch as u8).to_ascii_lowercase())
+            } else if ctrl {
                 Key::Ctrl((ch as u8).to_ascii_lowercase())
             } else if alt {
                 Key::Alt(ch as u8)
