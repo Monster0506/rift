@@ -11,6 +11,8 @@ pub enum Key {
     CtrlShift(u8),
     /// Alt key combination (e.g., Alt+A)
     Alt(u8),
+    /// Alt+Shift combination (e.g., Alt+Shift+S)
+    AltShift(u8),
     /// Arrow keys
     ArrowUp,
     ArrowDown,
@@ -59,6 +61,7 @@ impl Key {
 
             // Alt+key -> ESC prefix followed by the character
             Key::Alt(c) => vec![0x1b, *c],
+            Key::AltShift(c) => vec![0x1b, *c],
 
             // Single-byte control characters
             Key::Backspace => vec![0x7f],
@@ -152,8 +155,11 @@ pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
             } else if low.starts_with("c-") && low.len() == 3 {
                 let ch = low.chars().nth(2)?;
                 Key::Ctrl(ch as u8)
+            } else if low.starts_with("a-s-") && low.len() == 5 {
+                let ch = low.chars().nth(4)?;
+                Key::AltShift(ch as u8)
             } else if low.starts_with("a-") && low.len() == 3 {
-                let ch = token.chars().nth(2)?;
+                let ch = low.chars().nth(2)?;
                 Key::Alt(ch as u8)
             } else {
                 return None;
@@ -195,6 +201,15 @@ mod tests {
     #[test]
     fn gt_needs_no_escaping() {
         assert_eq!(parse_key_sequence(">"), Some(vec![Key::Char('>')]));
+    }
+
+    #[test]
+    fn alt_and_alt_shift_notation_normalize_case() {
+        assert_eq!(parse_key_sequence("<A-P>"), Some(vec![Key::Alt(b'p')]));
+        assert_eq!(
+            parse_key_sequence("<A-S-P>"),
+            Some(vec![Key::AltShift(b'p')])
+        );
     }
 
     #[test]

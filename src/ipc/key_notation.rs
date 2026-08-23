@@ -15,6 +15,7 @@ pub fn vim_to_key(k: Key) -> String {
         Key::Ctrl(c) => format!("<C-{}>", (c as char).to_ascii_lowercase()),
         Key::CtrlShift(c) => format!("<C-S-{}>", (c as char).to_ascii_lowercase()),
         Key::Alt(c) => format!("<A-{}>", (c as char).to_ascii_lowercase()),
+        Key::AltShift(c) => format!("<A-S-{}>", (c as char).to_ascii_lowercase()),
         Key::Escape => "<Esc>".into(),
         Key::Enter => "<Enter>".into(),
         Key::Tab => "<Tab>".into(),
@@ -94,9 +95,18 @@ pub fn key_to_vim(s: &str) -> Option<Key> {
             return Some(Key::Ctrl(c));
         }
     }
+    if let Some(rest) = inner
+        .strip_prefix("A-S-")
+        .or_else(|| inner.strip_prefix("S-A-"))
+    {
+        if rest.len() == 1 {
+            let c = rest.chars().next()?.to_ascii_lowercase() as u8;
+            return Some(Key::AltShift(c));
+        }
+    }
     if let Some(rest) = inner.strip_prefix("A-") {
         if rest.len() == 1 {
-            let c = rest.chars().next()? as u8;
+            let c = rest.chars().next()?.to_ascii_lowercase() as u8;
             return Some(Key::Alt(c));
         }
     }
@@ -157,6 +167,19 @@ mod tests {
         assert_eq!(key_to_vim("<C-w>"), Some(Key::Ctrl(b'w')));
         assert_eq!(vim_to_key(Key::Alt(b'p')), "<A-p>");
         assert_eq!(key_to_vim("<A-p>"), Some(Key::Alt(b'p')));
+    }
+
+    #[test]
+    fn alt_shift_round_trips() {
+        assert_eq!(vim_to_key(Key::AltShift(b't')), "<A-S-t>");
+        assert_eq!(key_to_vim("<A-S-t>"), Some(Key::AltShift(b't')));
+        assert_eq!(key_to_vim("<S-A-t>"), Some(Key::AltShift(b't')));
+    }
+
+    #[test]
+    fn alt_notation_normalizes_case() {
+        assert_eq!(key_to_vim("<A-P>"), Some(Key::Alt(b'p')));
+        assert_eq!(key_to_vim("<A-S-P>"), Some(Key::AltShift(b'p')));
     }
 
     #[test]
