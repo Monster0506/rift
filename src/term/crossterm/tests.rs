@@ -267,3 +267,21 @@ fn plain_ctrl_char_still_normalizes_case_without_shift() {
     let event = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::CONTROL);
     assert_eq!(translate_key_event(event), crate::key::Key::Ctrl(b'h'));
 }
+
+#[test]
+fn alt_shift_char_produces_alt_shift_with_lowercase_byte() {
+    use crate::term::crossterm::translate_key_event;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let event = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::ALT | KeyModifiers::SHIFT);
+    assert_eq!(translate_key_event(event), crate::key::Key::AltShift(b'h'));
+}
+
+#[test]
+fn plain_alt_char_normalizes_case_without_shift() {
+    use crate::term::crossterm::translate_key_event;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let event = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::ALT);
+    assert_eq!(translate_key_event(event), crate::key::Key::Alt(b'h'));
+}

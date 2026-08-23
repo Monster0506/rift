@@ -305,8 +305,10 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
                 Key::CtrlShift((ch as u8).to_ascii_lowercase())
             } else if ctrl {
                 Key::Ctrl((ch as u8).to_ascii_lowercase())
+            } else if alt && shift {
+                Key::AltShift((ch as u8).to_ascii_lowercase())
             } else if alt {
-                Key::Alt(ch as u8)
+                Key::Alt((ch as u8).to_ascii_lowercase())
             } else if ch.is_control()
                 && ch as u8 >= 1
                 && ch as u8 <= 26
