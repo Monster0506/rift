@@ -89,8 +89,14 @@ impl<T: TerminalBackend> Editor<T> {
                 None => return Ok(()),
             };
 
+            // A pasted block is handled atomically so its chars can never be
+            // reinterpreted as vim commands (e.g. a stray 'i' mid-paste).
+            if let Key::Paste(text) = key_press {
+                return self.handle_paste(text);
+            }
+
             // Update debug info
-            self.state.update_keypress(key_press);
+            self.state.update_keypress(key_press.clone());
 
             use crate::key::Key;
             use crate::keymap::MatchResult;
@@ -130,7 +136,7 @@ impl<T: TerminalBackend> Editor<T> {
             if is_terminal_insert {
                 let terminal_match = self
                     .keymap
-                    .lookup(crate::keymap::KeyContext::Terminal, &[key_press]);
+                    .lookup(crate::keymap::KeyContext::Terminal, &[key_press.clone()]);
                 if let crate::keymap::MatchResult::Exact(action)
                 | crate::keymap::MatchResult::Ambiguous(action) = terminal_match
                 {
@@ -162,7 +168,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             if let Some(grammar) = self.pending_grammar.take() {
-                self.advance_pending_grammar(grammar, key_press);
+                self.advance_pending_grammar(grammar, key_press.clone());
                 self.update_state_and_render(
                     key_press,
                     crate::key_handler::KeyAction::Continue,
@@ -223,7 +229,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             // Push key to pending buffer
-            self.pending_keys.push(key_press);
+            self.pending_keys.push(key_press.clone());
 
             // Input Processing Loop (allows backtracking)
             loop {
@@ -309,7 +315,7 @@ impl<T: TerminalBackend> Editor<T> {
                                     self.handle_action(&action);
                                     self.pending_count = 0;
 
-                                    self.pending_keys.push(last);
+                                    self.pending_keys.push(last.clone());
                                     if self.current_mode == mode_before {
                                         // Mode unchanged: normal re-dispatch.
                                         continue;
@@ -333,14 +339,14 @@ impl<T: TerminalBackend> Editor<T> {
                                 }
                             }
                         } else if self.current_mode == Mode::Insert {
-                            let k = self.pending_keys[0];
+                            let k = self.pending_keys[0].clone();
                             self.pending_keys.clear();
                             if let Key::Char(ch) = k {
                                 self.handle_action(&Action::Editor(EditorAction::InsertChar(ch)));
                             }
                             // Else ignore?
                         } else if self.current_mode == Mode::Replace {
-                            let k = self.pending_keys[0];
+                            let k = self.pending_keys[0].clone();
                             self.pending_keys.clear();
                             if let Key::Char(ch) = k {
                                 if let Some(doc) = self.document_manager.active_document_mut() {
@@ -365,7 +371,7 @@ impl<T: TerminalBackend> Editor<T> {
                         {
                             // Command Line typing handling (fallback)
                             // Since KeyMap might not have all chars registered
-                            let k = self.pending_keys[0];
+                            let k = self.pending_keys[0].clone();
                             self.pending_keys.clear();
                             match k {
                                 Key::Tab => {
@@ -481,6 +487,53 @@ impl<T: TerminalBackend> Editor<T> {
             Mode::Search => KeyContext::Search,
             Mode::Rename => KeyContext::Command,
         }
+    }
+
+    /// Handle an atomic bracketed-paste block, so no character in it can be
+    /// reinterpreted as a leader key, count digit, operator, or mode switch.
+    pub(super) fn handle_paste(&mut self, text: String) -> Result<(), RiftError> {
+        if text.is_empty() {
+            return Ok(());
+        }
+
+        let is_terminal_insert =
+            self.current_mode == Mode::Insert && self.active_doc_is(|d| d.is_terminal());
+        if is_terminal_insert {
+            if let Some(doc) = self.document_manager.active_document_mut() {
+                if let Some(term) = &mut doc.terminal {
+                    term.scroll_to_bottom();
+                    if let Err(e) = term.write(text.as_bytes()) {
+                        self.state.notify(
+                            crate::notification::NotificationType::Error,
+                            format!("Write failed: {}", e),
+                        );
+                    }
+                }
+            }
+            return self.update_and_render();
+        }
+
+        match self.current_mode {
+            Mode::Insert | Mode::Replace => {
+                self.insert_pasted_text_at_cursor(&text);
+            }
+            Mode::Command | Mode::Search | Mode::Rename => {
+                for ch in text.chars() {
+                    self.handle_mode_management(Command::AppendToCommandLine(ch));
+                }
+            }
+            // Normal/Visual/OperatorPending: insert like vim's `p`, without
+            // changing mode or touching pending-grammar/leader-key state.
+            _ => {
+                let chars: Vec<crate::character::Character> = text
+                    .chars()
+                    .map(crate::character::Character::from)
+                    .collect();
+                self.insert_text_at_cursor(&chars, false);
+            }
+        }
+
+        self.update_and_render()
     }
 
     /// Past timeout, flush a pending non-operator sequence: run the shorter

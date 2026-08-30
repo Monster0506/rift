@@ -1331,4 +1331,19 @@ impl<T: TerminalBackend> Editor<T> {
         self.do_incremental_syntax_parse();
         true
     }
+
+    /// Insert pasted text literally at the cursor, exactly as if typed, one undo transaction.
+    pub(super) fn insert_pasted_text_at_cursor(&mut self, text: &str) -> bool {
+        if text.is_empty() {
+            return false;
+        }
+        let Some(doc) = self.document_manager.active_document_mut() else {
+            return false;
+        };
+        doc.begin_transaction("Paste");
+        let _ = doc.insert_str(text);
+        doc.commit_transaction();
+        self.do_incremental_syntax_parse();
+        true
+    }
 }
