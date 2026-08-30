@@ -1,7 +1,7 @@
 //! Key representation for editor input
 
 /// Represents a key press event
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Key {
     /// Printable character
     Char(char),
@@ -40,6 +40,9 @@ pub enum Key {
     ShiftSpace,
     /// System events
     Resize(u16, u16),
+    /// A terminal bracketed-paste block: the whole clipboard payload as one
+    /// event, so it never gets decomposed into individual command keys.
+    Paste(String),
 }
 
 impl Key {
@@ -91,6 +94,10 @@ impl Key {
             Key::Delete => csi_tilde(3),
             Key::PageUp => csi_tilde(5),
             Key::PageDown => csi_tilde(6),
+
+            // A paste block: pass the literal bytes through, same as a
+            // normal terminal delivering pasted text to a child process.
+            Key::Paste(text) => text.as_bytes().to_vec(),
 
             // Non-input events produce no bytes
             Key::Resize(..) => vec![],
