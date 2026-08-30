@@ -220,6 +220,21 @@ fn event_loop<T: TerminalBackend>(local_term: &mut T, stream: TcpStream) -> anyh
                         });
                         write_framed(&mut write_stream, &msg)?;
                     }
+                    // The wire protocol has no paste token, so decompose
+                    // into per-char sends (the un-bracketed local fallback).
+                    Key::Paste(text) => {
+                        for ch in text.chars() {
+                            if let Some(notation) = vim_to_key_sendable(Key::Char(ch)) {
+                                seq += 1;
+                                let msg = serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "method": "input.key",
+                                    "params": InputKeyParams { key: notation, seq },
+                                });
+                                write_framed(&mut write_stream, &msg)?;
+                            }
+                        }
+                    }
                     other => {
                         if let Some(notation) = vim_to_key_sendable(other) {
                             seq += 1;

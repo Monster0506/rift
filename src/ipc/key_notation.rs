@@ -1,9 +1,11 @@
 use crate::key::Key;
 
-/// Returns `None` for keys that must not be sent over the wire (Resize is local-only).
+/// Returns `None` for keys with no single wire token (Resize is local-only;
+/// Paste's text doesn't fit vim notation - callers decompose it first).
 pub fn vim_to_key_sendable(k: Key) -> Option<String> {
     match k {
         Key::Resize(_, _) => None,
+        Key::Paste(_) => None,
         other => Some(vim_to_key(other)),
     }
 }
@@ -38,6 +40,7 @@ pub fn vim_to_key(k: Key) -> String {
         Key::PageUp => "<PageUp>".into(),
         Key::PageDown => "<PageDown>".into(),
         Key::Resize(_, _) => "<Resize>".into(),
+        Key::Paste(text) => format!("<Paste:{}b>", text.len()),
     }
 }
 
@@ -156,8 +159,8 @@ mod tests {
             (Key::PageDown, "<PageDown>"),
         ];
         for (key, notation) in pairs {
-            assert_eq!(&vim_to_key(*key), notation);
-            assert_eq!(key_to_vim(notation), Some(*key));
+            assert_eq!(&vim_to_key(key.clone()), notation);
+            assert_eq!(key_to_vim(notation), Some(key.clone()));
         }
     }
 
