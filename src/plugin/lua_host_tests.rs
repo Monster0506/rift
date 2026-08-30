@@ -1108,3 +1108,55 @@ fn test_lsp_stub_functions_are_callable_and_no_op() {
         "stub rift.lsp functions must not queue any mutation"
     );
 }
+
+/// Regression: a plugin handler that loops forever (e.g. a full-document
+/// rescan that never yields) must be aborted well under a second.
+#[test]
+fn test_dispatch_event_aborts_a_runaway_handler_past_its_time_budget() {
+    let host = make_host();
+    assert!(host
+        .exec(
+            r#"
+            rift.on('TextChangedCoarse', function(_ev)
+                while true do end
+            end)
+        "#
+        )
+        .is_none());
+
+    let started = std::time::Instant::now();
+    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse { buf: 1 });
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "runaway handler must be aborted by its time budget, took {elapsed:?}"
+    );
+    assert_eq!(errors.len(), 1, "the aborted handler must report an error");
+    assert!(
+        errors[0].contains("time budget"),
+        "error should explain the abort: {:?}",
+        errors[0]
+    );
+}
+
+/// A well-behaved handler well under the budget must be unaffected.
+#[test]
+fn test_dispatch_event_does_not_abort_a_fast_handler() {
+    let host = make_host();
+    assert!(host
+        .exec(
+            r#"
+            rift.on('TextChangedCoarse', function(_ev)
+                rift.notify('info', 'fast handler ran')
+            end)
+        "#
+        )
+        .is_none());
+
+    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse { buf: 1 });
+    assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
+    let mutations = host.drain_mutations();
+    assert_eq!(mutations.len(), 1);
+    assert!(matches!(&mutations[0], PluginMutation::Notify { .. }));
+}
