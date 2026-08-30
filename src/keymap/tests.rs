@@ -248,14 +248,14 @@ fn test_file_explorer_buffer_all_normal_motions_accessible() {
     for (key, motion) in &motions {
         map.register(
             KeyContext::Normal,
-            *key,
+            key.clone(),
             Action::Editor(EditorAction::Move(*motion)),
         );
     }
 
     for (key, motion) in &motions {
         assert_eq!(
-            map.get_action(KeyContext::FileExplorer, *key),
+            map.get_action(KeyContext::FileExplorer, key.clone()),
             Some(&Action::Editor(EditorAction::Move(*motion))),
             "FileExplorer should inherit {:?} from Normal",
             key
@@ -275,14 +275,14 @@ fn test_undotree_all_normal_motions_accessible() {
     for (key, motion) in &motions {
         map.register(
             KeyContext::Normal,
-            *key,
+            key.clone(),
             Action::Editor(EditorAction::Move(*motion)),
         );
     }
 
     for (key, motion) in &motions {
         assert_eq!(
-            map.get_action(KeyContext::UndoTree, *key),
+            map.get_action(KeyContext::UndoTree, key.clone()),
             Some(&Action::Editor(EditorAction::Move(*motion))),
             "UndoTree should inherit {:?} from Normal",
             key
@@ -376,8 +376,8 @@ fn test_ctrl_w_ctrl_hjkl_match_ctrl_w_hjkl() {
     let ww = Key::Ctrl(b'w');
 
     for ch in [b'h', b'j', b'k', b'l'] {
-        let plain = map.lookup(KeyContext::Normal, &[ww, Key::Char(ch as char)]);
-        let ctrl = map.lookup(KeyContext::Normal, &[ww, Key::Ctrl(ch)]);
+        let plain = map.lookup(KeyContext::Normal, &[ww.clone(), Key::Char(ch as char)]);
+        let ctrl = map.lookup(KeyContext::Normal, &[ww.clone(), Key::Ctrl(ch)]);
 
         assert!(
             matches!(plain, MatchResult::Exact(_)),
@@ -404,8 +404,8 @@ fn test_ctrl_w_ctrl_shift_hjkl_match_ctrl_w_hjkl() {
     let ww = Key::Ctrl(b'w');
 
     for ch in [b'h', b'j', b'k', b'l'] {
-        let plain = map.lookup(KeyContext::Normal, &[ww, Key::Char(ch as char)]);
-        let ctrl_shift = map.lookup(KeyContext::Normal, &[ww, Key::CtrlShift(ch)]);
+        let plain = map.lookup(KeyContext::Normal, &[ww.clone(), Key::Char(ch as char)]);
+        let ctrl_shift = map.lookup(KeyContext::Normal, &[ww.clone(), Key::CtrlShift(ch)]);
 
         assert_eq!(
             plain, ctrl_shift,

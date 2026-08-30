@@ -87,6 +87,7 @@ impl StatusBar {
             Key::PageUp => "PageUp".to_string(),
             Key::PageDown => "PageDown".to_string(),
             Key::Resize(cols, rows) => format!("Resize({cols}, {rows})"),
+            Key::Paste(text) => format!("Paste({} bytes)", text.len()),
         }
     }
 
@@ -163,7 +164,7 @@ impl StatusBar {
             col += count_str.len();
         }
 
-        if let Some(key) = state.pending_key {
+        if let Some(key) = state.pending_key.clone() {
             let pending_str = format!(" [{}]", Self::format_key(key));
             frame.write_str_colored(status_row, col, &pending_str, fg, bg);
             col += pending_str.len();
@@ -227,7 +228,7 @@ impl StatusBar {
                 &state.file_name,
                 &state.cursor,
                 state.total_lines,
-                state.last_keypress,
+                state.last_keypress.clone(),
             );
             if !debug_str.is_empty() {
                 let padded_cols = available_cols.saturating_sub(1);

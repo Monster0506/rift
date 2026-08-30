@@ -748,13 +748,13 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     ] {
         keymap.register_sequence(
             KeyContext::Normal,
-            vec![ww, Key::Char(ch)],
+            vec![ww.clone(), Key::Char(ch)],
             Action::Editor(EditorAction::RunCommand(cmd.to_string())),
         );
     }
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![ww, Key::Ctrl(b'w')],
+        vec![ww.clone(), Key::Ctrl(b'w')],
         Action::Editor(EditorAction::RunCommand(":split :w".to_string())),
     );
     for (ch, cmd) in [
@@ -765,12 +765,12 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     ] {
         keymap.register_sequence(
             KeyContext::Normal,
-            vec![ww, Key::Ctrl(ch)],
+            vec![ww.clone(), Key::Ctrl(ch)],
             Action::Editor(EditorAction::RunCommand(cmd.to_string())),
         );
         keymap.register_sequence(
             KeyContext::Normal,
-            vec![ww, Key::CtrlShift(ch)],
+            vec![ww.clone(), Key::CtrlShift(ch)],
             Action::Editor(EditorAction::RunCommand(cmd.to_string())),
         );
     }
