@@ -786,6 +786,7 @@ dependencies = [
  "getrandom 0.4.3",
  "mlua",
  "monster-regex",
+ "parking_lot",
  "proptest",
  "serde",
  "serde_json",

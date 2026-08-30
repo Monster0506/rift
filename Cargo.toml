@@ -93,6 +93,7 @@ web-time = "1.1"
 criterion = { version = "0.8.1", features = ["html_reports"] }
 tempfile = "3.24.0"
 proptest = "1"
+parking_lot = "0.12"
 
 [[bench]]
 name = "buffer_bench"
