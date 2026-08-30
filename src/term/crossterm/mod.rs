@@ -166,6 +166,11 @@ impl<W: Write> TerminalBackend for CrosstermBackend<W> {
         terminal::enable_raw_mode().map_err(|e| format!("Failed to enable raw mode: {e}"))?;
         self.raw_mode_enabled = true;
 
+        // Bracketed paste (Unix only): crossterm's Windows backend can't
+        // parse ESC[200~/[201~ - it delivers a real Escape keypress first, which exits Insert mode mid-paste.
+        #[cfg(not(windows))]
+        let _ = execute!(self.writer, event::EnableBracketedPaste);
+
         // Hide cursor during rendering
         execute!(self.writer, cursor::Hide).map_err(|e| format!("Failed to hide cursor: {e}"))?;
 
@@ -178,6 +183,9 @@ impl<W: Write> TerminalBackend for CrosstermBackend<W> {
     fn deinit(&mut self) {
         // Show cursor before exiting
         let _ = execute!(self.writer, cursor::Show);
+
+        #[cfg(not(windows))]
+        let _ = execute!(self.writer, event::DisableBracketedPaste);
 
         if self.raw_mode_enabled {
             let _ = terminal::disable_raw_mode();
@@ -205,6 +213,7 @@ impl<W: Write> TerminalBackend for CrosstermBackend<W> {
                     Ok(None)
                 }
             }
+            Event::Paste(text) => Ok(Some(Key::Paste(text))),
             Event::Resize(cols, rows) => Ok(Some(Key::Resize(cols, rows))),
             _ => Ok(None),
         }
