@@ -111,6 +111,7 @@ pub fn resolve_input(key: Key) -> Option<InputIntent> {
         Key::AltShift(_) => None,  // handled by keymap
         Key::CtrlShift(_) => None, // handled by keymap
         Key::Resize(_, _) => None,
+        Key::Paste(_) => None, // bulk text; callers handle Key::Paste before reaching here
         Key::ShiftTab => None, // handled before resolve_input in command mode
         Key::ShiftSpace => None, // Visual-mode-only; handled by keymap
     }
