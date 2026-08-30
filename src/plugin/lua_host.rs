@@ -259,6 +259,9 @@ impl Default for LuaSharedState {
 pub struct LuaHost {
     lua: Lua,
     shared: Arc<Mutex<LuaSharedState>>,
+    /// Absolute deadline for the in-flight Lua call, checked by a VM
+    /// instruction hook so a runaway handler aborts instead of freezing.
+    hook_deadline: Arc<Mutex<Option<std::time::Instant>>>,
 }
 
 impl LuaHost {
@@ -267,6 +270,27 @@ impl LuaHost {
         // plugins are fully trusted user code loaded from the local filesystem, but this unsafe block annoys me greatly
         let lua = unsafe { Lua::unsafe_new() };
         let shared = Arc::new(Mutex::new(LuaSharedState::default()));
+        let hook_deadline: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
+        {
+            let deadline = Arc::clone(&hook_deadline);
+            // Checked every 100k VM instructions - cheap enough to run continuously,
+            // frequent enough to abort a runaway handler well under a second.
+            let _ = lua.set_hook(
+                mlua::HookTriggers::new().every_nth_instruction(100_000),
+                move |_lua, _debug| {
+                    let past_deadline = deadline
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .is_some_and(|dl| std::time::Instant::now() >= dl);
+                    if past_deadline {
+                        return Err(mlua::Error::RuntimeError(
+                            "plugin handler exceeded its time budget and was cancelled".into(),
+                        ));
+                    }
+                    Ok(mlua::VmState::Continue)
+                },
+            );
+        }
 
         // os.execute() blocks the calling thread on a subprocess; route through
         // rift.spawn_shell instead, which runs off-thread and reports via a UserEvent.
@@ -2284,7 +2308,11 @@ function rift.plugins.unload(name)
 end
 "#).set_name("rift:prelude").exec()?;
 
-        Ok(Self { lua, shared })
+        Ok(Self {
+            lua,
+            shared,
+            hook_deadline,
+        })
     }
 
     /// Refresh the annotation query snapshot and the id the next `add{}` claims.
@@ -2350,6 +2378,24 @@ end
         s.lsp_diagnostics = lsp_diagnostics;
     }
 
+    /// Budget for one automatic (non-user-initiated) Lua call - event
+    /// handlers, not explicit commands/actions the user just triggered.
+    const AUTO_DISPATCH_BUDGET: std::time::Duration = std::time::Duration::from_millis(150);
+
+    /// Runs `f` with `hook_deadline` set so the VM hook can abort it past
+    /// budget. Saves/restores the prior deadline for reentrant dispatch.
+    fn call_budgeted<T>(&self, f: impl FnOnce() -> LuaResult<T>) -> LuaResult<T> {
+        let deadline = std::time::Instant::now() + Self::AUTO_DISPATCH_BUDGET;
+        let prev = self
+            .hook_deadline
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .replace(deadline);
+        let result = f();
+        *self.hook_deadline.lock().unwrap_or_else(|e| e.into_inner()) = prev;
+        result
+    }
+
     /// Dispatch an `EditorEvent` to all registered Lua handlers.
     /// Returns error strings for any handlers that raised a Lua error.
     pub fn dispatch_event(&self, event: &EditorEvent) -> Vec<String> {
@@ -2399,7 +2445,7 @@ end
                         s.current_slot = slot_id;
                         prev
                     };
-                    let call_result = f.call::<()>(ev_table.clone());
+                    let call_result = self.call_budgeted(|| f.call::<()>(ev_table.clone()));
                     self.shared
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
@@ -2475,7 +2521,7 @@ end
         if let Ok(p) = value_into_lua(ctx.payload.clone(), &self.lua) {
             let _ = t.set("payload", p);
         }
-        f.call::<()>(t).is_ok()
+        self.call_budgeted(|| f.call::<()>(t)).is_ok()
     }
 
     /// Execute a plugin command registered via `rift.register_command`.
@@ -2648,7 +2694,7 @@ end
                         .collect::<LuaResult<_>>()?;
                     for entry in snapshot {
                         let f: LuaFunction = entry.get("fn")?;
-                        if let Err(e) = f.call::<()>(ev.clone()) {
+                        if let Err(e) = self.call_budgeted(|| f.call::<()>(ev.clone())) {
                             self.shared
                                 .lock()
                                 .unwrap_or_else(|e| e.into_inner())
