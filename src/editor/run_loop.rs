@@ -138,9 +138,10 @@ impl<T: TerminalBackend> Editor<T> {
             };
 
             if is_terminal_insert {
-                let terminal_match = self
-                    .keymap
-                    .lookup(crate::keymap::KeyContext::Terminal, &[key_press.clone()]);
+                let terminal_match = self.keymap.lookup(
+                    crate::keymap::KeyContext::Terminal,
+                    std::slice::from_ref(&key_press),
+                );
                 if let crate::keymap::MatchResult::Exact(action)
                 | crate::keymap::MatchResult::Ambiguous(action) = terminal_match
                 {

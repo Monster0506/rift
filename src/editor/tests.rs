@@ -4755,7 +4755,7 @@ fn real_keymap_v_then_l_renders_a_visible_highlight_in_the_composited_cells() {
         } else {
             KeyContext::Normal
         };
-        match editor.keymap.lookup(context, &[key.clone()]) {
+        match editor.keymap.lookup(context, std::slice::from_ref(&key)) {
             MatchResult::Exact(action) | MatchResult::Ambiguous(action) => {
                 let action = action.clone();
                 editor.handle_action(&action);
@@ -4811,7 +4811,7 @@ fn visual_highlight_redraws_on_a_frame_after_the_initial_one() {
         } else {
             KeyContext::Normal
         };
-        match editor.keymap.lookup(context, &[key.clone()]) {
+        match editor.keymap.lookup(context, std::slice::from_ref(&key)) {
             MatchResult::Exact(action) | MatchResult::Ambiguous(action) => {
                 let action = action.clone();
                 editor.handle_action(&action);
@@ -5196,7 +5196,7 @@ fn dd_deletes_the_current_line_via_the_operator_doubling_path_not_a_keymap_seque
     // executes operator keys immediately, so each 'd' is dispatched on its own.
     let feed_key = |editor: &mut Editor<MockTerminal>, key: Key| match editor
         .keymap
-        .lookup(KeyContext::Normal, &[key.clone()])
+        .lookup(KeyContext::Normal, std::slice::from_ref(&key))
     {
         MatchResult::Exact(action) | MatchResult::Ambiguous(action) => {
             let action = action.clone();
