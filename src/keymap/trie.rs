@@ -36,7 +36,7 @@ impl TrieNode {
             return;
         }
 
-        let key = keys[0];
+        let key = keys[0].clone();
         self.children
             .entry(key)
             .or_default()
@@ -50,7 +50,7 @@ impl TrieNode {
             self.action = None;
             return had;
         }
-        let key = keys[0];
+        let key = keys[0].clone();
         if let Some(child) = self.children.get_mut(&key) {
             let removed = child.remove(&keys[1..]);
             if child.action.is_none() && child.children.is_empty() {
@@ -79,7 +79,7 @@ impl TrieNode {
             return MatchResult::None;
         }
 
-        let key = keys[0];
+        let key = keys[0].clone();
         if let Some(child) = self.children.get(&key) {
             child.lookup(&keys[1..])
         } else {

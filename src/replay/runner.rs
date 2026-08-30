@@ -21,7 +21,7 @@ pub struct Mark {
 }
 
 /// Wall-clock cost of a single `tick()` spent processing one scripted key.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct TickTiming {
     pub key: Key,
     pub duration: Duration,
@@ -151,12 +151,12 @@ pub fn run<W: Write>(ops: &[ScriptOp], writer: W) -> Result<RunReport, RiftError
                 ));
             }
             ScriptOp::Keys(keys) => {
-                ed.term.push_keys(keys.iter().copied());
+                ed.term.push_keys(keys.iter().cloned());
                 for key in keys {
                     let started = Instant::now();
                     ed.tick()?;
                     report.ticks.push(TickTiming {
-                        key: *key,
+                        key: key.clone(),
                         duration: started.elapsed(),
                     });
                 }

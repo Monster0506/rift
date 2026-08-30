@@ -25,7 +25,7 @@ impl QueueTerminal {
     }
 
     fn push_chord(&mut self, keys: &[Key]) {
-        self.keys.extend(keys.iter().copied());
+        self.keys.extend(keys.iter().cloned());
     }
 }
 
@@ -240,9 +240,9 @@ fn rapid_ctrl_w_four_pane_survives_random_walk_without_corruption() {
         seed ^= seed << 17;
         let dir_idx = (seed % 4) as usize;
         let second = if (seed >> 4).is_multiple_of(2) {
-            plain[dir_idx]
+            plain[dir_idx].clone()
         } else {
-            held[dir_idx]
+            held[dir_idx].clone()
         };
         editor.term.push_chord(&[WW, second]);
     }
