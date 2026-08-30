@@ -6472,3 +6472,148 @@ fn bracketed_paste_reproduced_through_a_real_vte_parser() {
     );
 }
 
+/// Wraps `MockTerminal`; each queued `Key` gets a following filtered event
+/// (`None`), reproducing Windows' paired press+release `InputRecord`s.
+struct PressReleaseTerminal {
+    inner: MockTerminal,
+    raw: std::collections::VecDeque<Option<crate::key::Key>>,
+}
+
+impl PressReleaseTerminal {
+    fn new(rows: u16, cols: u16, keys: Vec<crate::key::Key>) -> Self {
+        let mut raw = std::collections::VecDeque::new();
+        for key in keys {
+            raw.push_back(Some(key));
+            raw.push_back(None);
+        }
+        Self {
+            inner: MockTerminal::new(rows, cols),
+            raw,
+        }
+    }
+}
+
+impl crate::term::TerminalBackend for PressReleaseTerminal {
+    fn init(&mut self) -> Result<(), String> {
+        self.inner.init()
+    }
+    fn deinit(&mut self) {
+        self.inner.deinit()
+    }
+    fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, String> {
+        Ok(!self.raw.is_empty())
+    }
+    fn read_key(&mut self) -> Result<Option<crate::key::Key>, String> {
+        Ok(self.raw.pop_front().flatten())
+    }
+    fn write(&mut self, bytes: &[u8]) -> Result<(), String> {
+        self.inner.write(bytes)
+    }
+    fn flush(&mut self) -> Result<(), String> {
+        self.inner.flush()
+    }
+    fn get_size(&self) -> Result<crate::term::Size, String> {
+        self.inner.get_size()
+    }
+    fn clear_screen(&mut self) -> Result<(), String> {
+        self.inner.clear_screen()
+    }
+    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), String> {
+        self.inner.move_cursor(row, col)
+    }
+    fn hide_cursor(&mut self) -> Result<(), String> {
+        self.inner.hide_cursor()
+    }
+    fn show_cursor(&mut self) -> Result<(), String> {
+        self.inner.show_cursor()
+    }
+    fn clear_to_end_of_line(&mut self) -> Result<(), String> {
+        self.inner.clear_to_end_of_line()
+    }
+    fn set_cursor_shape(&mut self, shape: crate::term::CursorShape) -> Result<(), String> {
+        self.inner.set_cursor_shape(shape)
+    }
+}
+
+/// Regression: a trailing release used to strand the render - the last
+/// press saw it as "more input" and skipped; its own tick skipped the coalescing check too.
+#[test]
+fn paste_burst_with_trailing_release_events_still_renders_without_a_further_key() {
+    use crate::action::{Action, EditorAction};
+
+    let pasted = " 4 CS Classes to Visit";
+    let keys: Vec<crate::key::Key> = pasted.chars().map(crate::key::Key::Char).collect();
+    let mut editor = Editor::new(PressReleaseTerminal::new(24, 80, keys)).unwrap();
+    editor.update_and_render().unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
+
+    let mut ticks = 0;
+    while editor.term.poll(std::time::Duration::ZERO).unwrap() {
+        editor.tick().unwrap();
+        ticks += 1;
+        assert!(ticks < 10_000, "tick loop must drain the queue, not spin");
+    }
+
+    assert_eq!(editor.active_document().buffer.to_string(), pasted);
+
+    let screen = compositor_ascii(&mut editor);
+    let joined: String = screen.chars().filter(|c| *c != '\n').collect();
+    assert!(
+        joined.contains(pasted) || joined.replace(' ', "").contains("4CSClassestoVisit"),
+        "screen must show the pasted text once input drains, with no further keypress:\n{screen}"
+    );
+}
+
+/// Diagnostic: a single Insert-mode space, delivered as a press+release
+/// pair (as Windows does for every key), must move the rendered cursor without a further keypress.
+#[test]
+fn single_space_keypress_with_release_moves_the_rendered_cursor() {
+    use crate::action::{Action, EditorAction};
+    let mut editor = Editor::new(PressReleaseTerminal::new(24, 80, vec![])).unwrap();
+    editor.update_and_render().unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
+    editor.execute_buffer_command(crate::command::Command::InsertChar('a'));
+    editor.update_and_render().unwrap();
+    let before = editor.term.inner.cursor_moves.last().copied();
+
+    editor.term.raw.push_back(Some(crate::key::Key::Char(' ')));
+    editor.term.raw.push_back(None);
+    while editor.term.poll(std::time::Duration::ZERO).unwrap() {
+        editor.tick().unwrap();
+    }
+
+    assert_eq!(editor.active_document().buffer.to_string(), "a ");
+    let after = editor.term.inner.cursor_moves.last().copied();
+    assert_ne!(
+        after, before,
+        "the rendered cursor must advance past the space without a further keypress"
+    );
+}
+
+/// Diagnostic: navigating `k` up into a soft-wrapped row, delivered as a
+/// single press+release pair, must move the rendered cursor without a further keypress.
+#[test]
+fn single_up_keypress_on_soft_wrap_with_release_moves_the_rendered_cursor() {
+    use crate::action::{Action, EditorAction};
+    let mut editor = Editor::new(PressReleaseTerminal::new(24, 20, vec![])).unwrap();
+    editor.state.settings.soft_wrap = true;
+    editor.execute_buffer_command(crate::command::Command::InsertChar('x'));
+    for _ in 0..30 {
+        editor.execute_buffer_command(crate::command::Command::InsertChar('a'));
+    }
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
+    editor.update_and_render().unwrap();
+    let before = editor.term.inner.cursor_moves.last().copied();
+
+    editor.term.raw.push_back(Some(crate::key::Key::Char('k')));
+    editor.term.raw.push_back(None);
+    while editor.term.poll(std::time::Duration::ZERO).unwrap() {
+        editor.tick().unwrap();
+    }
+
+    let after = editor.term.inner.cursor_moves.last().copied();
+    assert_ne!(
+        after, before,
+        "the rendered cursor must move up a soft-wrapped row without a further keypress"
+    );
+}
