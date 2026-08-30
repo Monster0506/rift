@@ -46,6 +46,23 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_and_render()
     }
 
+    /// A filtered event (e.g. Windows key-release) skips the coalescing
+    /// check, stranding a render owed from the key just before it; flush it here.
+    pub(super) fn flush_coalesced_render_if_idle(&mut self) -> Result<(), RiftError> {
+        if self.unrendered_key_count == 0 {
+            return Ok(());
+        }
+        let more_input_queued = self
+            .term
+            .poll(std::time::Duration::from_millis(0))
+            .unwrap_or(false);
+        if more_input_queued {
+            return Ok(());
+        }
+        self.unrendered_key_count = 0;
+        self.update_and_render()
+    }
+
     /// State-update phase: syncs viewport/cursor/document-derived state ahead of
     /// rendering. No cell composition or layer writes happen here.
     fn update_state(&mut self) -> Option<FrameState> {

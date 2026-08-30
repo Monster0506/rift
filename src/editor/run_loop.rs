@@ -86,7 +86,11 @@ impl<T: TerminalBackend> Editor<T> {
             // Read key
             let key_press = match self.term.read_key()? {
                 Some(key) => key,
-                None => return Ok(()),
+                None => {
+                    // A filtered event (e.g. Windows key-release) never
+                    // reaches the coalescing check; flush any owed render.
+                    return self.flush_coalesced_render_if_idle();
+                }
             };
 
             // A pasted block is handled atomically so its chars can never be
