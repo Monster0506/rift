@@ -793,7 +793,12 @@ fn split(
                     update(&mut node);
                     (Some(node), right_child)
                 } else {
-                    // Actual split of the piece
+                    // Actual split of the piece. `split_piece_stats` derives both halves'
+                    // stats from cached totals (smaller-half scan) instead of an O(piece_len) rescan.
+                    let slice = get_piece_slice(&node.piece, original, add);
+                    let ((nl1, bytes1), (nl2, bytes2)) =
+                        split_piece_stats(slice, offset, node.piece_newlines, node.piece_byte_len);
+
                     let p1 = Piece {
                         source: node.piece.source,
                         start: node.piece.start,
@@ -817,7 +822,7 @@ fn split(
                         height: 1, // will update
                     });
                     let mut n1 = n1;
-                    update_node_metadata(&mut n1, original, add);
+                    update_node_metadata(&mut n1, nl1, bytes1);
 
                     let n2 = Arc::new(Node {
                         left: None,
@@ -831,7 +836,7 @@ fn split(
                         height: 1, // will update
                     });
                     let mut n2 = n2;
-                    update_node_metadata(&mut n2, original, add);
+                    update_node_metadata(&mut n2, nl2, bytes2);
 
                     (Some(n1), Some(n2))
                 }
@@ -928,7 +933,7 @@ fn get_piece_slice<'a>(
     }
 }
 
-fn update_node_metadata(node: &mut Arc<Node>, original: &[Character], add: &[Character]) {
+fn update_node_metadata(node: &mut Arc<Node>, piece_nl: usize, piece_bytes: usize) {
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
     let right_len = node.right.as_ref().map_or(0, |n| n.len);
     let left_byte_len = node.left.as_ref().map_or(0, |n| n.byte_len);
@@ -937,9 +942,6 @@ fn update_node_metadata(node: &mut Arc<Node>, original: &[Character], add: &[Cha
     let right_nl = node.right.as_ref().map_or(0, |n| n.newlines);
     let h = 1 + max(height(&node.left), height(&node.right));
 
-    let slice = get_piece_slice(&node.piece, original, add);
-    let (piece_nl, piece_bytes) = count_stats(slice);
-
     let node_mut = Arc::make_mut(node);
     node_mut.len = left_len + node_mut.piece.len + right_len;
     node_mut.piece_newlines = piece_nl;
@@ -947,6 +949,23 @@ fn update_node_metadata(node: &mut Arc<Node>, original: &[Character], add: &[Cha
     node_mut.byte_len = left_byte_len + piece_bytes + right_byte_len;
     node_mut.newlines = left_nl + piece_nl + right_nl;
     node_mut.height = h;
+}
+
+/// (newlines, byte_len) for both halves of a piece split at `offset`,
+/// scanning only the smaller half instead of an O(piece_len) rescan of the whole piece.
+fn split_piece_stats(
+    slice: &[Character],
+    offset: usize,
+    total_newlines: usize,
+    total_bytes: usize,
+) -> ((usize, usize), (usize, usize)) {
+    if offset <= slice.len() - offset {
+        let (nl1, bytes1) = count_stats(&slice[..offset]);
+        ((nl1, bytes1), (total_newlines - nl1, total_bytes - bytes1))
+    } else {
+        let (nl2, bytes2) = count_stats(&slice[offset..]);
+        ((total_newlines - nl2, total_bytes - bytes2), (nl2, bytes2))
+    }
 }
 
 fn collect_chars(
