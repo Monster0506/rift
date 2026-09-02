@@ -2129,7 +2129,7 @@ fn needs_clear_forces_repaint_even_when_blit_key_is_unchanged() {
     let corrupt = Cell::new(Character::Unicode('X'));
     {
         let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
-        layer.set_cell(0, 0, corrupt.clone());
+        layer.set_cell(0, 0, corrupt);
     }
     assert_eq!(
         system

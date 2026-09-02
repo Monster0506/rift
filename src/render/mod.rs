@@ -1158,11 +1158,7 @@ fn render_line(
                     };
                     for k in 1..visible_width {
                         if display_col + k < config.visible_cols {
-                            frame.set_cell(
-                                config.row_idx,
-                                display_col + k,
-                                crate::perf_clone!(empty_cell.clone()),
-                            );
+                            frame.set_cell(config.row_idx, display_col + k, empty_cell);
                         }
                     }
                 }
@@ -1396,11 +1392,7 @@ fn render_notifications_to_paint_frame(
                         attrs: crate::layer::CellAttrs::default(),
                     };
                     for k in 1..ch_width {
-                        frame.set_cell(
-                            current_row,
-                            current_col + k,
-                            crate::perf_clone!(empty_cell.clone()),
-                        );
+                        frame.set_cell(current_row, current_col + k, empty_cell);
                     }
                 }
                 current_col += ch_width;

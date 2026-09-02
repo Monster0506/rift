@@ -5,7 +5,7 @@
 //! mutates the buffer; it keeps the cursor visible and stays independent of rendering mechanics.
 
 /// Viewport manages which portion of the buffer is visible
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Viewport {
     /// Top line of the visible area (0-indexed)
     top_line: usize,

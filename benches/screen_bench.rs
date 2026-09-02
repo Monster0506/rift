@@ -65,7 +65,7 @@ fn screen_updates(c: &mut Criterion) {
             i = (i + 1) % (rows * cols);
             let r = i / cols;
             let col = i % cols;
-            black_box(buf.set_cell(r, col, cell.clone()));
+            black_box(buf.set_cell(r, col, cell));
         })
     });
 

@@ -365,7 +365,7 @@ fn test_cell_batch_end_col() {
     let batch = CellBatch {
         row: 0,
         start_col: 5,
-        cells: vec![cell.clone(), cell.clone(), cell],
+        cells: vec![cell, cell, cell],
     };
     assert_eq!(batch.end_col(), 8);
 }
