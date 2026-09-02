@@ -41,7 +41,7 @@ pub struct SyntaxParseJob {
     _lib: Option<Arc<RawLib>>,
     /// Highlights as of `old_tree`, plus the single edit since then (if
     /// exactly one landed); otherwise the highlights query rescans everything.
-    old_highlights: IntervalTree<u32>,
+    old_highlights: Arc<IntervalTree<u32>>,
 }
 
 impl std::fmt::Debug for SyntaxParseJob {
@@ -80,7 +80,7 @@ impl SyntaxParseJob {
             cached_logical_bytes: None,
             single_edit: None,
             _lib: None,
-            old_highlights: IntervalTree::default(),
+            old_highlights: Arc::new(IntervalTree::default()),
         }
     }
 
@@ -95,7 +95,7 @@ impl SyntaxParseJob {
     /// so highlights can be scoped to the changed region (only 1 edit is optimized).
     pub fn with_highlights_context(
         mut self,
-        old_highlights: IntervalTree<u32>,
+        old_highlights: Arc<IntervalTree<u32>>,
         edits: &[InputEdit],
     ) -> Self {
         self.old_highlights = old_highlights;
@@ -383,7 +383,10 @@ mod tests {
             1,
             buffer2.revision,
         )
-        .with_highlights_context(initial_highlights.clone(), std::slice::from_ref(&edit));
+        .with_highlights_context(
+            initial_highlights.clone().into(),
+            std::slice::from_ref(&edit),
+        );
 
         let result = run_job(job);
 
@@ -479,7 +482,10 @@ mod tests {
             1,
             buffer2.revision,
         )
-        .with_highlights_context(initial_highlights.clone(), std::slice::from_ref(&edit));
+        .with_highlights_context(
+            initial_highlights.clone().into(),
+            std::slice::from_ref(&edit),
+        );
 
         let result = run_job(job);
 
@@ -559,7 +565,10 @@ mod tests {
             1,
             buffer2.revision,
         )
-        .with_highlights_context(initial_highlights.clone(), std::slice::from_ref(&edit));
+        .with_highlights_context(
+            initial_highlights.clone().into(),
+            std::slice::from_ref(&edit),
+        );
 
         let result = run_job(job);
         let expected_highlights = full_highlights(&language, &query, source2.as_slice());
@@ -657,7 +666,7 @@ mod tests {
                 1,
                 buffer.revision,
             )
-            .with_highlights_context(highlights.clone(), std::slice::from_ref(&edit));
+            .with_highlights_context(highlights.clone().into(), std::slice::from_ref(&edit));
 
             let result = run_job(job);
             tree = result.tree.expect("each step must produce a tree");

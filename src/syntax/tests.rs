@@ -142,7 +142,7 @@ mod svelte_tests {
 
         let result = crate::job_manager::jobs::syntax::SyntaxParseResult {
             tree: syntax.tree.clone(),
-            highlights: syntax.highlights_snapshot().0,
+            highlights: (*syntax.highlights_snapshot().0).clone(),
             language_name: syntax.language_name.clone(),
             document_id: 0,
             revision: 0,

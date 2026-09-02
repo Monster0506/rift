@@ -16,7 +16,7 @@ pub struct InjectedLayer {
     pub language_name: String,
     pub highlights_query: Option<Arc<Query>>,
     pub tree: Option<Tree>,
-    pub cached_highlights: IntervalTree<u32>,
+    pub cached_highlights: Arc<IntervalTree<u32>>,
     /// Byte ranges in the host document covered by this layer.
     pub byte_ranges: Vec<std::ops::Range<usize>>,
     /// Keeps a dynamically loaded `language`'s backing library alive (see `RawLib`).
@@ -32,7 +32,9 @@ pub struct Syntax {
     pub tree: Option<Tree>,
     pub highlights_query: Option<Arc<Query>>,
     pub language_name: String,
-    cached_highlights: IntervalTree<u32>,
+    /// Arc-wrapped: always replaced wholesale, never mutated in place, so
+    /// `highlights_snapshot()` (cloned on every reparse job spawn) stays O(1).
+    cached_highlights: Arc<IntervalTree<u32>>,
     /// Logical bytes from the last completed parse, so a background job can
     /// patch them instead of a full `to_logical_bytes()` rebuild.
     cached_logical_bytes: Option<Arc<Vec<u8>>>,
@@ -83,7 +85,7 @@ impl Syntax {
             tree: None,
             highlights_query,
             language_name: loaded.name,
-            cached_highlights: IntervalTree::default(),
+            cached_highlights: Arc::new(IntervalTree::default()),
             cached_logical_bytes: None,
             lib: loaded.lib,
             injections_query: None,
@@ -114,7 +116,7 @@ impl Syntax {
 
     /// Snapshot of the current highlights and the edits applied since they
     /// were last fully recomputed, for a background job to reuse.
-    pub(crate) fn highlights_snapshot(&self) -> (IntervalTree<u32>, Vec<InputEdit>) {
+    pub(crate) fn highlights_snapshot(&self) -> (Arc<IntervalTree<u32>>, Vec<InputEdit>) {
         (self.cached_highlights.clone(), self.pending_edits.clone())
     }
 
@@ -164,7 +166,7 @@ impl Syntax {
             return;
         }
         self.tree = result.tree;
-        self.cached_highlights = result.highlights;
+        self.cached_highlights = Arc::new(result.highlights);
         self.highlights_generation += 1;
         self.cached_logical_bytes = Some(Arc::new(result.logical_bytes));
         self.pending_edits.clear();
@@ -175,20 +177,20 @@ impl Syntax {
     /// The next `incremental_parse()` will do a full re-parse from scratch.
     pub fn invalidate_trees(&mut self) {
         self.tree = None;
-        self.cached_highlights = IntervalTree::default();
+        self.cached_highlights = Arc::new(IntervalTree::default());
         self.highlights_generation += 1;
         self.cached_logical_bytes = None;
         self.pending_edits.clear();
         self.logical_bytes_pending_edits.clear();
         for layer in &mut self.injection_layers {
             layer.tree = None;
-            layer.cached_highlights = IntervalTree::default();
+            layer.cached_highlights = Arc::new(IntervalTree::default());
             layer.byte_ranges.clear();
         }
         self.static_injection_ranges = IntervalTree::default();
         for layer in self.dynamic_injection_layers.values_mut() {
             layer.tree = None;
-            layer.cached_highlights = IntervalTree::default();
+            layer.cached_highlights = Arc::new(IntervalTree::default());
             layer.byte_ranges.clear();
         }
         self.dynamic_injection_ranges = IntervalTree::default();
@@ -303,13 +305,13 @@ impl Syntax {
             };
 
             if let Some((prev_tree, edit)) = scoped {
-                self.cached_highlights = scoped_query_highlights(
+                self.cached_highlights = Arc::new(scoped_query_highlights(
                     query,
                     &tree,
                     source,
                     &self.cached_highlights,
                     Some((prev_tree, edit)),
-                );
+                ));
                 self.highlights_generation += 1;
             } else {
                 let root_node = tree.root_node();
@@ -339,7 +341,8 @@ impl Syntax {
                 if query_timed_out {
                     return ParseOutcome::Aborted;
                 }
-                self.cached_highlights = IntervalTree::new(finalize_highlights(highlights));
+                self.cached_highlights =
+                    Arc::new(IntervalTree::new(finalize_highlights(highlights)));
                 self.highlights_generation += 1;
             }
         }
@@ -372,7 +375,7 @@ impl Syntax {
                         highlights.push((range, capture.index));
                     }
                 }
-                self.cached_highlights = IntervalTree::new(highlights);
+                self.cached_highlights = Arc::new(IntervalTree::new(highlights));
                 self.highlights_generation += 1;
             }
             self.tree = Some(tree);
@@ -496,7 +499,7 @@ impl Syntax {
         for (li, layer) in self.injection_layers.iter_mut().enumerate() {
             let ranges = &lang_ranges[li];
             if ranges.is_empty() {
-                layer.cached_highlights = IntervalTree::default();
+                layer.cached_highlights = Arc::new(IntervalTree::default());
                 layer.byte_ranges.clear();
                 continue;
             }
@@ -547,7 +550,7 @@ impl Syntax {
                 IntervalTree::default()
             };
 
-            layer.cached_highlights = highlights;
+            layer.cached_highlights = Arc::new(highlights);
             layer.tree = Some(new_tree);
         }
     }
@@ -715,7 +718,7 @@ impl Syntax {
                     language_name: lang_name,
                     highlights_query,
                     tree: Some(new_tree),
-                    cached_highlights: highlights,
+                    cached_highlights: Arc::new(highlights),
                     byte_ranges: ranges,
                     lib: lang_loaded.lib,
                 },
@@ -843,7 +846,7 @@ pub fn build_syntax(
                             language_name: lang_name,
                             highlights_query: layer_query,
                             tree: None,
-                            cached_highlights: IntervalTree::default(),
+                            cached_highlights: Arc::new(IntervalTree::default()),
                             byte_ranges: Vec::new(),
                             lib: lang_loaded.lib,
                         });
