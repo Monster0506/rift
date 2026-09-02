@@ -199,7 +199,7 @@ impl DoubleBuffer {
                 if col_idx >= self.cols {
                     break;
                 }
-                self.current[start + col_idx] = crate::perf_clone!(cell.clone());
+                self.current[start + col_idx] = *cell;
             }
         }
         // Mark full screen dirty on copy
@@ -223,7 +223,7 @@ impl DoubleBuffer {
             for c in 0..self.cols.min(new_cols) {
                 let old_idx = self.idx(r, c);
                 let new_idx = r * new_cols + c;
-                new_current[new_idx] = crate::perf_clone!(self.current[old_idx].clone());
+                new_current[new_idx] = self.current[old_idx];
             }
         }
 
@@ -347,7 +347,7 @@ impl DoubleBuffer {
                         batch_start = Some(col_idx);
                         current_cells = Some(self.cell_batch_pool.pop().unwrap_or_default());
                     }
-                    current_cells.as_mut().unwrap().push(curr.clone());
+                    current_cells.as_mut().unwrap().push(*curr);
                 } else if let Some(start) = batch_start {
                     // End of batch
                     batches.push(CellBatch {
@@ -423,7 +423,7 @@ impl DoubleBuffer {
             for r in top..=bottom - k {
                 let (dst, src) = (r * self.cols, (r + k) * self.cols);
                 for c in 0..self.cols {
-                    self.previous[dst + c] = crate::perf_clone!(self.previous[src + c].clone());
+                    self.previous[dst + c] = self.previous[src + c];
                 }
             }
             for r in bottom - k + 1..=bottom {
@@ -433,7 +433,7 @@ impl DoubleBuffer {
             for r in (top + k..=bottom).rev() {
                 let (dst, src) = (r * self.cols, (r - k) * self.cols);
                 for c in 0..self.cols {
-                    self.previous[dst + c] = crate::perf_clone!(self.previous[src + c].clone());
+                    self.previous[dst + c] = self.previous[src + c];
                 }
             }
             for r in top..top + k {

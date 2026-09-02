@@ -467,8 +467,8 @@ impl RenderSystem {
                 .resize(self.viewport.visible_rows(), self.viewport.visible_cols());
         }
 
-        // Clone viewport to avoid simultaneous borrow of self in update_world
-        let viewport = crate::perf_clone!(self.viewport.clone());
+        // Copy the viewport out to avoid holding a borrow of self across update_world.
+        let viewport = self.viewport;
         let skip_content = state.skip_content;
         let scroll_hint = state.scroll_hint;
         let cursor_row_offset = state.cursor_row_offset;

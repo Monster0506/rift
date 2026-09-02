@@ -466,7 +466,7 @@ impl FloatingWindow {
             if let Some(line) = content.get(content_row) {
                 for (i, cell) in line.iter().take(content_width).enumerate() {
                     let col = start_col + 1 + i;
-                    let mut final_cell = cell.clone();
+                    let mut final_cell = *cell;
                     if final_cell.fg.is_none() {
                         final_cell.fg = fg;
                     }
@@ -554,7 +554,7 @@ impl FloatingWindow {
             if let Some(line) = content.get(row_offset) {
                 for (i, cell) in line.iter().take(width).enumerate() {
                     let col = start_col + i;
-                    let mut final_cell = cell.clone();
+                    let mut final_cell = *cell;
                     if final_cell.fg.is_none() {
                         final_cell.fg = fg;
                     }

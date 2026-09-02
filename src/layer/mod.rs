@@ -126,7 +126,7 @@ pub struct CellStyle {
 }
 
 /// A cell in the terminal buffer
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cell {
     /// The character to display
     pub content: Character,
@@ -433,7 +433,7 @@ impl Layer {
     pub fn fill_rect(&mut self, rect: Rect, cell: Cell) {
         for row in rect.start_row..=rect.end_row.min(self.rows.saturating_sub(1)) {
             for col in rect.start_col..=rect.end_col.min(self.cols.saturating_sub(1)) {
-                self.set_cell(row, col, crate::perf_clone!(cell.clone()));
+                self.set_cell(row, col, cell);
             }
         }
     }
@@ -448,7 +448,7 @@ impl Layer {
             for c in 0..self.cols.min(new_cols) {
                 let old_idx = self.idx(r, c);
                 let new_idx = r * new_cols + c;
-                new_cells[new_idx] = crate::perf_clone!(self.cells[old_idx].clone());
+                new_cells[new_idx] = self.cells[old_idx];
             }
         }
 
@@ -597,12 +597,7 @@ impl LayerCompositor {
                         _ => false,
                     };
                     if !unchanged {
-                        // perf_clone! expands to more than `.clone()` when
-                        // perf_instrumentation is on - not a plain map_clone.
-                        #[allow(clippy::map_clone)]
-                        let cell = final_cell
-                            .map(|c| crate::perf_clone!(c.clone()))
-                            .unwrap_or_else(Cell::empty);
+                        let cell = final_cell.copied().unwrap_or_else(Cell::empty);
                         self.buffer.set_cell(r, c, cell);
                     }
                 }
@@ -630,9 +625,7 @@ impl LayerCompositor {
             self.composite();
         }
         if row < self.rows && col < self.cols {
-            Some(crate::perf_clone!(self.buffer.current_slice()
-                [row * self.cols + col]
-                .clone()))
+            Some(self.buffer.current_slice()[row * self.cols + col])
         } else {
             None
         }
