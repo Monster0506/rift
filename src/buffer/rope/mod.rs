@@ -37,19 +37,12 @@ struct Node {
 #[derive(Clone, Debug)]
 pub struct PieceTable {
     original: Arc<Vec<Character>>,
-    add: Vec<Character>,
+    add: Arc<Vec<Character>>,
     root: Option<Arc<Node>>,
-    /// Cumulative UTF-8 byte length of `original[..i]` (length `original.len() + 1`); built once
-    /// here since `original` is immutable. Lets char<->byte lookups be O(1), not an O(piece_len) rescan.
     original_byte_prefix: Arc<Vec<u32>>,
-    /// Same idea as `original_byte_prefix`, but for the append-only `add`
-    /// buffer; extended incrementally in `push_add` as `add` grows.
-    add_byte_prefix: Vec<u32>,
-    /// Cumulative newline count of `original[..i]`, same shape as
-    /// `original_byte_prefix`. Lets line<->char lookups be O(1)/O(log piece_len) too.
+    add_byte_prefix: Arc<Vec<u32>>,
     original_newline_prefix: Arc<Vec<u32>>,
-    /// Same idea as `original_newline_prefix`, but for `add`.
-    add_newline_prefix: Vec<u32>,
+    add_newline_prefix: Arc<Vec<u32>>,
 }
 
 impl PieceTable {
@@ -81,31 +74,34 @@ impl PieceTable {
 
         Self {
             original: Arc::new(original),
-            add: Vec::new(),
+            add: Arc::new(Vec::new()),
             root,
             original_byte_prefix: Arc::new(original_byte_prefix),
-            add_byte_prefix: vec![0],
+            add_byte_prefix: Arc::new(vec![0]),
             original_newline_prefix: Arc::new(original_newline_prefix),
-            add_newline_prefix: vec![0],
+            add_newline_prefix: Arc::new(vec![0]),
         }
     }
 
     /// Appends `text` to `add` and extends its byte/newline prefix sums to match, so
     /// position lookups for pieces in `add` stay O(1)/O(log piece_len) instead of an O(piece_len) scan.
     fn push_add(&mut self, text: &[Character]) {
-        self.add.reserve(text.len());
-        self.add_byte_prefix.reserve(text.len());
-        self.add_newline_prefix.reserve(text.len());
-        let mut bytes = *self.add_byte_prefix.last().unwrap();
-        let mut newlines = *self.add_newline_prefix.last().unwrap();
+        let add = Arc::make_mut(&mut self.add);
+        let add_byte_prefix = Arc::make_mut(&mut self.add_byte_prefix);
+        let add_newline_prefix = Arc::make_mut(&mut self.add_newline_prefix);
+        add.reserve(text.len());
+        add_byte_prefix.reserve(text.len());
+        add_newline_prefix.reserve(text.len());
+        let mut bytes = *add_byte_prefix.last().unwrap();
+        let mut newlines = *add_newline_prefix.last().unwrap();
         for c in text {
-            self.add.push(*c);
+            add.push(*c);
             bytes += c.len_utf8() as u32;
-            self.add_byte_prefix.push(bytes);
+            add_byte_prefix.push(bytes);
             if *c == Character::Newline {
                 newlines += 1;
             }
-            self.add_newline_prefix.push(newlines);
+            add_newline_prefix.push(newlines);
         }
     }
 
