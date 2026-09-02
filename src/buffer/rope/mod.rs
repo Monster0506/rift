@@ -45,12 +45,18 @@ pub struct PieceTable {
     /// Same idea as `original_byte_prefix`, but for the append-only `add`
     /// buffer; extended incrementally in `push_add` as `add` grows.
     add_byte_prefix: Vec<u32>,
+    /// Cumulative newline count of `original[..i]`, same shape as
+    /// `original_byte_prefix`. Lets line<->char lookups be O(1)/O(log piece_len) too.
+    original_newline_prefix: Arc<Vec<u32>>,
+    /// Same idea as `original_newline_prefix`, but for `add`.
+    add_newline_prefix: Vec<u32>,
 }
 
 impl PieceTable {
     pub fn new(original: Vec<Character>) -> Self {
         let len = original.len();
-        let (newlines, byte_len, original_byte_prefix) = count_stats_with_prefix(&original);
+        let (newlines, byte_len, original_byte_prefix, original_newline_prefix) =
+            count_stats_with_prefixes(&original);
         let piece = Piece {
             source: BufferSource::Original,
             start: 0,
@@ -79,19 +85,27 @@ impl PieceTable {
             root,
             original_byte_prefix: Arc::new(original_byte_prefix),
             add_byte_prefix: vec![0],
+            original_newline_prefix: Arc::new(original_newline_prefix),
+            add_newline_prefix: vec![0],
         }
     }
 
-    /// Appends `text` to the add-buffer and extends its byte-length prefix
-    /// sum to match, so char<->byte lookups for pieces in `add` stay O(1) instead of an O(piece_len) rescan.
+    /// Appends `text` to `add` and extends its byte/newline prefix sums to match, so
+    /// position lookups for pieces in `add` stay O(1)/O(log piece_len) instead of an O(piece_len) scan.
     fn push_add(&mut self, text: &[Character]) {
         self.add.reserve(text.len());
         self.add_byte_prefix.reserve(text.len());
-        let mut last = *self.add_byte_prefix.last().unwrap();
+        self.add_newline_prefix.reserve(text.len());
+        let mut bytes = *self.add_byte_prefix.last().unwrap();
+        let mut newlines = *self.add_newline_prefix.last().unwrap();
         for c in text {
             self.add.push(*c);
-            last += c.len_utf8() as u32;
-            self.add_byte_prefix.push(last);
+            bytes += c.len_utf8() as u32;
+            self.add_byte_prefix.push(bytes);
+            if *c == Character::Newline {
+                newlines += 1;
+            }
+            self.add_newline_prefix.push(newlines);
         }
     }
 
@@ -282,14 +296,24 @@ impl PieceTable {
         if line_idx >= self.get_line_count() {
             return self.len();
         }
-        find_nth_newline_end(self.root.as_deref(), line_idx, &self.original, &self.add)
+        find_nth_newline_end(
+            self.root.as_deref(),
+            line_idx,
+            &self.original_newline_prefix,
+            &self.add_newline_prefix,
+        )
     }
 
     pub fn line_at_char(&self, pos: usize) -> usize {
         if pos >= self.len() {
             return self.get_line_count().saturating_sub(1);
         }
-        get_line_at_pos(self.root.as_deref(), pos, &self.original, &self.add)
+        get_line_at_pos(
+            self.root.as_deref(),
+            pos,
+            &self.original_newline_prefix,
+            &self.add_newline_prefix,
+        )
     }
 
     /// Convert character index to byte offset. O(log n) to the target
@@ -954,20 +978,28 @@ fn count_stats(chars: &[Character]) -> (usize, usize) {
 }
 
 /// Same as `count_stats`, but also returns the cumulative UTF-8 byte-length
-/// prefix sum (`prefix[i]` = total bytes of `chars[..i]`, length `chars.len() + 1`).
-fn count_stats_with_prefix(chars: &[Character]) -> (usize, usize, Vec<u32>) {
-    let mut newlines = 0;
+/// and newline-count prefix sums (length `chars.len() + 1` each).
+fn count_stats_with_prefixes(chars: &[Character]) -> (usize, usize, Vec<u32>, Vec<u32>) {
+    let mut newlines: u32 = 0;
     let mut byte_len: u32 = 0;
-    let mut prefix = Vec::with_capacity(chars.len() + 1);
-    prefix.push(0);
+    let mut byte_prefix = Vec::with_capacity(chars.len() + 1);
+    let mut newline_prefix = Vec::with_capacity(chars.len() + 1);
+    byte_prefix.push(0);
+    newline_prefix.push(0);
     for c in chars {
+        byte_len += c.len_utf8() as u32;
+        byte_prefix.push(byte_len);
         if *c == Character::Newline {
             newlines += 1;
         }
-        byte_len += c.len_utf8() as u32;
-        prefix.push(byte_len);
+        newline_prefix.push(newlines);
     }
-    (newlines, byte_len as usize, prefix)
+    (
+        newlines as usize,
+        byte_len as usize,
+        byte_prefix,
+        newline_prefix,
+    )
 }
 
 fn get_piece_slice<'a>(
@@ -1139,8 +1171,8 @@ fn collect_chars_range(
 fn find_nth_newline_end(
     node: Option<&Node>,
     target: usize,
-    original: &[Character],
-    add: &[Character],
+    original_prefix: &[u32],
+    add_prefix: &[u32],
 ) -> usize {
     let node = match node {
         Some(n) => n,
@@ -1152,44 +1184,48 @@ fn find_nth_newline_end(
     let left_nl = node.left.as_ref().map_or(0, |n| n.newlines);
 
     if target <= left_nl {
-        find_nth_newline_end(node.left.as_deref(), target, original, add)
+        find_nth_newline_end(node.left.as_deref(), target, original_prefix, add_prefix)
     } else {
         let current_nl = left_nl + node.piece_newlines;
 
         if target <= current_nl {
-            // In this piece
-            let slice = get_piece_slice(&node.piece, original, add);
-            let needed_in_piece = target - left_nl;
-
-            let mut count = 0;
-            for (i, c) in slice.iter().enumerate() {
-                if *c == Character::Newline {
-                    count += 1;
-                    if count == needed_in_piece {
-                        let left_len = node.left.as_ref().map_or(0, |n| n.len);
-                        return left_len + i + 1;
-                    }
-                }
-            }
-
-            unreachable!("Metadata mismatch: newline not found in piece");
+            // In this piece: binary search the piece's newline-count prefix
+            // sum instead of an O(piece_len) scan.
+            let needed_in_piece = (target - left_nl) as u32;
+            let prefix = match node.piece.source {
+                BufferSource::Original => original_prefix,
+                BufferSource::Add => add_prefix,
+            };
+            let base = prefix[node.piece.start];
+            let target_absolute = base + needed_in_piece;
+            let hi = node.piece.start + node.piece.len;
+            // Smallest index m in [0, piece.len] with prefix[start+m] >= target_absolute;
+            // char at local index m-1 is the needed_in_piece-th newline.
+            let m = prefix[node.piece.start..=hi].partition_point(|&p| p < target_absolute);
+            let left_len = node.left.as_ref().map_or(0, |n| n.len);
+            left_len + m
         } else {
             // In right child
             let left_len = node.left.as_ref().map_or(0, |n| n.len);
             left_len
                 + node.piece.len
-                + find_nth_newline_end(node.right.as_deref(), target - current_nl, original, add)
+                + find_nth_newline_end(
+                    node.right.as_deref(),
+                    target - current_nl,
+                    original_prefix,
+                    add_prefix,
+                )
         }
     }
 }
 
-/// O(log n) to the target piece, then O(piece_len) to count newlines within
-/// it via `count_stats` -- same in-piece scan caveat as `char_to_byte`.
+/// O(log n) to the target piece, then O(1) within it via
+/// `original_newline_prefix`/`add_newline_prefix`.
 fn get_line_at_pos(
     node: Option<&Node>,
     pos: usize,
-    original: &[Character],
-    add: &[Character],
+    original_prefix: &[u32],
+    add_prefix: &[u32],
 ) -> usize {
     let node = match node {
         Some(n) => n,
@@ -1201,20 +1237,19 @@ fn get_line_at_pos(
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
 
     if pos < left_len {
-        get_line_at_pos(node.left.as_deref(), pos, original, add)
+        get_line_at_pos(node.left.as_deref(), pos, original_prefix, add_prefix)
     } else {
         let left_nl = node.left.as_ref().map_or(0, |n| n.newlines);
 
         if pos < left_len + node.piece.len {
-            // In this piece; a piece with no newlines needs no scan.
-            if node.piece_newlines == 0 {
-                return left_nl;
-            }
+            // In this piece: O(1) via the piece's newline-count prefix sum.
             let offset = pos - left_len;
-            let slice = get_piece_slice(&node.piece, original, add);
-
-            let (piece_nl_before, _) = count_stats(&slice[..offset]);
-            left_nl + piece_nl_before
+            let prefix = match node.piece.source {
+                BufferSource::Original => original_prefix,
+                BufferSource::Add => add_prefix,
+            };
+            let piece_nl_before = prefix[node.piece.start + offset] - prefix[node.piece.start];
+            left_nl + piece_nl_before as usize
         } else {
             // In right child
             left_nl
@@ -1222,8 +1257,8 @@ fn get_line_at_pos(
                 + get_line_at_pos(
                     node.right.as_deref(),
                     pos - left_len - node.piece.len,
-                    original,
-                    add,
+                    original_prefix,
+                    add_prefix,
                 )
         }
     }
