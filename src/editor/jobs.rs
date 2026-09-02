@@ -354,9 +354,11 @@ impl<T: TerminalBackend> Editor<T> {
                             doc.custom_highlights.clear();
 
                             if let Some(entries) = res.dir_entries {
+                                // Placeholder: populate_directory_buffer assigns IDs
+                                // and writes the final entries into doc.kind itself.
                                 doc.kind = crate::document::BufferKind::Directory {
                                     path: res.path.clone(),
-                                    entries: entries.clone(),
+                                    entries: Vec::new(),
                                     show_hidden: false,
                                 };
                                 doc.populate_directory_buffer(entries);
