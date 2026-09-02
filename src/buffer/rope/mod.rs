@@ -39,12 +39,18 @@ pub struct PieceTable {
     original: Arc<Vec<Character>>,
     add: Vec<Character>,
     root: Option<Arc<Node>>,
+    /// Cumulative UTF-8 byte length of `original[..i]` (length `original.len() + 1`); built once
+    /// here since `original` is immutable. Lets char<->byte lookups be O(1), not an O(piece_len) rescan.
+    original_byte_prefix: Arc<Vec<u32>>,
+    /// Same idea as `original_byte_prefix`, but for the append-only `add`
+    /// buffer; extended incrementally in `push_add` as `add` grows.
+    add_byte_prefix: Vec<u32>,
 }
 
 impl PieceTable {
     pub fn new(original: Vec<Character>) -> Self {
         let len = original.len();
-        let (newlines, byte_len) = count_stats(&original);
+        let (newlines, byte_len, original_byte_prefix) = count_stats_with_prefix(&original);
         let piece = Piece {
             source: BufferSource::Original,
             start: 0,
@@ -71,6 +77,21 @@ impl PieceTable {
             original: Arc::new(original),
             add: Vec::new(),
             root,
+            original_byte_prefix: Arc::new(original_byte_prefix),
+            add_byte_prefix: vec![0],
+        }
+    }
+
+    /// Appends `text` to the add-buffer and extends its byte-length prefix
+    /// sum to match, so char<->byte lookups for pieces in `add` stay O(1) instead of an O(piece_len) rescan.
+    fn push_add(&mut self, text: &[Character]) {
+        self.add.reserve(text.len());
+        self.add_byte_prefix.reserve(text.len());
+        let mut last = *self.add_byte_prefix.last().unwrap();
+        for c in text {
+            self.add.push(*c);
+            last += c.len_utf8() as u32;
+            self.add_byte_prefix.push(last);
         }
     }
 
@@ -101,7 +122,7 @@ impl PieceTable {
             let add_end = self.add.len();
             if let Some(ref mut root) = self.root {
                 if extend_last_piece(root, add_end, text.len(), newlines, byte_len) {
-                    self.add.extend_from_slice(text);
+                    self.push_add(text);
                     #[cfg(debug_assertions)]
                     assert_tree_metadata(self.root.as_deref());
                     return;
@@ -110,7 +131,7 @@ impl PieceTable {
         }
 
         let add_start = self.add.len();
-        self.add.extend_from_slice(text);
+        self.push_add(text);
 
         let new_piece = Piece {
             source: BufferSource::Add,
@@ -148,7 +169,7 @@ impl PieceTable {
         }
 
         let add_start = self.add.len();
-        self.add.extend_from_slice(text);
+        self.push_add(text);
         let (new_nl, new_bytes) = count_stats(text);
 
         let new_node = Arc::new(Node {
@@ -271,22 +292,32 @@ impl PieceTable {
         get_line_at_pos(self.root.as_deref(), pos, &self.original, &self.add)
     }
 
-    /// Convert character index to byte offset. O(log n) to the target piece, then
-    /// O(piece_len) within it (no per-piece prefix-sum cache yet); see `buffer::api`'s module doc.
+    /// Convert character index to byte offset. O(log n) to the target
+    /// piece, then O(1) within it via `original_byte_prefix`/`add_byte_prefix`.
     pub fn char_to_byte(&self, char_index: usize) -> usize {
         if char_index >= self.len() {
             return self.byte_len();
         }
-        get_byte_offset_recursive(self.root.as_deref(), char_index, &self.original, &self.add)
+        get_byte_offset_recursive(
+            self.root.as_deref(),
+            char_index,
+            &self.original_byte_prefix,
+            &self.add_byte_prefix,
+        )
     }
 
-    /// Convert byte offset to character index (the char containing the byte, or
-    /// starting at it). Same O(piece_len) in-piece scan caveat as [`Self::char_to_byte`].
+    /// Convert byte offset to character index (the char containing the byte, or starting at
+    /// it). O(log n) to the target piece, then a binary search within it instead of a scan.
     pub fn byte_to_char(&self, byte_offset: usize) -> usize {
         if byte_offset >= self.byte_len() {
             return self.len();
         }
-        get_char_idx_recursive(self.root.as_deref(), byte_offset, &self.original, &self.add)
+        get_char_idx_recursive(
+            self.root.as_deref(),
+            byte_offset,
+            &self.original_byte_prefix,
+            &self.add_byte_prefix,
+        )
     }
 
     /// Get an O(N) iterator over the characters
@@ -922,6 +953,23 @@ fn count_stats(chars: &[Character]) -> (usize, usize) {
     (newlines, byte_len)
 }
 
+/// Same as `count_stats`, but also returns the cumulative UTF-8 byte-length
+/// prefix sum (`prefix[i]` = total bytes of `chars[..i]`, length `chars.len() + 1`).
+fn count_stats_with_prefix(chars: &[Character]) -> (usize, usize, Vec<u32>) {
+    let mut newlines = 0;
+    let mut byte_len: u32 = 0;
+    let mut prefix = Vec::with_capacity(chars.len() + 1);
+    prefix.push(0);
+    for c in chars {
+        if *c == Character::Newline {
+            newlines += 1;
+        }
+        byte_len += c.len_utf8() as u32;
+        prefix.push(byte_len);
+    }
+    (newlines, byte_len as usize, prefix)
+}
+
 fn get_piece_slice<'a>(
     piece: &Piece,
     original: &'a [Character],
@@ -1184,8 +1232,8 @@ fn get_line_at_pos(
 fn get_byte_offset_recursive(
     node: Option<&Node>,
     char_pos: usize,
-    original: &[Character],
-    add: &[Character],
+    original_prefix: &[u32],
+    add_prefix: &[u32],
 ) -> usize {
     let node = match node {
         Some(n) => n,
@@ -1198,21 +1246,15 @@ fn get_byte_offset_recursive(
     let left_byte_len = node.left.as_ref().map_or(0, |n| n.byte_len);
 
     if char_pos < left_len {
-        get_byte_offset_recursive(node.left.as_deref(), char_pos, original, add)
+        get_byte_offset_recursive(node.left.as_deref(), char_pos, original_prefix, add_prefix)
     } else if char_pos < left_len + node.piece.len {
-        // In this piece
+        // In this piece: O(1) via the piece's cached byte-length prefix sum.
         let offset = char_pos - left_len;
-        // All-single-byte piece: in-piece byte offset equals char offset.
-        if node.piece_byte_len == node.piece.len {
-            return left_byte_len + offset;
-        }
-        let slice = get_piece_slice(&node.piece, original, add);
-
-        // Sum byte len of `offset` characters
-        let mut piece_bytes = 0;
-        for item in slice.iter().take(offset) {
-            piece_bytes += item.len_utf8();
-        }
+        let prefix = match node.piece.source {
+            BufferSource::Original => original_prefix,
+            BufferSource::Add => add_prefix,
+        };
+        let piece_bytes = (prefix[node.piece.start + offset] - prefix[node.piece.start]) as usize;
         left_byte_len + piece_bytes
     } else {
         // In right child
@@ -1221,8 +1263,8 @@ fn get_byte_offset_recursive(
             + get_byte_offset_recursive(
                 node.right.as_deref(),
                 char_pos - left_len - node.piece.len,
-                original,
-                add,
+                original_prefix,
+                add_prefix,
             )
     }
 }
@@ -1230,8 +1272,8 @@ fn get_byte_offset_recursive(
 fn get_char_idx_recursive(
     node: Option<&Node>,
     byte_pos: usize,
-    original: &[Character],
-    add: &[Character],
+    original_prefix: &[u32],
+    add_prefix: &[u32],
 ) -> usize {
     let node = match node {
         Some(n) => n,
@@ -1244,29 +1286,21 @@ fn get_char_idx_recursive(
     let left_len = node.left.as_ref().map_or(0, |n| n.len);
 
     if byte_pos < left_byte_len {
-        get_char_idx_recursive(node.left.as_deref(), byte_pos, original, add)
+        get_char_idx_recursive(node.left.as_deref(), byte_pos, original_prefix, add_prefix)
     } else if byte_pos < left_byte_len + node.piece_byte_len {
-        // In this piece
-        let target_in_piece = byte_pos - left_byte_len;
-        // All-single-byte piece: in-piece char index equals byte offset.
-        if node.piece_byte_len == node.piece.len {
-            return left_len + target_in_piece;
-        }
-        let slice = get_piece_slice(&node.piece, original, add);
-
-        let mut current_bytes = 0;
-        for (i, c) in slice.iter().enumerate() {
-            let clen = c.len_utf8();
-            if current_bytes + clen > target_in_piece {
-                // The byte is within this character
-                return left_len + i;
-            }
-            current_bytes += clen;
-            // If we hit exact match (start of next char), loop continues
-            if current_bytes == target_in_piece {}
-        }
-        // Should have found it in this piece
-        left_len + slice.len()
+        // In this piece: binary search the piece's byte-length prefix sum
+        // instead of an O(piece_len) scan.
+        let target_in_piece = (byte_pos - left_byte_len) as u32;
+        let prefix = match node.piece.source {
+            BufferSource::Original => original_prefix,
+            BufferSource::Add => add_prefix,
+        };
+        let base = prefix[node.piece.start];
+        let target_absolute = base + target_in_piece;
+        let hi = node.piece.start + node.piece.len;
+        // Rightmost index i (0-based within the piece) with prefix[i] <= target_absolute.
+        let idx = prefix[node.piece.start..=hi].partition_point(|&p| p <= target_absolute);
+        left_len + idx.saturating_sub(1)
     } else {
         // In right child
         left_len
@@ -1274,8 +1308,8 @@ fn get_char_idx_recursive(
             + get_char_idx_recursive(
                 node.right.as_deref(),
                 byte_pos - left_byte_len - node.piece_byte_len,
-                original,
-                add,
+                original_prefix,
+                add_prefix,
             )
     }
 }
