@@ -303,11 +303,18 @@ fn flycheck_progress_never_gates_requests_and_readiness_is_permanent() {
         "grace period still counts as indexing"
     );
 
-    // A flycheck token starting inside the grace period must not cancel it.
+    // A flycheck token starting inside the grace period must not cancel it, and
+    // must not push a status-bar Progress message (it would show stale indexing counts).
+    let before = out.len();
     mgr.on_progress(
         "rust",
         &progress("rustAnalyzer/Flycheck/0", "begin", "cargo check"),
         &mut out,
+    );
+    assert_eq!(
+        out.len(),
+        before,
+        "flycheck begin must not push a Progress message"
     );
     std::thread::sleep(std::time::Duration::from_millis(650));
     let ready = mgr
@@ -320,14 +327,29 @@ fn flycheck_progress_never_gates_requests_and_readiness_is_permanent() {
     );
     assert!(!mgr.is_indexing("rust"));
 
+    // A flycheck end likewise pushes nothing and never gates.
+    let before = out.len();
+    mgr.on_progress(
+        "rust",
+        &progress("rustAnalyzer/Flycheck/0", "end", ""),
+        &mut out,
+    );
+    assert_eq!(
+        out.len(),
+        before,
+        "flycheck end must not push a Progress message"
+    );
+    assert!(!mgr.is_indexing("rust"));
+
     // After readiness, a later re-index only affects status, never gating.
+    // The earlier flycheck begin/end never touched these counters.
     mgr.on_progress(
         "rust",
         &progress("rustAnalyzer/Indexing", "begin", "Indexing"),
         &mut out,
     );
     assert!(!mgr.is_indexing("rust"));
-    assert_eq!(mgr.indexing_progress("rust"), Some((1, 3)));
+    assert_eq!(mgr.indexing_progress("rust"), Some((1, 2)));
 }
 
 #[test]
