@@ -24,6 +24,9 @@ pub struct DisplayMap {
     pub wrap_width: usize,
     pub tab_width: usize,
     complete: bool,
+    /// Sorted lines whose end-of-line needs its own row when the text exactly
+    /// fills the last segment (they carry trailing virtual text).
+    eol_rows: Vec<usize>,
 }
 
 /// Lines wrapped per lazy-extension step; bounds how much a single
@@ -40,9 +43,11 @@ fn wrap_chars<'a>(
     wrap_width: usize,
     tab_width: usize,
     emit_final_row: bool,
+    eol_rows: &[usize],
     rows: &mut Vec<VisualRowInfo>,
     line_first_rows: &mut Vec<usize>,
 ) {
+    let wants_eol_row = |line: usize| eol_rows.binary_search(&line).is_ok();
     let mut line_idx = first_line;
     let mut visual_col: usize = 0;
     let mut seg_char_start = start_char;
@@ -58,14 +63,16 @@ fn wrap_chars<'a>(
     for chunk in chunks {
         for &ch in chunk {
             if ch == Character::Newline {
-                rows.push(VisualRowInfo {
-                    logical_line: line_idx,
-                    char_start: seg_char_start,
-                    char_end: char_pos,
-                    segment_col_start: seg_col_start,
-                    segment_col_end: visual_col,
+                close_line(
+                    rows,
+                    line_idx,
+                    seg_char_start,
+                    char_pos,
+                    seg_col_start,
+                    visual_col,
                     is_first,
-                });
+                    wants_eol_row(line_idx).then_some(wrap_width),
+                );
                 line_idx += 1;
                 char_pos += 1;
                 line_first_rows.push(rows.len());
@@ -132,8 +139,37 @@ fn wrap_chars<'a>(
     }
 
     if emit_final_row {
+        close_line(
+            rows,
+            line_idx,
+            seg_char_start,
+            char_pos,
+            seg_col_start,
+            visual_col,
+            is_first,
+            wants_eol_row(line_idx).then_some(wrap_width),
+        );
+    }
+}
+
+/// Emit the rows ending a logical line. With `eol_row_width` set and the
+/// segment exactly that wide, the line end gets an extra row of its own.
+#[allow(clippy::too_many_arguments)]
+fn close_line(
+    rows: &mut Vec<VisualRowInfo>,
+    logical_line: usize,
+    seg_char_start: usize,
+    char_pos: usize,
+    seg_col_start: usize,
+    visual_col: usize,
+    is_first: bool,
+    eol_row_width: Option<usize>,
+) {
+    let full = eol_row_width
+        .is_some_and(|w| visual_col > seg_col_start && visual_col - seg_col_start >= w);
+    if full {
         rows.push(VisualRowInfo {
-            logical_line: line_idx,
+            logical_line,
             char_start: seg_char_start,
             char_end: char_pos,
             segment_col_start: seg_col_start,
@@ -141,10 +177,29 @@ fn wrap_chars<'a>(
             is_first,
         });
     }
+    rows.push(VisualRowInfo {
+        logical_line,
+        char_start: if full { char_pos } else { seg_char_start },
+        char_end: char_pos,
+        segment_col_start: if full { visual_col } else { seg_col_start },
+        segment_col_end: visual_col,
+        is_first: is_first && !full,
+    });
 }
 
 impl DisplayMap {
     pub fn build(buf: &TextBuffer, wrap_width: usize, tab_width: usize) -> Self {
+        Self::build_with(buf, wrap_width, tab_width, Vec::new())
+    }
+
+    /// `build`, giving the lines in `eol_rows` (sorted) an extra row for
+    /// their line end when their text exactly fills the last segment.
+    pub fn build_with(
+        buf: &TextBuffer,
+        wrap_width: usize,
+        tab_width: usize,
+        eol_rows: Vec<usize>,
+    ) -> Self {
         let total_lines = buf.get_total_lines();
         crate::perf_span!(
             "wrap_build",
@@ -163,6 +218,7 @@ impl DisplayMap {
             wrap_width,
             tab_width,
             true,
+            &eol_rows,
             &mut rows,
             &mut line_first_visual,
         );
@@ -173,6 +229,7 @@ impl DisplayMap {
             wrap_width,
             tab_width,
             complete: true,
+            eol_rows,
         }
     }
 
@@ -185,7 +242,20 @@ impl DisplayMap {
             wrap_width,
             tab_width,
             complete: false,
+            eol_rows: Vec::new(),
         }
+    }
+
+    /// Set the EOL-row lines on a map that has not wrapped anything yet.
+    pub fn with_eol_rows(mut self, eol_rows: Vec<usize>) -> Self {
+        debug_assert!(self.rows.is_empty(), "eol rows must be set before wrapping");
+        self.eol_rows = eol_rows;
+        self
+    }
+
+    /// Lines that get an EOL row when their text exactly fills the wrap width.
+    pub fn eol_rows(&self) -> &[usize] {
+        &self.eol_rows
     }
 
     /// Whether the map has been extended through the end of the document.
@@ -233,6 +303,7 @@ impl DisplayMap {
             self.wrap_width,
             self.tab_width,
             is_tail,
+            &self.eol_rows,
             &mut self.rows,
             &mut self.line_first_visual,
         );
@@ -282,7 +353,16 @@ impl DisplayMap {
 
     /// Patch the map against post-edit `buf` (`del` chars removed at `pos`,
     /// `ins` inserted), rewrapping only the affected lines; false means rebuild.
-    pub fn apply_edit(&mut self, buf: &TextBuffer, pos: usize, del: usize, ins: usize) -> bool {
+    /// `eol_rows` is the post-edit EOL-row line set; it must agree with the
+    /// old one outside the rewrapped region.
+    pub fn apply_edit(
+        &mut self,
+        buf: &TextBuffer,
+        pos: usize,
+        del: usize,
+        ins: usize,
+        eol_rows: Vec<usize>,
+    ) -> bool {
         let old_lines = self.line_first_visual.len();
         let old_len = self.rows.last().map_or(0, |r| r.char_end);
         let new_len = buf.len();
@@ -302,6 +382,26 @@ impl DisplayMap {
             return false;
         }
         let old_last = old_last as usize;
+
+        // Outside the region every old EOL-row line must survive (shifted);
+        // a changed set there means rows we would keep were built wrong.
+        let shifted_old = self.eol_rows.iter().filter_map(|&l| {
+            if l < first_line {
+                Some(l)
+            } else if l > old_last {
+                Some((l as isize + lines_delta) as usize)
+            } else {
+                None
+            }
+        });
+        let outside_new = eol_rows
+            .iter()
+            .copied()
+            .filter(|&l| l < first_line || l > new_last);
+        if !shifted_old.eq(outside_new) {
+            return false;
+        }
+        self.eol_rows = eol_rows;
 
         let row_start = self.line_first_visual[first_line];
         let row_end = if old_last + 1 < old_lines {
@@ -341,6 +441,7 @@ impl DisplayMap {
             self.wrap_width,
             self.tab_width,
             region_is_tail,
+            &self.eol_rows,
             &mut new_rows,
             &mut new_line_rows,
         );
@@ -417,14 +518,37 @@ impl DisplayMap {
         col
     }
 
+    /// A row holding only a line end (exactly-full line's continuation). Vertical
+    /// motion steps over it so `j`/`k` never stall on a blank row.
+    fn is_eol_only(&self, row: usize) -> bool {
+        self.rows
+            .get(row)
+            .is_some_and(|r| r.char_start == r.char_end && !r.is_first)
+    }
+
+    fn row_below(&self, cur_row: usize) -> Option<usize> {
+        let mut next = cur_row + 1;
+        if self.is_eol_only(next) && next + 1 < self.rows.len() {
+            next += 1;
+        }
+        (next < self.rows.len()).then_some(next)
+    }
+
+    fn row_above(&self, cur_row: usize) -> Option<usize> {
+        let mut prev = cur_row.checked_sub(1)?;
+        if self.is_eol_only(prev) && prev > 0 {
+            prev -= 1;
+        }
+        Some(prev)
+    }
+
     pub fn visual_down(&self, char_offset: usize, buf: &TextBuffer) -> usize {
         let cur_row = self.char_to_visual_row(char_offset);
         let cur_col = self.char_to_visual_col(char_offset, buf);
-        let next_row = cur_row + 1;
-        if next_row >= self.rows.len() {
-            return char_offset;
+        match self.row_below(cur_row) {
+            Some(row) => self.find_char_at_col(row, cur_col, buf),
+            None => char_offset,
         }
-        self.find_char_at_col(next_row, cur_col, buf)
     }
 
     /// Like `visual_down` but uses `target_col` instead of the cursor's current column.
@@ -436,20 +560,19 @@ impl DisplayMap {
         buf: &TextBuffer,
     ) -> usize {
         let cur_row = self.char_to_visual_row(char_offset);
-        let next_row = cur_row + 1;
-        if next_row >= self.rows.len() {
-            return char_offset;
+        match self.row_below(cur_row) {
+            Some(row) => self.find_char_at_col(row, target_col, buf),
+            None => char_offset,
         }
-        self.find_char_at_col(next_row, target_col, buf)
     }
 
     pub fn visual_up(&self, char_offset: usize, buf: &TextBuffer) -> usize {
         let cur_row = self.char_to_visual_row(char_offset);
-        if cur_row == 0 {
-            return char_offset;
-        }
         let cur_col = self.char_to_visual_col(char_offset, buf);
-        self.find_char_at_col(cur_row - 1, cur_col, buf)
+        match self.row_above(cur_row) {
+            Some(row) => self.find_char_at_col(row, cur_col, buf),
+            None => char_offset,
+        }
     }
 
     /// Like `visual_up` but uses `target_col` instead of the cursor's current column.
@@ -461,10 +584,10 @@ impl DisplayMap {
         buf: &TextBuffer,
     ) -> usize {
         let cur_row = self.char_to_visual_row(char_offset);
-        if cur_row == 0 {
-            return char_offset;
+        match self.row_above(cur_row) {
+            Some(row) => self.find_char_at_col(row, target_col, buf),
+            None => char_offset,
         }
-        self.find_char_at_col(cur_row - 1, target_col, buf)
     }
 
     fn find_char_at_col(&self, visual_row: usize, target_col: usize, buf: &TextBuffer) -> usize {
@@ -513,7 +636,7 @@ impl DisplayMap {
     pub fn visual_down_ext(&mut self, char_offset: usize, buf: &TextBuffer) -> usize {
         self.extend_to_char(buf, char_offset);
         let cur_row = self.char_to_visual_row(char_offset);
-        self.extend_to_row(buf, cur_row + 2);
+        self.extend_to_row(buf, cur_row + 3);
         self.visual_down(char_offset, buf)
     }
 
@@ -526,7 +649,7 @@ impl DisplayMap {
     ) -> usize {
         self.extend_to_char(buf, char_offset);
         let cur_row = self.char_to_visual_row(char_offset);
-        self.extend_to_row(buf, cur_row + 2);
+        self.extend_to_row(buf, cur_row + 3);
         self.visual_down_to_col(char_offset, target_col, buf)
     }
 
@@ -641,7 +764,10 @@ mod tests {
         let mut buf = buf_from(text);
         let mut map = DisplayMap::build(&buf, wrap_width, 4);
         let (pos, del, ins) = edit(&mut buf);
-        assert!(map.apply_edit(&buf, pos, del, ins), "apply_edit refused");
+        assert!(
+            map.apply_edit(&buf, pos, del, ins, Vec::new()),
+            "apply_edit refused"
+        );
         let full = DisplayMap::build(&buf, wrap_width, 4);
         assert_eq!(map, full, "incremental map diverged from full rebuild");
     }
@@ -672,6 +798,48 @@ mod tests {
     fn apply_edit_delete_newline_joins_lines() {
         let nl = SAMPLE.find('\n').unwrap();
         check_edit(SAMPLE, 8, |b| delete_at(b, nl, 1));
+    }
+
+    #[test]
+    fn exactly_full_line_gets_an_eol_row_only_when_asked() {
+        // "abcdefgh" is exactly 8 wide; "ab" is not.
+        let buf = buf_from("abcdefgh\nab\nabcdefgh");
+        let plain = DisplayMap::build(&buf, 8, 4);
+        assert_eq!(plain.total_visual_rows(), 3, "no extra row by default");
+
+        let with = DisplayMap::build_with(&buf, 8, 4, vec![0, 1]);
+        assert_eq!(with.total_visual_rows(), 4);
+        let eol = with.get_visual_row(1).unwrap();
+        assert_eq!((eol.char_start, eol.char_end, eol.is_first), (8, 8, false));
+        assert_eq!(with.char_to_visual_row(7), 0);
+        assert_eq!(
+            with.char_to_visual_row(8),
+            1,
+            "the EOL position lives on its own row"
+        );
+        // Line 1 is short: asking for an EOL row changes nothing there.
+        assert_eq!(with.logical_to_first_visual(1), 2);
+        assert_eq!(with.logical_to_first_visual(2), 3);
+
+        // Vertical motion steps over the EOL-only row in both directions.
+        assert_eq!(with.visual_down(3, &buf), 9 + 2);
+        assert_eq!(with.visual_up(9, &buf), 0);
+    }
+
+    #[test]
+    fn apply_edit_keeps_eol_rows_in_step_with_a_full_rebuild() {
+        let text = "abcdefgh\nsecond line here\nabcdefgh\n";
+        let mut buf = buf_from(text);
+        let mut map = DisplayMap::build_with(&buf, 8, 4, vec![0, 2]);
+
+        // Splitting line 1 shifts the second adorned line to 3.
+        let (pos, del, ins) = insert_at(&mut buf, 12, "\n");
+        assert!(map.apply_edit(&buf, pos, del, ins, vec![0, 3]));
+        assert_eq!(map, DisplayMap::build_with(&buf, 8, 4, vec![0, 3]));
+
+        // A set that disagrees outside the edited region forces a rebuild.
+        let (pos, del, ins) = insert_at(&mut buf, 12, "x");
+        assert!(!map.apply_edit(&buf, pos, del, ins, vec![3]));
     }
 
     #[test]
@@ -737,7 +905,7 @@ mod tests {
         let buf = buf_from(SAMPLE);
         let mut map = DisplayMap::build(&buf, 8, 4);
         let other = buf_from("completely different text of another length");
-        assert!(!map.apply_edit(&other, 0, 0, 1));
+        assert!(!map.apply_edit(&other, 0, 0, 1, Vec::new()));
     }
 
     #[test]
@@ -765,7 +933,7 @@ mod tests {
                 delete_at(&mut buf, pos, n)
             };
             assert!(
-                map.apply_edit(&buf, pos, del, ins),
+                map.apply_edit(&buf, pos, del, ins, Vec::new()),
                 "apply_edit refused at step {i}"
             );
             let full = DisplayMap::build(&buf, 10, 4);
@@ -780,13 +948,13 @@ mod tests {
         let mut buf = buf_from(SAMPLE);
         let mut map = DisplayMap::build(&buf, 8, 4);
         let (pos, del, ins) = insert_at(&mut buf, 6, "ABCDE");
-        assert!(map.apply_edit(&buf, pos, del, ins));
+        assert!(map.apply_edit(&buf, pos, del, ins, Vec::new()));
 
         for p in (6..11).rev() {
             assert!(buf.delete_range(p, 1));
         }
         assert!(
-            map.apply_edit(&buf, 6, 5, 0),
+            map.apply_edit(&buf, 6, 5, 0, Vec::new()),
             "combined delete apply_edit refused"
         );
         let full = DisplayMap::build(&buf, 8, 4);
@@ -800,13 +968,13 @@ mod tests {
         let mut buf = buf_from(SAMPLE);
         let mut map = DisplayMap::build(&buf, 8, 4);
         let (pos, del, ins) = insert_at(&mut buf, 6, "ABCDE");
-        assert!(map.apply_edit(&buf, pos, del, ins));
+        assert!(map.apply_edit(&buf, pos, del, ins, Vec::new()));
 
         for _ in 0..5 {
             assert!(buf.delete_range(6, 1));
         }
         assert!(
-            map.apply_edit(&buf, 6, 5, 0),
+            map.apply_edit(&buf, 6, 5, 0, Vec::new()),
             "combined fixed-position delete apply_edit refused"
         );
         let full = DisplayMap::build(&buf, 8, 4);
@@ -825,7 +993,7 @@ mod tests {
             insert_at(&mut buf, start + i, &ch.to_string());
         }
         assert!(
-            map.apply_edit(&buf, start, 0, 5),
+            map.apply_edit(&buf, start, 0, 5, Vec::new()),
             "combined insert apply_edit refused"
         );
         let full = DisplayMap::build(&buf, 8, 4);
@@ -840,10 +1008,10 @@ mod tests {
         let mut map = DisplayMap::build(&buf, 8, 4);
 
         let (pos, del, ins) = insert_at(&mut buf, 6, "\n");
-        assert!(map.apply_edit(&buf, pos, del, ins));
+        assert!(map.apply_edit(&buf, pos, del, ins, Vec::new()));
         for (i, ch) in "ABCDE".chars().enumerate() {
             let (pos, del, ins) = insert_at(&mut buf, 7 + i, &ch.to_string());
-            assert!(map.apply_edit(&buf, pos, del, ins));
+            assert!(map.apply_edit(&buf, pos, del, ins, Vec::new()));
         }
 
         for p in (7..12).rev() {
@@ -851,7 +1019,7 @@ mod tests {
         }
         assert!(buf.delete_range(6, 1));
         assert!(
-            map.apply_edit(&buf, 6, 6, 0),
+            map.apply_edit(&buf, 6, 6, 0, Vec::new()),
             "combined descending-then-repeat apply_edit refused"
         );
         let full = DisplayMap::build(&buf, 8, 4);
@@ -890,7 +1058,7 @@ mod tests {
         ];
 
         let combined = combine_char_edits(&edits).expect("dd shape should combine");
-        assert!(map.apply_edit(&buf, combined.pos, combined.del, combined.ins));
+        assert!(map.apply_edit(&buf, combined.pos, combined.del, combined.ins, Vec::new()));
         let full = DisplayMap::build(&buf, 12, 4);
         assert_eq!(
             map, full,
@@ -957,7 +1125,7 @@ mod tests {
 
             if let Some(combined) = combine_char_edits(&edits) {
                 assert!(
-                    map.apply_edit(&buf, combined.pos, combined.del, combined.ins),
+                    map.apply_edit(&buf, combined.pos, combined.del, combined.ins, Vec::new()),
                     "trial {trial}: apply_edit refused a combined edit"
                 );
                 let full = DisplayMap::build(&buf, 10, 4);
