@@ -27,6 +27,14 @@ pub enum RawLspMessage {
     ParseError { message: String },
 }
 
+/// Metadata for an in-flight request, keyed by this client's request id.
+#[derive(Debug)]
+pub struct PendingRequest {
+    pub method: String,
+    /// Normalized URI of the document the request was issued for, if any.
+    pub uri: Option<String>,
+}
+
 /// One live connection to a language server, either a spawned child process
 /// (stdio) or a keepalive broker socket that outlives this editor session.
 pub struct LspClient {
@@ -37,8 +45,9 @@ pub struct LspClient {
     writer_tx: Sender<Vec<u8>>,
     _writer_thread: thread::JoinHandle<()>,
     next_id: u64,
-    /// Maps request id -> method name so responses can be routed.
-    pub pending: HashMap<u64, String>,
+    /// Request ids are per client, so routing must consult this map rather
+    /// than a shared one (two servers both start numbering at 1).
+    pub pending: HashMap<u64, PendingRequest>,
     receiver: Receiver<RawLspMessage>,
     _reader_thread: thread::JoinHandle<()>,
     pub initialized: bool,
@@ -145,12 +154,24 @@ impl LspClient {
         }
     }
 
-    /// Send a JSON-RPC request and return its id.
-    pub fn send_request(&mut self, method: impl Into<String>, params: Value) -> u64 {
+    /// Send a JSON-RPC request and return its id. `uri` is remembered so the
+    /// response can be attributed to the document it was issued for.
+    pub fn send_request(
+        &mut self,
+        method: impl Into<String>,
+        params: Value,
+        uri: Option<String>,
+    ) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         let method = method.into();
-        self.pending.insert(id, method.clone());
+        self.pending.insert(
+            id,
+            PendingRequest {
+                method: method.clone(),
+                uri,
+            },
+        );
         let req = protocol::JsonRpcRequest {
             jsonrpc: "2.0",
             id,
@@ -218,13 +239,17 @@ impl LspClient {
         self._process.as_ref().expect("stdio client").id()
     }
 
-    /// Drain all pending raw messages from the reader thread.
-    pub fn poll_raw(&mut self) -> Vec<RawLspMessage> {
+    /// Drain all pending raw messages from the reader thread. The flag is
+    /// true once the reader has hung up (server exited or pipe closed).
+    pub fn poll_raw(&mut self) -> (Vec<RawLspMessage>, bool) {
         let mut msgs = Vec::new();
-        while let Ok(m) = self.receiver.try_recv() {
-            msgs.push(m);
+        loop {
+            match self.receiver.try_recv() {
+                Ok(m) => msgs.push(m),
+                Err(mpsc::TryRecvError::Empty) => return (msgs, false),
+                Err(mpsc::TryRecvError::Disconnected) => return (msgs, true),
+            }
         }
-        msgs
     }
 }
 
@@ -306,11 +331,12 @@ fn parse_rpc_message(msg: JsonRpcMessage) -> Option<RawLspMessage> {
         });
     }
 
-    if let Some(result) = msg.result {
-        return Some(RawLspMessage::Response { id, result });
-    }
-
-    None
+    // `"result": null` deserializes to None; it is still a valid response
+    // (e.g. definition/hover with nothing found) and must be routed.
+    Some(RawLspMessage::Response {
+        id,
+        result: msg.result.unwrap_or(Value::Null),
+    })
 }
 
 #[cfg(test)]
@@ -359,6 +385,21 @@ mod tests {
     fn method_with_no_id_is_a_notification() {
         let parsed = parse_rpc_message(msg(None, Some("textDocument/publishDiagnostics")));
         assert!(matches!(parsed, Some(RawLspMessage::Notification { .. })));
+    }
+
+    #[test]
+    fn response_with_null_result_is_still_a_response() {
+        // `{"id":3,"result":null}` is how servers say "nothing found"; it
+        // used to be dropped on the floor, leaking the pending request.
+        let parsed: JsonRpcMessage =
+            serde_json::from_str(r#"{"jsonrpc":"2.0","id":3,"result":null}"#).unwrap();
+        match parse_rpc_message(parsed) {
+            Some(RawLspMessage::Response { id, result }) => {
+                assert_eq!(id, 3);
+                assert!(result.is_null());
+            }
+            other => panic!("expected Response, got {other:?}"),
+        }
     }
 
     #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
@@ -478,7 +519,7 @@ mod tests {
         let (mut client, _sink) = client_with_slow_writer(std::time::Duration::from_millis(300));
 
         let start = std::time::Instant::now();
-        let id = client.send_request("test/request", serde_json::json!({}));
+        let id = client.send_request("test/request", serde_json::json!({}), None);
         let elapsed = start.elapsed();
 
         assert_eq!(id, 1);

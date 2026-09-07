@@ -281,6 +281,118 @@ fn manager_has_client_for_path_false_when_not_opened() {
 }
 
 #[test]
+fn flycheck_progress_never_gates_requests_and_readiness_is_permanent() {
+    let mut mgr = LspManager::new(None);
+    let mut out = Vec::new();
+    let progress = |token: &str, kind: &str, title: &str| serde_json::json!({ "token": token, "value": { "kind": kind, "title": title } });
+
+    // Real indexing gates until it ends plus the grace period.
+    mgr.on_progress(
+        "rust",
+        &progress("rustAnalyzer/Indexing", "begin", "Indexing"),
+        &mut out,
+    );
+    assert!(mgr.is_indexing("rust"));
+    mgr.on_progress(
+        "rust",
+        &progress("rustAnalyzer/Indexing", "end", ""),
+        &mut out,
+    );
+    assert!(
+        mgr.is_indexing("rust"),
+        "grace period still counts as indexing"
+    );
+
+    // A flycheck token starting inside the grace period must not cancel it.
+    mgr.on_progress(
+        "rust",
+        &progress("rustAnalyzer/Flycheck/0", "begin", "cargo check"),
+        &mut out,
+    );
+    std::thread::sleep(std::time::Duration::from_millis(650));
+    let ready = mgr
+        .poll()
+        .iter()
+        .any(|m| matches!(m, LspMessage::ServerReady { language } if language == "rust"));
+    assert!(
+        ready,
+        "ServerReady must fire while only a flycheck token is active"
+    );
+    assert!(!mgr.is_indexing("rust"));
+
+    // After readiness, a later re-index only affects status, never gating.
+    mgr.on_progress(
+        "rust",
+        &progress("rustAnalyzer/Indexing", "begin", "Indexing"),
+        &mut out,
+    );
+    assert!(!mgr.is_indexing("rust"));
+    assert_eq!(mgr.indexing_progress("rust"), Some((1, 3)));
+}
+
+#[test]
+fn did_open_without_registered_server_does_not_track_the_document() {
+    // A doc opened before its server is registered must not be poisoned:
+    // a later did_open (after registration) has to be able to attach it.
+    let mut mgr = LspManager::new(None);
+    let p = Path::new("/tmp/late.cobol");
+    mgr.did_open(p, "cobol", "x");
+    assert!(!mgr.has_client_for_path(p));
+    assert!(mgr.language_for_uri(&path_to_uri(p)).is_none());
+}
+
+#[test]
+fn path_to_uri_percent_encodes_reserved_characters() {
+    #[cfg(not(windows))]
+    {
+        let p = Path::new("/home/u/my project/a#b?.rs");
+        assert_eq!(path_to_uri(p), "file:///home/u/my%20project/a%23b%3F.rs");
+        assert_eq!(uri_to_path(&path_to_uri(p)).unwrap(), p);
+    }
+    #[cfg(windows)]
+    {
+        let p = Path::new(r"C:\Users\Me\my project\a#b.rs");
+        assert_eq!(path_to_uri(p), "file:///c:/Users/Me/my%20project/a%23b.rs");
+        assert_eq!(
+            uri_to_path(&path_to_uri(p)).unwrap(),
+            Path::new(r"c:\Users\Me\my project\a#b.rs")
+        );
+    }
+}
+
+#[test]
+fn path_to_uri_keeps_path_case_and_only_folds_the_drive_letter() {
+    #[cfg(windows)]
+    {
+        let uri = path_to_uri(Path::new(r"\\?\C:\Users\Me\Src\Main.rs"));
+        assert_eq!(uri, "file:///c:/Users/Me/Src/Main.rs");
+    }
+}
+
+#[test]
+fn normalize_uri_equates_server_and_client_spellings() {
+    // rust-analyzer/VS Code style `c%3A` vs our `c:`; Windows folds case too.
+    let a = normalize_uri("file:///c%3A/Users/Me/main.rs");
+    let b = normalize_uri("file:///c:/Users/Me/main.rs");
+    assert_eq!(a, b);
+    assert_eq!(normalize_uri("file:///a/b%20c.rs"), "file:///a/b c.rs");
+    #[cfg(windows)]
+    assert_eq!(
+        normalize_uri("file:///C:/X.rs"),
+        normalize_uri("file:///c:/x.rs")
+    );
+}
+
+#[test]
+fn uri_to_path_unc_keeps_both_leading_slashes_on_windows() {
+    #[cfg(windows)]
+    {
+        let p = uri_to_path("file:////server/share/x.rs").unwrap();
+        assert_eq!(p, Path::new(r"\\server\share\x.rs"));
+    }
+}
+
+#[test]
 fn shutdown_all_clears_clients_and_kills_the_process() {
     use config::LspServerConfig;
 
@@ -315,6 +427,80 @@ fn shutdown_all_clears_clients_and_kills_the_process() {
         !process_is_running(pid),
         "shutdown_all must not leave the process running"
     );
+}
+
+#[test]
+fn a_server_that_exits_is_forgotten_and_respawn_stops_after_the_budget() {
+    use config::LspServerConfig;
+
+    let mut mgr = LspManager::new(None);
+    // A "server" that exits immediately without ever answering initialize.
+    let (command, args) = if cfg!(windows) {
+        (
+            "cmd".to_string(),
+            vec!["/c".to_string(), "exit".to_string()],
+        )
+    } else {
+        ("true".to_string(), vec![])
+    };
+    mgr.register_server(
+        "dead".to_string(),
+        LspServerConfig {
+            command,
+            args,
+            extensions: vec![],
+            root_markers: vec![],
+            capabilities: vec![],
+            initialization_options: None,
+            keep_alive: false,
+        },
+    );
+    let p = Path::new("/tmp/dead.rs");
+
+    for round in 0..MAX_RESTARTS {
+        mgr.did_open(p, "dead", "x");
+        assert!(
+            mgr.has_client_for_path(p),
+            "round {round}: doc should be tracked"
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut exited = false;
+        while std::time::Instant::now() < deadline && !exited {
+            exited = mgr
+                .poll()
+                .iter()
+                .any(|m| matches!(m, LspMessage::ServerExited { language } if language == "dead"));
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(exited, "round {round}: expected ServerExited");
+        assert!(
+            !mgr.has_client_for_path(p),
+            "exited server must drop its docs"
+        );
+        assert!(!mgr.clients.contains_key("dead"));
+    }
+
+    // Budget exhausted: no respawn, and the doc stays untracked.
+    mgr.did_open(p, "dead", "x");
+    assert!(!mgr.clients.contains_key("dead"));
+    assert!(!mgr.has_client_for_path(p));
+
+    // Re-registering the server resets the budget.
+    mgr.register_server(
+        "dead".to_string(),
+        LspServerConfig {
+            command: "ping".to_string(),
+            args: vec!["-n".to_string(), "30".to_string(), "127.0.0.1".to_string()],
+            extensions: vec![],
+            root_markers: vec![],
+            capabilities: vec![],
+            initialization_options: None,
+            keep_alive: false,
+        },
+    );
+    mgr.did_open(p, "dead", "x");
+    assert!(mgr.clients.contains_key("dead"));
+    mgr.shutdown_all();
 }
 
 #[test]
@@ -455,7 +641,7 @@ fn route_definition_response_with_locations() {
     ]);
     let msg = super::mod_fns::route_response_pub("textDocument/definition", None, locations_json);
     match msg {
-        Some(LspMessage::GotoDefinitionResult { locations }) => {
+        Some(LspMessage::GotoDefinitionResult { locations, .. }) => {
             assert_eq!(locations.len(), 1);
             assert_eq!(locations[0].range.start.line, 5);
         }
@@ -468,8 +654,61 @@ fn route_definition_response_empty_array() {
     let msg =
         super::mod_fns::route_response_pub("textDocument/definition", None, serde_json::json!([]));
     match msg {
-        Some(LspMessage::GotoDefinitionResult { locations }) => {
+        Some(LspMessage::GotoDefinitionResult { locations, .. }) => {
             assert!(locations.is_empty());
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn route_definition_response_accepts_location_links() {
+    let links = serde_json::json!([{
+        "originSelectionRange": { "start": { "line": 1, "character": 0 }, "end": { "line": 1, "character": 3 } },
+        "targetUri": "file:///foo/def.rs",
+        "targetRange": { "start": { "line": 10, "character": 0 }, "end": { "line": 20, "character": 1 } },
+        "targetSelectionRange": { "start": { "line": 10, "character": 7 }, "end": { "line": 10, "character": 12 } }
+    }]);
+    let msg =
+        super::mod_fns::route_response_pub("textDocument/definition", Some("file:///x.rs"), links);
+    match msg {
+        Some(LspMessage::GotoDefinitionResult { locations, uri }) => {
+            assert_eq!(uri, "file:///x.rs");
+            assert_eq!(locations.len(), 1);
+            assert_eq!(locations[0].uri, "file:///foo/def.rs");
+            assert_eq!(locations[0].range.start.line, 10);
+            assert_eq!(locations[0].range.start.character, 7);
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[test]
+fn route_definition_response_null_is_an_empty_result() {
+    let msg = super::mod_fns::route_response_pub(
+        "textDocument/definition",
+        None,
+        serde_json::Value::Null,
+    );
+    assert!(
+        matches!(msg, Some(LspMessage::GotoDefinitionResult { locations, .. }) if locations.is_empty())
+    );
+}
+
+#[test]
+fn route_notification_carries_diagnostics_version_and_show_message() {
+    let params = serde_json::json!({
+        "uri": "file:///main.rs", "version": 7, "diagnostics": []
+    });
+    match mod_fns::route_notification_pub("textDocument/publishDiagnostics", params) {
+        Some(LspMessage::Diagnostics { version, .. }) => assert_eq!(version, Some(7)),
+        other => panic!("unexpected: {:?}", other),
+    }
+    let params = serde_json::json!({ "type": 2, "message": "careful" });
+    match mod_fns::route_notification_pub("window/showMessage", params) {
+        Some(LspMessage::ShowMessage { kind, message }) => {
+            assert_eq!(kind, 2);
+            assert_eq!(message, "careful");
         }
         other => panic!("unexpected: {:?}", other),
     }
@@ -489,7 +728,7 @@ fn route_references_response() {
     ]);
     let msg = super::mod_fns::route_response_pub("textDocument/references", None, json);
     match msg {
-        Some(LspMessage::ReferencesResult { locations }) => {
+        Some(LspMessage::ReferencesResult { locations, .. }) => {
             assert_eq!(locations.len(), 2);
         }
         other => panic!("unexpected: {:?}", other),
@@ -501,7 +740,7 @@ fn route_hover_response_plain_string() {
     let json = serde_json::json!({ "contents": "i32" });
     let msg = super::mod_fns::route_response_pub("textDocument/hover", None, json);
     match msg {
-        Some(LspMessage::HoverResult { contents }) => {
+        Some(LspMessage::HoverResult { contents, .. }) => {
             assert_eq!(contents, "i32");
         }
         other => panic!("unexpected: {:?}", other),
@@ -513,7 +752,7 @@ fn route_hover_response_null() {
     let msg =
         super::mod_fns::route_response_pub("textDocument/hover", None, serde_json::json!(null));
     match msg {
-        Some(LspMessage::HoverResult { contents }) => {
+        Some(LspMessage::HoverResult { contents, .. }) => {
             assert!(
                 contents.is_empty(),
                 "expected empty hover, got: {}",
@@ -569,7 +808,7 @@ fn route_code_action_response() {
     ]);
     let msg = super::mod_fns::route_response_pub("textDocument/codeAction", None, json);
     match msg {
-        Some(LspMessage::CodeActionResult { actions }) => {
+        Some(LspMessage::CodeActionResult { actions, .. }) => {
             assert_eq!(actions.len(), 2);
             assert_eq!(actions[0]["title"], "Add missing import");
             assert_eq!(actions[1]["title"], "Fix all errors");
@@ -595,7 +834,9 @@ fn route_notification_diagnostics() {
     });
     let msg = super::mod_fns::route_notification_pub("textDocument/publishDiagnostics", json);
     match msg {
-        Some(LspMessage::Diagnostics { uri, diagnostics }) => {
+        Some(LspMessage::Diagnostics {
+            uri, diagnostics, ..
+        }) => {
             assert_eq!(uri, "file:///main.rs");
             assert_eq!(diagnostics.len(), 1);
             assert_eq!(diagnostics[0].message, "type mismatch");
