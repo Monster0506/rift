@@ -194,6 +194,9 @@ pub struct Editor<T: TerminalBackend> {
     /// After navigating to a parent directory, the name of the child entry to
     /// restore the cursor to once the listing arrives.
     pending_cursor_entry: Option<String>,
+    /// In-flight file-load job id -> document it will populate, so a failed
+    /// load can be attributed to its placeholder.
+    file_load_jobs: std::collections::HashMap<usize, crate::document::DocumentId>,
     /// LSP integration layer.
     #[cfg(feature = "lsp")]
     pub lsp_manager: crate::lsp::LspManager,
@@ -252,6 +255,10 @@ struct DisplayMapCacheEntry {
     /// a placeholder-to-loaded swap needs this too (see `ContentBlitKey`).
     buf_len: usize,
     content_width: usize,
+    /// Annotation revision (and LSP virtual-text setting) the map's EOL-row
+    /// set was derived from.
+    annotations_revision: u64,
+    lsp_virtual_text: bool,
     map: Option<std::sync::Arc<crate::wrap::DisplayMap>>,
 }
 

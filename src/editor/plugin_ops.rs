@@ -155,15 +155,24 @@ impl<T: TerminalBackend> Editor<T> {
             .lsp_diagnostics
             .iter()
             .map(|(uri, diags)| {
+                // Wire columns are encoding units; give Lua code points when we can.
+                let doc = crate::lsp::protocol::uri_to_path(uri)
+                    .and_then(|p| self.document_manager.find_open_document_id(&p))
+                    .and_then(|id| self.document_manager.get_document(id));
+                let encoding = self.lsp_manager.position_encoding_for_uri(uri);
                 let entries = diags
                     .iter()
                     .map(|d| {
-                        (
-                            d.range.start.line,
-                            d.range.start.character,
-                            d.severity.unwrap_or(1),
-                            d.message.clone(),
-                        )
+                        let line = d.range.start.line;
+                        let col = match doc {
+                            Some(doc) => doc.lsp_char_offset_in_line(
+                                line as usize,
+                                d.range.start.character,
+                                encoding,
+                            ) as u32,
+                            None => d.range.start.character,
+                        };
+                        (line, col, d.severity.unwrap_or(1), d.message.clone())
                     })
                     .collect();
                 (uri.clone(), entries)
@@ -760,6 +769,8 @@ impl<T: TerminalBackend> Editor<T> {
                 #[cfg(feature = "lsp")]
                 PluginMutation::LspRegisterServer { language, config } => {
                     self.lsp_manager.register_server(language, config);
+                    // Attach already-open files; other languages no-op in did_open.
+                    self.lsp_notify_open_all();
                 }
                 PluginMutation::LspGotoDefinition => {
                     self.handle_action(&crate::action::Action::Editor(
@@ -777,23 +788,24 @@ impl<T: TerminalBackend> Editor<T> {
                     ));
                 }
                 PluginMutation::LspRename { new_name } => {
-                    let path = self
-                        .document_manager
-                        .active_document()
-                        .and_then(|d| d.path())
-                        .map(|p| p.to_path_buf());
-                    let pos = self.document_manager.active_document().map(|doc| {
-                        let cursor = doc.buffer.cursor();
-                        let line = doc.buffer.line_index.get_line_at(cursor);
-                        let col = cursor.saturating_sub(doc.buffer.line_index.get_line_start(line));
-                        (line as u32, col as u32)
-                    });
                     #[cfg(feature = "lsp")]
-                    if let (Some(path), Some((line, col))) = (path, pos) {
-                        self.lsp_manager.rename(&path, line, col, new_name);
+                    match self.cursor_lsp_position() {
+                        Some((path, line, col)) => {
+                            if self
+                                .lsp_manager
+                                .rename(&path, line, col, new_name)
+                                .is_none()
+                            {
+                                self.notify_no_lsp_server();
+                            }
+                        }
+                        None => self.state.notify(
+                            crate::notification::NotificationType::Warning,
+                            "LSP rename: no file open".to_string(),
+                        ),
                     }
                     #[cfg(not(feature = "lsp"))]
-                    let _ = (path, pos, new_name);
+                    let _ = new_name;
                 }
                 PluginMutation::LspRenameDialog => {
                     self.handle_action(&crate::action::Action::Editor(

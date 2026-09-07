@@ -125,6 +125,7 @@ impl<T: TerminalBackend> Editor<T> {
             system_clipboard_cache: crate::clipboard::SystemClipboardCache::new(),
             post_paste_state: None,
             pending_cursor_entry: None,
+            file_load_jobs: std::collections::HashMap::new(),
             #[cfg(feature = "lsp")]
             lsp_manager: crate::lsp::LspManager::new(std::env::current_dir().ok()),
             #[cfg(feature = "lsp")]
@@ -173,28 +174,14 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         // Trigger initial syntax parse
-        #[cfg(feature = "treesitter")]
-        if let Some(doc) = editor.document_manager.active_document_mut() {
-            if let Some(path) = doc.path() {
-                let path = path.to_path_buf();
-                if let Ok(loaded) = editor.language_loader.load_language_for_file(&path) {
-                    let highlights_query = editor
-                        .language_loader
-                        .load_query(&loaded.name, "highlights")
-                        .ok()
-                        .and_then(|source| tree_sitter::Query::new(&loaded.language, &source).ok())
-                        .map(Arc::new);
-
-                    if let Ok(syntax) = crate::syntax::build_syntax(
-                        loaded,
-                        highlights_query,
-                        editor.language_loader.clone(),
-                    ) {
-                        doc.set_syntax(syntax);
-                        let doc_id = doc.id;
-                        editor.spawn_syntax_parse_job(doc_id);
-                    }
-                }
+        if let Some(doc_id) = editor.document_manager.active_document_id() {
+            editor.attach_syntax_for_document(doc_id);
+            if editor
+                .document_manager
+                .get_document(doc_id)
+                .is_some_and(|d| d.syntax.is_some())
+            {
+                editor.spawn_syntax_parse_job(doc_id);
             }
         }
 
@@ -217,7 +204,7 @@ impl<T: TerminalBackend> Editor<T> {
                     });
                 editor.apply_plugin_mutations();
                 #[cfg(feature = "lsp")]
-                editor.lsp_notify_open();
+                editor.lsp_notify_open(buf);
             }
         }
 

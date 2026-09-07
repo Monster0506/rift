@@ -42,6 +42,11 @@ impl<T: TerminalBackend> Editor<T> {
             let expand_tabs = doc.options.expand_tabs;
             let tab_width = doc.options.tab_width;
             let is_mutating = command.is_mutating();
+            let rests_on_last_char = current_mode == Mode::Normal
+                && matches!(
+                    command,
+                    crate::command::Command::Move(crate::action::Motion::EndOfLine, _)
+                );
 
             let _ = execute_command(
                 command,
@@ -52,6 +57,18 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.last_search_query.as_deref(),
                 display_map.as_mut().map(std::sync::Arc::make_mut),
             );
+
+            // Normal-mode `$` rests on the last character, not on the line
+            // break (operators and `A` still use the line-break position).
+            if rests_on_last_char {
+                let cursor = doc.buffer.cursor();
+                let on_newline =
+                    doc.buffer.char_at(cursor) == Some(crate::character::Character::Newline);
+                let line_start = doc.buffer.line_index.get_line_start(doc.buffer.get_line());
+                if on_newline && cursor > line_start {
+                    let _ = doc.buffer.set_cursor(cursor - 1);
+                }
+            }
 
             // Record insert-mode mutations for dot-repeat
             if is_mutating && self.current_mode == Mode::Insert && !self.dot_repeat.is_replaying() {
@@ -102,7 +119,7 @@ impl<T: TerminalBackend> Editor<T> {
                     // mutations within a single frame produce only one event.
                     self.pending_text_changed = Some(buf);
                     #[cfg(feature = "lsp")]
-                    self.lsp_notify_change();
+                    self.lsp_notify_change(buf);
                 }
 
                 // Defer CursorMoved to the next render cycle, same as
