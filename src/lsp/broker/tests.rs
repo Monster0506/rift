@@ -298,3 +298,97 @@ fn serve_acks_the_right_token_and_rejects_the_rest() {
         "descriptor must be removed when the broker exits"
     );
 }
+
+#[test]
+fn handshake_clears_the_timeout_on_the_reader_handle_not_just_its_clone() {
+    // Regression: `handshake` cleared the handshake-only read timeout on
+    // `writer` (a clone), not `reader`'s own handle; Windows doesn't propagate that across clones, so the reader spuriously timed out on every idle gap.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let server = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let (_writer, mut reader) = handshake(stream, "tok").expect("handshake should succeed");
+        // A leaked handshake timeout would fail this read within ~2s, well
+        // before the client sends anything at the 2.5s mark below.
+        read_framed(&mut reader)
+    });
+
+    let client = TcpStream::connect(addr).unwrap();
+    let mut writer = client.try_clone().unwrap();
+    write_framed(
+        &mut writer,
+        &json!({"jsonrpc": "2.0", "method": "broker/hello", "params": {"token": "tok"}}),
+    )
+    .unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let ack = read_framed(&mut BufReader::new(client.try_clone().unwrap())).unwrap();
+    let ack: Value = serde_json::from_slice(&ack).unwrap();
+    assert_eq!(ack["method"], "broker/ok");
+
+    std::thread::sleep(Duration::from_millis(2500));
+    write_framed(
+        &mut writer,
+        &json!({"jsonrpc": "2.0", "method": "textDocument/didOpen"}),
+    )
+    .unwrap();
+
+    let result = server.join().unwrap();
+    assert!(
+        result.is_ok(),
+        "reader must survive an idle gap past the handshake-only timeout"
+    );
+}
+
+#[test]
+fn try_connect_clears_the_timeout_on_the_reader_handle_not_just_its_clone() {
+    // Same defect, editor side: `try_connect` cleared the timeout on
+    // `write_half` (a clone) instead of the `reader` it actually returns.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let token = "tok".to_string();
+
+    let desc = BrokerDescriptor {
+        pid: std::process::id(),
+        port: addr.port(),
+        token: token.clone(),
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let desc_path = dir.path().join("test.json");
+    std::fs::write(&desc_path, serde_json::to_string(&desc).unwrap()).unwrap();
+
+    let server = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut writer = stream;
+        let hello = read_framed(&mut reader).unwrap();
+        let hello: Value = serde_json::from_slice(&hello).unwrap();
+        assert_eq!(
+            hello.pointer("/params/token").and_then(|t| t.as_str()),
+            Some("tok")
+        );
+        write_framed(
+            &mut writer,
+            &json!({"jsonrpc": "2.0", "method": "broker/ok"}),
+        )
+        .unwrap();
+        // A leaked 2s handshake timeout on the client's reader would show up
+        // as `try_connect` returning an error before this ever gets sent.
+        std::thread::sleep(Duration::from_millis(2500));
+        write_framed(
+            &mut writer,
+            &json!({"jsonrpc": "2.0", "method": "$/progress", "params": {}}),
+        )
+        .unwrap();
+    });
+
+    let (mut reader, _writer) = try_connect(&desc_path).expect("handshake should succeed");
+    let msg = read_framed(&mut reader);
+    server.join().unwrap();
+    assert!(
+        msg.is_ok(),
+        "reader must survive an idle gap past the handshake-only timeout"
+    );
+}

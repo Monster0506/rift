@@ -125,6 +125,9 @@ fn try_connect(desc_path: &std::path::Path) -> anyhow::Result<(BufReader<TcpStre
     if ack.get("method").and_then(|m| m.as_str()) != Some("broker/ok") {
         anyhow::bail!("broker refused connection");
     }
+    // Clear on `reader`'s own handle, not just its clone: on Windows a
+    // clone doesn't reliably inherit a timeout cleared on the other handle.
+    reader.get_ref().set_read_timeout(None)?;
     write_half.set_read_timeout(None)?;
     Ok((reader, write_half))
 }
@@ -567,6 +570,9 @@ fn handshake(stream: TcpStream, token: &str) -> Option<(TcpStream, BufReader<Tcp
     if !ok {
         return None;
     }
+    // Clear on `reader`'s own handle, not just its clone (see `try_connect`):
+    // Windows doesn't reliably share a cleared timeout across clones.
+    let _ = reader.get_ref().set_read_timeout(None);
     let _ = writer.set_read_timeout(None);
     write_framed(
         &mut writer,
