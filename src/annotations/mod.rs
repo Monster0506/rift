@@ -474,19 +474,20 @@ impl AnnotationStore {
         self.index_query(start..end.max(start + 1)).into_iter()
     }
 
-    /// Trailing end-of-line adornments as (line, text, color); offset anchors map
-    /// to a line via `line_of`. Drives diagnostic/blame virtual text
+    /// Trailing adornments as (line, text, color), one per line: most severe wins
+    /// and ` (+N)` marks the rest. `include_lsp` false hides LSP-owned ones.
     pub fn line_adornments(
         &self,
         colors: Option<&crate::color::theme::SyntaxColors>,
         defaults: Option<&registry::KindRegistry>,
         byte_range: std::ops::Range<usize>,
         line_range: std::ops::Range<usize>,
+        include_lsp: bool,
         line_of: impl Fn(usize) -> usize,
     ) -> Vec<(usize, String, crate::color::Color)> {
-        let mut out = Vec::new();
+        let mut found: Vec<(usize, i64, &Adornment, &Annotation)> = Vec::new();
         for a in self.viewport_candidates(byte_range, line_range) {
-            if !a.visible {
+            if !a.visible || (!include_lsp && a.owner == AnnotationOwner::Lsp) {
                 continue;
             }
             let Some(adornment) = a.presentation.as_ref().and_then(|p| p.adornment.as_ref()) else {
@@ -500,8 +501,24 @@ impl AnnotationStore {
                 Anchor::Point(p) => line_of(p.offset),
                 Anchor::Range(s, _) => line_of(s.offset),
             };
-            let color = adornment_color(a, adornment, colors, defaults);
-            out.push((line, adornment.text.clone(), color));
+            let rank = payload::lsp::severity(&a.payload).unwrap_or(i64::MAX);
+            found.push((line, rank, adornment, a));
+        }
+        found.sort_by_key(|(line, rank, _, _)| (*line, *rank));
+        let mut out = Vec::with_capacity(found.len());
+        let mut i = 0;
+        while i < found.len() {
+            let (line, _, adornment, a) = found[i];
+            let mut j = i + 1;
+            while j < found.len() && found[j].0 == line {
+                j += 1;
+            }
+            let text = match j - i - 1 {
+                0 => adornment.text.clone(),
+                extra => format!("{} (+{})", adornment.text, extra),
+            };
+            out.push((line, text, adornment_color(a, adornment, colors, defaults)));
+            i = j;
         }
         out
     }
@@ -604,32 +621,43 @@ impl AnnotationStore {
     }
 
     /// First visible annotation tooltip covering a byte offset, falling back to
-    /// the kind's default description when the payload has none.
+    /// the kind's default description; `include_lsp` false skips LSP ones.
     pub fn tooltip_at<'a>(
         &'a self,
         offset: usize,
         defaults: Option<&'a registry::KindRegistry>,
+        include_lsp: bool,
     ) -> Option<&'a str> {
-        self.query_at(offset).filter(|a| a.visible).find_map(|a| {
-            payload::tooltip(&a.payload)
-                .or_else(|| defaults.and_then(|r| r.default_description(&a.kind)))
-        })
-    }
-
-    /// The first visible annotation tooltip on a line (line-anchored), with the
-    /// same kind-default-description fallback as `tooltip_at`.
-    pub fn tooltip_at_line<'a>(
-        &'a self,
-        line: usize,
-        defaults: Option<&'a registry::KindRegistry>,
-    ) -> Option<&'a str> {
-        self.annotations
-            .iter()
-            .filter(|a| a.visible && a.anchor == Anchor::Line(line))
+        self.query_at(offset)
+            .filter(|a| a.visible && (include_lsp || a.owner != AnnotationOwner::Lsp))
             .find_map(|a| {
                 payload::tooltip(&a.payload)
                     .or_else(|| defaults.and_then(|r| r.default_description(&a.kind)))
             })
+    }
+
+    /// The most severe (LSP severity, then store order) visible annotation
+    /// tooltip on `line`; range/point anchors map to a line via `line_of`.
+    pub fn tooltip_at_line<'a>(
+        &'a self,
+        line: usize,
+        defaults: Option<&'a registry::KindRegistry>,
+        include_lsp: bool,
+    ) -> Option<&'a str> {
+        self.annotations
+            .iter()
+            .filter(|a| {
+                a.visible
+                    && a.anchor == Anchor::Line(line)
+                    && (include_lsp || a.owner != AnnotationOwner::Lsp)
+            })
+            .filter_map(|a| {
+                let tip = payload::tooltip(&a.payload)
+                    .or_else(|| defaults.and_then(|r| r.default_description(&a.kind)))?;
+                Some((payload::lsp::severity(&a.payload).unwrap_or(i64::MAX), tip))
+            })
+            .min_by_key(|(rank, _)| *rank)
+            .map(|(_, tip)| tip)
     }
 
     /// The interactive annotation whose span covers `offset`, if any.
@@ -788,16 +816,37 @@ impl AnnotationStore {
         )
     }
 
+    /// First non-empty line of `message` with control chars/tabs turned into
+    /// spaces and whitespace runs collapsed, so it fits one trailing text row.
+    fn adornment_summary(message: &str) -> String {
+        let line = message.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+        let mut out = String::with_capacity(line.len());
+        let mut pending_space = false;
+        for ch in line.chars() {
+            if ch.is_whitespace() || ch.is_control() {
+                pending_space = !out.is_empty();
+            } else {
+                if pending_space {
+                    out.push(' ');
+                    pending_space = false;
+                }
+                out.push(ch);
+            }
+        }
+        out
+    }
+
     /// Build (but do not insert) a `diag.<sev>` diagnostic annotation; shared
     /// by the single-insert and bulk-replace paths so they cannot drift.
     fn build_diagnostic(line: usize, severity: i64, message: &str) -> Annotation {
-        let sev_str = match severity {
+let sev_str = match severity {
             1 => "error",
             2 => "warning",
             3 => "info",
             4 => "hint",
             _ => "error",
         };
+        let message = message.trim();
         let face = FaceRef::new(format!("diag.{}", sev_str));
         let mut payload = Value::map();
         payload.set("severity", Value::Int(severity));
@@ -937,20 +986,32 @@ impl AnnotationStore {
         self.annotations.is_empty()
     }
 
-    /// Clone the full annotation state for an undo/redo snapshot.
+    /// Clone the annotation state for an undo/redo snapshot. LSP-owned
+    /// annotations are excluded: the server, not history, owns their lifetime.
     pub fn snapshot(&self) -> Vec<Annotation> {
-        self.annotations.clone()
+        self.annotations
+            .iter()
+            .filter(|a| a.owner != AnnotationOwner::Lsp)
+            .cloned()
+            .collect()
     }
 
-    /// Replace all annotations with a previously captured snapshot. `next_id` is
-    /// left untouched (it only grows), so restored ids never collide with new ones.
-    pub fn restore(&mut self, snapshot: Vec<Annotation>) {
+    /// Replace all non-LSP annotations with a captured snapshot, carrying the
+    /// current LSP set over unchanged. `next_id` only grows, so ids never collide.
+    pub fn restore(&mut self, mut snapshot: Vec<Annotation>) {
+        snapshot.retain(|a| a.owner != AnnotationOwner::Lsp);
+        snapshot.extend(
+            self.annotations
+                .drain(..)
+                .filter(|a| a.owner == AnnotationOwner::Lsp),
+        );
         self.annotations = snapshot;
         self.invalidate_index();
     }
 
-    /// Update Line anchors after `count` lines are deleted from `first_line`.
-    pub fn on_lines_deleted(&mut self, first_line: usize, count: usize) {
+    /// Update Line anchors after lines `first_line..first_line+count` are deleted
+    /// and their content collapsed into `merge_line` (Persist anchors move there).
+    pub fn on_lines_deleted(&mut self, first_line: usize, count: usize, merge_line: usize) {
         if count == 0 {
             return;
         }
@@ -975,12 +1036,16 @@ impl AnnotationStore {
             let by_id = self.by_id.borrow();
             for (l, id) in &affected {
                 let Some(&idx) = by_id.get(id) else { continue };
-                if *l < last_exclusive {
+                let new_line = if *l < last_exclusive {
                     if self.annotations[idx].stickiness == Stickiness::Delete {
                         to_remove.insert(*id);
+                        continue;
                     }
+                    merge_line
                 } else {
-                    let new_line = l - count;
+                    l - count
+                };
+                if new_line != *l {
                     self.annotations[idx].anchor = Anchor::Line(new_line);
                     shifted.push((*l, new_line, *id));
                 }

@@ -204,8 +204,9 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let cursor = doc.buffer.cursor();
             let line = doc.buffer.line_index.get_line_at(cursor);
+            let cursor_byte = doc.buffer.char_to_byte(cursor);
             doc.annotations
-                .query_at(cursor)
+                .query_at(cursor_byte)
                 .next()
                 .or_else(|| {
                     doc.annotations

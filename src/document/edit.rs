@@ -333,7 +333,8 @@ impl Document {
                 .on_edit(start_byte, old_end_byte, start_byte);
             // Deleting a newline merges the next line up: renumber line anchors.
             if deleted_char == Character::Newline {
-                self.annotations.on_lines_deleted(start_position.0 + 1, 1);
+                self.annotations
+                    .on_lines_deleted(start_position.0 + 1, 1, start_position.0);
             }
             return true;
         }
@@ -391,7 +392,8 @@ impl Document {
                 .on_edit(start_byte, old_end_byte, start_byte);
             // Deleting a newline merges the next line up: renumber line anchors.
             if deleted_char == Character::Newline {
-                self.annotations.on_lines_deleted(start_position.0 + 1, 1);
+                self.annotations
+                    .on_lines_deleted(start_position.0 + 1, 1, start_position.0);
             }
             return true;
         }
@@ -487,15 +489,18 @@ impl Document {
         let cursor_before = self.buffer.cursor();
         let deleted_chars: Vec<Character> = self.buffer.chars(start..end).collect();
 
-        // Track deleted lines for line-anchored annotations in every buffer.
-        let deleted_line_info: Option<(usize, usize)> = {
+        // Track deleted lines for line-anchored annotations in every buffer. The
+        // start line survives unless the range begins at column 0; all merge into it.
+        let deleted_line_info: Option<(usize, usize, usize)> = {
             let newline_count = deleted_chars
                 .iter()
                 .filter(|&&c| c == Character::Newline)
                 .count();
             if newline_count > 0 {
-                let first_line = self.buffer.line_index.get_line_at(start);
-                Some((first_line, newline_count))
+                let start_line = self.buffer.line_index.get_line_at(start);
+                let at_col0 = self.buffer.line_index.get_start(start_line) == Some(start);
+                let first_line = if at_col0 { start_line } else { start_line + 1 };
+                Some((first_line, newline_count, start_line))
             } else {
                 None
             }
@@ -534,9 +539,10 @@ impl Document {
         self.annotations
             .on_edit(start_byte, old_end_byte, start_byte);
 
-        // Update directory annotation line numbers after the buffer mutation.
-        if let Some((first_line, newline_count)) = deleted_line_info {
-            self.annotations.on_lines_deleted(first_line, newline_count);
+        // Update line-anchored annotations after the buffer mutation.
+        if let Some((first_line, newline_count, merge_line)) = deleted_line_info {
+            self.annotations
+                .on_lines_deleted(first_line, newline_count, merge_line);
         }
 
         Ok(())

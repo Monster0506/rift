@@ -398,6 +398,36 @@ fn set_lsp_debug_log(settings: &mut UserSettings, value: SettingValue) -> Result
     }
 }
 
+fn set_lsp_virtual_text(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Bool(b) => {
+            settings.lsp_virtual_text = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
+    }
+}
+
+fn set_lsp_diagnostic_tooltip(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Bool(b) => {
+            settings.lsp_diagnostic_tooltip = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
+    }
+}
+
 fn set_ghost_cut(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
     match value {
         SettingValue::Bool(b) => {
@@ -617,6 +647,24 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         set: set_lsp_debug_log,
         get: None,
         needs_full_redraw: false,
+    },
+    SettingDescriptor {
+        name: "lsp.virtual_text",
+        aliases: &["lspvt"],
+        description: "Render LSP diagnostics as trailing end-of-line virtual text",
+        ty: SettingType::Boolean,
+        set: set_lsp_virtual_text,
+        get: None,
+        needs_full_redraw: true,
+    },
+    SettingDescriptor {
+        name: "lsp.diagnostic_tooltip",
+        aliases: &["lsptip"],
+        description: "Show the diagnostic tooltip for the cursor line",
+        ty: SettingType::Boolean,
+        set: set_lsp_diagnostic_tooltip,
+        get: None,
+        needs_full_redraw: true,
     },
     SettingDescriptor {
         name: "ghostcut",

@@ -1071,12 +1071,13 @@ fn render_line(
 
     let concealed = ctx.annotation_concealed.unwrap_or(&[]);
     for item in layout {
-        if rendered_col >= content_cols {
-            reached_line_end = false;
+        // Newline first: an exactly-full row still counts as reaching line end.
+        if item.char == Character::Newline {
             break;
         }
 
-        if item.char == Character::Newline {
+        if rendered_col >= content_cols {
+            reached_line_end = false;
             break;
         }
 
@@ -1169,30 +1170,13 @@ fn render_line(
         current_visual_col = next_visual_col;
     }
 
-    // Render a trailing adornment (display-only virtual text with its own color),
-    // then fill with background. Drawn only on the line's last visual segment.
+    // Render a trailing adornment (display-only virtual text with its own color)
+    // on the line's last visual segment, only when the line end is on screen.
     let mut tail_col = rendered_col + config.gutter_width;
-    if let Some(adornments) = ctx.annotation_adornments.filter(|_| reached_line_end) {
+    let line_end_visible = reached_line_end && current_visual_col >= left_col;
+    if let Some(adornments) = ctx.annotation_adornments.filter(|_| line_end_visible) {
         if let Some((_, text, color)) = adornments.iter().find(|(l, _, _)| *l == config.line_num) {
-            if tail_col < config.visible_cols {
-                frame.set_cell(
-                    config.row_idx,
-                    tail_col,
-                    Cell::from_char(' ').with_colors(config.default_fg, config.default_bg),
-                );
-                tail_col += 1;
-            }
-            for ch in text.chars() {
-                if tail_col >= config.visible_cols {
-                    break;
-                }
-                frame.set_cell(
-                    config.row_idx,
-                    tail_col,
-                    Cell::new(Character::from(ch)).with_colors(Some(*color), config.default_bg),
-                );
-                tail_col += 1;
-            }
+            tail_col = render_trailing_adornment(frame, &config, tail_col, text, *color);
         }
     }
 
@@ -1237,6 +1221,67 @@ fn render_line(
             Cell::from_char(' ').with_colors(config.default_fg, config.default_bg),
         );
     }
+}
+
+/// Draw ` <text>` from `col`, advancing by display width (wide chars get filler
+/// cells). Clips with `...` when short on room; returns the next free column.
+fn render_trailing_adornment(
+    frame: &mut crate::paint::PaintFrame,
+    config: &RenderLineConfig,
+    mut col: usize,
+    text: &str,
+    color: Color,
+) -> usize {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+    let limit = config.visible_cols;
+    if col >= limit {
+        return col;
+    }
+    frame.set_cell(
+        config.row_idx,
+        col,
+        Cell::from_char(' ').with_colors(config.default_fg, config.default_bg),
+    );
+    col += 1;
+
+    let room = limit - col;
+    let fits = UnicodeWidthStr::width(text) <= room;
+    if !fits && room < 4 {
+        return col;
+    }
+    // Reserve the ellipsis when clipping.
+    let text_limit = if fits { limit } else { limit - 3 };
+    for ch in text.chars() {
+        if ch.is_control() {
+            continue;
+        }
+        let width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width == 0 {
+            continue;
+        }
+        if col + width > text_limit {
+            break;
+        }
+        let cell = Cell::new(Character::from(ch)).with_colors(Some(color), config.default_bg);
+        frame.set_cell(config.row_idx, col, cell);
+        let filler = Cell::from_char(' ').with_colors(Some(color), config.default_bg);
+        for k in 1..width {
+            frame.set_cell(config.row_idx, col + k, filler);
+        }
+        col += width;
+    }
+    if !fits {
+        for _ in 0..3 {
+            frame.set_cell(
+                config.row_idx,
+                col,
+                Cell::from_char('.').with_colors(Some(color), config.default_bg),
+            );
+            col += 1;
+        }
+    }
+    col
 }
 
 /// Calculate the cursor column position accounting for tab width and wide characters

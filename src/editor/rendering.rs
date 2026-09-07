@@ -216,6 +216,11 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.update_selection_highlights();
 
+        let multi_window = self.split_tree.window_count() > 1;
+        if multi_window {
+            self.update_window_viewports();
+        }
+
         self.render_plugin_float();
 
         // Populate the TOOLTIP layer before the main render so it's included
@@ -223,17 +228,71 @@ impl<T: TerminalBackend> Editor<T> {
         if self.post_paste_state.is_some() {
             self.render_clipboard_tooltip();
         } else {
-            self.render_annotation_tooltip();
+            let cursor_row = self.cursor_screen_row();
+            self.render_annotation_tooltip(cursor_row);
         }
 
         self.render_explorer_diff_tooltip();
 
-        if self.split_tree.window_count() > 1 {
-            self.update_window_viewports();
+        if multi_window {
             self.render_multi_window(needs_clear)
         } else {
             self.render(needs_clear, display_map.as_deref(), scroll_hint)
         }
+    }
+
+    /// Screen row where the focused window's cursor will be drawn, from the
+    /// viewports as last synced by `update_state` / `update_window_viewports`.
+    pub(crate) fn cursor_screen_row(&mut self) -> usize {
+        let focused_id = self.split_tree.focused_window_id();
+        let doc_id = self.split_tree.focused_window().document_id;
+        let (row_off, top_line, top_visual, content_width, rows) =
+            if self.split_tree.window_count() > 1 {
+                let Ok(size) = self.term.get_size() else {
+                    return 0;
+                };
+                let layouts = self
+                    .split_tree
+                    .compute_layout((size.rows as usize).saturating_sub(1), size.cols as usize);
+                let Some(layout) = layouts.iter().find(|l| l.window_id == focused_id) else {
+                    return 0;
+                };
+                let Some((_, content_width)) = self.window_map_key(doc_id, layout.cols) else {
+                    return 0;
+                };
+                let vp = &self.split_tree.focused_window().viewport;
+                (
+                    layout.row,
+                    vp.top_line(),
+                    vp.top_visual_row(),
+                    content_width,
+                    layout.rows + 1,
+                )
+            } else {
+                let gutter_width = if self.state.settings.show_line_numbers {
+                    self.state.gutter_width
+                } else {
+                    0
+                };
+                let vp = &self.render_system.viewport;
+                (
+                    0,
+                    vp.top_line(),
+                    vp.top_visual_row(),
+                    vp.visible_cols().saturating_sub(gutter_width).max(1),
+                    vp.visible_rows(),
+                )
+            };
+        let Some(doc) = self.document_manager.get_document(doc_id) else {
+            return 0;
+        };
+        let cursor = doc.buffer.cursor();
+        let line = doc.buffer.line_index.get_line_at(cursor);
+        let row = match self.resolve_display_map_cached(doc_id, content_width, cursor, rows) {
+            Some(dm) => dm.char_to_visual_row(cursor).saturating_sub(top_visual),
+            None => line.saturating_sub(top_line),
+        };
+        row_off + row
     }
 
     /// Resolve the display map through the per-(doc, width) cache, grown in
@@ -475,6 +534,7 @@ impl<T: TerminalBackend> Editor<T> {
             Some(kind_registry),
             start_byte..end_byte,
             start_logical..end_logical,
+            state.settings.lsp_virtual_text,
             |b| {
                 doc.buffer
                     .line_index
@@ -888,6 +948,7 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(kind_registry),
                 start_byte..end_byte,
                 start_line..end_line,
+                state.settings.lsp_virtual_text,
                 |b| {
                     doc.buffer
                         .line_index
@@ -1121,7 +1182,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Render a hover tooltip for the annotation under the cursor (e.g. an LSP
     /// diagnostic message) into the TOOLTIP layer. Clears it when there is none.
-    pub(super) fn render_annotation_tooltip(&mut self) {
+    pub(super) fn render_annotation_tooltip(&mut self, cursor_row: usize) {
         crate::perf_span!(
             "render_annotation_tooltip",
             crate::perf::PerfFields::default()
@@ -1131,6 +1192,7 @@ impl<T: TerminalBackend> Editor<T> {
         use crate::layer::{Cell, LayerPriority};
 
         let kind_registry = &self.kind_registry;
+        let include_lsp = self.state.settings.lsp_diagnostic_tooltip;
         let (tip, affordance) =
             self.document_manager
                 .active_document_mut()
@@ -1140,8 +1202,11 @@ impl<T: TerminalBackend> Editor<T> {
                     let cursor_byte = doc.buffer.char_to_byte(cursor);
                     let tip = doc
                         .annotations
-                        .tooltip_at(cursor_byte, Some(kind_registry))
-                        .or_else(|| doc.annotations.tooltip_at_line(line, Some(kind_registry)))
+                        .tooltip_at(cursor_byte, Some(kind_registry), include_lsp)
+                        .or_else(|| {
+                            doc.annotations
+                                .tooltip_at_line(line, Some(kind_registry), include_lsp)
+                        })
                         .map(|s| s.to_string());
                     // Affordance hint for the interactive annotation under the
                     // cursor, so its actions + key bindings are discoverable.
@@ -1161,30 +1226,47 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         const MAX_WIDTH: usize = 80;
+        const MAX_TIP_LINES: usize = 6;
+        let layer = self
+            .render_system
+            .compositor
+            .get_layer_mut(LayerPriority::TOOLTIP);
+        let screen_rows = layer.rows();
+        let wrap_width = MAX_WIDTH.min(layer.cols().saturating_sub(4)).max(1);
         let mut rows: Vec<Vec<Cell>> = Vec::new();
         if let Some(tip) = &tip {
-            rows.push(
-                tip.chars()
-                    .take(MAX_WIDTH)
-                    .map(|c| Cell::from_char(c).with_colors(Some(Color::White), None))
-                    .collect(),
-            );
+            for line in render::wrap_text(tip, wrap_width)
+                .into_iter()
+                .take(MAX_TIP_LINES)
+            {
+                rows.push(
+                    line.chars()
+                        .map(|c| Cell::from_char(c).with_colors(Some(Color::White), None))
+                        .collect(),
+                );
+            }
         }
         if let Some(affordance) = &affordance {
             rows.push(
                 affordance
                     .chars()
-                    .take(MAX_WIDTH)
+                    .take(wrap_width)
                     .map(|c| Cell::from_char(c).with_colors(Some(Color::Cyan), None))
                     .collect(),
             );
         }
         let width = rows.iter().map(|r| r.len()).max().unwrap_or(0) + 2;
         let height = rows.len() + 2;
+        // Bottom placement would cover the cursor row: flip to the top instead.
+        let position = if cursor_row + height + 1 >= screen_rows {
+            WindowPosition::Top
+        } else {
+            WindowPosition::Bottom
+        };
         let editor_fg = self.state.settings.editor_fg;
         let editor_bg = self.state.settings.editor_bg;
         let window = FloatingWindow::with_style(
-            WindowPosition::Bottom,
+            position,
             width,
             height,
             WindowStyle::new()
@@ -1193,10 +1275,6 @@ impl<T: TerminalBackend> Editor<T> {
                 .with_fg(editor_fg.unwrap_or(Color::White))
                 .with_bg(editor_bg.unwrap_or(Color::Black)),
         );
-        let layer = self
-            .render_system
-            .compositor
-            .get_layer_mut(LayerPriority::TOOLTIP);
         window.render_cells(layer, &rows);
     }
 
