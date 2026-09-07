@@ -953,8 +953,8 @@ impl LspManager {
         self.open_docs.contains_key(&doc_key(path))
     }
 
-    /// Track a `$/progress` token; ServerReady fires once every gating token
-    /// has ended. Diagnostics runs (flycheck) are shown but never gate requests.
+    /// Track a `$/progress` token; ServerReady fires once every gating token has
+    /// ended. Flycheck runs never gate or surface a Progress message, so they can't clobber the status bar with stale indexing counts.
     fn on_progress(&mut self, lang: &str, params: &Value, results: &mut Vec<LspMessage>) {
         let val = params.get("value").cloned().unwrap_or(Value::Null);
         let kind = val.get("kind").and_then(|k| k.as_str()).unwrap_or("");
@@ -971,11 +971,11 @@ impl LspManager {
             "begin" => {
                 if is_flycheck_progress(&token, title) {
                     flychecks.insert(token);
-                } else {
-                    *counter += 1;
+                    return;
+                }
+                *counter += 1;
                 // Cancel any pending idle timer: a new token arrived.
                 self.indexing_idle_since.remove(lang);
-                }
                 *self.indexing_started.entry(lang.to_string()).or_insert(0) += 1;
                 results.push(LspMessage::Progress {
                     language: lang.to_string(),
@@ -983,16 +983,19 @@ impl LspManager {
                 });
             }
             "report" => {
+                if flychecks.contains(&token) {
+                    return;
+                }
                 results.push(LspMessage::Progress {
                     language: lang.to_string(),
                     message: message.to_string(),
                 });
             }
             "end" => {
-                let gating = !flychecks.remove(&token);
-                if gating {
-                    *counter = counter.saturating_sub(1);
+                if flychecks.remove(&token) {
+                    return;
                 }
+                *counter = counter.saturating_sub(1);
                 *self.indexing_ended.entry(lang.to_string()).or_insert(0) += 1;
                 results.push(LspMessage::Progress {
                     language: lang.to_string(),
@@ -1000,7 +1003,7 @@ impl LspManager {
                 });
                 // Start the idle timer: ServerReady fires after 600ms
                 // of no new begin events, guarding against token bursts.
-                if gating && *counter == 0 {
+                if *counter == 0 {
                     self.indexing_idle_since
                         .entry(lang.to_string())
                         .or_insert_with(std::time::Instant::now);
