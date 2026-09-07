@@ -61,7 +61,7 @@ fn lsp_diagnostics_survive_line_deletion_outside_range() {
     store.create_lsp_diagnostic(10, "error".into());
 
     // Delete lines 0–4 (5 lines) -> diagnostic shifts to line 5
-    store.on_lines_deleted(0, 5);
+    store.on_lines_deleted(0, 5, 0);
 
     let diags: Vec<_> = store.lsp_diagnostics().collect();
     assert_eq!(diags.len(), 1);
@@ -76,7 +76,7 @@ fn replace_lsp_diagnostics_swaps_the_whole_set() {
     store.create_diagnostic(5, 2, "old warning");
     assert_eq!(store.lsp_diagnostics().count(), 2);
 
-    store.replace_lsp_diagnostics(vec![(3, 1, "new error"), (8, 4, "new hint")]);
+    store.replace_lsp_diagnostics(vec![(3, None, 1, "new error"), (8, None, 4, "new hint")]);
 
     let diags: Vec<_> = store.lsp_diagnostics().collect();
     assert_eq!(diags.len(), 2);
@@ -104,7 +104,7 @@ fn replace_lsp_diagnostics_with_empty_clears_stale_index() {
     let _ = store.next_interactive(0);
 
     // Empty replacement: clears all, must invalidate so the index rebuilds.
-    store.replace_lsp_diagnostics(Vec::<(usize, i64, &str)>::new());
+    store.replace_lsp_diagnostics(Vec::<crate::annotations::LspDiagnosticSpec>::new());
 
     assert_eq!(store.lsp_diagnostics().count(), 0);
     // A line-anchor edit consults the (now-rebuilt) index without stale ids.
@@ -114,18 +114,105 @@ fn replace_lsp_diagnostics_with_empty_clears_stale_index() {
 
 #[test]
 fn lsp_diagnostics_persist_when_their_line_is_deleted() {
-    // LspDiagnostics use Stickiness::Persist, so deleting their line keeps them
+    // LspDiagnostics use Stickiness::Persist: deleting their line relocates
+    // them to the merge line instead of dropping them.
     let mut store = AnnotationStore::new();
     store.create_lsp_diagnostic(3, "error".into());
+    store.create_lsp_diagnostic(6, "later".into());
 
-    store.on_lines_deleted(3, 1);
+    // Lines 3..5 deleted from mid-line 2: their content collapsed into line 2.
+    store.on_lines_deleted(3, 2, 2);
 
-    // Should persist (moved to nearest line, which is still line 3 after deletion
-    // since Persist keeps it at the same numeric position clamped to valid range)
-    let diags: Vec<_> = store.lsp_diagnostics().collect();
+    let mut lines: Vec<usize> = store
+        .lsp_diagnostics()
+        .map(|a| match a.anchor {
+            Anchor::Line(l) => l,
+            _ => panic!("expected line anchor"),
+        })
+        .collect();
+    lines.sort_unstable();
     assert_eq!(
-        diags.len(),
+        lines,
+        vec![2, 4],
+        "in-range moves to merge line, after shifts up"
+    );
+
+    // Whole-line delete at column 0: the diagnostic lands on the line now at 2.
+    store.on_lines_deleted(2, 1, 2);
+    let lines: Vec<usize> = store
+        .lsp_diagnostics()
+        .map(|a| match a.anchor {
+            Anchor::Line(l) => l,
+            _ => panic!("expected line anchor"),
+        })
+        .collect();
+    assert_eq!(lines.iter().filter(|&&l| l == 2).count(), 1);
+    assert_eq!(lines.iter().filter(|&&l| l == 3).count(), 1);
+}
+
+fn adornment_texts(store: &AnnotationStore, include_lsp: bool) -> Vec<(usize, String)> {
+    store
+        .line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, include_lsp, |_| 0)
+        .into_iter()
+        .map(|(line, text, _)| (line, text))
+        .collect()
+}
+
+#[test]
+fn diagnostic_adornment_is_single_line_and_printable() {
+    let mut store = AnnotationStore::new();
+    store.create_diagnostic(
+        0,
         1,
-        "diagnostic should survive Persist stickiness"
+        "\n  mismatched\ttypes:   expected\r`i32`\nfound `&str`\n",
+    );
+
+    assert_eq!(
+        adornment_texts(&store, true),
+        vec![(0, "mismatched types: expected `i32`".to_string())]
+    );
+    // The payload keeps the whole (trimmed) message for the tooltip.
+    let diag = store.lsp_diagnostics().next().unwrap();
+    assert_eq!(
+        payload::lsp::message(&diag.payload),
+        Some("mismatched\ttypes:   expected\r`i32`\nfound `&str`")
+    );
+    assert_eq!(
+        payload::tooltip(&diag.payload),
+        Some("[error] mismatched\ttypes:   expected\r`i32`\nfound `&str`")
     );
 }
+
+#[test]
+fn diagnostics_on_one_line_show_most_severe_with_count() {
+    let mut store = AnnotationStore::new();
+    store.create_diagnostic(3, 4, "hint");
+    store.create_diagnostic(3, 2, "warn");
+    store.create_diagnostic(3, 1, "err");
+    store.create_diagnostic(7, 3, "info");
+
+    assert_eq!(
+        adornment_texts(&store, true),
+        vec![(3, "err (+2)".to_string()), (7, "info".to_string())]
+    );
+    assert_eq!(
+        store.tooltip_at_line(3, None, true),
+        Some("[error] err"),
+        "tooltip prefers the most severe diagnostic"
+    );
+}
+
+#[test]
+fn lsp_adornments_and_tooltips_can_be_hidden() {
+    let mut store = AnnotationStore::new();
+    store.create_diagnostic(3, 1, "err");
+
+    assert!(adornment_texts(&store, false).is_empty());
+    assert_eq!(store.tooltip_at_line(3, None, false), None);
+    assert_eq!(
+        store.tooltip_at_line(3, None, true),
+        Some("[error] err")
+    );
+}
+
+

@@ -235,6 +235,12 @@ pub struct AnnotationHoverCtx {
 pub struct PluginFloat {
     pub title: String,
     pub lines: Vec<String>,
+    /// Screen row to keep uncovered: the float sits below it, else above.
+    pub anchor_row: Option<usize>,
+    /// First visible line of `lines`.
+    pub scroll: usize,
+    /// Content rows shown at the last render; bounds `scroll_float`.
+    pub visible_lines: usize,
 }
 
 impl PluginFloat {
@@ -242,7 +248,17 @@ impl PluginFloat {
         Self {
             title: title.into(),
             lines,
+            anchor_row: None,
+            scroll: 0,
+            visible_lines: 0,
         }
+    }
+
+    /// Anchor the float to a screen row (the cursor's) instead of centering.
+    #[must_use]
+    pub fn with_anchor_row(mut self, row: usize) -> Self {
+        self.anchor_row = Some(row);
+        self
     }
 }
 
@@ -505,24 +521,76 @@ impl PluginHost {
         val
     }
 
+    /// Scroll the open float's visible lines by `delta`, clamped to its content.
+    pub fn scroll_float(&mut self, delta: isize) {
+        if let Some(float) = &mut self.open_float {
+            let max = float.lines.len().saturating_sub(float.visible_lines.max(1));
+            float.scroll = float.scroll.saturating_add_signed(delta).min(max);
+        }
+    }
+
     /// Render the open float (if any) into the given layer. `fg`/`bg` should be the editor's
     /// current theme colors so the float blends with the UI instead of using reverse-video defaults.
     pub fn render_float_into_layer(
-        &self,
+        &mut self,
         layer: &mut crate::layer::Layer,
         fg: Option<crate::color::Color>,
         bg: Option<crate::color::Color>,
     ) {
         use crate::floating_window::{FloatingWindow, WindowPosition, WindowStyle};
+        use crate::layer::Cell;
         use unicode_width::UnicodeWidthStr;
 
-        let float = match &self.open_float {
+        let float = match &mut self.open_float {
             Some(f) => f,
             None => return,
         };
 
         let rows = layer.rows();
         let cols = layer.cols();
+        let total = float.lines.len();
+
+        // Anchored: below the anchor row if it fits, else above; never on it.
+        // The last screen row (status line) is never used. Otherwise centered.
+        let (position, content_h, left_aligned) = match float.anchor_row {
+            Some(r) => {
+                let below = rows.saturating_sub(r + 2);
+                let above = r;
+                let wanted = total + 2;
+                let (top, height) = if wanted <= below {
+                    (r + 1, wanted)
+                } else if wanted <= above {
+                    (r - wanted, wanted)
+                } else if below >= above {
+                    (r + 1, below)
+                } else {
+                    (0, above)
+                };
+                let position = WindowPosition::Absolute {
+                    row: top as u16,
+                    col: 0,
+                };
+                (position, height.saturating_sub(2), true)
+            }
+            None => (
+                WindowPosition::Center,
+                total.min(rows.saturating_sub(4)),
+                false,
+            ),
+        };
+        float.visible_lines = content_h;
+        float.scroll = float.scroll.min(total.saturating_sub(content_h));
+        let overflow = total > content_h;
+        let title = if overflow {
+            format!(
+                " {} [{}/{}] ",
+                float.title,
+                (float.scroll + content_h).min(total),
+                total
+            )
+        } else {
+            format!(" {} ", float.title)
+        };
 
         // Size to fit content using unicode display width, not `.len()` (byte length),
         // which would give wrong widths for CJK or other multi-byte characters.
@@ -532,9 +600,8 @@ impl PluginHost {
             .map(|l| UnicodeWidthStr::width(l.as_str()))
             .max()
             .unwrap_or(20)
-            .max(UnicodeWidthStr::width(float.title.as_str()) + 2)
-            .min(cols.saturating_sub(4));
-        let content_h = float.lines.len().min(rows.saturating_sub(4));
+            .max(UnicodeWidthStr::width(title.as_str()))
+            .min(cols.saturating_sub(if left_aligned { 2 } else { 4 }));
         let width = (content_w + 2).min(cols);
         let height = (content_h + 2).min(rows);
 
@@ -546,16 +613,37 @@ impl PluginHost {
             style = style.with_bg(b);
         }
 
-        let window = FloatingWindow::with_style(WindowPosition::Center, width, height, style);
+        let window = FloatingWindow::with_style(position, width, height, style);
 
         let char_lines: Vec<Vec<char>> = float
             .lines
             .iter()
+            .skip(float.scroll)
             .take(content_h)
             .map(|l| l.chars().collect())
             .collect();
 
         window.render(layer, &char_lines);
+
+        // Title on the top border, clipped to the inner width.
+        let (top, left) = window.calculate_position(rows as u16, cols as u16);
+        let (top, left) = (top as usize, left as usize + 1);
+        let mut col = 0;
+        for ch in title.chars() {
+            let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+            if w == 0 || col + w > width.saturating_sub(2) {
+                continue;
+            }
+            layer.set_cell(top, left + col, Cell::from_char(ch).with_colors(fg, bg));
+            for k in 1..w {
+                layer.set_cell(
+                    top,
+                    left + col + k,
+                    Cell::from_char(' ').with_colors(fg, bg),
+                );
+            }
+            col += w;
+        }
     }
 
     /// Initialize the Lua VM. Must be called once at startup.
@@ -770,5 +858,87 @@ impl std::fmt::Debug for PluginHost {
             .field("open_float", &self.open_float.as_ref().map(|f| &f.title))
             .field("queued_mutations", &self.mutation_queue.len())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod float_tests {
+    use super::*;
+    use crate::layer::{Layer, LayerPriority};
+
+    fn row_text(layer: &Layer, row: usize) -> String {
+        (0..layer.cols())
+            .map(|c| match layer.get_cell(row, c).map(|c| c.content) {
+                Some(crate::character::Character::Unicode(ch)) => ch,
+                _ => '.',
+            })
+            .collect()
+    }
+
+    fn drawn_rows(layer: &Layer) -> Vec<usize> {
+        (0..layer.rows())
+            .filter(|&r| (0..layer.cols()).any(|c| layer.get_cell(r, c).is_some()))
+            .collect()
+    }
+
+    fn host_with(float: PluginFloat) -> PluginHost {
+        let mut host = PluginHost::new(1);
+        host.apply_mutation(PluginMutation::OpenFloat(float));
+        host
+    }
+
+    #[test]
+    fn anchored_float_sits_below_cursor_row_when_it_fits() {
+        let mut layer = Layer::new(LayerPriority::POPUP, 20, 40);
+        let lines = vec!["one".to_string(), "two".to_string()];
+        let mut host = host_with(PluginFloat::new("T", lines).with_anchor_row(3));
+        host.render_float_into_layer(&mut layer, None, None);
+        assert_eq!(drawn_rows(&layer), vec![4, 5, 6, 7]);
+        assert!(
+            row_text(&layer, 4).contains(" T "),
+            "title sits on the top border"
+        );
+        assert!(row_text(&layer, 5).contains("one"));
+    }
+
+    #[test]
+    fn anchored_float_moves_above_cursor_row_when_no_room_below() {
+        let mut layer = Layer::new(LayerPriority::POPUP, 20, 40);
+        let lines = vec!["one".to_string(), "two".to_string()];
+        let mut host = host_with(PluginFloat::new("T", lines).with_anchor_row(17));
+        host.render_float_into_layer(&mut layer, None, None);
+        // Ends at row 16, never touching the anchor row.
+        assert_eq!(drawn_rows(&layer), vec![13, 14, 15, 16]);
+    }
+
+    #[test]
+    fn anchored_float_clamps_and_scrolls_long_content() {
+        let mut layer = Layer::new(LayerPriority::POPUP, 12, 40);
+        let lines: Vec<String> = (0..20).map(|i| format!("line{i}")).collect();
+        let mut host = host_with(PluginFloat::new("T", lines).with_anchor_row(2));
+        host.render_float_into_layer(&mut layer, None, None);
+        // Rows 3..=10: 8 rows = 6 content lines; the status row 11 stays clear.
+        assert_eq!(drawn_rows(&layer), (3..=10).collect::<Vec<_>>());
+        assert!(row_text(&layer, 3).contains("T [6/20]"));
+        assert!(row_text(&layer, 4).contains("line0"));
+
+        host.scroll_float(100);
+        host.render_float_into_layer(&mut layer, None, None);
+        assert!(row_text(&layer, 3).contains("T [20/20]"));
+        assert!(row_text(&layer, 4).contains("line14"));
+
+        host.scroll_float(-3);
+        host.render_float_into_layer(&mut layer, None, None);
+        assert!(row_text(&layer, 3).contains("T [17/20]"));
+        assert!(row_text(&layer, 4).contains("line11"));
+    }
+
+    #[test]
+    fn unanchored_float_stays_centered() {
+        let mut layer = Layer::new(LayerPriority::POPUP, 20, 40);
+        let lines = vec!["one".to_string()];
+        let mut host = host_with(PluginFloat::new("T", lines));
+        host.render_float_into_layer(&mut layer, None, None);
+        assert_eq!(drawn_rows(&layer), vec![8, 9, 10]);
     }
 }

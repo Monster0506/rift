@@ -49,7 +49,7 @@ fn line_anchor_edit_tracking(c: &mut Criterion) {
                 || populated_store_with_line_anchors(n),
                 |mut store| {
                     for _ in 0..50 {
-                        store.on_lines_deleted(black_box(1), black_box(1));
+                        store.on_lines_deleted(black_box(1), black_box(1), black_box(0));
                         store.on_line_inserted(black_box(1));
                     }
                     store
@@ -220,6 +220,7 @@ fn render_viewport_scroll(c: &mut Criterion) {
                             None,
                             byte_range.clone(),
                             line_range,
+                            true,
                             |_| 0,
                         );
                         let inline = store.inline_adornments(None, None, byte_range.clone());
@@ -247,8 +248,14 @@ fn render_full_document_scan(c: &mut Criterion) {
                         let full = 0..span.max(1);
                         let full_lines = 0..usize::MAX;
                         let spans = store.presentation_spans(None, None, full.clone());
-                        let adornments =
-                            store.line_adornments(None, None, full.clone(), full_lines, |_| 0);
+                        let adornments = store.line_adornments(
+                            None,
+                            None,
+                            full.clone(),
+                            full_lines,
+                            true,
+                            |_| 0,
+                        );
                         let inline = store.inline_adornments(None, None, full.clone());
                         let concealed = store.concealed_ranges(full);
                         black_box((spans.len(), adornments.len(), inline.len(), concealed.len()));

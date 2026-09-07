@@ -2035,10 +2035,113 @@ fn test_annotation_store_line_delete_removes_entry() {
         "/tmp",
     ));
     // Delete line 2 (b.txt)
-    doc.annotations.on_lines_deleted(2, 1);
+    doc.annotations.on_lines_deleted(2, 1, 2);
     assert_eq!(doc.annotations.directory_entry_id_at_line(1), Some(1)); // a.txt unchanged
     assert_eq!(doc.annotations.directory_entry_id_at_line(2), Some(3)); // c.txt shifted up
     assert_eq!(doc.annotations.directory_entry_id_at_line(3), None);
+}
+
+fn line_anchor(doc: &Document, id: crate::annotations::AnnotationId) -> Option<usize> {
+    match doc.annotations.get(id)?.anchor {
+        crate::annotations::Anchor::Line(l) => Some(l),
+        other => panic!("expected line anchor, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_delete_range_mid_line_merges_line_anchors_into_start_line() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Stickiness};
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("aaa\nbbb\nccc\nddd").unwrap();
+    let persist = |line| {
+        Annotation::new(
+            Kind::new("a.persist"),
+            Anchor::Line(line),
+            AnnotationOwner::User,
+        )
+        .with_stickiness(Stickiness::Persist)
+    };
+    let on_2 = doc.annotations.add(persist(2));
+    let on_3 = doc.annotations.add(persist(3));
+
+    // Delete "bb\nc" (line 1 col 1 .. line 2 col 1): line 2 merges into line 1.
+    doc.delete_range(5, 9).unwrap();
+    assert_eq!(doc.buffer.to_string(), "aaa\nbcc\nddd");
+    assert_eq!(line_anchor(&doc, on_2), Some(1));
+    assert_eq!(line_anchor(&doc, on_3), Some(2));
+}
+
+#[test]
+fn test_delete_range_at_column_zero_removes_whole_line() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Stickiness};
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("aaa\nbbb\nccc").unwrap();
+    let gone = doc.annotations.add(
+        Annotation::new(Kind::new("a.del"), Anchor::Line(1), AnnotationOwner::User)
+            .with_stickiness(Stickiness::Delete),
+    );
+    let kept = doc.annotations.add(
+        Annotation::new(Kind::new("a.keep"), Anchor::Line(2), AnnotationOwner::User)
+            .with_stickiness(Stickiness::Persist),
+    );
+
+    // Delete "bbb\n" starting at column 0: line 1 is removed outright.
+    doc.delete_range(4, 8).unwrap();
+    assert_eq!(doc.buffer.to_string(), "aaa\nccc");
+    assert!(doc.annotations.get(gone).is_none());
+    assert_eq!(line_anchor(&doc, kept), Some(1));
+}
+
+#[test]
+fn test_undo_redo_keep_current_lsp_diagnostics() {
+    use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
+    let mut doc = Document::new(1).unwrap();
+    doc.insert_str("aaa\nbbb\nccc").unwrap();
+    let user = doc.annotations.add(Annotation::new(
+        Kind::new("ui.link"),
+        Anchor::range(0, 3),
+        AnnotationOwner::User,
+    ));
+    doc.annotations
+        .replace_lsp_diagnostics(vec![(0, 1, "old")]);
+
+    // Snapshot-backed edit, then the server publishes a fresh set.
+    doc.delete_range(0, 4).unwrap();
+    doc.annotations
+        .replace_lsp_diagnostics(vec![(1, 2, "new")]);
+    let diag_lines = |doc: &Document| -> Vec<(usize, String)> {
+        doc.annotations
+            .lsp_diagnostics()
+            .map(|a| match a.anchor {
+                Anchor::Line(l) => (
+                    l,
+                    crate::annotations::payload::lsp::message(&a.payload)
+                        .unwrap()
+                        .to_string(),
+                ),
+                other => panic!("expected line anchor, got {:?}", other),
+            })
+            .collect()
+    };
+
+    doc.undo();
+    assert_eq!(doc.buffer.to_string(), "aaa\nbbb\nccc");
+    assert_eq!(
+        diag_lines(&doc),
+        vec![(1, "new".to_string())],
+        "undo must not resurrect old diagnostics"
+    );
+    assert!(
+        doc.annotations.get(user).is_some(),
+        "non-LSP annotations still restore"
+    );
+
+    doc.redo();
+    assert_eq!(
+        diag_lines(&doc),
+        vec![(1, "new".to_string())],
+        "redo must keep the live diagnostics"
+    );
 }
 
 #[test]
@@ -2476,6 +2579,7 @@ fn test_line_adornment_resolves_correct_line_past_multibyte_prefix() {
         None,
         0..doc.buffer.to_string().len(),
         0..doc.buffer.get_total_lines(),
+        true,
         |b| {
             doc.buffer
                 .line_index

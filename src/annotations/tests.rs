@@ -68,7 +68,7 @@ fn test_on_lines_deleted_removes_in_range() {
     store.create_directory_entry(1, 1);
     store.create_directory_entry(2, 2);
     store.create_directory_entry(3, 3);
-    store.on_lines_deleted(2, 1);
+    store.on_lines_deleted(2, 1, 2);
     // Entry 2 deleted; entry 3 shifts to line 2
     assert_eq!(store.directory_entries_by_line(), vec![(1, 1), (2, 3)]);
 }
@@ -92,7 +92,7 @@ fn test_on_lines_deleted_removal_keeps_index_valid() {
     assert!(!store.is_index_dirty());
 
     // Deletes line 2, hitting the removal branch (Delete-sticky entry 2).
-    store.on_lines_deleted(2, 1);
+    store.on_lines_deleted(2, 1, 2);
 
     assert_eq!(store.directory_entries_by_line(), vec![(1, 1), (2, 3)]);
     assert!(store.get(point).is_some());
@@ -109,7 +109,7 @@ fn test_on_lines_deleted_multi_count() {
     store.create_directory_entry(2, 2);
     store.create_directory_entry(3, 3);
     store.create_directory_entry(4, 4);
-    store.on_lines_deleted(2, 2);
+    store.on_lines_deleted(2, 2, 2);
     // Entries 2 and 3 deleted; entry 4 shifts to line 2
     assert_eq!(store.directory_entries_by_line(), vec![(1, 1), (2, 4)]);
 }
@@ -119,7 +119,7 @@ fn test_on_lines_deleted_before_range_unchanged() {
     let mut store = AnnotationStore::new();
     store.create_directory_entry(1, 1);
     store.create_directory_entry(3, 3);
-    store.on_lines_deleted(2, 1);
+    store.on_lines_deleted(2, 1, 2);
     let entries = store.directory_entries_by_line();
     assert_eq!(entries[0], (1, 1), "line 1 should not shift");
     assert_eq!(entries[1], (2, 3), "line 3 should shift to line 2");
@@ -168,7 +168,7 @@ fn test_clear_removes_all() {
 fn test_on_lines_deleted_zero_count_is_noop() {
     let mut store = AnnotationStore::new();
     store.create_directory_entry(1, 1);
-    store.on_lines_deleted(1, 0);
+    store.on_lines_deleted(1, 0, 1);
     assert_eq!(store.directory_entries_by_line(), vec![(1, 1)]);
 }
 
@@ -503,11 +503,18 @@ fn test_adornment_uses_kind_default_style() {
     );
     // Without defaults: DarkGrey fallback. With defaults: the kind style fg.
     assert_eq!(
-        store.line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, |_| 0),
+        store.line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, true, |_| 0),
         vec![(0, "---".to_string(), Color::DarkGrey)]
     );
     assert_eq!(
-        store.line_adornments(None, Some(&defaults), 0..usize::MAX, 0..usize::MAX, |_| 0),
+        store.line_adornments(
+            None,
+            Some(&defaults),
+            0..usize::MAX,
+            0..usize::MAX,
+            true,
+            |_| 0
+        ),
         vec![(0, "---".to_string(), Color::Grey)]
     );
 }
@@ -539,7 +546,14 @@ fn test_adornment_inline_style_wins_over_kind_default() {
         }),
     );
     assert_eq!(
-        store.line_adornments(None, Some(&defaults), 0..usize::MAX, 0..usize::MAX, |_| 0),
+        store.line_adornments(
+            None,
+            Some(&defaults),
+            0..usize::MAX,
+            0..usize::MAX,
+            true,
+            |_| 0
+        ),
         vec![(0, "---".to_string(), Color::Cyan)]
     );
 }
@@ -560,7 +574,7 @@ fn test_adornment_resolves_named_face() {
     );
     // "link" resolves to Blue via the built-in fallback (no syntax colors).
     assert_eq!(
-        store.line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, |_| 0),
+        store.line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, true, |_| 0),
         vec![(0, "->".to_string(), Color::Blue)]
     );
 }
@@ -572,7 +586,7 @@ fn test_adornment_falls_back_to_dark_grey() {
     trailing_adornment(&mut store, "md.rule", "---", Presentation::default());
     // No style, no face, no kind default: the unchanged DarkGrey fallback.
     assert_eq!(
-        store.line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, |_| 0),
+        store.line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, true, |_| 0),
         vec![(0, "---".to_string(), Color::DarkGrey)]
     );
 }
@@ -701,15 +715,15 @@ fn test_line_bucket_shift_ignores_point_range_annotations() {
     // Force the index (and line bucket) to build once.
     assert_eq!(store.query_at(0).count(), 1);
 
-    // Delete lines [2, 4): removes delete_sticky, keeps persist_in_range at
-    // its old line number (3), shifts after_range down by 2 (5 -> 3).
-    store.on_lines_deleted(2, 2);
+    // Delete lines [2, 4) merged into line 1: removes delete_sticky, moves
+    // persist_in_range to the merge line, shifts after_range down by 2 (5 -> 3).
+    store.on_lines_deleted(2, 2, 1);
 
     assert!(store.get(delete_sticky).is_none());
     let Anchor::Line(persist_line) = store.get(persist_in_range).unwrap().anchor else {
         panic!("expected line anchor");
     };
-    assert_eq!(persist_line, 3, "Persist-in-range keeps its old line");
+    assert_eq!(persist_line, 1, "Persist-in-range moves to the merge line");
     let Anchor::Line(before_line) = store.get(before_range).unwrap().anchor else {
         panic!("expected line anchor");
     };
@@ -788,8 +802,11 @@ fn test_viewport_restricted_queries_exclude_offscreen_annotations() {
             Presentation::default().with_adornment(Adornment::new("on", Placement::Trailing)),
         ),
     );
-    let on_screen = store.line_adornments(None, None, 0..1_000_000, 0..10, |_| 0);
-    assert_eq!(on_screen, vec![(5, "on".to_string(), Color::DarkGrey)]);
+    let on_screen = store.line_adornments(None, None, 0..1_000_000, 0..10, true, |_| 0);
+    assert_eq!(
+        on_screen,
+        vec![(5, "on".to_string(), Color::DarkGrey)]
+    );
 
     // Inline (overlay) adornment far off-screen (byte 100000) vs. on-screen
     // (byte 10).
@@ -877,7 +894,7 @@ fn test_revision_unchanged_on_true_noop_calls() {
     let rev = store.revision();
 
     // Zero-count line deletion and a zero-width edit are documented no-ops.
-    store.on_lines_deleted(5, 0);
+    store.on_lines_deleted(5, 0, 5);
     store.on_line_inserted(100);
     store.undo_line_inserted(100);
     store.on_edit(3, 3, 3);
@@ -921,7 +938,7 @@ fn test_revision_bumps_on_line_shift_methods() {
     store.create_directory_entry(2, 1);
     let rev0 = store.revision();
 
-    store.on_lines_deleted(0, 1);
+    store.on_lines_deleted(0, 1, 0);
     let rev1 = store.revision();
     assert_ne!(rev1, rev0, "on_lines_deleted must bump revision");
 
@@ -961,4 +978,24 @@ fn test_revision_bumps_on_clear_and_restore() {
     store.restore(snapshot);
     let rev2 = store.revision();
     assert_ne!(rev2, rev1, "restore must bump revision");
+}
+
+/// Undo snapshots never carry LSP-owned annotations: the server owns them, so
+/// a restore keeps whatever set is live instead of resurrecting an old one.
+#[test]
+fn test_snapshot_restore_keeps_live_lsp_annotations() {
+    let mut store = AnnotationStore::new();
+    let user = store.create_directory_entry(0, 1);
+    store.create_diagnostic(2, 1, "old");
+    let snapshot = store.snapshot();
+    assert!(snapshot.iter().all(|a| a.owner != AnnotationOwner::Lsp));
+
+    store.clear();
+    store.replace_lsp_diagnostics(vec![(5, 2, "new")]);
+    store.restore(snapshot);
+
+    assert!(store.get(user).is_some());
+    let diags: Vec<_> = store.lsp_diagnostics().collect();
+    assert_eq!(diags.len(), 1);
+    assert_eq!(diags[0].anchor, Anchor::Line(5));
 }

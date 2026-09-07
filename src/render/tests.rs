@@ -1245,6 +1245,90 @@ fn test_tab_rendered_as_space_not_raw_tab() {
     assert_eq!(layer.get_cell(0, 4).unwrap().content, Character::from('h'));
 }
 
+/// Render `text` with trailing `adornments` at horizontal scroll `left_col`
+/// and return row 0 as a string (unset cells become '.').
+fn render_row_with_adornments(
+    cols: usize,
+    text: &str,
+    adornments: &[(usize, String, Color)],
+    left_col: usize,
+) -> String {
+    let mut term = MockTerminal::new(5, cols as u16);
+    let mut buf = TextBuffer::new(64).unwrap();
+    buf.insert_str(text).unwrap();
+    let mut state = State::new();
+    state.update_buffer_stats(1, text.len(), crate::document::LineEnding::LF);
+    let mut system = RenderSystem::new(5, cols);
+    system.viewport.set_scroll(0, left_col);
+    system
+        .render(
+            &mut term,
+            RenderState {
+                syntax_generation: 0,
+                annotations_revision: 0,
+                kind_registry_generation: 0,
+                buf: &buf,
+                current_mode: Mode::Normal,
+                pending_key: None,
+                pending_count: 0,
+                state: &state,
+                needs_clear: true,
+                tab_width: 4,
+                highlights: None,
+                capture_map: None,
+                injection_highlights: None,
+                skip_content: false,
+                cursor_row_offset: 0,
+                cursor_col_offset: 0,
+                cursor_viewport: None,
+                terminal_cursor: None,
+                custom_highlights: None,
+                plugin_highlights: None,
+                annotation_styles: None,
+                annotation_adornments: Some(adornments),
+                annotation_inline: None,
+                annotation_concealed: None,
+                terminal_cell_colors: None,
+                show_line_numbers: false,
+                display_map: None,
+                scroll_hint: None,
+            },
+        )
+        .unwrap();
+    let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
+    (0..cols)
+        .map(|col| match layer.get_cell(0, col).map(|c| c.content) {
+            Some(Character::Unicode(ch)) => ch,
+            Some(other) => panic!("col {col}: unexpected cell {other:?}"),
+            None => '.',
+        })
+        .collect()
+}
+
+#[test]
+fn test_trailing_adornment_advances_by_display_width() {
+    let ad = vec![(0, "\u{4e2d}x".to_string(), Color::Red)];
+    let row = render_row_with_adornments(8, "ab", &ad, 0);
+    // Wide char at col 3 gets a filler cell at col 4 so 'x' lands at col 5.
+    assert_eq!(row, "ab \u{4e2d} x  ");
+}
+
+#[test]
+fn test_trailing_adornment_clips_with_ellipsis() {
+    let ad = vec![(0, "0123456789".to_string(), Color::Red)];
+    assert_eq!(render_row_with_adornments(10, "ab", &ad, 0), "ab 0123...");
+    // Fewer than 4 free cells: draw nothing rather than a bare ellipsis.
+    assert_eq!(render_row_with_adornments(6, "ab", &ad, 0), "ab    ");
+}
+
+#[test]
+fn test_trailing_adornment_hidden_when_line_end_scrolled_off() {
+    let ad = vec![(0, "msg".to_string(), Color::Red)];
+    assert_eq!(render_row_with_adornments(8, "ab", &ad, 5), "        ");
+    // Exactly-full row: line end reached but no room, nothing spills over.
+    assert_eq!(render_row_with_adornments(2, "ab", &ad, 0), "ab");
+}
+
 #[test]
 fn test_tab_straddling_left_col_does_not_shift_text() {
     // A tab straddling the left_col boundary must not push following chars right

@@ -106,6 +106,10 @@ pub struct UserSettings {
     pub cursor_speed: f64,
     /// Emit LSP protocol events as info notifications for debugging
     pub lsp_debug_log: bool,
+    /// Render LSP diagnostics as trailing end-of-line virtual text
+    pub lsp_virtual_text: bool,
+    /// Show the diagnostic tooltip for the cursor line
+    pub lsp_diagnostic_tooltip: bool,
     /// Defer `d`-cuts into a ghosted span until something resolves them;
     /// when off, `d` deletes right away, as before the ghost-cut feature.
     pub ghost_cut: bool,
@@ -134,6 +138,8 @@ impl UserSettings {
             cursor_color: None,
             cursor_speed: 0.8,
             lsp_debug_log: false,
+            lsp_virtual_text: true,
+            lsp_diagnostic_tooltip: true,
             ghost_cut: true,
         };
 
