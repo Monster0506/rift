@@ -154,7 +154,7 @@ fn adornment_texts(store: &AnnotationStore, include_lsp: bool) -> Vec<(usize, St
     store
         .line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, include_lsp, |_| 0)
         .into_iter()
-        .map(|(line, text, _)| (line, text))
+        .map(|(line, text, _)| (line, text.into_owned()))
         .collect()
 }
 
@@ -196,7 +196,7 @@ fn diagnostics_on_one_line_show_most_severe_with_count() {
         vec![(3, "err (+2)".to_string()), (7, "info".to_string())]
     );
     assert_eq!(
-        store.tooltip_at_line(3, None, true),
+        store.tooltip_at_line(3, None, true, |_| 0),
         Some("[error] err"),
         "tooltip prefers the most severe diagnostic"
     );
@@ -208,11 +208,46 @@ fn lsp_adornments_and_tooltips_can_be_hidden() {
     store.create_diagnostic(3, 1, "err");
 
     assert!(adornment_texts(&store, false).is_empty());
-    assert_eq!(store.tooltip_at_line(3, None, false), None);
+    assert_eq!(store.tooltip_at_line(3, None, false, |_| 0), None);
     assert_eq!(
-        store.tooltip_at_line(3, None, true),
+        store.tooltip_at_line(3, None, true, |_| 0),
         Some("[error] err")
     );
 }
 
+#[test]
+fn ranged_diagnostics_underline_their_span_and_still_resolve_by_line() {
+    let mut store = AnnotationStore::new();
+    store.replace_lsp_diagnostics(vec![
+        (2, Some(10..14), 2, "warn"),
+        (4, Some(30..30), 1, "err"),
+    ]);
 
+    let diags: Vec<_> = store.lsp_diagnostics().collect();
+    assert_eq!(diags[0].anchor, Anchor::range(10, 14));
+    // An empty span degrades to the line anchor (nothing to underline).
+    assert_eq!(diags[1].anchor, Anchor::Line(4));
+
+    // Underline only: syntax colors are untouched (no fg/bg in the style).
+    let spans = store.presentation_spans(None, None, 0..100);
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].0, 10..14);
+    assert!(spans[0].1.attrs.underline);
+    assert_eq!(spans[0].1.fg, None);
+
+    // Line-based consumers map the span start through `line_of`.
+    let line_of = |b: usize| if b >= 10 { 2 } else { 0 };
+    let texts: Vec<(usize, String)> = store
+        .line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, true, line_of)
+        .into_iter()
+        .map(|(line, text, _)| (line, text.into_owned()))
+        .collect();
+    assert_eq!(texts, vec![(2, "warn".to_string()), (4, "err".to_string())]);
+    assert_eq!(
+        store.tooltip_at_line(2, None, true, line_of),
+        Some("[warning] warn")
+    );
+    assert_eq!(store.tooltip_at_line(2, None, false, line_of), None);
+    assert_eq!(store.tooltip_at(12, None, false), None);
+    assert_eq!(store.tooltip_at(12, None, true), Some("[warning] warn"));
+}

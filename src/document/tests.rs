@@ -2103,12 +2103,12 @@ fn test_undo_redo_keep_current_lsp_diagnostics() {
         AnnotationOwner::User,
     ));
     doc.annotations
-        .replace_lsp_diagnostics(vec![(0, 1, "old")]);
+        .replace_lsp_diagnostics(vec![(0, None, 1, "old")]);
 
     // Snapshot-backed edit, then the server publishes a fresh set.
     doc.delete_range(0, 4).unwrap();
     doc.annotations
-        .replace_lsp_diagnostics(vec![(1, 2, "new")]);
+        .replace_lsp_diagnostics(vec![(1, None, 2, "new")]);
     let diag_lines = |doc: &Document| -> Vec<(usize, String)> {
         doc.annotations
             .lsp_diagnostics()

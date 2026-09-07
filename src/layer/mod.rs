@@ -115,6 +115,17 @@ impl CellAttrs {
     pub fn is_empty(&self) -> bool {
         *self == CellAttrs::default()
     }
+
+    /// Both sets of attributes (an underline composes over syntax bold/italic).
+    pub fn union(self, other: CellAttrs) -> CellAttrs {
+        CellAttrs {
+            bold: self.bold || other.bold,
+            italic: self.italic || other.italic,
+            underline: self.underline || other.underline,
+            strike: self.strike || other.strike,
+            reverse: self.reverse || other.reverse,
+        }
+    }
 }
 
 /// A fully-resolved cell style: optional fg/bg plus text attributes.

@@ -337,7 +337,7 @@ fn diagnostic_replace(c: &mut Criterion) {
                     store
                 },
                 |mut store| {
-                    store.replace_lsp_diagnostics((0..d).map(|i| (i, 2, "new")));
+                    store.replace_lsp_diagnostics((0..d).map(|i| (i, None, 2, "new")));
                     black_box(store.query_at(0).count());
                 },
                 criterion::BatchSize::SmallInput,

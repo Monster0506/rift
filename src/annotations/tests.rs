@@ -504,7 +504,7 @@ fn test_adornment_uses_kind_default_style() {
     // Without defaults: DarkGrey fallback. With defaults: the kind style fg.
     assert_eq!(
         store.line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, true, |_| 0),
-        vec![(0, "---".to_string(), Color::DarkGrey)]
+        vec![(0, std::borrow::Cow::Borrowed("---"), Color::DarkGrey)]
     );
     assert_eq!(
         store.line_adornments(
@@ -515,7 +515,7 @@ fn test_adornment_uses_kind_default_style() {
             true,
             |_| 0
         ),
-        vec![(0, "---".to_string(), Color::Grey)]
+        vec![(0, std::borrow::Cow::Borrowed("---"), Color::Grey)]
     );
 }
 
@@ -554,7 +554,7 @@ fn test_adornment_inline_style_wins_over_kind_default() {
             true,
             |_| 0
         ),
-        vec![(0, "---".to_string(), Color::Cyan)]
+        vec![(0, std::borrow::Cow::Borrowed("---"), Color::Cyan)]
     );
 }
 
@@ -575,7 +575,7 @@ fn test_adornment_resolves_named_face() {
     // "link" resolves to Blue via the built-in fallback (no syntax colors).
     assert_eq!(
         store.line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, true, |_| 0),
-        vec![(0, "->".to_string(), Color::Blue)]
+        vec![(0, std::borrow::Cow::Borrowed("->"), Color::Blue)]
     );
 }
 
@@ -587,7 +587,7 @@ fn test_adornment_falls_back_to_dark_grey() {
     // No style, no face, no kind default: the unchanged DarkGrey fallback.
     assert_eq!(
         store.line_adornments(None, None, 0..usize::MAX, 0..usize::MAX, true, |_| 0),
-        vec![(0, "---".to_string(), Color::DarkGrey)]
+        vec![(0, std::borrow::Cow::Borrowed("---"), Color::DarkGrey)]
     );
 }
 
@@ -805,7 +805,7 @@ fn test_viewport_restricted_queries_exclude_offscreen_annotations() {
     let on_screen = store.line_adornments(None, None, 0..1_000_000, 0..10, true, |_| 0);
     assert_eq!(
         on_screen,
-        vec![(5, "on".to_string(), Color::DarkGrey)]
+        vec![(5, std::borrow::Cow::Borrowed("on"), Color::DarkGrey)]
     );
 
     // Inline (overlay) adornment far off-screen (byte 100000) vs. on-screen
@@ -991,7 +991,7 @@ fn test_snapshot_restore_keeps_live_lsp_annotations() {
     assert!(snapshot.iter().all(|a| a.owner != AnnotationOwner::Lsp));
 
     store.clear();
-    store.replace_lsp_diagnostics(vec![(5, 2, "new")]);
+    store.replace_lsp_diagnostics(vec![(5, None, 2, "new")]);
     store.restore(snapshot);
 
     assert!(store.get(user).is_some());

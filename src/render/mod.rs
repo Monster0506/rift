@@ -315,6 +315,10 @@ pub struct NotificationDrawState {
 /// Inline (Overlay/Leading) annotation adornment: (start, end, text, color, is_leading).
 pub type InlineAdornment = (usize, usize, String, Color, bool);
 
+/// Trailing end-of-line adornment: (line, text, color). Text borrows the
+/// annotation store; only a ` (+N)` summary is owned.
+pub type LineAdornment<'a> = (usize, std::borrow::Cow<'a, str>, Color);
+
 /// External state passed to RenderSystem::render
 pub struct RenderState<'a> {
     pub buf: &'a TextBuffer,
@@ -341,7 +345,7 @@ pub struct RenderState<'a> {
     /// Generic annotation presentation styles (fg, bg) composed over base color.
     pub annotation_styles: Option<&'a [(std::ops::Range<usize>, crate::layer::CellStyle)]>,
     /// Trailing end-of-line annotation adornments (line, text, color).
-    pub annotation_adornments: Option<&'a [(usize, String, Color)]>,
+    pub annotation_adornments: Option<&'a [LineAdornment<'a>]>,
     /// Inline (Overlay/Leading) adornments (byte_offset, text, color, is_leading).
     pub annotation_inline: Option<&'a [InlineAdornment]>,
     /// Byte ranges hidden by Conceal adornments (already excluding the cursor line).
@@ -373,7 +377,7 @@ pub struct DrawContext<'a> {
     pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     pub plugin_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     pub annotation_styles: Option<&'a [(std::ops::Range<usize>, crate::layer::CellStyle)]>,
-    pub annotation_adornments: Option<&'a [(usize, String, Color)]>,
+    pub annotation_adornments: Option<&'a [LineAdornment<'a>]>,
     pub annotation_inline: Option<&'a [InlineAdornment]>,
     pub annotation_concealed: Option<&'a [(usize, usize)]>,
     pub terminal_cell_colors: Option<&'a [crate::color::CellColorSpan]>,
@@ -943,7 +947,7 @@ fn find_line_render_boundary(ctx: &DrawContext, config: &RenderLineConfig) -> Op
     for (k, item) in layout.enumerate() {
         last_pulled_char = Some(line_start_char + k);
 
-        if rendered_col >= content_cols {
+        if rendered_col >= content_cols && current_visual_col >= left_col {
             break;
         }
         if item.char == Character::Newline {
@@ -1076,7 +1080,9 @@ fn render_line(
             break;
         }
 
-        if rendered_col >= content_cols {
+        // Out of room only once the segment's own columns have been reached
+        // (an EOL-only segment has zero width but starts past its text).
+        if rendered_col >= content_cols && current_visual_col >= left_col {
             reached_line_end = false;
             break;
         }

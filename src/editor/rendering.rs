@@ -308,11 +308,23 @@ impl<T: TerminalBackend> Editor<T> {
         const CACHE_CAP: usize = 8;
         let soft_wrap = self.state.settings.soft_wrap;
         let wrap_width = self.state.settings.wrap_width;
+        let include_lsp = self.state.settings.lsp_virtual_text;
         let doc = self.document_manager.get_document_mut(doc_id)?;
         let revision = doc.buffer.revision;
         let buf_len = doc.buffer.len();
+        let annotations_revision = doc.annotations.revision();
         let params = super::resolve_wrap_params(doc, content_width, soft_wrap, wrap_width);
         let edits = doc.buffer.take_char_edits();
+
+        // Lines whose trailing virtual text needs an EOL row when they exactly
+        // fill the wrap width; computed only when the annotations changed.
+        let eol_rows = |doc: &crate::document::Document| {
+            doc.annotations.trailing_adornment_lines(include_lsp, |b| {
+                doc.buffer
+                    .line_index
+                    .get_line_at(doc.buffer.byte_to_char(b))
+            })
+        };
 
         let mut map: Option<Arc<crate::wrap::DisplayMap>> = None;
         let slot = self
@@ -328,7 +340,15 @@ impl<T: TerminalBackend> Editor<T> {
             };
             if valid {
                 if entry.revision == revision && entry.buf_len == buf_len {
-                    map = entry.map;
+                    let same_rows = (entry.annotations_revision == annotations_revision
+                        && entry.lsp_virtual_text == include_lsp)
+                        || entry
+                            .map
+                            .as_deref()
+                            .is_none_or(|m| m.eol_rows() == eol_rows(doc));
+                    if same_rows {
+                        map = entry.map;
+                    }
                 } else if entry.revision.wrapping_add(edits.len() as u64) == revision {
                     // Every logged edit accounted for by the revision delta (no
                     // foreign mutation slipped in): rewrap only the affected lines.
@@ -339,6 +359,7 @@ impl<T: TerminalBackend> Editor<T> {
                                 combined.pos,
                                 combined.del,
                                 combined.ins,
+                                eol_rows(doc),
                             ) {
                                 map = Some(m);
                             }
@@ -350,7 +371,9 @@ impl<T: TerminalBackend> Editor<T> {
 
         let mut map = match map {
             Some(m) => Some(m),
-            None => params.map(|(w, tw)| Arc::new(crate::wrap::DisplayMap::empty(w, tw))),
+            None => params.map(|(w, tw)| {
+                Arc::new(crate::wrap::DisplayMap::empty(w, tw).with_eol_rows(eol_rows(doc)))
+            }),
         };
 
         // Check via shared &DisplayMap first: Arc::make_mut clones unconditionally
@@ -375,6 +398,8 @@ impl<T: TerminalBackend> Editor<T> {
             revision,
             buf_len,
             content_width,
+            annotations_revision,
+            lsp_virtual_text: include_lsp,
             map: map.clone(),
         });
         map
@@ -1200,12 +1225,21 @@ impl<T: TerminalBackend> Editor<T> {
                     let cursor = doc.buffer.cursor();
                     let line = doc.buffer.line_index.get_line_at(cursor);
                     let cursor_byte = doc.buffer.char_to_byte(cursor);
+                    let line_of = |b: usize| {
+                        doc.buffer
+                            .line_index
+                            .get_line_at(doc.buffer.byte_to_char(b))
+                    };
                     let tip = doc
                         .annotations
                         .tooltip_at(cursor_byte, Some(kind_registry), include_lsp)
                         .or_else(|| {
-                            doc.annotations
-                                .tooltip_at_line(line, Some(kind_registry), include_lsp)
+                            doc.annotations.tooltip_at_line(
+                                line,
+                                Some(kind_registry),
+                                include_lsp,
+                                line_of,
+                            )
                         })
                         .map(|s| s.to_string());
                     // Affordance hint for the interactive annotation under the

@@ -1250,7 +1250,7 @@ fn test_tab_rendered_as_space_not_raw_tab() {
 fn render_row_with_adornments(
     cols: usize,
     text: &str,
-    adornments: &[(usize, String, Color)],
+    adornments: &[crate::render::LineAdornment<'_>],
     left_col: usize,
 ) -> String {
     let mut term = MockTerminal::new(5, cols as u16);
@@ -1307,7 +1307,7 @@ fn render_row_with_adornments(
 
 #[test]
 fn test_trailing_adornment_advances_by_display_width() {
-    let ad = vec![(0, "\u{4e2d}x".to_string(), Color::Red)];
+    let ad = vec![(0, std::borrow::Cow::Borrowed("\u{4e2d}x"), Color::Red)];
     let row = render_row_with_adornments(8, "ab", &ad, 0);
     // Wide char at col 3 gets a filler cell at col 4 so 'x' lands at col 5.
     assert_eq!(row, "ab \u{4e2d} x  ");
@@ -1315,7 +1315,7 @@ fn test_trailing_adornment_advances_by_display_width() {
 
 #[test]
 fn test_trailing_adornment_clips_with_ellipsis() {
-    let ad = vec![(0, "0123456789".to_string(), Color::Red)];
+    let ad = vec![(0, std::borrow::Cow::Borrowed("0123456789"), Color::Red)];
     assert_eq!(render_row_with_adornments(10, "ab", &ad, 0), "ab 0123...");
     // Fewer than 4 free cells: draw nothing rather than a bare ellipsis.
     assert_eq!(render_row_with_adornments(6, "ab", &ad, 0), "ab    ");
@@ -1323,7 +1323,7 @@ fn test_trailing_adornment_clips_with_ellipsis() {
 
 #[test]
 fn test_trailing_adornment_hidden_when_line_end_scrolled_off() {
-    let ad = vec![(0, "msg".to_string(), Color::Red)];
+    let ad = vec![(0, std::borrow::Cow::Borrowed("msg"), Color::Red)];
     assert_eq!(render_row_with_adornments(8, "ab", &ad, 5), "        ");
     // Exactly-full row: line end reached but no room, nothing spills over.
     assert_eq!(render_row_with_adornments(2, "ab", &ad, 0), "ab");

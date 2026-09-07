@@ -50,7 +50,7 @@ fn hash_annotation_styles(spans: &[(std::ops::Range<usize>, CellStyle)]) -> u64 
 /// content layer redraws when inlay hints or other virtual text change.
 fn hash_virtual_text(
     inline: &[InlineAdornment],
-    adornments: &[(usize, String, crate::color::Color)],
+    adornments: &[crate::render::LineAdornment<'_>],
 ) -> u64 {
     let mut h: u64 = 0;
     for (start, end, text, color, leading) in inline {

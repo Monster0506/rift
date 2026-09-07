@@ -115,6 +115,10 @@ impl Anchor {
     }
 }
 
+/// One diagnostic for `replace_lsp_diagnostics`: (line, diagnosed byte span
+/// if the server gave a non-empty one, severity, message).
+pub type LspDiagnosticSpec<'a> = (usize, Option<std::ops::Range<usize>>, i64, &'a str);
+
 /// What happens to an annotation when its anchored span is deleted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Stickiness {
@@ -484,7 +488,7 @@ impl AnnotationStore {
         line_range: std::ops::Range<usize>,
         include_lsp: bool,
         line_of: impl Fn(usize) -> usize,
-    ) -> Vec<(usize, String, crate::color::Color)> {
+    ) -> Vec<crate::render::LineAdornment<'_>> {
         let mut found: Vec<(usize, i64, &Adornment, &Annotation)> = Vec::new();
         for a in self.viewport_candidates(byte_range, line_range) {
             if !a.visible || (!include_lsp && a.owner == AnnotationOwner::Lsp) {
@@ -514,8 +518,8 @@ impl AnnotationStore {
                 j += 1;
             }
             let text = match j - i - 1 {
-                0 => adornment.text.clone(),
-                extra => format!("{} (+{})", adornment.text, extra),
+                0 => std::borrow::Cow::Borrowed(adornment.text.as_str()),
+                extra => std::borrow::Cow::Owned(format!("{} (+{})", adornment.text, extra)),
             };
             out.push((line, text, adornment_color(a, adornment, colors, defaults)));
             i = j;
@@ -643,13 +647,15 @@ impl AnnotationStore {
         line: usize,
         defaults: Option<&'a registry::KindRegistry>,
         include_lsp: bool,
+        line_of: impl Fn(usize) -> usize,
     ) -> Option<&'a str> {
         self.annotations
             .iter()
-            .filter(|a| {
-                a.visible
-                    && a.anchor == Anchor::Line(line)
-                    && (include_lsp || a.owner != AnnotationOwner::Lsp)
+            .filter(|a| a.visible && (include_lsp || a.owner != AnnotationOwner::Lsp))
+            .filter(|a| match a.anchor {
+                Anchor::Line(l) => l == line,
+                Anchor::Point(p) => line_of(p.offset) == line,
+                Anchor::Range(s, _) => line_of(s.offset) == line,
             })
             .filter_map(|a| {
                 let tip = payload::tooltip(&a.payload)
@@ -671,6 +677,34 @@ impl AnnotationStore {
         self.annotations
             .iter()
             .find(|a| a.is_interactive() && a.anchor == Anchor::Line(line))
+    }
+
+    /// Sorted, de-duplicated lines carrying a visible trailing adornment: the
+    /// lines that need an EOL row when soft-wrapped text exactly fills them.
+    pub fn trailing_adornment_lines(
+        &self,
+        include_lsp: bool,
+        line_of: impl Fn(usize) -> usize,
+    ) -> Vec<usize> {
+        let mut lines: Vec<usize> = self
+            .annotations
+            .iter()
+            .filter(|a| a.visible && (include_lsp || a.owner != AnnotationOwner::Lsp))
+            .filter(|a| {
+                a.presentation
+                    .as_ref()
+                    .and_then(|p| p.adornment.as_ref())
+                    .is_some_and(|ad| ad.placement == presentation::Placement::Trailing)
+            })
+            .map(|a| match a.anchor {
+                Anchor::Line(l) => l,
+                Anchor::Point(p) => line_of(p.offset),
+                Anchor::Range(s, _) => line_of(s.offset),
+            })
+            .collect();
+        lines.sort_unstable();
+        lines.dedup();
+        lines
     }
 
     /// Sorted, de-duplicated lines carrying an interactive annotation (offset
@@ -836,10 +870,15 @@ impl AnnotationStore {
         out
     }
 
-    /// Build (but do not insert) a `diag.<sev>` diagnostic annotation; shared
-    /// by the single-insert and bulk-replace paths so they cannot drift.
-    fn build_diagnostic(line: usize, severity: i64, message: &str) -> Annotation {
-let sev_str = match severity {
+    /// Build (but do not insert) a diagnostic: underlined over `bytes` when the
+    /// server gave a non-empty span, else anchored to the whole `line`.
+    fn build_diagnostic(
+        line: usize,
+        bytes: Option<std::ops::Range<usize>>,
+        severity: i64,
+        message: &str,
+    ) -> Annotation {
+        let sev_str = match severity {
             1 => "error",
             2 => "warning",
             3 => "info",
@@ -852,13 +891,26 @@ let sev_str = match severity {
         payload.set("severity", Value::Int(severity));
         payload.set("message", Value::Str(message.to_string()));
         payload.set("tooltip", Value::Str(format!("[{}] {}", sev_str, message)));
-        let presentation = Presentation::with_face(face.clone()).with_adornment(
-            presentation::Adornment::new(message, presentation::Placement::Trailing)
-                .with_face(face),
+        // Underline only: the diagnosed text keeps its syntax color, the
+        // severity color goes on the trailing message.
+        let underline = presentation::StyleOverride {
+            underline: true,
+            ..Default::default()
+        };
+        let presentation = Presentation::with_style(underline).with_adornment(
+            presentation::Adornment::new(
+                Self::adornment_summary(message),
+                presentation::Placement::Trailing,
+            )
+            .with_face(face),
         );
+        let anchor = match bytes {
+            Some(r) if r.start < r.end => Anchor::range(r.start, r.end),
+            _ => Anchor::Line(line),
+        };
         Annotation::new(
             Kind::new(well_known::LSP_DIAGNOSTIC),
-            Anchor::Line(line),
+            anchor,
             AnnotationOwner::Lsp,
         )
         .with_payload(payload)
@@ -867,23 +919,22 @@ let sev_str = match severity {
         .with_read_only(true)
     }
 
-    /// Create an LSP diagnostic: a `diag.<sev>` face plus a trailing EOL message
-    /// adornment, rendered through the generic presentation path
+    /// Create a line-anchored LSP diagnostic (severity face + trailing EOL message).
     pub fn create_diagnostic(&mut self, line: usize, severity: i64, message: &str) -> AnnotationId {
-        self.add(Self::build_diagnostic(line, severity, message))
+        self.add(Self::build_diagnostic(line, None, severity, message))
     }
 
-    /// Replace the full set of LSP diagnostics in one pass: drop existing LSP
-    /// diagnostic annotations and add `diags` (each `(line, severity, message)`),
+    /// Replace the full set of LSP diagnostics in one pass; each item is
+    /// `(line, diagnosed byte span, severity, message)`.
     pub fn replace_lsp_diagnostics<'a>(
         &mut self,
-        diags: impl IntoIterator<Item = (usize, i64, &'a str)>,
+        diags: impl IntoIterator<Item = LspDiagnosticSpec<'a>>,
     ) {
         self.annotations.retain(|a| {
             !(a.kind.matches_prefix(well_known::LSP_DIAGNOSTIC) && a.owner == AnnotationOwner::Lsp)
         });
-        for (line, severity, message) in diags {
-            let mut annotation = Self::build_diagnostic(line, severity, message);
+        for (line, bytes, severity, message) in diags {
+            let mut annotation = Self::build_diagnostic(line, bytes, severity, message);
             annotation.id = self.next_id;
             self.next_id += 1;
             self.annotations.push(annotation);
