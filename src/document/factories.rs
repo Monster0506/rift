@@ -103,6 +103,8 @@ impl Document {
             annotation_redo_stack: Vec::new(),
             document_version: 0,
             pending_lsp_edits: Vec::new(),
+            lsp_synced_revision: 0,
+            lsp_full_sync_needed: false,
             pending_ghost: Vec::new(),
         }
     }

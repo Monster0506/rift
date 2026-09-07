@@ -51,9 +51,11 @@ impl<T: TerminalBackend> Editor<T> {
         self.poll_pending_syntax_reparse();
         self.poll_pending_search_refresh();
 
-        // Poll LSP messages
+        // Poll LSP messages, after pushing every unsent edit so the server
+        // answers against the buffer the user actually sees.
         #[cfg(feature = "lsp")]
         {
+            self.lsp_flush_pending_changes();
             let lsp_msgs = self.lsp_manager.poll();
             let had_lsp = !lsp_msgs.is_empty();
             for msg in lsp_msgs {
@@ -112,11 +114,25 @@ impl<T: TerminalBackend> Editor<T> {
                 return Ok(());
             }
 
-            // Escape closes an open plugin float before any other key handling.
-            if key_press == Key::Escape && self.plugin_host.has_open_float() {
-                self.plugin_host.close_float();
-                self.update_and_render()?;
-                return Ok(());
+            // An open plugin float captures Escape (close) and scroll keys.
+            if self.plugin_host.has_open_float() {
+                let scroll = match &key_press {
+                    Key::Escape => {
+                        self.plugin_host.close_float();
+                        self.update_and_render()?;
+                        return Ok(());
+                    }
+                    Key::Char('j') | Key::ArrowDown => Some(1),
+                    Key::Char('k') | Key::ArrowUp => Some(-1),
+                    Key::PageDown => Some(10),
+                    Key::PageUp => Some(-10),
+                    _ => None,
+                };
+                if let Some(delta) = scroll {
+                    self.plugin_host.scroll_float(delta);
+                    self.update_and_render()?;
+                    return Ok(());
+                }
             }
 
             // Escape always cancels OperatorPending, regardless of keymap overrides.

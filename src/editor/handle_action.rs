@@ -800,31 +800,9 @@ impl<T: TerminalBackend> Editor<T> {
 
             EditorAction::LspGotoDefinition => {
                 #[cfg(feature = "lsp")]
-                {
-                    use crate::buffer::api::BufferView;
-                    if let Some(doc) = self.document_manager.active_document() {
-                        if let Some(path) = doc.path().map(|p| p.to_path_buf()) {
-                            if self.lsp_manager.is_indexing_path(&path) {
-                                self.state.notify(
-                                    crate::notification::NotificationType::Info,
-                                    "LSP: still indexing, please wait...".to_string(),
-                                );
-                            } else {
-                                let cur_line = doc.buffer.get_line();
-                                let line = cur_line as u32;
-                                let line_start = doc.buffer.line_start(cur_line);
-                                let char_col = doc.buffer.cursor().saturating_sub(line_start);
-                                let encoding = self.lsp_manager.position_encoding_for_path(&path);
-                                let col =
-                                    doc.lsp_position_units_in_line(cur_line, char_col, encoding);
-                                if self.lsp_manager.goto_definition(&path, line, col).is_none() {
-                                    self.state.notify(
-                                        crate::notification::NotificationType::Warning,
-                                        "LSP: no server available for this file".to_string(),
-                                    );
-                                }
-                            }
-                        }
+                if let Some((path, line, col)) = self.lsp_request_position() {
+                    if self.lsp_manager.goto_definition(&path, line, col).is_none() {
+                        self.notify_no_lsp_server();
                     }
                 }
                 true
@@ -832,31 +810,9 @@ impl<T: TerminalBackend> Editor<T> {
 
             EditorAction::LspReferences => {
                 #[cfg(feature = "lsp")]
-                {
-                    use crate::buffer::api::BufferView;
-                    if let Some(doc) = self.document_manager.active_document() {
-                        if let Some(path) = doc.path().map(|p| p.to_path_buf()) {
-                            if self.lsp_manager.is_indexing_path(&path) {
-                                self.state.notify(
-                                    crate::notification::NotificationType::Info,
-                                    "LSP: still indexing, please wait...".to_string(),
-                                );
-                            } else {
-                                let cur_line = doc.buffer.get_line();
-                                let line = cur_line as u32;
-                                let line_start = doc.buffer.line_start(cur_line);
-                                let char_col = doc.buffer.cursor().saturating_sub(line_start);
-                                let encoding = self.lsp_manager.position_encoding_for_path(&path);
-                                let col =
-                                    doc.lsp_position_units_in_line(cur_line, char_col, encoding);
-                                if self.lsp_manager.references(&path, line, col).is_none() {
-                                    self.state.notify(
-                                        crate::notification::NotificationType::Warning,
-                                        "LSP: no server available for this file".to_string(),
-                                    );
-                                }
-                            }
-                        }
+                if let Some((path, line, col)) = self.lsp_request_position() {
+                    if self.lsp_manager.references(&path, line, col).is_none() {
+                        self.notify_no_lsp_server();
                     }
                 }
                 true
@@ -864,31 +820,9 @@ impl<T: TerminalBackend> Editor<T> {
 
             EditorAction::LspHover => {
                 #[cfg(feature = "lsp")]
-                {
-                    use crate::buffer::api::BufferView;
-                    if let Some(doc) = self.document_manager.active_document() {
-                        if let Some(path) = doc.path().map(|p| p.to_path_buf()) {
-                            if self.lsp_manager.is_indexing_path(&path) {
-                                self.state.notify(
-                                    crate::notification::NotificationType::Info,
-                                    "LSP: still indexing, please wait...".to_string(),
-                                );
-                            } else {
-                                let cur_line = doc.buffer.get_line();
-                                let line = cur_line as u32;
-                                let line_start = doc.buffer.line_start(cur_line);
-                                let char_col = doc.buffer.cursor().saturating_sub(line_start);
-                                let encoding = self.lsp_manager.position_encoding_for_path(&path);
-                                let col =
-                                    doc.lsp_position_units_in_line(cur_line, char_col, encoding);
-                                if self.lsp_manager.hover(&path, line, col).is_none() {
-                                    self.state.notify(
-                                        crate::notification::NotificationType::Warning,
-                                        "LSP: no server available for this file".to_string(),
-                                    );
-                                }
-                            }
-                        }
+                if let Some((path, line, col)) = self.lsp_request_position() {
+                    if self.lsp_manager.hover(&path, line, col).is_none() {
+                        self.notify_no_lsp_server();
                     }
                 }
                 true
@@ -897,18 +831,7 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::LspRename => {
                 #[cfg(feature = "lsp")]
                 {
-                    use crate::buffer::api::BufferView;
-                    let ctx = self.document_manager.active_document().and_then(|doc| {
-                        let path = doc.path()?.to_path_buf();
-                        let cur_line = doc.buffer.get_line();
-                        let line = cur_line as u32;
-                        let line_start = doc.buffer.line_start(cur_line);
-                        let char_col = doc.buffer.cursor().saturating_sub(line_start);
-                        let encoding = self.lsp_manager.position_encoding_for_path(&path);
-                        let col = doc.lsp_position_units_in_line(cur_line, char_col, encoding);
-                        Some((path, line, col))
-                    });
-                    if let Some(ctx) = ctx {
+                    if let Some(ctx) = self.cursor_lsp_position() {
                         self.rename_context = Some(ctx);
                         self.state.clear_command_line();
                         self.set_mode(Mode::Rename);
@@ -924,48 +847,26 @@ impl<T: TerminalBackend> Editor<T> {
 
             EditorAction::LspCodeAction => {
                 #[cfg(feature = "lsp")]
-                {
-                    use crate::buffer::api::BufferView;
-                    if let Some(doc) = self.document_manager.active_document() {
-                        if let Some(path) = doc.path().map(|p| p.to_path_buf()) {
-                            if self.lsp_manager.is_indexing_path(&path) {
-                                self.state.notify(
-                                    crate::notification::NotificationType::Warning,
-                                    "LSP: still indexing, please wait...".to_string(),
-                                );
-                            } else {
-                                let cur_line = doc.buffer.get_line();
-                                let line = cur_line as u32;
-                                let line_start = doc.buffer.line_start(cur_line);
-                                let char_col = doc.buffer.cursor().saturating_sub(line_start);
-                                let encoding = self.lsp_manager.position_encoding_for_path(&path);
-                                let col =
-                                    doc.lsp_position_units_in_line(cur_line, char_col, encoding);
-                                let uri = crate::lsp::protocol::path_to_uri(&path);
-                                let norm_uri = crate::lsp::protocol::normalize_uri(&uri);
-                                let diagnostics: Vec<crate::lsp::protocol::LspDiagnostic> = self
-                                    .lsp_diagnostics
-                                    .get(&norm_uri)
-                                    .map(|diags| {
-                                        diags
-                                            .iter()
-                                            .filter(|d| d.range.start.line == line)
-                                            .cloned()
-                                            .collect()
-                                    })
-                                    .unwrap_or_default();
-                                if self
-                                    .lsp_manager
-                                    .code_action(&path, line, col, diagnostics)
-                                    .is_none()
-                                {
-                                    self.state.notify(
-                                        crate::notification::NotificationType::Warning,
-                                        "LSP: no server for this file".to_string(),
-                                    );
-                                }
-                            }
-                        }
+                if let Some((path, line, col)) = self.lsp_request_position() {
+                    let uri = crate::lsp::protocol::path_to_uri(&path);
+                    let norm_uri = crate::lsp::protocol::normalize_uri(&uri);
+                    let diagnostics: Vec<crate::lsp::protocol::LspDiagnostic> = self
+                        .lsp_diagnostics
+                        .get(&norm_uri)
+                        .map(|diags| {
+                            diags
+                                .iter()
+                                .filter(|d| d.range.start.line == line)
+                                .cloned()
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    if self
+                        .lsp_manager
+                        .code_action(&path, line, col, diagnostics)
+                        .is_none()
+                    {
+                        self.notify_no_lsp_server();
                     }
                 }
                 true
@@ -991,10 +892,7 @@ impl<T: TerminalBackend> Editor<T> {
                             .format(&path, tab_size, insert_spaces)
                             .is_none()
                         {
-                            self.state.notify(
-                                crate::notification::NotificationType::Warning,
-                                "LSP: no server available for this file".to_string(),
-                            );
+                            self.notify_no_lsp_server();
                         }
                     }
                 }

@@ -61,6 +61,16 @@ impl DocumentManager {
         self.current_tab = self.tab_order.len() - 1;
     }
 
+    /// Add a document as a tab without making it active.
+    pub fn add_document_inactive(&mut self, document: Document) {
+        let id = document.id;
+        if id >= self.next_document_id {
+            self.next_document_id = id + 1;
+        }
+        self.documents.insert(id, document);
+        self.tab_order.push(id);
+    }
+
     /// Get ID of the active document
     pub fn active_document_id(&self) -> Option<DocumentId> {
         if self.tab_order.is_empty() {

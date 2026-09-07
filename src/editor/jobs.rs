@@ -94,6 +94,54 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    /// Build and attach tree-sitter syntax for `doc_id` from its file path,
+    /// if a grammar is registered for it. Does not spawn a parse.
+    pub(super) fn attach_syntax_for_document(&mut self, doc_id: DocumentId) {
+        #[cfg(feature = "treesitter")]
+        {
+            let Some(path) = self
+                .document_manager
+                .get_document(doc_id)
+                .and_then(|d| d.path())
+                .map(|p| p.to_path_buf())
+            else {
+                return;
+            };
+            let Ok(loaded) = self.language_loader.load_language_for_file(&path) else {
+                return;
+            };
+            let highlights = self
+                .language_loader
+                .load_query(&loaded.name, "highlights")
+                .ok()
+                .and_then(|source| tree_sitter::Query::new(&loaded.language, &source).ok())
+                .map(Arc::new);
+            if let Ok(syntax) =
+                crate::syntax::build_syntax(loaded, highlights, self.language_loader.clone())
+            {
+                if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                    doc.set_syntax(syntax);
+                }
+            }
+        }
+        #[cfg(not(feature = "treesitter"))]
+        let _ = doc_id;
+    }
+
+    /// Forget a file-load job that will never deliver; drop any goto jump
+    /// waiting on the document it was meant to fill.
+    fn on_file_load_failed(&mut self, job_id: usize) {
+        let Some(doc_id) = self.file_load_jobs.remove(&job_id) else {
+            return;
+        };
+        #[cfg(feature = "lsp")]
+        if self.pending_goto_target.map(|t| t.0) == Some(doc_id) {
+            self.pending_goto_target = None;
+        }
+        #[cfg(not(feature = "lsp"))]
+        let _ = doc_id;
+    }
+
     /// Spawn a background reparse immediately (bypassing the debounce timer), cancelling any
     /// job already in flight for this doc. Used for one-shot triggers like undo/redo, not routine typing.
     pub(super) fn spawn_syntax_parse_job_immediate(&mut self, doc_id: DocumentId) {
@@ -182,6 +230,7 @@ impl<T: TerminalBackend> Editor<T> {
                 );
             }
             JobMessage::Error(id, err) => {
+                self.on_file_load_failed(id);
                 let silent = self.job_manager.is_job_silent(id);
                 let name = self.job_manager.job_name(id);
                 self.state.error_manager.notifications_mut().log_job_event(
@@ -208,6 +257,7 @@ impl<T: TerminalBackend> Editor<T> {
                     crate::notification::NotificationType::Warning,
                     format!("{} cancelled", name),
                 );
+                self.on_file_load_failed(id);
 
                 if self.pending_quit_job_id == Some(id) {
                     self.pending_quit_job_id = None;
@@ -459,52 +509,31 @@ impl<T: TerminalBackend> Editor<T> {
                     .downcast::<crate::job_manager::jobs::file_operations::FileLoadResult>(
                 ) {
                     Ok(res) => {
+                        self.file_load_jobs.remove(&id);
                         // Scope for doc mutation
                         let warming_data = if let Some(doc) =
                             self.document_manager.get_document_mut(res.document_id)
                         {
                             doc.apply_loaded_content(res.line_index, res.line_ending);
+                            if res.is_reload {
+                                // The server still holds the pre-reload text.
+                                doc.mark_lsp_full_sync();
+                            }
                             // Extract data for cache warming
                             let table = doc.buffer.line_index.table.clone();
                             let revision = doc.buffer.revision;
-                            let path = doc.path().map(|p| p.to_path_buf());
-                            Some((table, revision, path))
+                            Some((table, revision))
                         } else {
                             None
                         };
 
-                        // Re-initialize syntax
-                        #[cfg(feature = "treesitter")]
-                        if let Some((_, _, Some(path))) = &warming_data {
-                            if let Ok(loaded) = self.language_loader.load_language_for_file(path) {
-                                let highlights = self
-                                    .language_loader
-                                    .load_query(&loaded.name, "highlights")
-                                    .ok()
-                                    .and_then(|source| {
-                                        tree_sitter::Query::new(&loaded.language, &source).ok()
-                                    })
-                                    .map(Arc::new);
-
-                                if let Ok(syntax) = crate::syntax::build_syntax(
-                                    loaded,
-                                    highlights,
-                                    self.language_loader.clone(),
-                                ) {
-                                    if let Some(doc) =
-                                        self.document_manager.get_document_mut(res.document_id)
-                                    {
-                                        doc.set_syntax(syntax);
-                                    }
-                                }
-                            }
-                        }
+                        self.attach_syntax_for_document(res.document_id);
 
                         // Spawn syntax parse (requires self)
                         self.spawn_syntax_parse_job(res.document_id);
 
                         // Spawn cache warming if data extracted
-                        if let Some((table, revision, _)) = warming_data {
+                        if let Some((table, revision)) = warming_data {
                             let job = crate::job_manager::jobs::cache_warming::CacheWarmingJob::new(
                                 table, revision,
                             );
@@ -534,7 +563,7 @@ impl<T: TerminalBackend> Editor<T> {
                         // Notify LSP after opening a new (non-reload) file
                         #[cfg(feature = "lsp")]
                         if !res.is_reload {
-                            self.lsp_notify_open();
+                            self.lsp_notify_open(res.document_id);
                         }
 
                         // Apply any deferred goto-definition jump that was stashed
@@ -563,8 +592,8 @@ impl<T: TerminalBackend> Editor<T> {
                                     doc.buffer.clear_desired_col();
                                     let _ = doc.buffer.set_cursor(target);
                                 }
-                            } else {
-                                // Wrong document loaded — put the target back
+                            } else if self.document_manager.get_document(goto_doc).is_some() {
+                                // Another document loaded first; keep waiting for ours.
                                 self.pending_goto_target = Some((goto_doc, goto_line, goto_col));
                             }
                         }

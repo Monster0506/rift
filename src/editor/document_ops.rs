@@ -78,7 +78,8 @@ impl<T: TerminalBackend> Editor<T> {
                     doc_id,
                     path.clone(),
                 );
-                self.job_manager.spawn(job);
+                let job_id = self.job_manager.spawn(job);
+                self.file_load_jobs.insert(job_id, doc_id);
             } else if crate::document::manager::parent_dir_missing(&path) {
                 return Err(RiftError::new(
                     ErrorType::Io,
@@ -89,7 +90,11 @@ impl<T: TerminalBackend> Editor<T> {
                 // Brand-new file: nothing on disk to load, so open an empty
                 // buffer directly instead of spawning a job that would error.
                 self.save_current_view_state();
-                self.document_manager.create_placeholder(&path_str)?;
+                let doc_id = self.document_manager.create_placeholder(&path_str)?;
+                #[cfg(feature = "lsp")]
+                self.lsp_notify_open(doc_id);
+                #[cfg(not(feature = "lsp"))]
+                let _ = doc_id;
             }
         } else {
             // Reload current
@@ -107,7 +112,9 @@ impl<T: TerminalBackend> Editor<T> {
                         doc.id,
                         path.to_path_buf(),
                     );
-                    self.job_manager.spawn(job);
+                    let doc_id = doc.id;
+                    let job_id = self.job_manager.spawn(job);
+                    self.file_load_jobs.insert(job_id, doc_id);
                 } else {
                     return Err(RiftError::new(
                         ErrorType::Execution,

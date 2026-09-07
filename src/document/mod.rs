@@ -221,6 +221,11 @@ pub struct Document {
     /// Edits recorded since the last `take_lsp_edits`, for an LSP client to
     /// express as incremental changes instead of resending the whole document.
     pending_lsp_edits: Vec<crate::history::EditOperation>,
+    /// `buffer.revision` when the LSP client last synced this document. Any
+    /// drift not explained by `pending_lsp_edits` forces a full resync.
+    lsp_synced_revision: u64,
+    /// Set when the buffer was swapped wholesale (reload); cleared on sync.
+    lsp_full_sync_needed: bool,
     /// Deferred `d`-cuts not yet materialized into real deletes. A banked or
     /// visual-selection delete produces multiple entries from one cut action.
     pub pending_ghost: Vec<GhostCut>,
@@ -303,7 +308,13 @@ impl Document {
         use crate::history::EditOperation;
         use crate::lsp::protocol::{LspPosition, LspRange};
 
+        let complete = self.pending_lsp_edits_are_complete();
         let mut ops = std::mem::take(&mut self.pending_lsp_edits);
+        self.lsp_synced_revision = self.buffer.revision;
+        self.lsp_full_sync_needed = false;
+        if !complete {
+            return None;
+        }
         if ops.len() > 1 {
             let (position, text) = combine_insert_run(&ops)?;
             let units = self.lsp_position_units_in_line(
@@ -426,6 +437,31 @@ impl Document {
     /// next time; call this when skipping incremental sync for this edit.
     pub fn discard_pending_lsp_changes(&mut self) {
         self.pending_lsp_edits.clear();
+        self.lsp_synced_revision = self.buffer.revision;
+        self.lsp_full_sync_needed = false;
+    }
+
+    /// Flag the whole buffer as changed behind the LSP client's back (e.g. a
+    /// reload swapped it in), so the next sync resends everything.
+    pub fn mark_lsp_full_sync(&mut self) {
+        self.lsp_full_sync_needed = true;
+    }
+
+    /// True when the buffer changed since the LSP client last synced it,
+    /// whether or not the change went through `record_edit`.
+    pub fn has_pending_lsp_edits(&self) -> bool {
+        self.lsp_full_sync_needed
+            || !self.pending_lsp_edits.is_empty()
+            || self.buffer.revision != self.lsp_synced_revision
+    }
+
+    /// True only if every buffer mutation since the last sync was recorded, so
+    /// the pending edits can be replayed incrementally (undo/redo bypass recording).
+    #[cfg(feature = "lsp")]
+    fn pending_lsp_edits_are_complete(&self) -> bool {
+        let recorded = self.pending_lsp_edits.len() as u64;
+        !self.lsp_full_sync_needed
+            && self.buffer.revision.wrapping_sub(self.lsp_synced_revision) == recorded
     }
 
     #[cfg(feature = "lsp")]
