@@ -295,9 +295,7 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for PresentationDecorator<'a, 
                 if let Some(bg) = style.bg {
                     item.bg = Some(bg);
                 }
-                if !style.attrs.is_empty() {
-                    item.attrs = style.attrs;
-                }
+                item.attrs = item.attrs.union(style.attrs);
             }
         }
         Some(item)
