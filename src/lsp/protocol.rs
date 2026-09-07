@@ -150,6 +150,36 @@ pub struct LspLocation {
     pub range: LspRange,
 }
 
+/// `LocationLink`, the alternative shape servers may return for definition
+/// requests; collapses to the target's selection range.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LspLocationLink {
+    pub target_uri: String,
+    pub target_range: LspRange,
+    pub target_selection_range: Option<LspRange>,
+}
+
+impl From<LspLocationLink> for LspLocation {
+    fn from(link: LspLocationLink) -> Self {
+        LspLocation {
+            uri: link.target_uri,
+            range: link.target_selection_range.unwrap_or(link.target_range),
+        }
+    }
+}
+
+/// Parse one `Location | LocationLink` value.
+pub fn location_from_value(v: Value) -> Option<LspLocation> {
+    if v.get("targetUri").is_some() {
+        serde_json::from_value::<LspLocationLink>(v)
+            .ok()
+            .map(Into::into)
+    } else {
+        serde_json::from_value(v).ok()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LspDiagnostic {
     pub range: LspRange,
@@ -192,8 +222,24 @@ pub struct InitializeParams {
 pub struct ClientCapabilities {
     #[serde(rename = "textDocument")]
     pub text_document: TextDocumentClientCapabilities,
+    pub workspace: WorkspaceClientCapabilities,
     pub general: GeneralCapabilities,
     pub window: WindowCapabilities,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkspaceClientCapabilities {
+    /// We answer `workspace/applyEdit` by applying the edit in the editor.
+    #[serde(rename = "applyEdit")]
+    pub apply_edit: bool,
+    #[serde(rename = "workspaceEdit")]
+    pub workspace_edit: WorkspaceEditClientCapabilities,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkspaceEditClientCapabilities {
+    #[serde(rename = "documentChanges")]
+    pub document_changes: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -427,6 +473,22 @@ pub struct CodeActionContext {
     pub trigger_kind: u32,
 }
 
+/// Percent-encode a URI path: everything except RFC 3986 unreserved chars
+/// and `/` (Windows drive colons stay bare, matching what servers echo).
+fn percent_encode_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for b in path.bytes() {
+        let keep =
+            b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'/' | b':');
+        if keep {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{:02X}", b));
+        }
+    }
+    out
+}
+
 pub fn path_to_uri(path: &std::path::Path) -> String {
     let path_str = path.to_string_lossy();
     if cfg!(windows) {
@@ -439,27 +501,35 @@ pub fn path_to_uri(path: &std::path::Path) -> String {
         } else {
             path_str
         };
-        let normalized = stripped.replace('\\', "/");
-        let uri = if normalized.starts_with('/') {
-            format!("file://{}", normalized)
+        let mut normalized = stripped.replace('\\', "/");
+        // Only the drive letter is case-folded: servers key their file
+        // graph by the on-disk spelling of the rest of the path.
+        if normalized.as_bytes().get(1) == Some(&b':') {
+            normalized[..1].make_ascii_lowercase();
+        }
+        let encoded = percent_encode_path(&normalized);
+        if encoded.starts_with('/') {
+            format!("file://{}", encoded)
         } else {
-            format!("file:///{}", normalized)
-        };
-        // Lowercase so our URIs always match what the LSP server sends,
-        // which uses lowercase drive letters (file:///c:/...) on Windows.
-        uri.to_lowercase()
+            format!("file:///{}", encoded)
+        }
     } else {
-        format!("file://{}", path_str)
+        format!("file://{}", percent_encode_path(&path_str))
     }
 }
 
-/// Normalize a file URI for use as a HashMap key (Windows drive letters
-/// are case-insensitive, so `file:///C:/` and `file:///c:/` must match).
+/// Canonical map-key form of a file URI: percent-decoded so `c%3A` and `c:`
+/// agree, and case-folded on Windows where the filesystem is case-insensitive.
 pub fn normalize_uri(uri: &str) -> String {
-    if cfg!(windows) {
-        uri.to_lowercase()
+    let decoded = if uri.contains('%') {
+        std::borrow::Cow::Owned(percent_decode(uri))
     } else {
-        uri.to_string()
+        std::borrow::Cow::Borrowed(uri)
+    };
+    if cfg!(windows) {
+        decoded.to_lowercase()
+    } else {
+        decoded.into_owned()
     }
 }
 
@@ -487,7 +557,13 @@ pub fn uri_to_path(uri: &str) -> Option<std::path::PathBuf> {
     let path = uri.strip_prefix("file://")?;
     let path = percent_decode(path);
     let path = if cfg!(windows) {
-        path.strip_prefix('/').unwrap_or(&path).replace('/', "\\")
+        // `file:///c:/x` -> `c:\x`; `file:////server/share` (UNC) keeps both slashes.
+        let p = if path.starts_with("//") {
+            path.as_str()
+        } else {
+            path.strip_prefix('/').unwrap_or(&path)
+        };
+        p.replace('/', "\\")
     } else {
         path.to_string()
     };
