@@ -5,6 +5,14 @@ use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn execute_buffer_command(&mut self, command: crate::command::Command) -> bool {
+        if command.is_mutating()
+            && self
+                .document_manager
+                .active_document()
+                .is_some_and(|d| d.is_read_only)
+        {
+            return false;
+        }
         let current_mode = self.current_mode;
         if current_mode == Mode::Normal
             || current_mode == Mode::Insert
@@ -122,8 +130,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.lsp_notify_change(buf);
                 }
 
-                // Defer CursorMoved to the next render cycle, same as
-                // TextChangedCoarse, so several moves within a frame fire once.
+                // Defer CursorMoved so several moves within one frame fire once.
                 if let Some(event) = cursor_event {
                     self.pending_cursor_moved = Some(event);
                 }
