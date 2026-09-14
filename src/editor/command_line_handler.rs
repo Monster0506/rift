@@ -166,6 +166,9 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::OpenBufferList => {
                 self.open_buffer_list_panel();
             }
+            ExecutionResult::BufferDelete { index, bangs } => {
+                self.do_buffer_delete(index, bangs > 0);
+            }
             ExecutionResult::NotificationClear { bangs } => {
                 self.do_notification_clear(bangs > 0);
             }

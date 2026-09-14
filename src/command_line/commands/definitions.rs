@@ -199,6 +199,26 @@ fn parse_buffer_root(
     }
 }
 
+fn parse_bdelete(
+    _registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    match args.first() {
+        None => ParsedCommand::BufferDelete { index: None, bangs },
+        Some(arg) => match arg.parse::<usize>() {
+            Ok(index) if index > 0 => ParsedCommand::BufferDelete {
+                index: Some(index),
+                bangs,
+            },
+            _ => ParsedCommand::Unknown {
+                name: format!("bdelete {arg}"),
+                args: vec![],
+            },
+        },
+    }
+}
+
 fn parse_nohighlight(
     _registry: &SettingsRegistry<UserSettings>,
     _args: &[&str],
@@ -1040,6 +1060,15 @@ const BUFFER_SUBS: &[CommandDescriptor] = &[
         completion: N,
         subcommand_prefix: "",
     },
+    CommandDescriptor {
+        name: "delete",
+        aliases: &["d", "bd"],
+        description: "Delete buffer",
+        factory: Some(parse_bdelete),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
 ];
 
 // Re-wraps as Unknown { name: "lsp", args: [subcmd, ...] } so the executor maps it to
@@ -1282,6 +1311,15 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         aliases: &[],
         description: "List buffers",
         factory: Some(parse_blist),
+        subcommands: &[],
+        completion: N,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "bdelete",
+        aliases: &["bd"],
+        description: "Delete buffer",
+        factory: Some(parse_bdelete),
         subcommands: &[],
         completion: N,
         subcommand_prefix: "",

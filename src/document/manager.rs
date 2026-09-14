@@ -460,6 +460,11 @@ impl DocumentManager {
         }
     }
 
+    /// Whether `id` belongs to a panel-owned document.
+    pub fn is_private(&self, id: DocumentId) -> bool {
+        self.private_document_ids.contains(&id)
+    }
+
     /// Add a fully-constructed document and mark it as private (hidden from tabs).
     pub fn add_private_document(&mut self, doc: Document) -> DocumentId {
         let id = doc.id;
