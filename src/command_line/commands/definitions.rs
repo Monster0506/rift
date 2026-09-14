@@ -182,6 +182,26 @@ fn parse_blist(
     ParsedCommand::BufferList
 }
 
+fn parse_buffer_root(
+    _registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    match args.first() {
+        None => ParsedCommand::Unknown {
+            name: "buffer".to_string(),
+            args: vec![],
+        },
+        Some(arg) => match arg.parse::<usize>() {
+            Ok(index) if index > 0 => ParsedCommand::BufferGoto { index, bangs },
+            _ => ParsedCommand::Unknown {
+                name: format!("buffer {arg}"),
+                args: vec![],
+            },
+        },
+    }
+}
+
 fn parse_nohighlight(
     _registry: &SettingsRegistry<UserSettings>,
     _args: &[&str],
@@ -1237,7 +1257,7 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         name: "buffer",
         aliases: &["b"],
         description: "Buffer management",
-        factory: None,
+        factory: Some(parse_buffer_root),
         subcommands: BUFFER_SUBS,
         completion: N,
         subcommand_prefix: "",

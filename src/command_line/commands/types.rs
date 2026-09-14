@@ -76,6 +76,11 @@ pub enum ParsedCommand {
         bangs: usize,
     },
     BufferList,
+    /// Jump to the buffer at the given 1-based index
+    BufferGoto {
+        index: usize,
+        bangs: usize,
+    },
     /// Undo command (undo last change, optionally with count)
     Undo {
         count: Option<u64>,
