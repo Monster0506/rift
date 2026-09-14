@@ -160,6 +160,9 @@ impl<T: TerminalBackend> Editor<T> {
             ExecutionResult::BufferList => {
                 self.do_show_buffer_list();
             }
+            ExecutionResult::BufferGoto { index } => {
+                self.do_buffer_goto(index);
+            }
             ExecutionResult::NotificationClear { bangs } => {
                 self.do_notification_clear(bangs > 0);
             }

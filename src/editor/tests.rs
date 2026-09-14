@@ -398,6 +398,31 @@ fn test_handle_execution_result_buffer_navigation() {
 }
 
 #[test]
+fn test_buffer_goto_jumps_by_b_list_index() {
+    let mut editor = create_editor();
+    editor
+        .open_file(Some("doc1.txt".to_string()), false)
+        .unwrap();
+    editor
+        .open_file(Some("doc2.txt".to_string()), false)
+        .unwrap();
+    assert_eq!(editor.document_manager.active_tab_index(), 2);
+
+    // ":b 1" jumps to the first-opened buffer (1-based index).
+    editor.execute_command_line("b 1".to_string());
+    assert_eq!(editor.document_manager.active_tab_index(), 0);
+    assert_eq!(editor.active_document().display_name(), "[No Name]");
+
+    editor.execute_command_line("buffer 3".to_string());
+    assert_eq!(editor.document_manager.active_tab_index(), 2);
+    assert_eq!(editor.active_document().display_name(), "doc2.txt");
+
+    // Out-of-range index is a no-op, not a panic.
+    editor.execute_command_line("b 99".to_string());
+    assert_eq!(editor.document_manager.active_tab_index(), 2);
+}
+
+#[test]
 fn test_search_closes_on_success() {
     let mut editor = create_editor();
 
@@ -1972,8 +1997,8 @@ fn test_resolve_display_map_cached_keeps_entries_per_width() {
 
 #[test]
 fn test_resolve_display_map_cached_detects_placeholder_to_loaded_swap() {
-    // Mirrors the real open-file flow: render the empty placeholder (caching
-    // a "complete" empty map), then swap in loaded content at revision 0.
+    // Render the empty placeholder first (caching a complete empty map),
+    // then swap in loaded content at revision 0.
     let mut editor = create_editor_sized(24, 80);
     let doc_id = editor.document_manager.active_document_id().unwrap();
     editor.resolve_display_map_cached(doc_id, 80, 0, 100);
@@ -2510,7 +2535,7 @@ fn surround_escape_cancels_pending_grammar() {
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     assert!(editor.pending_grammar.is_some());
 
-    // Mirrors run_loop's Escape-cancels-OperatorPending handling.
+    // Escape cancels OperatorPending directly, without going through key dispatch.
     editor.set_mode(Mode::Normal);
     editor.pending_count = 0;
     editor.pending_grammar = None;
@@ -2620,8 +2645,7 @@ fn surround_interrupted_sg_does_not_corrupt_later_yank() {
     load_text(&mut editor, "foo bar");
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    // Start `sg` but abandon it by pressing an operator key before supplying
-    // a motion, mirroring EditorAction::Operator's reassignment path.
+    // Start `sg` but abandon it by pressing an operator key before supplying a motion.
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('g'));
@@ -2631,8 +2655,8 @@ fn surround_interrupted_sg_does_not_corrupt_later_yank() {
     )));
     assert_eq!(editor.pending_surround_add, None);
 
-    // A different operator key cancels the delete too, returning to a clean
-    // Normal-mode state, the same way the run_loop's Escape handler would.
+    // A different operator key cancels the delete too, returning to a
+    // clean Normal-mode state.
     editor.set_mode(Mode::Normal);
     editor.pending_operator = None;
 
@@ -4217,8 +4241,7 @@ fn operator_count_and_motion_count_multiply_not_concatenate() {
     load_text(&mut editor, "one two three four five six seven eight");
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    // "2d3w" must delete 2*3=6 words, not loop a 23-word delete; mirrors
-    // run_loop's digit handler stashing the operator count for the motion.
+    // "2d3w" must delete 2*3=6 words, not loop a 23-word delete.
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -4801,8 +4824,8 @@ fn visual_highlight_redraws_on_a_frame_after_the_initial_one() {
     load_text(&mut editor, "hello world");
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    // Render once first, mirroring the real run loop's initial-open render:
-    // redraw detection only catches an annotation-only change if spans are hashed.
+    // Render once first: redraw detection only catches an annotation-only
+    // change if spans are hashed.
     editor.update_and_render().unwrap();
 
     let feed_key = |editor: &mut Editor<MockTerminal>, key: Key| {

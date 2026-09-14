@@ -259,6 +259,44 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    /// Jump to the buffer at 1-based `index`, matching the order buffers were opened in.
+    pub(super) fn do_buffer_goto(&mut self, index: usize) {
+        let Some(target) = self
+            .document_manager
+            .get_document_id_at(index.saturating_sub(1))
+        else {
+            self.state.notify(
+                crate::notification::NotificationType::Warning,
+                format!("Buffer {index} does not exist"),
+            );
+            self.state.clear_command_line();
+            return;
+        };
+        let old_buf = self.active_document_id();
+        if target == old_buf {
+            self.state.clear_command_line();
+            return;
+        }
+        self.save_current_view_state();
+        if let Err(e) = self.document_manager.switch_to_document(target) {
+            self.state.handle_error(e);
+            return;
+        }
+        self.split_tree.set_focused_document(target);
+        self.restore_view_state();
+        self.sync_state_with_active_document();
+        self.state.clear_command_line();
+        self.update_lua_state();
+        self.plugin_host
+            .dispatch(&crate::plugin::EditorEvent::BufLeave { buf: old_buf });
+        self.plugin_host
+            .dispatch(&crate::plugin::EditorEvent::BufEnter { buf: target });
+        self.apply_plugin_mutations();
+        if let Err(e) = self.force_full_redraw() {
+            self.state.handle_error(e);
+        }
+    }
+
     pub(super) fn do_show_buffer_list(&mut self) {
         let buffers = self.document_manager.get_buffer_list();
         let mut message = String::new();
