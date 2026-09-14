@@ -51,6 +51,55 @@ pub mod lsp {
     }
 }
 
+/// Helpers for `git.*` annotation payloads (status buffer + hunk blocks).
+pub mod git {
+    use super::Value;
+
+    /// The tracked/untracked path a `git.status_entry`/`git.hunk` line refers to
+    /// (`payload.path`).
+    pub fn path(payload: &Value) -> Option<&str> {
+        payload.get("path").and_then(Value::as_str)
+    }
+
+    /// The section a `git.status_entry` belonged to at populate/expand time:
+    /// one of `"staged"`, `"unstaged"`, `"untracked"` (`payload.section`).
+    /// Unmerged entries are never annotated for reconciliation purposes.
+    pub fn section(payload: &Value) -> Option<&str> {
+        payload.get("section").and_then(Value::as_str)
+    }
+
+    /// The pre-rename path, for a `git.status_entry` on a renamed file
+    /// (`payload.orig_path`).
+    pub fn orig_path(payload: &Value) -> Option<&str> {
+        payload.get("orig_path").and_then(Value::as_str)
+    }
+
+    /// Whether a `git.hunk` came from the staged diff (`git diff --cached`,
+    /// `true`) or the unstaged diff (`git diff`, `false`) (`payload.staged_side`).
+    pub fn staged_side(payload: &Value) -> Option<bool> {
+        payload.get("staged_side").and_then(Value::as_bool)
+    }
+
+    /// Index into the expanded-diff snapshot's `Vec<Hunk>` for this path/side
+    /// (`payload.hunk_index`).
+    pub fn hunk_index(payload: &Value) -> Option<usize> {
+        payload
+            .get("hunk_index")
+            .and_then(Value::as_int)
+            .map(|i| i as usize)
+    }
+
+    /// Index into that hunk's `Vec<DiffLine>` for a `git.hunk_line`
+    /// (`payload.line_index`).
+    pub fn line_index(payload: &Value) -> Option<usize> {
+        payload
+            .get("line_index")
+            .and_then(Value::as_int)
+            .map(|i| i as usize)
+    }
+
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

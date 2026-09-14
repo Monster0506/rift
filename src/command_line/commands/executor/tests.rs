@@ -1150,6 +1150,24 @@ fn test_substitute_parsing_with_space() {
 }
 
 #[test]
+fn test_g_is_an_alias_for_the_git_command() {
+    // Fugitive convention: `:G` is a synonym for `:Git`.
+    let settings_registry = create_settings_registry();
+    let command_parser =
+        crate::command_line::commands::parser::CommandParser::new(settings_registry);
+
+    match command_parser.parse("G log") {
+        ParsedCommand::Git { args, .. } => assert_eq!(args, "log"),
+        other => panic!("Expected Git command via the G alias, got {:?}", other),
+    }
+
+    match command_parser.parse("G") {
+        ParsedCommand::Git { args, .. } => assert_eq!(args, ""),
+        other => panic!("Expected bare Git command via the G alias, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_substitute_parsing_weird_behavior_percent() {
     let settings_registry = create_settings_registry();
     let command_parser =

@@ -1051,6 +1051,181 @@ impl AnnotationStore {
         entries
     }
 
+
+    /// Create a `git.status_head` annotation anchored at the status
+    /// buffer's `HEAD <sha> <subject>` summary line. No payload needed â€”
+    /// its presence alone is the signal.
+    pub fn create_git_status_head(&mut self, line: usize) -> AnnotationId {
+        self.add(
+            Annotation::new(
+                Kind::new(well_known::GIT_STATUS_HEAD),
+                Anchor::Line(line),
+                AnnotationOwner::System,
+            )
+            .with_stickiness(Stickiness::Delete)
+            .with_visible(false)
+            .with_read_only(true)
+            .with_actions(vec![Action::activate()]),
+        )
+    }
+
+    /// Whether `line` is the status buffer's `git.status_head` summary line.
+    pub fn is_git_status_head_at_line(&self, line: usize) -> bool {
+        self.annotations
+            .iter()
+            .any(|a| a.kind.as_str() == well_known::GIT_STATUS_HEAD && a.anchor == Anchor::Line(line))
+    }
+
+    /// Create a `git.status_entry` annotation anchored at `line`, tagging it
+    /// with the path it names, the status-buffer section it belongs to
+    /// (`"staged"`/`"unstaged"`/`"untracked"`), and its pre-rename path if any.
+    /// `Stickiness::Delete` makes deleting the line itself the "discard" signal.
+    pub fn create_git_status_entry(
+        &mut self,
+        line: usize,
+        path: &str,
+        section: &str,
+        orig_path: Option<&str>,
+    ) -> AnnotationId {
+        let mut payload = Value::map();
+        payload.set("path", Value::Str(path.to_string()));
+        payload.set("section", Value::Str(section.to_string()));
+        if let Some(orig) = orig_path {
+            payload.set("orig_path", Value::Str(orig.to_string()));
+        }
+        self.add(
+            Annotation::new(
+                Kind::new(well_known::GIT_STATUS_ENTRY),
+                Anchor::Line(line),
+                AnnotationOwner::System,
+            )
+            .with_payload(payload)
+            .with_stickiness(Stickiness::Delete)
+            .with_visible(false)
+            .with_read_only(true)
+            .with_actions(vec![Action::activate()]),
+        )
+    }
+
+    /// The `(path, section, orig_path)` for the `git.status_entry` at `line`.
+    pub fn git_status_entry_at_line(&self, line: usize) -> Option<(String, String, Option<String>)> {
+        let a = self.annotations.iter().find(|a| {
+            a.kind.as_str() == well_known::GIT_STATUS_ENTRY && a.anchor == Anchor::Line(line)
+        })?;
+        let path = payload::git::path(&a.payload)?.to_string();
+        let section = payload::git::section(&a.payload)?.to_string();
+        let orig_path = payload::git::orig_path(&a.payload).map(|s| s.to_string());
+        Some((path, section, orig_path))
+    }
+
+    /// Create a `git.hunk` annotation anchored at a hunk header line, identifying
+    /// which expanded diff (`path`, `staged_side`) and which hunk within it
+    /// (`hunk_index` into that snapshot's `Vec<Hunk>`) this block came from.
+    /// `Stickiness::Delete` makes deleting the header line the "discard this
+    /// hunk" signal; the header line moving to a different section is the
+    /// "stage/unstage this hunk" signal.
+    pub fn create_git_hunk(
+        &mut self,
+        line: usize,
+        path: &str,
+        staged_side: bool,
+        hunk_index: usize,
+    ) -> AnnotationId {
+        let mut payload = Value::map();
+        payload.set("path", Value::Str(path.to_string()));
+        payload.set("staged_side", Value::Bool(staged_side));
+        payload.set("hunk_index", Value::Int(hunk_index as i64));
+        self.add(
+            Annotation::new(
+                Kind::new(well_known::GIT_HUNK),
+                Anchor::Line(line),
+                AnnotationOwner::System,
+            )
+            .with_payload(payload)
+            .with_stickiness(Stickiness::Delete)
+            .with_visible(false)
+            .with_read_only(true),
+        )
+    }
+
+    /// The `(path, staged_side, hunk_index)` for the `git.hunk` at `line`.
+    pub fn git_hunk_at_line(&self, line: usize) -> Option<(String, bool, usize)> {
+        let a = self
+            .annotations
+            .iter()
+            .find(|a| a.kind.as_str() == well_known::GIT_HUNK && a.anchor == Anchor::Line(line))?;
+        let path = payload::git::path(&a.payload)?.to_string();
+        let staged_side = payload::git::staged_side(&a.payload)?;
+        let hunk_index = payload::git::hunk_index(&a.payload)?;
+        Some((path, staged_side, hunk_index))
+    }
+
+    /// Create a `git.hunk_line` annotation anchored at one `+`/`-` content
+    /// line inside an expanded hunk, identifying which hunk it belongs to
+    /// (`path`/`staged_side`/`hunk_index`, same as `git.hunk`) and its
+    /// `line_index` within that hunk's `Vec<DiffLine>`. Interactive so plain
+    /// `j`/`k` can step through a hunk's changed lines once expanded â€”
+    /// context lines get no annotation, so navigation skips them.
+    pub fn create_git_hunk_line(
+        &mut self,
+        line: usize,
+        path: &str,
+        staged_side: bool,
+        hunk_index: usize,
+        line_index: usize,
+    ) -> AnnotationId {
+        let mut payload = Value::map();
+        payload.set("path", Value::Str(path.to_string()));
+        payload.set("staged_side", Value::Bool(staged_side));
+        payload.set("hunk_index", Value::Int(hunk_index as i64));
+        payload.set("line_index", Value::Int(line_index as i64));
+        self.add(
+            Annotation::new(
+                Kind::new(well_known::GIT_HUNK_LINE),
+                Anchor::Line(line),
+                AnnotationOwner::System,
+            )
+            .with_payload(payload)
+            .with_visible(false)
+            .with_read_only(true)
+            .with_actions(vec![Action::activate()]),
+        )
+    }
+
+    /// The `(path, staged_side, hunk_index, line_index)` for the
+    /// `git.hunk_line` at `line`.
+    pub fn git_hunk_line_at_line(&self, line: usize) -> Option<(String, bool, usize, usize)> {
+        let a = self.annotations.iter().find(|a| {
+            a.kind.as_str() == well_known::GIT_HUNK_LINE && a.anchor == Anchor::Line(line)
+        })?;
+        let path = payload::git::path(&a.payload)?.to_string();
+        let staged_side = payload::git::staged_side(&a.payload)?;
+        let hunk_index = payload::git::hunk_index(&a.payload)?;
+        let line_index = payload::git::line_index(&a.payload)?;
+        Some((path, staged_side, hunk_index, line_index))
+    }
+
+    /// Return every live `git.hunk` header's `(line, path, staged_side, hunk_index)`,
+    /// sorted by line â€” used by `]c`/`[c` navigation in a status buffer.
+    pub fn git_hunks_by_line(&self) -> Vec<(usize, String, bool, usize)> {
+        let mut hunks: Vec<(usize, String, bool, usize)> = self
+            .annotations
+            .iter()
+            .filter(|a| a.kind.as_str() == well_known::GIT_HUNK)
+            .filter_map(|a| {
+                let Anchor::Line(line) = a.anchor else {
+                    return None;
+                };
+                let path = payload::git::path(&a.payload)?.to_string();
+                let staged_side = payload::git::staged_side(&a.payload)?;
+                let hunk_index = payload::git::hunk_index(&a.payload)?;
+                Some((line, path, staged_side, hunk_index))
+            })
+            .collect();
+        hunks.sort_by_key(|&(line, ..)| line);
+        hunks
+    }
+
     /// Whether the store holds no annotations.
     pub fn is_empty(&self) -> bool {
         self.annotations.is_empty()

@@ -69,6 +69,50 @@ pub struct DirectoryDiff {
     pub creates: Vec<String>,
 }
 
+/// A single git-state mutation, run directly by a `GitStatus` buffer's
+/// cursor actions (`s`/`u`/`X`/`=`'s stage/unstage/discard verbs). Unmerged
+/// entries never produce an action here (conflict resolution is out of
+/// scope; see GIT_INTEGRATION_PLAN.md).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitStatusAction {
+    /// `git add -- path` (untracked or unstaged -> staged, whole file).
+    Stage(PathBuf),
+    /// `git restore --staged -- path` (staged -> unstaged, whole file).
+    Unstage(PathBuf),
+    /// Revert all changes to `path`: tracked files via `git restore --staged
+    /// --worktree` (also restoring `orig_path`, if this was a rename), untracked
+    /// files by deleting them from disk.
+    Discard {
+        path: PathBuf,
+        orig_path: Option<PathBuf>,
+        was_untracked: bool,
+    },
+    /// Apply exactly this hunk to the index (`git apply --cached`): a hunk
+    /// block moved from the Unstaged section into Staged, or a portion of
+    /// an untracked file's content (`is_new_file`: no index entry exists
+    /// for `path` yet, so the patch needs a "new file" header).
+    StageHunk {
+        path: PathBuf,
+        hunk: crate::git::diff::Hunk,
+        is_new_file: bool,
+    },
+    /// Reverse-apply this hunk from the index (`git apply --cached -R`): a
+    /// hunk block moved from the Staged section into Unstaged.
+    UnstageHunk {
+        path: PathBuf,
+        hunk: crate::git::diff::Hunk,
+    },
+    /// Reverse-apply this hunk to discard it entirely: for a staged hunk
+    /// (`staged_side: true`), reverts both the index (`git apply --cached -R`)
+    /// and the worktree (`git apply -R`); for an unstaged hunk, reverts only
+    /// the worktree (`git apply -R`).
+    DiscardHunk {
+        path: PathBuf,
+        hunk: crate::git::diff::Hunk,
+        staged_side: bool,
+    },
+}
+
 /// A deferred `d`-cut: `text` still sits in the buffer, greyed out, until
 /// a later action turns it into a real delete.
 pub struct GhostCut {
@@ -138,6 +182,35 @@ pub enum BufferKind {
     /// Plugin-created in-memory buffer with no disk path (`rift.create_scratch_buf`).
     /// `title` is shown as the tab label in place of a filename.
     Scratch { title: String },
+    /// Git status buffer: staged/unstaged/untracked/unmerged files. Read-only
+    /// â€” changes happen only through its key actions (`s`/`u`/`X`/`=`/`c...`),
+    /// never by editing the rendered text.
+    GitStatus {
+        repo_root: PathBuf,
+        /// Snapshot of the status listing at the last populate/refresh.
+        snapshot: crate::git::status::StatusSnapshot,
+        /// Diff hunks fetched for currently-expanded entries, keyed by
+        /// `(path, staged_side)` (`staged_side` = hunks came from `git diff --cached`).
+        expanded_diffs: std::collections::HashMap<(PathBuf, bool), Vec<crate::git::diff::Hunk>>,
+        /// HEAD's subject line, for the `HEAD <sha> <subject>` header
+        /// summary (Enter on it opens the Log browser). `None` on an
+        /// unborn branch with no commits yet.
+        head_subject: Option<String>,
+    },
+    /// Commit message buffer; `:w`/`:wq` commits.
+    GitCommitMessage {
+        repo_root: PathBuf,
+        target: GitCommitTarget,
+    },
+}
+
+/// What saving a `BufferKind::GitCommitMessage` buffer does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitCommitTarget {
+    /// `git commit -F <file>`.
+    New,
+    /// `git commit --amend -F <file>`.
+    Amend,
 }
 
 impl BufferKind {
@@ -155,6 +228,8 @@ impl BufferKind {
             BufferKind::Regions { .. } => "regions",
             BufferKind::BufferList { .. } => "buffer_list",
             BufferKind::Scratch { .. } => "scratch",
+            BufferKind::GitStatus { .. } => "git_status",
+            BufferKind::GitCommitMessage { .. } => "git_commit_message",
         }
     }
 }
@@ -500,8 +575,15 @@ impl Document {
                 | BufferKind::Clipboard { .. }
                 | BufferKind::UndoTree { .. }
                 | BufferKind::BufferList { .. }
+                | BufferKind::GitStatus { .. }
         )
     }
+
+    /// Check if this document is a git status buffer.
+    pub fn is_git_status(&self) -> bool {
+        matches!(self.kind, BufferKind::GitStatus { .. })
+    }
+
 
     /// Check if this document is any clipboard-related buffer
     pub fn is_any_clipboard(&self) -> bool {

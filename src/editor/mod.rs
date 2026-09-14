@@ -14,6 +14,7 @@ mod context_impl;
 mod document_ops;
 mod explorer;
 mod file_ops;
+mod git_status;
 mod handle_action;
 mod history;
 mod init;
@@ -42,6 +43,9 @@ mod split_nav_stress_tests;
 
 #[cfg(test)]
 mod insert_typing_stress_tests;
+
+#[cfg(test)]
+mod git_status_tests;
 
 use crate::command_line::commands::CommandParser;
 use crate::command_line::settings::SettingsRegistry;
@@ -230,6 +234,10 @@ pub struct Editor<T: TerminalBackend> {
     /// sync `try_incremental_parse` exceeding its time budget.
     pending_syntax_reparse:
         std::collections::HashMap<crate::document::DocumentId, jobs::PendingSyntaxReparse>,
+    /// `:Git diff`/`:Git diff --cached` opened this `GitStatus` doc id and
+    /// wants every hunk in the given section (`true` = staged) expanded as
+    /// soon as the async status snapshot populates the buffer.
+    pending_git_status_expand_all: std::collections::HashMap<crate::document::DocumentId, bool>,
     /// Deadline for a debounced search-highlight refresh after undo/redo, so
     /// a burst of undos pays one full-buffer re-search instead of one each.
     pending_search_refresh: Option<crate::time::Instant>,

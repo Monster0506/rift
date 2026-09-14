@@ -292,4 +292,51 @@ impl Document {
             ..Self::skeleton(id, buffer)
         })
     }
+
+    /// Create a new git status buffer. Content is populated later when a
+    /// `GitStatusJob` completes. Read-only: changes only happen through its
+    /// specific key actions (`s`/`u`/`X`/`=`/`c...`), never by editing the
+    /// rendered text directly (that content is regenerated on every refresh
+    /// anyway, and the line-anchored annotations those actions depend on
+    /// would desync from what's on screen).
+    pub fn new_git_status(id: super::DocumentId, repo_root: PathBuf) -> Result<Self, RiftError> {
+        let buffer = TextBuffer::new(4096)?;
+        Ok(Document {
+            options: DocumentOptions {
+                show_line_numbers: false,
+                ..DocumentOptions::default()
+            },
+            // Status buffer rows are git.status_entry/git.hunk annotations
+            // activated through the dispatch registry, same as the explorer.
+            interface_mode: true,
+            is_read_only: true,
+            kind: BufferKind::GitStatus {
+                repo_root,
+                snapshot: crate::git::status::StatusSnapshot::default(),
+                expanded_diffs: std::collections::HashMap::new(),
+                head_subject: None,
+            },
+            ..Self::skeleton(id, buffer)
+        })
+    }
+
+    /// Create a new commit message buffer, pre-filled with `initial_message`
+    /// (empty for a new commit, the previous message for amend/reword).
+    pub fn new_git_commit_message(
+        id: super::DocumentId,
+        repo_root: PathBuf,
+        target: super::GitCommitTarget,
+        initial_message: &str,
+    ) -> Result<Self, RiftError> {
+        let mut buffer = TextBuffer::new(initial_message.len().max(64))?;
+        if !initial_message.is_empty() {
+            let _ = buffer.insert_str(initial_message);
+            buffer.move_to_start();
+        }
+        Ok(Document {
+            kind: BufferKind::GitCommitMessage { repo_root, target },
+            ..Self::skeleton(id, buffer)
+        })
+    }
+
 }

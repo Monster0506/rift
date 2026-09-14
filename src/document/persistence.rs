@@ -106,6 +106,17 @@ impl Document {
             BufferKind::Regions { .. } => Cow::Borrowed("[Regions]"),
             BufferKind::BufferList { .. } => Cow::Borrowed("[Buffers]"),
             BufferKind::Scratch { title } => Cow::Owned(title.clone()),
+            BufferKind::GitStatus { repo_root, .. } => Cow::Owned(format!(
+                "[Git Status] {}",
+                repo_root
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("/")
+            )),
+            BufferKind::GitCommitMessage { target, .. } => Cow::Borrowed(match target {
+                crate::document::GitCommitTarget::New => "[Git Commit]",
+                crate::document::GitCommitTarget::Amend => "[Git Commit Amend]",
+            }),
             BufferKind::File => self
                 .file_path
                 .as_ref()

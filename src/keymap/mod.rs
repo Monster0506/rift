@@ -37,6 +37,8 @@ pub enum KeyContext {
     Regions,
     /// Interactive buffer-list split panel. Falls through to `Normal` for j/k/etc.
     BufferList,
+    /// Git status buffer. Falls through to Normal for j/k/etc.
+    GitStatus,
 }
 
 /// KeyMap stores mappings from (Context, Key Sequence) -> Action
@@ -86,7 +88,8 @@ impl KeyMap {
             | KeyContext::ClipboardEntry
             | KeyContext::LocationList
             | KeyContext::Regions
-            | KeyContext::BufferList => Some(KeyContext::Normal),
+            | KeyContext::BufferList
+            | KeyContext::GitStatus => Some(KeyContext::Normal),
             KeyContext::Terminal => Some(KeyContext::Global),
             KeyContext::TerminalNormal => Some(KeyContext::Normal),
             KeyContext::Normal | KeyContext::Insert | KeyContext::Command | KeyContext::Search => {
