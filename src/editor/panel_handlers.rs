@@ -196,7 +196,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         match entry_index {
             None => {
-                // New entry — push to front of ring
+                // New entry: push to front of ring
                 if !new_text.is_empty() {
                     self.clipboard_ring.push(new_text);
                 }
@@ -296,7 +296,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let Some(entry) = entry else { return };
 
-        // Empty URI signals a code action row — apply it.
+        // Empty URI signals a code action row: apply it.
         if entry.uri.is_empty() {
             let idx = entry.line as usize;
             let action = self.pending_code_actions.get(idx).cloned();
@@ -322,7 +322,15 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Space on a diagnostic entry — send a code action request scoped to that diagnostic.
+    pub(super) fn handle_buffer_list_action(&mut self, id: &str) {
+        match id {
+            "buffer_list:select" => self.handle_buffer_list_select(),
+            "buffer_list:close" => self.close_split_panel(),
+            _ => {}
+        }
+    }
+
+    /// Space on a diagnostic entry: send a code action request scoped to that diagnostic.
     #[cfg(feature = "lsp")]
     fn handle_location_list_code_action(&mut self) {
         use crate::document::BufferKind;
@@ -347,7 +355,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let Some(entry) = entry else { return };
 
-        // Already a code action row — Space applies it (same as Enter).
+        // Already a code action row: Space applies it (same as Enter).
         if entry.uri.is_empty() {
             let idx = entry.line as usize;
             let action = self.pending_code_actions.get(idx).cloned();

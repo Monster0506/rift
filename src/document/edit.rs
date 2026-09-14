@@ -1,4 +1,4 @@
-//! Document editing operations — insert, delete, and Tree-sitter incremental updates.
+//! Document editing operations: insert, delete, and Tree-sitter incremental updates.
 
 use super::{AnnotationUndo, AnnotationUndoHint, Document};
 use crate::character::Character;
@@ -72,6 +72,9 @@ impl Document {
     }
 
     pub fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
+        if self.is_read_only {
+            return Ok(());
+        }
         let inserting_newline = ch == '\n';
         // Track line shifts for line-anchored annotations in every buffer (not
         // just directories): diagnostics and line adornments must move with edits.
@@ -140,6 +143,9 @@ impl Document {
     }
 
     pub fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
+        if self.is_read_only {
+            return Ok(());
+        }
         // Count newlines before inserting so we can update annotation line numbers
         // (all buffers, so line-anchored annotations track multi-line inserts).
         let newline_count = s.chars().filter(|&c| c == '\n').count();
@@ -213,6 +219,9 @@ impl Document {
     /// Insert `Character`s at the cursor, preserving raw bytes/control chars
     /// (the byte-faithful counterpart of `insert_str`).
     pub fn insert_characters(&mut self, chars: &[Character]) -> Result<(), RiftError> {
+        if self.is_read_only {
+            return Ok(());
+        }
         let newline_count = chars
             .iter()
             .filter(|c| matches!(c, Character::Newline))
@@ -280,6 +289,9 @@ impl Document {
     }
 
     pub fn delete_backward(&mut self) -> bool {
+        if self.is_read_only {
+            return false;
+        }
         let cursor = self.buffer.cursor();
         if cursor == 0 {
             return false;
@@ -342,6 +354,9 @@ impl Document {
     }
 
     pub fn delete_forward(&mut self) -> bool {
+        if self.is_read_only {
+            return false;
+        }
         let cursor = self.buffer.cursor();
         if cursor >= self.buffer.len() {
             return false;
@@ -407,6 +422,9 @@ impl Document {
         count: usize,
         new_chars: &[Character],
     ) -> Result<(), RiftError> {
+        if self.is_read_only {
+            return Ok(());
+        }
         let end = pos + count;
         if end > self.buffer.len() {
             return Err(RiftError::new(
@@ -469,7 +487,7 @@ impl Document {
 
     /// Delete a range of characters, integrating with the undo system.
     pub fn delete_range(&mut self, start: usize, end: usize) -> Result<(), RiftError> {
-        if start >= end {
+        if self.is_read_only || start >= end {
             return Ok(());
         }
 

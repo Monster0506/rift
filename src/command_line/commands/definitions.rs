@@ -188,10 +188,7 @@ fn parse_buffer_root(
     bangs: usize,
 ) -> ParsedCommand {
     match args.first() {
-        None => ParsedCommand::Unknown {
-            name: "buffer".to_string(),
-            args: vec![],
-        },
+        None => ParsedCommand::OpenBufferList { bangs },
         Some(arg) => match arg.parse::<usize>() {
             Ok(index) if index > 0 => ParsedCommand::BufferGoto { index, bangs },
             _ => ParsedCommand::Unknown {

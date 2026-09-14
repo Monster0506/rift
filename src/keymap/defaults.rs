@@ -105,7 +105,7 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Buffer("clipboard:refresh".to_string()),
     );
 
-    // ClipboardEntry scratch buffer — Escape returns focus to index pane
+    // ClipboardEntry scratch buffer: Escape returns focus to index pane
     keymap.register(
         KeyContext::ClipboardEntry,
         Key::Escape,
@@ -955,6 +955,19 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         KeyContext::Regions,
         Key::Char('y'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
+    );
+
+    // Buffer-list panel: j/k inherit Normal's motion; only selection and close
+    // are bound here.
+    keymap.register(
+        KeyContext::BufferList,
+        Key::Enter,
+        Action::Buffer("buffer_list:select".to_string()),
+    );
+    keymap.register(
+        KeyContext::BufferList,
+        Key::Escape,
+        Action::Buffer("buffer_list:close".to_string()),
     );
 
     // Text objects are handled by run_loop.rs's pending-grammar state machine, not the trie.

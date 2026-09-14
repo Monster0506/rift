@@ -119,7 +119,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Handle `-` in a directory buffer — navigate to parent.
+    /// Handle `-` in a directory buffer: navigate to parent.
     pub(super) fn handle_explorer_parent(&mut self) {
         use crate::document::BufferKind;
 
@@ -298,6 +298,19 @@ impl<T: TerminalBackend> Editor<T> {
                     .document_manager
                     .switch_to_document(layout.original_doc_id);
             }
+            PanelKind::BufferList => {
+                // The preview window shows a real, already-open document (not a
+                // private clone), so only the list window/doc need tearing down.
+                self.split_tree.close_window(layout.preview_win_id);
+                self.split_tree
+                    .set_window_document(layout.dir_win_id, layout.original_doc_id);
+                self.document_manager
+                    .remove_private_document(layout.dir_doc_id);
+                self.split_tree.set_focus(layout.dir_win_id);
+                let _ = self
+                    .document_manager
+                    .switch_to_document(layout.original_doc_id);
+            }
         }
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
@@ -405,6 +418,175 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
+    /// Open the buffer list as a two-pane split: left = status list,
+    /// right = a live preview of the buffer under the cursor.
+    pub fn open_buffer_list_panel(&mut self) {
+        // If already open, just refocus and refresh the list content.
+        if let Some(layout) = self.panel_layout.clone() {
+            if layout.kind == PanelKind::BufferList {
+                self.split_tree.set_focus(layout.dir_win_id);
+                let _ = self.document_manager.switch_to_document(layout.dir_doc_id);
+                self.refresh_buffer_list_panel();
+                self.update_buffer_list_preview();
+                let _ = self.force_full_redraw();
+                return;
+            }
+            self.close_split_panel();
+        }
+
+        let dir_doc_id = self.document_manager.next_id();
+        let mut dir_doc = match crate::document::Document::new_buffer_list(dir_doc_id) {
+            Ok(d) => d,
+            Err(e) => {
+                self.state.handle_error(e);
+                return;
+            }
+        };
+        let infos = self.document_manager.get_buffer_list();
+        dir_doc.populate_buffer_list_buffer(&infos);
+        self.document_manager.add_private_document(dir_doc);
+
+        let size = self
+            .term
+            .get_size()
+            .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+        let rows = size.rows as usize;
+        let cols = size.cols as usize;
+
+        let dir_win_id = self.split_tree.focused_window_id();
+        let original_doc_id = self.split_tree.focused_window().document_id;
+        let preview_target = infos.first().map(|i| i.id).unwrap_or(original_doc_id);
+        self.split_tree.set_window_document(dir_win_id, dir_doc_id);
+
+        let preview_win_id = self
+            .split_tree
+            .split(
+                crate::split::tree::SplitDirection::Vertical,
+                dir_win_id,
+                preview_target,
+                rows,
+                cols,
+            )
+            .expect("dir_win_id is the focused window, which is always a valid leaf");
+
+        self.split_tree.set_focus(dir_win_id);
+        let _ = self.document_manager.switch_to_document(dir_doc_id);
+
+        self.panel_layout = Some(PanelLayout {
+            kind: PanelKind::BufferList,
+            dir_win_id,
+            preview_win_id,
+            dir_doc_id,
+            preview_doc_id: original_doc_id,
+            original_doc_id,
+        });
+
+        self.sync_state_with_active_document();
+        let _ = self.force_full_redraw();
+    }
+
+    /// Repopulate an already-open buffer-list panel's list pane, preserving
+    /// the cursor's row (clamped to the new entry count).
+    pub(super) fn refresh_buffer_list_panel(&mut self) {
+        let layout = match self.panel_layout_of(PanelKind::BufferList) {
+            Some(l) => l,
+            None => return,
+        };
+        let infos = self.document_manager.get_buffer_list();
+        let cursor_line = self
+            .document_manager
+            .get_document(layout.dir_doc_id)
+            .map(|d| d.buffer.line_index.get_line_at(d.buffer.cursor()))
+            .unwrap_or(0);
+        if let Some(doc) = self.document_manager.get_document_mut(layout.dir_doc_id) {
+            doc.populate_buffer_list_buffer(&infos);
+            let target_line = cursor_line.min(infos.len().saturating_sub(1));
+            if let Some(start) = doc.buffer.line_index.get_start(target_line) {
+                let _ = doc.buffer.set_cursor(start);
+            }
+        }
+    }
+
+    /// Called after every cursor movement in the buffer-list pane: point the
+    /// preview window at the real buffer under the cursor.
+    pub(super) fn update_buffer_list_preview(&mut self) {
+        let layout = match &self.panel_layout {
+            Some(l)
+                if l.kind == PanelKind::BufferList
+                    && self.split_tree.focused_window_id() == l.dir_win_id =>
+            {
+                l.clone()
+            }
+            _ => return,
+        };
+
+        let target_id = {
+            let doc = match self.document_manager.get_document(layout.dir_doc_id) {
+                Some(d) => d,
+                None => return,
+            };
+            let cursor = doc.buffer.cursor();
+            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            match &doc.kind {
+                crate::document::BufferKind::BufferList { entries } => {
+                    match entries.get(line_num) {
+                        Some(id) => *id,
+                        None => return,
+                    }
+                }
+                _ => return,
+            }
+        };
+
+        if self.document_manager.get_document(target_id).is_none() {
+            return;
+        }
+        let already_showing = self
+            .split_tree
+            .get_window(layout.preview_win_id)
+            .map(|w| w.document_id)
+            == Some(target_id);
+        if already_showing {
+            return;
+        }
+        self.split_tree
+            .set_window_document(layout.preview_win_id, target_id);
+        let _ = self.update_and_render();
+    }
+
+    /// Handle <CR> in the buffer-list pane: switch to the buffer on the cursor line.
+    pub(super) fn handle_buffer_list_select(&mut self) {
+        let layout = match self.panel_layout.clone() {
+            Some(l) if l.kind == PanelKind::BufferList => l,
+            _ => return,
+        };
+        let target_id = {
+            let doc = match self.document_manager.get_document(layout.dir_doc_id) {
+                Some(d) => d,
+                None => return,
+            };
+            let cursor = doc.buffer.cursor();
+            let line_num = doc.buffer.line_index.get_line_at(cursor);
+            match &doc.kind {
+                crate::document::BufferKind::BufferList { entries } => {
+                    match entries.get(line_num) {
+                        Some(id) => *id,
+                        None => return,
+                    }
+                }
+                _ => return,
+            }
+        };
+        let target_exists = self.document_manager.get_document(target_id).is_some();
+        self.close_split_panel();
+        if target_exists {
+            let _ = self.document_manager.switch_to_document(target_id);
+            self.split_tree.set_focused_document(target_id);
+            self.sync_state_with_active_document();
+            let _ = self.force_full_redraw();
+        }
+    }
+
     /// Called after every cursor movement in the clipboard index pane: update the preview.
     pub(super) fn update_clipboard_preview(&mut self) {
         let layout = match &self.panel_layout {
@@ -428,7 +610,7 @@ impl<T: TerminalBackend> Editor<T> {
             let line_text = String::from_utf8_lossy(&line_bytes);
             let line_text = line_text.trim();
 
-            // Lines are `[N]` — parse N to look up the entry in the snapshot
+            // Lines are `[N]`: parse N to look up the entry in the snapshot
             let idx = line_text
                 .strip_prefix('[')
                 .and_then(|r| r.strip_suffix(']'))
@@ -830,7 +1012,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_explorer_preview();
     }
 
-    /// Handle <CR> in an undo-tree buffer — jump to the node on the cursor line.
+    /// Handle <CR> in an undo-tree buffer: jump to the node on the cursor line.
     pub(super) fn handle_undotree_select(&mut self) {
         use crate::document::BufferKind;
 
@@ -1070,7 +1252,7 @@ fn apply_directory_diff_to_fs(
     let fs = crate::fs_backend::backend();
     let mut errors: Vec<String> = Vec::new();
 
-    // Renames — run synchronously so the reload sees the final state
+    // Renames: run synchronously so the reload sees the final state
     for (old_path, new_name) in &diff.renames {
         let new_path = old_path.parent().unwrap_or(dir_path).join(new_name);
         // Guard: moving a directory inside itself is never valid.

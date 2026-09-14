@@ -81,6 +81,10 @@ pub enum ParsedCommand {
         index: usize,
         bangs: usize,
     },
+    /// Open the interactive buffer-list split panel
+    OpenBufferList {
+        bangs: usize,
+    },
     /// Undo command (undo last change, optionally with count)
     Undo {
         count: Option<u64>,

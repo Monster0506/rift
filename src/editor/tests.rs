@@ -423,6 +423,124 @@ fn test_buffer_goto_jumps_by_b_list_index() {
 }
 
 #[test]
+fn test_open_buffer_list_panel_shows_status_and_enter_switches() {
+    let mut editor = create_editor();
+    editor
+        .open_file(Some("doc1.txt".to_string()), false)
+        .unwrap();
+    editor
+        .open_file(Some("doc2.txt".to_string()), false)
+        .unwrap();
+    editor.active_document().insert_char('x').unwrap(); // mark doc2 dirty
+    let doc1_id = editor.document_manager.get_document_id_at(1).unwrap();
+
+    editor.execute_command_line("buffer".to_string());
+
+    let layout = editor
+        .panel_layout_of(crate::editor::PanelKind::BufferList)
+        .expect(":buffer with no args opens the buffer-list split panel");
+    let list_doc = editor
+        .document_manager
+        .get_document(layout.dir_doc_id)
+        .unwrap();
+    let text = list_doc.buffer.to_string();
+    // Status flags: current/dirty/read-only/special, one char each.
+    assert!(text.contains("[2] doc1.txt:  "));
+    assert!(text.contains("[3] doc2.txt: %+"));
+
+    // Move onto doc1's line (tab index 1 -> line 1) and press Enter: switches to it and closes the panel.
+    {
+        let doc = editor
+            .document_manager
+            .get_document_mut(layout.dir_doc_id)
+            .unwrap();
+        let line_start = doc.buffer.line_index.get_start(1).unwrap();
+        let _ = doc.buffer.set_cursor(line_start);
+    }
+    editor.handle_buffer_list_select();
+
+    assert!(editor
+        .panel_layout_of(crate::editor::PanelKind::BufferList)
+        .is_none());
+    assert_eq!(editor.document_manager.active_document_id(), Some(doc1_id));
+}
+
+#[test]
+fn test_buffer_list_j_snaps_between_entries_and_updates_preview() {
+    use crate::action::{Action, EditorAction, Motion};
+
+    let mut editor = create_editor();
+    editor
+        .open_file(Some("doc1.txt".to_string()), false)
+        .unwrap();
+    editor
+        .open_file(Some("doc2.txt".to_string()), false)
+        .unwrap();
+    let doc1_id = editor.document_manager.get_document_id_at(1).unwrap();
+
+    editor.execute_command_line("buffer".to_string());
+    let layout = editor
+        .panel_layout_of(crate::editor::PanelKind::BufferList)
+        .unwrap();
+
+    // Cursor starts on line 0 (the scratch doc); j moves one entry down per press.
+    editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Down)));
+    let preview_shown = editor
+        .split_tree
+        .get_window(layout.preview_win_id)
+        .unwrap()
+        .document_id;
+    assert_eq!(preview_shown, doc1_id);
+
+    // Read-only: typing into the list pane must not mutate it.
+    let before = editor
+        .document_manager
+        .get_document(layout.dir_doc_id)
+        .unwrap()
+        .buffer
+        .to_string();
+    editor.active_document().insert_char('z').unwrap();
+    let after = editor
+        .document_manager
+        .get_document(layout.dir_doc_id)
+        .unwrap()
+        .buffer
+        .to_string();
+    assert_eq!(before, after, "buffer-list panel must be non-editable");
+}
+
+#[test]
+fn test_read_only_buffer_refuses_to_enter_insert_mode() {
+    use crate::action::{Action, EditorAction};
+
+    let mut editor = create_editor();
+    editor
+        .open_file(Some("doc1.txt".to_string()), false)
+        .unwrap();
+    editor.execute_command_line("buffer".to_string());
+    assert!(editor
+        .panel_layout_of(crate::editor::PanelKind::BufferList)
+        .is_some());
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
+    assert_eq!(editor.mode(), Mode::Normal);
+
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAfter));
+    assert_eq!(editor.mode(), Mode::Normal);
+
+    editor.handle_action(&Action::Editor(EditorAction::OpenLineBelow));
+    assert_eq!(editor.mode(), Mode::Normal);
+
+    editor.handle_action(&Action::Editor(EditorAction::Operator(
+        crate::action::OperatorType::Change,
+    )));
+    editor.handle_action(&Action::Editor(EditorAction::Move(
+        crate::action::Motion::Right,
+    )));
+    assert_eq!(editor.mode(), Mode::Normal);
+}
+
+#[test]
 fn test_search_closes_on_success() {
     let mut editor = create_editor();
 
