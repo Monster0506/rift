@@ -447,6 +447,14 @@ pub enum EditorAction {
     RegionsListSelect,
     /// `x` inside the regions window: drop that entry from the set.
     RegionsListDrop,
+    /// `<Space>g`: open the git status buffer for the current repository.
+    GitStatus,
+    /// `cc` in the status buffer: open an empty commit message buffer.
+    GitCommitNew,
+    /// `ca`/`cw` in the status buffer: amend/reword HEAD's commit message.
+    GitCommitAmend,
+    /// `cf` in the status buffer: `git commit --fixup=HEAD` from staged changes.
+    GitCommitFixup,
 }
 
 /// Represents an action in the editor
@@ -561,7 +569,7 @@ impl FromStr for Action {
             "editor:history_down" => Ok(Action::Editor(EditorAction::HistoryDown)),
             "editor:dot_repeat" => Ok(Action::Editor(EditorAction::DotRepeat)),
 
-            // Navigation / search (parameterised — must precede Buffer catch-all)
+            // Navigation / search (parameterised â€” must precede Buffer catch-all)
             s if s.starts_with("editor:run:") => Ok(Action::Editor(EditorAction::RunCommand(
                 s["editor:run:".len()..].to_string(),
             ))),

@@ -492,8 +492,8 @@ impl Document {
 
                 // A blank annotated line means the user erased the entry: treat as deleted.
                 if primary_name.is_empty() {
-                    continue;
-                }
+                continue;
+            }
 
                 seen_ids.insert(entry_id);
 
@@ -587,6 +587,369 @@ impl Document {
             self.terminal_cell_colors = cell_colors;
         }
     }
+
+    /// Populate (or repopulate) this git status buffer from a fresh
+    /// `git status` snapshot. Collapses any previously-expanded hunks â€”
+    /// callers that want to keep an expansion across a refresh must
+    /// re-expand it after this call.
+    pub fn populate_git_status_buffer(
+        &mut self,
+        snapshot: crate::git::status::StatusSnapshot,
+        head_subject: Option<String>,
+    ) {
+        let repo_root = match &self.kind {
+            BufferKind::GitStatus { repo_root, .. } => repo_root.clone(),
+            _ => return,
+        };
+        self.kind = BufferKind::GitStatus {
+            repo_root,
+            snapshot,
+            expanded_diffs: std::collections::HashMap::new(),
+            head_subject,
+        };
+        self.render_git_status();
+        self.history.mark_saved();
+    }
+
+    /// Record `hunks` as the expanded diff for `path` on the given side
+    /// (`staged_side`: `true` = `git diff --cached`, `false` = `git diff`)
+    /// and re-render. No-op if this isn't a git status buffer.
+    pub fn set_git_status_expanded(
+        &mut self,
+        path: std::path::PathBuf,
+        staged_side: bool,
+        hunks: Vec<crate::git::diff::Hunk>,
+    ) {
+        match &mut self.kind {
+            BufferKind::GitStatus { expanded_diffs, .. } => {
+                expanded_diffs.insert((path, staged_side), hunks);
+            }
+            _ => return,
+        }
+        self.render_git_status();
+    }
+
+    /// Remove `path`'s expanded diff on the given side and re-render.
+    pub fn collapse_git_status_entry(&mut self, path: &std::path::Path, staged_side: bool) {
+        match &mut self.kind {
+            BufferKind::GitStatus { expanded_diffs, .. } => {
+                expanded_diffs.remove(&(path.to_path_buf(), staged_side));
+            }
+            _ => return,
+        }
+        self.render_git_status();
+    }
+
+    /// Whether `path`'s diff is currently expanded on the given side.
+    pub fn is_git_status_expanded(&self, path: &std::path::Path, staged_side: bool) -> bool {
+        match &self.kind {
+            BufferKind::GitStatus { expanded_diffs, .. } => {
+                expanded_diffs.contains_key(&(path.to_path_buf(), staged_side))
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether `path`'s snapshot entry is untracked (never in the index),
+    /// so staging any part of it needs a "new file" patch header.
+    pub fn is_git_status_entry_untracked(&self, path: &std::path::Path) -> bool {
+        match &self.kind {
+            BufferKind::GitStatus { snapshot, .. } => snapshot
+                .entries
+                .iter()
+                .any(|e| e.path == path && e.is_untracked()),
+            _ => false,
+        }
+    }
+
+    /// Rebuild buffer text + annotations from this git status buffer's
+    /// current `snapshot`/`expanded_diffs`. Does not touch `self.kind` itself
+    /// (callers update the snapshot/expanded_diffs before calling this).
+    fn render_git_status(&mut self) {
+        use crate::color::Color;
+
+        let (snapshot, expanded_diffs, head_subject) = match &self.kind {
+            BufferKind::GitStatus {
+                snapshot,
+                expanded_diffs,
+                head_subject,
+                ..
+            } => (snapshot.clone(), expanded_diffs.clone(), head_subject.clone()),
+            _ => return,
+        };
+
+        // Capture what the cursor is currently "on" so it can be restored
+        // after the rebuild below â€” without this, every expand/collapse/
+        // stage/unstage/discard silently snaps the cursor back to line 0,
+        // which then desyncs `j`'s next stop from where the user thinks
+        // they are (landing back on the file entry instead of advancing
+        // into the hunk they just expanded).
+        enum CursorTarget {
+            HunkLine {
+                path: String,
+                staged_side: bool,
+                hunk_index: usize,
+                line_index: usize,
+            },
+            HunkHeader {
+                path: String,
+                staged_side: bool,
+                hunk_index: usize,
+            },
+            Entry {
+                path: String,
+            },
+        }
+        let cursor_target = {
+            let cursor = self.buffer.cursor();
+            let line = self.buffer.line_index.get_line_at(cursor);
+            if let Some((path, staged_side, hunk_index, line_index)) =
+                self.annotations.git_hunk_line_at_line(line)
+            {
+                Some(CursorTarget::HunkLine {
+                    path,
+                    staged_side,
+                    hunk_index,
+                    line_index,
+                })
+            } else if let Some((path, staged_side, hunk_index)) =
+                self.annotations.git_hunk_at_line(line)
+            {
+                Some(CursorTarget::HunkHeader {
+                    path,
+                    staged_side,
+                    hunk_index,
+                })
+            } else {
+                self.annotations
+                    .git_status_entry_at_line(line)
+                    .map(|(path, ..)| CursorTarget::Entry { path })
+            }
+        };
+        let mut exact_restore_line: Option<usize> = None;
+        let mut hunk_restore_line: Option<usize> = None;
+        let mut entry_restore_line: Option<usize> = None;
+
+        let mut chars: Vec<Character> = Vec::new();
+        let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
+        let mut byte_offset = 0usize;
+        let mut line_idx = 0usize;
+
+        self.annotations.clear();
+
+        let branch_line = match &snapshot.branch.head {
+            Some(name) => format!("On branch {name}"),
+            None => match &snapshot.branch.oid {
+                Some(oid) => format!("HEAD detached at {}", &oid[..oid.len().min(12)]),
+                None => "On an unborn branch".to_string(),
+            },
+        };
+        let range = git_status_push_line(&mut chars, &mut byte_offset, &branch_line);
+        highlights.push((range, Color::Cyan));
+        line_idx += 1;
+
+        if let (Some(oid), Some(subject)) = (&snapshot.branch.oid, &head_subject) {
+            let head_line = format!("HEAD  {} {subject}", &oid[..oid.len().min(8)]);
+            let range = git_status_push_line(&mut chars, &mut byte_offset, &head_line);
+            highlights.push((range, Color::Yellow));
+            self.annotations.create_git_status_head(line_idx);
+            line_idx += 1;
+        }
+
+        if let Some(upstream) = &snapshot.branch.upstream {
+            let (ahead, behind) = (snapshot.branch.ahead, snapshot.branch.behind);
+            let msg = if ahead > 0 && behind > 0 {
+                Some(format!(
+                    "Your branch and '{upstream}' have diverged (ahead {ahead}, behind {behind})"
+                ))
+            } else if ahead > 0 {
+                Some(format!(
+                    "Your branch is ahead of '{upstream}' by {ahead} commit(s)"
+                ))
+            } else if behind > 0 {
+                Some(format!(
+                    "Your branch is behind '{upstream}' by {behind} commit(s)"
+                ))
+            } else {
+                None
+            };
+            if let Some(msg) = msg {
+                git_status_push_line(&mut chars, &mut byte_offset, &msg);
+                line_idx += 1;
+            }
+        }
+        git_status_push_line(&mut chars, &mut byte_offset, "");
+        line_idx += 1;
+
+        let sections: [(&str, Color); 4] = [
+            (git_status_sections::UNMERGED, Color::Magenta),
+            (git_status_sections::STAGED, Color::Green),
+            (git_status_sections::UNSTAGED, Color::Yellow),
+            (git_status_sections::UNTRACKED, Color::Red),
+        ];
+
+        for (section, color) in sections {
+            let entries: Vec<&crate::git::status::StatusEntry> = snapshot
+                .entries
+                .iter()
+                .filter(|e| git_status_entry_matches_section(e, section))
+                .collect();
+            if entries.is_empty() {
+                continue;
+            }
+
+            let header = git_status_sections::header_text(section, entries.len());
+            let range = git_status_push_line(&mut chars, &mut byte_offset, &header);
+            highlights.push((range, Color::DarkGrey));
+            line_idx += 1;
+
+            for entry in entries {
+                let path_str = entry.path.to_string_lossy().to_string();
+                let orig_str = entry
+                    .orig_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string());
+                let display = match &orig_str {
+                    Some(orig) => format!("{orig} -> {path_str}"),
+                    None => path_str.clone(),
+                };
+                let code = git_status_entry_code(entry, section);
+                let line_text = if code.is_empty() {
+                    format!("  {display}")
+                } else {
+                    format!("  {code} {display}")
+                };
+                let range = git_status_push_line(&mut chars, &mut byte_offset, &line_text);
+                highlights.push((range, color));
+                let this_line = line_idx;
+                line_idx += 1;
+
+                self.annotations.create_git_status_entry(
+                    this_line,
+                    &path_str,
+                    section,
+                    orig_str.as_deref(),
+                );
+                let target_path = match &cursor_target {
+                    Some(CursorTarget::HunkLine { path, .. })
+                    | Some(CursorTarget::HunkHeader { path, .. })
+                    | Some(CursorTarget::Entry { path }) => Some(path.as_str()),
+                    None => None,
+                };
+                if target_path == Some(path_str.as_str()) {
+                    entry_restore_line = Some(this_line);
+                }
+
+                let staged_side = section == git_status_sections::STAGED;
+                if let Some(hunks) = expanded_diffs.get(&(entry.path.clone(), staged_side)) {
+                    for (hunk_index, hunk) in hunks.iter().enumerate() {
+                        let header_text = if hunk.header.is_empty() {
+                            format!(
+                                "      @@ -{},{} +{},{} @@",
+                                hunk.old_start, hunk.old_lines, hunk.new_start, hunk.new_lines
+                            )
+                        } else {
+                            format!(
+                                "      @@ -{},{} +{},{} @@ {}",
+                                hunk.old_start,
+                                hunk.old_lines,
+                                hunk.new_start,
+                                hunk.new_lines,
+                                hunk.header
+                            )
+                        };
+                        let range = git_status_push_line(&mut chars, &mut byte_offset, &header_text);
+                        highlights.push((range, Color::Cyan));
+                        let hunk_line_idx = line_idx;
+                        line_idx += 1;
+                        self.annotations.create_git_hunk(
+                            hunk_line_idx,
+                            &path_str,
+                            staged_side,
+                            hunk_index,
+                        );
+                        let same_hunk = matches!(
+                            &cursor_target,
+                            Some(CursorTarget::HunkLine { path, staged_side: s, hunk_index: hi, .. })
+                            | Some(CursorTarget::HunkHeader { path, staged_side: s, hunk_index: hi })
+                            if path == &path_str && *s == staged_side && *hi == hunk_index
+                        );
+                        if same_hunk {
+                            hunk_restore_line = Some(hunk_line_idx);
+                        }
+                        let is_exact_header_target = matches!(
+                            &cursor_target,
+                            Some(CursorTarget::HunkHeader { path, staged_side: s, hunk_index: hi })
+                            if path == &path_str && *s == staged_side && *hi == hunk_index
+                        );
+                        if is_exact_header_target {
+                            exact_restore_line = Some(hunk_line_idx);
+                        }
+
+                        for (dl_index, dl) in hunk.lines.iter().enumerate() {
+                            let (marker, color) = match dl.kind {
+                                crate::git::diff::DiffLineKind::Context => (' ', None),
+                                crate::git::diff::DiffLineKind::Addition => {
+                                    ('+', Some(Color::Green))
+                                }
+                                crate::git::diff::DiffLineKind::Deletion => {
+                                    ('-', Some(Color::Red))
+                                }
+                            };
+                            let text = format!("        {marker}{}", dl.content);
+                            let range = git_status_push_line(&mut chars, &mut byte_offset, &text);
+                            if let Some(color) = color {
+                                highlights.push((range, color));
+                            }
+                            if dl.kind != crate::git::diff::DiffLineKind::Context {
+                                self.annotations.create_git_hunk_line(
+                                    line_idx,
+                                    &path_str,
+                                    staged_side,
+                                    hunk_index,
+                                    dl_index,
+                                );
+                                let is_exact_line_target = matches!(
+                                    &cursor_target,
+                                    Some(CursorTarget::HunkLine { path, staged_side: s, hunk_index: hi, line_index })
+                                    if path == &path_str && *s == staged_side && *hi == hunk_index && *line_index == dl_index
+                                );
+                                if is_exact_line_target {
+                                    exact_restore_line = Some(line_idx);
+                                }
+                            }
+                            line_idx += 1;
+                        }
+                    }
+                }
+            }
+            git_status_push_line(&mut chars, &mut byte_offset, "");
+            line_idx += 1;
+        }
+
+        if chars.last() == Some(&Character::Newline) {
+            chars.pop();
+        }
+
+        self.replace_buffer_content_chars(&chars);
+        self.custom_highlights = highlights;
+        let restore_line = exact_restore_line.or(hunk_restore_line).or(entry_restore_line);
+        if let Some(line) = restore_line {
+            if let Some(offset) = self.buffer.line_index.get_start(line) {
+                let _ = self.buffer.set_cursor(offset);
+            }
+        }
+    }
+
+    /// Return the repo root for any git buffer kind.
+    pub fn git_repo_root(&self) -> Option<&std::path::Path> {
+        match &self.kind {
+            BufferKind::GitStatus { repo_root, .. } => Some(repo_root),
+            BufferKind::GitCommitMessage { repo_root, .. } => Some(repo_root),
+            _ => None,
+        }
+    }
+
 }
 
 /// Determine the highlight color for one directory buffer line.
@@ -619,4 +982,81 @@ fn dir_entry_color(
             }
         }
     }
+}
+
+/// Status-buffer section identifiers and the header text they render as.
+mod git_status_sections {
+    pub const UNMERGED: &str = "unmerged";
+    pub const STAGED: &str = "staged";
+    pub const UNSTAGED: &str = "unstaged";
+    pub const UNTRACKED: &str = "untracked";
+
+    pub fn header_text(section: &str, count: usize) -> String {
+        match section {
+            UNMERGED => format!("Unmerged paths ({count})"),
+            STAGED => format!("Staged changes ({count})"),
+            UNSTAGED => format!("Unstaged changes ({count})"),
+            UNTRACKED => format!("Untracked files ({count})"),
+            _ => String::new(),
+        }
+    }
+}
+
+/// Whether `entry` belongs under `section` for status-buffer rendering.
+fn git_status_entry_matches_section(entry: &crate::git::status::StatusEntry, section: &str) -> bool {
+    match section {
+        s if s == git_status_sections::UNMERGED => entry.is_unmerged(),
+        s if s == git_status_sections::STAGED => entry.is_staged(),
+        s if s == git_status_sections::UNSTAGED => entry.is_unstaged(),
+        s if s == git_status_sections::UNTRACKED => entry.is_untracked(),
+        _ => false,
+    }
+}
+
+/// The short status-code prefix shown for `entry` in `section` (e.g. `"M"`,
+/// `"UU"`, or empty for untracked, which has no meaningful code).
+fn git_status_entry_code(entry: &crate::git::status::StatusEntry, section: &str) -> String {
+    use crate::git::status::FileState;
+
+    fn state_char(state: FileState) -> char {
+        match state {
+            FileState::Unmodified => '.',
+            FileState::Modified => 'M',
+            FileState::TypeChanged => 'T',
+            FileState::Added => 'A',
+            FileState::Deleted => 'D',
+            FileState::Renamed => 'R',
+            FileState::Copied => 'C',
+            FileState::UpdatedUnmerged => 'U',
+        }
+    }
+
+    match section {
+        s if s == git_status_sections::UNMERGED => format!(
+            "{}{}",
+            state_char(entry.index_state),
+            state_char(entry.worktree_state)
+        ),
+        s if s == git_status_sections::STAGED => state_char(entry.index_state).to_string(),
+        s if s == git_status_sections::UNSTAGED => state_char(entry.worktree_state).to_string(),
+        _ => String::new(),
+    }
+}
+
+/// Append `text` plus a trailing newline to `chars`, advancing `byte_offset`.
+/// Returns the byte range of `text` itself (excluding the newline), for highlights.
+fn git_status_push_line(
+    chars: &mut Vec<Character>,
+    byte_offset: &mut usize,
+    text: &str,
+) -> std::ops::Range<usize> {
+    let start = *byte_offset;
+    for c in text.chars() {
+        chars.push(Character::from(c));
+        *byte_offset += c.len_utf8();
+    }
+    let end = *byte_offset;
+    chars.push(Character::Newline);
+    *byte_offset += 1;
+    start..end
 }

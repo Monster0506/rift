@@ -9,7 +9,7 @@ use crate::term::TerminalBackend;
 use std::sync::Arc;
 
 /// Debounce window for backgrounding a syntax parse after a sync attempt
-/// exceeds its time budget — coalesces rapid keystrokes into one job.
+/// exceeds its time budget â€” coalesces rapid keystrokes into one job.
 const SYNTAX_REPARSE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(40);
 
 /// Tracks a document's outstanding background syntax reparse, so a burst of edits debounces
@@ -270,7 +270,7 @@ impl<T: TerminalBackend> Editor<T> {
             JobMessage::Custom(id, payload) => {
                 let any_payload = payload.into_any();
 
-                // Try DirectoryListing — route to the document by id
+                // Try DirectoryListing â€” route to the document by id
                 let any_payload = match any_payload
                     .downcast::<crate::job_manager::jobs::explorer::DirectoryListing>(
                 ) {
@@ -349,7 +349,77 @@ impl<T: TerminalBackend> Editor<T> {
                     Err(p) => p,
                 };
 
-                // Try UndoTreeRenderResult — populate the matching undotree buffer
+                // Try GitStatusResult â€” populate the matching git status buffer
+                let any_payload = match any_payload
+                    .downcast::<crate::job_manager::jobs::git::GitStatusResult>(
+                ) {
+                    Ok(result) => {
+                        let doc_id = result.doc_id as crate::document::DocumentId;
+                        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                            let root_matches = matches!(&doc.kind,
+                                crate::document::BufferKind::GitStatus { repo_root, .. }
+                                if *repo_root == result.repo_root);
+                            if root_matches {
+                                doc.populate_git_status_buffer(result.snapshot, result.head_subject);
+                            }
+                        }
+                        if let Some(staged_side) = self.pending_git_status_expand_all.remove(&doc_id)
+                        {
+                            self.spawn_expand_all_git_status_hunks(doc_id, staged_side);
+                        }
+                        if self.active_document_id() == doc_id {
+                            self.sync_state_with_active_document();
+                            let _ = self.force_full_redraw();
+                        }
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    }
+                    Err(p) => p,
+                };
+
+                // Try GitDiffResult â€” expand the matching hunk block inline
+                let any_payload = match any_payload
+                    .downcast::<crate::job_manager::jobs::git::GitDiffResult>(
+                ) {
+                    Ok(result) => {
+                        let doc_id = result.doc_id as crate::document::DocumentId;
+                        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                            if doc.is_git_status() {
+                                doc.set_git_status_expanded(
+                                    result.path,
+                                    result.staged_side,
+                                    result.hunks,
+                                );
+                            }
+                        }
+                        if self.active_document_id() == doc_id {
+                            self.sync_state_with_active_document();
+                            let _ = self.force_full_redraw();
+                        }
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    }
+                    Err(p) => p,
+                };
+
+                // Try GitCommandResult â€” show `:Git <args>` output
+                let any_payload = match any_payload
+                    .downcast::<crate::job_manager::jobs::git::GitCommandResult>(
+                ) {
+                    Ok(result) => {
+                        self.refresh_git_status_buffers_for(&result.repo_root);
+                        self.show_git_command_result(&result.args, result.output, result.success);
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    }
+                    Err(p) => p,
+                };
+
+                
+                // Try UndoTreeRenderResult â€” populate the matching undotree buffer
                 let any_payload = match any_payload
                     .downcast::<crate::job_manager::jobs::undotree::UndoTreeRenderResult>(
                 ) {
@@ -371,7 +441,7 @@ impl<T: TerminalBackend> Editor<T> {
                     Err(p) => p,
                 };
 
-                // Try ExplorerPreviewResult — populate the preview pane
+                // Try ExplorerPreviewResult â€” populate the preview pane
                 let any_payload = match any_payload
                     .downcast::<crate::job_manager::jobs::explorer_preview::ExplorerPreviewResult>()
                 {

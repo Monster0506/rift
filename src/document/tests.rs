@@ -16,12 +16,12 @@ fn test_new_doc_is_file_kind() {
 #[test]
 fn test_lsp_char_offset_handles_astral_and_non_ascii() {
     let mut doc = Document::new(1).unwrap();
-    // "🦀" is outside the BMP (2 UTF-16 units, 1 code point); "é" is 1 UTF-16
+    // "ðŸ¦€" is outside the BMP (2 UTF-16 units, 1 code point); "Ã©" is 1 UTF-16
     // unit. An LSP server reports `character` in UTF-16 units, not code points.
-    let _ = doc.insert_str("a🦀é-end");
+    let _ = doc.insert_str("aðŸ¦€Ã©-end");
 
-    // code points: a(0) 🦀(1) é(2) -(3) e(4) n(5) d(6)
-    // utf16 units: a=0  🦀=1,2  é=3   -=4  e=5  n=6  d=7
+    // code points: a(0) ðŸ¦€(1) Ã©(2) -(3) e(4) n(5) d(6)
+    // utf16 units: a=0  ðŸ¦€=1,2  Ã©=3   -=4  e=5  n=6  d=7
 
     use crate::lsp::protocol::PositionEncoding;
     let enc = PositionEncoding::Utf16;
@@ -29,7 +29,7 @@ fn test_lsp_char_offset_handles_astral_and_non_ascii() {
     assert_eq!(
         doc.lsp_char_offset_in_line(0, 3, enc),
         2,
-        "utf16 offset 3 (past the 2-unit crab) must land on code point 2 ('é'), not 3"
+        "utf16 offset 3 (past the 2-unit crab) must land on code point 2 ('Ã©'), not 3"
     );
     assert_eq!(doc.lsp_char_offset_in_line(0, 7, enc), 6);
 
@@ -37,7 +37,7 @@ fn test_lsp_char_offset_handles_astral_and_non_ascii() {
     assert_eq!(
         doc.lsp_position_units_in_line(0, 2, enc),
         3,
-        "code point 2 ('é') must report utf16 offset 3 (after the 2-unit crab)"
+        "code point 2 ('Ã©') must report utf16 offset 3 (after the 2-unit crab)"
     );
     assert_eq!(doc.lsp_position_units_in_line(0, 6, enc), 7);
 }
@@ -49,8 +49,8 @@ fn test_lsp_char_offset_handles_astral_and_non_ascii() {
 fn test_lsp_position_units_differ_by_negotiated_encoding() {
     use crate::lsp::protocol::PositionEncoding;
     let mut doc = Document::new(1).unwrap();
-    // "a🦀é-": utf16 units a=1,crab=2,é=1,-=1 (total 5); utf8 bytes a=1,crab=4,é=2,-=1 (total 8).
-    let _ = doc.insert_str("a🦀é-end");
+    // "aðŸ¦€Ã©-": utf16 units a=1,crab=2,Ã©=1,-=1 (total 5); utf8 bytes a=1,crab=4,Ã©=2,-=1 (total 8).
+    let _ = doc.insert_str("aðŸ¦€Ã©-end");
 
     assert_eq!(
         doc.lsp_position_units_in_line(0, 3, PositionEncoding::Utf16),
@@ -116,9 +116,9 @@ fn test_incremental_lsp_change_for_single_char_delete() {
 fn test_incremental_lsp_change_positions_a_non_bmp_char_correctly() {
     use crate::lsp::protocol::PositionEncoding;
     let mut doc = Document::new(1).unwrap();
-    // "🦀" is 2 UTF-16 units; deleting the 'x' right after it must report a
+    // "ðŸ¦€" is 2 UTF-16 units; deleting the 'x' right after it must report a
     // range starting at unit 2 (after the crab), not code-point offset 1.
-    let _ = doc.insert_str("🦀x");
+    let _ = doc.insert_str("ðŸ¦€x");
     let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
     let _ = doc.buffer.set_cursor(2);
     doc.delete_backward();
@@ -435,7 +435,7 @@ fn test_directory_path_returns_path_for_directory() {
     let doc = Document::new_directory(1, path.clone()).unwrap();
     assert_eq!(doc.directory_path(), Some(&path));
 }
-// populate_directory_buffer — text format
+// populate_directory_buffer â€” text format
 
 fn make_dir_entries(names: &[(&str, bool)], base: &str) -> Vec<DirEntry> {
     names
@@ -540,7 +540,7 @@ fn test_populate_directory_marks_saved() {
     doc.populate_directory_buffer(vec![]);
     assert!(!doc.is_dirty());
 }
-// populate_directory_buffer — highlights
+// populate_directory_buffer â€” highlights
 
 #[test]
 fn test_populate_directory_highlights_non_empty() {
@@ -660,7 +660,7 @@ fn test_parse_diff_no_changes_empty_deletes_creates() {
 #[test]
 fn test_parse_diff_deleted_entry() {
     let mut doc = make_populated_directory_doc("/tmp", &[("a.txt", false), ("b.txt", false)]);
-    // Remove b.txt from the buffer — keep only the header and a.txt (id=1).
+    // Remove b.txt from the buffer â€” keep only the header and a.txt (id=1).
     set_annotated_buffer(&mut doc, "../\n/001 a.txt");
 
     let diff = doc.parse_directory_diff();
@@ -854,7 +854,7 @@ fn test_populate_undotree_preserves_linked_doc_id() {
 #[test]
 fn test_populate_undotree_noop_on_wrong_kind() {
     let mut doc = Document::new(1).unwrap();
-    // Should silently do nothing — no panic
+    // Should silently do nothing â€” no panic
     doc.populate_undotree_buffer("text".to_string(), vec![1], vec![]);
     // Buffer should remain empty
     assert_eq!(doc.buffer.to_string(), "");
@@ -954,7 +954,7 @@ fn test_dir_entry_directory() {
     };
     assert!(entry.is_dir);
 }
-// DirectoryDiff — rename detection
+// DirectoryDiff â€” rename detection
 
 /// Helper: replace the full buffer text of a doc (simulates user editing the explorer buffer).
 fn set_buffer_text(doc: &mut Document, text: &str) {
@@ -1310,7 +1310,7 @@ fn test_populate_undotree_increments_revision() {
         "revision should increment after populate"
     );
 }
-// BufferKind — cloneability
+// BufferKind â€” cloneability
 
 #[test]
 fn test_buffer_kind_file_clones() {
@@ -1956,7 +1956,7 @@ fn test_document_version_increments_per_edit() {
     assert!(doc.version() > v1);
 }
 
-// Annotation store integration — directory entry tracking
+// Annotation store integration â€” directory entry tracking
 
 #[test]
 fn test_populate_directory_creates_annotations_in_store() {
@@ -2171,7 +2171,7 @@ fn test_parse_diff_reorder_without_rename_produces_no_diff() {
     // The ID system: swapping order of lines does not change IDs -> no renames.
     let mut doc =
         make_populated_directory_doc("/tmp", &[("alpha.txt", false), ("beta.txt", false)]);
-    // Swap order but keep IDs — both names unchanged.
+    // Swap order but keep IDs â€” both names unchanged.
     set_annotated_buffer(&mut doc, "../\n/002 beta.txt\n/001 alpha.txt");
     let diff = doc.parse_directory_diff();
     assert!(
@@ -2216,7 +2216,7 @@ fn test_parse_diff_all_entries_deleted() {
         "/tmp",
         &[("a.txt", false), ("b.txt", false), ("c.txt", false)],
     );
-    // Buffer only contains the header — all entry IDs absent -> all deleted.
+    // Buffer only contains the header â€” all entry IDs absent -> all deleted.
     set_annotated_buffer(&mut doc, "../");
     let diff = doc.parse_directory_diff();
     assert_eq!(
@@ -2301,7 +2301,7 @@ fn wrap_resolve_floors_to_one() {
     assert_eq!(mode.resolve(10), 1);
 }
 
-// parse_directory_diff — dangerous create names that could escape to the filesystem
+// parse_directory_diff â€” dangerous create names that could escape to the filesystem
 
 #[test]
 fn test_parse_diff_dotdot_line_is_always_filtered() {
@@ -2338,7 +2338,7 @@ fn test_parse_diff_rename_to_empty_visible_name_is_ignored() {
     // User deletes the visible name portion but leaves the ID prefix: "/001 " (with trailing space stripped by trim).
     // The trimmed visible part is empty -> no rename should be produced.
     let mut doc = make_populated_directory_doc("/tmp", &[("a.txt", false)]);
-    // Buffer line: "/001 " — visible part is "" after stripping prefix.
+    // Buffer line: "/001 " â€” visible part is "" after stripping prefix.
     set_annotated_buffer(&mut doc, "../\n/001 ");
 
     let diff = doc.parse_directory_diff();
@@ -2369,7 +2369,7 @@ fn test_parse_diff_id_only_line_no_trailing_text_not_counted_as_create() {
 
 #[test]
 fn test_parse_diff_line_with_path_separator_is_create() {
-    // A user might type "sub/file.txt" — this should appear in creates verbatim.
+    // A user might type "sub/file.txt" â€” this should appear in creates verbatim.
     // apply_directory_diff handles the path join; parse layer must not strip or drop it.
     let mut doc = make_populated_directory_doc("/tmp", &[]);
     set_annotated_buffer(&mut doc, "../\nsub/file.txt");
@@ -2384,7 +2384,7 @@ fn test_parse_diff_line_with_path_separator_is_create() {
 
 #[test]
 fn test_parse_diff_many_entries_ids_are_stable() {
-    // With 100 entries the IDs are 001..100 and each round-trips correctly — no collision,
+    // With 100 entries the IDs are 001..100 and each round-trips correctly â€” no collision,
     // no off-by-one at the boundary between two-digit and three-digit IDs.
     let names: Vec<(&str, bool)> = (0..100).map(|_| ("x.txt", false)).collect();
     let doc = make_populated_directory_doc("/tmp", &names);
@@ -2758,4 +2758,87 @@ fn populate_regions_buffer_with_no_regions_shows_empty_placeholder() {
     doc.populate_regions_buffer(&source, &[]);
 
     assert_eq!(doc.buffer.to_string(), "(empty)");
+}
+
+// git status buffer â€” populate
+
+fn staged_entry(path: &str) -> crate::git::status::StatusEntry {
+    crate::git::status::StatusEntry {
+        path: PathBuf::from(path),
+        orig_path: None,
+        index_state: crate::git::status::FileState::Modified,
+        worktree_state: crate::git::status::FileState::Unmodified,
+        kind: crate::git::status::EntryKind::Ordinary,
+    }
+}
+
+fn unstaged_entry(path: &str) -> crate::git::status::StatusEntry {
+    crate::git::status::StatusEntry {
+        path: PathBuf::from(path),
+        orig_path: None,
+        index_state: crate::git::status::FileState::Unmodified,
+        worktree_state: crate::git::status::FileState::Modified,
+        kind: crate::git::status::EntryKind::Ordinary,
+    }
+}
+
+fn untracked_entry(path: &str) -> crate::git::status::StatusEntry {
+    crate::git::status::StatusEntry {
+        path: PathBuf::from(path),
+        orig_path: None,
+        index_state: crate::git::status::FileState::Unmodified,
+        worktree_state: crate::git::status::FileState::Unmodified,
+        kind: crate::git::status::EntryKind::Untracked,
+    }
+}
+
+fn unmerged_entry(path: &str) -> crate::git::status::StatusEntry {
+    crate::git::status::StatusEntry {
+        path: PathBuf::from(path),
+        orig_path: None,
+        index_state: crate::git::status::FileState::UpdatedUnmerged,
+        worktree_state: crate::git::status::FileState::UpdatedUnmerged,
+        kind: crate::git::status::EntryKind::Unmerged,
+    }
+}
+
+fn make_git_status_doc(entries: Vec<crate::git::status::StatusEntry>) -> Document {
+    let mut doc = Document::new_git_status(1, PathBuf::from("/repo")).unwrap();
+    let snapshot = crate::git::status::StatusSnapshot {
+        branch: crate::git::status::BranchInfo::default(),
+        entries,
+    };
+    doc.populate_git_status_buffer(snapshot, None);
+    doc
+}
+
+
+#[test]
+fn populate_git_status_buffer_renders_sections_and_codes() {
+    let doc = make_git_status_doc(vec![
+        staged_entry("a.rs"),
+        unstaged_entry("b.rs"),
+        untracked_entry("c.rs"),
+        unmerged_entry("d.rs"),
+    ]);
+    let text = doc.buffer.to_string();
+    assert!(text.contains("Unmerged paths (1)"));
+    assert!(text.contains("UU d.rs"));
+    assert!(text.contains("Staged changes (1)"));
+    assert!(text.contains("M a.rs"));
+    assert!(text.contains("Unstaged changes (1)"));
+    assert!(text.contains("M b.rs"));
+    assert!(text.contains("Untracked files (1)"));
+    assert!(text.contains("c.rs"));
+    assert!(!text.contains("  M c.rs"), "untracked entries show no status code");
+}
+
+#[test]
+fn populate_git_status_buffer_skips_empty_sections() {
+    let doc = make_git_status_doc(vec![staged_entry("a.rs")]);
+    let text = doc.buffer.to_string();
+    assert!(text.contains("Staged changes (1)"));
+    assert!(!text.contains("Unstaged changes"));
+    assert!(!text.contains("Untracked files"));
+    assert!(!text.contains("Unmerged paths"));
 }
