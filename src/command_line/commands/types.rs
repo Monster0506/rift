@@ -85,6 +85,11 @@ pub enum ParsedCommand {
     OpenBufferList {
         bangs: usize,
     },
+    /// Delete a buffer by index, or the current one when absent.
+    BufferDelete {
+        index: Option<usize>,
+        bangs: usize,
+    },
     /// Undo command (undo last change, optionally with count)
     Undo {
         count: Option<u64>,
