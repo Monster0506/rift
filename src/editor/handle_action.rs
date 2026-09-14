@@ -41,6 +41,9 @@ impl<T: TerminalBackend> Editor<T> {
                 let kind = self.active_document().kind.clone();
                 match kind {
                     BufferKind::Directory { .. } => self.handle_directory_buffer_action(id),
+                    BufferKind::GitStatus { .. } => self.handle_git_status_buffer_action(id),
+                    BufferKind::GitBlame { .. } => self.handle_git_blame_buffer_action(id),
+                    BufferKind::GitLog { .. } => self.handle_git_log_buffer_action(id),
                     BufferKind::UndoTree { .. } => self.handle_undotree_buffer_action(id),
                     BufferKind::Messages { .. } => self.handle_messages_buffer_action(id),
                     BufferKind::Clipboard { .. } => self.handle_clipboard_buffer_action(id),
@@ -430,6 +433,70 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::ExplorerToggleHidden => {
                 self.handle_explorer_toggle_hidden();
+                true
+            }
+            EditorAction::GitStatus => {
+                self.open_git_status();
+                true
+            }
+            EditorAction::GitCommitNew => {
+                self.open_git_commit_new();
+                true
+            }
+            EditorAction::GitCommitAmend => {
+                self.open_git_commit_amend();
+                true
+            }
+            EditorAction::GitCommitFixup => {
+                self.run_git_commit_fixup();
+                true
+            }
+            EditorAction::GitRebaseFromLogCommit => {
+                self.git_rebase_from_log_commit();
+                true
+            }
+            EditorAction::GitRebaseAbort => {
+                self.abort_git_rebase();
+                true
+            }
+            EditorAction::GitRebaseMoveUp => {
+                self.git_rebase_move(false);
+                true
+            }
+            EditorAction::GitRebaseMoveDown => {
+                self.git_rebase_move(true);
+                true
+            }
+            EditorAction::GitRebaseSetPick => {
+                self.git_rebase_set_verb(crate::git::rebase::RebaseVerb::Pick);
+                true
+            }
+            EditorAction::GitRebaseSetSquash => {
+                self.git_rebase_set_verb(crate::git::rebase::RebaseVerb::Squash);
+                true
+            }
+            EditorAction::GitRebaseSetFixup => {
+                self.git_rebase_set_verb(crate::git::rebase::RebaseVerb::Fixup);
+                true
+            }
+            EditorAction::GitRebaseSetEdit => {
+                self.git_rebase_set_verb(crate::git::rebase::RebaseVerb::Edit);
+                true
+            }
+            EditorAction::GitRebaseDrop => {
+                self.git_rebase_drop();
+                true
+            }
+            EditorAction::GitRebaseToggleFold => {
+                self.git_rebase_toggle_fold();
+                true
+            }
+            EditorAction::GitRebaseOpenMessage => {
+                self.git_rebase_open_message_editor();
+                true
+            }
+            EditorAction::GitHelp => {
+                self.open_git_help();
                 true
             }
             EditorAction::OpenUndoTree => {
@@ -1164,6 +1231,9 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
         };
+        if doc.is_read_only {
+            return false;
+        }
 
         // Track whether we need to prepend a newline (last-line edge case).
         let mut needs_leading_newline = false;
@@ -1240,6 +1310,9 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
         };
+        if doc.is_read_only {
+            return false;
+        }
         doc.begin_transaction("Paste");
         let _ = doc.insert_str(text);
         doc.commit_transaction();
