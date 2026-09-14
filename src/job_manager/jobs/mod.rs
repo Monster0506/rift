@@ -6,6 +6,7 @@ pub mod explorer;
 pub mod explorer_preview;
 pub mod file_operations;
 pub mod fs;
+pub mod git;
 #[cfg(feature = "treesitter")]
 pub mod syntax;
 #[cfg(feature = "terminal_emulation")]
