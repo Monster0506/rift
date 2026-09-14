@@ -117,6 +117,10 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 return;
             }
+            ExecutionResult::RunGit { args } => {
+                self.run_git_command(args);
+                self.state.clear_command_line();
+            }
             ExecutionResult::Success => {}
             ExecutionResult::Quit { bangs } => {
                 self.do_quit(bangs > 0);

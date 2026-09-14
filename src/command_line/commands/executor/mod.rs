@@ -73,6 +73,10 @@ pub enum ExecutionResult {
         cmd: Option<String>,
         bangs: usize,
     },
+    /// Run a git subcommand and show its output (`:Git <args>`).
+    RunGit {
+        args: String,
+    },
     SplitWindow {
         direction: crate::split::tree::SplitDirection,
         subcommand: crate::command_line::commands::SplitSubcommand,
@@ -140,6 +144,7 @@ impl std::fmt::Debug for ExecutionResult {
                 .field("cmd", cmd)
                 .field("bangs", bangs)
                 .finish(),
+            Self::RunGit { args } => f.debug_struct("RunGit").field("args", args).finish(),
             Self::SplitWindow {
                 direction,
                 subcommand,
@@ -179,6 +184,7 @@ impl CommandExecutor {
         match command {
             ParsedCommand::Quit { bangs } => ExecutionResult::Quit { bangs },
             ParsedCommand::Terminal { cmd, bangs } => ExecutionResult::OpenTerminal { cmd, bangs },
+            ParsedCommand::Git { args, bangs: _ } => ExecutionResult::RunGit { args },
             ParsedCommand::Set {
                 option,
                 value,
