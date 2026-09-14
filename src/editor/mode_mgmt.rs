@@ -6,8 +6,27 @@ use crate::mode::Mode;
 use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
 
+/// True for commands that switch into Insert or Replace mode.
+fn enters_edit_mode(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::EnterInsertMode
+            | Command::EnterInsertModeAfter
+            | Command::EnterInsertModeAtLineStart
+            | Command::EnterInsertModeAtLineEnd
+            | Command::OpenLineBelow
+            | Command::OpenLineAbove
+            | Command::Change(_, _)
+            | Command::ChangeLine(_)
+            | Command::EnterReplaceMode
+    )
+}
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_mode_management(&mut self, command: crate::command::Command) {
+        if enters_edit_mode(&command) && self.active_doc_is(|d| d.is_read_only) {
+            self.reject_read_only_edit();
+            return;
+        }
         match command {
             Command::EnterInsertMode => {
                 // Start transaction for grouping insert mode edits

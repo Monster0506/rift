@@ -277,4 +277,19 @@ impl Document {
             ..Self::skeleton(id, buffer)
         })
     }
+
+    /// Create a new interactive buffer-list panel document (read-only, interface-mode).
+    pub fn new_buffer_list(id: super::DocumentId) -> Result<Self, RiftError> {
+        let buffer = TextBuffer::new(4096)?;
+        Ok(Document {
+            options: DocumentOptions {
+                show_line_numbers: false,
+                ..DocumentOptions::default()
+            },
+            is_read_only: true,
+            interface_mode: true,
+            kind: BufferKind::BufferList { entries: vec![] },
+            ..Self::skeleton(id, buffer)
+        })
+    }
 }

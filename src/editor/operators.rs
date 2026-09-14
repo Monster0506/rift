@@ -129,6 +129,11 @@ impl<T: TerminalBackend> Editor<T> {
                 result
             }
             crate::action::OperatorType::Change => {
+                if self.active_doc_is(|d| d.is_read_only) {
+                    self.reject_read_only_edit();
+                    self.set_mode(Mode::Normal);
+                    return false;
+                }
                 if !has_range {
                     if let Motion::TextObject(spec) = motion {
                         let insert_pos =
@@ -222,8 +227,8 @@ impl<T: TerminalBackend> Editor<T> {
                         } else {
                             doc.buffer.move_to_line_end();
                             let end = doc.buffer.cursor();
-                            // Last line: ghost the preceding newline too, mirroring
-                            // DeleteLine's extra delete_backward for that case.
+                            // Last line: ghost the preceding newline too, so the
+                            // ghosted range still merges into the line above it.
                             if start > 0 {
                                 (start - 1, end)
                             } else {
@@ -252,6 +257,11 @@ impl<T: TerminalBackend> Editor<T> {
                 result
             }
             crate::action::OperatorType::Change => {
+                if self.active_doc_is(|d| d.is_read_only) {
+                    self.reject_read_only_edit();
+                    self.set_mode(Mode::Normal);
+                    return false;
+                }
                 let command = crate::command::Command::ChangeLine(count);
                 self.document_manager
                     .active_document_mut()

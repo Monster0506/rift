@@ -183,9 +183,9 @@ pub struct Editor<T: TerminalBackend> {
     pub panel_layout: Option<PanelLayout>,
     /// Last seen notification generation; used to detect when to refresh open messages buffers.
     last_notification_generation: u64,
-    /// Plugin host — dispatches editor events to registered plugin handlers.
+    /// Plugin host: dispatches editor events to registered plugin handlers.
     pub plugin_host: crate::plugin::PluginHost,
-    /// Clipboard ring buffer — stores yanked/deleted text, capacity 10.
+    /// Clipboard ring buffer: stores yanked/deleted text, capacity 10.
     pub clipboard_ring: crate::clipboard::ClipboardRing,
     /// Cached system-clipboard read for the tooltip, refreshed out-of-band.
     system_clipboard_cache: crate::clipboard::SystemClipboardCache,
@@ -252,7 +252,7 @@ struct DisplayMapCacheEntry {
     doc_id: DocumentId,
     revision: u64,
     /// `apply_loaded_content` resets revision to 0 rather than bumping it, so
-    /// a placeholder-to-loaded swap needs this too (see `ContentBlitKey`).
+    /// a placeholder-to-loaded swap is tracked by buffer length instead.
     buf_len: usize,
     content_width: usize,
     /// Annotation revision (and LSP virtual-text setting) the map's EOL-row
@@ -282,6 +282,8 @@ pub enum PanelKind {
     LocationList,
     /// `gv` regions list.
     Regions,
+    /// Interactive buffer-list split panel.
+    BufferList,
 }
 
 /// Tracks the two windows and documents that make up a live explorer session.

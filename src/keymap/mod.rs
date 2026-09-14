@@ -23,10 +23,10 @@ pub enum KeyContext {
     Clipboard,
     /// Clipboard entry scratch buffer context
     ClipboardEntry,
-    /// Terminal buffer in insert mode — falls through to Global only (no Normal bindings
-    /// should intercept typed characters).
+    /// Terminal buffer in insert mode: falls through to Global only (no
+    /// Normal bindings should intercept typed characters).
     Terminal,
-    /// Terminal buffer in normal mode — falls through to Normal so all vim motions work.
+    /// Terminal buffer in normal mode: falls through to Normal so all vim motions work.
     TerminalNormal,
     /// Location list panel (diagnostics, references).
     LocationList,
@@ -35,6 +35,8 @@ pub enum KeyContext {
     Visual,
     /// `gv` regions list window. Falls through to Normal for j/k/etc.
     Regions,
+    /// Interactive buffer-list split panel. Falls through to `Normal` for j/k/etc.
+    BufferList,
 }
 
 /// KeyMap stores mappings from (Context, Key Sequence) -> Action
@@ -83,7 +85,8 @@ impl KeyMap {
             | KeyContext::Clipboard
             | KeyContext::ClipboardEntry
             | KeyContext::LocationList
-            | KeyContext::Regions => Some(KeyContext::Normal),
+            | KeyContext::Regions
+            | KeyContext::BufferList => Some(KeyContext::Normal),
             KeyContext::Terminal => Some(KeyContext::Global),
             KeyContext::TerminalNormal => Some(KeyContext::Normal),
             KeyContext::Normal | KeyContext::Insert | KeyContext::Command | KeyContext::Search => {
