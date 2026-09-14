@@ -30,6 +30,14 @@ impl<T: TerminalBackend> Editor<T> {
             .unwrap_or(false)
     }
 
+    /// Notify that an edit was refused because the buffer is read-only.
+    pub(super) fn reject_read_only_edit(&mut self) {
+        self.state.notify(
+            crate::notification::NotificationType::Warning,
+            "Cannot make changes: buffer is read-only".to_string(),
+        );
+    }
+
     pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         #[cfg(feature = "lsp")]
         self.lsp_notify_close(id);

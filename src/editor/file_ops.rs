@@ -57,6 +57,7 @@ impl<T: TerminalBackend> Editor<T> {
                 | BufferKind::Messages { .. }
                 | BufferKind::LocationList { .. }
                 | BufferKind::Regions { .. }
+                | BufferKind::BufferList { .. }
                 | BufferKind::Scratch { .. } => {
                     self.state.handle_error(RiftError::new(
                         ErrorType::Io,

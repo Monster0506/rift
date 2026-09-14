@@ -10,7 +10,7 @@ fn line_start_offset(buf: &crate::buffer::TextBuffer, row: usize) -> usize {
 }
 
 /// Char offset of the end of `row` (trailing newline or buffer's end).
-/// Mirrors `clipboard::capture_text`'s Linewise guarded pattern.
+/// Clamps to the buffer end so a last line without a trailing newline can't overshoot.
 fn line_end_offset(buf: &crate::buffer::TextBuffer, row: usize) -> usize {
     if row + 1 < buf.get_total_lines() {
         buf.line_index
@@ -63,8 +63,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let end_offset = if range.inclusive { 1 } else { 0 };
             let s = range.anchor.min(range.new_cursor);
-            // Clamp: a last line with no trailing newline can overshoot by one
-            // (same case clipboard::capture_text already guards).
+            // Clamp: a last line with no trailing newline can overshoot by one.
             let e = (range.anchor.max(range.new_cursor) + end_offset).min(doc.buffer.len());
             let strictly_larger =
                 s <= current.0 && e >= current.1 && (s < current.0 || e > current.1);
@@ -219,7 +218,7 @@ impl<T: TerminalBackend> Editor<T> {
             .active_document()
             .map(|d| d.selection_set.is_empty())
             .unwrap_or(true);
-        if is_empty {
+        if is_empty || self.active_doc_is(|d| d.is_read_only) {
             return false;
         }
 
@@ -321,8 +320,8 @@ impl<T: TerminalBackend> Editor<T> {
                     .active_document()
                     .is_some_and(|doc| doc.ghost_cut_allowed());
                 if self.state.settings.ghost_cut && ghost_allowed {
-                    // Cursor lands on the lowest-offset region's start, matching
-                    // apply_to_each_region's highest-offset-first delete order.
+                    // Cursor lands on the lowest-offset region's start so it
+                    // stays valid after every region is ghosted for deletion.
                     let cursor_target = ranges.iter().map(|&(s, _)| s).min();
                     let ghosted_doc = self.document_manager.active_document_mut().map(|doc| {
                         doc.create_ghosts(&ranges);
@@ -478,8 +477,8 @@ impl<T: TerminalBackend> Editor<T> {
         any
     }
 
-    /// `sg<ch>` against a non-empty `SelectionSet`: the region supplies the range directly,
-    /// so this mirrors `Command::AddSurround` instead of `compute_motion_range`.
+    /// `sg<ch>` against a non-empty `SelectionSet`: each region supplies its own
+    /// range directly, instead of resolving one from a motion.
     pub(super) fn try_run_set_aware_add_surround(&mut self, ch: char, delim_count: usize) -> bool {
         let is_empty = self
             .document_manager

@@ -1,4 +1,4 @@
-//! Buffer population methods — rendering special buffer kinds into text.
+//! Buffer population methods: rendering special buffer kinds into text.
 
 use super::{BufferKind, DirEntry, DirectoryDiff, Document};
 use crate::buffer::TextBuffer;
@@ -327,6 +327,53 @@ impl Document {
         self.history.mark_saved();
     }
 
+    /// Populate (or repopulate) the interactive buffer-list panel from the
+    /// current buffer set, showing each entry's index, name, and status flags.
+    pub fn populate_buffer_list_buffer(&mut self, infos: &[crate::document::manager::BufferInfo]) {
+        use crate::color::Color;
+
+        let mut content = String::new();
+        let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
+        let mut entries: Vec<super::DocumentId> = Vec::with_capacity(infos.len());
+        self.annotations.clear();
+
+        if infos.is_empty() {
+            content.push_str("(no buffers)");
+        } else {
+            for (i, info) in infos.iter().enumerate() {
+                let current = if info.is_current { "%" } else { " " };
+                let dirty = if info.is_dirty { "+" } else { " " };
+                let read_only = if info.is_read_only { "R" } else { " " };
+                let special = if info.is_special { "~" } else { " " };
+                let start = content.len();
+                content.push_str(&format!(
+                    "[{}] {}: {current}{dirty}{read_only}{special}",
+                    info.index + 1,
+                    info.name,
+                ));
+                let color = if info.is_current {
+                    Color::Cyan
+                } else if info.is_dirty {
+                    Color::Yellow
+                } else {
+                    Color::White
+                };
+                highlights.push((start..content.len(), color));
+                content.push('\n');
+                entries.push(info.id);
+                self.annotations.create_buffer_entry(i, info.id);
+            }
+            if content.ends_with('\n') {
+                content.pop();
+            }
+        }
+
+        self.replace_buffer_content(&content);
+        self.custom_highlights = highlights;
+        self.kind = BufferKind::BufferList { entries };
+        self.history.mark_saved();
+    }
+
     /// Populate (or repopulate) the `gv` regions list from `regions`,
     /// computed against `source_buf` (the document the set belongs to).
     pub fn populate_regions_buffer(
@@ -443,7 +490,7 @@ impl Document {
                 // Primary entry name: visible line content with trailing slash and whitespace stripped.
                 let primary_name = line_text.trim_end_matches('/').trim().to_string();
 
-                // A blank annotated line means the user erased the entry — treat as deleted.
+                // A blank annotated line means the user erased the entry: treat as deleted.
                 if primary_name.is_empty() {
                     continue;
                 }

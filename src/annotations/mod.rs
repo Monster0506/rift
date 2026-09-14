@@ -17,8 +17,8 @@ pub use value::Value;
 
 use serde::{Deserialize, Serialize};
 
-/// Resolve an adornment's foreground color, mirroring the range path's precedence:
-/// inline adornment style, annotation style, kind-default style, then face/kind face.
+/// Resolve an adornment's foreground color by precedence: inline adornment
+/// style, annotation style, kind-default style, then face/kind face.
 fn adornment_color(
     a: &Annotation,
     adornment: &Adornment,
@@ -262,8 +262,8 @@ pub struct AnnotationStore {
     /// Stale flag for `by_id` + `line_index` alone (a plain O(n) pass), so
     /// line-anchor edit tracking never pays to rebuild the interval tree.
     aux_dirty: std::cell::Cell<bool>,
-    /// Bumped on every observable mutation, mirroring `TextBuffer::revision`,
-    /// so snapshot consumers (the Lua host) can skip re-materializing unchanged state.
+    /// Bumped on every observable mutation, so snapshot consumers (the Lua
+    /// host) can skip re-materializing unchanged state.
     revision: u64,
 }
 
@@ -982,6 +982,25 @@ impl AnnotationStore {
         self.add(
             Annotation::new(
                 Kind::new(well_known::FS_ENTRY),
+                Anchor::Line(line),
+                AnnotationOwner::System,
+            )
+            .with_payload(payload)
+            .with_stickiness(Stickiness::Delete)
+            .with_visible(false)
+            .with_read_only(true)
+            .with_actions(vec![Action::activate()]),
+        )
+    }
+
+    /// Create an interactive `buffer.entry` annotation anchored at `line`.
+    /// Used only to mark the line as actionable; the caller resolves selection itself.
+    pub fn create_buffer_entry(&mut self, line: usize, doc_id: u64) -> AnnotationId {
+        let mut payload = Value::map();
+        payload.set("doc_id", Value::Int(doc_id as i64));
+        self.add(
+            Annotation::new(
+                Kind::new(well_known::BUFFER_ENTRY),
                 Anchor::Line(line),
                 AnnotationOwner::System,
             )

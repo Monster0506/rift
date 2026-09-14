@@ -70,7 +70,7 @@ pub struct DirectoryDiff {
 }
 
 /// A deferred `d`-cut: `text` still sits in the buffer, greyed out, until
-/// something resolves it into a real delete (see `Document::commit_pending_ghost`).
+/// a later action turns it into a real delete.
 pub struct GhostCut {
     pub start: usize,
     pub end: usize,
@@ -117,7 +117,7 @@ pub enum BufferKind {
         /// When true, shows all job events including silent ones
         show_all: bool,
     },
-    /// Clipboard ring index buffer — editable, :w syncs back to the ring
+    /// Clipboard ring index buffer, editable: :w syncs back to the ring
     Clipboard {
         /// Snapshot of ring entries at populate time; used for content-matching on save
         entries: Vec<Vec<crate::character::Character>>,
@@ -132,6 +132,9 @@ pub enum BufferKind {
     /// `gv` regions window: a read-only list of the active document's
     /// banked `SelectionSet`, one line per region.
     Regions { source_doc_id: DocumentId },
+    /// Interactive buffer-list split panel: one line per open buffer.
+    /// `entries[line]` is the DocumentId shown on that line.
+    BufferList { entries: Vec<DocumentId> },
     /// Plugin-created in-memory buffer with no disk path (`rift.create_scratch_buf`).
     /// `title` is shown as the tab label in place of a filename.
     Scratch { title: String },
@@ -150,6 +153,7 @@ impl BufferKind {
             BufferKind::ClipboardEntry { .. } => "clipboard_entry",
             BufferKind::LocationList { .. } => "location_list",
             BufferKind::Regions { .. } => "regions",
+            BufferKind::BufferList { .. } => "buffer_list",
             BufferKind::Scratch { .. } => "scratch",
         }
     }
@@ -210,8 +214,8 @@ pub struct Document {
     pub selection_set: crate::selection::SelectionSet,
     /// Full annotation snapshot captured before a transaction, restored on undo.
     pending_annotation_snapshot: Option<Vec<crate::annotations::Annotation>>,
-    /// Undo stack parallel to the edit history; one entry per standalone edit
-    /// or committed transaction (see [`AnnotationUndo`]).
+    /// Undo stack parallel to the edit history; one entry per standalone
+    /// edit or committed transaction.
     annotation_undo_stack: Vec<AnnotationUndo>,
     /// Redo stack, mirror of the undo stack.
     annotation_redo_stack: Vec<AnnotationUndo>,
@@ -480,6 +484,11 @@ impl Document {
         matches!(self.kind, BufferKind::Regions { .. })
     }
 
+    /// Check if this document is the interactive buffer-list panel.
+    pub fn is_buffer_list(&self) -> bool {
+        matches!(self.kind, BufferKind::BufferList { .. })
+    }
+
     /// Whether deletes on this buffer may defer through a ghost-cut annotation
     pub fn ghost_cut_allowed(&self) -> bool {
         !matches!(
@@ -490,6 +499,7 @@ impl Document {
                 | BufferKind::Messages { .. }
                 | BufferKind::Clipboard { .. }
                 | BufferKind::UndoTree { .. }
+                | BufferKind::BufferList { .. }
         )
     }
 

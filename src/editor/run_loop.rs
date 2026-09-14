@@ -475,6 +475,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_terminal = self.active_doc_is(|d| d.is_terminal());
         let is_location_list = self.active_doc_is(|d| d.is_location_list());
         let is_regions = self.active_doc_is(|d| d.is_regions());
+        let is_buffer_list = self.active_doc_is(|d| d.is_buffer_list());
         match self.current_mode {
             Mode::Normal
             | Mode::OperatorPending
@@ -497,6 +498,8 @@ impl<T: TerminalBackend> Editor<T> {
                     KeyContext::LocationList
                 } else if is_regions {
                     KeyContext::Regions
+                } else if is_buffer_list {
+                    KeyContext::BufferList
                 } else if self.current_mode == Mode::OperatorPending {
                     KeyContext::OperatorPending
                 } else {

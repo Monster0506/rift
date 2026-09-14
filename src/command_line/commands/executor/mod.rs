@@ -43,6 +43,8 @@ pub enum ExecutionResult {
     BufferGoto {
         index: usize,
     },
+    /// Open the interactive buffer-list split panel
+    OpenBufferList,
     NotificationClear {
         bangs: usize,
     },
@@ -114,6 +116,7 @@ impl std::fmt::Debug for ExecutionResult {
                 .finish(),
             Self::BufferList => write!(f, "BufferList"),
             Self::BufferGoto { index } => write!(f, "BufferGoto({index})"),
+            Self::OpenBufferList => write!(f, "OpenBufferList"),
             Self::NotificationClear { bangs } => f
                 .debug_struct("NotificationClear")
                 .field("bangs", bangs)
@@ -413,6 +416,7 @@ impl CommandExecutor {
             }
             ParsedCommand::BufferList => ExecutionResult::BufferList,
             ParsedCommand::BufferGoto { index, bangs: _ } => ExecutionResult::BufferGoto { index },
+            ParsedCommand::OpenBufferList { bangs: _ } => ExecutionResult::OpenBufferList,
             ParsedCommand::Undo { count, bangs: _ } => ExecutionResult::Undo { count },
             ParsedCommand::Redo { count, bangs: _ } => ExecutionResult::Redo { count },
             ParsedCommand::UndoGoto { seq, bangs: _ } => ExecutionResult::UndoGoto { seq },

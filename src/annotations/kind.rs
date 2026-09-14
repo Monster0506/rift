@@ -66,6 +66,7 @@ pub mod well_known {
     pub const UI_LINK: &str = "ui.link";
     pub const UI_BUTTON: &str = "ui.button";
     pub const UI_CHECKBOX: &str = "ui.checkbox";
+    pub const BUFFER_ENTRY: &str = "buffer.entry";
 }
 
 #[cfg(test)]

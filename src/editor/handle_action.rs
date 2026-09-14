@@ -47,6 +47,7 @@ impl<T: TerminalBackend> Editor<T> {
                     BufferKind::ClipboardEntry { .. } => self.handle_clipboard_entry_action(id),
                     BufferKind::LocationList { .. } => self.handle_location_list_action(id),
                     BufferKind::Regions { .. } => self.handle_regions_buffer_action(id),
+                    BufferKind::BufferList { .. } => self.handle_buffer_list_action(id),
                     _ => {}
                 }
                 return true;
@@ -100,6 +101,7 @@ impl<T: TerminalBackend> Editor<T> {
                     && self.snap_to_actionable_line(matches!(motion, Motion::Down))
                 {
                     self.update_explorer_preview();
+                    self.update_buffer_list_preview();
                     return true;
                 }
 
@@ -946,8 +948,8 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::SurroundGiveLine => {
                 use crate::text_objects::{Direction, Modifier, ObjectKind, TextObjectSpec};
-                // Only meaningful mid-`sg`; otherwise mirrors the old
-                // unrecognized-key-cancels-pending-operator behavior.
+                // Only meaningful mid-`sg`; otherwise cancels back to Normal
+                // like any other unrecognized key mid-operator.
                 let Some(delim_count) = self.pending_surround_add.take() else {
                     self.pending_operator = None;
                     self.set_mode(Mode::Normal);
@@ -1182,7 +1184,7 @@ impl<T: TerminalBackend> Editor<T> {
                         .unwrap_or(doc.buffer.len());
                     let _ = doc.buffer.set_cursor(next);
                 } else {
-                    // Last line has no trailing newline — go to end and prepend one.
+                    // Last line has no trailing newline: go to end and prepend one.
                     doc.buffer.move_to_end();
                     needs_leading_newline = true;
                 }
