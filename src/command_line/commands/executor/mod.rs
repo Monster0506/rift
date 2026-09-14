@@ -45,6 +45,11 @@ pub enum ExecutionResult {
     },
     /// Open the interactive buffer-list split panel
     OpenBufferList,
+    /// Delete a buffer by index, or the current one when absent.
+    BufferDelete {
+        index: Option<usize>,
+        bangs: usize,
+    },
     NotificationClear {
         bangs: usize,
     },
@@ -117,6 +122,11 @@ impl std::fmt::Debug for ExecutionResult {
             Self::BufferList => write!(f, "BufferList"),
             Self::BufferGoto { index } => write!(f, "BufferGoto({index})"),
             Self::OpenBufferList => write!(f, "OpenBufferList"),
+            Self::BufferDelete { index, bangs } => f
+                .debug_struct("BufferDelete")
+                .field("index", index)
+                .field("bangs", bangs)
+                .finish(),
             Self::NotificationClear { bangs } => f
                 .debug_struct("NotificationClear")
                 .field("bangs", bangs)
@@ -417,6 +427,9 @@ impl CommandExecutor {
             ParsedCommand::BufferList => ExecutionResult::BufferList,
             ParsedCommand::BufferGoto { index, bangs: _ } => ExecutionResult::BufferGoto { index },
             ParsedCommand::OpenBufferList { bangs: _ } => ExecutionResult::OpenBufferList,
+            ParsedCommand::BufferDelete { index, bangs } => {
+                ExecutionResult::BufferDelete { index, bangs }
+            }
             ParsedCommand::Undo { count, bangs: _ } => ExecutionResult::Undo { count },
             ParsedCommand::Redo { count, bangs: _ } => ExecutionResult::Redo { count },
             ParsedCommand::UndoGoto { seq, bangs: _ } => ExecutionResult::UndoGoto { seq },

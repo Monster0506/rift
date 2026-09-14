@@ -423,6 +423,57 @@ fn test_buffer_goto_jumps_by_b_list_index() {
 }
 
 #[test]
+fn test_bdelete_removes_current_buffer_and_shows_neighbor() {
+    let mut editor = create_editor();
+    editor
+        .open_file(Some("doc1.txt".to_string()), false)
+        .unwrap();
+    editor
+        .open_file(Some("doc2.txt".to_string()), false)
+        .unwrap();
+    assert_eq!(editor.document_manager.tab_count(), 3);
+
+    editor.execute_command_line("bdelete".to_string());
+    assert_eq!(editor.document_manager.tab_count(), 2);
+    assert_eq!(editor.active_document().display_name(), "doc1.txt");
+}
+
+#[test]
+fn test_bd_by_index_deletes_a_non_current_buffer() {
+    let mut editor = create_editor();
+    editor
+        .open_file(Some("doc1.txt".to_string()), false)
+        .unwrap();
+    editor
+        .open_file(Some("doc2.txt".to_string()), false)
+        .unwrap();
+    assert_eq!(editor.document_manager.active_tab_index(), 2);
+
+    editor.execute_command_line("bd 2".to_string());
+    assert_eq!(editor.document_manager.tab_count(), 2);
+    // The active buffer (doc2.txt) is unaffected by deleting the one before it.
+    assert_eq!(editor.active_document().display_name(), "doc2.txt");
+    assert_eq!(editor.document_manager.active_tab_index(), 1);
+}
+
+#[test]
+fn test_bdelete_refuses_dirty_buffer_without_bang() {
+    let mut editor = create_editor();
+    editor.active_document().insert_char('x').unwrap();
+    assert_eq!(editor.document_manager.tab_count(), 1);
+
+    editor.execute_command_line("bdelete".to_string());
+    assert_eq!(
+        editor.document_manager.tab_count(),
+        1,
+        "dirty buffer must survive a bare :bdelete"
+    );
+
+    editor.execute_command_line("bdelete!".to_string());
+    assert_eq!(editor.active_document().buffer.to_string(), "");
+}
+
+#[test]
 fn test_open_buffer_list_panel_shows_status_and_enter_switches() {
     let mut editor = create_editor();
     editor

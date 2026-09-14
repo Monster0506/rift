@@ -298,6 +298,65 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    /// Delete the buffer at 1-based `index`, or the current buffer when `None`.
+    pub(super) fn do_buffer_delete(&mut self, index: Option<usize>, force: bool) {
+        let target = match index {
+            Some(i) => match self
+                .document_manager
+                .get_document_id_at(i.saturating_sub(1))
+            {
+                Some(id) => id,
+                None => {
+                    self.state.notify(
+                        crate::notification::NotificationType::Warning,
+                        format!("Buffer {i} does not exist"),
+                    );
+                    self.state.clear_command_line();
+                    return;
+                }
+            },
+            None => self.active_document_id(),
+        };
+
+        if self.document_manager.is_private(target) {
+            self.state.notify(
+                crate::notification::NotificationType::Warning,
+                "Cannot delete a panel buffer; close its panel instead".to_string(),
+            );
+            self.state.clear_command_line();
+            return;
+        }
+
+        #[cfg(feature = "lsp")]
+        self.lsp_notify_close(target);
+
+        let result = if force {
+            self.document_manager.remove_document_force(target)
+        } else {
+            self.document_manager.remove_document(target)
+        };
+
+        match result {
+            Err(e) => self.state.handle_error(e),
+            Ok(()) => {
+                if let Some(fallback) = self.document_manager.active_document_id() {
+                    for win_id in self.split_tree.windows_for_document(target) {
+                        self.split_tree.set_window_document(win_id, fallback);
+                    }
+                }
+                self.update_lua_state();
+                self.plugin_host
+                    .dispatch(&crate::plugin::EditorEvent::BufClose { buf: target });
+                self.apply_plugin_mutations();
+                self.sync_state_with_active_document();
+                self.state.clear_command_line();
+                if let Err(e) = self.force_full_redraw() {
+                    self.state.handle_error(e);
+                }
+            }
+        }
+    }
+
     pub(super) fn do_show_buffer_list(&mut self) {
         let buffers = self.document_manager.get_buffer_list();
         let mut message = String::new();
