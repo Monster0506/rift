@@ -60,6 +60,79 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::ExplorerToggleHidden),
     );
 
+    // GitStatus buffer Defaults â€” fugitive's in-buffer vocabulary.
+    // Normal motions fall through to KeyContext::Normal via the fallback chain.
+    keymap.register(
+        KeyContext::GitStatus,
+        Key::Enter,
+        Action::Buffer("git_status:select".to_string()),
+    );
+    keymap.register(
+        KeyContext::GitStatus,
+        Key::Char('s'),
+        Action::Buffer("git_status:stage".to_string()),
+    );
+    keymap.register(
+        KeyContext::GitStatus,
+        Key::Char('u'),
+        Action::Buffer("git_status:unstage".to_string()),
+    );
+    keymap.register(
+        KeyContext::GitStatus,
+        Key::Char('-'),
+        Action::Buffer("git_status:toggle_stage".to_string()),
+    );
+    keymap.register(
+        KeyContext::GitStatus,
+        Key::Char('X'),
+        Action::Buffer("git_status:discard".to_string()),
+    );
+    keymap.register(
+        KeyContext::GitStatus,
+        Key::Char('='),
+        Action::Buffer("git_status:toggle_expand".to_string()),
+    );
+    keymap.register(
+        KeyContext::GitStatus,
+        Key::Char('b'),
+        Action::Buffer("git_status:blame".to_string()),
+    );
+    keymap.register(
+        KeyContext::GitStatus,
+        Key::Char('r'),
+        Action::Buffer("git_status:rebase".to_string()),
+    );
+    keymap.register_sequence(
+        KeyContext::GitStatus,
+        vec![Key::Char(']'), Key::Char('c')],
+        Action::Buffer("git_status:next_hunk".to_string()),
+    );
+    keymap.register_sequence(
+        KeyContext::GitStatus,
+        vec![Key::Char('['), Key::Char('c')],
+        Action::Buffer("git_status:prev_hunk".to_string()),
+    );
+    keymap.register_sequence(
+        KeyContext::GitStatus,
+        vec![Key::Char('c'), Key::Char('c')],
+        Action::Editor(EditorAction::GitCommitNew),
+    );
+    keymap.register_sequence(
+        KeyContext::GitStatus,
+        vec![Key::Char('c'), Key::Char('a')],
+        Action::Editor(EditorAction::GitCommitAmend),
+    );
+    keymap.register_sequence(
+        KeyContext::GitStatus,
+        vec![Key::Char('c'), Key::Char('w')],
+        Action::Editor(EditorAction::GitCommitAmend),
+    );
+    keymap.register_sequence(
+        KeyContext::GitStatus,
+        vec![Key::Char('c'), Key::Char('f')],
+        Action::Editor(EditorAction::GitCommitFixup),
+    );
+
     // UndoTree buffer Defaults
     // j/k are overridden to skip connector lines; <CR> selects the node.
     keymap.register(
@@ -107,10 +180,10 @@ pub fn register_defaults(keymap: &mut KeyMap) {
 
     // ClipboardEntry scratch buffer: Escape returns focus to index pane
     keymap.register(
-        KeyContext::ClipboardEntry,
-        Key::Escape,
-        Action::Buffer("clipboard:entry:close".to_string()),
-    );
+    KeyContext::ClipboardEntry,
+    Key::Escape,
+    Action::Buffer("clipboard:entry:close".to_string()),
+);
 
     // Normal Mode Defaults
     // '-' opens the file-explorer buffer for the current file's parent directory
@@ -892,6 +965,12 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         vec![Key::Char(' '), Key::Char('e')],
         Action::Editor(EditorAction::LspDiagnosticsPanel),
     );
+    keymap.register_sequence(
+        KeyContext::Normal,
+        vec![Key::Char(' '), Key::Char('g')],
+        Action::Editor(EditorAction::GitStatus),
+    );
+
 
     // Location list panel bindings (diagnostics / references)
     keymap.register(

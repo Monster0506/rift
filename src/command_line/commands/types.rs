@@ -123,6 +123,11 @@ pub enum ParsedCommand {
         cmd: Option<String>,
         bangs: usize,
     },
+    /// Generic `git <args>` passthrough escape hatch.
+    Git {
+        args: String,
+        bangs: usize,
+    },
     Split {
         subcommand: SplitSubcommand,
         bangs: usize,

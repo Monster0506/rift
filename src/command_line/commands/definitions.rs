@@ -632,6 +632,17 @@ fn parse_terminal(
     ParsedCommand::Terminal { cmd, bangs }
 }
 
+fn parse_git(
+    _registry: &SettingsRegistry<UserSettings>,
+    args: &[&str],
+    bangs: usize,
+) -> ParsedCommand {
+    ParsedCommand::Git {
+        args: args.join(" "),
+        bangs,
+    }
+}
+
 fn parse_split_base(args: &[&str], bangs: usize) -> (SplitSubcommand, usize) {
     let sub = match args.first() {
         None | Some(&".") => SplitSubcommand::Current,
@@ -1425,6 +1436,15 @@ pub const COMMANDS: &[CommandDescriptor] = &[
         factory: Some(parse_terminal),
         subcommands: &[],
         completion: F,
+        subcommand_prefix: "",
+    },
+    CommandDescriptor {
+        name: "git",
+        aliases: &["Git", "G"],
+        description: "Run a git subcommand and show its output",
+        factory: Some(parse_git),
+        subcommands: &[],
+        completion: N,
         subcommand_prefix: "",
     },
     CommandDescriptor {

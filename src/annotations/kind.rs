@@ -62,6 +62,20 @@ pub mod well_known {
     pub const LSP_DIAGNOSTIC: &str = "lsp.diagnostic";
     pub const LSP_HINT: &str = "lsp.hint";
     pub const GIT_BLAME: &str = "git.blame";
+    /// One line of a `BufferKind::GitStatus` buffer naming a tracked/untracked
+    /// path and the section it belonged to at populate/expand time.
+    pub const GIT_STATUS_ENTRY: &str = "git.status_entry";
+    /// The `HEAD <sha> <subject>` summary line at the top of a
+    /// `BufferKind::GitStatus` buffer. Interactive: Enter opens the Log
+    /// browser.
+    pub const GIT_STATUS_HEAD: &str = "git.status_head";
+    /// A hunk header line (`@@ ... @@`) inside an expanded status-buffer entry,
+    /// anchoring the whole hunk block for the `s`/`u`/`X` cursor actions.
+    pub const GIT_HUNK: &str = "git.hunk";
+    /// One `+`/`-` content line inside an expanded status-buffer hunk,
+    /// anchoring per-line stage/unstage/discard for the `s`/`u`/`X` cursor
+    /// actions (context lines get no annotation â€” nothing to select).
+    pub const GIT_HUNK_LINE: &str = "git.hunk_line";
     pub const MARK_USER: &str = "mark.user";
     pub const UI_LINK: &str = "ui.link";
     pub const UI_BUTTON: &str = "ui.button";

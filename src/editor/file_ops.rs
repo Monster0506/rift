@@ -46,6 +46,9 @@ impl<T: TerminalBackend> Editor<T> {
                 BufferKind::Directory { .. } => {
                     self.apply_directory_diff();
                 }
+                BufferKind::GitCommitMessage { .. } => {
+                    self.apply_git_commit_message();
+                }
                 BufferKind::Clipboard { .. } => {
                     self.apply_clipboard_diff();
                 }
@@ -58,7 +61,7 @@ impl<T: TerminalBackend> Editor<T> {
                 | BufferKind::LocationList { .. }
                 | BufferKind::Regions { .. }
                 | BufferKind::BufferList { .. }
-                | BufferKind::Scratch { .. } => {
+                | BufferKind::Scratch { .. }| BufferKind::GitStatus { .. } => {
                     self.state.handle_error(RiftError::new(
                         ErrorType::Io,
                         "CANT_SAVE",
@@ -77,6 +80,22 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn do_save_and_quit(&mut self) {
+        use crate::document::BufferKind;
+        // `do_save()` already dispatches correctly per `BufferKind` â€” every
+        // non-`File` special buffer (Directory/Clipboard/GitStatus/
+        // GitCommitMessage/GitRebaseTodo/...) saves synchronously, so there
+        // is no async job to wait on before quitting. Only `File` needs the
+        // job-based path below (must wait for the write to actually land on
+        // disk before exiting).
+        let is_plain_file = matches!(
+            self.document_manager.active_document().map(|d| &d.kind),
+            Some(BufferKind::File)
+        );
+        if !is_plain_file {
+            self.do_save();
+            self.should_quit = true;
+            return;
+        }
         let committed_prior = self
             .document_manager
             .active_document_mut()

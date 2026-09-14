@@ -102,6 +102,11 @@ impl DocumentManager {
         self.documents.get_mut(&id)
     }
 
+    /// Iterate over every open document (tabs and private), in no particular order.
+    pub fn documents_iter(&self) -> impl Iterator<Item = &Document> {
+        self.documents.values()
+    }
+
     /// Find the ID of an open messages buffer, if any.
     pub fn find_messages_doc_id(&self) -> Option<DocumentId> {
         self.documents
