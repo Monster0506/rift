@@ -39,6 +39,10 @@ pub enum ExecutionResult {
         bangs: usize,
     },
     BufferList,
+    /// Jump to the buffer at the given 1-based index
+    BufferGoto {
+        index: usize,
+    },
     NotificationClear {
         bangs: usize,
     },
@@ -109,6 +113,7 @@ impl std::fmt::Debug for ExecutionResult {
                 .field("bangs", bangs)
                 .finish(),
             Self::BufferList => write!(f, "BufferList"),
+            Self::BufferGoto { index } => write!(f, "BufferGoto({index})"),
             Self::NotificationClear { bangs } => f
                 .debug_struct("NotificationClear")
                 .field("bangs", bangs)
@@ -407,6 +412,7 @@ impl CommandExecutor {
                 }
             }
             ParsedCommand::BufferList => ExecutionResult::BufferList,
+            ParsedCommand::BufferGoto { index, bangs: _ } => ExecutionResult::BufferGoto { index },
             ParsedCommand::Undo { count, bangs: _ } => ExecutionResult::Undo { count },
             ParsedCommand::Redo { count, bangs: _ } => ExecutionResult::Redo { count },
             ParsedCommand::UndoGoto { seq, bangs: _ } => ExecutionResult::UndoGoto { seq },
