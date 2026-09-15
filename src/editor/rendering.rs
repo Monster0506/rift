@@ -1,3 +1,4 @@
+use super::git_gutter;
 use super::Editor;
 use crate::error::{ErrorType, RiftError};
 use crate::render;
@@ -591,6 +592,7 @@ impl<T: TerminalBackend> Editor<T> {
         });
         let annotations_revision = doc.annotations.revision();
         let kind_registry_generation = kind_registry.generation();
+        let git_gutter_colors_data = git_gutter::git_gutter_render_colors(doc);
 
         let state = render::RenderState {
             buf: &doc.buffer,
@@ -612,6 +614,11 @@ impl<T: TerminalBackend> Editor<T> {
                 None
             } else {
                 Some(&doc.custom_highlights)
+            },
+            git_gutter_colors: if git_gutter_colors_data.is_empty() {
+                None
+            } else {
+                Some(&git_gutter_colors_data)
             },
             plugin_highlights: if doc.plugin_highlights.is_empty() {
                 None
@@ -881,8 +888,7 @@ impl<T: TerminalBackend> Editor<T> {
             })
             .map(|l| l.window_id)
             .collect();
-        // `needs_clear` (from `mark_needs_full_redraw()`) also invalidates
-        // every window's cache, same as an actual window-set change.
+        // A full redraw invalidates every window paint cache.
         let window_set_changed = needs_clear
             || resolvable_window_ids.len() != render_system.window_paint_caches.len()
             || !resolvable_window_ids
@@ -1003,6 +1009,7 @@ impl<T: TerminalBackend> Editor<T> {
             });
             let annotations_revision = doc.annotations.revision();
             let kind_registry_generation = kind_registry.generation();
+            let git_gutter_colors_data = git_gutter::git_gutter_render_colors(doc);
 
             let ctx = render::DrawContext {
                 buf: &doc.buffer,
@@ -1020,6 +1027,11 @@ impl<T: TerminalBackend> Editor<T> {
                     None
                 } else {
                     Some(&doc.custom_highlights)
+                },
+                git_gutter_colors: if git_gutter_colors_data.is_empty() {
+                    None
+                } else {
+                    Some(&git_gutter_colors_data)
                 },
                 plugin_highlights: if doc.plugin_highlights.is_empty() {
                     None
@@ -1175,6 +1187,9 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 Some(&focused_doc.custom_highlights)
             },
+            // Cursor-only overlay (skip_content); gutter is redrawn by the
+            // full content pass, not this one.
+            git_gutter_colors: None,
             plugin_highlights: if focused_doc.plugin_highlights.is_empty() {
                 None
             } else {
@@ -1511,7 +1526,7 @@ mod combine_char_edits_tests {
 
     #[test]
     fn adjacent_multi_char_inserts_of_different_sizes_combine() {
-        // The undo-of-`dd` shape: mirror of the above, both re-insertions.
+        // Two adjacent insertions restore a single deleted range.
         let edits = [edit(1202713, 0, 1), edit(1202714, 0, 1362)];
         assert_eq!(combine_char_edits(&edits), Some(edit(1202713, 0, 1363)));
     }
@@ -1545,7 +1560,7 @@ mod combine_char_edits_tests {
 
     #[test]
     fn repeated_then_ascending_insert_combines() {
-        // Mirror of the above, for redoing the same transaction.
+        // Repeated ascending insertions recreate one transaction.
         let edits = [edit(0, 0, 1), edit(0, 0, 1), edit(1, 0, 1), edit(2, 0, 1)];
         assert_eq!(combine_char_edits(&edits), Some(edit(0, 0, edits.len())));
     }
