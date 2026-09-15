@@ -108,8 +108,7 @@ impl StatusBar {
         parts.join(" | ")
     }
 
-    /// Render the status bar to a layer so it can be composited with others.
-    /// `frame` is caller-owned scratch space, reset here rather than allocated fresh - see `PaintFrame::reset`.
+    /// Render status into the caller-owned scratch frame.
     pub fn render_to_layer(
         layer: &mut Layer,
         state: &StatusDrawState,

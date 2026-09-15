@@ -124,7 +124,7 @@ impl CommandParser {
                     if let Some(cmd_def) = current_registry.get(&canonical_name) {
                         if let Some(ref sub_registry) = cmd_def.subcommands {
                             current_registry = sub_registry;
-                            continue; // Continue to next token to see if it matches a subcommand
+                            continue; // Continue while matching a subcommand.
                         }
                     }
                     // No subcommands or not found, stop traversal

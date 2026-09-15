@@ -146,7 +146,7 @@ mod tests {
         std::fs::create_dir(&source).unwrap();
         std::fs::write(source.join("file.txt"), "hello").unwrap();
 
-        // destination is a subdirectory of source — must be rejected
+        // A destination inside the source directory must be rejected.
         let destination = source.join("sub");
         let result = FsCopyJob::copy_recursive_pub(&source, &destination);
         assert!(
@@ -239,7 +239,7 @@ mod tests {
 
     #[test]
     fn copy_recursive_pub_destination_prefix_not_confused_with_inside_source() {
-        // "src_extra" starts with "src" but is NOT inside "src" — must not be rejected.
+        // "src_extra" shares the prefix but is outside "src", so allow it.
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("src");
         std::fs::create_dir(&src).unwrap();

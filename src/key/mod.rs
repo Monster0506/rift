@@ -56,7 +56,7 @@ impl Key {
                 c.encode_utf8(&mut buf).as_bytes().to_vec()
             }
 
-            // Ctrl+key -> mask to control range (0x00–0x1F)
+            // Ctrl+key masks to the control range (0x00..=0x1F).
             Key::Ctrl(c) => vec![c & 0x1f],
 
             // Ctrl+Shift+key
@@ -95,8 +95,7 @@ impl Key {
             Key::PageUp => csi_tilde(5),
             Key::PageDown => csi_tilde(6),
 
-            // A paste block: pass the literal bytes through, same as a
-            // normal terminal delivering pasted text to a child process.
+            // Pass pasted text through as literal terminal input.
             Key::Paste(text) => text.as_bytes().to_vec(),
 
             // Non-input events produce no bytes
@@ -105,9 +104,8 @@ impl Key {
     }
 }
 
-/// Parse a vim-notation key sequence (e.g. `<Esc>`, `<C-x>`, bare chars) into
-/// a list of `Key`s. Use `<lt>` for a literal `<`; `>` needs no escaping.
-/// Returns `None` if any token is unrecognised.
+/// Parse Vim key notation into a key sequence. Use `<lt>` for a literal `<`.
+/// Returns None if any token is unrecognised.
 pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
     let mut keys = Vec::new();
     let mut chars = s.chars().peekable();

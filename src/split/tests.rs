@@ -817,7 +817,7 @@ fn move_window_preserves_size_when_has_neighbor() {
 
     let new_layouts = tree.compute_layout(24, 81);
     let w1_cols_after = new_layouts.iter().find(|l| l.window_id == w1).unwrap().cols;
-    // Allow ±2 cols tolerance for separator and rounding
+    // Allow +/- two columns for separator and rounding.
     assert!(
         (w1_cols_after as i32 - w1_cols_before as i32).abs() <= 2,
         "w1 cols before={w1_cols_before} after={w1_cols_after}"
