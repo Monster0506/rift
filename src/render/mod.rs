@@ -86,13 +86,12 @@ pub(crate) struct ContentBlitKey {
     plugin_highlights_hash: u64,
     search_matches_hash: u64,
     /// `AnnotationStore::revision()` combined with the active theme and
-    /// `KindRegistry::generation()` - see `compute_content_blit_key`.
+    /// Kind-registry generation included in the content blit cache key.
     annotation_presentation_generation: u64,
-    /// Content hash of the queried, cursor-line-excluded concealed-range
-    /// slice - see its call site for why this stays hash-based, not a generation.
+    /// Content hash of concealed-range annotations, excluding the cursor line.
+    /// Used in the content blit cache key.
     annotation_concealed_hash: u64,
-    /// `top_visual_row` under soft wrap, `top_line` otherwise - the one field
-    /// a scroll blit is allowed to see change.
+    /// Top visible buffer line; changing it permits a scroll blit.
     scroll_top: usize,
 }
 
@@ -132,7 +131,7 @@ fn hash_search_matches(matches: &[crate::search::SearchMatch]) -> u64 {
 }
 
 /// Content hash of concealed (zero-width-dropped) byte ranges - the queried,
-/// cursor-line-excluded slice itself; see `ContentBlitKey::annotation_concealed_hash`.
+/// Hash of content annotations excluding the cursor line.
 fn hash_concealed_ranges(items: &[(usize, usize)]) -> u64 {
     let mut h: u64 = items.len() as u64;
     for (s, e) in items {
@@ -340,6 +339,9 @@ pub struct RenderState<'a> {
     pub terminal_cursor: Option<(usize, usize)>,
     /// Optional per-byte-range foreground color overrides (used by directory/undotree buffers).
     pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
+    /// Per-line gutter foreground color overrides from git-gutter-diff
+    /// signs;  `(0-indexed line, color)`, tints the line-number digits.
+    pub git_gutter_colors: Option<&'a [(usize, Color)]>,
     /// Plugin highlights: rendered as bg color with contrasting fg.
     pub plugin_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     /// Generic annotation presentation styles (fg, bg) composed over base color.
@@ -375,6 +377,9 @@ pub struct DrawContext<'a> {
     pub current_mode: Mode,
     pub pending_key: Option<Key>,
     pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
+    /// Per-line gutter foreground color overrides from git-gutter-diff
+    /// signs;  `(0-indexed line, color)`, tints the line-number digits.
+    pub git_gutter_colors: Option<&'a [(usize, Color)]>,
     pub plugin_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     pub annotation_styles: Option<&'a [(std::ops::Range<usize>, crate::layer::CellStyle)]>,
     pub annotation_adornments: Option<&'a [LineAdornment<'a>]>,
@@ -397,11 +402,11 @@ pub struct DrawContext<'a> {
     /// When set, use these matches instead of state.search_matches for this pane.
     /// Pass `Some(&[])` for non-active panes to suppress cross-pane highlights.
     pub search_matches_override: Option<&'a [crate::search::SearchMatch]>,
-    /// See `RenderState::syntax_generation`.
+    /// Syntax-highlight generation used for cache invalidation.
     pub syntax_generation: u64,
-    /// See `RenderState::annotations_revision`.
+    /// Annotation revision used for cache invalidation.
     pub annotations_revision: u64,
-    /// See `RenderState::kind_registry_generation`.
+    /// Kind-registry generation used for cache invalidation.
     pub kind_registry_generation: u64,
 }
 
@@ -458,7 +463,7 @@ pub(crate) fn render_content_to_layer_offset(
 ) -> Result<(), String> {
     crate::perf_span!("render_content", crate::perf::PerfFields::default());
 
-    // `frame` paints in local (0-based) coordinates (see `rasterize_offset`)
+    // `frame` paints in local zero-based coordinates.
     // and can be one row taller than `painted_rows` (a blank trailing row).
     let painted_rows = ctx.viewport.visible_rows().saturating_sub(1);
     let frame_rows = ctx.viewport.visible_rows();
@@ -656,13 +661,16 @@ fn render_content_to_paint_frame(
 
             if gutter_width > 0 {
                 if row_info.is_first {
+                    let line_fg =
+                        gutter_color_for_line(ctx.git_gutter_colors, row_info.logical_line)
+                            .or(editor_fg);
                     render_gutter(
                         frame,
                         row_info.logical_line,
                         i,
                         gutter_width,
                         buf_total_lines,
-                        editor_fg,
+                        line_fg,
                         editor_bg,
                         &mut gutter_scratch,
                     );
@@ -697,7 +705,7 @@ fn render_content_to_paint_frame(
         }
     } else {
         // Non-wrap mode: one row per logical line, so a scroll blit may reuse
-        // rows whose line hasn't changed - see `find_line_render_boundary`.
+        // A changed line defines the boundary for an incremental render.
         let top_line = viewport.top_line();
         let search_matches = ctx.search_matches();
         let first_visible_char = buf.line_index.get_start(top_line).unwrap_or(0);
@@ -777,13 +785,14 @@ fn render_content_to_paint_frame(
             frame.reset_row(i);
 
             if gutter_width > 0 {
+                let line_fg = gutter_color_for_line(ctx.git_gutter_colors, line_num).or(editor_fg);
                 render_gutter(
                     frame,
                     line_num,
                     i,
                     gutter_width,
                     buf_total_lines,
-                    editor_fg,
+                    line_fg,
                     editor_bg,
                     &mut gutter_scratch,
                 );
@@ -805,6 +814,11 @@ fn render_content_to_paint_frame(
     }
 
     Ok(())
+}
+
+/// Look up a per-line gutter foreground override with a linear scan over visible rows.
+fn gutter_color_for_line(colors: Option<&[(usize, Color)]>, line: usize) -> Option<Color> {
+    colors?.iter().find(|&&(l, _)| l == line).map(|&(_, c)| c)
 }
 
 fn render_gutter_blank(
@@ -963,7 +977,7 @@ fn find_line_render_boundary(ctx: &DrawContext, config: &RenderLineConfig) -> Op
         let width = item.width;
         let next_visual_col = current_visual_col + width;
 
-        // Mirror render_line's own budget consumption exactly (including the
+        // Consumes the same render budget as `render_line`.
         // leading-adornment char loop), so rendered_col tracks in lockstep.
         if next_visual_col > left_col {
             let plan = plan_glyph_draw(width, current_visual_col, left_col);
@@ -1295,7 +1309,7 @@ pub fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) 
     calculate_cursor_column_at(buf, line, tab_width, buf.cursor())
 }
 
-/// Like `calculate_cursor_column` but with an explicit cursor position.
+/// Calculates a cursor column for an explicit cursor position.
 pub fn calculate_cursor_column_at(
     buf: &TextBuffer,
     line: usize,

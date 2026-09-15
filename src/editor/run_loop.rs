@@ -50,6 +50,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.poll_pending_syntax_reparse();
         self.poll_pending_search_refresh();
+        self.poll_git_gutter_diff();
 
         // Poll LSP messages, after pushing every unsent edit so the server
         // answers against the buffer the user actually sees.
@@ -475,11 +476,11 @@ impl<T: TerminalBackend> Editor<T> {
         let is_terminal = self.active_doc_is(|d| d.is_terminal());
         let is_location_list = self.active_doc_is(|d| d.is_location_list());
         let is_regions = self.active_doc_is(|d| d.is_regions());
-        let is_buffer_list = self.active_doc_is(|d| d.is_buffer_list());
         let is_git_status = self.active_doc_is(|d| d.is_git_status());
         let is_git_blame = self.active_doc_is(|d| d.is_git_blame());
         let is_git_log = self.active_doc_is(|d| d.is_git_log());
         let is_git_rebase_todo = self.active_doc_is(|d| d.is_git_rebase_todo());
+        let is_buffer_list = self.active_doc_is(|d| d.is_buffer_list());
         match self.current_mode {
             Mode::Normal
             | Mode::OperatorPending
@@ -502,6 +503,8 @@ impl<T: TerminalBackend> Editor<T> {
                     KeyContext::LocationList
                 } else if is_regions {
                     KeyContext::Regions
+                } else if is_git_status {
+                    KeyContext::GitStatus
                 } else if is_git_blame {
                     KeyContext::GitBlame
                 } else if is_git_log {
@@ -510,8 +513,6 @@ impl<T: TerminalBackend> Editor<T> {
                     KeyContext::GitRebaseTodo
                 } else if is_buffer_list {
                     KeyContext::BufferList
-                } else if is_git_status {
-                    KeyContext::GitStatus
                 } else if self.current_mode == Mode::OperatorPending {
                     KeyContext::OperatorPending
                 } else {
