@@ -228,8 +228,7 @@ impl Document {
                 ..linked.options.clone()
             },
             file_path: linked.file_path.clone(),
-            // A read-only mirror of the linked file's content, not an actionable
-            // interface buffer, so navigation stays line-by-line.
+            // Read-only copy of a linked file with ordinary line-by-line navigation.
             is_read_only: true,
             history: linked.history.clone(),
             ..Self::skeleton(id, linked.buffer.clone())
@@ -278,27 +277,7 @@ impl Document {
         })
     }
 
-    /// Create a new interactive buffer-list panel document (read-only, interface-mode).
-    pub fn new_buffer_list(id: super::DocumentId) -> Result<Self, RiftError> {
-        let buffer = TextBuffer::new(4096)?;
-        Ok(Document {
-            options: DocumentOptions {
-                show_line_numbers: false,
-                ..DocumentOptions::default()
-            },
-            is_read_only: true,
-            interface_mode: true,
-            kind: BufferKind::BufferList { entries: vec![] },
-            ..Self::skeleton(id, buffer)
-        })
-    }
-
-    /// Create a new git status buffer. Content is populated later when a
-    /// `GitStatusJob` completes. Read-only: changes only happen through its
-    /// specific key actions (`s`/`u`/`X`/`=`/`c...`), never by editing the
-    /// rendered text directly (that content is regenerated on every refresh
-    /// anyway, and the line-anchored annotations those actions depend on
-    /// would desync from what's on screen).
+    /// Create a new git status buffer. Content is populated later when a `GitStatusJob` completes. Read-only: changes only happen through its specific key actions (`s`/`u`/`X`/`=`/`c...`), never by editing the rendered text directly (that content is regenerated on every refresh anyway, and the line-anchored.
     pub fn new_git_status(id: super::DocumentId, repo_root: PathBuf) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         Ok(Document {
@@ -307,7 +286,7 @@ impl Document {
                 ..DocumentOptions::default()
             },
             // Status buffer rows are git.status_entry/git.hunk annotations
-            // activated through the dispatch registry, same as the explorer.
+            // These rows are interactive through the action dispatch registry.
             interface_mode: true,
             is_read_only: true,
             kind: BufferKind::GitStatus {
@@ -339,4 +318,107 @@ impl Document {
         })
     }
 
+    /// Create a new git blame buffer. Content is populated later when a
+    /// `GitBlameJob` completes.
+    pub fn new_git_blame(
+        id: super::DocumentId,
+        repo_root: PathBuf,
+        linked_doc_id: super::DocumentId,
+        path: PathBuf,
+        at_commit: Option<String>,
+    ) -> Result<Self, RiftError> {
+        let buffer = TextBuffer::new(4096)?;
+        Ok(Document {
+            options: DocumentOptions {
+                show_line_numbers: false,
+                ..DocumentOptions::default()
+            },
+            is_read_only: true,
+            interface_mode: true,
+            kind: BufferKind::GitBlame {
+                repo_root,
+                linked_doc_id,
+                path,
+                at_commit,
+                lines: vec![],
+            },
+            ..Self::skeleton(id, buffer)
+        })
+    }
+
+    /// Create a new git log buffer. Content is populated later when a
+    /// `GitLogJob` completes.
+    pub fn new_git_log(
+        id: super::DocumentId,
+        repo_root: PathBuf,
+        path: Option<PathBuf>,
+    ) -> Result<Self, RiftError> {
+        let buffer = TextBuffer::new(4096)?;
+        Ok(Document {
+            options: DocumentOptions {
+                show_line_numbers: false,
+                ..DocumentOptions::default()
+            },
+            is_read_only: true,
+            interface_mode: true,
+            kind: BufferKind::GitLog {
+                repo_root,
+                path,
+                commits: vec![],
+                expanded: None,
+                expanded_body: None,
+            },
+            ..Self::skeleton(id, buffer)
+        })
+    }
+
+    /// Create a new git rebase todo buffer, pre-populated with `steps`.
+    pub fn new_git_rebase_todo(
+        id: super::DocumentId,
+        repo_root: PathBuf,
+        base: String,
+        saved_head: String,
+        branch: String,
+        steps: &[crate::git::rebase::RebaseStep],
+    ) -> Result<Self, RiftError> {
+        let buffer = TextBuffer::new(64)?;
+        let mut doc = Document {
+            options: DocumentOptions {
+                show_line_numbers: false,
+                ..DocumentOptions::default()
+            },
+            interface_mode: true,
+            is_read_only: true,
+            kind: BufferKind::GitRebaseTodo {
+                repo_root,
+                base,
+                saved_head,
+                branch,
+                pause: None,
+                steps: steps.to_vec(),
+                message_overrides: std::collections::HashMap::new(),
+                expanded_bodies: std::collections::HashSet::new(),
+                original_bodies: std::collections::HashMap::new(),
+            },
+            ..Self::skeleton(id, buffer)
+        };
+        doc.render_git_rebase_todo("Initial plan");
+        doc.history = UndoTree::new();
+        Ok(doc)
+    }
+
+    /// Create a new interactive buffer-list panel document (read-only, interface-mode).
+    pub fn new_buffer_list(id: super::DocumentId) -> Result<Self, RiftError> {
+        let buffer = TextBuffer::new(4096)?;
+        Ok(Document {
+            options: DocumentOptions {
+                show_line_numbers: false,
+                ..DocumentOptions::default()
+            },
+            is_read_only: true,
+            interface_mode: true,
+            kind: BufferKind::BufferList { entries: vec![] },
+            ..Self::skeleton(id, buffer)
+        })
+    }
 }

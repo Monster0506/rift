@@ -61,9 +61,7 @@ pub mod git {
         payload.get("path").and_then(Value::as_str)
     }
 
-    /// The section a `git.status_entry` belonged to at populate/expand time:
-    /// one of `"staged"`, `"unstaged"`, `"untracked"` (`payload.section`).
-    /// Unmerged entries are never annotated for reconciliation purposes.
+    /// The section a `git.status_entry` belonged to at populate/expand time: one of `"staged"`, `"unstaged"`, `"untracked"` (`payload.section`). Unmerged entries are never annotated for reconciliation purposes.
     pub fn section(payload: &Value) -> Option<&str> {
         payload.get("section").and_then(Value::as_str)
     }
@@ -98,6 +96,16 @@ pub mod git {
             .map(|i| i as usize)
     }
 
+    /// The commit sha a `git.blame`/`git.log_commit` line refers to (`payload.sha`).
+    pub fn sha(payload: &Value) -> Option<&str> {
+        payload.get("sha").and_then(Value::as_str)
+    }
+
+    /// The gutter-diff sign kind for a `git.gutter` line: `"add"`,
+    /// `"change"`, or `"delete"` (`payload.gutter_kind`).
+    pub fn gutter_kind(payload: &Value) -> Option<&str> {
+        payload.get("gutter_kind").and_then(Value::as_str)
+    }
 }
 
 #[cfg(test)]

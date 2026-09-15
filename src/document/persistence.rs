@@ -116,7 +116,23 @@ impl Document {
             BufferKind::GitCommitMessage { target, .. } => Cow::Borrowed(match target {
                 crate::document::GitCommitTarget::New => "[Git Commit]",
                 crate::document::GitCommitTarget::Amend => "[Git Commit Amend]",
+                crate::document::GitCommitTarget::RebaseReword { .. } => "[Git Reword]",
+                crate::document::GitCommitTarget::RebasePlanReword { .. } => "[Git Reword (plan)]",
             }),
+            BufferKind::GitBlame { path, .. } => Cow::Owned(format!(
+                "[Git Blame] {}",
+                path.file_name().and_then(|n| n.to_str()).unwrap_or("")
+            )),
+            BufferKind::GitLog { path, .. } => Cow::Owned(match path {
+                Some(p) => format!(
+                    "[Git Log] {}",
+                    p.file_name().and_then(|n| n.to_str()).unwrap_or("")
+                ),
+                None => "[Git Log]".to_string(),
+            }),
+            BufferKind::GitRebaseTodo { base, .. } => {
+                Cow::Owned(format!("[Git Rebase onto {base}]"))
+            }
             BufferKind::File => self
                 .file_path
                 .as_ref()
