@@ -15,6 +15,7 @@ mod document_ops;
 mod explorer;
 mod file_ops;
 mod git_blame;
+mod git_gutter;
 mod git_log;
 mod git_rebase;
 mod git_status;
@@ -46,6 +47,12 @@ mod split_nav_stress_tests;
 
 #[cfg(test)]
 mod insert_typing_stress_tests;
+
+#[cfg(test)]
+mod git_gutter_tests;
+
+#[cfg(test)]
+mod git_rebase_tests;
 
 #[cfg(test)]
 mod git_status_tests;
@@ -237,9 +244,15 @@ pub struct Editor<T: TerminalBackend> {
     /// sync `try_incremental_parse` exceeding its time budget.
     pending_syntax_reparse:
         std::collections::HashMap<crate::document::DocumentId, jobs::PendingSyntaxReparse>,
-    /// `:Git diff`/`:Git diff --cached` opened this `GitStatus` doc id and
-    /// wants every hunk in the given section (`true` = staged) expanded as
-    /// soon as the async status snapshot populates the buffer.
+    /// Debounced git-gutter-diff state per document (revision-driven: armed
+    /// whenever `poll_git_gutter_diff` notices the buffer revision moved).
+    pending_git_gutter_diff:
+        std::collections::HashMap<crate::document::DocumentId, git_gutter::PendingGitGutterDiff>,
+    /// Discovered repo root per document, memoized so gutter-diff polling
+    /// doesn't shell `git rev-parse` every tick. `None` = confirmed not in a repo.
+    git_gutter_repo_cache:
+        std::collections::HashMap<crate::document::DocumentId, Option<std::path::PathBuf>>,
+    /// `:Git diff`/`:Git diff --cached` opened this `GitStatus` doc id and wants every hunk in the given section (`true` = staged) expanded as soon as the async status snapshot populates the buffer.
     pending_git_status_expand_all: std::collections::HashMap<crate::document::DocumentId, bool>,
     /// `:Git show` opened this `GitLog` doc id and wants HEAD's commit
     /// expanded as soon as the async commit list populates the buffer.
