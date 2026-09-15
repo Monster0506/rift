@@ -101,6 +101,12 @@ impl<T: TerminalBackend> Editor<T> {
         self.git_gutter_repo_cache.insert(doc_id, root.clone());
         root
     }
+
+    /// Drop cached gutter-diff state for a closed document.
+    pub(super) fn clear_git_gutter_state(&mut self, doc_id: DocumentId) {
+        self.pending_git_gutter_diff.remove(&doc_id);
+        self.git_gutter_repo_cache.remove(&doc_id);
+    }
 }
 
 /// Live gutter-diff signs for `doc`, mapped to line-number foreground colors for `DrawContext::git_gutter_colors`. Empty for anything but a `File` buffer with signs currently recorded.
