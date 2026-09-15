@@ -478,6 +478,7 @@ impl<T: TerminalBackend> Editor<T> {
         let is_buffer_list = self.active_doc_is(|d| d.is_buffer_list());
         let is_git_status = self.active_doc_is(|d| d.is_git_status());
         let is_git_blame = self.active_doc_is(|d| d.is_git_blame());
+        let is_git_log = self.active_doc_is(|d| d.is_git_log());
         match self.current_mode {
             Mode::Normal
             | Mode::OperatorPending
@@ -502,6 +503,8 @@ impl<T: TerminalBackend> Editor<T> {
                     KeyContext::Regions
                 } else if is_git_blame {
                     KeyContext::GitBlame
+                } else if is_git_log {
+                    KeyContext::GitLog
                 } else if is_buffer_list {
                     KeyContext::BufferList
                 } else if is_git_status {
