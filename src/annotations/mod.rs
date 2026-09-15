@@ -1051,10 +1051,7 @@ impl AnnotationStore {
         entries
     }
 
-
-    /// Create a `git.status_head` annotation anchored at the status
-    /// buffer's `HEAD <sha> <subject>` summary line. No payload needed â€”
-    /// its presence alone is the signal.
+    /// Create a `git.status_head` annotation anchored at the status buffer's `HEAD <sha> <subject>` summary line. No payload needed; its presence alone is the signal.
     pub fn create_git_status_head(&mut self, line: usize) -> AnnotationId {
         self.add(
             Annotation::new(
@@ -1071,15 +1068,12 @@ impl AnnotationStore {
 
     /// Whether `line` is the status buffer's `git.status_head` summary line.
     pub fn is_git_status_head_at_line(&self, line: usize) -> bool {
-        self.annotations
-            .iter()
-            .any(|a| a.kind.as_str() == well_known::GIT_STATUS_HEAD && a.anchor == Anchor::Line(line))
+        self.annotations.iter().any(|a| {
+            a.kind.as_str() == well_known::GIT_STATUS_HEAD && a.anchor == Anchor::Line(line)
+        })
     }
 
-    /// Create a `git.status_entry` annotation anchored at `line`, tagging it
-    /// with the path it names, the status-buffer section it belongs to
-    /// (`"staged"`/`"unstaged"`/`"untracked"`), and its pre-rename path if any.
-    /// `Stickiness::Delete` makes deleting the line itself the "discard" signal.
+    /// Create a `git.status_entry` annotation anchored at `line`, tagging it with the path it names, the status-buffer section it belongs to (`"staged"`/`"unstaged"`/`"untracked"`), and its pre-rename path if any. `Stickiness::Delete` makes deleting the line itself the "discard" signal.
     pub fn create_git_status_entry(
         &mut self,
         line: usize,
@@ -1108,7 +1102,10 @@ impl AnnotationStore {
     }
 
     /// The `(path, section, orig_path)` for the `git.status_entry` at `line`.
-    pub fn git_status_entry_at_line(&self, line: usize) -> Option<(String, String, Option<String>)> {
+    pub fn git_status_entry_at_line(
+        &self,
+        line: usize,
+    ) -> Option<(String, String, Option<String>)> {
         let a = self.annotations.iter().find(|a| {
             a.kind.as_str() == well_known::GIT_STATUS_ENTRY && a.anchor == Anchor::Line(line)
         })?;
@@ -1118,12 +1115,7 @@ impl AnnotationStore {
         Some((path, section, orig_path))
     }
 
-    /// Create a `git.hunk` annotation anchored at a hunk header line, identifying
-    /// which expanded diff (`path`, `staged_side`) and which hunk within it
-    /// (`hunk_index` into that snapshot's `Vec<Hunk>`) this block came from.
-    /// `Stickiness::Delete` makes deleting the header line the "discard this
-    /// hunk" signal; the header line moving to a different section is the
-    /// "stage/unstage this hunk" signal.
+    /// Create a `git.hunk` annotation anchored at a hunk header line, identifying which expanded diff (`path`, `staged_side`) and which hunk within it (`hunk_index` into that snapshot's `Vec<Hunk>`) this block came from. `Stickiness::Delete` makes deleting the header line the "discard this hunk" signal; the header.
     pub fn create_git_hunk(
         &mut self,
         line: usize,
@@ -1160,12 +1152,7 @@ impl AnnotationStore {
         Some((path, staged_side, hunk_index))
     }
 
-    /// Create a `git.hunk_line` annotation anchored at one `+`/`-` content
-    /// line inside an expanded hunk, identifying which hunk it belongs to
-    /// (`path`/`staged_side`/`hunk_index`, same as `git.hunk`) and its
-    /// `line_index` within that hunk's `Vec<DiffLine>`. Interactive so plain
-    /// `j`/`k` can step through a hunk's changed lines once expanded â€”
-    /// context lines get no annotation, so navigation skips them.
+    /// Creates a hunk-line annotation that identifies a changed line within an expanded hunk.
     pub fn create_git_hunk_line(
         &mut self,
         line: usize,
@@ -1206,7 +1193,7 @@ impl AnnotationStore {
     }
 
     /// Return every live `git.hunk` header's `(line, path, staged_side, hunk_index)`,
-    /// sorted by line â€” used by `]c`/`[c` navigation in a status buffer.
+    /// sorted by line;  used by `]c`/`[c` navigation in a status buffer.
     pub fn git_hunks_by_line(&self) -> Vec<(usize, String, bool, usize)> {
         let mut hunks: Vec<(usize, String, bool, usize)> = self
             .annotations
@@ -1224,6 +1211,157 @@ impl AnnotationStore {
             .collect();
         hunks.sort_by_key(|&(line, ..)| line);
         hunks
+    }
+
+    /// Create a `git.blame` annotation anchored at `line`, tagging it with
+    /// the commit sha that line is attributed to (for walk-back).
+    pub fn create_git_blame_line(&mut self, line: usize, sha: &str) -> AnnotationId {
+        let mut payload = Value::map();
+        payload.set("sha", Value::Str(sha.to_string()));
+        self.add(
+            Annotation::new(
+                Kind::new(well_known::GIT_BLAME),
+                Anchor::Line(line),
+                AnnotationOwner::System,
+            )
+            .with_payload(payload)
+            .with_stickiness(Stickiness::Persist)
+            .with_visible(false)
+            .with_read_only(true),
+        )
+    }
+
+    /// The commit sha for the `git.blame` line at `line`, if any.
+    pub fn git_blame_sha_at_line(&self, line: usize) -> Option<String> {
+        let a = self
+            .annotations
+            .iter()
+            .find(|a| a.kind.as_str() == well_known::GIT_BLAME && a.anchor == Anchor::Line(line))?;
+        payload::git::sha(&a.payload).map(|s| s.to_string())
+    }
+
+    /// Create a `git.log_commit` annotation anchored at `line`, tagging it
+    /// with the commit sha that log entry summarizes.
+    pub fn create_git_log_commit(&mut self, line: usize, sha: &str) -> AnnotationId {
+        let mut payload = Value::map();
+        payload.set("sha", Value::Str(sha.to_string()));
+        self.add(
+            Annotation::new(
+                Kind::new(well_known::GIT_LOG_COMMIT),
+                Anchor::Line(line),
+                AnnotationOwner::System,
+            )
+            .with_payload(payload)
+            .with_stickiness(Stickiness::Delete)
+            .with_visible(false)
+            .with_read_only(true)
+            .with_actions(vec![Action::activate()]),
+        )
+    }
+
+    /// The commit sha for the `git.log_commit` line at `line`, if any.
+    pub fn git_log_commit_sha_at_line(&self, line: usize) -> Option<String> {
+        let a = self.annotations.iter().find(|a| {
+            a.kind.as_str() == well_known::GIT_LOG_COMMIT && a.anchor == Anchor::Line(line)
+        })?;
+        payload::git::sha(&a.payload).map(|s| s.to_string())
+    }
+
+    /// Create a `git.rebase_step` annotation anchored at a commit's head line, tagging it with that commit's sha. `Action::activate()` makes it interactive so interface-mode `j`/`k` snapping only stops on head lines, skipping inline body-preview lines entirely.
+    pub fn create_git_rebase_step(&mut self, line: usize, sha: &str) -> AnnotationId {
+        let mut payload = Value::map();
+        payload.set("sha", Value::Str(sha.to_string()));
+        self.add(
+            Annotation::new(
+                Kind::new(well_known::GIT_REBASE_STEP),
+                Anchor::Line(line),
+                AnnotationOwner::System,
+            )
+            .with_payload(payload)
+            .with_stickiness(Stickiness::Delete)
+            .with_visible(false)
+            .with_read_only(true)
+            .with_actions(vec![Action::activate()]),
+        )
+    }
+
+    /// The commit sha for the `git.rebase_step` head line at `line`, if any.
+    pub fn git_rebase_step_at_line(&self, line: usize) -> Option<String> {
+        let a = self.annotations.iter().find(|a| {
+            a.kind.as_str() == well_known::GIT_REBASE_STEP && a.anchor == Anchor::Line(line)
+        })?;
+        payload::git::sha(&a.payload).map(|s| s.to_string())
+    }
+
+    /// Every live `git.rebase_step` head line's `(line, sha)`, sorted by line; the plan's on-screen order, for reorder/execution actions that need to know where the cursor's commit currently sits.
+    pub fn git_rebase_steps_by_line(&self) -> Vec<(usize, String)> {
+        let mut steps: Vec<(usize, String)> = self
+            .annotations
+            .iter()
+            .filter(|a| a.kind.as_str() == well_known::GIT_REBASE_STEP)
+            .filter_map(|a| {
+                let Anchor::Line(line) = a.anchor else {
+                    return None;
+                };
+                payload::git::sha(&a.payload).map(|s| (line, s.to_string()))
+            })
+            .collect();
+        steps.sort_by_key(|&(line, _)| line);
+        steps
+    }
+
+    /// Replace every `git.gutter` annotation with fresh signs. Always clear-then-rebuild (never incremental): each `GitGutterDiffJob` result is a full re-diff, so stale per-line entries from a previous diff would otherwise linger past their actual line's lifetime.
+    pub fn replace_git_gutter_signs(
+        &mut self,
+        signs: &[(usize, crate::git::diff::GutterSignKind)],
+    ) {
+        self.annotations
+            .retain(|a| a.kind.as_str() != well_known::GIT_GUTTER);
+        self.invalidate_index();
+        for &(line, kind) in signs {
+            let kind_str = match kind {
+                crate::git::diff::GutterSignKind::Add => "add",
+                crate::git::diff::GutterSignKind::Change => "change",
+                crate::git::diff::GutterSignKind::Delete => "delete",
+            };
+            let mut payload = Value::map();
+            payload.set("gutter_kind", Value::Str(kind_str.to_string()));
+            self.add(
+                Annotation::new(
+                    Kind::new(well_known::GIT_GUTTER),
+                    Anchor::Line(line),
+                    AnnotationOwner::System,
+                )
+                .with_payload(payload)
+                .with_stickiness(Stickiness::Persist)
+                .with_visible(false)
+                .with_read_only(true),
+            );
+        }
+    }
+
+    /// Every live `git.gutter` sign's `(line, kind)`, sorted by line;  for
+    /// the render pipeline to color the line-number gutter.
+    pub fn git_gutter_signs(&self) -> Vec<(usize, crate::git::diff::GutterSignKind)> {
+        let mut signs: Vec<(usize, crate::git::diff::GutterSignKind)> = self
+            .annotations
+            .iter()
+            .filter(|a| a.kind.as_str() == well_known::GIT_GUTTER)
+            .filter_map(|a| {
+                let Anchor::Line(line) = a.anchor else {
+                    return None;
+                };
+                let kind = match payload::git::gutter_kind(&a.payload)? {
+                    "add" => crate::git::diff::GutterSignKind::Add,
+                    "change" => crate::git::diff::GutterSignKind::Change,
+                    "delete" => crate::git::diff::GutterSignKind::Delete,
+                    _ => return None,
+                };
+                Some((line, kind))
+            })
+            .collect();
+        signs.sort_by_key(|&(line, _)| line);
+        signs
     }
 
     /// Whether the store holds no annotations.

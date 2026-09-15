@@ -5,6 +5,12 @@ use crate::buffer::TextBuffer;
 use crate::character::Character;
 use std::collections::HashSet;
 
+struct RebasePlanRender {
+    text: String,
+    highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
+    head_lines: Vec<(usize, String)>,
+}
+
 impl Document {
     /// Replace this document's buffer with new content, resetting cursor to the top.
     pub fn replace_buffer_content(&mut self, content: &str) {
@@ -492,8 +498,8 @@ impl Document {
 
                 // A blank annotated line means the user erased the entry: treat as deleted.
                 if primary_name.is_empty() {
-                continue;
-            }
+                    continue;
+                }
 
                 seen_ids.insert(entry_id);
 
@@ -588,10 +594,7 @@ impl Document {
         }
     }
 
-    /// Populate (or repopulate) this git status buffer from a fresh
-    /// `git status` snapshot. Collapses any previously-expanded hunks â€”
-    /// callers that want to keep an expansion across a refresh must
-    /// re-expand it after this call.
+    /// Populate (or repopulate) this git status buffer from a fresh `git status` snapshot. Collapses any previously-expanded hunks; callers that want to keep an expansion across a refresh must re-expand it after this call.
     pub fn populate_git_status_buffer(
         &mut self,
         snapshot: crate::git::status::StatusSnapshot,
@@ -611,9 +614,7 @@ impl Document {
         self.history.mark_saved();
     }
 
-    /// Record `hunks` as the expanded diff for `path` on the given side
-    /// (`staged_side`: `true` = `git diff --cached`, `false` = `git diff`)
-    /// and re-render. No-op if this isn't a git status buffer.
+    /// Record `hunks` as the expanded diff for `path` on the given side (`staged_side`: `true` = `git diff --cached`, `false` = `git diff`) and re-render. No-op if this isn't a git status buffer.
     pub fn set_git_status_expanded(
         &mut self,
         path: std::path::PathBuf,
@@ -662,9 +663,7 @@ impl Document {
         }
     }
 
-    /// Rebuild buffer text + annotations from this git status buffer's
-    /// current `snapshot`/`expanded_diffs`. Does not touch `self.kind` itself
-    /// (callers update the snapshot/expanded_diffs before calling this).
+    /// Rebuild buffer text + annotations from this git status buffer's current `snapshot`/`expanded_diffs`. Does not touch `self.kind` itself (callers update the snapshot/expanded_diffs before calling this).
     fn render_git_status(&mut self) {
         use crate::color::Color;
 
@@ -674,16 +673,15 @@ impl Document {
                 expanded_diffs,
                 head_subject,
                 ..
-            } => (snapshot.clone(), expanded_diffs.clone(), head_subject.clone()),
+            } => (
+                snapshot.clone(),
+                expanded_diffs.clone(),
+                head_subject.clone(),
+            ),
             _ => return,
         };
 
-        // Capture what the cursor is currently "on" so it can be restored
-        // after the rebuild below â€” without this, every expand/collapse/
-        // stage/unstage/discard silently snaps the cursor back to line 0,
-        // which then desyncs `j`'s next stop from where the user thinks
-        // they are (landing back on the file entry instead of advancing
-        // into the hunk they just expanded).
+        // Capture what the cursor is currently "on" so it can be restored after the rebuild below; without this, every expand/collapse/ stage/unstage/discard silently snaps the cursor back to line 0, which then desyncs `j`'s next stop from where the user thinks they are (landing back on the file entry instead of.
         enum CursorTarget {
             HunkLine {
                 path: String,
@@ -858,7 +856,8 @@ impl Document {
                                 hunk.header
                             )
                         };
-                        let range = git_status_push_line(&mut chars, &mut byte_offset, &header_text);
+                        let range =
+                            git_status_push_line(&mut chars, &mut byte_offset, &header_text);
                         highlights.push((range, Color::Cyan));
                         let hunk_line_idx = line_idx;
                         line_idx += 1;
@@ -892,9 +891,7 @@ impl Document {
                                 crate::git::diff::DiffLineKind::Addition => {
                                     ('+', Some(Color::Green))
                                 }
-                                crate::git::diff::DiffLineKind::Deletion => {
-                                    ('-', Some(Color::Red))
-                                }
+                                crate::git::diff::DiffLineKind::Deletion => ('-', Some(Color::Red)),
                             };
                             let text = format!("        {marker}{}", dl.content);
                             let range = git_status_push_line(&mut chars, &mut byte_offset, &text);
@@ -933,7 +930,9 @@ impl Document {
 
         self.replace_buffer_content_chars(&chars);
         self.custom_highlights = highlights;
-        let restore_line = exact_restore_line.or(hunk_restore_line).or(entry_restore_line);
+        let restore_line = exact_restore_line
+            .or(hunk_restore_line)
+            .or(entry_restore_line);
         if let Some(line) = restore_line {
             if let Some(offset) = self.buffer.line_index.get_start(line) {
                 let _ = self.buffer.set_cursor(offset);
@@ -941,17 +940,493 @@ impl Document {
         }
     }
 
+    /// Verb-specific color for a rebase-todo head line.
+    fn git_rebase_verb_color(verb: crate::git::rebase::RebaseVerb) -> crate::color::Color {
+        use crate::color::Color;
+        use crate::git::rebase::RebaseVerb;
+        match verb {
+            RebaseVerb::Pick => Color::Green,
+            RebaseVerb::Squash => Color::Yellow,
+            RebaseVerb::Fixup => Color::DarkYellow,
+            RebaseVerb::Reword => Color::Blue,
+            RebaseVerb::Edit => Color::Magenta,
+            RebaseVerb::Drop => Color::DarkGrey,
+        }
+    }
+
+    /// Pure computation: build the plan's rendered text, highlight spans, and `(line, sha)` head-line list for `steps`, optionally prefixed with a non-interactive `banner` line (e.g. a pause status). Shared by the normal interactive render and the paused-state render, which apply the result to the buffer.
+    fn build_rebase_plan_lines(
+        steps: &[crate::git::rebase::RebaseStep],
+        message_overrides: &std::collections::HashMap<String, String>,
+        expanded_bodies: &std::collections::HashSet<String>,
+        original_bodies: &std::collections::HashMap<String, String>,
+        banner: Option<&str>,
+    ) -> RebasePlanRender {
+        use crate::color::Color;
+
+        let mut text = String::new();
+        let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
+        let mut head_lines: Vec<(usize, String)> = Vec::new();
+        let mut line_idx = 0usize;
+
+        let push_line = |text: &mut String, s: &str| -> std::ops::Range<usize> {
+            let start = text.len();
+            text.push_str(s);
+            let end = text.len();
+            text.push('\n');
+            start..end
+        };
+
+        if let Some(banner) = banner {
+            let range = push_line(&mut text, &format!("# {banner}"));
+            highlights.push((range, Color::Yellow));
+            line_idx += 1;
+        }
+
+        for step in steps {
+            let short_sha = &step.sha[..step.sha.len().min(8)];
+            let title = match message_overrides.get(&step.sha) {
+                Some(m) => m.lines().next().unwrap_or(""),
+                None => step.subject.as_str(),
+            };
+            let head_text = format!("{} {short_sha} {title}", step.verb.as_str());
+            let range = push_line(&mut text, &head_text);
+            highlights.push((range, Self::git_rebase_verb_color(step.verb)));
+            let this_line = line_idx;
+            line_idx += 1;
+            head_lines.push((this_line, step.sha.clone()));
+
+            if expanded_bodies.contains(&step.sha) {
+                let body = match message_overrides.get(&step.sha) {
+                    Some(m) => {
+                        let mut lines = m.lines();
+                        lines.next();
+                        lines.collect::<Vec<_>>().join("\n")
+                    }
+                    None => original_bodies.get(&step.sha).cloned().unwrap_or_default(),
+                };
+                let is_fold = matches!(
+                    step.verb,
+                    crate::git::rebase::RebaseVerb::Squash | crate::git::rebase::RebaseVerb::Fixup
+                );
+                if is_fold {
+                    let range = push_line(&mut text, "    -> folds into previous");
+                    highlights.push((range, Color::DarkGrey));
+                    line_idx += 1;
+                }
+                for body_line in body.lines() {
+                    let range = push_line(&mut text, &format!("    {body_line}"));
+                    if is_fold {
+                        highlights.push((range, Color::DarkGrey));
+                    }
+                    line_idx += 1;
+                }
+            }
+        }
+        if text.ends_with('\n') {
+            text.pop();
+        }
+        RebasePlanRender {
+            text,
+            highlights,
+            head_lines,
+        }
+    }
+
+    /// Rebuild this rebase-todo buffer's text + annotations from `steps`/ `message_overrides`/`expanded_bodies`/`original_bodies`, preserving which commit's head line the cursor was on. Unlike `render_git_status` (a read-only buffer, wholesale-swapped with no undo concerns), this buffer is genuinely editable, and.
+    pub(super) fn render_git_rebase_todo(&mut self, description: &str) {
+        let (steps, message_overrides, expanded_bodies, original_bodies) = match &self.kind {
+            BufferKind::GitRebaseTodo {
+                steps,
+                message_overrides,
+                expanded_bodies,
+                original_bodies,
+                ..
+            } => (
+                steps.clone(),
+                message_overrides.clone(),
+                expanded_bodies.clone(),
+                original_bodies.clone(),
+            ),
+            _ => return,
+        };
+
+        let cursor_sha = {
+            let cursor = self.buffer.cursor();
+            let line = self.buffer.line_index.get_line_at(cursor);
+            self.annotations.git_rebase_step_at_line(line)
+        };
+
+        let RebasePlanRender {
+            text,
+            highlights,
+            head_lines,
+        } = Self::build_rebase_plan_lines(
+            &steps,
+            &message_overrides,
+            &expanded_bodies,
+            &original_bodies,
+            None,
+        );
+        let head_line_for_sha: std::collections::HashMap<String, usize> =
+            head_lines.iter().cloned().map(|(l, s)| (s, l)).collect();
+        let restore_line = cursor_sha.and_then(|sha| head_line_for_sha.get(&sha).copied());
+
+        self.begin_transaction(description);
+        let old_len = self.buffer.len();
+        if old_len > 0 {
+            let _ = self.delete_range(0, old_len);
+        }
+        if !text.is_empty() {
+            let _ = self.insert_str(&text);
+        }
+        self.commit_transaction();
+
+        self.annotations.clear();
+        for (line, sha) in head_lines {
+            self.annotations.create_git_rebase_step(line, &sha);
+        }
+        self.custom_highlights = highlights;
+        if let Some(line) = restore_line.or(if steps.is_empty() { None } else { Some(0) }) {
+            if let Some(offset) = self.buffer.line_index.get_start(line) {
+                let _ = self.buffer.set_cursor(offset);
+            }
+        }
+    }
+
+    /// Render a paused rebase-todo: `remaining` (already trimmed to what's left) with a status banner on top, in the same rich annotated/ colored view as the interactive plan; not a plain-text dump; so pausing doesn't jar into a visually different "other" buffer. K/J/ verb keys/fold/reword all keep working on the.
+    pub fn render_git_rebase_paused(
+        &mut self,
+        remaining: &[crate::git::rebase::RebaseStep],
+        banner: &str,
+    ) {
+        let (message_overrides, expanded_bodies, original_bodies) = match &self.kind {
+            BufferKind::GitRebaseTodo {
+                message_overrides,
+                expanded_bodies,
+                original_bodies,
+                ..
+            } => (
+                message_overrides.clone(),
+                expanded_bodies.clone(),
+                original_bodies.clone(),
+            ),
+            _ => return,
+        };
+        if let BufferKind::GitRebaseTodo { steps, .. } = &mut self.kind {
+            *steps = remaining.to_vec();
+        }
+        let RebasePlanRender {
+            text,
+            highlights,
+            head_lines,
+        } = Self::build_rebase_plan_lines(
+            remaining,
+            &message_overrides,
+            &expanded_bodies,
+            &original_bodies,
+            Some(banner),
+        );
+        self.replace_buffer_content(&text);
+        self.annotations.clear();
+        for (line, sha) in head_lines {
+            self.annotations.create_git_rebase_step(line, &sha);
+        }
+        self.custom_highlights = highlights;
+        self.history.mark_saved();
+    }
+
+    /// Swap the plan's step at `sha` with its neighbor (up or down).
+    /// No-op at either edge or if `sha` isn't found.
+    pub fn move_git_rebase_step(&mut self, sha: &str, down: bool) {
+        let BufferKind::GitRebaseTodo { steps, .. } = &mut self.kind else {
+            return;
+        };
+        let Some(idx) = steps.iter().position(|s| s.sha == sha) else {
+            return;
+        };
+        let target = if down {
+            if idx + 1 >= steps.len() {
+                return;
+            }
+            idx + 1
+        } else {
+            if idx == 0 {
+                return;
+            }
+            idx - 1
+        };
+        steps.swap(idx, target);
+        let description = if down {
+            "Move commit down"
+        } else {
+            "Move commit up"
+        };
+        self.render_git_rebase_todo(description);
+    }
+
+    /// Set the verb of the step at `sha` (never `Reword`/`Drop`;  those go
+    /// through the message editor and `remove_git_rebase_step` respectively).
+    pub fn set_git_rebase_verb(&mut self, sha: &str, verb: crate::git::rebase::RebaseVerb) {
+        let BufferKind::GitRebaseTodo { steps, .. } = &mut self.kind else {
+            return;
+        };
+        let Some(step) = steps.iter_mut().find(|s| s.sha == sha) else {
+            return;
+        };
+        step.verb = verb;
+        self.render_git_rebase_todo(&format!("Set commit to {}", verb.as_str()));
+    }
+
+    /// Remove the step at `sha` from the plan entirely (drop).
+    pub fn remove_git_rebase_step(&mut self, sha: &str) {
+        let BufferKind::GitRebaseTodo { steps, .. } = &mut self.kind else {
+            return;
+        };
+        let before = steps.len();
+        steps.retain(|s| s.sha != sha);
+        if steps.len() == before {
+            return;
+        }
+        self.render_git_rebase_todo("Drop commit");
+    }
+
+    /// Toggle whether `sha`'s body is previewed inline. Lazily fetches and
+    /// caches its real body text on first expand if there's no override yet.
+    pub fn toggle_git_rebase_expand(&mut self, sha: &str, repo_root: &std::path::Path) {
+        let already_expanded = match &self.kind {
+            BufferKind::GitRebaseTodo {
+                expanded_bodies, ..
+            } => expanded_bodies.contains(sha),
+            _ => return,
+        };
+        if already_expanded {
+            if let BufferKind::GitRebaseTodo {
+                expanded_bodies, ..
+            } = &mut self.kind
+            {
+                expanded_bodies.remove(sha);
+            }
+        } else {
+            let needs_fetch = match &self.kind {
+                BufferKind::GitRebaseTodo {
+                    message_overrides,
+                    original_bodies,
+                    ..
+                } => !message_overrides.contains_key(sha) && !original_bodies.contains_key(sha),
+                _ => false,
+            };
+            if needs_fetch {
+                let full = crate::git::run_checked(repo_root, &["log", "-1", "--format=%B", sha])
+                    .unwrap_or_default();
+                let mut lines = full.lines();
+                lines.next(); // subject, already shown in the head line
+                let body = lines.collect::<Vec<_>>().join("\n").trim().to_string();
+                if let BufferKind::GitRebaseTodo {
+                    original_bodies, ..
+                } = &mut self.kind
+                {
+                    original_bodies.insert(sha.to_string(), body);
+                }
+            }
+            if let BufferKind::GitRebaseTodo {
+                expanded_bodies, ..
+            } = &mut self.kind
+            {
+                expanded_bodies.insert(sha.to_string());
+            }
+        }
+        self.render_git_rebase_todo("Toggle commit preview");
+    }
+
+    /// The current full message for `sha` (override if set, else its real
+    /// current commit message), for prefilling the `c`/`r` sub-editor.
+    pub fn git_rebase_current_message(&self, sha: &str, repo_root: &std::path::Path) -> String {
+        match &self.kind {
+            BufferKind::GitRebaseTodo {
+                message_overrides, ..
+            } => {
+                if let Some(m) = message_overrides.get(sha) {
+                    return m.clone();
+                }
+            }
+            _ => return String::new(),
+        }
+        crate::git::run_checked(repo_root, &["log", "-1", "--format=%B", sha])
+            .unwrap_or_default()
+            .trim_end()
+            .to_string()
+    }
+
+    /// Set (or clear, if `message` is empty) `sha`'s message override and
+    /// re-render;  called when the `c`/`r` sub-editor is saved.
+    pub fn set_git_rebase_message_override(&mut self, sha: &str, message: String) {
+        let BufferKind::GitRebaseTodo {
+            message_overrides,
+            expanded_bodies,
+            ..
+        } = &mut self.kind
+        else {
+            return;
+        };
+        if message.trim().is_empty() {
+            message_overrides.remove(sha);
+        } else {
+            message_overrides.insert(sha.to_string(), message);
+            expanded_bodies.insert(sha.to_string());
+        }
+        self.render_git_rebase_todo("Reword commit");
+    }
+
     /// Return the repo root for any git buffer kind.
     pub fn git_repo_root(&self) -> Option<&std::path::Path> {
         match &self.kind {
             BufferKind::GitStatus { repo_root, .. } => Some(repo_root),
             BufferKind::GitCommitMessage { repo_root, .. } => Some(repo_root),
+            BufferKind::GitBlame { repo_root, .. } => Some(repo_root),
+            BufferKind::GitLog { repo_root, .. } => Some(repo_root),
+            BufferKind::GitRebaseTodo { repo_root, .. } => Some(repo_root),
             _ => None,
         }
     }
 
+    /// Replace this file buffer's git-gutter signs (add/change/delete per line), computed by a `GitGutterDiffJob` against the buffer's live (possibly unsaved) content.
+    pub fn set_git_gutter_signs(&mut self, signs: &[(usize, crate::git::diff::GutterSignKind)]) {
+        self.annotations.replace_git_gutter_signs(signs);
+    }
+
+    /// Populate (or repopulate) this git blame buffer from a fresh
+    /// `git blame --porcelain` listing.
+    pub fn populate_git_blame_buffer(&mut self, lines: Vec<crate::git::blame::BlameLine>) {
+        let (repo_root, linked_doc_id, path, at_commit) = match &self.kind {
+            BufferKind::GitBlame {
+                repo_root,
+                linked_doc_id,
+                path,
+                at_commit,
+                ..
+            } => (
+                repo_root.clone(),
+                *linked_doc_id,
+                path.clone(),
+                at_commit.clone(),
+            ),
+            _ => return,
+        };
+
+        let mut text = String::new();
+        for (i, line) in lines.iter().enumerate() {
+            let sha = &line.commit.sha;
+            let short_sha = &sha[..sha.len().min(8)];
+            let date = crate::git::format_unix_date(line.commit.author_time);
+            let author = truncate_display(&line.commit.author, 16);
+            text.push_str(&format!(
+                "{short_sha} ({author:<16} {date}) {}",
+                line.content
+            ));
+            if i + 1 < lines.len() {
+                text.push('\n');
+            }
+        }
+        self.replace_buffer_content(&text);
+        self.annotations.clear();
+        for (i, line) in lines.iter().enumerate() {
+            self.annotations.create_git_blame_line(i, &line.commit.sha);
+        }
+        self.kind = BufferKind::GitBlame {
+            repo_root,
+            linked_doc_id,
+            path,
+            at_commit,
+            lines,
+        };
+        self.history.mark_saved();
+    }
+
+    /// Populate (or repopulate) this git log buffer from a fresh commit
+    /// listing. Collapses any previously-expanded `git show` body.
+    pub fn populate_git_log_buffer(&mut self, commits: Vec<crate::git::log::CommitSummary>) {
+        let (repo_root, path) = match &self.kind {
+            BufferKind::GitLog {
+                repo_root, path, ..
+            } => (repo_root.clone(), path.clone()),
+            _ => return,
+        };
+        self.kind = BufferKind::GitLog {
+            repo_root,
+            path,
+            commits,
+            expanded: None,
+            expanded_body: None,
+        };
+        self.render_git_log();
+        self.history.mark_saved();
+    }
+
+    /// Set (or clear, via `None`) the inline-expanded `git show` body for
+    /// `sha` and re-render.
+    pub fn set_git_log_expanded(&mut self, sha: Option<String>, body: Option<String>) {
+        match &mut self.kind {
+            BufferKind::GitLog {
+                expanded,
+                expanded_body,
+                ..
+            } => {
+                *expanded = sha;
+                *expanded_body = body;
+            }
+            _ => return,
+        }
+        self.render_git_log();
+    }
+
+    fn render_git_log(&mut self) {
+        let (commits, expanded, expanded_body) = match &self.kind {
+            BufferKind::GitLog {
+                commits,
+                expanded,
+                expanded_body,
+                ..
+            } => (commits.clone(), expanded.clone(), expanded_body.clone()),
+            _ => return,
+        };
+
+        let mut lines: Vec<String> = Vec::new();
+        let mut commit_annotations: Vec<(usize, String)> = Vec::new();
+        for commit in &commits {
+            let line_idx = lines.len();
+            let date = crate::git::format_unix_date(commit.author_time);
+            lines.push(format!(
+                "{} ({date}) {}: {}",
+                commit.short_sha, commit.author_name, commit.subject
+            ));
+            commit_annotations.push((line_idx, commit.sha.clone()));
+            if expanded.as_deref() == Some(commit.sha.as_str()) {
+                if let Some(body) = &expanded_body {
+                    for body_line in body.lines() {
+                        lines.push(format!("    {body_line}"));
+                    }
+                }
+            }
+        }
+
+        self.replace_buffer_content(&lines.join("\n"));
+        self.annotations.clear();
+        for (line, sha) in commit_annotations {
+            self.annotations.create_git_log_commit(line, &sha);
+        }
+    }
 }
 
+/// Truncate `s` to at most `max_chars` characters, for fixed-width columns
+/// like a blame author name (never panics on multi-byte boundaries).
+fn truncate_display(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        s.chars().take(max_chars).collect()
+    }
+}
 /// Determine the highlight color for one directory buffer line.
 fn dir_entry_color(
     id_to_orig: &std::collections::HashMap<u16, String>,
@@ -1003,7 +1478,10 @@ mod git_status_sections {
 }
 
 /// Whether `entry` belongs under `section` for status-buffer rendering.
-fn git_status_entry_matches_section(entry: &crate::git::status::StatusEntry, section: &str) -> bool {
+fn git_status_entry_matches_section(
+    entry: &crate::git::status::StatusEntry,
+    section: &str,
+) -> bool {
     match section {
         s if s == git_status_sections::UNMERGED => entry.is_unmerged(),
         s if s == git_status_sections::STAGED => entry.is_staged(),
