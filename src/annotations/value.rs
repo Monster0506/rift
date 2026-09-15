@@ -6,7 +6,7 @@ use serde::ser::{SerializeMap, SerializeSeq, Serializer};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// A recursive, serializable value. See the module docs for the design rationale.
+/// A recursive, serializable value.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Value {
     #[default]

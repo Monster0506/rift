@@ -5,7 +5,7 @@ use crate::split::navigation::Direction;
 use crate::split::tree::SplitDirection;
 use crate::test_utils::MockTerminal;
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
+// -- helpers --
 
 /// Drains job messages until every spawned job thread has actually finished
 /// (checked via the thread handle, not just one `recv_timeout` miss).
@@ -122,7 +122,7 @@ fn setup(
     (editor, win_a, win_b, win_c)
 }
 
-// ─── screenshot helper ────────────────────────────────────────────────────────
+// -- screenshot helper --
 
 fn print_screen(label: &str, screen: &str) {
     eprintln!("\n=== {label} ===");
@@ -131,7 +131,7 @@ fn print_screen(label: &str, screen: &str) {
     }
 }
 
-// ─── tests ───────────────────────────────────────────────────────────────────
+// -- tests --
 
 #[test]
 fn baseline_layout_renders_correctly() {
@@ -469,7 +469,7 @@ fn three_horizontal_wl_on_a_swaps_with_b() {
     );
 }
 
-// ─── border-highlight tests ───────────────────────────────────────────────────
+// -- border-highlight tests --
 
 fn compositor_cell_fg(editor: &mut Editor<MockTerminal>, row: usize, col: usize) -> Option<Color> {
     let cols = editor.render_system.compositor.cols();

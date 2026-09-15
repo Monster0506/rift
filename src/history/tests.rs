@@ -1112,7 +1112,7 @@ fn test_goto_seq_cross_branch_content() {
         text: vec![Character::from('d')],
         len: 1,
     });
-    let seq_d = tree.push(tx_d, None); // seq=4 — branch from seq_b
+    let seq_d = tree.push(tx_d, None); // seq=4, branch from seq_b
     assert_eq!(tree.current_seq(), seq_d);
 
     // Now goto_seq to C (seq_c) across the branch

@@ -570,8 +570,7 @@ fn handshake(stream: TcpStream, token: &str) -> Option<(TcpStream, BufReader<Tcp
     if !ok {
         return None;
     }
-    // Clear on `reader`'s own handle, not just its clone (see `try_connect`):
-    // Windows doesn't reliably share a cleared timeout across clones.
+    // Clear both handles because Windows may retain cloned socket timeouts.
     let _ = reader.get_ref().set_read_timeout(None);
     let _ = writer.set_read_timeout(None);
     write_framed(

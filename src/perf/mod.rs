@@ -153,7 +153,7 @@ pub fn record(event: PerfEvent) {
             }
             sink.ring.push_back(event);
 
-            // Write to log — no heap allocations in the hot path.
+            // Write to the log without allocating on the hot path.
             let _ = write!(sink.log, "[perf] {}: {:?}", event.name, event.duration);
             if let Some(tag) = event.fields.tag {
                 let _ = write!(sink.log, " tag={tag}");

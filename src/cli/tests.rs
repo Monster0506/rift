@@ -10,7 +10,7 @@ fn err(args: &[&str]) -> String {
     parse_args(args).expect_err("expected Err")
 }
 
-// ── version ──────────────────────────────────────────────────────────────────
+// -- version --
 
 #[test]
 fn version_short() {
@@ -27,14 +27,14 @@ fn version_before_file() {
     assert!(parse_args(&["-v", "file.txt"]).unwrap().is_none());
 }
 
-// ── empty ─────────────────────────────────────────────────────────────────────
+// -- empty --
 
 #[test]
 fn empty_args() {
     assert_eq!(ok(&[]), Args::default());
 }
 
-// ── file ──────────────────────────────────────────────────────────────────────
+// -- file --
 
 #[test]
 fn bare_file() {
@@ -46,7 +46,7 @@ fn two_files_is_error() {
     assert!(err(&["a.txt", "b.txt"]).contains("unexpected argument"));
 }
 
-// ── goto ──────────────────────────────────────────────────────────────────────
+// -- goto --
 
 #[test]
 fn plus_alone_is_last_line() {
@@ -102,7 +102,7 @@ fn goto_before_file() {
     assert_eq!(a.goto, Some(Goto::Line(5)));
 }
 
-// ── search ────────────────────────────────────────────────────────────────────
+// -- search --
 
 #[test]
 fn plus_slash_pattern() {
@@ -124,7 +124,7 @@ fn search_empty_pattern() {
     assert_eq!(ok(&["+/"]).search.as_deref(), Some(""));
 }
 
-// ── -c / --cmd ────────────────────────────────────────────────────────────────
+// -- -c / --cmd --
 
 #[test]
 fn dash_c() {
@@ -158,7 +158,7 @@ fn cmd_missing_arg_is_error() {
     assert!(err(&["--cmd"]).contains("requires a command argument"));
 }
 
-// ── unknown flags ─────────────────────────────────────────────────────────────
+// -- unknown flags --
 
 #[test]
 fn unknown_flag_is_error() {
@@ -170,7 +170,7 @@ fn unknown_short_flag_is_error() {
     assert!(err(&["-z"]).contains("unknown flag"));
 }
 
-// ── combinations ─────────────────────────────────────────────────────────────
+// -- combinations --
 
 #[test]
 fn file_goto_search_cmd() {

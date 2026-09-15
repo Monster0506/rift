@@ -74,8 +74,7 @@ pub struct CellBatch {
     pub row: usize,
     /// Starting column position (0-indexed)
     pub start_col: usize,
-    /// The cells to render (consecutive), owned rather than `Vec<&Cell>` so
-    /// it can be pooled across frames instead of allocated fresh (see `cell_batch_pool`).
+    /// Owns the cells so buffers can be reused across frames.
     pub cells: Vec<Cell>,
 }
 
@@ -102,8 +101,7 @@ pub struct DoubleBuffer {
     /// Dirty rectangle for the current frame
     frame_dirty_rect: Option<Rect>,
 
-    /// Scratch buffers reused across `render_to_terminal` calls instead of
-    /// allocating fresh per cell-batch - see `flush_cell_batch`.
+    /// Scratch buffers reused for terminal rendering.
     scratch_output: String,
     scratch_cmd_buf: Vec<u8>,
     scratch_ops: Vec<StyleOp>,

@@ -1,5 +1,4 @@
-//! Rendering hook for the multi-region selection set: mirrors
-//! Document::sync_search_annotations (search.rs) but for ui.selection.*.
+//! Renders annotations for multi-region selections.
 
 use super::Document;
 use crate::selection::Region;

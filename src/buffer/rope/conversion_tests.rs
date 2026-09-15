@@ -24,7 +24,7 @@ fn test_ascii_conversion() {
 
 #[test]
 fn test_unicode_conversion() {
-    // Chars 0='A',1='🦀',2='B' -> bytes 0='A',1..5='🦀',5='B'.
+    // Characters 0=A, 1=crab emoji, 2=B; bytes are 0, 1..5, and 5.
     let pt = create_table("A🦀B");
 
     // char -> byte
@@ -47,7 +47,7 @@ fn test_unicode_conversion() {
 
 #[test]
 fn test_complex_mixed() {
-    // Chars 0='a',1='é',2='€' -> bytes 0,1(start é),3(start €),6(end).
+    // Characters are ASCII, accented Latin, and Euro sign; bytes end at 1, 3, and 6.
     let pt = create_table("aé€");
 
     assert_eq!(pt.char_to_byte(0), 0);
@@ -57,9 +57,9 @@ fn test_complex_mixed() {
 
     assert_eq!(pt.byte_to_char(0), 0);
     assert_eq!(pt.byte_to_char(1), 1);
-    assert_eq!(pt.byte_to_char(2), 1); // inside é
+    assert_eq!(pt.byte_to_char(2), 1); // Inside the accented character.
     assert_eq!(pt.byte_to_char(3), 2);
-    assert_eq!(pt.byte_to_char(4), 2); // inside €
-    assert_eq!(pt.byte_to_char(5), 2); // inside €
+    assert_eq!(pt.byte_to_char(4), 2); // Inside the Euro sign.
+    assert_eq!(pt.byte_to_char(5), 2); // Inside the Euro sign.
     assert_eq!(pt.byte_to_char(6), 3);
 }

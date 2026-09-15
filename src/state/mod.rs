@@ -1,5 +1,4 @@
-//! Centralized editor state: settings, debug mode, runtime info. Mirrors
-//! exactly one focused buffer at a time (other buffers can be open in splits).
+//! Centralized editor state for settings and runtime information.
 
 use crate::color::{Color, Theme};
 use crate::command::Command;

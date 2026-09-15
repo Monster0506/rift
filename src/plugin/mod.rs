@@ -66,8 +66,7 @@ pub enum PluginMutation {
     },
     /// Remove all highlights owned by the given plugin slot.
     ClearHighlights { slot: u32 },
-    /// Set a per-document option. Supported names: `tab_width`, `expand_tabs`,
-    /// `show_line_numbers`. Value is always a string ("4", "true", "false", …).
+    /// Set a per-document option. Values are strings such as `"4"` or `"true"`.
     SetOption { name: String, value: String },
     /// Trigger a save of the active buffer to disk.
     SaveBuffer,
@@ -88,7 +87,7 @@ pub enum PluginMutation {
     SetScroll(usize, usize),
     /// Set the line ending for the active document ("lf" or "crlf").
     SetLineEnding(String),
-    /// Remove a key binding. `mode` and `keys` are the same as `MapKey`.
+    /// Remove a key binding for the selected mode and key sequence.
     UnmapKey { mode: String, keys: String },
     /// Move the cursor to `row` (1-indexed) and center the viewport on it.
     CenterOnLine(usize),
@@ -190,11 +189,9 @@ pub enum PluginMutation {
         presentation: Option<crate::annotations::Presentation>,
         description: Option<String>,
     },
-    /// Create an in-memory buffer with no disk path, populated with `lines`,
-    /// and switch to it. Fires `BufOpen` once applied, same as a file load.
+    /// Create and activate an in-memory buffer. Fires BufOpen after creation.
     CreateScratchBuf { name: String, lines: Vec<String> },
-    /// Reload the active buffer's content from disk, discarding in-memory edits if `force`.
-    /// The Lua-facing counterpart of `open_file(None, _)`, unreachable via `rift.open_file` since its `path` is mandatory.
+    /// Reload active buffer content from disk. Force discards unsaved changes.
     ReloadBuffer { force: bool },
 }
 

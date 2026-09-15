@@ -1,7 +1,4 @@
-//! End-to-end tests of the git status/commit workflow against a real,
-//! disposable temp repository â€” the async job round-trip (`GitStatusJob`,
-//! `GitDiffJob`), stage/unstage/discard via the cursor-action fast paths,
-//! and the commit/fixup buffers, all exercised through the real `Editor`.
+//! End-to-end tests of the git status/commit workflow against a real, disposable temp repository; the async job round-trip (`GitStatusJob`, `GitDiffJob`), stage/unstage/discard via the cursor-action fast paths, and the commit/fixup buffers, all exercised through the real `Editor`.
 
 use super::Editor;
 #[allow(unused_imports)]
@@ -15,10 +12,7 @@ fn create_editor() -> Editor<MockTerminal> {
     Editor::new(term).unwrap()
 }
 
-/// Drains pending job messages, blocking until every spawned job thread has
-/// actually finished (not just "no message arrived in the last 50ms" â€” under
-/// heavy parallel test load, spawning a `git` subprocess can take longer
-/// than that, so a fixed short window is unreliable here).
+/// Drains pending job messages, blocking until every spawned job thread has actually finished (not just "no message arrived in the last 50ms"; under heavy parallel test load, spawning a `git` subprocess can take longer than that, so a fixed short window is unreliable here).
 fn drain_jobs(editor: &mut Editor<MockTerminal>) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
@@ -120,11 +114,7 @@ fn cursor_stage_action_runs_git_add_and_refreshes_the_buffer() {
 
 #[test]
 fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
-    // Regression: `GitStatus` used to be editable via cut/paste-between-
-    // sections + `:w` reconciliation. That model let plain `dd`/insert-mode
-    // keys silently mutate displayed text with zero git effect while
-    // desyncing the line-anchored annotations `s`/`u`/`X`/`=` rely on.
-    // Changes now only happen through those dedicated actions.
+    // Regression: `GitStatus` used to be editable via cut/paste-between- sections + `:w` reconciliation. That model let plain `dd`/insert-mode keys silently mutate displayed text with zero git effect while desyncing the line-anchored annotations `s`/`u`/`X`/`=` rely on. Changes now only happen through those.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -164,11 +154,7 @@ fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
 
 #[test]
 fn wq_on_a_git_commit_message_buffer_commits_and_quits_instead_of_erroring() {
-    // Regression: `do_save_and_quit` (`:wq`/`EditorAction::SaveAndQuit`) used
-    // to always take the `File`-only async-save path regardless of
-    // `BufferKind`, so `:wq` on any non-`File` special buffer (this commit
-    // message buffer, but also pre-existing Directory/Clipboard buffers)
-    // failed with "No file name" instead of dispatching through `do_save()`.
+    // Regression: `do_save_and_quit` (`:wq`/`EditorAction::SaveAndQuit`) used to always take the `File`-only async-save path regardless of `BufferKind`, so `:wq` on any non-`File` special buffer (this commit message buffer, but also pre-existing Directory/Clipboard buffers) failed with "No file name" instead of.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
     std::fs::write(dir.path().join("tracked.txt"), "line one\nline TWO\n").unwrap();
@@ -345,9 +331,7 @@ fn expand_and_stage_hunk_leaves_other_hunks_unstaged() {
     assert_eq!(files[0].hunks.len(), 2, "expected two separate hunks");
     let first_hunk = files[0].hunks[0].clone();
 
-    // Stage exactly the first hunk via the pure apply.rs primitive (already
-    // covered end-to-end in git::apply::tests; here we confirm the second
-    // hunk survives untouched in the worktree).
+    // Stage exactly the first hunk via the pure apply.rs primitive (already covered end-to-end in git::apply::tests; here we confirm the second hunk survives untouched in the worktree).
     crate::git::apply::stage_hunk(dir.path(), "multi.txt", &first_hunk, false).unwrap();
 
     let staged =
@@ -370,9 +354,7 @@ fn expand_and_stage_hunk_leaves_other_hunks_unstaged() {
 
 #[test]
 fn cursor_stage_action_on_a_single_diff_line_stages_only_that_line() {
-    // Two changes close enough together to land in one hunk; staging via
-    // the cursor on just ONE of the two `+` lines must leave the other
-    // change unstaged, both in the index and in the worktree.
+    // Two changes close enough together to land in one hunk; staging via the cursor on just ONE of the two `+` lines must leave the other change unstaged, both in the index and in the worktree.
     let dir = tempfile::tempdir().unwrap();
     crate::git::run_checked(dir.path(), &["init", "--quiet"]).unwrap();
     crate::git::run_checked(dir.path(), &["config", "user.email", "t@example.com"]).unwrap();
@@ -525,10 +507,7 @@ fn cursor_stage_action_on_an_untracked_files_hunk_line_stages_only_that_line() {
     editor.git_status_cursor_action("stage");
     drain_jobs(&mut editor);
 
-    // git's own status parser reclassifies a partially-staged untracked file
-    // as `AM` (added in index, modified in worktree) once any part of it is
-    // staged â€” confirm the index has exactly the staged line, worktree has
-    // the full original file untouched.
+    // git's own status parser reclassifies a partially-staged untracked file as `AM` (added in index, modified in worktree) once any part of it is staged; confirm the index has exactly the staged line, worktree has the full original file untouched.
     let status = crate::git::run_checked(dir.path(), &["status", "--porcelain=v2"]).unwrap();
     assert!(
         status.contains("AM") && status.contains("new.txt"),
@@ -654,7 +633,7 @@ fn git_blame_walk_back_re_blames_at_the_parent_commit() {
         .git_blame_sha_at_line(0)
         .unwrap();
 
-    // Walk back via the dispatched buffer action (mirrors pressing Enter).
+    // Walk back through the dispatched buffer action.
     editor.handle_git_blame_buffer_action("git_blame:walk_back");
     drain_jobs(&mut editor);
 
@@ -673,10 +652,7 @@ fn git_blame_walk_back_re_blames_at_the_parent_commit() {
 
 #[test]
 fn git_blame_walk_back_on_the_root_commit_shows_a_notice_instead_of_a_raw_git_error() {
-    // Regression: walking back from a line the root commit introduced tried
-    // `git blame <root-sha>^`, which git rejects ("bad revision") since a
-    // root commit has no parent â€” surfaced to the user as a raw subprocess
-    // error instead of a sensible "nothing earlier" notice.
+    // Regression: walking back from a line the root commit introduced tried `git blame <root-sha>^`, which git rejects ("bad revision") since a root commit has no parent; surfaced to the user as a raw subprocess error instead of a sensible "nothing earlier" notice.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -715,9 +691,7 @@ fn git_blame_walk_back_on_the_root_commit_shows_a_notice_instead_of_a_raw_git_er
 
 #[test]
 fn git_blame_walk_back_from_a_middle_line_re_blames_that_lines_own_history() {
-    // A multi-line file where only ONE line was touched by a later commit;
-    // walking back with the cursor on THAT line (not line 0) must re-blame
-    // using that line's own sha, not silently do nothing.
+    // A multi-line file where only ONE line was touched by a later commit; walking back with the cursor on THAT line (not line 0) must re-blame using that line's own sha, not silently do nothing.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
     std::fs::write(dir.path().join("tracked.txt"), "line one\nline TWO\n").unwrap();
@@ -866,7 +840,7 @@ fn bare_git_diff_command_opens_status_with_unstaged_hunks_expanded() {
     assert!(
         doc.is_git_status_expanded(&PathBuf::from("tracked.txt"), false),
         "the unstaged hunk must already be expanded: {}",
-        doc.buffer.to_string()
+        doc.buffer
     );
 }
 
@@ -891,7 +865,7 @@ fn bare_git_diff_cached_command_opens_status_with_staged_hunks_expanded() {
     assert!(
         doc.is_git_status_expanded(&PathBuf::from("tracked.txt"), true),
         "the staged hunk must already be expanded: {}",
-        doc.buffer.to_string()
+        doc.buffer
     );
 }
 
@@ -937,9 +911,7 @@ fn git_blame_command_with_explicit_path_blames_that_file_not_the_active_one() {
 
 #[test]
 fn git_blame_command_with_a_flag_falls_through_to_raw_output() {
-    // Regression: `blame <path>` is intercepted for the structured view,
-    // but `blame -C` (or any other flag-shaped argument) must still reach
-    // the raw escape hatch, same as any other subcommand+flags combo.
+    // Regression: `blame -C` and every other flag-shaped argument must reach raw command output.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -957,9 +929,7 @@ fn git_blame_command_with_a_flag_falls_through_to_raw_output() {
 
 #[test]
 fn git_log_command_with_a_flag_falls_through_to_raw_output() {
-    // Regression: adding path-argument support for `blame` must not also
-    // make `log -1` (a pre-existing, tested raw-passthrough case) get
-    // hijacked as "log scoped to a file named -1".
+    // Regression: adding path-argument support for `blame` must not also make `log -1` (a pre-existing, tested raw-passthrough case) get hijacked as "log scoped to a file named -1".
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -1198,11 +1168,7 @@ fn bare_git_show_command_opens_log_with_head_expanded() {
 
 #[test]
 fn running_a_git_command_from_the_command_line_returns_to_normal_mode() {
-    // Regression: `ExecutionResult::RunGit`'s handler returned early,
-    // skipping the shared cleanup that resets `Mode::Command` back to
-    // `Mode::Normal` â€” the floating command-line window stayed open after
-    // `:G`/`:Git log` (or any `:Git ...`) even though the target buffer
-    // (status/log/scratch) had already opened underneath it.
+    // Regression: `ExecutionResult::RunGit`'s handler returned early, skipping the shared cleanup that resets `Mode::Command` back to `Mode::Normal`; the floating command-line window stayed open after `:G`/`:Git log` (or any `:Git ...`) even though the target buffer (status/log/scratch) had already opened.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -1292,13 +1258,7 @@ fn g_question_mark_key_sequence_resolves_to_git_help() {
 
 #[test]
 fn expanding_a_hunk_via_real_keys_lets_one_j_reach_the_first_hunk_line() {
-    // Regression: `render_git_status` unconditionally reset the cursor to
-    // buffer offset 0 on every rebuild (expand/collapse/stage/unstage/
-    // discard). Pressing `=` to expand then `j` once looked like it should
-    // land inside the hunk, but the reset-to-0 meant `j` actually landed
-    // back on the file entry (the first interactive line after 0) â€” so the
-    // next `s`/`u` staged/unstaged the whole file instead of the hunk line
-    // the user thought they were on.
+    // Regression: `render_git_status` unconditionally reset the cursor to buffer offset 0 on every rebuild (expand/collapse/stage/unstage/ discard). Pressing `=` to expand then `j` once looked like it should land inside the hunk, but the reset-to-0 meant `j` actually landed back on the file entry (the first.
     use crate::replay::backend::ReplayBackend;
 
     fn send<W: std::io::Write>(editor: &mut Editor<ReplayBackend<W>>, seq: &str) {
@@ -1351,7 +1311,7 @@ fn expanding_a_hunk_via_real_keys_lets_one_j_reach_the_first_hunk_line() {
     assert!(
         doc.annotations.git_hunk_line_at_line(line).is_some(),
         "a single 'j' after expand must land directly on the first hunk line: line={line}, buffer=\n{}",
-        doc.buffer.to_string()
+        doc.buffer
     );
 
     send(&mut editor, "s");

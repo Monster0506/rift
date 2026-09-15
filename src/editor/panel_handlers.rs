@@ -355,7 +355,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         let Some(entry) = entry else { return };
 
-        // Already a code action row: Space applies it (same as Enter).
+        // Space applies a selected code action.
         if entry.uri.is_empty() {
             let idx = entry.line as usize;
             let action = self.pending_code_actions.get(idx).cloned();

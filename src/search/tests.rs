@@ -166,12 +166,12 @@ fn test_find_next_backward_same_line() {
 
 #[test]
 fn test_unicode_offsets() {
-    // "Héllo" -> 'H' (0), 'é' (1), 'l' (2), 'l' (3), 'o' (4)
-    // Byte offsets: 'H' (0), 'é' (1..3), 'l' (3), ...
+    // The accented character starts at character offset 1 and byte offset 1.
+    // It occupies bytes 1..3.
     let buffer = MockBuffer::new(&["Héllo world"]);
 
     // Search "world"
-    // "Héllo " is 6 chars. "world" starts at 6.
+    // "world" starts at character offset 6.
     let res = find_next(&buffer, 0, "world", SearchDirection::Forward)
         .unwrap()
         .0;
@@ -179,7 +179,7 @@ fn test_unicode_offsets() {
     let m = res.unwrap();
     assert_eq!(m.range, 6..11);
 
-    // Search "é"
+    // Search for the accented character.
     let res = find_next(&buffer, 0, "é", SearchDirection::Forward)
         .unwrap()
         .0;
@@ -195,11 +195,11 @@ fn test_unicode_word_search_no_panic() {
     let buffer = MockBuffer::new(&["héllo wörld café"]);
 
     let (m, _) = find_next(&buffer, 0, r"\w+", SearchDirection::Forward).unwrap();
-    assert_eq!(m.expect("\\w+ should match").range, 0..5); // "héllo"
+    assert_eq!(m.expect("\\w+ should match").range, 0..5); // First accented word.
 
     let (all, _) = find_all(&buffer, r"\w+").unwrap();
     let words: Vec<_> = all.iter().map(|m| m.range.clone()).collect();
-    assert_eq!(words, vec![0..5, 6..11, 12..16]); // héllo / wörld / café
+    assert_eq!(words, vec![0..5, 6..11, 12..16]); // Three accented words.
 }
 
 #[test]
@@ -214,7 +214,7 @@ fn test_lookbehind_non_ascii_no_panic() {
 
     // find_all of a lookbehind over multibyte text must not panic.
     let (all, _) = find_all(&buffer, r"(?<!q).").unwrap();
-    assert_eq!(all.len(), 3); // ä, b, c
+    assert_eq!(all.len(), 3); // Accented character, b, and c.
 }
 
 #[test]

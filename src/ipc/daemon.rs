@@ -502,7 +502,7 @@ fn serve_client(
             }
         }
 
-        // Editor pressed :q in remote mode — detach client, keep editor alive.
+        // Editor pressed :q in remote mode, so detach the client and keep the editor alive.
         if detach_rx.try_recv().is_ok() {
             let end = serde_json::json!({
                 "jsonrpc": "2.0",

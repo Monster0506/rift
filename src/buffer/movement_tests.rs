@@ -370,7 +370,7 @@ fn test_desired_col_wrap_dollar_jk_restores_eol() {
 
 #[test]
 fn test_desired_col_wrap_persists_across_short_lines() {
-    // Same as the non-wrap test but through the visual path.
+    // Covers desired-column persistence through the visual path.
     let mut buf = create_buffer("long line here\nx\ny\nlong line here");
     buf.set_cursor(13).unwrap();
 

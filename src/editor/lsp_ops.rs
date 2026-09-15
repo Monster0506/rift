@@ -345,7 +345,7 @@ impl<T: TerminalBackend> Editor<T> {
         col_units: u32,
     ) {
         let already_open = self.document_manager.find_open_document_id(&path).is_some();
-        // Mirrors open_file: an existing, not-yet-open file loads through a job.
+        // Existing files that are not open load through a job.
         let loads_async = !already_open && path.exists();
 
         if let Err(e) = self.open_file(Some(path.to_string_lossy().into_owned()), false) {

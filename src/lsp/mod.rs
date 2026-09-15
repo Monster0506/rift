@@ -52,7 +52,7 @@ pub enum LspMessage {
         actions: Vec<serde_json::Value>,
         uri: String,
     },
-    /// Result of a codeAction/resolve — the same action but with edit populated.
+    /// Result of a codeAction/resolve with the edit populated.
     CodeActionResolved {
         action: serde_json::Value,
     },
@@ -195,8 +195,7 @@ impl LspManager {
         self.position_encoding_for_uri(&path_to_uri(path))
     }
 
-    /// Same as `position_encoding_for_path`, for a caller that already has
-    /// the URI (avoids recomputing it on a hot per-keystroke path).
+    /// Returns the negotiated position encoding for an already available URI.
     pub(crate) fn position_encoding_for_uri(
         &self,
         uri: &str,
@@ -419,8 +418,8 @@ impl LspManager {
         })
         .unwrap_or(Value::Null);
 
-        // Only send didOpen after the initialize handshake is complete.
-        // If not yet initialized, queue it — poll() will flush it when ready.
+        // Queue didOpen until the initialize handshake completes.
+        // poll() flushes it once the client is ready.
         let initialized = self
             .clients
             .get(language)
@@ -444,7 +443,7 @@ impl LspManager {
         self.is_tracking_uri(&path_to_uri(path))
     }
 
-    /// Same as `is_tracking`, for a caller that already has the URI.
+    /// Reports whether an already normalized URI is tracked.
     pub(crate) fn is_tracking_uri(&self, uri: &str) -> bool {
         self.open_docs
             .get(&normalize_uri(uri))
@@ -456,7 +455,7 @@ impl LspManager {
         self.did_change_uri(&path_to_uri(path), content);
     }
 
-    /// Same as `did_change`, for a caller that already has the wire URI.
+    /// Notify the server that a URI's content changed.
     pub(crate) fn did_change_uri(&mut self, uri: &str, content: &str) {
         let (language, version) = match self.open_docs.get_mut(&normalize_uri(uri)) {
             Some(state) => {
@@ -491,7 +490,7 @@ impl LspManager {
         self.did_change_incremental_uri(&path_to_uri(path), changes);
     }
 
-    /// Same as `did_change_incremental`, for a caller that already has the wire URI.
+    /// Send ordered incremental changes for a URI.
     pub(crate) fn did_change_incremental_uri(
         &mut self,
         uri: &str,
@@ -535,7 +534,7 @@ impl LspManager {
         self.supports_incremental_sync_uri(&path_to_uri(path))
     }
 
-    /// Same as `supports_incremental_sync`, for a caller that already has the URI.
+    /// Reports whether the URI's server supports incremental synchronization.
     pub(crate) fn supports_incremental_sync_uri(&self, uri: &str) -> bool {
         self.open_docs
             .get(&normalize_uri(uri))

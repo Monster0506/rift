@@ -20,8 +20,7 @@ impl Region {
         }
     }
 
-    /// Ordered (start, end) char-offset span, `end` exclusive; pure anchor/cursor
-    /// math for set bookkeeping (see `buffer_span` for the buffer-aware range).
+    /// Ordered exclusive-end span for selection bookkeeping.
     pub fn span(&self) -> (usize, usize) {
         (
             self.anchor.min(self.cursor),
@@ -29,8 +28,7 @@ impl Region {
         )
     }
 
-    /// Range this region covers in `buf`: same as `span()` except Linewise is
-    /// expanded to whole lines. Use this, not `span()`, to read/mutate buffer text.
+    /// Return this region's buffer range, expanding linewise selections to whole lines.
     pub fn buffer_span(&self, buf: &TextBuffer) -> (usize, usize) {
         match self.kind {
             RangeKind::Linewise => {
@@ -76,8 +74,7 @@ impl SelectionSet {
         self.active = None;
     }
 
-    /// Merge `region` into the set, repeating while it overlaps another
-    /// same-kind region (touching does not count -- see design doc S3).
+    /// Merge overlapping same-kind regions; touching regions stay separate.
     pub fn bank(&mut self, region: Region) {
         let mut cur = region;
         loop {

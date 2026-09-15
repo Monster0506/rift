@@ -3,7 +3,7 @@ use super::protocol::*;
 use super::*;
 use std::path::Path;
 
-// ── protocol helpers ──────────────────────────────────────────────────────────
+// -- protocol helpers --
 
 #[test]
 fn path_to_uri_unix_style() {
@@ -38,8 +38,8 @@ fn uri_to_path_roundtrip() {
 
 #[test]
 fn uri_to_path_decodes_percent_encoded_multibyte_utf8() {
-    // "é" encodes to the 2-byte UTF-8 sequence %C3%A9; decoding byte-by-byte
-    // as Latin-1 (`byte as char`) would yield "Ã©" instead of "é".
+    // A two-byte accented character encodes as %C3%A9.
+    // Byte-wise Latin-1 decoding yields the wrong text.
     #[cfg(not(windows))]
     {
         let uri = "file:///home/user/r%C3%A9sum%C3%A9.rs";
@@ -56,7 +56,7 @@ fn uri_to_path_decodes_percent_encoded_multibyte_utf8() {
 
 #[test]
 fn utf16_char_offset_round_trip_for_astral_emoji() {
-    // "🦀" (U+1F980) is outside the BMP: 1 code point, but 2 UTF-16 code units.
+    // The crab emoji uses one code point and two UTF-16 code units.
     let line = "a🦀b";
     assert_eq!(char_offset_to_utf16(line.chars(), 0), 0);
     assert_eq!(char_offset_to_utf16(line.chars(), 1), 1); // past 'a'
@@ -71,7 +71,7 @@ fn utf16_char_offset_round_trip_for_astral_emoji() {
 
 #[test]
 fn utf8_char_offset_round_trip_for_astral_emoji() {
-    // "🦀" is 1 code point but 4 UTF-8 bytes.
+    // The crab emoji uses one code point and four UTF-8 bytes.
     let line = "a🦀b";
     assert_eq!(char_offset_to_utf8(line.chars(), 1), 1); // past 'a'
     assert_eq!(char_offset_to_utf8(line.chars(), 2), 5); // past 'a' + crab (4 bytes)
@@ -102,7 +102,7 @@ fn uri_to_path_invalid_returns_none() {
     assert!(uri_to_path("not-a-uri").is_none());
 }
 
-// ── JSON-RPC serialisation ────────────────────────────────────────────────────
+// -- JSON-RPC serialization --
 
 #[test]
 fn json_rpc_request_serialises_correctly() {
@@ -130,7 +130,7 @@ fn json_rpc_request_omits_null_params() {
     assert!(!s.contains("params"), "should omit null params, got: {}", s);
 }
 
-// ── LspDiagnostic deserialisation ────────────────────────────────────────────
+// -- LspDiagnostic deserialization --
 
 #[test]
 fn diagnostic_deserialises_with_severity() {
@@ -164,7 +164,7 @@ fn diagnostic_deserialises_without_severity() {
     assert_eq!(diag.severity, None);
 }
 
-// ── LspLocation deserialisation ───────────────────────────────────────────────
+// -- LspLocation deserialization --
 
 #[test]
 fn location_deserialises() {
@@ -180,7 +180,7 @@ fn location_deserialises() {
     assert_eq!(loc.range.start.line, 10);
 }
 
-// ── LspTextEdit deserialisation ───────────────────────────────────────────────
+// -- LspTextEdit deserialization --
 
 #[test]
 fn text_edit_deserialises() {
@@ -196,7 +196,7 @@ fn text_edit_deserialises() {
     assert_eq!(edit.new_text, "fn replaced() {}\n");
 }
 
-// ── hover text extraction ─────────────────────────────────────────────────────
+// -- hover text extraction --
 
 #[test]
 fn hover_plain_string() {
@@ -230,7 +230,7 @@ fn hover_null_result_returns_none() {
     assert!(mod_fns::extract_hover_text_pub(&result).is_none());
 }
 
-// ── config ────────────────────────────────────────────────────────────────────
+// -- config --
 
 #[test]
 fn language_id_mapping() {
@@ -239,7 +239,7 @@ fn language_id_mapping() {
     assert_eq!(super::config::language_id("unknown_lang"), "plaintext");
 }
 
-// ── LspManager (no live server) ───────────────────────────────────────────────
+// -- LspManager without live server --
 
 #[test]
 fn manager_poll_with_no_clients_returns_empty() {
@@ -648,7 +648,7 @@ fn process_is_running(pid: u32) -> bool {
     }
 }
 
-// ── route_response integration (via public mod_fns) ──────────────────────────
+// -- route_response integration --
 
 #[test]
 fn route_definition_response_with_locations() {
@@ -891,7 +891,7 @@ fn route_unknown_notification_returns_none() {
 
 #[test]
 fn route_initialize_response_returns_none() {
-    // initialize is handled internally (sends initialized notification) — no LspMessage
+    // Initialize is handled internally and emits no LspMessage.
     let msg = super::mod_fns::route_response_pub(
         "initialize",
         None,
@@ -906,7 +906,7 @@ fn route_unknown_method_returns_none() {
     assert!(msg.is_none());
 }
 
-// ── hover soft-wrap ───────────────────────────────────────────────────────────
+// -- hover soft-wrap --
 
 #[test]
 fn hover_long_line_wraps_within_width() {
@@ -948,11 +948,9 @@ fn hover_short_content_stays_on_one_line() {
 
 #[test]
 fn hover_cjk_content_wraps_by_display_width() {
-    // "你好" is 2 CJK chars, display width 4 each -> total 4.
-    // At width 3 the word cannot be split further so it stays alone on a line.
+    // Two CJK characters occupy width 4 and fit within width 5.
+    // The word remains on its own line at width 3.
     let s = "你好 world";
     let wrapped = crate::render::wrap_text(s, 5);
-    // "你好" has display width 4 (fits in 5), "world" has width 5 (fits in 5)
-    // -> each word on its own line since 4+1+5 = 10 > 5
     assert_eq!(wrapped.len(), 2, "got: {:?}", wrapped);
 }

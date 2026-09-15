@@ -973,8 +973,7 @@ fn count_stats(chars: &[Character]) -> (usize, usize) {
     (newlines, byte_len)
 }
 
-/// Same as `count_stats`, but also returns the cumulative UTF-8 byte-length
-/// and newline-count prefix sums (length `chars.len() + 1` each).
+/// Returns cumulative UTF-8 byte-length and newline prefix sums.
 fn count_stats_with_prefixes(chars: &[Character]) -> (usize, usize, Vec<u32>, Vec<u32>) {
     let mut newlines: u32 = 0;
     let mut byte_len: u32 = 0;
