@@ -41,6 +41,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
         #[cfg(feature = "lsp")]
         self.lsp_notify_close(id);
+        self.clear_git_gutter_state(id);
         self.document_manager.remove_document(id)?;
         if let Some(doc_id) = self.document_manager.active_document_id() {
             self.split_tree.set_focused_document(doc_id);
