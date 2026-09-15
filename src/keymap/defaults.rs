@@ -72,6 +72,18 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Buffer("git_blame:close".to_string()),
     );
 
+    // GitLog buffer defaults
+    keymap.register(
+        KeyContext::GitLog,
+        Key::Enter,
+        Action::Buffer("git_log:toggle_expand".to_string()),
+    );
+    keymap.register(
+        KeyContext::GitLog,
+        Key::Escape,
+        Action::Buffer("git_log:close".to_string()),
+    );
+
     // GitStatus buffer Defaults â€” fugitive's in-buffer vocabulary.
     // Normal motions fall through to KeyContext::Normal via the fallback chain.
     keymap.register(
