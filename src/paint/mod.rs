@@ -1,5 +1,4 @@
-//! Intermediate paint representation between editor state and the render
-//! backend; see render_abstraction.md. `rasterize` turns a frame into `Layer` cells.
+//! Intermediate paint representation used to rasterize frames into layers.
 
 use crate::character::Character;
 use crate::color::Color;
@@ -22,8 +21,7 @@ pub struct PaintRow {
     pub runs: Vec<TextRun>,
 }
 
-/// Terminal cursor shape. Mirrors `crate::term::CursorShape`'s variants
-/// without depending on the `term` module, per the paint/ invariant above.
+/// Terminal cursor shape used by the paint layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorShape {
     SteadyBlock,
@@ -131,8 +129,7 @@ impl PaintFrame {
         });
     }
 
-    /// Paint `text` starting at `(row, start_col)`, one column per char.
-    /// Mirrors `Layer::write_str_colored`.
+    /// Paint text with one column per character.
     pub fn write_str_colored(
         &mut self,
         row: usize,

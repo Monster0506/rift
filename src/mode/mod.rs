@@ -26,8 +26,7 @@ pub enum Mode {
 }
 
 impl Mode {
-    /// Canonical lowercase name, e.g. for Lua plugin state.
-    /// `OperatorPending` reports as `"normal"` since plugins see no distinction.
+    /// Returns the lowercase mode name for Lua state. OperatorPending uses `"normal"`.
     pub fn as_str(self) -> &'static str {
         match self {
             Mode::Normal | Mode::OperatorPending => "normal",

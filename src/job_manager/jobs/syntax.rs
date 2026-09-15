@@ -32,8 +32,8 @@ pub struct SyntaxParseJob {
     language_name: String,
     document_id: u64,
     revision: u64,
-    /// Prior logical-bytes buffer and the single edit since it was captured,
-    /// if any — lets `run()` patch instead of a full `to_logical_bytes()` rebuild.
+    /// Prior logical-bytes buffer and the single edit since it was captured.
+    /// Lets `run()` patch instead of rebuilding the logical bytes.
     cached_logical_bytes: Option<Arc<Vec<u8>>>,
     single_edit: Option<InputEdit>,
     /// Keeps `parser`'s language's backing dynamic library alive for the job's

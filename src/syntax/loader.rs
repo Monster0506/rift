@@ -87,7 +87,7 @@ impl LanguageLoader {
                 return Some(name.clone());
             }
         }
-        // Built-in extension map (mirrors load_language_for_file).
+        // Built-in extension map.
         let name = match ext {
             "c" | "h" => "c",
             "cc" | "cpp" | "cxx" | "hpp" => "cpp",

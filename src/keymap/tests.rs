@@ -394,11 +394,8 @@ fn test_ctrl_w_ctrl_hjkl_match_ctrl_w_hjkl() {
 
 #[test]
 fn test_ctrl_w_ctrl_shift_hjkl_match_ctrl_w_hjkl() {
-    // Regression: on backends that report Shift independently of Ctrl
-    // (Windows), <C-w>H typed fast enough that Ctrl is still physically
-    // held for the H keystroke produces Key::CtrlShift(b'h'), not
-    // Key::Char('H') or Key::Ctrl(b'h'). Without this alias the chord
-    // would silently fail to match anything.
+    // Backends can emit CtrlShift for fast Ctrl-W chords.
+    // The alias keeps Ctrl-W H/J/K/L navigation available.
     let mut map = KeyMap::new();
     register_defaults(&mut map);
     let ww = Key::Ctrl(b'w');

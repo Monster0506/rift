@@ -681,8 +681,6 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// `:Git <args>` escape hatch: run an arbitrary git subcommand and show its output. View-only; no `--no-ext-diff`, so a configured `diff.external` etc. is respected for anything that falls through. Fugitive convention: bare `:Git`/`:G` opens the status buffer, bare `:Git log` opens the log browser, bare `:Git.
-    /// `:Git <args>` escape hatch: run an arbitrary git subcommand and show its output. View-only; no `--no-ext-diff`, so a configured `diff.external` etc. is respected for anything that falls through. Fugitive convention: bare `:Git`/`:G` opens the status buffer, bare `:Git log` opens the log browser, bare `:Git.
-    /// `:Git <args>` escape hatch: run an arbitrary git subcommand and show its output. View-only; no `--no-ext-diff`, so a configured `diff.external` etc. is respected for anything that falls through. Fugitive convention: bare `:Git`/`:G` opens the status buffer, bare `:Git log` opens the log browser, bare `:Git.
     pub fn run_git_command(&mut self, args: String) {
         let trimmed = args.trim();
         if trimmed.is_empty() {
@@ -708,11 +706,16 @@ impl<T: TerminalBackend> Editor<T> {
             self.open_git_status_expand_all(true);
             return;
         }
+        // `blame <path>` opens the structured view. Flag arguments use the raw command output path.
         if trimmed == "blame"
             || (trimmed.starts_with("blame ") && !trimmed[6..].trim_start().starts_with('-'))
         {
             let path_arg = trimmed.strip_prefix("blame").unwrap().trim();
-            let arg = (!path_arg.is_empty()).then_some(path_arg);
+            let arg = if path_arg.is_empty() {
+                None
+            } else {
+                Some(path_arg)
+            };
             if let Some((path, repo_root)) = self.resolve_git_blame_target(arg) {
                 self.open_git_blame(path, repo_root);
             }
@@ -736,8 +739,9 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
+        let origin_doc_id = self.active_document_id();
         let job = crate::job_manager::jobs::git::GitCommandJob::new(
-            self.active_document_id() as usize,
+            origin_doc_id as usize,
             repo_root,
             args,
         );
@@ -824,6 +828,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
+
     /// `g?` in a git status/log/blame/rebase-todo buffer: open a read-only
     /// scratch buffer listing that buffer's key reference.
     pub(super) fn open_git_help(&mut self) {

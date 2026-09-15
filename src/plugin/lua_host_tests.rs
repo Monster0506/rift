@@ -705,7 +705,7 @@ fn test_register_action_tagged_with_plugin() {
 #[test]
 fn test_execute_action_still_works_after_ownership_change() {
     let host = make_host();
-    // register_action now stores {fn, plugin} — execute_action must unwrap correctly.
+    // register_action stores {fn, plugin}; execute_action unwraps it.
     assert!(host
         .exec("rift.register_action('ping', function() rift.notify('info', 'pong') end)")
         .is_none());

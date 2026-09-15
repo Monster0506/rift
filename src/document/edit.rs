@@ -143,15 +143,8 @@ impl Document {
     }
 
     pub fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
-        // Read-only enforcement lives at the command-dispatch level
-        // (execute_buffer_command/handle_mode_management/operators/paste),
-        // not here: several read-only buffers (GitRebaseTodo, in
-        // particular) legitimately call this internally to rebuild their
-        // own rendered content via begin_transaction/insert_str/
-        // commit_transaction, for real undo tracking on their structural
-        // actions. A guard here would silently no-op that.
-        // Count newlines before inserting so we can update annotation line numbers
-        // (all buffers, so line-anchored annotations track multi-line inserts).
+        // Dispatch handles read-only edits; internal rendering needs undo tracking.
+        // Count newlines to shift line annotations after multi-line inserts.
         let newline_count = s.chars().filter(|&c| c == '\n').count();
         let line_before_insert = if newline_count > 0 {
             Some(self.buffer.get_line())
@@ -491,8 +484,7 @@ impl Document {
 
     /// Delete a range of characters, integrating with the undo system.
     pub fn delete_range(&mut self, start: usize, end: usize) -> Result<(), RiftError> {
-        // See `insert_str`: read-only enforcement lives at the
-        // command-dispatch level, not here.
+        // Command dispatch prevents user edits of read-only buffers.
         if start >= end {
             return Ok(());
         }

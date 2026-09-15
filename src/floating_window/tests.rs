@@ -55,7 +55,7 @@ fn test_floating_window_render_multiline() {
     // Check top-left corner has border character
     let cell = layer.get_cell(row as usize, col as usize);
     assert!(cell.is_some());
-    // Should be top-left corner: ╭
+    // Expect the top-left border corner.
     assert_eq!(cell.unwrap().content, Character::from('╭'));
 
     // Check content row (first content at row+1, col+1)

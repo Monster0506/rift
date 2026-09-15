@@ -60,106 +60,7 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::ExplorerToggleHidden),
     );
 
-    // GitBlame buffer defaults
-    keymap.register(
-        KeyContext::GitBlame,
-        Key::Enter,
-        Action::Buffer("git_blame:walk_back".to_string()),
-    );
-    keymap.register(
-        KeyContext::GitBlame,
-        Key::Escape,
-        Action::Buffer("git_blame:close".to_string()),
-    );
-
-    // GitRebaseTodo buffer Defaults
-    keymap.register(
-        KeyContext::GitRebaseTodo,
-        Key::Char('X'),
-        Action::Editor(EditorAction::GitRebaseAbort),
-    );
-    keymap.register(
-        KeyContext::GitRebaseTodo,
-        Key::Char('K'),
-        Action::Editor(EditorAction::GitRebaseMoveUp),
-    );
-    keymap.register(
-        KeyContext::GitRebaseTodo,
-        Key::Char('J'),
-        Action::Editor(EditorAction::GitRebaseMoveDown),
-    );
-    keymap.register(
-        KeyContext::GitRebaseTodo,
-        Key::Char('p'),
-        Action::Editor(EditorAction::GitRebaseSetPick),
-    );
-    keymap.register(
-        KeyContext::GitRebaseTodo,
-        Key::Char('s'),
-        Action::Editor(EditorAction::GitRebaseSetSquash),
-    );
-    keymap.register(
-        KeyContext::GitRebaseTodo,
-        Key::Char('f'),
-        Action::Editor(EditorAction::GitRebaseSetFixup),
-    );
-    keymap.register(
-        KeyContext::GitRebaseTodo,
-        Key::Char('e'),
-        Action::Editor(EditorAction::GitRebaseSetEdit),
-    );
-    keymap.register_sequence(
-        KeyContext::GitRebaseTodo,
-        vec![Key::Char('d'), Key::Char('d')],
-        Action::Editor(EditorAction::GitRebaseDrop),
-    );
-    keymap.register(
-        KeyContext::GitRebaseTodo,
-        Key::Enter,
-        Action::Editor(EditorAction::GitRebaseToggleFold),
-    );
-    keymap.register(
-        KeyContext::GitRebaseTodo,
-        Key::Char('='),
-        Action::Editor(EditorAction::GitRebaseToggleFold),
-    );
-    keymap.register(
-        KeyContext::GitRebaseTodo,
-        Key::Char('c'),
-        Action::Editor(EditorAction::GitRebaseOpenMessage),
-    );
-    keymap.register(
-        KeyContext::GitRebaseTodo,
-        Key::Char('r'),
-        Action::Editor(EditorAction::GitRebaseOpenMessage),
-    );
-
-    // GitLog buffer defaults
-    keymap.register(
-        KeyContext::GitLog,
-        Key::Enter,
-        Action::Buffer("git_log:toggle_expand".to_string()),
-    );
-    keymap.register(
-        KeyContext::GitLog,
-        Key::Escape,
-        Action::Buffer("git_log:close".to_string()),
-    );
-
-    for context in [
-        KeyContext::GitStatus,
-        KeyContext::GitBlame,
-        KeyContext::GitLog,
-        KeyContext::GitRebaseTodo,
-    ] {
-        keymap.register_sequence(
-            context,
-            vec![Key::Char('g'), Key::Char('?')],
-            Action::Editor(EditorAction::GitHelp),
-        );
-    }
-
-    // GitStatus buffer Defaults â€” fugitive's in-buffer vocabulary.
+    // GitStatus buffer Defaults;  fugitive's in-buffer vocabulary.
     // Normal motions fall through to KeyContext::Normal via the fallback chain.
     keymap.register(
         KeyContext::GitStatus,
@@ -230,6 +131,11 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         KeyContext::GitStatus,
         vec![Key::Char('c'), Key::Char('f')],
         Action::Editor(EditorAction::GitCommitFixup),
+    );
+    keymap.register_sequence(
+        KeyContext::GitStatus,
+        vec![Key::Char('g'), Key::Char('?')],
+        Action::Editor(EditorAction::GitHelp),
     );
 
     // UndoTree buffer Defaults
@@ -1068,6 +974,112 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         KeyContext::Normal,
         vec![Key::Char(' '), Key::Char('g')],
         Action::Editor(EditorAction::GitStatus),
+    );
+
+    // GitRebaseTodo buffer Defaults
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('X'),
+        Action::Editor(EditorAction::GitRebaseAbort),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('K'),
+        Action::Editor(EditorAction::GitRebaseMoveUp),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('J'),
+        Action::Editor(EditorAction::GitRebaseMoveDown),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('p'),
+        Action::Editor(EditorAction::GitRebaseSetPick),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('s'),
+        Action::Editor(EditorAction::GitRebaseSetSquash),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('f'),
+        Action::Editor(EditorAction::GitRebaseSetFixup),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('e'),
+        Action::Editor(EditorAction::GitRebaseSetEdit),
+    );
+    keymap.register_sequence(
+        KeyContext::GitRebaseTodo,
+        vec![Key::Char('d'), Key::Char('d')],
+        Action::Editor(EditorAction::GitRebaseDrop),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Enter,
+        Action::Editor(EditorAction::GitRebaseToggleFold),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('='),
+        Action::Editor(EditorAction::GitRebaseToggleFold),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('c'),
+        Action::Editor(EditorAction::GitRebaseOpenMessage),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('r'),
+        Action::Editor(EditorAction::GitRebaseOpenMessage),
+    );
+    keymap.register_sequence(
+        KeyContext::GitRebaseTodo,
+        vec![Key::Char('g'), Key::Char('?')],
+        Action::Editor(EditorAction::GitHelp),
+    );
+
+    // GitBlame buffer Defaults
+    keymap.register(
+        KeyContext::GitBlame,
+        Key::Enter,
+        Action::Buffer("git_blame:walk_back".to_string()),
+    );
+    keymap.register_sequence(
+        KeyContext::GitBlame,
+        vec![Key::Char('g'), Key::Char('?')],
+        Action::Editor(EditorAction::GitHelp),
+    );
+    keymap.register(
+        KeyContext::GitBlame,
+        Key::Escape,
+        Action::Buffer("git_blame:close".to_string()),
+    );
+
+    // GitLog buffer Defaults
+    keymap.register(
+        KeyContext::GitLog,
+        Key::Enter,
+        Action::Buffer("git_log:select".to_string()),
+    );
+    keymap.register_sequence(
+        KeyContext::GitLog,
+        vec![Key::Char('g'), Key::Char('?')],
+        Action::Editor(EditorAction::GitHelp),
+    );
+    keymap.register(
+        KeyContext::GitLog,
+        Key::Char('='),
+        Action::Buffer("git_log:toggle_expand".to_string()),
+    );
+    keymap.register(
+        KeyContext::GitLog,
+        Key::Char('r'),
+        Action::Editor(EditorAction::GitRebaseFromLogCommit),
     );
 
     // Location list panel bindings (diagnostics / references)

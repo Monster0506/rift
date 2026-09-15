@@ -136,7 +136,7 @@ fn test_saved_current_node_shows_current_marker() {
     tree.nodes.insert(0, create_dummy_node(0, None, "Original"));
     tree.nodes.insert(1, create_dummy_node(1, Some(0), "Edit"));
 
-    // Node is both saved and current — current wins
+    // Node is both saved and current; current wins.
     tree.saved_seq = 1;
     tree.current = 1;
 
@@ -160,7 +160,7 @@ fn test_root_saved_no_marker() {
     tree.nodes.insert(0, create_dummy_node(0, None, "Original"));
     tree.nodes.insert(1, create_dummy_node(1, Some(0), "Edit"));
 
-    // saved_seq == root_seq — should not show 'S' on root
+    // saved_seq equals root_seq, so the root has no 'S' marker.
     tree.saved_seq = 0;
     tree.current = 1;
 

@@ -19,7 +19,7 @@ pub struct InjectedLayer {
     pub cached_highlights: Arc<IntervalTree<u32>>,
     /// Byte ranges in the host document covered by this layer.
     pub byte_ranges: Vec<std::ops::Range<usize>>,
-    /// Keeps a dynamically loaded `language`'s backing library alive (see `RawLib`).
+    /// Keeps a dynamic language library loaded while the layer uses it.
     pub lib: Option<Arc<super::loader::RawLib>>,
 }
 
