@@ -15,8 +15,7 @@ use crate::mode::Mode;
 use crate::status::StatusBar;
 use crate::term::CursorShape;
 
-/// One window's persistent paint state in multi-window rendering - see
-/// `RenderSystem::window_paint_caches`.
+/// Persistent paint state for one window in multi-window rendering.
 #[derive(Debug)]
 pub(crate) struct WindowPaintCache {
     pub(crate) frame: crate::paint::PaintFrame,
@@ -112,10 +111,10 @@ pub struct RenderSystem {
     cursor_animator: crate::cursor::CursorAnimator,
 
     /// Reused across `render_content_to_layer[_offset]` calls instead of
-    /// allocating a fresh `PaintFrame` every call - see `PaintFrame::reset`.
+    /// Reuses a persistent `PaintFrame` instead of allocating one per call.
     pub(crate) content_paint_frame: crate::paint::PaintFrame,
     /// Identity of the last successful single-window content paint, enabling
-    /// a dirty-row scroll blit on the next call - see `ContentBlitKey`.
+    /// Tracks content changes that allow a dirty-row scroll blit.
     pub(crate) content_blit_key: Option<crate::render::ContentBlitKey>,
     /// One persistent paint frame + blit key per visible split window,
     /// keyed by `WindowId` - lets each window reuse the skip/blit machinery.
@@ -487,6 +486,7 @@ impl RenderSystem {
             capture_map: state.capture_map,
             injection_highlights: state.injection_highlights,
             custom_highlights: state.custom_highlights,
+            git_gutter_colors: state.git_gutter_colors,
             plugin_highlights: state.plugin_highlights,
             annotation_styles: state.annotation_styles,
             annotation_adornments: state.annotation_adornments,
@@ -583,7 +583,7 @@ impl RenderSystem {
                             },
                         );
 
-                        // `offset` is a char count (see CommandLine::render_to_layer); convert
+                        // `offset` counts characters; convert it to terminal columns before rendering.
                         // the byte-offset cursor to match so the column math stays consistent.
                         let cursor_char = state
                             .content
