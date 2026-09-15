@@ -2812,7 +2812,6 @@ fn make_git_status_doc(entries: Vec<crate::git::status::StatusEntry>) -> Documen
     doc
 }
 
-
 #[test]
 fn populate_git_status_buffer_renders_sections_and_codes() {
     let doc = make_git_status_doc(vec![
@@ -2830,7 +2829,10 @@ fn populate_git_status_buffer_renders_sections_and_codes() {
     assert!(text.contains("M b.rs"));
     assert!(text.contains("Untracked files (1)"));
     assert!(text.contains("c.rs"));
-    assert!(!text.contains("  M c.rs"), "untracked entries show no status code");
+    assert!(
+        !text.contains("  M c.rs"),
+        "untracked entries show no status code"
+    );
 }
 
 #[test]

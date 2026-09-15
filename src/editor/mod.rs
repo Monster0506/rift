@@ -14,6 +14,7 @@ mod context_impl;
 mod document_ops;
 mod explorer;
 mod file_ops;
+mod git_blame;
 mod git_status;
 mod handle_action;
 mod history;
