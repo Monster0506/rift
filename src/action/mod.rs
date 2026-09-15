@@ -455,6 +455,26 @@ pub enum EditorAction {
     GitCommitAmend,
     /// `cf` in the status buffer: `git commit --fixup=HEAD` from staged changes.
     GitCommitFixup,
+    /// `r` on a commit in the Log buffer: start a rebase from that commit
+    /// onward (base = its parent).
+    GitRebaseFromLogCommit,
+    /// Abort an in-progress rebase and return to the original branch.
+    GitRebaseAbort,
+    /// `K`/`J` on a rebase-todo commit: move it up/down one slot.
+    GitRebaseMoveUp,
+    GitRebaseMoveDown,
+    /// `p`/`s`/`f`/`e` on a rebase-todo commit: set its verb directly.
+    GitRebaseSetPick,
+    GitRebaseSetSquash,
+    GitRebaseSetFixup,
+    GitRebaseSetEdit,
+    /// `dd` on a rebase-todo commit: drop it from the plan.
+    GitRebaseDrop,
+    /// `Enter`/`=` on a rebase-todo commit: toggle its inline body preview.
+    GitRebaseToggleFold,
+    /// `c`/`r` on a rebase-todo commit: open its message in the reword
+    /// sub-editor (planning-time;  nothing's cherry-picked yet).
+    GitRebaseOpenMessage,
 }
 
 /// Represents an action in the editor

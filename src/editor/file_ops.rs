@@ -49,6 +49,9 @@ impl<T: TerminalBackend> Editor<T> {
                 BufferKind::GitCommitMessage { .. } => {
                     self.apply_git_commit_message();
                 }
+                BufferKind::GitRebaseTodo { .. } => {
+                    self.apply_git_rebase_todo();
+                }
                 BufferKind::Clipboard { .. } => {
                     self.apply_clipboard_diff();
                 }
@@ -64,8 +67,7 @@ impl<T: TerminalBackend> Editor<T> {
                 | BufferKind::Scratch { .. }
                 | BufferKind::GitStatus { .. }
                 | BufferKind::GitBlame { .. }
-                | BufferKind::GitLog { .. }
-                | BufferKind::GitRebaseTodo { .. } => {
+                | BufferKind::GitLog { .. } => {
                     self.state.handle_error(RiftError::new(
                         ErrorType::Io,
                         "CANT_SAVE",
