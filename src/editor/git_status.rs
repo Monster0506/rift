@@ -824,4 +824,88 @@ impl<T: TerminalBackend> Editor<T> {
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
+    /// `g?` in a git status/log/blame/rebase-todo buffer: open a read-only
+    /// scratch buffer listing that buffer's key reference.
+    pub(super) fn open_git_help(&mut self) {
+        let Some(lines) = git_help_lines(&self.active_document().kind) else {
+            return;
+        };
+        let id = self.document_manager.next_id();
+        let doc = match crate::document::Document::new_scratch(id, "[Git Help]".to_string(), &lines)
+        {
+            Ok(mut d) => {
+                d.is_read_only = true;
+                d
+            }
+            Err(e) => {
+                self.state.handle_error(e);
+                return;
+            }
+        };
+        self.document_manager.add_document(doc);
+        if let Err(e) = self.document_manager.switch_to_document(id) {
+            self.state.handle_error(e);
+            return;
+        }
+        self.split_tree.set_focused_document(id);
+        self.sync_state_with_active_document();
+        let _ = self.force_full_redraw();
+    }
+}
+
+/// Key reference lines for `g?`, one per git buffer kind. `None` for anything else (the keymap only binds `g?` inside these four contexts, but a defensive default keeps this total). Terse, one line per key; same register as a vim `:help` table, not prose.
+fn git_help_lines(kind: &BufferKind) -> Option<Vec<String>> {
+    let text: &[&str] = match kind {
+        BufferKind::GitStatus { .. } => &[
+            "Git Status",
+            "",
+            "g?      help",
+            "s       stage",
+            "u       unstage",
+            "-       toggle stage",
+            "X       discard",
+            "=       toggle diff",
+            "]c [c   next/prev hunk",
+            "<CR>    expand / open Log (on HEAD line)",
+            "b       blame file",
+            "r       rebase onto upstream",
+            "cc      commit",
+            "ca cw   amend",
+            "cf      fixup!",
+            "j k     move",
+        ],
+        BufferKind::GitBlame { .. } => &[
+            "Git Blame",
+            "",
+            "g?      help",
+            "<CR>    blame parent",
+            "<Esc>   close",
+            "j k     move",
+        ],
+        BufferKind::GitLog { .. } => &[
+            "Git Log",
+            "",
+            "g?      help",
+            "<CR> =  toggle show",
+            "r       rebase from here",
+            "j k     move",
+        ],
+        BufferKind::GitRebaseTodo { .. } => &[
+            "Git Rebase Todo",
+            "",
+            "g?      help",
+            "K J     move commit up/down",
+            "p       pick",
+            "s       squash",
+            "f       fixup",
+            "e       edit",
+            "dd      drop",
+            "c r     reword (opens message editor)",
+            "<CR> =  toggle body preview",
+            "X       abort",
+            ":w      run",
+        ],
+        _ => return None,
+    };
+    Some(text.iter().map(|s| s.to_string()).collect())
 }

@@ -495,6 +495,10 @@ impl<T: TerminalBackend> Editor<T> {
                 self.git_rebase_open_message_editor();
                 true
             }
+            EditorAction::GitHelp => {
+                self.open_git_help();
+                true
+            }
             EditorAction::OpenUndoTree => {
                 self.open_undotree_split();
                 true

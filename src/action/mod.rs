@@ -475,6 +475,9 @@ pub enum EditorAction {
     /// `c`/`r` on a rebase-todo commit: open its message in the reword
     /// sub-editor (planning-time;  nothing's cherry-picked yet).
     GitRebaseOpenMessage,
+    /// `g?` in any git buffer (status/log/blame/rebase todo): show its key
+    /// reference as a scratch buffer.
+    GitHelp,
 }
 
 /// Represents an action in the editor
