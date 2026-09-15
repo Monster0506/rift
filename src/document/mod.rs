@@ -69,28 +69,20 @@ pub struct DirectoryDiff {
     pub creates: Vec<String>,
 }
 
-/// A single git-state mutation, run directly by a `GitStatus` buffer's
-/// cursor actions (`s`/`u`/`X`/`=`'s stage/unstage/discard verbs). Unmerged
-/// entries never produce an action here (conflict resolution is out of
-/// scope; see GIT_INTEGRATION_PLAN.md).
+/// A git-state mutation invoked by GitStatus cursor actions. Unmerged entries require conflict resolution and have no action.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitStatusAction {
     /// `git add -- path` (untracked or unstaged -> staged, whole file).
     Stage(PathBuf),
     /// `git restore --staged -- path` (staged -> unstaged, whole file).
     Unstage(PathBuf),
-    /// Revert all changes to `path`: tracked files via `git restore --staged
-    /// --worktree` (also restoring `orig_path`, if this was a rename), untracked
-    /// files by deleting them from disk.
+    /// Revert all changes to `path`: tracked files via `git restore --staged --worktree` (also restoring `orig_path`, if this was a rename), untracked files by deleting them from disk.
     Discard {
         path: PathBuf,
         orig_path: Option<PathBuf>,
         was_untracked: bool,
     },
-    /// Apply exactly this hunk to the index (`git apply --cached`): a hunk
-    /// block moved from the Unstaged section into Staged, or a portion of
-    /// an untracked file's content (`is_new_file`: no index entry exists
-    /// for `path` yet, so the patch needs a "new file" header).
+    /// Apply exactly this hunk to the index (`git apply --cached`): a hunk block moved from the Unstaged section into Staged, or a portion of an untracked file's content (`is_new_file`: no index entry exists for `path` yet, so the patch needs a "new file" header).
     StageHunk {
         path: PathBuf,
         hunk: crate::git::diff::Hunk,
@@ -102,10 +94,7 @@ pub enum GitStatusAction {
         path: PathBuf,
         hunk: crate::git::diff::Hunk,
     },
-    /// Reverse-apply this hunk to discard it entirely: for a staged hunk
-    /// (`staged_side: true`), reverts both the index (`git apply --cached -R`)
-    /// and the worktree (`git apply -R`); for an unstaged hunk, reverts only
-    /// the worktree (`git apply -R`).
+    /// Reverse-apply this hunk to discard it entirely: for a staged hunk (`staged_side: true`), reverts both the index (`git apply --cached -R`) and the worktree (`git apply -R`); for an unstaged hunk, reverts only the worktree (`git apply -R`).
     DiscardHunk {
         path: PathBuf,
         hunk: crate::git::diff::Hunk,
@@ -176,15 +165,10 @@ pub enum BufferKind {
     /// `gv` regions window: a read-only list of the active document's
     /// banked `SelectionSet`, one line per region.
     Regions { source_doc_id: DocumentId },
-    /// Interactive buffer-list split panel: one line per open buffer.
-    /// `entries[line]` is the DocumentId shown on that line.
-    BufferList { entries: Vec<DocumentId> },
     /// Plugin-created in-memory buffer with no disk path (`rift.create_scratch_buf`).
     /// `title` is shown as the tab label in place of a filename.
     Scratch { title: String },
-    /// Git status buffer: staged/unstaged/untracked/unmerged files. Read-only
-    /// â€” changes happen only through its key actions (`s`/`u`/`X`/`=`/`c...`),
-    /// never by editing the rendered text.
+    /// Git status buffer: staged/unstaged/untracked/unmerged files. Read-only; changes happen only through its key actions (`s`/`u`/`X`/`=`/`c...`), never by editing the rendered text.
     GitStatus {
         repo_root: PathBuf,
         /// Snapshot of the status listing at the last populate/refresh.
@@ -192,9 +176,7 @@ pub enum BufferKind {
         /// Diff hunks fetched for currently-expanded entries, keyed by
         /// `(path, staged_side)` (`staged_side` = hunks came from `git diff --cached`).
         expanded_diffs: std::collections::HashMap<(PathBuf, bool), Vec<crate::git::diff::Hunk>>,
-        /// HEAD's subject line, for the `HEAD <sha> <subject>` header
-        /// summary (Enter on it opens the Log browser). `None` on an
-        /// unborn branch with no commits yet.
+        /// HEAD's subject line, for the `HEAD <sha> <subject>` header summary (Enter on it opens the Log browser). `None` on an unborn branch with no commits yet.
         head_subject: Option<String>,
     },
     /// Commit message buffer; `:w`/`:wq` commits.
@@ -202,6 +184,49 @@ pub enum BufferKind {
         repo_root: PathBuf,
         target: GitCommitTarget,
     },
+    /// `git blame` view for a file. Read-only navigation walks to a commit parent and opens in an adjacent split.
+    GitBlame {
+        repo_root: PathBuf,
+        linked_doc_id: DocumentId,
+        path: PathBuf,
+        /// Ancestor commit currently being blamed at, if walked back from HEAD/worktree.
+        at_commit: Option<String>,
+        lines: Vec<crate::git::blame::BlameLine>,
+    },
+    /// `git log` browser for the repository (or scoped to one `path`). `=` expands a commit's `git show` inline, the same mechanism as status-buffer hunk expansion. Read-only, pure navigation.
+    GitLog {
+        repo_root: PathBuf,
+        path: Option<PathBuf>,
+        commits: Vec<crate::git::log::CommitSummary>,
+        /// SHA of the commit currently expanded inline, if any.
+        expanded: Option<String>,
+        /// Cached `git show` body for `expanded`, so re-collapsing/expanding
+        /// the same commit doesn't re-fetch.
+        expanded_body: Option<String>,
+    },
+    /// Rebase todo: a `pick`/`squash`/`fixup`/`reword`/`edit` plan for `base..saved_head`, rendered from `steps`/`message_overrides`/ `expanded_bodies` (the buffer's text is a derived view, not the source of truth; `K`/`J`/verb keys/`dd`/`c`/`r` mutate `steps` or `message_overrides` directly and re-render). `:w`.
+    GitRebaseTodo {
+        repo_root: PathBuf,
+        base: String,
+        /// Original branch tip before the rebase started, for `abort`.
+        saved_head: String,
+        /// Original branch name, moved to the new tip on completion.
+        branch: String,
+        pause: Option<crate::git::rebase::RebasePause>,
+        /// The plan, in execution order. Authoritative: `:w` runs this
+        /// list directly, it does not re-parse the rendered text.
+        steps: Vec<crate::git::rebase::RebaseStep>,
+        /// Per-commit full-message override (sha -> `<subject>\n\n<body>`), set via the `c`/`r` message sub-editor. A step with no entry here executes using its real, current commit message untouched.
+        message_overrides: std::collections::HashMap<String, String>,
+        /// Which commits currently have their body previewed inline (sha
+        /// set). Fresh entries start collapsed (not a member).
+        expanded_bodies: std::collections::HashSet<String>,
+        /// Cache of each commit's real body text (sha -> body, the part of the message after the subject line), fetched lazily the first time a commit is expanded with no override yet. Kept separate from `message_overrides` so merely *looking* at a commit never counts as editing it.
+        original_bodies: std::collections::HashMap<String, String>,
+    },
+    /// Interactive buffer-list split panel: one line per open buffer.
+    /// `entries[line]` is the DocumentId shown on that line.
+    BufferList { entries: Vec<DocumentId> },
 }
 
 /// What saving a `BufferKind::GitCommitMessage` buffer does.
@@ -211,6 +236,13 @@ pub enum GitCommitTarget {
     New,
     /// `git commit --amend -F <file>`.
     Amend,
+    /// Message for a paused rebase `reword` step: saving amends the just-cherry-picked commit with this message, then resumes `rebase_doc_id`'s remaining steps.
+    RebaseReword { rebase_doc_id: DocumentId },
+    /// Message for a commit still being planned in `rebase_doc_id` (not cherry-picked yet; the rebase hasn't started). Saving updates that todo's `message_overrides` for `sha` and returns to it; no git command runs here at all.
+    RebasePlanReword {
+        rebase_doc_id: DocumentId,
+        sha: String,
+    },
 }
 
 impl BufferKind {
@@ -230,6 +262,9 @@ impl BufferKind {
             BufferKind::Scratch { .. } => "scratch",
             BufferKind::GitStatus { .. } => "git_status",
             BufferKind::GitCommitMessage { .. } => "git_commit_message",
+            BufferKind::GitBlame { .. } => "git_blame",
+            BufferKind::GitLog { .. } => "git_log",
+            BufferKind::GitRebaseTodo { .. } => "git_rebase_todo",
         }
     }
 }
@@ -292,7 +327,7 @@ pub struct Document {
     /// Undo stack parallel to the edit history; one entry per standalone
     /// edit or committed transaction.
     annotation_undo_stack: Vec<AnnotationUndo>,
-    /// Redo stack, mirror of the undo stack.
+    /// Redo annotations paired with the edit-history redo stack.
     annotation_redo_stack: Vec<AnnotationUndo>,
     /// Monotonic edit sequence number, incremented once per applied edit.
     /// Lets producers reconcile stale annotation positions.
@@ -559,11 +594,6 @@ impl Document {
         matches!(self.kind, BufferKind::Regions { .. })
     }
 
-    /// Check if this document is the interactive buffer-list panel.
-    pub fn is_buffer_list(&self) -> bool {
-        matches!(self.kind, BufferKind::BufferList { .. })
-    }
-
     /// Whether deletes on this buffer may defer through a ghost-cut annotation
     pub fn ghost_cut_allowed(&self) -> bool {
         !matches!(
@@ -574,8 +604,10 @@ impl Document {
                 | BufferKind::Messages { .. }
                 | BufferKind::Clipboard { .. }
                 | BufferKind::UndoTree { .. }
-                | BufferKind::BufferList { .. }
                 | BufferKind::GitStatus { .. }
+                | BufferKind::GitBlame { .. }
+                | BufferKind::GitLog { .. }
+                | BufferKind::GitRebaseTodo { .. }
         )
     }
 
@@ -584,6 +616,25 @@ impl Document {
         matches!(self.kind, BufferKind::GitStatus { .. })
     }
 
+    /// Check if this document is a git rebase todo buffer.
+    pub fn is_git_rebase_todo(&self) -> bool {
+        matches!(self.kind, BufferKind::GitRebaseTodo { .. })
+    }
+
+    /// Check if this document is a git blame buffer.
+    pub fn is_git_blame(&self) -> bool {
+        matches!(self.kind, BufferKind::GitBlame { .. })
+    }
+
+    /// Check if this document is a git log buffer.
+    pub fn is_git_log(&self) -> bool {
+        matches!(self.kind, BufferKind::GitLog { .. })
+    }
+
+    /// Check if this document is the interactive buffer-list panel.
+    pub fn is_buffer_list(&self) -> bool {
+        matches!(self.kind, BufferKind::BufferList { .. })
+    }
 
     /// Check if this document is any clipboard-related buffer
     pub fn is_any_clipboard(&self) -> bool {

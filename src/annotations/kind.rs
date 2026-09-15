@@ -65,17 +65,20 @@ pub mod well_known {
     /// One line of a `BufferKind::GitStatus` buffer naming a tracked/untracked
     /// path and the section it belonged to at populate/expand time.
     pub const GIT_STATUS_ENTRY: &str = "git.status_entry";
-    /// The `HEAD <sha> <subject>` summary line at the top of a
-    /// `BufferKind::GitStatus` buffer. Interactive: Enter opens the Log
-    /// browser.
+    /// The `HEAD <sha> <subject>` summary line at the top of a `BufferKind::GitStatus` buffer. Interactive: Enter opens the Log browser.
     pub const GIT_STATUS_HEAD: &str = "git.status_head";
     /// A hunk header line (`@@ ... @@`) inside an expanded status-buffer entry,
     /// anchoring the whole hunk block for the `s`/`u`/`X` cursor actions.
     pub const GIT_HUNK: &str = "git.hunk";
-    /// One `+`/`-` content line inside an expanded status-buffer hunk,
-    /// anchoring per-line stage/unstage/discard for the `s`/`u`/`X` cursor
-    /// actions (context lines get no annotation â€” nothing to select).
+    /// One `+`/`-` content line inside an expanded status-buffer hunk, anchoring per-line stage/unstage/discard for the `s`/`u`/`X` cursor actions (context lines get no annotation; nothing to select).
     pub const GIT_HUNK_LINE: &str = "git.hunk_line";
+    /// One commit line of a `BufferKind::GitLog` browser buffer.
+    pub const GIT_LOG_COMMIT: &str = "git.log_commit";
+    /// The head line of one commit in a `BufferKind::GitRebaseTodo` plan, tagging it with that commit's sha. Interactive, so `j`/`k` (via interface-mode snapping) can only land on head lines, never on a commit's inline body-preview lines.
+    pub const GIT_REBASE_STEP: &str = "git.rebase_step";
+    /// A per-line gutter-diff sign (add/change/delete), for tinting the
+    /// line-number gutter of a `File` buffer against its git index.
+    pub const GIT_GUTTER: &str = "git.gutter";
     pub const MARK_USER: &str = "mark.user";
     pub const UI_LINK: &str = "ui.link";
     pub const UI_BUTTON: &str = "ui.button";

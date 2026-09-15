@@ -35,10 +35,16 @@ pub enum KeyContext {
     Visual,
     /// `gv` regions list window. Falls through to Normal for j/k/etc.
     Regions,
-    /// Interactive buffer-list split panel. Falls through to `Normal` for j/k/etc.
-    BufferList,
     /// Git status buffer. Falls through to Normal for j/k/etc.
     GitStatus,
+    /// Git blame buffer. Falls through to Normal for j/k/etc.
+    GitBlame,
+    /// Git log browser buffer. Falls through to Normal for j/k/etc.
+    GitLog,
+    /// Git rebase todo buffer. Falls through to Normal for j/k/etc.
+    GitRebaseTodo,
+    /// Interactive buffer-list split panel. Falls through to `Normal` for j/k/etc.
+    BufferList,
 }
 
 /// KeyMap stores mappings from (Context, Key Sequence) -> Action
@@ -88,8 +94,11 @@ impl KeyMap {
             | KeyContext::ClipboardEntry
             | KeyContext::LocationList
             | KeyContext::Regions
-            | KeyContext::BufferList
-            | KeyContext::GitStatus => Some(KeyContext::Normal),
+            | KeyContext::GitStatus
+            | KeyContext::GitBlame
+            | KeyContext::GitLog
+            | KeyContext::GitRebaseTodo
+            | KeyContext::BufferList => Some(KeyContext::Normal),
             KeyContext::Terminal => Some(KeyContext::Global),
             KeyContext::TerminalNormal => Some(KeyContext::Normal),
             KeyContext::Normal | KeyContext::Insert | KeyContext::Command | KeyContext::Search => {
