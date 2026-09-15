@@ -437,9 +437,10 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn git_status_select(&mut self) {
         enum Selection {
             Hunk,
+            Head,
             File(PathBuf),
         }
-        let selection = {
+        let (selection, repo_root) = {
             let doc = self.active_document();
             let repo_root = match doc.git_repo_root() {
                 Some(r) => r.to_path_buf(),
@@ -449,15 +450,20 @@ impl<T: TerminalBackend> Editor<T> {
             let line = doc.buffer.line_index.get_line_at(cursor);
             let selection = if doc.annotations.git_hunk_at_line(line).is_some() {
                 Some(Selection::Hunk)
+            } else if doc.annotations.is_git_status_head_at_line(line) {
+                Some(Selection::Head)
             } else if let Some((path, ..)) = doc.annotations.git_status_entry_at_line(line) {
                 Some(Selection::File(repo_root.join(path)))
             } else {
                 None
             };
-            selection
+            (selection, repo_root)
         };
         match selection {
             Some(Selection::Hunk) => self.git_status_toggle_expand(),
+            Some(Selection::Head) => {
+                self.open_git_log(repo_root, None);
+            }
             Some(Selection::File(path)) => {
                 if let Err(e) = self.open_file(Some(path.display().to_string()), false) {
                     self.state.handle_error(e);
@@ -639,10 +645,22 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// `:Git <args>` escape hatch: run an arbitrary git subcommand and show its output. View-only; no `--no-ext-diff`, so a configured `diff.external` etc. is respected for anything that falls through. Fugitive convention: bare `:Git`/`:G` opens the status buffer, bare `:Git log` opens the log browser, bare `:Git.
     /// `:Git <args>` escape hatch: run an arbitrary git subcommand and show its output. View-only; no `--no-ext-diff`, so a configured `diff.external` etc. is respected for anything that falls through. Fugitive convention: bare `:Git`/`:G` opens the status buffer, bare `:Git log` opens the log browser, bare `:Git.
+    /// `:Git <args>` escape hatch: run an arbitrary git subcommand and show its output. View-only; no `--no-ext-diff`, so a configured `diff.external` etc. is respected for anything that falls through. Fugitive convention: bare `:Git`/`:G` opens the status buffer, bare `:Git log` opens the log browser, bare `:Git.
     pub fn run_git_command(&mut self, args: String) {
         let trimmed = args.trim();
         if trimmed.is_empty() {
             self.open_git_status();
+            return;
+        }
+        if trimmed == "log" {
+            let repo_root = match self.resolve_git_repo_root() {
+                Ok(root) => root,
+                Err(e) => {
+                    self.state.handle_error(e);
+                    return;
+                }
+            };
+            self.open_git_log(repo_root, None);
             return;
         }
         if trimmed == "diff" {
@@ -661,6 +679,17 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some((path, repo_root)) = self.resolve_git_blame_target(arg) {
                 self.open_git_blame(path, repo_root);
             }
+            return;
+        }
+        if trimmed == "show" {
+            let repo_root = match self.resolve_git_repo_root() {
+                Ok(root) => root,
+                Err(e) => {
+                    self.state.handle_error(e);
+                    return;
+                }
+            };
+            self.open_git_log_expand_head(repo_root);
             return;
         }
         let repo_root = match self.resolve_git_repo_root() {
