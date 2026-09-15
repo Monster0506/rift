@@ -49,14 +49,14 @@ impl<T: TerminalBackend> Editor<T> {
                 BufferKind::GitCommitMessage { .. } => {
                     self.apply_git_commit_message();
                 }
-                BufferKind::GitRebaseTodo { .. } => {
-                    self.apply_git_rebase_todo();
-                }
                 BufferKind::Clipboard { .. } => {
                     self.apply_clipboard_diff();
                 }
                 BufferKind::ClipboardEntry { .. } => {
                     self.apply_clipboard_entry_save();
+                }
+                BufferKind::GitRebaseTodo { .. } => {
+                    self.apply_git_rebase_todo();
                 }
                 BufferKind::UndoTree { .. }
                 | BufferKind::Terminal
@@ -65,9 +65,9 @@ impl<T: TerminalBackend> Editor<T> {
                 | BufferKind::Regions { .. }
                 | BufferKind::BufferList { .. }
                 | BufferKind::Scratch { .. }
-                | BufferKind::GitStatus { .. }
                 | BufferKind::GitBlame { .. }
-                | BufferKind::GitLog { .. } => {
+                | BufferKind::GitLog { .. }
+                | BufferKind::GitStatus { .. } => {
                     self.state.handle_error(RiftError::new(
                         ErrorType::Io,
                         "CANT_SAVE",
@@ -87,12 +87,7 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn do_save_and_quit(&mut self) {
         use crate::document::BufferKind;
-        // `do_save()` already dispatches correctly per `BufferKind` â€” every
-        // non-`File` special buffer (Directory/Clipboard/GitStatus/
-        // GitCommitMessage/GitRebaseTodo/...) saves synchronously, so there
-        // is no async job to wait on before quitting. Only `File` needs the
-        // job-based path below (must wait for the write to actually land on
-        // disk before exiting).
+        // `do_save()` already dispatches correctly per `BufferKind`; every non-`File` special buffer (Directory/Clipboard/GitStatus/ GitCommitMessage/GitRebaseTodo/...) saves synchronously, so there is no async job to wait on before quitting. Only `File` needs the job-based path below (must wait for the write to.
         let is_plain_file = matches!(
             self.document_manager.active_document().map(|d| &d.kind),
             Some(BufferKind::File)

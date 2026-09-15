@@ -20,7 +20,7 @@ fn patch_logical_bytes_insert_ascii() {
 
 #[test]
 fn patch_logical_bytes_insert_before_multibyte_run() {
-    // "café" = c(1) a(1) f(1) é(2 bytes). Insert right before the 'é'.
+    // Insert before the two-byte accented character.
     let mut buffer = TextBuffer::new(16).unwrap();
     buffer.insert_str("café").unwrap();
     let cached = buffer.to_logical_bytes();
@@ -38,7 +38,7 @@ fn patch_logical_bytes_insert_before_multibyte_run() {
 
 #[test]
 fn patch_logical_bytes_insert_after_multibyte_run() {
-    // Insert immediately after the 'é' in "café".
+    // Insert immediately after the two-byte accented character.
     let mut buffer = TextBuffer::new(16).unwrap();
     buffer.insert_str("café").unwrap();
     let cached = buffer.to_logical_bytes();
@@ -46,7 +46,7 @@ fn patch_logical_bytes_insert_after_multibyte_run() {
     buffer.set_cursor(4).unwrap();
     buffer.insert_str("Y").unwrap();
 
-    let start_byte = 5; // 'c','a','f' (3 bytes) + 'é' (2 bytes)
+    let start_byte = 5; // Three ASCII bytes plus the two-byte accented character.
     let patched = buffer
         .patch_logical_bytes(&cached, start_byte, start_byte, start_byte + 1)
         .expect("patch should succeed");
@@ -56,7 +56,7 @@ fn patch_logical_bytes_insert_after_multibyte_run() {
 
 #[test]
 fn patch_logical_bytes_delete_multibyte_char() {
-    // Delete the 3-byte CJK character in the middle of "a日b".
+    // Delete the three-byte CJK character in the middle.
     let mut buffer = TextBuffer::new(16).unwrap();
     buffer.insert_str("a日b").unwrap();
     let cached = buffer.to_logical_bytes();
@@ -72,7 +72,7 @@ fn patch_logical_bytes_delete_multibyte_char() {
 
 #[test]
 fn patch_logical_bytes_replace_spans_multiple_multibyte_chars() {
-    // Replace "日本" (two 3-byte CJK chars) inside "a日本b" with an emoji (4 bytes).
+    // Replace two three-byte CJK characters with a four-byte emoji.
     let mut buffer = TextBuffer::new(16).unwrap();
     buffer.insert_str("a日本b").unwrap();
     let cached = buffer.to_logical_bytes();
@@ -104,7 +104,7 @@ fn patch_logical_bytes_rejects_stale_cache() {
 
 #[test]
 fn patch_logical_bytes_rejects_non_char_boundary() {
-    // "日" is 3 bytes; splitting it mid-character must be rejected.
+    // Splitting a three-byte CJK character must be rejected.
     let mut buffer = TextBuffer::new(16).unwrap();
     buffer.insert_str("日").unwrap();
     let cached = buffer.to_logical_bytes();

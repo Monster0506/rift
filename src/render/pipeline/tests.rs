@@ -40,7 +40,7 @@ fn test_tab_layout() {
 #[test]
 fn test_tab_layout_wide_and_zero_width_unicode_chars() {
     // Non-ASCII must skip the ASCII width-1 fast path: CJK is width 2, combining mark width 0.
-    let input = chars("\u{4E2D}\u{0301}a").into_iter(); // '中' (CJK), combining acute, 'a'
+    let input = chars("\u{4E2D}\u{0301}a").into_iter(); // CJK, combining acute, and ASCII.
     let layout = TabLayout::new(input, 4);
     let items: Vec<LayoutItem> = layout.collect();
 
@@ -75,8 +75,7 @@ fn test_search_decorator() {
 
 #[test]
 fn test_search_decorator_multibyte_unicode() {
-    // "日本語": each char is 3 bytes in UTF-8, so char offset 2 ("語") is
-    // byte offset 6; match range 2..3 (chars) is byte range 6..9.
+    // Each CJK character uses three UTF-8 bytes; character offset 2 maps to bytes 6..9.
     let input = chars("日本語").into_iter();
     let matches = vec![SearchMatch { range: 2..3 }];
     let mut matches_idx = 0;
@@ -85,10 +84,10 @@ fn test_search_decorator_multibyte_unicode() {
     let items: Vec<RenderItem> = decorator.collect();
 
     assert_eq!(items.len(), 3);
-    // 日 and 本 should NOT be highlighted
+    // The first two characters should not be highlighted.
     assert!(items[0].bg.is_none(), "日 should not be highlighted");
     assert!(items[1].bg.is_none(), "本 should not be highlighted");
-    // 語 should be highlighted
+    // The final character should be highlighted.
     assert_eq!(items[2].fg, Some(Color::Black), "語 fg");
     assert_eq!(items[2].bg, Some(Color::Yellow), "語 bg");
 }
@@ -379,8 +378,8 @@ fn visible_chars(items: &[RenderItem]) -> String {
 
 #[test]
 fn test_line_source_renders_plain_directory_line() {
-    // After migration, directory buffer lines contain only visible chars — no annotation prefix.
-    // LineSource should yield all characters as-is.
+    // Directory buffers contain only visible characters.
+    // LineSource yields every character without annotation prefixes.
     let items = chars("hello.txt").into_iter();
     let collected: Vec<RenderItem> = items.collect();
     assert_eq!(collected.len(), 9);

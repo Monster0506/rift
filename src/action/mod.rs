@@ -380,7 +380,7 @@ pub enum EditorAction {
     },
     /// Enter char-pending state for r (next keypress replaces count chars at cursor)
     ReplaceCharPending,
-    /// Enter Replace mode (R:  each char overwrites instead of inserting)
+    /// Enter Replace mode (R: each char overwrites instead of inserting)
     EnterReplaceMode,
     /// LSP: go to definition under cursor (gd)
     LspGotoDefinition,
@@ -592,7 +592,7 @@ impl FromStr for Action {
             "editor:history_down" => Ok(Action::Editor(EditorAction::HistoryDown)),
             "editor:dot_repeat" => Ok(Action::Editor(EditorAction::DotRepeat)),
 
-            // Navigation / search (parameterised â€” must precede Buffer catch-all)
+            // Navigation / search (parameterised;  must precede Buffer catch-all)
             s if s.starts_with("editor:run:") => Ok(Action::Editor(EditorAction::RunCommand(
                 s["editor:run:".len()..].to_string(),
             ))),

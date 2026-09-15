@@ -516,7 +516,7 @@ impl SplitTree {
                     return true;
                 }
 
-                // No deeper match in this direction — adjust at this level.
+                // No deeper match in this direction, so adjust at this level.
                 if *d == direction {
                     // Translate the cell delta into a ratio delta via this split's
                     // on-screen span, so a keystroke resizes the same amount at any depth.

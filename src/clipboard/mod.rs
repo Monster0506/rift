@@ -181,7 +181,7 @@ pub fn read_system_clipboard_text() -> Option<String> {
     WORKER.get_or_init(ClipboardWorker::new).read()
 }
 
-/// System clipboard access is compiled out; callers see an always-empty clipboard.
+/// Returns None when system clipboard support is disabled.
 #[cfg(not(feature = "system_clipboard"))]
 pub fn read_system_clipboard_text() -> Option<String> {
     None

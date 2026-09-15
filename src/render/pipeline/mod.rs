@@ -517,8 +517,7 @@ impl<I: Iterator<Item = RenderItem>> Iterator for TabLayout<I> {
             self.tab_width - (self.visual_col % self.tab_width)
         } else {
             match item.char {
-                // Always printable ASCII here (see From<char> for Character), so
-                // always width 1 - skips the Unicode width-table lookup.
+                // ASCII Unicode characters are one cell wide.
                 Character::Unicode(c) if c.is_ascii() => 1,
                 Character::Unicode(c) => UnicodeWidthChar::width(c).unwrap_or(0),
                 Character::Byte(_) => 4,    // \xNN

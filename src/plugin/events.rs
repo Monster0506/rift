@@ -40,8 +40,8 @@ pub enum EditorEvent {
     /// A buffer was reloaded from disk (e.g. after an external change).
     BufReload { buf: DocumentId },
 
-    /// Coarse change notification — something in the buffer changed.
-    /// Cheap to fire; suitable for tools that just need to know "something changed".
+    /// Coarse change notification for a modified buffer.
+    /// Cheap to fire for tools that only need change awareness.
     TextChangedCoarse { buf: DocumentId },
 
     /// The cursor moved. Row and col are 0-indexed.

@@ -351,10 +351,8 @@ impl DisplayMap {
         self.rows.len() < row + extend_margin_rows + 1
     }
 
-    /// Patch the map against post-edit `buf` (`del` chars removed at `pos`,
-    /// `ins` inserted), rewrapping only the affected lines; false means rebuild.
-    /// `eol_rows` is the post-edit EOL-row line set; it must agree with the
-    /// old one outside the rewrapped region.
+    /// Patch only the affected lines after an edit; return false when rebuilding is required.
+    /// `eol_rows` must match unchanged lines outside the rewrapped region.
     pub fn apply_edit(
         &mut self,
         buf: &TextBuffer,

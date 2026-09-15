@@ -21,8 +21,7 @@ pub struct BufEntry {
 #[derive(Debug, Clone)]
 pub struct AnnotationView {
     pub id: u64,
-    /// Cheap `Arc` clone of the annotation's `Kind` - avoids a per-annotation
-    /// string allocation when materializing this snapshot (see `Kind`).
+    /// Cloning this Arc avoids allocating a string per annotation.
     pub kind: std::sync::Arc<str>,
     /// Owner tag, always one of a fixed literal set (`AnnotationOwner::as_str`),
     /// so no allocation is needed to carry it here.
