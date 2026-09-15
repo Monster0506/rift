@@ -42,6 +42,7 @@ impl<T: TerminalBackend> Editor<T> {
                 match kind {
                     BufferKind::Directory { .. } => self.handle_directory_buffer_action(id),
                     BufferKind::GitStatus { .. } => self.handle_git_status_buffer_action(id),
+                    BufferKind::GitBlame { .. } => self.handle_git_blame_buffer_action(id),
                     BufferKind::UndoTree { .. } => self.handle_undotree_buffer_action(id),
                     BufferKind::Messages { .. } => self.handle_messages_buffer_action(id),
                     BufferKind::Clipboard { .. } => self.handle_clipboard_buffer_action(id),

@@ -467,6 +467,13 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    /// `b` in the status buffer: blame the file under the cursor.
+    pub(super) fn git_status_blame_cursor(&mut self) {
+        if let Some((path, repo_root)) = self.resolve_git_blame_target(None) {
+            self.open_git_blame(path, repo_root);
+        }
+    }
+
     /// Dispatches a `git_status:*` `Action::Buffer` id.
     pub(super) fn handle_git_status_buffer_action(&mut self, id: &str) {
         match id {
@@ -478,6 +485,7 @@ impl<T: TerminalBackend> Editor<T> {
             "git_status:next_hunk" => self.git_status_navigate_hunk(true),
             "git_status:prev_hunk" => self.git_status_navigate_hunk(false),
             "git_status:select" => self.git_status_select(),
+            "git_status:blame" => self.git_status_blame_cursor(),
             _ => {}
         }
     }
@@ -630,6 +638,7 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     /// `:Git <args>` escape hatch: run an arbitrary git subcommand and show its output. View-only; no `--no-ext-diff`, so a configured `diff.external` etc. is respected for anything that falls through. Fugitive convention: bare `:Git`/`:G` opens the status buffer, bare `:Git log` opens the log browser, bare `:Git.
+    /// `:Git <args>` escape hatch: run an arbitrary git subcommand and show its output. View-only; no `--no-ext-diff`, so a configured `diff.external` etc. is respected for anything that falls through. Fugitive convention: bare `:Git`/`:G` opens the status buffer, bare `:Git log` opens the log browser, bare `:Git.
     pub fn run_git_command(&mut self, args: String) {
         let trimmed = args.trim();
         if trimmed.is_empty() {
@@ -644,6 +653,16 @@ impl<T: TerminalBackend> Editor<T> {
             self.open_git_status_expand_all(true);
             return;
         }
+        if trimmed == "blame"
+            || (trimmed.starts_with("blame ") && !trimmed[6..].trim_start().starts_with('-'))
+        {
+            let path_arg = trimmed.strip_prefix("blame").unwrap().trim();
+            let arg = (!path_arg.is_empty()).then_some(path_arg);
+            if let Some((path, repo_root)) = self.resolve_git_blame_target(arg) {
+                self.open_git_blame(path, repo_root);
+            }
+            return;
+        }
         let repo_root = match self.resolve_git_repo_root() {
             Ok(root) => root,
             Err(e) => {
@@ -651,13 +670,49 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        let origin_doc_id = self.active_document_id();
         let job = crate::job_manager::jobs::git::GitCommandJob::new(
-            origin_doc_id as usize,
+            self.active_document_id() as usize,
             repo_root,
             args,
         );
         self.job_manager.spawn(job);
+    }
+
+    /// Resolve `(path, repo_root)` for a blame request; an explicit `arg` path wins; otherwise the Status buffer's cursor file if that's the active buffer; otherwise the active file buffer's own path. This is the one place that resolution lives: `open_git_blame` itself takes plain explicit arguments and never.
+    fn resolve_git_blame_target(&mut self, arg: Option<&str>) -> Option<(PathBuf, PathBuf)> {
+        if let Some(arg) = arg {
+            let repo_root = match self.resolve_git_repo_root() {
+                Ok(root) => root,
+                Err(e) => {
+                    self.state.handle_error(e);
+                    return None;
+                }
+            };
+            return Some((repo_root.join(arg), repo_root));
+        }
+        let doc = self.active_document();
+        if doc.is_git_status() {
+            let repo_root = doc.git_repo_root()?.to_path_buf();
+            let cursor = doc.buffer.cursor();
+            let line = doc.buffer.line_index.get_line_at(cursor);
+            let (path, ..) = doc.annotations.git_status_entry_at_line(line)?;
+            return Some((repo_root.join(path), repo_root));
+        }
+        if let Some(path) = doc.path().map(|p| p.to_path_buf()) {
+            let base_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+            return match crate::git::discover_repo(&base_dir) {
+                Ok(r) => Some((path, r.root)),
+                Err(e) => {
+                    self.state.handle_error(e);
+                    None
+                }
+            };
+        }
+        self.state.notify(
+            crate::notification::NotificationType::Error,
+            "No file to blame".to_string(),
+        );
+        None
     }
 
     /// Show a `GitCommandJob`'s output: a scratch buffer for anything
@@ -703,5 +758,4 @@ impl<T: TerminalBackend> Editor<T> {
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
-
 }

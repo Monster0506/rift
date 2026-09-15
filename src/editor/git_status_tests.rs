@@ -139,8 +139,16 @@ fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
     // `dd` must not remove the branch header line from the buffer.
     let before = doc.buffer.to_string();
     assert!(!editor.execute_buffer_command(crate::command::Command::DeleteLine(1)));
-    let after = editor.document_manager.active_document().unwrap().buffer.to_string();
-    assert_eq!(before, after, "dd must not mutate a read-only status buffer");
+    let after = editor
+        .document_manager
+        .active_document()
+        .unwrap()
+        .buffer
+        .to_string();
+    assert_eq!(
+        before, after,
+        "dd must not mutate a read-only status buffer"
+    );
 
     editor.do_save();
     assert!(
@@ -185,7 +193,10 @@ fn wq_on_a_git_commit_message_buffer_commits_and_quits_instead_of_erroring() {
     let log = crate::git::run_checked(dir.path(), &["log", "-1", "--format=%s"]).unwrap();
     assert_eq!(log.trim(), "wq commits this buffer");
     assert!(
-        editor.document_manager.get_document(commit_doc_id).is_none(),
+        editor
+            .document_manager
+            .get_document(commit_doc_id)
+            .is_none(),
         "commit buffer should close after :wq"
     );
     assert!(editor.should_quit, ":wq must still quit the editor");
@@ -215,7 +226,10 @@ fn commit_new_writes_a_real_commit_and_closes_the_buffer() {
     let log = crate::git::run_checked(dir.path(), &["log", "-1", "--format=%s"]).unwrap();
     assert_eq!(log.trim(), "Update tracked.txt line two");
     assert!(
-        editor.document_manager.get_document(commit_doc_id).is_none(),
+        editor
+            .document_manager
+            .get_document(commit_doc_id)
+            .is_none(),
         "commit message buffer should close after a successful commit"
     );
 }
@@ -244,7 +258,11 @@ fn commit_amend_prefills_head_message_and_amends_in_place() {
 
     let log = crate::git::run_checked(dir.path(), &["log", "--format=%s"]).unwrap();
     let subjects: Vec<&str> = log.lines().collect();
-    assert_eq!(subjects, vec!["init (amended)"], "amend must not add a second commit");
+    assert_eq!(
+        subjects,
+        vec!["init (amended)"],
+        "amend must not add a second commit"
+    );
 }
 
 #[test]
@@ -260,7 +278,11 @@ fn commit_fixup_creates_a_fixup_commit_from_staged_changes() {
 
     let log = crate::git::run_checked(dir.path(), &["log", "--format=%s"]).unwrap();
     let subjects: Vec<&str> = log.lines().collect();
-    assert_eq!(subjects.len(), 2, "expected init + fixup commit: {subjects:?}");
+    assert_eq!(
+        subjects.len(),
+        2,
+        "expected init + fixup commit: {subjects:?}"
+    );
     assert!(subjects[0].starts_with("fixup! init"), "{subjects:?}");
 }
 
@@ -293,7 +315,10 @@ fn discard_untracked_entry_deletes_the_file_from_disk() {
     editor.git_status_cursor_action("discard");
     drain_jobs(&mut editor);
 
-    assert!(!new_path.exists(), "discarding an untracked file must delete it");
+    assert!(
+        !new_path.exists(),
+        "discarding an untracked file must delete it"
+    );
 }
 
 #[test]
@@ -315,8 +340,7 @@ fn expand_and_stage_hunk_leaves_other_hunks_unstaged() {
     )
     .unwrap();
 
-    let diff_out =
-        crate::git::run_checked(dir.path(), &["diff", "--no-ext-diff", "-U1"]).unwrap();
+    let diff_out = crate::git::run_checked(dir.path(), &["diff", "--no-ext-diff", "-U1"]).unwrap();
     let files = crate::git::diff::parse_unified_diff(&diff_out);
     assert_eq!(files[0].hunks.len(), 2, "expected two separate hunks");
     let first_hunk = files[0].hunks[0].clone();
@@ -326,16 +350,22 @@ fn expand_and_stage_hunk_leaves_other_hunks_unstaged() {
     // hunk survives untouched in the worktree).
     crate::git::apply::stage_hunk(dir.path(), "multi.txt", &first_hunk, false).unwrap();
 
-    let staged = crate::git::run_checked(dir.path(), &["diff", "--no-ext-diff", "--cached"]).unwrap();
+    let staged =
+        crate::git::run_checked(dir.path(), &["diff", "--no-ext-diff", "--cached"]).unwrap();
     assert!(staged.contains("-a"), "{staged}");
     assert!(staged.contains("+A"), "{staged}");
-    assert!(!staged.contains("-j"), "second hunk must stay unstaged: {staged}");
+    assert!(
+        !staged.contains("-j"),
+        "second hunk must stay unstaged: {staged}"
+    );
 
     let worktree = crate::git::run_checked(dir.path(), &["diff", "--no-ext-diff"]).unwrap();
     assert!(worktree.contains("-j"), "{worktree}");
     assert!(worktree.contains("+J"), "{worktree}");
-    assert!(!worktree.contains("-a"), "first hunk must be gone from the worktree diff: {worktree}");
-
+    assert!(
+        !worktree.contains("-a"),
+        "first hunk must be gone from the worktree diff: {worktree}"
+    );
 }
 
 #[test]
@@ -357,7 +387,10 @@ fn cursor_stage_action_on_a_single_diff_line_stages_only_that_line() {
     editor.open_git_status();
     drain_jobs(&mut editor);
     {
-        let doc = editor.document_manager.get_document_mut(editor.active_document_id()).unwrap();
+        let doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         let entry_line = (0..doc.buffer.get_total_lines())
             .find(|&l| doc.annotations.git_status_entry_at_line(l).is_some())
             .expect("must find the multi.txt entry line");
@@ -386,13 +419,26 @@ fn cursor_stage_action_on_a_single_diff_line_stages_only_that_line() {
     editor.git_status_cursor_action("stage");
     drain_jobs(&mut editor);
 
-    let staged = crate::git::run_checked(dir.path(), &["diff", "--no-ext-diff", "--cached"]).unwrap();
-    assert!(staged.contains("-a") && staged.contains("+A"), "expected 'a'->'A' staged: {staged}");
-    assert!(!staged.contains("-d") && !staged.contains("+D"), "'d'->'D' must stay unstaged: {staged}");
+    let staged =
+        crate::git::run_checked(dir.path(), &["diff", "--no-ext-diff", "--cached"]).unwrap();
+    assert!(
+        staged.contains("-a") && staged.contains("+A"),
+        "expected 'a'->'A' staged: {staged}"
+    );
+    assert!(
+        !staged.contains("-d") && !staged.contains("+D"),
+        "'d'->'D' must stay unstaged: {staged}"
+    );
 
     let worktree = crate::git::run_checked(dir.path(), &["diff", "--no-ext-diff"]).unwrap();
-    assert!(worktree.contains("-d") && worktree.contains("+D"), "expected 'd'->'D' still in the worktree diff: {worktree}");
-    assert!(!worktree.contains("-a") && !worktree.contains("+A"), "'a'->'A' must be gone from the worktree diff: {worktree}");
+    assert!(
+        worktree.contains("-d") && worktree.contains("+D"),
+        "expected 'd'->'D' still in the worktree diff: {worktree}"
+    );
+    assert!(
+        !worktree.contains("-a") && !worktree.contains("+A"),
+        "'a'->'A' must be gone from the worktree diff: {worktree}"
+    );
 }
 
 #[test]
@@ -425,7 +471,10 @@ fn expanding_an_untracked_files_entry_shows_its_hunk_diff() {
 
     let doc = editor.document_manager.get_document(doc_id).unwrap();
     let text = doc.buffer.to_string();
-    assert!(text.contains("+one"), "expected new.txt's content as additions: {text}");
+    assert!(
+        text.contains("+one"),
+        "expected new.txt's content as additions: {text}"
+    );
     assert!(text.contains("+two"), "{text}");
     assert!(text.contains("+three"), "{text}");
 }
@@ -481,16 +530,32 @@ fn cursor_stage_action_on_an_untracked_files_hunk_line_stages_only_that_line() {
     // staged â€” confirm the index has exactly the staged line, worktree has
     // the full original file untouched.
     let status = crate::git::run_checked(dir.path(), &["status", "--porcelain=v2"]).unwrap();
-    assert!(status.contains("AM") && status.contains("new.txt"), "{status}");
+    assert!(
+        status.contains("AM") && status.contains("new.txt"),
+        "{status}"
+    );
 
-    let staged = crate::git::run_checked(dir.path(), &["diff", "--no-ext-diff", "--cached", "--", "new.txt"]).unwrap();
+    let staged = crate::git::run_checked(
+        dir.path(),
+        &["diff", "--no-ext-diff", "--cached", "--", "new.txt"],
+    )
+    .unwrap();
     assert!(staged.contains("new file mode"), "{staged}");
     assert!(staged.contains("+two"), "{staged}");
-    assert!(!staged.contains("+one"), "only the selected line should be staged: {staged}");
-    assert!(!staged.contains("+three"), "only the selected line should be staged: {staged}");
+    assert!(
+        !staged.contains("+one"),
+        "only the selected line should be staged: {staged}"
+    );
+    assert!(
+        !staged.contains("+three"),
+        "only the selected line should be staged: {staged}"
+    );
 
     let worktree_content = std::fs::read_to_string(dir.path().join("new.txt")).unwrap();
-    assert_eq!(worktree_content, "one\ntwo\nthree\n", "worktree must stay untouched by staging");
+    assert_eq!(
+        worktree_content, "one\ntwo\nthree\n",
+        "worktree must stay untouched by staging"
+    );
 }
 
 #[test]
@@ -538,7 +603,10 @@ fn discard_on_an_untracked_files_hunk_line_is_not_supported_and_leaves_it_untouc
     drain_jobs(&mut editor);
 
     let status = crate::git::run_checked(dir.path(), &["status", "--porcelain=v2"]).unwrap();
-    assert!(status.contains("? new.txt"), "must stay fully untracked and untouched: {status}");
+    assert!(
+        status.contains("? new.txt"),
+        "must stay fully untracked and untouched: {status}"
+    );
     let worktree_content = std::fs::read_to_string(dir.path().join("new.txt")).unwrap();
     assert_eq!(worktree_content, "one\ntwo\nthree\n");
 }
@@ -592,9 +660,15 @@ fn git_blame_walk_back_re_blames_at_the_parent_commit() {
 
     let doc = editor.document_manager.get_document(doc_id).unwrap();
     let after_sha = doc.annotations.git_blame_sha_at_line(0).unwrap();
-    assert_ne!(before_sha, after_sha, "walk-back must re-blame at an earlier commit");
+    assert_ne!(
+        before_sha, after_sha,
+        "walk-back must re-blame at an earlier commit"
+    );
     let text = doc.buffer.to_string();
-    assert!(text.contains("line one"), "should show the original pre-edit content: {text}");
+    assert!(
+        text.contains("line one"),
+        "should show the original pre-edit content: {text}"
+    );
 }
 
 #[test]
@@ -625,12 +699,18 @@ fn git_blame_walk_back_on_the_root_commit_shows_a_notice_instead_of_a_raw_git_er
 
     let doc = editor.document_manager.get_document(doc_id).unwrap();
     let after_sha = doc.annotations.git_blame_sha_at_line(0).unwrap();
-    assert_eq!(before_sha, after_sha, "the root commit's blame must be unchanged");
+    assert_eq!(
+        before_sha, after_sha,
+        "the root commit's blame must be unchanged"
+    );
     let (at_commit_is_none,) = match &doc.kind {
         crate::document::BufferKind::GitBlame { at_commit, .. } => (at_commit.is_none(),),
         _ => panic!("expected GitBlame kind"),
     };
-    assert!(at_commit_is_none, "must not record a walk-back target that was refused");
+    assert!(
+        at_commit_is_none,
+        "must not record a walk-back target that was refused"
+    );
 }
 
 #[test]
@@ -667,9 +747,15 @@ fn git_blame_walk_back_from_a_middle_line_re_blames_that_lines_own_history() {
 
     let doc = editor.document_manager.get_document(doc_id).unwrap();
     let after_sha = doc.annotations.git_blame_sha_at_line(1).unwrap();
-    assert_ne!(before_sha, after_sha, "walk-back from line 1 must re-blame at its parent commit");
+    assert_ne!(
+        before_sha, after_sha,
+        "walk-back from line 1 must re-blame at its parent commit"
+    );
     let text = doc.buffer.to_string();
-    assert!(text.contains("line two"), "should show the pre-edit content of line two: {text}");
+    assert!(
+        text.contains("line two"),
+        "should show the pre-edit content of line two: {text}"
+    );
 }
 
 #[test]
@@ -692,7 +778,10 @@ fn open_git_log_lists_commits_and_expand_shows_git_show_body() {
 
     let doc = editor.document_manager.active_document().unwrap();
     let text = doc.buffer.to_string();
-    assert!(text.contains("tracked.txt"), "expanded git show should mention the changed file: {text}");
+    assert!(
+        text.contains("tracked.txt"),
+        "expanded git show should mention the changed file: {text}"
+    );
 }
 
 #[test]
@@ -712,7 +801,10 @@ fn git_command_escape_hatch_runs_and_shows_output() {
         "multi-line git output should open a scratch buffer, not just a notification"
     );
     let text = doc.buffer.to_string();
-    assert!(text.contains("init"), "expected git log output in a scratch buffer: {text}");
+    assert!(
+        text.contains("init"),
+        "expected git log output in a scratch buffer: {text}"
+    );
 }
 
 #[test]
@@ -727,7 +819,11 @@ fn bare_git_command_opens_the_status_buffer() {
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    assert!(doc.is_git_status(), "bare :Git must open the status buffer: {:?}", doc.kind);
+    assert!(
+        doc.is_git_status(),
+        "bare :Git must open the status buffer: {:?}",
+        doc.kind
+    );
 }
 
 #[test]
@@ -743,7 +839,11 @@ fn bare_git_log_command_opens_the_log_buffer() {
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    assert!(doc.is_git_log(), "bare :Git log must open the log buffer: {:?}", doc.kind);
+    assert!(
+        doc.is_git_log(),
+        "bare :Git log must open the log buffer: {:?}",
+        doc.kind
+    );
 }
 
 #[test]
@@ -758,7 +858,11 @@ fn bare_git_diff_command_opens_status_with_unstaged_hunks_expanded() {
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    assert!(doc.is_git_status(), "bare :Git diff must open the status buffer: {:?}", doc.kind);
+    assert!(
+        doc.is_git_status(),
+        "bare :Git diff must open the status buffer: {:?}",
+        doc.kind
+    );
     assert!(
         doc.is_git_status_expanded(&PathBuf::from("tracked.txt"), false),
         "the unstaged hunk must already be expanded: {}",
@@ -779,7 +883,11 @@ fn bare_git_diff_cached_command_opens_status_with_staged_hunks_expanded() {
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    assert!(doc.is_git_status(), "bare :Git diff --cached must open the status buffer: {:?}", doc.kind);
+    assert!(
+        doc.is_git_status(),
+        "bare :Git diff --cached must open the status buffer: {:?}",
+        doc.kind
+    );
     assert!(
         doc.is_git_status_expanded(&PathBuf::from("tracked.txt"), true),
         "the staged hunk must already be expanded: {}",
@@ -798,7 +906,11 @@ fn bare_git_blame_command_blames_the_active_file() {
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    assert!(doc.is_git_blame(), "bare :Git blame must open the blame buffer: {:?}", doc.kind);
+    assert!(
+        doc.is_git_blame(),
+        "bare :Git blame must open the blame buffer: {:?}",
+        doc.kind
+    );
 }
 
 #[test]
@@ -837,7 +949,10 @@ fn git_blame_command_with_a_flag_falls_through_to_raw_output() {
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    assert!(!doc.is_git_blame(), "a flag argument must not open the structured blame view");
+    assert!(
+        !doc.is_git_blame(),
+        "a flag argument must not open the structured blame view"
+    );
 }
 
 #[test]
@@ -854,7 +969,10 @@ fn git_log_command_with_a_flag_falls_through_to_raw_output() {
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    assert!(!doc.is_git_log(), "a flag argument must not open the structured log view");
+    assert!(
+        !doc.is_git_log(),
+        "a flag argument must not open the structured log view"
+    );
     assert_eq!(doc.display_name(), "[Git: log -1]");
 }
 
@@ -869,7 +987,10 @@ fn b_key_in_status_buffer_blames_the_file_under_cursor() {
     editor.open_git_status();
     drain_jobs(&mut editor);
     {
-        let doc = editor.document_manager.get_document_mut(editor.active_document_id()).unwrap();
+        let doc = editor
+            .document_manager
+            .get_document_mut(editor.active_document_id())
+            .unwrap();
         let entry_line = (0..doc.buffer.get_total_lines())
             .find(|&l| doc.annotations.git_status_entry_at_line(l).is_some())
             .expect("must find an entry line");
@@ -899,12 +1020,19 @@ fn r_key_in_status_buffer_starts_a_rebase_onto_upstream() {
         &["clone", "--quiet", ".", upstream_dir.to_str().unwrap()],
     )
     .unwrap();
-    crate::git::run_checked(dir.path(), &["remote", "add", "origin", upstream_dir.to_str().unwrap()])
-        .unwrap();
+    crate::git::run_checked(
+        dir.path(),
+        &["remote", "add", "origin", upstream_dir.to_str().unwrap()],
+    )
+    .unwrap();
     crate::git::run_checked(dir.path(), &["fetch", "origin", "--quiet"]).unwrap();
     crate::git::run_checked(
         dir.path(),
-        &["branch", &format!("--set-upstream-to=origin/{branch}"), &branch],
+        &[
+            "branch",
+            &format!("--set-upstream-to=origin/{branch}"),
+            &branch,
+        ],
     )
     .unwrap();
     std::fs::write(dir.path().join("new.txt"), "x\n").unwrap();
@@ -940,7 +1068,10 @@ fn status_buffer_shows_head_summary_line_and_enter_opens_log() {
             .find(|&l| doc.annotations.is_git_status_head_at_line(l));
         (head_line, text)
     };
-    assert!(text.contains("HEAD"), "expected a HEAD summary line: {text}");
+    assert!(
+        text.contains("HEAD"),
+        "expected a HEAD summary line: {text}"
+    );
     let head_line = head_line.expect("HEAD line must be annotated as interactive");
 
     {
@@ -952,7 +1083,11 @@ fn status_buffer_shows_head_summary_line_and_enter_opens_log() {
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    assert!(doc.is_git_log(), "Enter on the HEAD line must open the Log browser: {:?}", doc.kind);
+    assert!(
+        doc.is_git_log(),
+        "Enter on the HEAD line must open the Log browser: {:?}",
+        doc.kind
+    );
 }
 
 #[test]
@@ -962,13 +1097,19 @@ fn space_g_key_resolves_to_git_status_with_no_prefix_ambiguity() {
     use crate::keymap::{KeyContext, MatchResult};
 
     let editor = create_editor();
-    match editor.keymap.lookup(KeyContext::Normal, &[Key::Char(' '), Key::Char('g')]) {
+    match editor
+        .keymap
+        .lookup(KeyContext::Normal, &[Key::Char(' '), Key::Char('g')])
+    {
         MatchResult::Exact(Action::Editor(EditorAction::GitStatus)) => {}
         other => panic!("expected '<Space>g' to resolve to GitStatus, got {other:?}"),
     }
     // Bare 'gr' (no leading space) must remain LSP references, unaffected
     // by the rebase consolidation.
-    match editor.keymap.lookup(KeyContext::Normal, &[Key::Char('g'), Key::Char('r')]) {
+    match editor
+        .keymap
+        .lookup(KeyContext::Normal, &[Key::Char('g'), Key::Char('r')])
+    {
         MatchResult::Exact(Action::Editor(EditorAction::LspReferences)) => {}
         other => panic!("expected bare 'gr' to still resolve to LspReferences, got {other:?}"),
     }
@@ -988,10 +1129,19 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
     assert!(doc.is_read_only, "GitBlame must be read-only");
     let before = doc.buffer.to_string();
     editor.handle_mode_management(crate::command::Command::EnterInsertMode);
-    assert_eq!(editor.current_mode, crate::mode::Mode::Normal, "i must not enter Insert on GitBlame");
+    assert_eq!(
+        editor.current_mode,
+        crate::mode::Mode::Normal,
+        "i must not enter Insert on GitBlame"
+    );
     assert!(!editor.execute_buffer_command(crate::command::Command::DeleteLine(1)));
     assert_eq!(
-        editor.document_manager.active_document().unwrap().buffer.to_string(),
+        editor
+            .document_manager
+            .active_document()
+            .unwrap()
+            .buffer
+            .to_string(),
         before,
         "dd must not mutate GitBlame"
     );
@@ -1002,10 +1152,19 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
     assert!(doc.is_read_only, "GitLog must be read-only");
     let before = doc.buffer.to_string();
     editor.handle_mode_management(crate::command::Command::EnterInsertMode);
-    assert_eq!(editor.current_mode, crate::mode::Mode::Normal, "i must not enter Insert on GitLog");
+    assert_eq!(
+        editor.current_mode,
+        crate::mode::Mode::Normal,
+        "i must not enter Insert on GitLog"
+    );
     assert!(!editor.execute_buffer_command(crate::command::Command::DeleteLine(1)));
     assert_eq!(
-        editor.document_manager.active_document().unwrap().buffer.to_string(),
+        editor
+            .document_manager
+            .active_document()
+            .unwrap()
+            .buffer
+            .to_string(),
         before,
         "dd must not mutate GitLog"
     );
@@ -1022,11 +1181,19 @@ fn bare_git_show_command_opens_log_with_head_expanded() {
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    let crate::document::BufferKind::GitLog { expanded, expanded_body, .. } = &doc.kind else {
+    let crate::document::BufferKind::GitLog {
+        expanded,
+        expanded_body,
+        ..
+    } = &doc.kind
+    else {
         panic!("bare :Git show must open the log buffer: {:?}", doc.kind);
     };
     assert!(expanded.is_some(), "HEAD's commit must already be expanded");
-    assert!(expanded_body.is_some(), "the expanded commit's git show body must be populated");
+    assert!(
+        expanded_body.is_some(),
+        "the expanded commit's git show body must be populated"
+    );
 }
 
 #[test]
@@ -1069,20 +1236,36 @@ fn g_question_mark_opens_a_read_only_help_buffer_for_each_git_buffer_kind() {
     assert!(doc.is_read_only, "help buffer must be read-only");
     let text = doc.buffer.to_string();
     assert!(text.contains("Git Status"), "expected status help: {text}");
-    assert!(text.contains("s       stage"), "expected an 's' entry: {text}");
+    assert!(
+        text.contains("s       stage"),
+        "expected an 's' entry: {text}"
+    );
 
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
     editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
     drain_jobs(&mut editor);
     editor.open_git_help();
-    let text = editor.document_manager.active_document().unwrap().buffer.to_string();
+    let text = editor
+        .document_manager
+        .active_document()
+        .unwrap()
+        .buffer
+        .to_string();
     assert!(text.contains("Git Blame"), "expected blame help: {text}");
-    assert!(text.contains("blame parent"), "expected the walk-back entry: {text}");
+    assert!(
+        text.contains("blame parent"),
+        "expected the walk-back entry: {text}"
+    );
 
     editor.open_git_log(dir.path().to_path_buf(), None);
     drain_jobs(&mut editor);
     editor.open_git_help();
-    let text = editor.document_manager.active_document().unwrap().buffer.to_string();
+    let text = editor
+        .document_manager
+        .active_document()
+        .unwrap()
+        .buffer
+        .to_string();
     assert!(text.contains("Git Log"), "expected log help: {text}");
 }
 
@@ -1172,14 +1355,26 @@ fn expanding_a_hunk_via_real_keys_lets_one_j_reach_the_first_hunk_line() {
     );
 
     send(&mut editor, "s");
-    let staged = crate::git::run_checked(dir.path(), &["diff", "--no-ext-diff", "--cached"]).unwrap();
+    let staged =
+        crate::git::run_checked(dir.path(), &["diff", "--no-ext-diff", "--cached"]).unwrap();
     let worktree = crate::git::run_checked(dir.path(), &["diff", "--no-ext-diff"]).unwrap();
-    assert!(staged.contains("-a") && staged.contains("+A"), "expected 'a'->'A' staged: {staged}");
-    assert!(!staged.contains("-d") && !staged.contains("+D"), "'d'->'D' must stay unstaged: {staged}");
-    assert!(worktree.contains("-d") && worktree.contains("+D"), "expected 'd'->'D' still unstaged: {worktree}");
+    assert!(
+        staged.contains("-a") && staged.contains("+A"),
+        "expected 'a'->'A' staged: {staged}"
+    );
+    assert!(
+        !staged.contains("-d") && !staged.contains("+D"),
+        "'d'->'D' must stay unstaged: {staged}"
+    );
+    assert!(
+        worktree.contains("-d") && worktree.contains("+D"),
+        "expected 'd'->'D' still unstaged: {worktree}"
+    );
 }
 
-fn drain_jobs_replay<W: std::io::Write>(editor: &mut Editor<crate::replay::backend::ReplayBackend<W>>) {
+fn drain_jobs_replay<W: std::io::Write>(
+    editor: &mut Editor<crate::replay::backend::ReplayBackend<W>>,
+) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         match editor

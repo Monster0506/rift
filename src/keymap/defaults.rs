@@ -60,6 +60,18 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::ExplorerToggleHidden),
     );
 
+    // GitBlame buffer defaults
+    keymap.register(
+        KeyContext::GitBlame,
+        Key::Enter,
+        Action::Buffer("git_blame:walk_back".to_string()),
+    );
+    keymap.register(
+        KeyContext::GitBlame,
+        Key::Escape,
+        Action::Buffer("git_blame:close".to_string()),
+    );
+
     // GitStatus buffer Defaults â€” fugitive's in-buffer vocabulary.
     // Normal motions fall through to KeyContext::Normal via the fallback chain.
     keymap.register(
@@ -180,10 +192,10 @@ pub fn register_defaults(keymap: &mut KeyMap) {
 
     // ClipboardEntry scratch buffer: Escape returns focus to index pane
     keymap.register(
-    KeyContext::ClipboardEntry,
-    Key::Escape,
-    Action::Buffer("clipboard:entry:close".to_string()),
-);
+        KeyContext::ClipboardEntry,
+        Key::Escape,
+        Action::Buffer("clipboard:entry:close".to_string()),
+    );
 
     // Normal Mode Defaults
     // '-' opens the file-explorer buffer for the current file's parent directory
@@ -970,7 +982,6 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         vec![Key::Char(' '), Key::Char('g')],
         Action::Editor(EditorAction::GitStatus),
     );
-
 
     // Location list panel bindings (diagnostics / references)
     keymap.register(
