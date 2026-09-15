@@ -61,7 +61,11 @@ impl<T: TerminalBackend> Editor<T> {
                 | BufferKind::LocationList { .. }
                 | BufferKind::Regions { .. }
                 | BufferKind::BufferList { .. }
-                | BufferKind::Scratch { .. }| BufferKind::GitStatus { .. } => {
+                | BufferKind::Scratch { .. }
+                | BufferKind::GitStatus { .. }
+                | BufferKind::GitBlame { .. }
+                | BufferKind::GitLog { .. }
+                | BufferKind::GitRebaseTodo { .. } => {
                     self.state.handle_error(RiftError::new(
                         ErrorType::Io,
                         "CANT_SAVE",
