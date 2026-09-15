@@ -451,6 +451,50 @@ impl<T: TerminalBackend> Editor<T> {
                 self.run_git_commit_fixup();
                 true
             }
+            EditorAction::GitRebaseFromLogCommit => {
+                self.git_rebase_from_log_commit();
+                true
+            }
+            EditorAction::GitRebaseAbort => {
+                self.abort_git_rebase();
+                true
+            }
+            EditorAction::GitRebaseMoveUp => {
+                self.git_rebase_move(false);
+                true
+            }
+            EditorAction::GitRebaseMoveDown => {
+                self.git_rebase_move(true);
+                true
+            }
+            EditorAction::GitRebaseSetPick => {
+                self.git_rebase_set_verb(crate::git::rebase::RebaseVerb::Pick);
+                true
+            }
+            EditorAction::GitRebaseSetSquash => {
+                self.git_rebase_set_verb(crate::git::rebase::RebaseVerb::Squash);
+                true
+            }
+            EditorAction::GitRebaseSetFixup => {
+                self.git_rebase_set_verb(crate::git::rebase::RebaseVerb::Fixup);
+                true
+            }
+            EditorAction::GitRebaseSetEdit => {
+                self.git_rebase_set_verb(crate::git::rebase::RebaseVerb::Edit);
+                true
+            }
+            EditorAction::GitRebaseDrop => {
+                self.git_rebase_drop();
+                true
+            }
+            EditorAction::GitRebaseToggleFold => {
+                self.git_rebase_toggle_fold();
+                true
+            }
+            EditorAction::GitRebaseOpenMessage => {
+                self.git_rebase_open_message_editor();
+                true
+            }
             EditorAction::OpenUndoTree => {
                 self.open_undotree_split();
                 true

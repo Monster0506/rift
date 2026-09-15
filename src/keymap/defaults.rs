@@ -72,6 +72,68 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Buffer("git_blame:close".to_string()),
     );
 
+    // GitRebaseTodo buffer Defaults
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('X'),
+        Action::Editor(EditorAction::GitRebaseAbort),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('K'),
+        Action::Editor(EditorAction::GitRebaseMoveUp),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('J'),
+        Action::Editor(EditorAction::GitRebaseMoveDown),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('p'),
+        Action::Editor(EditorAction::GitRebaseSetPick),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('s'),
+        Action::Editor(EditorAction::GitRebaseSetSquash),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('f'),
+        Action::Editor(EditorAction::GitRebaseSetFixup),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('e'),
+        Action::Editor(EditorAction::GitRebaseSetEdit),
+    );
+    keymap.register_sequence(
+        KeyContext::GitRebaseTodo,
+        vec![Key::Char('d'), Key::Char('d')],
+        Action::Editor(EditorAction::GitRebaseDrop),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Enter,
+        Action::Editor(EditorAction::GitRebaseToggleFold),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('='),
+        Action::Editor(EditorAction::GitRebaseToggleFold),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('c'),
+        Action::Editor(EditorAction::GitRebaseOpenMessage),
+    );
+    keymap.register(
+        KeyContext::GitRebaseTodo,
+        Key::Char('r'),
+        Action::Editor(EditorAction::GitRebaseOpenMessage),
+    );
+
     // GitLog buffer defaults
     keymap.register(
         KeyContext::GitLog,

@@ -480,6 +480,16 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    /// `r` in the status buffer: start a rebase onto the current branch's
+    /// configured upstream (old `<Space>gr` behavior, now scoped to Status).
+    pub(super) fn git_status_rebase_cursor(&mut self) {
+        let repo_root = match self.active_document().git_repo_root() {
+            Some(r) => r.to_path_buf(),
+            None => return,
+        };
+        self.open_git_rebase(repo_root);
+    }
+
     /// Dispatches a `git_status:*` `Action::Buffer` id.
     pub(super) fn handle_git_status_buffer_action(&mut self, id: &str) {
         match id {
@@ -492,6 +502,7 @@ impl<T: TerminalBackend> Editor<T> {
             "git_status:prev_hunk" => self.git_status_navigate_hunk(false),
             "git_status:select" => self.git_status_select(),
             "git_status:blame" => self.git_status_blame_cursor(),
+            "git_status:rebase" => self.git_status_rebase_cursor(),
             _ => {}
         }
     }
@@ -573,7 +584,8 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    /// Save a GitCommitMessage buffer as a commit or amend, then close it.
+    /// `:w`/`:wq` on a `GitCommitMessage` buffer: commit (or amend) with the
+    /// buffer's text, then close it.
     pub(super) fn apply_git_commit_message(&mut self) {
         let (repo_root, target, message, doc_id) = {
             let doc = match self.document_manager.active_document() {
@@ -594,6 +606,15 @@ impl<T: TerminalBackend> Editor<T> {
             (repo_root, target, message, doc.id)
         };
 
+        if let GitCommitTarget::RebasePlanReword { rebase_doc_id, sha } = target {
+            self.state.clear_command_line();
+            if let Err(e) = self.remove_document(doc_id) {
+                self.state.handle_error(e);
+                return;
+            }
+            self.apply_rebase_plan_reword(rebase_doc_id, &sha, message);
+            return;
+        }
         if message.trim().is_empty() {
             self.state.notify(
                 crate::notification::NotificationType::Error,
@@ -620,7 +641,8 @@ impl<T: TerminalBackend> Editor<T> {
 
         let tmp_path_str = tmp_path.to_string_lossy().into_owned();
         let mut args = vec!["commit", "-F", tmp_path_str.as_str(), "--quiet"];
-        if target == GitCommitTarget::Amend {
+        let is_reword = matches!(target, GitCommitTarget::RebaseReword { .. });
+        if target == GitCommitTarget::Amend || is_reword {
             args.push("--amend");
         }
         let result = crate::git::run_checked(&repo_root, &args);
@@ -633,11 +655,26 @@ impl<T: TerminalBackend> Editor<T> {
                     self.state.handle_error(e);
                     return;
                 }
-                self.state.notify(
-                    crate::notification::NotificationType::Info,
-                    "Committed".to_string(),
-                );
-                self.refresh_git_status_buffers_for(&repo_root);
+                let paused_edit_rebase = if target == GitCommitTarget::Amend {
+                    self.find_paused_edit_rebase(&repo_root)
+                } else {
+                    None
+                };
+                if let GitCommitTarget::RebaseReword { rebase_doc_id } = target {
+                    self.resume_rebase_after_reword(rebase_doc_id, &repo_root);
+                } else if let Some((rebase_doc_id, remaining)) = paused_edit_rebase {
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        "Amended — resuming rebase".to_string(),
+                    );
+                    self.resume_rebase_after_edit_amend(rebase_doc_id, &repo_root, remaining);
+                } else {
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        "Committed".to_string(),
+                    );
+                    self.refresh_git_status_buffers_for(&repo_root);
+                }
             }
             Err(e) => self.state.handle_error(e),
         }
