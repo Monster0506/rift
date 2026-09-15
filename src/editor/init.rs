@@ -143,6 +143,7 @@ impl<T: TerminalBackend> Editor<T> {
             hovered_annotation: None,
             pending_syntax_reparse: std::collections::HashMap::new(),
             pending_git_status_expand_all: std::collections::HashMap::new(),
+            pending_git_log_expand_head: std::collections::HashSet::new(),
             pending_search_refresh: None,
             search_highlights_synced: None,
             pending_explorer_preview: None,

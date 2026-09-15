@@ -15,6 +15,7 @@ mod document_ops;
 mod explorer;
 mod file_ops;
 mod git_blame;
+mod git_log;
 mod git_status;
 mod handle_action;
 mod history;
@@ -239,6 +240,9 @@ pub struct Editor<T: TerminalBackend> {
     /// wants every hunk in the given section (`true` = staged) expanded as
     /// soon as the async status snapshot populates the buffer.
     pending_git_status_expand_all: std::collections::HashMap<crate::document::DocumentId, bool>,
+    /// `:Git show` opened this `GitLog` doc id and wants HEAD's commit
+    /// expanded as soon as the async commit list populates the buffer.
+    pending_git_log_expand_head: std::collections::HashSet<crate::document::DocumentId>,
     /// Deadline for a debounced search-highlight refresh after undo/redo, so
     /// a burst of undos pays one full-buffer re-search instead of one each.
     pending_search_refresh: Option<crate::time::Instant>,

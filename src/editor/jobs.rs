@@ -442,6 +442,71 @@ impl<T: TerminalBackend> Editor<T> {
                         Err(p) => p,
                     };
 
+                // Try GitLogResult;  populate the matching log buffer
+                let any_payload =
+                    match any_payload.downcast::<crate::job_manager::jobs::git::GitLogResult>() {
+                        Ok(result) => {
+                            let doc_id = result.doc_id as crate::document::DocumentId;
+                            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                                if doc.is_git_log() {
+                                    doc.populate_git_log_buffer(result.commits);
+                                }
+                            }
+                            if self.active_document_id() == doc_id {
+                                self.sync_state_with_active_document();
+                                let _ = self.force_full_redraw();
+                            }
+                            self.job_manager
+                                .update_job_state(&JobMessage::Finished(id, true));
+                            return Ok(());
+                        }
+                        Err(p) => p,
+                    };
+
+                // Try GitLogResult;  populate the matching log buffer
+                let any_payload =
+                    match any_payload.downcast::<crate::job_manager::jobs::git::GitLogResult>() {
+                        Ok(result) => {
+                            let doc_id = result.doc_id as crate::document::DocumentId;
+                            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                                if doc.is_git_log() {
+                                    doc.populate_git_log_buffer(result.commits);
+                                }
+                            }
+                            if self.pending_git_log_expand_head.remove(&doc_id) {
+                                let head =
+                                    self.document_manager.get_document(doc_id).and_then(|doc| {
+                                        match &doc.kind {
+                                            crate::document::BufferKind::GitLog {
+                                                repo_root,
+                                                commits,
+                                                ..
+                                            } => commits
+                                                .first()
+                                                .map(|c| (repo_root.clone(), c.sha.clone())),
+                                            _ => None,
+                                        }
+                                    });
+                                if let Some((repo_root, sha)) = head {
+                                    let job = crate::job_manager::jobs::git::GitShowJob::new(
+                                        doc_id as usize,
+                                        repo_root,
+                                        sha,
+                                    );
+                                    self.job_manager.spawn(job);
+                                }
+                            }
+                            if self.active_document_id() == doc_id {
+                                self.sync_state_with_active_document();
+                                let _ = self.force_full_redraw();
+                            }
+                            self.job_manager
+                                .update_job_state(&JobMessage::Finished(id, true));
+                            return Ok(());
+                        }
+                        Err(p) => p,
+                    };
+
                 // Try UndoTreeRenderResult â€” populate the matching undotree buffer
                 let any_payload = match any_payload
                     .downcast::<crate::job_manager::jobs::undotree::UndoTreeRenderResult>(
