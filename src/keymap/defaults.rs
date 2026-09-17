@@ -1049,6 +1049,11 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Key::Enter,
         Action::Buffer("git_blame:walk_back".to_string()),
     );
+    keymap.register(
+        KeyContext::GitBlame,
+        Key::Backspace,
+        Action::Buffer("git_blame:walk_forward".to_string()),
+    );
     keymap.register_sequence(
         KeyContext::GitBlame,
         vec![Key::Char('g'), Key::Char('?')],

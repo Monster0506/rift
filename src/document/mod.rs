@@ -188,10 +188,16 @@ pub enum BufferKind {
     GitBlame {
         repo_root: PathBuf,
         linked_doc_id: DocumentId,
+        linked_window_id: crate::split::window::WindowId,
         path: PathBuf,
-        /// Ancestor commit currently being blamed at, if walked back from HEAD/worktree.
         at_commit: Option<String>,
+        history: Vec<Option<String>>,
         lines: Vec<crate::git::blame::BlameLine>,
+        /// Number of visual rows occupied by each linked source line.
+        wrap_rows: Vec<usize>,
+        /// Linked source document, wrap width, tab width, and revision used
+        /// to derive `wrap_rows`.
+        wrap_key: Option<(DocumentId, usize, usize, u64)>,
     },
     /// `git log` browser for the repository (or scoped to one `path`). `=` expands a commit's `git show` inline, the same mechanism as status-buffer hunk expansion. Read-only, pure navigation.
     GitLog {

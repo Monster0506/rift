@@ -105,6 +105,16 @@ pub fn format_unix_date(unix_seconds: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// Format a Unix timestamp as a UTC `YYYY-MM-DD HH:MM` timestamp.
+pub fn format_unix_datetime(unix_seconds: i64) -> String {
+    let days = unix_seconds.div_euclid(86400);
+    let seconds = unix_seconds.rem_euclid(86400);
+    let (y, m, d) = civil_from_days(days);
+    let hour = seconds / 3600;
+    let minute = seconds % 3600 / 60;
+    format!("{y:04}-{m:02}-{d:02} {hour:02}:{minute:02}")
+}
+
 /// Howard Hinnant's `civil_from_days`: days-since-epoch (1970-01-01) ->
 /// `(year, month, day)`. Proleptic Gregorian calendar, valid for any `i64`.
 fn civil_from_days(z: i64) -> (i64, u32, u32) {
@@ -154,6 +164,12 @@ mod tests {
     fn format_unix_date_handles_pre_epoch_timestamps() {
         // 1969-12-31T00:00:00Z
         assert_eq!(format_unix_date(-86400), "1969-12-31");
+    }
+
+    #[test]
+    fn format_unix_datetime_includes_time() {
+        // 2024-01-15T13:45:00Z
+        assert_eq!(format_unix_datetime(1_705_326_300), "2024-01-15 13:45");
     }
 
     #[test]

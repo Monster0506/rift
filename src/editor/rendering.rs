@@ -700,6 +700,120 @@ impl<T: TerminalBackend> Editor<T> {
         let layouts = self
             .split_tree
             .compute_layout(content_rows, size.cols as usize);
+        if let Some(partner_window_id) = self.git_blame_partner_window_id() {
+            let focused_window_id = self.split_tree.focused_window_id();
+            let focused_is_blame = self
+                .document_manager
+                .get_document(self.split_tree.focused_window().document_id)
+                .is_some_and(|doc| doc.is_git_blame());
+            let (blame_window_id, source_window_id) = if focused_is_blame {
+                (focused_window_id, partner_window_id)
+            } else {
+                (partner_window_id, focused_window_id)
+            };
+            let source_cols = layouts
+                .iter()
+                .find(|layout| layout.window_id == source_window_id)
+                .map(|layout| layout.cols);
+            let source_doc_id = self
+                .split_tree
+                .get_window(source_window_id)
+                .map(|window| window.document_id);
+            let blame_doc_id = self
+                .split_tree
+                .get_window(blame_window_id)
+                .map(|window| window.document_id);
+            if let (Some(source_cols), Some(source_doc_id), Some(blame_doc_id)) =
+                (source_cols, source_doc_id, blame_doc_id)
+            {
+                let blame_line_count = self
+                    .document_manager
+                    .get_document(blame_doc_id)
+                    .and_then(|doc| match &doc.kind {
+                        crate::document::BufferKind::GitBlame { lines, .. } => Some(lines.len()),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                let wrap_spec =
+                    self.document_manager
+                        .get_document(source_doc_id)
+                        .map(|source_doc| {
+                            let show_line_numbers = source_doc.options.show_line_numbers
+                                && self.state.settings.show_line_numbers;
+                            let gutter_width = if show_line_numbers {
+                                source_doc.buffer.get_total_lines().to_string().len() + 2
+                            } else {
+                                0
+                            };
+                            let content_width = source_cols.saturating_sub(gutter_width).max(1);
+                            let params = super::resolve_wrap_params(
+                                source_doc,
+                                content_width,
+                                soft_wrap,
+                                self.state.settings.wrap_width,
+                            );
+                            let (wrap_width, tab_width) =
+                                params.unwrap_or((0, source_doc.options.tab_width));
+                            (
+                                (
+                                    source_doc_id,
+                                    wrap_width,
+                                    tab_width,
+                                    source_doc.buffer.revision,
+                                ),
+                                params,
+                            )
+                        });
+                let already_current = wrap_spec.as_ref().is_some_and(|(key, _)| {
+                    self.document_manager
+                        .get_document(blame_doc_id)
+                        .is_some_and(|doc| {
+                            matches!(
+                                &doc.kind,
+                                crate::document::BufferKind::GitBlame {
+                                    wrap_key: Some(current),
+                                    ..
+                                } if current == key
+                            )
+                        })
+                });
+                if let Some((wrap_key, params)) = wrap_spec.filter(|_| !already_current) {
+                    let wrap_rows = self
+                        .document_manager
+                        .get_document(source_doc_id)
+                        .map(|source_doc| match params {
+                            Some((wrap_width, tab_width)) => {
+                                let map = crate::wrap::DisplayMap::build(
+                                    &source_doc.buffer,
+                                    wrap_width,
+                                    tab_width,
+                                );
+                                (0..blame_line_count)
+                                    .map(|line| {
+                                        let first = map.logical_to_first_visual(line);
+                                        let next = if line + 1 < source_doc.buffer.get_total_lines()
+                                        {
+                                            map.logical_to_first_visual(line + 1)
+                                        } else {
+                                            map.total_visual_rows()
+                                        };
+                                        next.saturating_sub(first).max(1)
+                                    })
+                                    .collect()
+                            }
+                            None => vec![1; blame_line_count],
+                        })
+                        .unwrap_or_default();
+                    if let Some(blame_doc) = self.document_manager.get_document_mut(blame_doc_id) {
+                        blame_doc.set_git_blame_wrap_rows(wrap_key, wrap_rows);
+                        if let Some(window) = self.split_tree.get_window_mut(blame_window_id) {
+                            window.cursor_position = blame_doc.buffer.cursor();
+                        }
+                    }
+                }
+            }
+        }
+        self.sync_git_blame_cursor();
 
         for layout in &layouts {
             let window = match self.split_tree.get_window(layout.window_id) {
@@ -807,6 +921,84 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
             }
+        }
+
+        let Some(partner_window_id) = self.git_blame_partner_window_id() else {
+            return;
+        };
+        let focused_window_id = self.split_tree.focused_window_id();
+        let viewport_state = |window_id| {
+            let layout = layouts
+                .iter()
+                .find(|layout| layout.window_id == window_id)?;
+            let window = self.split_tree.get_window(window_id)?;
+            Some((
+                layout.cols,
+                layout.rows,
+                window.document_id,
+                window.cursor_position,
+                window.viewport.top_line(),
+                window.viewport.top_visual_row(),
+            ))
+        };
+        let Some((
+            focused_cols,
+            focused_rows,
+            focused_doc_id,
+            focused_cursor,
+            focused_top_line,
+            focused_top_visual,
+        )) = viewport_state(focused_window_id)
+        else {
+            return;
+        };
+        let Some((
+            partner_cols,
+            partner_rows,
+            partner_doc_id,
+            partner_cursor,
+            _,
+            current_partner_top_visual,
+        )) = viewport_state(partner_window_id)
+        else {
+            return;
+        };
+
+        let focused_map =
+            self.window_map_key(focused_doc_id, focused_cols)
+                .and_then(|(doc_id, width)| {
+                    self.resolve_display_map_cached(doc_id, width, focused_cursor, focused_rows + 1)
+                });
+        let top_line = if soft_wrap {
+            focused_map
+                .as_ref()
+                .and_then(|map| {
+                    map.get_visual_row(focused_top_visual)
+                        .map(|row| row.logical_line)
+                })
+                .unwrap_or(focused_top_line)
+        } else {
+            focused_top_line
+        };
+        let partner_map =
+            self.window_map_key(partner_doc_id, partner_cols)
+                .and_then(|(doc_id, width)| {
+                    self.resolve_display_map_cached(doc_id, width, partner_cursor, partner_rows + 1)
+                });
+        let partner_top_visual = if soft_wrap {
+            partner_map
+                .as_ref()
+                .map(|map| map.logical_to_first_visual(top_line))
+                .unwrap_or(top_line)
+        } else {
+            current_partner_top_visual
+        };
+        if let Some(partner) = self.split_tree.get_window_mut(partner_window_id) {
+            partner.viewport.set_scroll_with_visual(
+                top_line,
+                partner_top_visual,
+                partner.viewport.left_col(),
+            );
         }
     }
 

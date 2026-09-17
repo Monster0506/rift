@@ -1298,49 +1298,136 @@ impl Document {
     /// Populate (or repopulate) this git blame buffer from a fresh
     /// `git blame --porcelain` listing.
     pub fn populate_git_blame_buffer(&mut self, lines: Vec<crate::git::blame::BlameLine>) {
-        let (repo_root, linked_doc_id, path, at_commit) = match &self.kind {
-            BufferKind::GitBlame {
-                repo_root,
-                linked_doc_id,
-                path,
-                at_commit,
-                ..
-            } => (
-                repo_root.clone(),
-                *linked_doc_id,
-                path.clone(),
-                at_commit.clone(),
-            ),
-            _ => return,
-        };
-
-        let mut text = String::new();
-        for (i, line) in lines.iter().enumerate() {
-            let sha = &line.commit.sha;
-            let short_sha = &sha[..sha.len().min(8)];
-            let date = crate::git::format_unix_date(line.commit.author_time);
-            let author = truncate_display(&line.commit.author, 16);
-            text.push_str(&format!(
-                "{short_sha} ({author:<16} {date}) {}",
-                line.content
-            ));
-            if i + 1 < lines.len() {
-                text.push('\n');
-            }
-        }
-        self.replace_buffer_content(&text);
-        self.annotations.clear();
-        for (i, line) in lines.iter().enumerate() {
-            self.annotations.create_git_blame_line(i, &line.commit.sha);
-        }
+        let (repo_root, linked_doc_id, linked_window_id, path, at_commit, history) =
+            match &self.kind {
+                BufferKind::GitBlame {
+                    repo_root,
+                    linked_doc_id,
+                    linked_window_id,
+                    path,
+                    at_commit,
+                    history,
+                    ..
+                } => (
+                    repo_root.clone(),
+                    *linked_doc_id,
+                    *linked_window_id,
+                    path.clone(),
+                    at_commit.clone(),
+                    history.clone(),
+                ),
+                _ => return,
+            };
+        let wrap_rows = vec![1; lines.len()];
         self.kind = BufferKind::GitBlame {
             repo_root,
             linked_doc_id,
+            linked_window_id,
             path,
             at_commit,
+            history,
             lines,
+            wrap_rows,
+            wrap_key: None,
         };
+        self.render_git_blame();
         self.history.mark_saved();
+    }
+
+    /// Reflow blame metadata to match the linked source pane's visual rows.
+    /// Continuation rows are blank and deliberately carry no annotation.
+    pub fn set_git_blame_wrap_rows(
+        &mut self,
+        wrap_key: (super::DocumentId, usize, usize, u64),
+        wrap_rows: Vec<usize>,
+    ) {
+        let unchanged = matches!(
+            &self.kind,
+            BufferKind::GitBlame {
+                wrap_key: current_key,
+                wrap_rows: current,
+                ..
+            } if *current_key == Some(wrap_key) && *current == wrap_rows
+        );
+        if unchanged {
+            return;
+        }
+        if let BufferKind::GitBlame {
+            wrap_key: current_key,
+            wrap_rows: current,
+            ..
+        } = &mut self.kind
+        {
+            *current_key = Some(wrap_key);
+            *current = wrap_rows;
+        } else {
+            return;
+        }
+        self.render_git_blame();
+    }
+
+    fn render_git_blame(&mut self) {
+        let selected_source_line = {
+            let buffer_line = self.buffer.line_index.get_line_at(self.buffer.cursor());
+            self.annotations
+                .git_blame_source_line_at_line(buffer_line)
+                .unwrap_or(buffer_line)
+        };
+        let (lines, wrap_rows) = match &self.kind {
+            BufferKind::GitBlame {
+                lines, wrap_rows, ..
+            } => (lines.clone(), wrap_rows.clone()),
+            _ => return,
+        };
+
+        let total_rows: usize = wrap_rows.iter().map(|rows| (*rows).max(1)).sum();
+        let mut text = String::new();
+        let mut highlights = Vec::with_capacity(lines.len() * 3);
+        let mut annotation_lines = Vec::with_capacity(lines.len());
+        let mut display_line = 0;
+        for (source_line, line) in lines.iter().enumerate() {
+            annotation_lines.push(display_line);
+            let sha = &line.commit.sha;
+            let short_sha = &sha[..sha.len().min(8)];
+            let date = crate::git::format_unix_datetime(line.commit.author_time);
+            let author = truncate_display(&line.commit.author, 16);
+            let sha_start = text.len();
+            text.push_str(short_sha);
+            highlights.push((sha_start..text.len(), crate::color::Color::Cyan));
+            text.push_str(" (");
+            let author_start = text.len();
+            text.push_str(&format!("{author:<16}"));
+            highlights.push((author_start..text.len(), crate::color::Color::Blue));
+            text.push(' ');
+            let date_start = text.len();
+            text.push_str(&date);
+            highlights.push((date_start..text.len(), crate::color::Color::DarkGrey));
+            text.push(')');
+
+            let rows = wrap_rows.get(source_line).copied().unwrap_or(1).max(1);
+            for _ in 0..rows {
+                display_line += 1;
+                if display_line < total_rows {
+                    text.push('\n');
+                }
+            }
+        }
+
+        self.replace_buffer_content(&text);
+        self.custom_highlights = highlights;
+        self.annotations.clear();
+        for (source_line, (line, display_line)) in
+            lines.iter().zip(annotation_lines.iter()).enumerate()
+        {
+            self.annotations
+                .create_git_blame_line(*display_line, source_line, &line.commit.sha);
+        }
+        let selected_source_line = selected_source_line.min(lines.len().saturating_sub(1));
+        if let Some(display_line) = annotation_lines.get(selected_source_line) {
+            if let Some(cursor) = self.buffer.line_index.get_start(*display_line) {
+                let _ = self.buffer.set_cursor(cursor);
+            }
+        }
     }
 
     /// Populate (or repopulate) this git log buffer from a fresh commit

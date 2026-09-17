@@ -884,8 +884,8 @@ fn git_help_lines(kind: &BufferKind) -> Option<Vec<String>> {
             "",
             "g?      help",
             "<CR>    blame parent",
+            "<BS>    blame next revision",
             "<Esc>   close",
-            "j k     move",
         ],
         BufferKind::GitLog { .. } => &[
             "Git Log",
