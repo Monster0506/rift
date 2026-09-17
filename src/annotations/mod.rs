@@ -1215,9 +1215,15 @@ impl AnnotationStore {
 
     /// Create a `git.blame` annotation anchored at `line`, tagging it with
     /// the commit sha that line is attributed to (for walk-back).
-    pub fn create_git_blame_line(&mut self, line: usize, sha: &str) -> AnnotationId {
+    pub fn create_git_blame_line(
+        &mut self,
+        line: usize,
+        source_line: usize,
+        sha: &str,
+    ) -> AnnotationId {
         let mut payload = Value::map();
         payload.set("sha", Value::Str(sha.to_string()));
+        payload.set("source_line", Value::Int(source_line as i64));
         self.add(
             Annotation::new(
                 Kind::new(well_known::GIT_BLAME),
@@ -1227,7 +1233,8 @@ impl AnnotationStore {
             .with_payload(payload)
             .with_stickiness(Stickiness::Persist)
             .with_visible(false)
-            .with_read_only(true),
+            .with_read_only(true)
+            .with_actions(vec![Action::activate()]),
         )
     }
 
@@ -1238,6 +1245,34 @@ impl AnnotationStore {
             .iter()
             .find(|a| a.kind.as_str() == well_known::GIT_BLAME && a.anchor == Anchor::Line(line))?;
         payload::git::sha(&a.payload).map(|s| s.to_string())
+    }
+
+    pub fn git_blame_source_line_at_line(&self, line: usize) -> Option<usize> {
+        self.annotations
+            .iter()
+            .find(|a| a.kind.as_str() == well_known::GIT_BLAME && a.anchor == Anchor::Line(line))
+            .and_then(|a| a.payload.get("source_line"))
+            .and_then(|value| match value {
+                Value::Int(line) => usize::try_from(*line).ok(),
+                _ => None,
+            })
+    }
+
+    pub fn git_blame_line_for_source_line(&self, source_line: usize) -> Option<usize> {
+        self.annotations.iter().find_map(|annotation| {
+            if annotation.kind.as_str() != well_known::GIT_BLAME {
+                return None;
+            }
+            let Anchor::Line(line) = annotation.anchor else {
+                return None;
+            };
+            match annotation.payload.get("source_line") {
+                Some(Value::Int(value)) if usize::try_from(*value).ok() == Some(source_line) => {
+                    Some(line)
+                }
+                _ => None,
+            }
+        })
     }
 
     /// Create a `git.log_commit` annotation anchored at `line`, tagging it
