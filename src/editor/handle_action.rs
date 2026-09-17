@@ -96,6 +96,14 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
 
+                if self.current_mode == Mode::Normal
+                    && matches!(motion, Motion::Up | Motion::Down)
+                    && self.active_doc_is(|doc| doc.is_git_blame())
+                {
+                    let _ = self.snap_to_actionable_line(matches!(motion, Motion::Down));
+                    return true;
+                }
+
                 // Interface-mode buffers snap vertical motion between actionable
                 // lines, else fall through to ordinary motion.
                 if self.current_mode == Mode::Normal

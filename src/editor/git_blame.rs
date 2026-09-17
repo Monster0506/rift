@@ -1,8 +1,10 @@
 //! Git blame view: open, populate, and walk-back navigation. Read-only; no `:w` reconciliation.
 
 use super::Editor;
-use crate::document::BufferKind;
+use crate::document::{BufferKind, Document};
 use crate::term::TerminalBackend;
+
+const BLAME_PANE_WIDTH_RATIO: f64 = 0.33;
 
 impl<T: TerminalBackend> Editor<T> {
     /// Open a blame view for `path`'s current content, as a new vertical split next to it. `repo_root` and `path` are caller-supplied; callers resolve "which file" from their own context (the active file buffer, a Status entry under the cursor, a `:Git blame <path>` argument), never guessed here. If `path` isn't.
@@ -49,16 +51,25 @@ impl<T: TerminalBackend> Editor<T> {
         let focused = self.split_tree.focused_window_id();
         let blame_win_id = self
             .split_tree
-            .split(
+            .split_before_with_ratio(
                 crate::split::tree::SplitDirection::Vertical,
                 focused,
                 blame_doc_id,
                 rows,
                 cols,
+                BLAME_PANE_WIDTH_RATIO,
             )
             .expect("focused window is always a valid leaf");
         self.split_tree.set_focus(blame_win_id);
         let _ = self.document_manager.switch_to_document(blame_doc_id);
+        if let Some(doc) = self.document_manager.get_document_mut(blame_doc_id) {
+            if let BufferKind::GitBlame {
+                linked_window_id, ..
+            } = &mut doc.kind
+            {
+                *linked_window_id = focused;
+            }
+        }
 
         let job = crate::job_manager::jobs::git::GitBlameJob::new(
             blame_doc_id as usize,
@@ -72,66 +83,293 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    /// `Enter` on a blame line: walk back one commit; re-blame the whole file as of that commit's parent (`<sha>^`), so the line's history before the shown commit becomes visible.
     pub(super) fn git_blame_walk_back(&mut self) {
-        let (repo_root, path, sha) = {
+        let (repo_root, path, sha, linked_doc_id, linked_window_id) = {
             let doc = self.active_document();
-            let (repo_root, path) = match &doc.kind {
-                BufferKind::GitBlame {
-                    repo_root, path, ..
-                } => (repo_root.clone(), path.clone()),
-                _ => return,
+            let BufferKind::GitBlame {
+                repo_root,
+                path,
+                linked_doc_id,
+                linked_window_id,
+                ..
+            } = &doc.kind
+            else {
+                return;
             };
-            let cursor = doc.buffer.cursor();
-            let line = doc.buffer.line_index.get_line_at(cursor);
+            let line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
             let Some(sha) = doc.annotations.git_blame_sha_at_line(line) else {
                 return;
             };
-            (repo_root, path, sha)
+            (
+                repo_root.clone(),
+                path.clone(),
+                sha,
+                *linked_doc_id,
+                *linked_window_id,
+            )
         };
-
-        // A root commit has no parent;  walking back from it would just
-        // fail the `GitBlameJob` with a raw "bad revision" git error.
-        let has_parent = crate::git::run(
+        let parent_commit = format!("{sha}^");
+        if !crate::git::run(
             &repo_root,
-            &["rev-parse", "--verify", "--quiet", &format!("{sha}^")],
+            &["rev-parse", "--verify", "--quiet", &parent_commit],
         )
         .map(|out| out.success)
-        .unwrap_or(false);
-        if !has_parent {
+        .unwrap_or(false)
+        {
             self.state.notify(
                 crate::notification::NotificationType::Info,
                 "This commit introduced the line — nothing earlier to walk back to".to_string(),
             );
             return;
         }
-
+        if !self.set_git_blame_source(
+            &repo_root,
+            &path,
+            linked_doc_id,
+            linked_window_id,
+            Some(&parent_commit),
+        ) {
+            return;
+        }
         let doc_id = self.active_document_id();
-        let parent_commit = format!("{sha}^");
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-            if let BufferKind::GitBlame { at_commit, .. } = &mut doc.kind {
+            if let BufferKind::GitBlame {
+                at_commit, history, ..
+            } = &mut doc.kind
+            {
+                history.push(at_commit.clone());
                 *at_commit = Some(parent_commit.clone());
             }
         }
-        let job = crate::job_manager::jobs::git::GitBlameJob::new(
-            doc_id as usize,
-            repo_root,
-            path,
-            Some(parent_commit),
-        );
-        self.job_manager.spawn(job);
+        self.job_manager
+            .spawn(crate::job_manager::jobs::git::GitBlameJob::new(
+                doc_id as usize,
+                repo_root,
+                path,
+                Some(parent_commit),
+            ));
+    }
+
+    pub(super) fn git_blame_walk_forward(&mut self) {
+        let (repo_root, path, linked_doc_id, linked_window_id, previous) = {
+            let doc = self.active_document();
+            let BufferKind::GitBlame {
+                repo_root,
+                path,
+                linked_doc_id,
+                linked_window_id,
+                history,
+                ..
+            } = &doc.kind
+            else {
+                return;
+            };
+            let Some(previous) = history.last().cloned() else {
+                return;
+            };
+            (
+                repo_root.clone(),
+                path.clone(),
+                *linked_doc_id,
+                *linked_window_id,
+                previous,
+            )
+        };
+        if !self.set_git_blame_source(
+            &repo_root,
+            &path,
+            linked_doc_id,
+            linked_window_id,
+            previous.as_deref(),
+        ) {
+            return;
+        }
+        let doc_id = self.active_document_id();
+        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+            if let BufferKind::GitBlame {
+                at_commit, history, ..
+            } = &mut doc.kind
+            {
+                *at_commit = history.pop().unwrap();
+            }
+        }
+        self.job_manager
+            .spawn(crate::job_manager::jobs::git::GitBlameJob::new(
+                doc_id as usize,
+                repo_root,
+                path,
+                previous,
+            ));
+    }
+
+    fn set_git_blame_source(
+        &mut self,
+        repo_root: &std::path::Path,
+        path: &std::path::Path,
+        linked_doc_id: crate::document::DocumentId,
+        linked_window_id: crate::split::window::WindowId,
+        commit: Option<&str>,
+    ) -> bool {
+        let active_doc_id = self.active_document_id();
+        let old_doc_id = self
+            .split_tree
+            .get_window(linked_window_id)
+            .map(|window| window.document_id);
+        match commit {
+            Some(commit) => {
+                let root = repo_root.to_string_lossy().replace('\\', "/");
+                let root = root.strip_prefix("//?/").unwrap_or(&root);
+                let full_path = path.to_string_lossy().replace('\\', "/");
+                let full_path = full_path.strip_prefix("//?/").unwrap_or(&full_path);
+                let relative = full_path
+                    .strip_prefix(root.trim_end_matches('/'))
+                    .unwrap_or(full_path)
+                    .trim_start_matches('/');
+                let spec = format!("{commit}:{relative}");
+                let content = match crate::git::run_checked(repo_root, &["cat-file", "blob", &spec])
+                {
+                    Ok(content) => content,
+                    Err(error) => {
+                        self.state.handle_error(error);
+                        return false;
+                    }
+                };
+                let id = self.document_manager.next_id();
+                let mut doc = match crate::document::Document::from_file(id, path) {
+                    Ok(doc) => doc,
+                    Err(error) => {
+                        self.state.handle_error(error);
+                        return false;
+                    }
+                };
+                doc.replace_buffer_content(&content);
+                doc.is_read_only = true;
+                doc.kind = BufferKind::Scratch {
+                    title: format!(
+                        "[Git] {} @ {}",
+                        path.display(),
+                        &commit[..commit.len().min(8)]
+                    ),
+                };
+                self.document_manager.add_private_document(doc);
+                self.split_tree.set_window_document(linked_window_id, id);
+                if let Some(old_doc_id) = old_doc_id.filter(|id| *id != linked_doc_id) {
+                    self.document_manager.remove_private_document(old_doc_id);
+                }
+            }
+            None => {
+                self.split_tree
+                    .set_window_document(linked_window_id, linked_doc_id);
+                if let Some(old_doc_id) = old_doc_id.filter(|id| *id != linked_doc_id) {
+                    self.document_manager.remove_private_document(old_doc_id);
+                }
+            }
+        }
+        let _ = self.document_manager.switch_to_document(active_doc_id);
+        true
+    }
+
+    /// Keep a blame pane and its linked source pane on the same logical line.
+    ///
+    /// Viewports are cursor-driven, so mirror the focused pane's cursor into
+    /// its partner before their viewports are updated.
+    pub(super) fn sync_git_blame_cursor(&mut self) {
+        let line = {
+            let window = self.split_tree.focused_window();
+            let Some(doc) = self.document_manager.get_document(window.document_id) else {
+                return;
+            };
+            let buffer_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
+            doc.annotations
+                .git_blame_source_line_at_line(buffer_line)
+                .unwrap_or(buffer_line)
+        };
+
+        let Some(target_window_id) = self.git_blame_partner_window_id() else {
+            return;
+        };
+        let Some(target_doc_id) = self
+            .split_tree
+            .get_window(target_window_id)
+            .map(|window| window.document_id)
+        else {
+            return;
+        };
+        let Some(target_doc) = self.document_manager.get_document_mut(target_doc_id) else {
+            return;
+        };
+        let target_line = target_doc
+            .annotations
+            .git_blame_line_for_source_line(line)
+            .unwrap_or(line)
+            .min(target_doc.buffer.get_total_lines().saturating_sub(1));
+        let cursor = target_doc
+            .buffer
+            .line_index
+            .get_start(target_line)
+            .unwrap_or(0);
+        target_doc
+            .buffer
+            .set_cursor(cursor)
+            .expect("line index must return a valid cursor offset");
+        if let Some(window) = self.split_tree.get_window_mut(target_window_id) {
+            window.cursor_position = cursor;
+        }
+    }
+
+    /// The pane linked to the focused Git blame or source window.
+    pub(super) fn git_blame_partner_window_id(&self) -> Option<crate::split::window::WindowId> {
+        let focused_window_id = self.split_tree.focused_window_id();
+        let focused_doc_id = self.split_tree.focused_window().document_id;
+        match self.document_manager.get_document(focused_doc_id) {
+            Some(Document {
+                kind:
+                    BufferKind::GitBlame {
+                        linked_window_id, ..
+                    },
+                ..
+            }) => Some(*linked_window_id),
+            _ => self
+                .document_manager
+                .documents_iter()
+                .find_map(|doc| match &doc.kind {
+                    BufferKind::GitBlame {
+                        linked_window_id, ..
+                    } if *linked_window_id == focused_window_id => Some(doc.id),
+                    _ => None,
+                })
+                .and_then(|blame_doc_id| {
+                    self.split_tree
+                        .windows
+                        .iter()
+                        .find_map(|(window_id, window)| {
+                            (window.document_id == blame_doc_id).then_some(*window_id)
+                        })
+                }),
+        }
     }
 
     /// `Escape` in a blame buffer: close it and return focus to the linked file.
     pub(super) fn close_git_blame(&mut self) {
-        let (doc_id, linked_doc_id) = {
+        let (doc_id, linked_doc_id, linked_window_id) = {
             let doc = self.active_document();
-            let linked_doc_id = match &doc.kind {
-                BufferKind::GitBlame { linked_doc_id, .. } => *linked_doc_id,
-                _ => return,
+            let BufferKind::GitBlame {
+                linked_doc_id,
+                linked_window_id,
+                ..
+            } = &doc.kind
+            else {
+                return;
             };
-            (doc.id, linked_doc_id)
+            (doc.id, *linked_doc_id, *linked_window_id)
         };
+        self.set_git_blame_source(
+            std::path::Path::new(""),
+            std::path::Path::new(""),
+            linked_doc_id,
+            linked_window_id,
+            None,
+        );
         if let Err(e) = self.remove_document(doc_id) {
             self.state.handle_error(e);
             return;
@@ -148,6 +386,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_git_blame_buffer_action(&mut self, id: &str) {
         match id {
             "git_blame:walk_back" => self.git_blame_walk_back(),
+            "git_blame:walk_forward" => self.git_blame_walk_forward(),
             "git_blame:close" => self.close_git_blame(),
             _ => {}
         }

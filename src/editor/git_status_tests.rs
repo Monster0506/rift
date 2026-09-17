@@ -597,17 +597,389 @@ fn open_git_blame_populates_one_line_per_source_line() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
+    let source_window_id = editor.split_tree.focused_window_id();
     editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
     drain_jobs(&mut editor);
 
+    let blame_window_id = editor.split_tree.focused_window_id();
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_git_blame());
     let text = doc.buffer.to_string();
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines.len(), 2, "tracked.txt has 2 lines: {text}");
     for line in &lines {
-        assert!(line.contains("line "), "{line}");
         assert!(line.contains('('), "expected author/date parens: {line}");
+        let timestamp = line
+            .strip_suffix(')')
+            .and_then(|line| line.rsplit_once(' ').map(|(_, timestamp)| timestamp))
+            .unwrap();
+        assert!(
+            timestamp.contains(':'),
+            "blame timestamp must include time: {line}"
+        );
+        assert!(
+            !line.contains("line one"),
+            "blame must not duplicate source: {line}"
+        );
+        assert!(
+            !line.contains("line two"),
+            "blame must not duplicate source: {line}"
+        );
+    }
+    assert_eq!(
+        doc.custom_highlights.len(),
+        lines.len() * 3,
+        "each blame row must color its SHA, author, and date"
+    );
+    for color in [
+        crate::color::Color::Cyan,
+        crate::color::Color::Blue,
+        crate::color::Color::DarkGrey,
+    ] {
+        assert!(
+            doc.custom_highlights
+                .iter()
+                .any(|(_, actual)| *actual == color),
+            "missing blame metadata color {color:?}"
+        );
+    }
+
+    let layouts = editor.split_tree.compute_layout(23, 80);
+    let blame_layout = layouts
+        .iter()
+        .find(|l| l.window_id == blame_window_id)
+        .unwrap();
+    let source_layout = layouts
+        .iter()
+        .find(|l| l.window_id == source_window_id)
+        .unwrap();
+    assert!(
+        blame_layout.col < source_layout.col,
+        "blame must open to the left of its linked source"
+    );
+}
+
+#[test]
+fn git_blame_uses_a_third_of_its_parent_split_width() {
+    let dir = tempfile::tempdir().unwrap();
+    init_repo_with_commit(dir.path());
+
+    let mut editor = create_editor();
+    open_and_load(&mut editor, &dir.path().join("tracked.txt"));
+    let source_window_id = editor.split_tree.focused_window_id();
+    let source_doc_id = editor.active_document_id();
+    editor
+        .split_tree
+        .split(
+            crate::split::tree::SplitDirection::Vertical,
+            source_window_id,
+            source_doc_id,
+            24,
+            80,
+        )
+        .unwrap();
+    editor.split_tree.set_focus(source_window_id);
+    let parent_width = editor
+        .split_tree
+        .compute_layout(23, 160)
+        .iter()
+        .find(|layout| layout.window_id == source_window_id)
+        .unwrap()
+        .cols;
+
+    editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
+    drain_jobs(&mut editor);
+
+    let blame_window_id = editor.split_tree.focused_window_id();
+    let layouts = editor.split_tree.compute_layout(23, 160);
+    let blame_layout = layouts
+        .iter()
+        .find(|layout| layout.window_id == blame_window_id)
+        .unwrap();
+
+    assert_eq!(
+        blame_layout.cols,
+        parent_width * 33 / 100,
+        "blame must occupy 33% of the source split"
+    );
+}
+
+#[test]
+fn git_blame_inserts_and_skips_source_soft_wrap_spacers() {
+    let dir = tempfile::tempdir().unwrap();
+    init_repo_with_commit(dir.path());
+    let path = dir.path().join("tracked.txt");
+    let long_line = "wrapped ".repeat(30);
+    std::fs::write(&path, format!("{long_line}\nsecond\n{long_line}\n")).unwrap();
+    crate::git::run_checked(dir.path(), &["commit", "-am", "wrap line", "--quiet"]).unwrap();
+
+    let mut editor = create_editor();
+    open_and_load(&mut editor, &path);
+    let source_window_id = editor.split_tree.focused_window_id();
+    editor.open_git_blame(path, dir.path().to_path_buf());
+    drain_jobs(&mut editor);
+    editor.update_and_render().unwrap();
+
+    let blame_doc_id = editor.active_document_id();
+    let (first_source_line, second_source_line) = {
+        let doc = editor.document_manager.get_document(blame_doc_id).unwrap();
+        let first = doc.annotations.git_blame_line_for_source_line(0).unwrap();
+        let second = doc.annotations.git_blame_line_for_source_line(1).unwrap();
+        assert!(
+            second > first + 1,
+            "wrapped source line must insert blank blame rows"
+        );
+        let rendered = doc.buffer.to_string();
+        let rendered_lines: Vec<_> = rendered.lines().collect();
+        for spacer in first + 1..second {
+            assert_eq!(
+                rendered_lines.get(spacer).copied().unwrap_or_default(),
+                "",
+                "blame continuation row {spacer} must be empty"
+            );
+            assert!(
+                doc.annotations.git_blame_sha_at_line(spacer).is_none(),
+                "blame continuation rows must not be actionable"
+            );
+        }
+        (first, second)
+    };
+    assert_eq!(first_source_line, 0);
+
+    editor.handle_action(&crate::action::Action::Editor(
+        crate::action::EditorAction::Move(crate::action::Motion::Down),
+    ));
+    let doc = editor.document_manager.get_document(blame_doc_id).unwrap();
+    assert_eq!(doc.buffer.get_line(), second_source_line);
+    assert_eq!(
+        doc.annotations
+            .git_blame_source_line_at_line(doc.buffer.get_line()),
+        Some(1)
+    );
+    let source_window = editor.split_tree.get_window(source_window_id).unwrap();
+    assert_eq!(
+        editor
+            .document_manager
+            .get_document(source_window.document_id)
+            .unwrap()
+            .buffer
+            .get_line(),
+        1,
+        "source cursor must follow the selected blame metadata row"
+    );
+
+    editor.handle_action(&crate::action::Action::Editor(
+        crate::action::EditorAction::Move(crate::action::Motion::Up),
+    ));
+    assert_eq!(
+        editor
+            .document_manager
+            .get_document(blame_doc_id)
+            .unwrap()
+            .buffer
+            .get_line(),
+        first_source_line,
+        "k must skip every blank continuation row"
+    );
+
+    for _ in 0..2 {
+        editor.handle_action(&crate::action::Action::Editor(
+            crate::action::EditorAction::Move(crate::action::Motion::Down),
+        ));
+    }
+    let last_metadata_line = editor
+        .document_manager
+        .get_document(blame_doc_id)
+        .unwrap()
+        .annotations
+        .git_blame_line_for_source_line(2)
+        .unwrap();
+    assert_eq!(
+        editor
+            .document_manager
+            .get_document(blame_doc_id)
+            .unwrap()
+            .buffer
+            .get_line(),
+        last_metadata_line
+    );
+    editor.handle_action(&crate::action::Action::Editor(
+        crate::action::EditorAction::Move(crate::action::Motion::Down),
+    ));
+    assert_eq!(
+        editor
+            .document_manager
+            .get_document(blame_doc_id)
+            .unwrap()
+            .buffer
+            .get_line(),
+        last_metadata_line,
+        "j at the last metadata row must not enter trailing wrap spacers"
+    );
+
+    editor.term.size = (24, 160);
+    editor.update_and_render().unwrap();
+    let widened_doc = editor.document_manager.get_document(blame_doc_id).unwrap();
+    let widened_second = widened_doc
+        .annotations
+        .git_blame_line_for_source_line(1)
+        .unwrap();
+    assert!(
+        widened_second < second_source_line,
+        "widening the source pane must remove obsolete blame spacer rows"
+    );
+    assert_eq!(
+        widened_doc
+            .annotations
+            .git_blame_source_line_at_line(widened_doc.buffer.get_line()),
+        Some(2),
+        "blame selection must stay on the same source line while reflowing"
+    );
+}
+#[test]
+
+fn git_blame_keeps_source_scrolled_to_its_logical_line() {
+    let dir = tempfile::tempdir().unwrap();
+    init_repo_with_commit(dir.path());
+    let path = dir.path().join("tracked.txt");
+    let content = (0..80)
+        .map(|line| format!("line {line}\n"))
+        .collect::<String>();
+    std::fs::write(&path, content).unwrap();
+    crate::git::run_checked(dir.path(), &["commit", "-am", "add lines", "--quiet"]).unwrap();
+
+    let mut editor = create_editor();
+    editor.state.settings.soft_wrap = false;
+    open_and_load(&mut editor, &path);
+    let source_window_id = editor.split_tree.focused_window_id();
+    editor.open_git_blame(path, dir.path().to_path_buf());
+    drain_jobs(&mut editor);
+    let offset = editor
+        .active_document()
+        .buffer
+        .line_index
+        .get_start(40)
+        .unwrap();
+    editor.active_document().buffer.set_cursor(offset).unwrap();
+    editor.update_and_render().unwrap();
+
+    let blame_window_id = editor.split_tree.focused_window_id();
+    let blame_line = editor.active_document().buffer.get_line();
+    let source_window = editor.split_tree.get_window(source_window_id).unwrap();
+    let source_line = editor
+        .document_manager
+        .get_document(source_window.document_id)
+        .unwrap()
+        .buffer
+        .get_line();
+    assert_eq!(source_line, blame_line);
+    assert_eq!(
+        source_window.viewport.top_line(),
+        editor
+            .split_tree
+            .get_window(blame_window_id)
+            .unwrap()
+            .viewport
+            .top_line()
+    );
+    assert!(
+        source_window.viewport.top_line() > 0,
+        "cursor movement must scroll both linked panes (blame line {blame_line})"
+    );
+
+    editor.switch_focus(source_window_id);
+    let offset = editor
+        .active_document()
+        .buffer
+        .line_index
+        .get_start(39)
+        .unwrap();
+    editor.active_document().buffer.set_cursor(offset).unwrap();
+    editor.update_and_render().unwrap();
+
+    let (blame_doc_id, blame_top_line) = {
+        let window = editor.split_tree.get_window(blame_window_id).unwrap();
+        (window.document_id, window.viewport.top_line())
+    };
+    let source_top_line = editor
+        .split_tree
+        .get_window(source_window_id)
+        .unwrap()
+        .viewport
+        .top_line();
+    let blame_line = editor
+        .document_manager
+        .get_document(blame_doc_id)
+        .unwrap()
+        .buffer
+        .get_line();
+    let source_line = editor.active_document().buffer.get_line();
+    assert_eq!(blame_line, source_line);
+    assert_eq!(blame_top_line, source_top_line);
+}
+#[test]
+fn git_blame_replay_renders_metadata_to_the_left_of_source() {
+    use crate::replay::backend::ReplayBackend;
+
+    let dir = tempfile::tempdir().unwrap();
+    init_repo_with_commit(dir.path());
+    let path = dir.path().join("tracked.txt");
+    let backend = ReplayBackend::new(Vec::new(), 24, 160);
+    let mut editor = Editor::with_file(backend, Some(path.display().to_string())).unwrap();
+    drain_jobs_replay(&mut editor);
+
+    let keys = crate::key::parse_key_sequence(":G blame<CR>").unwrap();
+    editor.term.push_keys(keys.clone());
+    for _ in keys {
+        editor.tick().unwrap();
+    }
+    drain_jobs_replay(&mut editor);
+
+    let metadata_sha = editor
+        .active_document()
+        .buffer
+        .to_string()
+        .lines()
+        .next()
+        .unwrap()[..8]
+        .to_owned();
+    editor.update_and_render().unwrap();
+    let rows = editor.render_system.compositor.rows();
+    let cols = editor.render_system.compositor.cols();
+    let cells = editor.render_system.compositor.get_composited_slice();
+    let screen = (0..rows)
+        .map(|row| {
+            (0..cols)
+                .map(|col| cells[row * cols + col].to_char())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let line = screen
+        .lines()
+        .find(|line| line.contains("line one"))
+        .unwrap();
+    let metadata_col = line.find(&metadata_sha).unwrap();
+    let source_col = line.find("line one").unwrap();
+
+    assert!(
+        metadata_col < source_col,
+        "blame metadata must render left of its linked source:\n{screen}"
+    );
+    assert_eq!(
+        line.matches("line one").count(),
+        1,
+        "source text must appear only in the source pane:\n{screen}"
+    );
+    for color in [
+        crate::color::Color::Cyan,
+        crate::color::Color::Blue,
+        crate::color::Color::DarkGrey,
+    ] {
+        assert!(
+            cells.iter().any(|cell| cell.fg == Some(color)),
+            "blame metadata color {color:?} must reach the rendered pane"
+        );
     }
 }
 
@@ -620,6 +992,8 @@ fn git_blame_walk_back_re_blames_at_the_parent_commit() {
 
     let mut editor = create_editor();
     open_and_load(&mut editor, &dir.path().join("tracked.txt"));
+    let source_window_id = editor.split_tree.focused_window_id();
+    let source_doc_id = editor.active_document_id();
     editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
     drain_jobs(&mut editor);
 
@@ -643,10 +1017,34 @@ fn git_blame_walk_back_re_blames_at_the_parent_commit() {
         before_sha, after_sha,
         "walk-back must re-blame at an earlier commit"
     );
-    let text = doc.buffer.to_string();
-    assert!(
-        text.contains("line one"),
-        "should show the original pre-edit content: {text}"
+    let historical_doc_id = editor
+        .split_tree
+        .get_window(source_window_id)
+        .unwrap()
+        .document_id;
+    assert_ne!(historical_doc_id, source_doc_id);
+    assert!(editor
+        .document_manager
+        .get_document(historical_doc_id)
+        .unwrap()
+        .buffer
+        .to_string()
+        .contains("line one"));
+    assert_eq!(
+        editor.document_manager.active_document_id(),
+        Some(doc_id),
+        "creating the historical source buffer must not steal focus from blame"
+    );
+
+    editor.handle_git_blame_buffer_action("git_blame:walk_forward");
+    drain_jobs(&mut editor);
+    assert_eq!(
+        editor
+            .split_tree
+            .get_window(source_window_id)
+            .unwrap()
+            .document_id,
+        source_doc_id
     );
 }
 
@@ -724,11 +1122,6 @@ fn git_blame_walk_back_from_a_middle_line_re_blames_that_lines_own_history() {
     assert_ne!(
         before_sha, after_sha,
         "walk-back from line 1 must re-blame at its parent commit"
-    );
-    let text = doc.buffer.to_string();
-    assert!(
-        text.contains("line two"),
-        "should show the pre-edit content of line two: {text}"
     );
 }
 

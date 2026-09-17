@@ -331,6 +331,7 @@ impl Document {
         Ok(Document {
             options: DocumentOptions {
                 show_line_numbers: false,
+                wrap: Some(super::definitions::WrapMode::Off),
                 ..DocumentOptions::default()
             },
             is_read_only: true,
@@ -338,9 +339,13 @@ impl Document {
             kind: BufferKind::GitBlame {
                 repo_root,
                 linked_doc_id,
+                linked_window_id: 0,
                 path,
                 at_commit,
+                history: vec![],
                 lines: vec![],
+                wrap_rows: vec![],
+                wrap_key: None,
             },
             ..Self::skeleton(id, buffer)
         })

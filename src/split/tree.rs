@@ -11,6 +11,12 @@ pub enum SplitDirection {
     Vertical,
 }
 
+#[derive(Clone, Copy)]
+struct SplitPlacement {
+    new_first: bool,
+    first_ratio: f64,
+}
+
 pub enum SplitNode {
     Leaf(WindowId),
     Split {
@@ -53,6 +59,71 @@ impl SplitTree {
         viewport_rows: usize,
         viewport_cols: usize,
     ) -> Option<WindowId> {
+        self.split_with_order(
+            direction,
+            target_id,
+            new_doc_id,
+            viewport_rows,
+            viewport_cols,
+            SplitPlacement {
+                new_first: false,
+                first_ratio: 0.5,
+            },
+        )
+    }
+
+    pub fn split_before(
+        &mut self,
+        direction: SplitDirection,
+        target_id: WindowId,
+        new_doc_id: DocumentId,
+        viewport_rows: usize,
+        viewport_cols: usize,
+    ) -> Option<WindowId> {
+        self.split_with_order(
+            direction,
+            target_id,
+            new_doc_id,
+            viewport_rows,
+            viewport_cols,
+            SplitPlacement {
+                new_first: true,
+                first_ratio: 0.5,
+            },
+        )
+    }
+
+    pub fn split_before_with_ratio(
+        &mut self,
+        direction: SplitDirection,
+        target_id: WindowId,
+        new_doc_id: DocumentId,
+        viewport_rows: usize,
+        viewport_cols: usize,
+        first_ratio: f64,
+    ) -> Option<WindowId> {
+        self.split_with_order(
+            direction,
+            target_id,
+            new_doc_id,
+            viewport_rows,
+            viewport_cols,
+            SplitPlacement {
+                new_first: true,
+                first_ratio,
+            },
+        )
+    }
+
+    fn split_with_order(
+        &mut self,
+        direction: SplitDirection,
+        target_id: WindowId,
+        new_doc_id: DocumentId,
+        viewport_rows: usize,
+        viewport_cols: usize,
+        placement: SplitPlacement,
+    ) -> Option<WindowId> {
         if !self.windows.contains_key(&target_id) || !Self::is_leaf(&self.root, target_id) {
             return None;
         }
@@ -81,6 +152,8 @@ impl SplitTree {
             target_id,
             direction,
             new_id,
+            placement.new_first,
+            placement.first_ratio,
         );
 
         Some(new_id)
@@ -100,14 +173,23 @@ impl SplitTree {
         target_id: WindowId,
         direction: SplitDirection,
         new_id: WindowId,
+        new_first: bool,
+        first_ratio: f64,
     ) -> SplitNode {
         match node {
-            SplitNode::Leaf(id) if id == target_id => SplitNode::Split {
-                direction,
-                ratio: 0.5,
-                first: Box::new(SplitNode::Leaf(id)),
-                second: Box::new(SplitNode::Leaf(new_id)),
-            },
+            SplitNode::Leaf(id) if id == target_id => {
+                let (first, second) = if new_first {
+                    (SplitNode::Leaf(new_id), SplitNode::Leaf(id))
+                } else {
+                    (SplitNode::Leaf(id), SplitNode::Leaf(new_id))
+                };
+                SplitNode::Split {
+                    direction,
+                    ratio: first_ratio,
+                    first: Box::new(first),
+                    second: Box::new(second),
+                }
+            }
             SplitNode::Split {
                 direction: d,
                 ratio,
@@ -116,8 +198,22 @@ impl SplitTree {
             } => SplitNode::Split {
                 direction: d,
                 ratio,
-                first: Box::new(Self::replace_leaf(*first, target_id, direction, new_id)),
-                second: Box::new(Self::replace_leaf(*second, target_id, direction, new_id)),
+                first: Box::new(Self::replace_leaf(
+                    *first,
+                    target_id,
+                    direction,
+                    new_id,
+                    new_first,
+                    first_ratio,
+                )),
+                second: Box::new(Self::replace_leaf(
+                    *second,
+                    target_id,
+                    direction,
+                    new_id,
+                    new_first,
+                    first_ratio,
+                )),
             },
             other => other,
         }

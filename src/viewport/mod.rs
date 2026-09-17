@@ -165,6 +165,21 @@ impl Viewport {
         self.first_update = true;
     }
 
+    /// Set the logical and visual scroll positions together for synchronized
+    /// split panes.
+    pub fn set_scroll_with_visual(
+        &mut self,
+        top_line: usize,
+        top_visual_row: usize,
+        left_col: usize,
+    ) {
+        self.top_line = top_line;
+        self.top_visual_row = top_visual_row;
+        self.left_col = left_col;
+        self.sub_line_offset = 0.0;
+        self.first_update = true;
+    }
+
     /// Scroll so that `line` (0-indexed) is vertically centered in the viewport.
     /// Clamps correctly so no blank space appears below the buffer.
     pub fn center_on(&mut self, line: usize, total_lines: usize) {
