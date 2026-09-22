@@ -1,6 +1,6 @@
 //! Document persistence: save, load, path management, display name.
 
-use super::{BufferKind, Document, LineEnding};
+use super::{Document, LineEnding};
 use crate::error::{ErrorType, RiftError};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -75,72 +75,31 @@ impl Document {
     /// Get display name for UI (filename or "[No Name]")
     #[must_use]
     pub fn display_name(&self) -> Cow<'_, str> {
-        match &self.kind {
-            BufferKind::Terminal => {
-                if let Some(term) = &self.terminal {
-                    Cow::Owned(format!("[Terminal] {}", term.name))
-                } else {
-                    Cow::Borrowed("[Terminal]")
-                }
-            }
-            BufferKind::Directory { path, .. } => Cow::Owned(
-                path.file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| "/".to_string()),
-            ),
-            BufferKind::UndoTree { .. } => Cow::Borrowed("[UndoTree]"),
-            BufferKind::Messages { show_all } => {
-                if *show_all {
-                    Cow::Borrowed("[Messages:all]")
-                } else {
-                    Cow::Borrowed("[Messages]")
-                }
-            }
-            BufferKind::Clipboard { .. } => Cow::Borrowed("[Clipboard]"),
-            BufferKind::ClipboardEntry {
-                entry_index: Some(i),
-            } => Cow::Owned(format!("[Clipboard:{}]", i)),
-            BufferKind::ClipboardEntry { entry_index: None } => Cow::Borrowed("[Clipboard:new]"),
-            BufferKind::LocationList { .. } => Cow::Borrowed("[Locations]"),
-            BufferKind::Regions { .. } => Cow::Borrowed("[Regions]"),
-            BufferKind::BufferList { .. } => Cow::Borrowed("[Buffers]"),
-            BufferKind::Scratch { title } => Cow::Owned(title.clone()),
-            BufferKind::GitStatus { repo_root, .. } => Cow::Owned(format!(
-                "[Git Status] {}",
-                repo_root
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("/")
-            )),
-            BufferKind::GitCommitMessage { target, .. } => Cow::Borrowed(match target {
-                crate::document::GitCommitTarget::New => "[Git Commit]",
-                crate::document::GitCommitTarget::Amend => "[Git Commit Amend]",
-                crate::document::GitCommitTarget::RebaseReword { .. } => "[Git Reword]",
-                crate::document::GitCommitTarget::RebasePlanReword { .. } => "[Git Reword (plan)]",
-            }),
-            BufferKind::GitBlame { path, .. } => Cow::Owned(format!(
-                "[Git Blame] {}",
-                path.file_name().and_then(|n| n.to_str()).unwrap_or("")
-            )),
-            BufferKind::GitLog { path, .. } => Cow::Owned(match path {
-                Some(p) => format!(
-                    "[Git Log] {}",
-                    p.file_name().and_then(|n| n.to_str()).unwrap_or("")
-                ),
-                None => "[Git Log]".to_string(),
-            }),
-            BufferKind::GitRebaseTodo { base, .. } => {
-                Cow::Owned(format!("[Git Rebase onto {base}]"))
-            }
-            BufferKind::File => self
-                .file_path
-                .as_ref()
-                .and_then(|p| p.file_name())
-                .and_then(|n| n.to_str())
-                .map(Cow::Borrowed)
-                .unwrap_or(Cow::Borrowed(crate::constants::ui::NO_NAME)),
+        if let Some(title) = self.scratch_title() {
+            return Cow::Borrowed(title);
         }
+        if let Some(path) = self.directory_path() {
+            return path
+                .file_name()
+                .map(|name| name.to_string_lossy())
+                .unwrap_or_else(|| path.to_string_lossy());
+        }
+        if let Some(path) = self.git_blame_path() {
+            let name = path
+                .file_name()
+                .map(|name| name.to_string_lossy())
+                .unwrap_or_else(|| path.to_string_lossy());
+            return Cow::Owned(format!("[Git Blame] {name}"));
+        }
+
+        if let Some(crate::annotations::Value::Str(title)) = self.vars.get("title") {
+            return Cow::Borrowed(title);
+        }
+
+        self.kind.display_name(
+            self.file_path.as_deref(),
+            self.terminal().map(|terminal| terminal.name.as_str()),
+        )
     }
 
     /// Get the file path if it exists

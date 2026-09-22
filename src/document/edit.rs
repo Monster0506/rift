@@ -72,7 +72,7 @@ impl Document {
     }
 
     pub fn insert_char(&mut self, ch: char) -> Result<(), RiftError> {
-        if self.is_read_only {
+        if self.is_read_only() {
             return Ok(());
         }
         let inserting_newline = ch == '\n';
@@ -216,7 +216,7 @@ impl Document {
     /// Insert `Character`s at the cursor, preserving raw bytes/control chars
     /// (the byte-faithful counterpart of `insert_str`).
     pub fn insert_characters(&mut self, chars: &[Character]) -> Result<(), RiftError> {
-        if self.is_read_only {
+        if self.is_read_only() {
             return Ok(());
         }
         let newline_count = chars
@@ -286,7 +286,7 @@ impl Document {
     }
 
     pub fn delete_backward(&mut self) -> bool {
-        if self.is_read_only {
+        if self.is_read_only() {
             return false;
         }
         let cursor = self.buffer.cursor();
@@ -299,8 +299,9 @@ impl Document {
             .char_at(cursor - 1)
             .unwrap_or(Character::from('\0'));
 
-        // For directory buffers, block newline deletion to prevent line merges.
-        if self.is_directory() && deleted_char == Character::Newline {
+        if self.policies().structural_edit == crate::document::StructuralEditPolicy::PreserveRows
+            && deleted_char == Character::Newline
+        {
             return false;
         }
 
@@ -351,7 +352,7 @@ impl Document {
     }
 
     pub fn delete_forward(&mut self) -> bool {
-        if self.is_read_only {
+        if self.is_read_only() {
             return false;
         }
         let cursor = self.buffer.cursor();
@@ -361,8 +362,9 @@ impl Document {
 
         let deleted_char = self.buffer.char_at(cursor).unwrap_or(Character::from('\0'));
 
-        // For directory buffers, block newline deletion to prevent line merges.
-        if self.is_directory() && deleted_char == Character::Newline {
+        if self.policies().structural_edit == crate::document::StructuralEditPolicy::PreserveRows
+            && deleted_char == Character::Newline
+        {
             return false;
         }
 
@@ -419,7 +421,7 @@ impl Document {
         count: usize,
         new_chars: &[Character],
     ) -> Result<(), RiftError> {
-        if self.is_read_only {
+        if self.is_read_only() {
             return Ok(());
         }
         let end = pos + count;
