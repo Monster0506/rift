@@ -334,10 +334,11 @@ impl Syntax {
                 );
                 while let Some(m) = matches.next() {
                     let pattern_index = m.pattern_index;
-                    for capture in m.captures {
+                    for capture in m.captures() {
                         highlights.push((capture.node.byte_range(), capture.index, pattern_index));
                     }
                 }
+                drop(matches);
                 if query_timed_out {
                     return ParseOutcome::Aborted;
                 }
@@ -370,7 +371,7 @@ impl Syntax {
                 let mut highlights = Vec::new();
                 let mut matches = cursor.matches(query, root_node, source);
                 while let Some(m) = matches.next() {
-                    for capture in m.captures {
+                    for capture in m.captures() {
                         let range = capture.node.byte_range();
                         highlights.push((range, capture.index));
                     }
@@ -460,7 +461,7 @@ impl Syntax {
                 let mut matches = cursor.matches(query, root, source);
 
                 while let Some(m) = matches.next() {
-                    for cap in m.captures {
+                    for cap in m.captures() {
                         for (cap_idx, lang_name) in &self.injection_capture_langs {
                             if cap.index == *cap_idx {
                                 for (li, layer) in self.injection_layers.iter().enumerate() {
@@ -591,7 +592,7 @@ impl Syntax {
                     let mut lang_name: Option<String> = None;
                     let mut content_range: Option<std::ops::Range<usize>> = None;
 
-                    for cap in m.captures {
+                    for cap in m.captures() {
                         if cap.index == lang_cap_idx {
                             let text = std::str::from_utf8(&source[cap.node.byte_range()])
                                 .unwrap_or("")
@@ -961,7 +962,7 @@ pub(crate) fn scoped_query_highlights(
         let mut matches = cursor.matches(query, root_node, source);
         while let Some(m) = matches.next() {
             let pattern_index = m.pattern_index;
-            for capture in m.captures {
+            for capture in m.captures() {
                 fresh.push((capture.node.byte_range(), capture.index, pattern_index));
             }
         }
