@@ -42,6 +42,7 @@ pub struct ExplorerPreviewJob {
     right_doc_id: DocumentId,
     path: PathBuf,
     show_hidden: bool,
+    token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl ExplorerPreviewJob {
@@ -50,11 +51,32 @@ impl ExplorerPreviewJob {
             right_doc_id,
             path,
             show_hidden,
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+        self.token = Some(token);
+        self
     }
 }
 
 impl Job for ExplorerPreviewJob {
+    fn name(&self) -> &'static str {
+        "explorer-preview"
+    }
+
+    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
+        self.token
+    }
+
+    fn target_document_id(&self) -> Option<DocumentId> {
+        Some(self.right_doc_id)
+    }
+
+    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
+        Some(crate::job_manager::AsyncOpDomain::ExplorerPreview)
+    }
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
@@ -93,7 +115,11 @@ impl Job for ExplorerPreviewJob {
                 dir_entries: Some(entries),
                 file_text: None,
             });
-            crate::job_manager::send_job_result(&sender, id, result);
+            if let Some(token) = self.token {
+                crate::job_manager::send_job_result_with_token(&sender, id, token, result);
+            } else {
+                crate::job_manager::send_job_result(&sender, id, result);
+            }
         } else {
             let text = match fs.read_file_prefix(&self.path, FILE_PREVIEW_BYTES) {
                 Err(_) => "<cannot open file>".to_string(),
@@ -117,7 +143,11 @@ impl Job for ExplorerPreviewJob {
                 dir_entries: None,
                 file_text: Some(text),
             });
-            crate::job_manager::send_job_result(&sender, id, result);
+            if let Some(token) = self.token {
+                crate::job_manager::send_job_result_with_token(&sender, id, token, result);
+            } else {
+                crate::job_manager::send_job_result(&sender, id, result);
+            }
         }
     }
 

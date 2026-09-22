@@ -20,11 +20,21 @@ crate::impl_job_payload!(GitStatusResult);
 pub struct GitStatusJob {
     doc_id: usize,
     repo_root: PathBuf,
+    token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl GitStatusJob {
     pub fn new(doc_id: usize, repo_root: PathBuf) -> Self {
-        Self { doc_id, repo_root }
+        Self {
+            doc_id,
+            repo_root,
+            token: None,
+        }
+    }
+
+    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+        self.token = Some(token);
+        self
     }
 }
 
@@ -33,6 +43,17 @@ impl Job for GitStatusJob {
         "git-status"
     }
 
+    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
+        self.token
+    }
+
+    fn target_document_id(&self) -> Option<crate::document::DocumentId> {
+        Some(self.doc_id as crate::document::DocumentId)
+    }
+
+    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
+        Some(crate::job_manager::AsyncOpDomain::GitStatus)
+    }
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
@@ -59,7 +80,11 @@ impl Job for GitStatusJob {
                     snapshot,
                     head_subject,
                 });
-                crate::job_manager::send_job_result(&sender, id, result);
+                if let Some(token) = self.token {
+                    crate::job_manager::send_job_result_with_token(&sender, id, token, result);
+                } else {
+                    crate::job_manager::send_job_result(&sender, id, result);
+                }
             }
             Err(e) => {
                 let _ = sender.send(JobMessage::Error(id, e.message));
@@ -94,6 +119,7 @@ pub struct GitDiffJob {
     staged_side: bool,
     /// Untracked (no index entry at all yet): fetched via `git diff --no-index` against `/dev/null` instead of `git diff [--cached]`, since a plain `git diff` never shows untracked paths.
     untracked: bool,
+    token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl GitDiffJob {
@@ -110,7 +136,13 @@ impl GitDiffJob {
             path,
             staged_side,
             untracked,
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+        self.token = Some(token);
+        self
     }
 }
 
@@ -119,6 +151,17 @@ impl Job for GitDiffJob {
         "git-diff"
     }
 
+    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
+        self.token
+    }
+
+    fn target_document_id(&self) -> Option<crate::document::DocumentId> {
+        Some(self.doc_id as crate::document::DocumentId)
+    }
+
+    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
+        Some(crate::job_manager::AsyncOpDomain::GitDiff)
+    }
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
@@ -173,7 +216,11 @@ impl Job for GitDiffJob {
             staged_side: self.staged_side,
             hunks,
         });
-        crate::job_manager::send_job_result(&sender, id, result);
+        if let Some(token) = self.token {
+            crate::job_manager::send_job_result_with_token(&sender, id, token, result);
+        } else {
+            crate::job_manager::send_job_result(&sender, id, result);
+        }
     }
 
     fn is_silent(&self) -> bool {
@@ -196,6 +243,7 @@ pub struct GitBlameJob {
     repo_root: PathBuf,
     path: PathBuf,
     at_commit: Option<String>,
+    token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl GitBlameJob {
@@ -210,13 +258,31 @@ impl GitBlameJob {
             repo_root,
             path,
             at_commit,
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+        self.token = Some(token);
+        self
     }
 }
 
 impl Job for GitBlameJob {
     fn name(&self) -> &'static str {
         "git-blame"
+    }
+
+    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
+        self.token
+    }
+
+    fn target_document_id(&self) -> Option<crate::document::DocumentId> {
+        Some(self.doc_id as crate::document::DocumentId)
+    }
+
+    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
+        Some(crate::job_manager::AsyncOpDomain::GitBlame)
     }
 
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
@@ -238,7 +304,11 @@ impl Job for GitBlameJob {
                     doc_id: self.doc_id,
                     lines,
                 });
-                crate::job_manager::send_job_result(&sender, id, result);
+                if let Some(token) = self.token {
+                    crate::job_manager::send_job_result_with_token(&sender, id, token, result);
+                } else {
+                    crate::job_manager::send_job_result(&sender, id, result);
+                }
             }
             Err(e) => {
                 let _ = sender.send(JobMessage::Error(id, e.message));
@@ -265,6 +335,7 @@ pub struct GitLogJob {
     doc_id: usize,
     repo_root: PathBuf,
     path: Option<PathBuf>,
+    token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl GitLogJob {
@@ -273,7 +344,13 @@ impl GitLogJob {
             doc_id,
             repo_root,
             path,
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+        self.token = Some(token);
+        self
     }
 }
 
@@ -282,6 +359,17 @@ impl Job for GitLogJob {
         "git-log"
     }
 
+    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
+        self.token
+    }
+
+    fn target_document_id(&self) -> Option<crate::document::DocumentId> {
+        Some(self.doc_id as crate::document::DocumentId)
+    }
+
+    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
+        Some(crate::job_manager::AsyncOpDomain::GitLog)
+    }
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
@@ -301,7 +389,11 @@ impl Job for GitLogJob {
                     doc_id: self.doc_id,
                     commits,
                 });
-                crate::job_manager::send_job_result(&sender, id, result);
+                if let Some(token) = self.token {
+                    crate::job_manager::send_job_result_with_token(&sender, id, token, result);
+                } else {
+                    crate::job_manager::send_job_result(&sender, id, result);
+                }
             }
             Err(e) => {
                 let _ = sender.send(JobMessage::Error(id, e.message));
@@ -330,6 +422,7 @@ pub struct GitShowJob {
     doc_id: usize,
     repo_root: PathBuf,
     sha: String,
+    token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl GitShowJob {
@@ -338,7 +431,13 @@ impl GitShowJob {
             doc_id,
             repo_root,
             sha,
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+        self.token = Some(token);
+        self
     }
 }
 
@@ -347,6 +446,17 @@ impl Job for GitShowJob {
         "git-show"
     }
 
+    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
+        self.token
+    }
+
+    fn target_document_id(&self) -> Option<crate::document::DocumentId> {
+        Some(self.doc_id as crate::document::DocumentId)
+    }
+
+    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
+        Some(crate::job_manager::AsyncOpDomain::GitShow)
+    }
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
@@ -358,7 +468,11 @@ impl Job for GitShowJob {
                     sha: self.sha,
                     body: stdout,
                 });
-                crate::job_manager::send_job_result(&sender, id, result);
+                if let Some(token) = self.token {
+                    crate::job_manager::send_job_result_with_token(&sender, id, token, result);
+                } else {
+                    crate::job_manager::send_job_result(&sender, id, result);
+                }
             }
             Err(e) => {
                 let _ = sender.send(JobMessage::Error(id, e.message));
@@ -458,6 +572,7 @@ pub struct GitGutterDiffJob {
     repo_root: PathBuf,
     rel_path: PathBuf,
     buffer_text: String,
+    token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl GitGutterDiffJob {
@@ -474,7 +589,13 @@ impl GitGutterDiffJob {
             repo_root,
             rel_path,
             buffer_text,
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+        self.token = Some(token);
+        self
     }
 }
 
@@ -483,6 +604,17 @@ impl Job for GitGutterDiffJob {
         "git-gutter-diff"
     }
 
+    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
+        self.token
+    }
+
+    fn target_document_id(&self) -> Option<crate::document::DocumentId> {
+        Some(self.doc_id as crate::document::DocumentId)
+    }
+
+    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
+        Some(crate::job_manager::AsyncOpDomain::GitGutter)
+    }
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
@@ -502,7 +634,11 @@ impl Job for GitGutterDiffJob {
                     revision: self.revision,
                     signs: Vec::new(),
                 });
-                crate::job_manager::send_job_result(&sender, id, result);
+                if let Some(token) = self.token {
+                    crate::job_manager::send_job_result_with_token(&sender, id, token, result);
+                } else {
+                    crate::job_manager::send_job_result(&sender, id, result);
+                }
                 return;
             }
         };
@@ -562,7 +698,11 @@ impl Job for GitGutterDiffJob {
             revision: self.revision,
             signs,
         });
-        crate::job_manager::send_job_result(&sender, id, result);
+        if let Some(token) = self.token {
+            crate::job_manager::send_job_result_with_token(&sender, id, token, result);
+        } else {
+            crate::job_manager::send_job_result(&sender, id, result);
+        }
     }
 
     fn is_silent(&self) -> bool {

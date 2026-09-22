@@ -39,14 +39,107 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
+        self.remove_document_with_intent(id, crate::document::RemovalIntent::Normal)
+    }
+
+    pub(super) fn remove_document_force(&mut self, id: DocumentId) -> Result<(), RiftError> {
+        self.remove_document_with_intent(id, crate::document::RemovalIntent::Force)
+    }
+
+    pub(super) fn remove_private_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
+        if self.document_manager.get_document(id).is_none() {
+            return Ok(());
+        }
+        self.remove_document_with_intent(id, crate::document::RemovalIntent::Force)
+    }
+
+    fn remove_document_with_intent(
+        &mut self,
+        id: DocumentId,
+        intent: crate::document::RemovalIntent,
+    ) -> Result<(), RiftError> {
+        let plan = self.document_manager.prepare_removal(id, intent)?;
+        let (handle, kind_id, descriptor) = {
+            let document = self.document_manager.get_document(id).ok_or_else(|| {
+                RiftError::new(
+                    ErrorType::Internal,
+                    crate::constants::errors::INTERNAL_ERROR,
+                    format!("Document {id} not found"),
+                )
+            })?;
+            (
+                document.handle(),
+                document.buffer_kind_id(),
+                std::sync::Arc::clone(&document.kind.descriptor),
+            )
+        };
+
+        self.job_manager.cancel_jobs_for_handle(handle);
+        match descriptor.on_close {
+            crate::document::CloseHandler::Native(close) => close(handle),
+            crate::document::CloseHandler::Lua => {
+                self.plugin_host.invoke_buffer_close(id, descriptor.name());
+            }
+        }
+        self.apply_plugin_mutations();
+
         #[cfg(feature = "lsp")]
-        self.lsp_notify_close(id);
+        {
+            self.lsp_notify_close(id);
+            if self
+                .pending_goto_target
+                .map(|(d, ..)| d == id)
+                .unwrap_or(false)
+            {
+                self.pending_goto_target = None;
+            }
+        }
+
+        self.file_load_jobs.retain(|_, target_id| *target_id != id);
         self.clear_git_gutter_state(id);
-        self.document_manager.remove_document(id)?;
+        self.pending_syntax_reparse.remove(&id);
+        self.pending_git_status_expand_all.remove(&id);
+        self.pending_git_log_expand_head.remove(&id);
+        self.display_map_cache.retain(|entry| entry.doc_id != id);
+        if self.pending_text_changed == Some(id) {
+            self.pending_text_changed = None;
+        }
+        if self
+            .pending_cursor_moved
+            .map(|(d, ..)| d == id)
+            .unwrap_or(false)
+        {
+            self.pending_cursor_moved = None;
+        }
+        if self
+            .search_highlights_synced
+            .as_ref()
+            .map(|(d, ..)| *d == id)
+            .unwrap_or(false)
+        {
+            self.search_highlights_synced = None;
+        }
+
+        let has_replacement = plan.has_replacement();
+        self.document_manager.commit_removal(plan);
+        self.buffer_kinds.decrement_open_count(kind_id);
+        if has_replacement {
+            self.buffer_kinds
+                .increment_open_count(crate::document::BufferKindId::FILE);
+        }
         if let Some(doc_id) = self.document_manager.active_document_id() {
+            for win_id in self.split_tree.windows_for_document(id) {
+                self.split_tree.set_window_document(win_id, doc_id);
+            }
             self.split_tree.set_focused_document(doc_id);
         }
         self.sync_state_with_active_document();
+
+        self.update_lua_state();
+        self.plugin_host
+            .dispatch(&crate::plugin::EditorEvent::BufClose { buf: id });
+        self.apply_plugin_mutations();
+
         Ok(())
     }
 
@@ -205,10 +298,16 @@ impl<T: TerminalBackend> Editor<T> {
 
         #[cfg(feature = "terminal_emulation")]
         {
-            let job = crate::job_manager::jobs::terminal_job::TerminalInputJob {
-                document_id: id,
-                rx,
-            };
+            let handle = self
+                .document_manager
+                .get_handle(id)
+                .expect("new terminal document has a handle");
+            let token = self.job_manager.next_token(
+                handle,
+                crate::document::BufferKindId::TERMINAL,
+                crate::job_manager::AsyncOpDomain::Terminal,
+            );
+            let job = crate::job_manager::jobs::terminal_job::TerminalInputJob::new(token, rx);
             self.job_manager.spawn(job);
         }
         #[cfg(not(feature = "terminal_emulation"))]

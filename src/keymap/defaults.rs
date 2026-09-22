@@ -1,8 +1,8 @@
 use crate::action::{Action, EditorAction, Motion};
 use crate::command::Command;
+use crate::document::BufferKindId;
 use crate::key::Key;
 use crate::keymap::{KeyContext, KeyMap};
-
 /// Register default keybindings
 pub fn register_defaults(keymap: &mut KeyMap) {
     // Terminal mode Defaults
@@ -35,27 +35,27 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     // FileExplorer (Directory buffer) Defaults. Normal motions fall through to KeyContext::Normal
     // via the fallback chain; only directory-specific bindings are registered here.
     keymap.register(
-        KeyContext::FileExplorer,
+        KeyContext::Buffer(BufferKindId::DIRECTORY),
         Key::Enter,
         Action::Buffer("explorer:select".to_string()),
     );
     keymap.register(
-        KeyContext::FileExplorer,
+        KeyContext::Buffer(BufferKindId::DIRECTORY),
         Key::Char('-'),
         Action::Buffer("explorer:parent".to_string()),
     );
     keymap.register(
-        KeyContext::FileExplorer,
+        KeyContext::Buffer(BufferKindId::DIRECTORY),
         Key::Backspace,
         Action::Buffer("explorer:parent".to_string()),
     );
     keymap.register(
-        KeyContext::FileExplorer,
+        KeyContext::Buffer(BufferKindId::DIRECTORY),
         Key::Escape,
         Action::Buffer("explorer:close".to_string()),
     );
     keymap.register(
-        KeyContext::FileExplorer,
+        KeyContext::Buffer(BufferKindId::DIRECTORY),
         Key::Char('H'),
         Action::Editor(EditorAction::ExplorerToggleHidden),
     );
@@ -63,133 +63,130 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     // GitStatus buffer Defaults;  fugitive's in-buffer vocabulary.
     // Normal motions fall through to KeyContext::Normal via the fallback chain.
     keymap.register(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         Key::Enter,
         Action::Buffer("git_status:select".to_string()),
     );
     keymap.register(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         Key::Char('s'),
         Action::Buffer("git_status:stage".to_string()),
     );
     keymap.register(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         Key::Char('u'),
         Action::Buffer("git_status:unstage".to_string()),
     );
     keymap.register(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         Key::Char('-'),
         Action::Buffer("git_status:toggle_stage".to_string()),
     );
     keymap.register(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         Key::Char('X'),
         Action::Buffer("git_status:discard".to_string()),
     );
     keymap.register(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         Key::Char('='),
         Action::Buffer("git_status:toggle_expand".to_string()),
     );
     keymap.register(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         Key::Char('b'),
         Action::Buffer("git_status:blame".to_string()),
     );
     keymap.register(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         Key::Char('r'),
         Action::Buffer("git_status:rebase".to_string()),
     );
     keymap.register_sequence(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         vec![Key::Char(']'), Key::Char('c')],
         Action::Buffer("git_status:next_hunk".to_string()),
     );
     keymap.register_sequence(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         vec![Key::Char('['), Key::Char('c')],
         Action::Buffer("git_status:prev_hunk".to_string()),
     );
     keymap.register_sequence(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         vec![Key::Char('c'), Key::Char('c')],
         Action::Editor(EditorAction::GitCommitNew),
     );
     keymap.register_sequence(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         vec![Key::Char('c'), Key::Char('a')],
         Action::Editor(EditorAction::GitCommitAmend),
     );
     keymap.register_sequence(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         vec![Key::Char('c'), Key::Char('w')],
         Action::Editor(EditorAction::GitCommitAmend),
     );
     keymap.register_sequence(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         vec![Key::Char('c'), Key::Char('f')],
         Action::Editor(EditorAction::GitCommitFixup),
     );
     keymap.register_sequence(
-        KeyContext::GitStatus,
+        KeyContext::Buffer(BufferKindId::GIT_STATUS),
         vec![Key::Char('g'), Key::Char('?')],
         Action::Editor(EditorAction::GitHelp),
     );
-
     // UndoTree buffer Defaults
     // j/k are overridden to skip connector lines; <CR> selects the node.
     keymap.register(
-        KeyContext::UndoTree,
+        KeyContext::Buffer(BufferKindId::UNDO_TREE),
         Key::Char('j'),
         Action::Buffer("undotree:next".to_string()),
     );
     keymap.register(
-        KeyContext::UndoTree,
+        KeyContext::Buffer(BufferKindId::UNDO_TREE),
         Key::Char('k'),
         Action::Buffer("undotree:prev".to_string()),
     );
     keymap.register(
-        KeyContext::UndoTree,
+        KeyContext::Buffer(BufferKindId::UNDO_TREE),
         Key::Enter,
         Action::Buffer("undotree:select".to_string()),
     );
     keymap.register(
-        KeyContext::UndoTree,
+        KeyContext::Buffer(BufferKindId::UNDO_TREE),
         Key::Escape,
         Action::Buffer("undotree:close".to_string()),
     );
 
     // Clipboard index buffer Defaults
     keymap.register(
-        KeyContext::Clipboard,
+        KeyContext::Buffer(BufferKindId::CLIPBOARD),
         Key::Enter,
         Action::Buffer("clipboard:select".to_string()),
     );
     keymap.register(
-        KeyContext::Clipboard,
+        KeyContext::Buffer(BufferKindId::CLIPBOARD),
         Key::Escape,
         Action::Buffer("clipboard:close".to_string()),
     );
     keymap.register(
-        KeyContext::Clipboard,
+        KeyContext::Buffer(BufferKindId::CLIPBOARD),
         Key::Char('n'),
         Action::Buffer("clipboard:new".to_string()),
     );
     keymap.register(
-        KeyContext::Clipboard,
+        KeyContext::Buffer(BufferKindId::CLIPBOARD),
         Key::Char('r'),
         Action::Buffer("clipboard:refresh".to_string()),
     );
-
     // ClipboardEntry scratch buffer: Escape returns focus to index pane
     keymap.register(
-        KeyContext::ClipboardEntry,
+        KeyContext::Buffer(BufferKindId::CLIPBOARD_ENTRY),
         Key::Escape,
         Action::Buffer("clipboard:entry:close".to_string()),
     );
-
     // Normal Mode Defaults
     // '-' opens the file-explorer buffer for the current file's parent directory
     keymap.register(
@@ -978,128 +975,128 @@ pub fn register_defaults(keymap: &mut KeyMap) {
 
     // GitRebaseTodo buffer Defaults
     keymap.register(
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
         Key::Char('X'),
         Action::Editor(EditorAction::GitRebaseAbort),
     );
     keymap.register(
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
         Key::Char('K'),
         Action::Editor(EditorAction::GitRebaseMoveUp),
     );
     keymap.register(
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
         Key::Char('J'),
         Action::Editor(EditorAction::GitRebaseMoveDown),
     );
     keymap.register(
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
         Key::Char('p'),
         Action::Editor(EditorAction::GitRebaseSetPick),
     );
     keymap.register(
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
         Key::Char('s'),
         Action::Editor(EditorAction::GitRebaseSetSquash),
     );
     keymap.register(
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
         Key::Char('f'),
         Action::Editor(EditorAction::GitRebaseSetFixup),
     );
     keymap.register(
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
         Key::Char('e'),
         Action::Editor(EditorAction::GitRebaseSetEdit),
     );
     keymap.register_sequence(
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
         vec![Key::Char('d'), Key::Char('d')],
         Action::Editor(EditorAction::GitRebaseDrop),
     );
     keymap.register(
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
         Key::Enter,
         Action::Editor(EditorAction::GitRebaseToggleFold),
     );
     keymap.register(
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
         Key::Char('='),
         Action::Editor(EditorAction::GitRebaseToggleFold),
     );
     keymap.register(
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
         Key::Char('c'),
         Action::Editor(EditorAction::GitRebaseOpenMessage),
     );
     keymap.register(
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
         Key::Char('r'),
         Action::Editor(EditorAction::GitRebaseOpenMessage),
     );
     keymap.register_sequence(
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
         vec![Key::Char('g'), Key::Char('?')],
         Action::Editor(EditorAction::GitHelp),
     );
 
     // GitBlame buffer Defaults
     keymap.register(
-        KeyContext::GitBlame,
+        KeyContext::Buffer(BufferKindId::GIT_BLAME),
         Key::Enter,
         Action::Buffer("git_blame:walk_back".to_string()),
     );
     keymap.register(
-        KeyContext::GitBlame,
+        KeyContext::Buffer(BufferKindId::GIT_BLAME),
         Key::Backspace,
         Action::Buffer("git_blame:walk_forward".to_string()),
     );
     keymap.register_sequence(
-        KeyContext::GitBlame,
+        KeyContext::Buffer(BufferKindId::GIT_BLAME),
         vec![Key::Char('g'), Key::Char('?')],
         Action::Editor(EditorAction::GitHelp),
     );
     keymap.register(
-        KeyContext::GitBlame,
+        KeyContext::Buffer(BufferKindId::GIT_BLAME),
         Key::Escape,
         Action::Buffer("git_blame:close".to_string()),
     );
 
     // GitLog buffer Defaults
     keymap.register(
-        KeyContext::GitLog,
+        KeyContext::Buffer(BufferKindId::GIT_LOG),
         Key::Enter,
         Action::Buffer("git_log:select".to_string()),
     );
     keymap.register_sequence(
-        KeyContext::GitLog,
+        KeyContext::Buffer(BufferKindId::GIT_LOG),
         vec![Key::Char('g'), Key::Char('?')],
         Action::Editor(EditorAction::GitHelp),
     );
     keymap.register(
-        KeyContext::GitLog,
+        KeyContext::Buffer(BufferKindId::GIT_LOG),
         Key::Char('='),
         Action::Buffer("git_log:toggle_expand".to_string()),
     );
     keymap.register(
-        KeyContext::GitLog,
+        KeyContext::Buffer(BufferKindId::GIT_LOG),
         Key::Char('r'),
         Action::Editor(EditorAction::GitRebaseFromLogCommit),
     );
 
     // Location list panel bindings (diagnostics / references)
     keymap.register(
-        KeyContext::LocationList,
+        KeyContext::Buffer(BufferKindId::LOCATION_LIST),
         Key::Enter,
         Action::Buffer("location_list:select".to_string()),
     );
     keymap.register(
-        KeyContext::LocationList,
+        KeyContext::Buffer(BufferKindId::LOCATION_LIST),
         Key::Char('q'),
         Action::Buffer("location_list:close".to_string()),
     );
     keymap.register(
-        KeyContext::LocationList,
+        KeyContext::Buffer(BufferKindId::LOCATION_LIST),
         Key::Char(' '),
         Action::Buffer("location_list:code_action".to_string()),
     );
@@ -1111,42 +1108,42 @@ pub fn register_defaults(keymap: &mut KeyMap) {
         Action::Editor(EditorAction::ToggleRegionsWindow),
     );
     keymap.register(
-        KeyContext::Regions,
+        KeyContext::Buffer(BufferKindId::REGIONS),
         Key::Char('j'),
         Action::Editor(EditorAction::RegionsListDown),
     );
     keymap.register(
-        KeyContext::Regions,
+        KeyContext::Buffer(BufferKindId::REGIONS),
         Key::Char('k'),
         Action::Editor(EditorAction::RegionsListUp),
     );
     keymap.register(
-        KeyContext::Regions,
+        KeyContext::Buffer(BufferKindId::REGIONS),
         Key::Enter,
         Action::Editor(EditorAction::RegionsListSelect),
     );
     keymap.register(
-        KeyContext::Regions,
+        KeyContext::Buffer(BufferKindId::REGIONS),
         Key::Char('x'),
         Action::Editor(EditorAction::RegionsListDrop),
     );
     keymap.register(
-        KeyContext::Regions,
+        KeyContext::Buffer(BufferKindId::REGIONS),
         Key::Char('q'),
         Action::Buffer("regions:close".to_string()),
     );
     keymap.register(
-        KeyContext::Regions,
+        KeyContext::Buffer(BufferKindId::REGIONS),
         Key::Char('d'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Delete)),
     );
     keymap.register(
-        KeyContext::Regions,
+        KeyContext::Buffer(BufferKindId::REGIONS),
         Key::Char('c'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Change)),
     );
     keymap.register(
-        KeyContext::Regions,
+        KeyContext::Buffer(BufferKindId::REGIONS),
         Key::Char('y'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
     );
@@ -1154,12 +1151,12 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     // Buffer-list panel: j/k inherit Normal's motion; only selection and close
     // are bound here.
     keymap.register(
-        KeyContext::BufferList,
+        KeyContext::Buffer(BufferKindId::BUFFER_LIST),
         Key::Enter,
         Action::Buffer("buffer_list:select".to_string()),
     );
     keymap.register(
-        KeyContext::BufferList,
+        KeyContext::Buffer(BufferKindId::BUFFER_LIST),
         Key::Escape,
         Action::Buffer("buffer_list:close".to_string()),
     );

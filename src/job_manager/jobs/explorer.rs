@@ -24,6 +24,7 @@ pub struct DirectoryListJob {
     doc_id: usize,
     path: PathBuf,
     show_hidden: bool,
+    token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl DirectoryListJob {
@@ -32,7 +33,13 @@ impl DirectoryListJob {
             doc_id,
             path,
             show_hidden,
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+        self.token = Some(token);
+        self
     }
 }
 
@@ -41,6 +48,17 @@ impl Job for DirectoryListJob {
         "directory-list"
     }
 
+    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
+        self.token
+    }
+
+    fn target_document_id(&self) -> Option<crate::document::DocumentId> {
+        Some(self.doc_id as crate::document::DocumentId)
+    }
+
+    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
+        Some(crate::job_manager::AsyncOpDomain::DirectoryListing)
+    }
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
@@ -67,7 +85,11 @@ impl Job for DirectoryListJob {
                     path: self.path,
                     entries: file_entries,
                 });
-                crate::job_manager::send_job_result(&sender, id, result);
+                if let Some(token) = self.token {
+                    crate::job_manager::send_job_result_with_token(&sender, id, token, result);
+                } else {
+                    crate::job_manager::send_job_result(&sender, id, result);
+                }
             }
             Err(e) => {
                 // Empty listing clears "Loading..." before the error notification
@@ -76,7 +98,11 @@ impl Job for DirectoryListJob {
                     path: self.path.clone(),
                     entries: vec![],
                 });
-                let _ = sender.send(JobMessage::Custom(id, result));
+                if let Some(token) = self.token {
+                    let _ = sender.send(JobMessage::CustomToken(id, token, result));
+                } else {
+                    let _ = sender.send(JobMessage::Custom(id, result));
+                }
                 let _ = sender.send(JobMessage::Error(id, e.message));
             }
         }

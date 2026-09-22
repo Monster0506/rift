@@ -28,6 +28,7 @@ pub struct FileSaveJob {
     pub path: PathBuf,
     pub line_ending: LineEnding,
     pub saved_seq: EditSeq,
+    pub token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl FileSaveJob {
@@ -44,7 +45,13 @@ impl FileSaveJob {
             path,
             line_ending,
             saved_seq,
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+        self.token = Some(token);
+        self
     }
 }
 
@@ -53,6 +60,17 @@ impl Job for FileSaveJob {
         "file-save"
     }
 
+    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
+        self.token
+    }
+
+    fn target_document_id(&self) -> Option<DocumentId> {
+        Some(self.document_id)
+    }
+
+    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
+        Some(crate::job_manager::AsyncOpDomain::FileSave)
+    }
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         crate::perf_span!("document_save", crate::perf::PerfFields::default());
         let parent = self.path.parent().unwrap_or_else(|| Path::new("."));
@@ -119,7 +137,16 @@ impl Job for FileSaveJob {
                         saved_seq: self.saved_seq,
                         path: self.path.clone(),
                     };
-                    crate::job_manager::send_job_result(&sender, id, Box::new(result));
+                    if let Some(token) = self.token {
+                        crate::job_manager::send_job_result_with_token(
+                            &sender,
+                            id,
+                            token,
+                            Box::new(result),
+                        );
+                    } else {
+                        crate::job_manager::send_job_result(&sender, id, Box::new(result));
+                    }
                 } else {
                     // Clean up temp file
                     let _ = fs::remove_file(&temp_path);
@@ -157,6 +184,7 @@ pub struct FileLoadJob {
     pub document_id: DocumentId,
     pub path: PathBuf,
     pub is_reload: bool,
+    pub token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl FileLoadJob {
@@ -165,6 +193,7 @@ impl FileLoadJob {
             document_id,
             path,
             is_reload: false,
+            token: None,
         }
     }
 
@@ -173,7 +202,13 @@ impl FileLoadJob {
             document_id,
             path,
             is_reload: true,
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+        self.token = Some(token);
+        self
     }
 }
 
@@ -182,6 +217,17 @@ impl Job for FileLoadJob {
         "file-load"
     }
 
+    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
+        self.token
+    }
+
+    fn target_document_id(&self) -> Option<DocumentId> {
+        Some(self.document_id)
+    }
+
+    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
+        Some(crate::job_manager::AsyncOpDomain::FileLoad)
+    }
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         let do_load = || -> Result<FileLoadResult, crate::error::RiftError> {
             let bytes = crate::fs_backend::backend().read_file(&self.path)?;
@@ -211,7 +257,16 @@ impl Job for FileLoadJob {
         match do_load() {
             Ok(result) => {
                 if !signal.is_cancelled() {
-                    crate::job_manager::send_job_result(&sender, id, Box::new(result));
+                    if let Some(token) = self.token {
+                        crate::job_manager::send_job_result_with_token(
+                            &sender,
+                            id,
+                            token,
+                            Box::new(result),
+                        );
+                    } else {
+                        crate::job_manager::send_job_result(&sender, id, Box::new(result));
+                    }
                 } else {
                     let _ = sender.send(JobMessage::Cancelled(id));
                 }
