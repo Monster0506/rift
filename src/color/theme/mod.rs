@@ -141,9 +141,14 @@ impl Theme {
             b: 110,
         };
         let punct = Color::Rgb {
-            r: 155,
-            g: 160,
-            b: 168,
+            r: 105,
+            g: 109,
+            b: 114,
+        };
+        let variable = Color::Rgb {
+            r: 74,
+            g: 64,
+            b: 58,
         };
         let syntax = SyntaxColors::from_base_colors(&[
             (KEYWORD, fg),
@@ -154,8 +159,8 @@ impl Theme {
             (CONSTANT, num),
             (BOOLEAN, num),
             (COMMENT, comment),
-            (VARIABLE, fg),
-            (PARAMETER, fg),
+            (VARIABLE, variable),
+            (PARAMETER, variable),
             (PROPERTY, fg),
             (ATTRIBUTE, fg),
             ("ui.lsp.ok", Color::DarkBlue),
@@ -213,7 +218,7 @@ impl Theme {
                 r: 0,
                 g: 120,
                 b: 212,
-            }, // #0078D4 - Fluent blue
+            },
             Some(syntax),
         )
     }
@@ -226,7 +231,7 @@ impl Theme {
             r: 224,
             g: 224,
             b: 224,
-        }; // Matches the theme foreground exactly (fixes the old ANSI White mismatch)
+        };
         let def = Color::Rgb {
             r: 111,
             g: 179,
@@ -252,6 +257,11 @@ impl Theme {
             g: 144,
             b: 160,
         };
+        let variable = Color::Rgb {
+            r: 214,
+            g: 201,
+            b: 184,
+        };
         let syntax = SyntaxColors::from_base_colors(&[
             (KEYWORD, fg),
             (FUNCTION, def),
@@ -261,8 +271,8 @@ impl Theme {
             (CONSTANT, num),
             (BOOLEAN, num),
             (COMMENT, comment),
-            (VARIABLE, fg),
-            (PARAMETER, fg),
+            (VARIABLE, variable),
+            (PARAMETER, variable),
             (PROPERTY, fg),
             (ATTRIBUTE, fg),
             (NAMESPACE, def),
@@ -317,7 +327,7 @@ impl Theme {
                 r: 86,
                 g: 156,
                 b: 214,
-            }, // #569CD6 - VS Code blue
+            },
             Some(syntax),
         )
     }
@@ -332,14 +342,14 @@ impl Theme {
             b: 178,
         };
         let def = Color::Rgb {
-            r: 69,
-            g: 133,
-            b: 136,
+            r: 142,
+            g: 192,
+            b: 124,
         };
         let string = Color::Rgb {
-            r: 152,
-            g: 151,
-            b: 26,
+            r: 184,
+            g: 187,
+            b: 38,
         };
         let num = Color::Rgb {
             r: 212,
@@ -356,6 +366,11 @@ impl Theme {
             g: 153,
             b: 132,
         };
+        let variable = Color::Rgb {
+            r: 195,
+            g: 210,
+            b: 213,
+        };
         let syntax = SyntaxColors::from_base_colors(&[
             (KEYWORD, fg),
             (FUNCTION, def),
@@ -365,8 +380,8 @@ impl Theme {
             (CONSTANT, num),
             (BOOLEAN, num),
             (COMMENT, comment),
-            (VARIABLE, fg),
-            (PARAMETER, fg),
+            (VARIABLE, variable),
+            (PARAMETER, variable),
             (PROPERTY, fg),
             (ATTRIBUTE, fg),
             (NAMESPACE, def),
@@ -438,7 +453,7 @@ impl Theme {
                 r: 255,
                 g: 146,
                 b: 47,
-            }, // #FF922F - Andrew Orange
+            },
             Some(syntax),
         )
     }
@@ -468,14 +483,19 @@ impl Theme {
             b: 173,
         };
         let comment = Color::Rgb {
-            r: 76,
-            g: 86,
-            b: 106,
+            r: 129,
+            g: 161,
+            b: 193,
         };
         let punct = Color::Rgb {
             r: 123,
             g: 136,
             b: 161,
+        };
+        let variable = Color::Rgb {
+            r: 216,
+            g: 222,
+            b: 233,
         };
         let syntax = SyntaxColors::from_base_colors(&[
             (KEYWORD, fg),
@@ -486,8 +506,8 @@ impl Theme {
             (CONSTANT, num),
             (BOOLEAN, num),
             (COMMENT, comment),
-            (VARIABLE, fg),
-            (PARAMETER, fg),
+            (VARIABLE, variable),
+            (PARAMETER, variable),
             (PROPERTY, def),
             (ATTRIBUTE, fg),
             (NAMESPACE, def),
@@ -558,7 +578,7 @@ impl Theme {
                 r: 136,
                 g: 192,
                 b: 208,
-            }, // #88C0D0 - Nordic frost
+            },
             Some(syntax),
         )
     }
