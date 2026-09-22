@@ -60,6 +60,9 @@ impl<T: TerminalBackend> Editor<T> {
             document_manager.add_document(new_doc);
         }
 
+        let mut buffer_kinds = crate::document::BufferKindRegistry::with_builtins();
+        buffer_kinds.increment_open_count(crate::document::BufferKindId::FILE);
+
         // Init terminal (clears screen, enters raw mode) AFTER loading the
         // document, so a load failure doesn't leave the terminal messed up.
         terminal.init()?;
@@ -90,6 +93,7 @@ impl<T: TerminalBackend> Editor<T> {
             term: terminal,
             render_system,
             document_manager,
+            buffer_kinds,
             current_mode: Mode::Normal,
             should_quit: false,
             state,
@@ -102,6 +106,8 @@ impl<T: TerminalBackend> Editor<T> {
             pending_quit_job_id: None,
             keymap: KeyMap::new(),
             split_tree,
+            native_action_handlers: super::handle_action::native_action_handlers(),
+            native_save_handlers: super::file_ops::native_save_handlers(),
             pending_keys: Vec::new(),
             pending_count: 0,
             pending_operator_count: 0,
@@ -328,10 +334,43 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
-    pub(super) fn load_plugins(&mut self) -> Result<(), RiftError> {
-        // Drop stale Lua annotation-action handlers; the fresh VM re-registers
-        // them as plugins run, and any that don't simply fall back to a no-op.
+    pub(super) fn retire_lua_plugins(&mut self) {
+        let active_gens = self.plugin_host.active_generations();
+        for gen in active_gens {
+            self.plugin_host.retire_generation(gen);
+            self.keymap.unregister_owner(gen.keymap_owner_token());
+
+            let retired_kind_ids = self.buffer_kinds.retire_plugin(
+                gen.plugin_id().as_nonzero(),
+                gen.generation(),
+                "plugin reloaded".to_string(),
+            );
+
+            for kind_id in retired_kind_ids {
+                if let Some(tombstone_desc) = self.buffer_kinds.get_by_id(kind_id) {
+                    let matching_doc_ids: Vec<crate::document::DocumentId> = self
+                        .document_manager
+                        .documents_iter()
+                        .filter(|doc| doc.kind.id == kind_id)
+                        .map(|doc| doc.id)
+                        .collect();
+
+                    for doc_id in matching_doc_ids {
+                        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                            doc.kind = crate::document::BufferKind::new(std::sync::Arc::clone(
+                                &tombstone_desc,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
         self.dispatch_registry.clear_lua_handlers();
+    }
+
+    pub(super) fn load_plugins(&mut self) -> Result<(), RiftError> {
+        self.retire_lua_plugins();
         if let Some(err) = self.plugin_host.init_lua() {
             return Err(RiftError::new(
                 ErrorType::Internal,

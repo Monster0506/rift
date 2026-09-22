@@ -1,3 +1,5 @@
+use crate::document::{BufferKindId, DocumentHandle, DocumentId};
+use crate::plugin::PluginGeneration;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -68,6 +70,93 @@ macro_rules! impl_job_payload {
         }
     };
 }
+/// Async operation domain for request epoch tracking and validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AsyncOpDomain {
+    SyntaxParse,
+    GitGutter,
+    DirectoryListing,
+    GitStatus,
+    GitDiff,
+    GitBlame,
+    GitLog,
+    GitShow,
+    UndoTree,
+    ExplorerPreview,
+    FileSave,
+    FileLoad,
+    Terminal,
+}
+
+/// Token establishing the freshness contract for an asynchronous operation against a document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AsyncToken {
+    pub handle: DocumentHandle,
+    pub expected_kind: BufferKindId,
+    pub epoch: u64,
+    pub owner: Option<PluginGeneration>,
+    pub domain: AsyncOpDomain,
+}
+
+impl AsyncToken {
+    /// Creates a new AsyncToken, inferring domain from `expected_kind` if possible.
+    pub const fn new(handle: DocumentHandle, expected_kind: BufferKindId, epoch: u64) -> Self {
+        let domain = match expected_kind {
+            BufferKindId::TERMINAL => AsyncOpDomain::Terminal,
+            BufferKindId::DIRECTORY => AsyncOpDomain::DirectoryListing,
+            BufferKindId::GIT_STATUS => AsyncOpDomain::GitStatus,
+            BufferKindId::GIT_BLAME => AsyncOpDomain::GitBlame,
+            BufferKindId::GIT_LOG => AsyncOpDomain::GitLog,
+            BufferKindId::UNDO_TREE => AsyncOpDomain::UndoTree,
+            _ => AsyncOpDomain::FileLoad,
+        };
+        Self {
+            handle,
+            expected_kind,
+            epoch,
+            owner: None,
+            domain,
+        }
+    }
+
+    /// Creates a new AsyncToken with an explicit operation domain.
+    pub const fn with_domain(
+        handle: DocumentHandle,
+        expected_kind: BufferKindId,
+        epoch: u64,
+        domain: AsyncOpDomain,
+    ) -> Self {
+        Self {
+            handle,
+            expected_kind,
+            epoch,
+            owner: None,
+            domain,
+        }
+    }
+
+    /// Creates a new AsyncToken with an owner generation and explicit domain.
+    pub const fn with_owner(
+        handle: DocumentHandle,
+        expected_kind: BufferKindId,
+        epoch: u64,
+        owner: Option<PluginGeneration>,
+        domain: AsyncOpDomain,
+    ) -> Self {
+        Self {
+            handle,
+            expected_kind,
+            epoch,
+            owner,
+            domain,
+        }
+    }
+
+    /// Returns the target document ID.
+    pub const fn doc_id(&self) -> DocumentId {
+        self.handle.doc_id
+    }
+}
 
 /// Message sent from a background job to the editor.
 #[derive(Debug)]
@@ -84,16 +173,29 @@ pub enum JobMessage {
     Cancelled(usize),
     /// Custom payload for job-specific results
     Custom(usize, Box<dyn JobPayload>),
-    /// Terminal output data (DocumentId, Data)
-    TerminalOutput(crate::document::DocumentId, Vec<u8>),
-    /// Terminal process exit (DocumentId)
-    TerminalExit(crate::document::DocumentId),
+    /// Custom payload with an associated AsyncToken
+    CustomToken(usize, AsyncToken, Box<dyn JobPayload>),
+    /// Terminal output data (AsyncToken, Data)
+    TerminalOutput(AsyncToken, Vec<u8>),
+    /// Terminal process exit (AsyncToken)
+    TerminalExit(AsyncToken),
 }
 
 /// Sends a job's successful result, then its Finished message. The common
 /// two-message tail of a job's `run()` once it has produced a payload.
 pub fn send_job_result(sender: &Sender<JobMessage>, id: usize, payload: Box<dyn JobPayload>) {
     let _ = sender.send(JobMessage::Custom(id, payload));
+    let _ = sender.send(JobMessage::Finished(id, true));
+}
+
+/// Sends a job's successful result carrying an AsyncToken, then its Finished message.
+pub fn send_job_result_with_token(
+    sender: &Sender<JobMessage>,
+    id: usize,
+    token: AsyncToken,
+    payload: Box<dyn JobPayload>,
+) {
+    let _ = sender.send(JobMessage::CustomToken(id, token, payload));
     let _ = sender.send(JobMessage::Finished(id, true));
 }
 
@@ -158,6 +260,20 @@ pub trait Job: Send + std::fmt::Debug + 'static {
     fn name(&self) -> &'static str {
         "job"
     }
+    /// Returns the AsyncToken associated with this job, if document-targeted.
+    fn async_token(&self) -> Option<AsyncToken> {
+        None
+    }
+
+    /// Target document ID if this job is document-targeted.
+    fn target_document_id(&self) -> Option<DocumentId> {
+        None
+    }
+
+    /// Target async operation domain if this job is document-targeted.
+    fn target_domain(&self) -> Option<AsyncOpDomain> {
+        None
+    }
 }
 
 impl Job for Box<dyn Job> {
@@ -172,6 +288,15 @@ impl Job for Box<dyn Job> {
     fn name(&self) -> &'static str {
         (**self).name()
     }
+    fn async_token(&self) -> Option<AsyncToken> {
+        (**self).async_token()
+    }
+    fn target_document_id(&self) -> Option<DocumentId> {
+        (**self).target_document_id()
+    }
+    fn target_domain(&self) -> Option<AsyncOpDomain> {
+        (**self).target_domain()
+    }
 }
 
 impl Job for Box<dyn Job + Send> {
@@ -185,6 +310,15 @@ impl Job for Box<dyn Job + Send> {
 
     fn name(&self) -> &'static str {
         (**self).name()
+    }
+    fn async_token(&self) -> Option<AsyncToken> {
+        (**self).async_token()
+    }
+    fn target_document_id(&self) -> Option<DocumentId> {
+        (**self).target_document_id()
+    }
+    fn target_domain(&self) -> Option<AsyncOpDomain> {
+        (**self).target_domain()
     }
 }
 
@@ -211,6 +345,12 @@ pub struct JobManager {
     next_job_id: usize,
     /// Caps how many job bodies may run concurrently.
     concurrency_limiter: Arc<Semaphore>,
+    /// Tracks tokens for running jobs: job_id -> AsyncToken
+    job_tokens: HashMap<usize, AsyncToken>,
+    /// Tracks current epoch per document handle and operation domain
+    current_epochs: HashMap<(DocumentHandle, AsyncOpDomain), u64>,
+    /// Active document handles mapped by DocumentId
+    active_handles: HashMap<DocumentId, (DocumentHandle, BufferKindId, Option<PluginGeneration>)>,
 }
 
 impl JobManager {
@@ -223,6 +363,9 @@ impl JobManager {
             jobs: HashMap::new(),
             next_job_id: 1,
             concurrency_limiter: Arc::new(Semaphore::new(MAX_CONCURRENT_JOBS)),
+            job_tokens: HashMap::new(),
+            current_epochs: HashMap::new(),
+            active_handles: HashMap::new(),
         }
     }
 
@@ -231,7 +374,20 @@ impl JobManager {
     pub fn spawn<J: Job>(&mut self, job: J) -> usize {
         let id = self.next_job_id;
         self.next_job_id += 1;
-
+        if let Some(token) = job.async_token() {
+            self.job_tokens.insert(id, token);
+        } else if let (Some(doc_id), Some(domain)) = (job.target_document_id(), job.target_domain())
+        {
+            // Only tokenize when the real handle is already known; a fabricated
+            // instance-0 handle would silently discard results for recycled doc IDs.
+            if let Some(&(handle, kind, owner)) = self.active_handles.get(&doc_id) {
+                let entry = self.current_epochs.entry((handle, domain)).or_insert(0);
+                *entry += 1;
+                let epoch = *entry;
+                let token = AsyncToken::with_owner(handle, kind, epoch, owner, domain);
+                self.job_tokens.insert(id, token);
+            }
+        }
         let sender = self.sender.clone();
         let cancellation_token = Arc::new(AtomicBool::new(false));
         let signal = CancellationSignal {
@@ -328,6 +484,7 @@ impl JobManager {
             if let Some(job) = self.jobs.remove(id) {
                 let _ = job.handle.join();
             }
+            self.job_tokens.remove(id);
         }
 
         finished_ids
@@ -366,6 +523,128 @@ impl JobManager {
     /// the thread handle so it's accurate even if the caller isn't draining.
     pub fn any_job_thread_alive(&self) -> bool {
         self.jobs.values().any(|h| !h.handle.is_finished())
+    }
+    /// Spawns a job with an explicitly registered AsyncToken.
+    pub fn spawn_with_token<J: Job>(&mut self, job: J, token: AsyncToken) -> usize {
+        let id = self.spawn(job);
+        self.register_job_token(id, token);
+        id
+    }
+    /// Register an active document handle, kind, and optional plugin owner.
+    pub fn register_document_handle(
+        &mut self,
+        handle: DocumentHandle,
+        kind: BufferKindId,
+        owner: Option<PluginGeneration>,
+    ) {
+        self.active_handles
+            .insert(handle.doc_id, (handle, kind, owner));
+    }
+
+    /// Unregister a document handle when closed.
+    pub fn unregister_document_handle(&mut self, handle: DocumentHandle) {
+        if let Some((curr, _, _)) = self.active_handles.get(&handle.doc_id) {
+            if *curr == handle {
+                self.active_handles.remove(&handle.doc_id);
+            }
+        }
+    }
+
+    /// Generates a fresh AsyncToken for the given document handle, kind, and domain,
+    /// advancing the request epoch so any older token for this domain becomes stale.
+    pub fn next_token(
+        &mut self,
+        handle: DocumentHandle,
+        expected_kind: BufferKindId,
+        domain: AsyncOpDomain,
+    ) -> AsyncToken {
+        self.register_document_handle(handle, expected_kind, None);
+        let entry = self.current_epochs.entry((handle, domain)).or_insert(0);
+        *entry += 1;
+        let epoch = *entry;
+        AsyncToken::with_domain(handle, expected_kind, epoch, domain)
+    }
+
+    /// Generates a fresh AsyncToken with an explicit plugin generation owner.
+    pub fn next_token_with_owner(
+        &mut self,
+        handle: DocumentHandle,
+        expected_kind: BufferKindId,
+        owner: Option<PluginGeneration>,
+        domain: AsyncOpDomain,
+    ) -> AsyncToken {
+        self.register_document_handle(handle, expected_kind, owner);
+        let entry = self.current_epochs.entry((handle, domain)).or_insert(0);
+        *entry += 1;
+        let epoch = *entry;
+        AsyncToken::with_owner(handle, expected_kind, epoch, owner, domain)
+    }
+
+    /// Registers an AsyncToken for a specific job ID.
+    pub fn register_job_token(&mut self, job_id: usize, token: AsyncToken) {
+        self.job_tokens.insert(job_id, token);
+    }
+
+    /// Retrieves the AsyncToken associated with a job ID, if any.
+    pub fn job_token(&self, job_id: usize) -> Option<AsyncToken> {
+        self.job_tokens.get(&job_id).copied()
+    }
+
+    /// Checks whether an AsyncToken's epoch matches the current epoch for its handle and domain.
+    pub fn is_token_current(&self, token: &AsyncToken) -> bool {
+        self.current_epochs
+            .get(&(token.handle, token.domain))
+            .copied()
+            .map(|current| current == token.epoch)
+            .unwrap_or(false)
+    }
+
+    /// Returns the current epoch for a handle and domain, if recorded.
+    pub fn current_epoch(&self, handle: DocumentHandle, domain: AsyncOpDomain) -> Option<&u64> {
+        self.current_epochs.get(&(handle, domain))
+    }
+
+    /// Cancels all tracked jobs for a given document handle and purges their epochs/tokens.
+    pub fn cancel_jobs_for_handle(&mut self, handle: DocumentHandle) -> Vec<usize> {
+        let matching_ids: Vec<usize> = self
+            .job_tokens
+            .iter()
+            .filter(|(_, token)| token.handle == handle)
+            .map(|(id, _)| *id)
+            .collect();
+        for &id in &matching_ids {
+            self.cancel_job(id);
+            self.job_tokens.remove(&id);
+        }
+        self.current_epochs.retain(|(h, _), _| *h != handle);
+        if let Some((curr, _, _)) = self.active_handles.get(&handle.doc_id) {
+            if *curr == handle {
+                self.active_handles.remove(&handle.doc_id);
+            }
+        }
+        matching_ids
+    }
+
+    /// Cancels all tracked jobs for a given document ID and purges their epochs/tokens.
+    pub fn cancel_document_jobs(&mut self, doc_id: DocumentId) -> Vec<usize> {
+        let matching_ids: Vec<usize> = self
+            .job_tokens
+            .iter()
+            .filter(|(_, token)| token.doc_id() == doc_id)
+            .map(|(id, _)| *id)
+            .collect();
+        for &id in &matching_ids {
+            self.cancel_job(id);
+            self.job_tokens.remove(&id);
+        }
+        self.current_epochs.retain(|(h, _), _| h.doc_id != doc_id);
+        self.active_handles.remove(&doc_id);
+        matching_ids
+    }
+
+    /// Invalidate any recorded request epochs for a document ID without cancelling jobs.
+    pub fn invalidate_document_epochs(&mut self, doc_id: DocumentId) {
+        self.current_epochs.retain(|(h, _), _| h.doc_id != doc_id);
     }
 }
 

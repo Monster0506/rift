@@ -42,8 +42,8 @@ pub struct SyntaxParseJob {
     /// Highlights as of `old_tree`, plus the single edit since then (if
     /// exactly one landed); otherwise the highlights query rescans everything.
     old_highlights: Arc<IntervalTree<u32>>,
+    token: Option<crate::job_manager::AsyncToken>,
 }
-
 impl std::fmt::Debug for SyntaxParseJob {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SyntaxParseJob")
@@ -81,7 +81,13 @@ impl SyntaxParseJob {
             single_edit: None,
             _lib: None,
             old_highlights: Arc::new(IntervalTree::default()),
+            token: None,
         }
+    }
+
+    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+        self.token = Some(token);
+        self
     }
 
     /// Attach the backing library handle for `parser`'s language, if it was
@@ -123,6 +129,17 @@ impl Job for SyntaxParseJob {
         "syntax-parse"
     }
 
+    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
+        self.token
+    }
+
+    fn target_document_id(&self) -> Option<crate::document::DocumentId> {
+        Some(self.document_id)
+    }
+
+    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
+        Some(crate::job_manager::AsyncOpDomain::SyntaxParse)
+    }
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
@@ -148,6 +165,7 @@ impl Job for SyntaxParseJob {
             single_edit,
             _lib,
             old_highlights,
+            token,
         } = *self;
 
         // Uses logical bytes, not the rendered form, so tree-sitter offsets match
@@ -260,7 +278,11 @@ impl Job for SyntaxParseJob {
             logical_bytes: source_bytes,
         };
 
-        crate::job_manager::send_job_result(&sender, id, Box::new(result));
+        if let Some(token) = token {
+            crate::job_manager::send_job_result_with_token(&sender, id, token, Box::new(result));
+        } else {
+            crate::job_manager::send_job_result(&sender, id, Box::new(result));
+        }
     }
 
     fn is_silent(&self) -> bool {
