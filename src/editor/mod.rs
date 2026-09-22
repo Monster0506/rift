@@ -112,9 +112,7 @@ fn resolve_wrap_params(
     global_wrap_width: Option<usize>,
 ) -> Option<(usize, usize)> {
     use crate::document::definitions::WrapMode;
-    // Terminal and directory buffers never use soft-wrap: terminals manage their own
-    // cursor, and directory buffers have invisible ID prefixes the display map doesn't know about.
-    if doc.is_terminal() || doc.is_directory() {
+    if doc.projection() != crate::document::TextProjectionPolicy::PlainText {
         return None;
     }
     let w = match &doc.options.wrap {
@@ -146,6 +144,7 @@ pub struct Editor<T: TerminalBackend> {
     /// Terminal backend
     pub term: T,
     pub document_manager: crate::document::DocumentManager,
+    pub buffer_kinds: crate::document::BufferKindRegistry,
     pub render_system: crate::render::RenderSystem,
     current_mode: Mode,
     should_quit: bool,
@@ -160,6 +159,12 @@ pub struct Editor<T: TerminalBackend> {
     pending_quit_job_id: Option<usize>,
     pub keymap: KeyMap,
     pub split_tree: SplitTree,
+    native_action_handlers: std::collections::HashMap<
+        crate::document::BufferKindId,
+        handle_action::NativeActionHandler<T>,
+    >,
+    native_save_handlers:
+        std::collections::HashMap<crate::document::BufferKindId, file_ops::NativeSaveHandler<T>>,
     // Input state
     pending_keys: Vec<crate::key::Key>,
     pending_count: usize,

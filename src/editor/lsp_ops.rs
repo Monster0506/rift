@@ -1060,7 +1060,6 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        doc.is_read_only = true;
         let content: String = entries
             .iter()
             .map(|e| e.display.as_str())
@@ -1068,10 +1067,7 @@ impl<T: TerminalBackend> Editor<T> {
             .join("\n");
         doc.replace_buffer_content(&content);
         let _ = doc.buffer.set_cursor(0);
-        doc.kind = crate::document::BufferKind::LocationList {
-            source_doc_id,
-            entries,
-        };
+        doc.set_location_list(source_doc_id, entries);
         self.document_manager.add_private_document(doc);
 
         let size = self

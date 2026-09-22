@@ -2,149 +2,260 @@ use super::Editor;
 use crate::error::{ErrorType, RiftError};
 use crate::term::TerminalBackend;
 
+pub(super) type NativeSaveHandler<T> = fn(&mut Editor<T>) -> crate::document::SaveResult;
+
+fn save_directory<T: TerminalBackend>(editor: &mut Editor<T>) -> crate::document::SaveResult {
+    editor.apply_directory_diff();
+    crate::document::SaveResult::Saved
+}
+
+fn save_commit_message<T: TerminalBackend>(editor: &mut Editor<T>) -> crate::document::SaveResult {
+    editor.apply_git_commit_message();
+    crate::document::SaveResult::Saved
+}
+
+fn save_clipboard<T: TerminalBackend>(editor: &mut Editor<T>) -> crate::document::SaveResult {
+    editor.apply_clipboard_diff();
+    crate::document::SaveResult::Saved
+}
+
+fn save_clipboard_entry<T: TerminalBackend>(editor: &mut Editor<T>) -> crate::document::SaveResult {
+    editor.apply_clipboard_entry_save();
+    crate::document::SaveResult::Saved
+}
+
+fn save_rebase<T: TerminalBackend>(editor: &mut Editor<T>) -> crate::document::SaveResult {
+    editor.apply_git_rebase_todo();
+    crate::document::SaveResult::Saved
+}
+
+pub(super) fn native_save_handlers<T: TerminalBackend>(
+) -> std::collections::HashMap<crate::document::BufferKindId, NativeSaveHandler<T>> {
+    use crate::document::BufferKindId;
+
+    let mut handlers = std::collections::HashMap::new();
+    handlers.insert(
+        BufferKindId::DIRECTORY,
+        save_directory::<T> as NativeSaveHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::GIT_COMMIT_MESSAGE,
+        save_commit_message::<T> as NativeSaveHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::CLIPBOARD,
+        save_clipboard::<T> as NativeSaveHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::CLIPBOARD_ENTRY,
+        save_clipboard_entry::<T> as NativeSaveHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::GIT_REBASE_TODO,
+        save_rebase::<T> as NativeSaveHandler<T>,
+    );
+    handlers
+}
+
 impl<T: TerminalBackend> Editor<T> {
-    pub(super) fn do_save(&mut self) {
-        use crate::document::BufferKind;
-        if let Some(doc) = self.document_manager.active_document() {
-            match &doc.kind {
-                BufferKind::File => {
-                    let (save_info, committed_prior) = {
-                        let doc = self.document_manager.active_document_mut().unwrap();
-                        let committed_prior = doc.commit_pending_ghost();
-                        (
-                            doc.path().map(|p| (doc.id, p.to_path_buf())),
-                            committed_prior,
-                        )
-                    };
-                    if committed_prior {
-                        self.do_incremental_syntax_parse();
-                    }
-                    if let Some((buf_id, path)) = save_info {
-                        self.plugin_host
-                            .dispatch(&crate::plugin::EditorEvent::BufSavePre {
-                                buf: buf_id,
-                                path: path.clone(),
-                            });
-                        self.apply_plugin_mutations();
-                        let doc = self.document_manager.active_document_mut().unwrap();
-                        let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
-                            doc.id,
-                            doc.buffer.line_index.table.clone(),
-                            path,
-                            doc.options.line_ending,
-                            doc.history.current_seq(),
-                        );
-                        self.job_manager.spawn(job);
-                    } else {
-                        self.state.handle_error(RiftError::new(
-                            ErrorType::Io,
-                            "NO_FILENAME",
-                            "No file name",
-                        ));
-                    }
-                }
-                BufferKind::Directory { .. } => {
-                    self.apply_directory_diff();
-                }
-                BufferKind::GitCommitMessage { .. } => {
-                    self.apply_git_commit_message();
-                }
-                BufferKind::Clipboard { .. } => {
-                    self.apply_clipboard_diff();
-                }
-                BufferKind::ClipboardEntry { .. } => {
-                    self.apply_clipboard_entry_save();
-                }
-                BufferKind::GitRebaseTodo { .. } => {
-                    self.apply_git_rebase_todo();
-                }
-                BufferKind::UndoTree { .. }
-                | BufferKind::Terminal
-                | BufferKind::Messages { .. }
-                | BufferKind::LocationList { .. }
-                | BufferKind::Regions { .. }
-                | BufferKind::BufferList { .. }
-                | BufferKind::Scratch { .. }
-                | BufferKind::GitBlame { .. }
-                | BufferKind::GitLog { .. }
-                | BufferKind::GitStatus { .. } => {
-                    self.state.handle_error(RiftError::new(
-                        ErrorType::Io,
-                        "CANT_SAVE",
-                        format!(
-                            "{} buffer cannot be saved",
-                            self.document_manager
-                                .active_document()
-                                .map(|d| d.display_name().into_owned())
-                                .unwrap_or_default()
-                        ),
-                    ));
+    pub(super) fn dispatch_save_sync(&mut self) -> crate::document::SaveResult {
+        let Some((doc_id, kind_id, kind_name, dispatch)) =
+            self.document_manager.active_document().map(|document| {
+                (
+                    document.id,
+                    document.buffer_kind_id(),
+                    document.descriptor().name().to_string(),
+                    document.descriptor().save_dispatch,
+                )
+            })
+        else {
+            self.state.clear_command_line();
+            return crate::document::SaveResult::Rejected;
+        };
+
+        match dispatch {
+            crate::document::SaveDispatch::Lua => {
+                let saved = self.plugin_host.invoke_buffer_save(doc_id, &kind_name);
+                self.apply_plugin_mutations();
+                self.state.clear_command_line();
+                if saved {
+                    crate::document::SaveResult::Saved
+                } else {
+                    crate::document::SaveResult::Failed
                 }
             }
+            crate::document::SaveDispatch::Disabled => {
+                self.state.clear_command_line();
+                crate::document::SaveResult::Rejected
+            }
+            crate::document::SaveDispatch::Reject => {
+                self.state.handle_error(RiftError::new(
+                    ErrorType::Io,
+                    "CANT_SAVE",
+                    format!(
+                        "{} buffer cannot be saved",
+                        self.document_manager
+                            .active_document()
+                            .map(|document| document.display_name().into_owned())
+                            .unwrap_or_default()
+                    ),
+                ));
+                self.state.clear_command_line();
+                crate::document::SaveResult::Rejected
+            }
+            crate::document::SaveDispatch::Native(handler) => {
+                let result = if let Some(handler) = self.native_save_handlers.get(&kind_id).copied()
+                {
+                    handler(self)
+                } else if let Some(handle) = self
+                    .document_manager
+                    .active_document()
+                    .map(|document| document.handle())
+                {
+                    handler(handle)
+                } else {
+                    crate::document::SaveResult::Rejected
+                };
+                self.state.clear_command_line();
+                result
+            }
         }
-        self.state.clear_command_line();
+    }
+
+    pub(super) fn do_save(&mut self) {
+        let is_plain_file = self
+            .document_manager
+            .active_document()
+            .is_some_and(|doc| doc.buffer_kind_id() == crate::document::BufferKindId::FILE);
+        if is_plain_file {
+            let (save_info, committed_prior) = {
+                let document = self.document_manager.active_document_mut().unwrap();
+                let committed_prior = document.commit_pending_ghost();
+                (
+                    document
+                        .path()
+                        .map(|path| (document.id, path.to_path_buf())),
+                    committed_prior,
+                )
+            };
+            if committed_prior {
+                self.do_incremental_syntax_parse();
+            }
+            if let Some((buf_id, path)) = save_info {
+                self.plugin_host
+                    .dispatch(&crate::plugin::EditorEvent::BufSavePre {
+                        buf: buf_id,
+                        path: path.clone(),
+                    });
+                self.apply_plugin_mutations();
+                let document = self.document_manager.active_document_mut().unwrap();
+                let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
+                    document.id,
+                    document.buffer.line_index.table.clone(),
+                    path,
+                    document.options.line_ending,
+                    document.history.current_seq(),
+                );
+                self.job_manager.spawn(job);
+            } else {
+                self.state.handle_error(RiftError::new(
+                    ErrorType::Io,
+                    "NO_FILENAME",
+                    "No file name",
+                ));
+            }
+            self.state.clear_command_line();
+        } else {
+            self.dispatch_save_sync();
+        }
     }
 
     pub(super) fn do_save_and_quit(&mut self) {
-        use crate::document::BufferKind;
-        // `do_save()` already dispatches correctly per `BufferKind`; every non-`File` special buffer (Directory/Clipboard/GitStatus/ GitCommitMessage/GitRebaseTodo/...) saves synchronously, so there is no async job to wait on before quitting. Only `File` needs the job-based path below (must wait for the write to.
-        let is_plain_file = matches!(
-            self.document_manager.active_document().map(|d| &d.kind),
-            Some(BufferKind::File)
-        );
-        if !is_plain_file {
-            self.do_save();
-            self.should_quit = true;
+        let is_plain_file = self
+            .document_manager
+            .active_document()
+            .is_some_and(|doc| doc.buffer_kind_id() == crate::document::BufferKindId::FILE);
+        if is_plain_file {
+            let committed_prior = self
+                .document_manager
+                .active_document_mut()
+                .is_some_and(|doc| doc.commit_pending_ghost());
+            if committed_prior {
+                self.do_incremental_syntax_parse();
+            }
+            let res = {
+                let doc = self.document_manager.active_document().unwrap();
+                if doc.has_path() {
+                    Ok((
+                        doc.id,
+                        doc.path().unwrap().to_path_buf(),
+                        doc.buffer.line_index.table.clone(),
+                        doc.options.line_ending,
+                        doc.history.current_seq(),
+                    ))
+                } else if let Some(path) = &self.state.file_path {
+                    Ok((
+                        doc.id,
+                        std::path::PathBuf::from(path),
+                        doc.buffer.line_index.table.clone(),
+                        doc.options.line_ending,
+                        doc.history.current_seq(),
+                    ))
+                } else {
+                    Err(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))
+                }
+            };
+            match res {
+                Ok((doc_id, path, table, line_ending, saved_seq)) => {
+                    let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
+                        doc_id,
+                        table,
+                        path.clone(),
+                        line_ending,
+                        saved_seq,
+                    );
+                    let id = self.job_manager.spawn(job);
+                    self.pending_quit_job_id = Some(id);
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        format!("Saving {} and quitting...", path.display()),
+                    );
+                }
+                Err(e) => self.state.handle_error(e),
+            }
+            self.state.clear_command_line();
             return;
         }
-        let committed_prior = self
+
+        let Some((doc_id, handle)) = self
             .document_manager
-            .active_document_mut()
-            .is_some_and(|doc| doc.commit_pending_ghost());
-        if committed_prior {
-            self.do_incremental_syntax_parse();
-        }
-        let res = {
-            let doc = self.document_manager.active_document().unwrap();
-            if doc.has_path() {
-                Ok((
-                    doc.id,
-                    doc.path().unwrap().to_path_buf(),
-                    doc.buffer.line_index.table.clone(),
-                    doc.options.line_ending,
-                    doc.history.current_seq(),
-                ))
-            } else if let Some(path) = &self.state.file_path {
-                Ok((
-                    doc.id,
-                    std::path::PathBuf::from(path),
-                    doc.buffer.line_index.table.clone(),
-                    doc.options.line_ending,
-                    doc.history.current_seq(),
-                ))
-            } else {
-                Err(RiftError::new(ErrorType::Io, "NO_FILENAME", "No file name"))
-            }
+            .active_document()
+            .map(|doc| (doc.id, doc.handle()))
+        else {
+            self.state.clear_command_line();
+            return;
         };
-        match res {
-            Ok((doc_id, path, table, line_ending, saved_seq)) => {
-                let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
-                    doc_id,
-                    table,
-                    path.clone(),
-                    line_ending,
-                    saved_seq,
-                );
-                let id = self.job_manager.spawn(job);
-                self.pending_quit_job_id = Some(id);
-                self.state.notify(
-                    crate::notification::NotificationType::Info,
-                    format!("Saving {} and quitting...", path.display()),
-                );
-            }
-            Err(e) => self.state.handle_error(e),
+
+        // Synchronous descriptor save dispatch
+        let save_result = self.dispatch_save_sync();
+        if save_result != crate::document::SaveResult::Saved {
+            // Failed or rejected save leaves the document open without quitting
+            return;
         }
-        self.state.clear_command_line();
+
+        // Revalidate source handle
+        if self
+            .document_manager
+            .get_document_by_handle(handle)
+            .is_some()
+        {
+            if let Err(e) = self.remove_document(doc_id) {
+                self.state.handle_error(e);
+                return;
+            }
+        }
+
+        self.should_quit = true;
     }
 
     pub(super) fn do_quit(&mut self, force: bool) {
@@ -152,8 +263,7 @@ impl<T: TerminalBackend> Editor<T> {
         let in_clipboard_entry = self
             .document_manager
             .active_document()
-            .map(|d| matches!(d.kind, crate::document::BufferKind::ClipboardEntry { .. }))
-            .unwrap_or(false);
+            .is_some_and(|doc| doc.is_clipboard_entry());
         if in_clipboard_entry {
             self.handle_clipboard_entry_close();
             return;
@@ -189,7 +299,9 @@ impl<T: TerminalBackend> Editor<T> {
             if !force {
                 let doc_id = self.active_document_id();
                 if let Some(doc) = self.document_manager.get_document(doc_id) {
-                    if doc.is_dirty() && !doc.is_special() {
+                    let confirm_dirty = doc.kind.descriptor.policies.close
+                        == crate::document::ClosePolicy::ConfirmDirty;
+                    if doc.is_dirty() && (confirm_dirty || !doc.is_special()) {
                         self.state.handle_error(RiftError::warning(
                             ErrorType::Execution,
                             crate::constants::errors::UNSAVED_CHANGES,
@@ -202,25 +314,20 @@ impl<T: TerminalBackend> Editor<T> {
             self.should_quit = true;
         } else {
             let doc_id = self.active_document_id();
-            #[cfg(feature = "lsp")]
-            self.lsp_notify_close(doc_id);
             let result = if force {
-                self.document_manager.remove_document_force(doc_id)
+                self.remove_document_force(doc_id)
             } else {
-                self.document_manager.remove_document(doc_id)
+                self.remove_document(doc_id)
             };
             match result {
                 Err(e) => self.state.handle_error(e),
                 Ok(()) => {
-                    self.update_lua_state();
-                    self.plugin_host
-                        .dispatch(&crate::plugin::EditorEvent::BufClose { buf: doc_id });
                     if let Some(new_doc_id) = self.document_manager.active_document_id() {
                         self.split_tree.set_focused_document(new_doc_id);
                         self.plugin_host
                             .dispatch(&crate::plugin::EditorEvent::BufEnter { buf: new_doc_id });
+                        self.apply_plugin_mutations();
                     }
-                    self.apply_plugin_mutations();
                     self.sync_state_with_active_document();
                     if let Err(e) = self.force_full_redraw() {
                         self.state.handle_error(e);
@@ -347,28 +454,15 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        #[cfg(feature = "lsp")]
-        self.lsp_notify_close(target);
-
         let result = if force {
-            self.document_manager.remove_document_force(target)
+            self.remove_document_force(target)
         } else {
-            self.document_manager.remove_document(target)
+            self.remove_document(target)
         };
 
         match result {
             Err(e) => self.state.handle_error(e),
             Ok(()) => {
-                if let Some(fallback) = self.document_manager.active_document_id() {
-                    for win_id in self.split_tree.windows_for_document(target) {
-                        self.split_tree.set_window_document(win_id, fallback);
-                    }
-                }
-                self.update_lua_state();
-                self.plugin_host
-                    .dispatch(&crate::plugin::EditorEvent::BufClose { buf: target });
-                self.apply_plugin_mutations();
-                self.sync_state_with_active_document();
                 self.state.clear_command_line();
                 if let Err(e) = self.force_full_redraw() {
                     self.state.handle_error(e);

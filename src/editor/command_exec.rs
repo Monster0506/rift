@@ -9,7 +9,7 @@ impl<T: TerminalBackend> Editor<T> {
             && self
                 .document_manager
                 .active_document()
-                .is_some_and(|d| d.is_read_only)
+                .is_some_and(|d| d.is_read_only())
         {
             return false;
         }

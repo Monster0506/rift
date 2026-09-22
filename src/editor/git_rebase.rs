@@ -1,7 +1,7 @@
 //! Executes a rebase plan through cherry-pick, amend, and ref updates. `:w` resumes after edit, reword, or conflict pauses.
 
 use super::Editor;
-use crate::document::{BufferKind, DocumentId, GitCommitTarget};
+use crate::document::{DocumentId, GitCommitTarget};
 use crate::error::{ErrorType, RiftError};
 use crate::git::rebase::{RebasePause, RebaseStep, RebaseVerb};
 use crate::notification::NotificationType;
@@ -315,25 +315,20 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(d) => d,
                 None => return,
             };
-            match &doc.kind {
-                BufferKind::GitRebaseTodo {
-                    repo_root,
-                    base,
-                    branch,
-                    pause,
-                    steps,
-                    message_overrides,
-                    ..
-                } => (
-                    repo_root.clone(),
-                    base.clone(),
-                    branch.clone(),
-                    pause.clone(),
-                    steps.clone(),
-                    message_overrides.clone(),
-                ),
-                _ => return,
+            if !doc.is_git_rebase_todo() {
+                return;
             }
+            let (Some(repo_root), Some(base), Some(branch), Some(steps), Some(message_overrides)) = (
+                doc.git_repo_root().map(Path::to_path_buf),
+                doc.git_rebase_base().map(str::to_string),
+                doc.git_rebase_branch().map(str::to_string),
+                doc.git_rebase_steps().map(|s| s.to_vec()),
+                doc.git_rebase_message_overrides().cloned(),
+            ) else {
+                return;
+            };
+            let pause = doc.git_rebase_pause().cloned();
+            (repo_root, base, branch, pause, steps, message_overrides)
         };
         let doc_id = self.active_document_id();
 
@@ -405,19 +400,19 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(doc) = self.document_manager.get_document(rebase_doc_id) else {
                 return;
             };
-            let BufferKind::GitRebaseTodo {
-                branch,
-                pause,
-                message_overrides,
-                ..
-            } = &doc.kind
-            else {
+            if !doc.is_git_rebase_todo() {
+                return;
+            }
+            let Some(RebasePause::AwaitingReword { remaining }) = doc.git_rebase_pause() else {
                 return;
             };
-            let Some(RebasePause::AwaitingReword { remaining }) = pause else {
+            let (Some(branch), Some(message_overrides)) = (
+                doc.git_rebase_branch().map(str::to_string),
+                doc.git_rebase_message_overrides().cloned(),
+            ) else {
                 return;
             };
-            (branch.clone(), remaining.clone(), message_overrides.clone())
+            (branch, remaining.clone(), message_overrides)
         };
         self.run_rebase_steps(
             rebase_doc_id,
@@ -433,16 +428,14 @@ impl<T: TerminalBackend> Editor<T> {
         &self,
         repo_root: &Path,
     ) -> Option<(DocumentId, Vec<RebaseStep>)> {
-        self.document_manager
-            .documents_iter()
-            .find_map(|d| match &d.kind {
-                BufferKind::GitRebaseTodo {
-                    repo_root: r,
-                    pause: Some(RebasePause::Edit { remaining }),
-                    ..
-                } if r == repo_root => Some((d.id, remaining.clone())),
-                _ => None,
-            })
+        self.document_manager.documents_iter().find_map(|d| {
+            if d.is_git_rebase_todo() && d.git_repo_root() == Some(repo_root) {
+                if let Some(RebasePause::Edit { remaining }) = d.git_rebase_pause() {
+                    return Some((d.id, remaining.clone()));
+                }
+            }
+            None
+        })
     }
 
     /// Called once `ca`/`cw` successfully amends HEAD while `rebase_doc_id`
@@ -456,13 +449,13 @@ impl<T: TerminalBackend> Editor<T> {
         let Some((branch, message_overrides)) = self
             .document_manager
             .get_document(rebase_doc_id)
-            .and_then(|doc| match &doc.kind {
-                BufferKind::GitRebaseTodo {
-                    branch,
-                    message_overrides,
-                    ..
-                } => Some((branch.clone(), message_overrides.clone())),
-                _ => None,
+            .and_then(|doc| {
+                if !doc.is_git_rebase_todo() {
+                    return None;
+                }
+                let branch = doc.git_rebase_branch()?.to_string();
+                let message_overrides = doc.git_rebase_message_overrides()?.clone();
+                Some((branch, message_overrides))
             })
         else {
             return;
@@ -506,7 +499,7 @@ impl<T: TerminalBackend> Editor<T> {
                         &new_tip[..new_tip.len().min(8)]
                     ),
                 );
-                if let Err(e) = self.remove_document(doc_id) {
+                if let Err(e) = self.remove_document_force(doc_id) {
                     self.state.handle_error(e);
                 }
                 self.refresh_git_status_buffers_for(repo_root);
@@ -563,9 +556,7 @@ impl<T: TerminalBackend> Editor<T> {
             | RebasePause::AwaitingReword { remaining } => remaining.clone(),
         };
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-            if let BufferKind::GitRebaseTodo { pause: p, .. } = &mut doc.kind {
-                *p = Some(pause);
-            }
+            doc.set_git_rebase_pause(Some(pause));
             doc.render_git_rebase_paused(&remaining, status);
         }
     }
@@ -574,11 +565,14 @@ impl<T: TerminalBackend> Editor<T> {
     pub fn abort_git_rebase(&mut self) {
         let (doc_id, repo_root, branch) = {
             let doc = self.active_document();
-            let (repo_root, branch) = match &doc.kind {
-                BufferKind::GitRebaseTodo {
-                    repo_root, branch, ..
-                } => (repo_root.clone(), branch.clone()),
-                _ => return,
+            if !doc.is_git_rebase_todo() {
+                return;
+            }
+            let (Some(repo_root), Some(branch)) = (
+                doc.git_repo_root().map(Path::to_path_buf),
+                doc.git_rebase_branch().map(str::to_string),
+            ) else {
+                return;
             };
             (doc.id, repo_root, branch)
         };
@@ -589,7 +583,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
         self.state
             .notify(NotificationType::Warning, "Rebase aborted".to_string());
-        if let Err(e) = self.remove_document(doc_id) {
+        if let Err(e) = self.remove_document_force(doc_id) {
             self.state.handle_error(e);
         }
         self.refresh_git_status_buffers_for(&repo_root);
