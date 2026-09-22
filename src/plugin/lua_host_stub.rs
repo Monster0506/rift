@@ -20,6 +20,18 @@ impl LuaHost {
         Ok(Self)
     }
 
+    pub fn with_generation(_generation: crate::plugin::PluginGeneration) -> Result<Self, String> {
+        Ok(Self)
+    }
+
+    pub fn generation(&self) -> crate::plugin::PluginGeneration {
+        crate::plugin::PluginGeneration::new(
+            crate::plugin::PluginId::new(unsafe { std::num::NonZeroU32::new_unchecked(1) }),
+            unsafe { std::num::NonZeroU32::new_unchecked(1) },
+        )
+    }
+
+    pub fn mark_retiring(&self) {}
     pub fn set_annotations(&self, _views: Vec<AnnotationView>, _next_id: u64) {}
 
     #[allow(clippy::too_many_arguments)]
@@ -46,6 +58,10 @@ impl LuaHost {
         _focused_win_id: u64,
         _previous_win_id: Option<u64>,
         _lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>>,
+        _buffer_vars: std::collections::HashMap<
+            u64,
+            std::collections::HashMap<String, crate::annotations::Value>,
+        >,
     ) {
     }
 
@@ -62,6 +78,18 @@ impl LuaHost {
         _enter: bool,
         _ctx: &crate::plugin::AnnotationHoverCtx,
     ) -> bool {
+        false
+    }
+
+    pub fn invoke_buffer_action(&self, _buf_id: u64, _kind: &str, _action: &str) -> bool {
+        false
+    }
+
+    pub fn invoke_buffer_save(&self, _buf_id: u64, _kind: &str) -> bool {
+        false
+    }
+
+    pub fn invoke_buffer_close(&self, _buf_id: u64, _kind: &str) -> bool {
         false
     }
 

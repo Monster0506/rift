@@ -3,7 +3,7 @@
 use crate::notification::NotificationType;
 use crate::plugin::events::EditorEvent;
 pub use crate::plugin::lua_state::{AnnotationView, BufEntry, BufLinesSource, WinEntry};
-use crate::plugin::lua_value::{value_from_lua_table, value_into_lua};
+use crate::plugin::lua_value::{value_from_lua, value_from_lua_table, value_into_lua};
 use crate::plugin::{PluginFloat, PluginMutation};
 use mlua::prelude::*;
 use std::sync::{Arc, Mutex};
@@ -192,6 +192,11 @@ struct LuaSharedState {
     /// Completed shell commands waiting to be fired as Lua UserEvents.
     /// Each entry is (tag, success, output). Drained in `drain_mutations`.
     pending_shell_events: Vec<(String, bool, String)>,
+    is_active: bool,
+    buffer_vars: std::collections::HashMap<
+        u64,
+        std::collections::HashMap<String, crate::annotations::Value>,
+    >,
 }
 
 impl LuaSharedState {
@@ -251,6 +256,8 @@ impl Default for LuaSharedState {
             lsp_diagnostics: std::collections::HashMap::new(),
             current_plugin: None,
             pending_shell_events: Vec::new(),
+            is_active: true,
+            buffer_vars: std::collections::HashMap::new(),
         }
     }
 }
@@ -262,14 +269,26 @@ pub struct LuaHost {
     /// Absolute deadline for the in-flight Lua call, checked by a VM
     /// instruction hook so a runaway handler aborts instead of freezing.
     hook_deadline: Arc<Mutex<Option<std::time::Instant>>>,
+    generation: crate::plugin::PluginGeneration,
 }
 
 impl LuaHost {
-    /// Create a new Lua VM and register the full `rift` API table.
+    /// Create a new Lua VM with a fresh generation and register the full `rift` API table.
     pub fn new() -> LuaResult<Self> {
+        let plugin_id = crate::plugin::PluginId::allocate();
+        let gen = crate::plugin::PluginGeneration::allocate(plugin_id);
+        Self::with_generation(gen)
+    }
+
+    /// Create a new Lua VM bound to a specific plugin generation.
+    pub fn with_generation(generation: crate::plugin::PluginGeneration) -> LuaResult<Self> {
         // plugins are fully trusted user code loaded from the local filesystem, but this unsafe block annoys me greatly
         let lua = unsafe { Lua::unsafe_new() };
-        let shared = Arc::new(Mutex::new(LuaSharedState::default()));
+        let shared_state = LuaSharedState {
+            is_active: true,
+            ..Default::default()
+        };
+        let shared = Arc::new(Mutex::new(shared_state));
         let hook_deadline: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
         {
             let deadline = Arc::clone(&hook_deadline);
@@ -325,6 +344,8 @@ impl LuaHost {
             .set("_rift_enter_handlers", lua.create_table()?)?;
         lua.globals()
             .set("_rift_leave_handlers", lua.create_table()?)?;
+        lua.globals()
+            .set("_rift_buffer_kinds", lua.create_table()?)?;
 
         let api = lua.create_table()?;
 
@@ -1991,6 +2012,218 @@ impl LuaHost {
             api.set("add_package_path", f)?;
         }
 
+        {
+            let sh = Arc::clone(&shared);
+            let register = lua.create_function(move |lua, (name, opts): (String, LuaTable)| {
+                let mut s = sh.lock().unwrap_or_else(|error| error.into_inner());
+                if !s.is_active {
+                    return Err(LuaError::RuntimeError(
+                        "cannot register buffer kind: plugin generation is retired".to_string(),
+                    ));
+                }
+
+                if name.trim().is_empty() {
+                    return Err(LuaError::RuntimeError(
+                        "register_buffer_kind: name must not be empty".to_string(),
+                    ));
+                }
+
+                let on_close: Option<LuaFunction> = opts.get("on_close")?;
+                if on_close.is_none() {
+                    return Err(LuaError::RuntimeError(
+                        "register_buffer_kind requires on_close".to_string(),
+                    ));
+                }
+
+                let read_only_opt: Option<String> = opts.get("read_only")?;
+                if let Some(ro) = &read_only_opt {
+                    match ro.as_str() {
+                        "readonly" | "read_only" | "fixed" | "fixed_readonly" | "writable"
+                        | "fixed_writable" | "override" | "document_override" => {}
+                        other => {
+                            return Err(LuaError::RuntimeError(format!(
+                                "invalid read_only policy: '{other}'"
+                            )));
+                        }
+                    }
+                }
+
+                let close_opt: Option<String> = opts.get("close")?;
+                if let Some(cl) = &close_opt {
+                    match cl.as_str() {
+                        "confirm" | "confirm_dirty" | "discard" | "discard_dirty" => {}
+                        other => {
+                            return Err(LuaError::RuntimeError(format!(
+                                "invalid close policy: '{other}'"
+                            )));
+                        }
+                    }
+                }
+
+                let key_fallback_opt: Option<String> = opts.get("key_fallback")?;
+                if let Some(kf) = &key_fallback_opt {
+                    match kf.as_str() {
+                        "normal" | "global" | "none" => {}
+                        other => {
+                            return Err(LuaError::RuntimeError(format!(
+                                "invalid key_fallback policy: '{other}'"
+                            )));
+                        }
+                    }
+                }
+
+                let kinds: LuaTable = lua.globals().get("_rift_buffer_kinds")?;
+                kinds.set(name.as_str(), opts.clone())?;
+                s.mutations.push(PluginMutation::RegisterBufferKind {
+                    name,
+                    read_only: read_only_opt,
+                    close: close_opt,
+                    key_fallback: key_fallback_opt,
+                    display_name: opts.get("display_name")?,
+                    help_lines: opts
+                        .get::<Option<LuaTable>>("help_lines")?
+                        .map(|lines| lines.sequence_values::<String>().collect())
+                        .transpose()?,
+                    has_on_close: true,
+                    has_on_action: opts.get::<Option<LuaFunction>>("on_action")?.is_some(),
+                    has_on_save: opts.get::<Option<LuaFunction>>("on_save")?.is_some(),
+                });
+                Ok(())
+            })?;
+            api.set("register_buffer_kind", register)?;
+        }
+        {
+            let sh = Arc::clone(&shared);
+            let create =
+                lua.create_function(move |_, (kind, opts): (String, Option<LuaTable>)| {
+                    let opts = opts;
+                    let title = opts
+                        .as_ref()
+                        .and_then(|table| table.get::<Option<String>>("title").ok())
+                        .flatten();
+                    let lines = opts
+                        .as_ref()
+                        .and_then(|table| table.get::<Option<LuaTable>>("lines").ok())
+                        .flatten()
+                        .map(|table| table.sequence_values::<String>().collect())
+                        .transpose()?
+                        .unwrap_or_default();
+                    let mut vars = Vec::new();
+                    if let Some(table) = opts
+                        .as_ref()
+                        .and_then(|table| table.get::<Option<LuaTable>>("vars").ok())
+                        .flatten()
+                    {
+                        for pair in table.pairs::<String, LuaValue>() {
+                            let (key, value) = pair?;
+                            vars.push((key, value_from_lua(&value)?));
+                        }
+                    }
+                    let mut s = sh.lock().unwrap_or_else(|error| error.into_inner());
+                    if !s.is_active {
+                        return Err(LuaError::RuntimeError(
+                            "cannot create buffer: plugin generation is retired".to_string(),
+                        ));
+                    }
+                    s.mutations.push(PluginMutation::CreateBuffer {
+                        kind,
+                        title,
+                        lines,
+                        vars,
+                    });
+                    Ok(())
+                })?;
+            api.set("create_buffer", create)?;
+        }
+
+        {
+            let sh = Arc::clone(&shared);
+            let map = lua.create_function(
+                move |_, (kind, mode, keys, action): (String, String, String, String)| {
+                    let mut s = sh.lock().unwrap_or_else(|error| error.into_inner());
+                    if !s.is_active {
+                        return Err(LuaError::RuntimeError(
+                            "cannot map buffer kind: plugin generation is retired".to_string(),
+                        ));
+                    }
+                    s.mutations.push(PluginMutation::MapKeyKind {
+                        kind,
+                        mode,
+                        keys,
+                        action,
+                    });
+                    Ok(())
+                },
+            )?;
+            api.set("map_buffer_kind", map)?;
+        }
+
+        {
+            let sh = Arc::clone(&shared);
+            let unmap =
+                lua.create_function(move |_, (kind, mode, keys): (String, String, String)| {
+                    let mut s = sh.lock().unwrap_or_else(|error| error.into_inner());
+                    if !s.is_active {
+                        return Err(LuaError::RuntimeError(
+                            "cannot unmap buffer kind: plugin generation is retired".to_string(),
+                        ));
+                    }
+                    s.mutations
+                        .push(PluginMutation::UnmapKeyKind { kind, mode, keys });
+                    Ok(())
+                })?;
+            api.set("unmap_buffer_kind", unmap)?;
+        }
+        {
+            let sh = Arc::clone(&shared);
+            let get_var =
+                lua.create_function(move |lua, (buf_id, key): (Option<u64>, String)| {
+                    let s = sh.lock().unwrap_or_else(|error| error.into_inner());
+                    if !s.is_active {
+                        return Ok(LuaValue::Nil);
+                    }
+                    let target_id = buf_id.unwrap_or(s.buf_id as u64);
+                    let val = s
+                        .buffer_vars
+                        .get(&target_id)
+                        .and_then(|vars| vars.get(&key))
+                        .cloned();
+                    drop(s);
+                    match val {
+                        Some(v) => value_into_lua(v, lua),
+                        None => Ok(LuaValue::Nil),
+                    }
+                })?;
+            api.set("get_buffer_var", get_var)?;
+        }
+
+        {
+            let sh = Arc::clone(&shared);
+            let set_var = lua.create_function(
+                move |_, (buf_id, key, value): (Option<u64>, String, LuaValue)| {
+                    let mut s = sh.lock().unwrap_or_else(|error| error.into_inner());
+                    if !s.is_active {
+                        return Err(LuaError::RuntimeError(
+                            "cannot set buffer var: plugin generation is retired".to_string(),
+                        ));
+                    }
+                    let val = value_from_lua(&value)?;
+                    let target_id = buf_id.unwrap_or(s.buf_id as u64);
+                    s.buffer_vars
+                        .entry(target_id)
+                        .or_default()
+                        .insert(key.clone(), val.clone());
+                    s.mutations.push(PluginMutation::SetBufferVar {
+                        buf_id,
+                        key,
+                        value: val,
+                    });
+                    Ok(())
+                },
+            )?;
+            api.set("set_buffer_var", set_var)?;
+        }
+
         lua.globals().set("rift", api)?;
 
         // Embedded Lua prelude - convenience wrappers that don't need Rust bindings.
@@ -2312,7 +2545,19 @@ end
             lua,
             shared,
             hook_deadline,
+            generation,
         })
+    }
+
+    /// The owning plugin generation for this Lua VM.
+    pub fn generation(&self) -> crate::plugin::PluginGeneration {
+        self.generation
+    }
+
+    /// Mark this Lua host as retiring, rejecting new mutations.
+    pub fn mark_retiring(&self) {
+        let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+        s.is_active = false;
     }
 
     /// Refresh the annotation query snapshot and the id the next `add{}` claims.
@@ -2349,6 +2594,10 @@ end
         focused_win_id: u64,
         previous_win_id: Option<u64>,
         lsp_diagnostics: std::collections::HashMap<String, Vec<(u32, u32, u32, String)>>,
+        buffer_vars: std::collections::HashMap<
+            u64,
+            std::collections::HashMap<String, crate::annotations::Value>,
+        >,
     ) {
         let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
         s.buf_id = buf_id;
@@ -2376,6 +2625,7 @@ end
         s.focused_win_id = focused_win_id;
         s.previous_win_id = previous_win_id;
         s.lsp_diagnostics = lsp_diagnostics;
+        s.buffer_vars = buffer_vars;
     }
 
     /// Budget for one automatic (non-user-initiated) Lua call - event
@@ -2461,6 +2711,72 @@ end
     }
 
     /// Invoke the Lua handler registered for an annotation (kind, verb) with a
+    fn invoke_buffer_callback(
+        &self,
+        buf_id: u64,
+        kind: &str,
+        field: &str,
+        action: Option<&str>,
+    ) -> bool {
+        {
+            let s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+            if !s.is_active {
+                return false;
+            }
+        }
+        let kinds: LuaTable = match self.lua.globals().get("_rift_buffer_kinds") {
+            Ok(table) => table,
+            Err(_) => return false,
+        };
+        let entry: LuaTable = match kinds.get::<Option<LuaTable>>(kind) {
+            Ok(Some(entry)) => entry,
+            _ => return false,
+        };
+        let callback: LuaFunction = match entry.get::<Option<LuaFunction>>(field) {
+            Ok(Some(callback)) => callback,
+            _ => return false,
+        };
+        let context = match self.lua.create_table() {
+            Ok(context) => context,
+            Err(_) => return false,
+        };
+        if context.set("buffer", buf_id).is_err() || context.set("kind", kind).is_err() {
+            return false;
+        }
+        if let Some(action) = action {
+            if context.set("action", action).is_err() {
+                return false;
+            }
+        }
+
+        match self.call_budgeted(|| callback.call::<()>(context)) {
+            Ok(()) => true,
+            Err(error) => {
+                self.shared
+                    .lock()
+                    .unwrap_or_else(|poison| poison.into_inner())
+                    .mutations
+                    .push(PluginMutation::Notify {
+                        message: format!("[lua:{kind}.{field}] {error}"),
+                        level: NotificationType::Error,
+                    });
+                true
+            }
+        }
+    }
+
+    pub fn invoke_buffer_action(&self, buf_id: u64, kind: &str, action: &str) -> bool {
+        self.invoke_buffer_callback(buf_id, kind, "on_action", Some(action))
+    }
+
+    pub fn invoke_buffer_save(&self, buf_id: u64, kind: &str) -> bool {
+        self.invoke_buffer_callback(buf_id, kind, "on_save", None)
+    }
+
+    pub fn invoke_buffer_close(&self, buf_id: u64, kind: &str) -> bool {
+        self.invoke_buffer_callback(buf_id, kind, "on_close", None)
+    }
+
     /// context table. Returns `true` if a handler was found and called.
     pub fn invoke_annotation_action(&self, ctx: &crate::plugin::AnnotationActionCtx) -> bool {
         let handlers: LuaTable = match self.lua.globals().get("_rift_action_handlers") {

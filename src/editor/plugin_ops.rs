@@ -183,6 +183,14 @@ impl<T: TerminalBackend> Editor<T> {
             String,
             Vec<(u32, u32, u32, String)>,
         > = std::collections::HashMap::new();
+        let buffer_vars: std::collections::HashMap<
+            u64,
+            std::collections::HashMap<String, crate::annotations::Value>,
+        > = self
+            .document_manager
+            .documents_iter()
+            .map(|doc| (doc.id, doc.vars.clone()))
+            .collect();
 
         self.plugin_host.lua_update_state(
             buf_id,
@@ -206,8 +214,8 @@ impl<T: TerminalBackend> Editor<T> {
             focused_win_id,
             previous_win_id,
             lsp_diagnostics,
+            buffer_vars,
         );
-
         // Skip the annotation snapshot update when its revision is unchanged.
         use crate::annotations::Anchor;
         use crate::plugin::lua_host::AnnotationView;
@@ -353,10 +361,18 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         // Drain into a Vec first so we don't hold a borrow on plugin_host.
-        let mutations: Vec<PluginMutation> = self.plugin_host.drain_mutations().collect();
+        let envelopes: Vec<crate::plugin::PluginMutationEnvelope> =
+            self.plugin_host.drain_mutation_envelopes().collect();
 
         let mut needs_highlight_merge = false;
-        for mutation in mutations {
+        for envelope in envelopes {
+            let origin = envelope.origin;
+            if let Some(gen) = origin {
+                if !self.plugin_host.is_generation_active(gen) {
+                    continue;
+                }
+            }
+            let mutation = envelope.mutation;
             match mutation {
                 PluginMutation::Notify { message, level } => {
                     self.state.notify(level, message);
@@ -630,7 +646,249 @@ impl<T: TerminalBackend> Editor<T> {
                         crate::key::parse_key_sequence(&keys),
                         action.parse::<crate::action::Action>(),
                     ) {
-                        self.keymap.register_sequence(ctx, key_seq, act);
+                        if let Some(gen) = origin {
+                            self.keymap.register_with_owner(
+                                ctx,
+                                key_seq,
+                                act,
+                                gen.keymap_owner_token(),
+                            );
+                        } else {
+                            self.keymap.register_sequence(ctx, key_seq, act);
+                        }
+                    }
+                }
+                PluginMutation::RegisterBufferKind {
+                    name,
+                    read_only,
+                    close,
+                    key_fallback,
+                    display_name,
+                    help_lines,
+                    has_on_close,
+                    has_on_action,
+                    has_on_save,
+                } => {
+                    if !has_on_close {
+                        self.state.notify(
+                            crate::notification::NotificationType::Error,
+                            format!("buffer kind '{name}' requires on_close"),
+                        );
+                        continue;
+                    }
+                    let owner = match origin {
+                        Some(gen) if self.plugin_host.is_generation_active(gen) => {
+                            crate::document::DescriptorOwner::plugin(
+                                gen.plugin_id().as_nonzero(),
+                                gen.generation(),
+                            )
+                        }
+                        _ => {
+                            self.state.notify(
+                                crate::notification::NotificationType::Error,
+                                format!("cannot register buffer kind '{name}': no active plugin generation"),
+                            );
+                            continue;
+                        }
+                    };
+                    let read_only_policy = match read_only.as_deref() {
+                        Some("readonly" | "read_only" | "fixed" | "fixed_readonly") => {
+                            crate::document::ReadOnlyPolicy::FixedReadOnly
+                        }
+                        Some("writable" | "fixed_writable") => {
+                            crate::document::ReadOnlyPolicy::FixedWritable
+                        }
+                        Some("override" | "document_override") | None => {
+                            crate::document::ReadOnlyPolicy::DocumentOverride
+                        }
+                        Some(invalid) => {
+                            self.state.notify(
+                                crate::notification::NotificationType::Error,
+                                format!("buffer kind '{name}' has invalid read_only policy: '{invalid}'"),
+                            );
+                            continue;
+                        }
+                    };
+                    let close_policy = match close.as_deref() {
+                        Some("discard" | "discard_dirty") => {
+                            crate::document::ClosePolicy::DiscardDirty
+                        }
+                        Some("confirm" | "confirm_dirty") | None => {
+                            crate::document::ClosePolicy::ConfirmDirty
+                        }
+                        Some(invalid) => {
+                            self.state.notify(
+                                crate::notification::NotificationType::Error,
+                                format!(
+                                    "buffer kind '{name}' has invalid close policy: '{invalid}'"
+                                ),
+                            );
+                            continue;
+                        }
+                    };
+                    let key_fallback_policy = match key_fallback.as_deref() {
+                        Some("global") => crate::document::KeyFallback::Global,
+                        Some("none") => crate::document::KeyFallback::None,
+                        Some("normal") | None => crate::document::KeyFallback::Normal,
+                        Some(invalid) => {
+                            self.state.notify(
+                                crate::notification::NotificationType::Error,
+                                format!("buffer kind '{name}' has invalid key_fallback policy: '{invalid}'"),
+                            );
+                            continue;
+                        }
+                    };
+                    let result = self.buffer_kinds.register_runtime(&name, |id| {
+                        let mut policies = crate::document::BufferPolicies::file_default();
+                        policies.read_only = read_only_policy;
+                        policies.close = close_policy;
+                        policies.language_services =
+                            crate::document::LanguageServicesPolicy::Virtual;
+                        policies.key_fallback = key_fallback_policy;
+                        crate::document::KindDescriptor {
+                            id,
+                            name: name.clone().into_boxed_str(),
+                            policies,
+                            action_dispatch: if has_on_action {
+                                crate::document::ActionDispatch::Lua
+                            } else {
+                                crate::document::ActionDispatch::Disabled
+                            },
+                            save_dispatch: if has_on_save {
+                                crate::document::SaveDispatch::Lua
+                            } else {
+                                crate::document::SaveDispatch::Disabled
+                            },
+                            display_name: display_name
+                                .clone()
+                                .map(|label| {
+                                    crate::document::DisplayNameStrategy::Label(
+                                        label.into_boxed_str(),
+                                    )
+                                })
+                                .unwrap_or(crate::document::DisplayNameStrategy::KindName),
+                            help_lines: help_lines.clone().map(Into::into),
+                            on_close: crate::document::CloseHandler::Lua,
+                            state_key: crate::document::PLUGIN_BUFFER_STATE_KEY.id(),
+                            owner,
+                            tombstone: None,
+                        }
+                    });
+                    if let Err(error) = result {
+                        self.state.notify(
+                            crate::notification::NotificationType::Error,
+                            error.to_string(),
+                        );
+                    }
+                }
+                PluginMutation::CreateBuffer {
+                    kind,
+                    title,
+                    lines,
+                    vars,
+                } => {
+                    let Some(descriptor) = self.buffer_kinds.get_by_name(&kind) else {
+                        self.state.notify(
+                            crate::notification::NotificationType::Error,
+                            format!("unknown buffer kind '{kind}'"),
+                        );
+                        continue;
+                    };
+                    let reservation = self.document_manager.reserve_creation();
+                    let mut document = match crate::document::Document::new(reservation.id()) {
+                        Ok(document) => document,
+                        Err(error) => {
+                            self.state.handle_error(error);
+                            continue;
+                        }
+                    };
+                    document.set_handle(reservation.handle());
+                    document.kind = crate::document::BufferKind::new(descriptor.clone());
+                    document.vars = vars.into_iter().collect();
+                    if let Some(ref title_str) = title {
+                        document.vars.insert(
+                            "title".to_string(),
+                            crate::annotations::Value::Str(title_str.clone()),
+                        );
+                    }
+                    document.state = crate::document::StateSlot::new(
+                        crate::document::PLUGIN_BUFFER_STATE_KEY,
+                        crate::document::PluginBufferState,
+                    );
+                    let text = lines.join("\n");
+                    if !text.is_empty() {
+                        let _ = document.buffer.insert_str(&text);
+                    }
+                    let draft = match crate::document::DocumentDraft::new(reservation, document) {
+                        Ok(draft) => draft,
+                        Err(error) => {
+                            self.state.handle_error(error);
+                            continue;
+                        }
+                    };
+                    let handle = self.document_manager.commit_draft_active(draft);
+                    self.buffer_kinds.increment_open_count(descriptor.id());
+                    self.split_tree.set_focused_document(handle.doc_id());
+                    self.sync_state_with_active_document();
+                    let _ = self.force_full_redraw();
+                    self.plugin_host
+                        .dispatch(&crate::plugin::EditorEvent::BufOpen {
+                            buf: handle.doc_id(),
+                            path: None,
+                            filetype: None,
+                        });
+                    self.plugin_host
+                        .dispatch(&crate::plugin::EditorEvent::BufEnter {
+                            buf: handle.doc_id(),
+                        });
+                }
+                PluginMutation::MapKeyKind {
+                    kind,
+                    mode: _,
+                    keys,
+                    action,
+                } => {
+                    let Some(kind_id) = self.buffer_kinds.id_by_name(&kind) else {
+                        continue;
+                    };
+                    if let (Some(key_seq), Ok(action)) = (
+                        crate::key::parse_key_sequence(&keys),
+                        action.parse::<crate::action::Action>(),
+                    ) {
+                        let ctx = crate::keymap::KeyContext::Buffer(kind_id);
+                        if let Some(gen) = origin {
+                            self.keymap.register_with_owner(
+                                ctx,
+                                key_seq,
+                                action,
+                                gen.keymap_owner_token(),
+                            );
+                        } else {
+                            self.keymap.register_sequence(ctx, key_seq, action);
+                        }
+                    }
+                }
+                PluginMutation::UnmapKeyKind {
+                    kind,
+                    mode: _,
+                    keys,
+                } => {
+                    let Some(kind_id) = self.buffer_kinds.id_by_name(&kind) else {
+                        continue;
+                    };
+                    if let Some(key_seq) = crate::key::parse_key_sequence(&keys) {
+                        self.keymap.unregister_sequence(
+                            crate::keymap::KeyContext::Buffer(kind_id),
+                            &key_seq,
+                        );
+                    }
+                }
+                PluginMutation::SetBufferVar { buf_id, key, value } => {
+                    let doc_id = buf_id.or_else(|| self.document_manager.active_document_id());
+                    if let Some(document) =
+                        doc_id.and_then(|id| self.document_manager.get_document_mut(id))
+                    {
+                        document.vars.insert(key, value);
                     }
                 }
                 PluginMutation::CenterOnLine(row) => {
