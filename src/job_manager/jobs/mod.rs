@@ -1,5 +1,6 @@
 //! Job modules. Import `Job` and `JobPayload` from here in any test file,
 //! including nested test modules.
+pub use crate::job_manager::{AsyncOpDomain, AsyncToken};
 pub mod cache_warming;
 pub mod completion;
 pub mod explorer;

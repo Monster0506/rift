@@ -25,6 +25,7 @@ crate::impl_job_payload!(UndoTreeRenderResult);
 pub struct UndoTreeRenderJob {
     ut_doc_id: DocumentId,
     tree: UndoTree,
+    token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl std::fmt::Debug for UndoTreeRenderJob {
@@ -37,7 +38,16 @@ impl std::fmt::Debug for UndoTreeRenderJob {
 
 impl UndoTreeRenderJob {
     pub fn new(ut_doc_id: DocumentId, tree: UndoTree) -> Self {
-        Self { ut_doc_id, tree }
+        Self {
+            ut_doc_id,
+            tree,
+            token: None,
+        }
+    }
+
+    pub fn with_token(mut self, token: crate::job_manager::AsyncToken) -> Self {
+        self.token = Some(token);
+        self
     }
 }
 
@@ -46,6 +56,17 @@ impl Job for UndoTreeRenderJob {
         "undotree-render"
     }
 
+    fn async_token(&self) -> Option<crate::job_manager::AsyncToken> {
+        self.token
+    }
+
+    fn target_document_id(&self) -> Option<DocumentId> {
+        Some(self.ut_doc_id)
+    }
+
+    fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
+        Some(crate::job_manager::AsyncOpDomain::UndoTree)
+    }
     fn run(self: Box<Self>, id: usize, sender: Sender<JobMessage>, signal: CancellationSignal) {
         if signal.is_cancelled() {
             return;
@@ -63,10 +84,12 @@ impl Job for UndoTreeRenderJob {
             sequences,
             highlights,
         });
-
-        crate::job_manager::send_job_result(&sender, id, result);
+        if let Some(token) = self.token {
+            crate::job_manager::send_job_result_with_token(&sender, id, token, result);
+        } else {
+            crate::job_manager::send_job_result(&sender, id, result);
+        }
     }
-
     fn is_silent(&self) -> bool {
         true
     }

@@ -3,6 +3,7 @@ use super::Editor;
 use crate::buffer::api::BufferView;
 use crate::document::DocumentId;
 use crate::error::RiftError;
+use crate::job_manager::AsyncToken;
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
 #[cfg(feature = "treesitter")]
@@ -52,6 +53,12 @@ impl<T: TerminalBackend> Editor<T> {
         let (old_highlights, pending_edits) = syntax.highlights_snapshot();
         let (cached_logical_bytes, single_edit) = syntax.incremental_logical_bytes();
 
+        let token = self.job_manager.next_token(
+            doc.handle(),
+            doc.buffer_kind_id(),
+            crate::job_manager::AsyncOpDomain::SyntaxParse,
+        );
+
         let job = SyntaxParseJob::new(
             buffer,
             parser,
@@ -61,13 +68,13 @@ impl<T: TerminalBackend> Editor<T> {
             doc_id,
             doc.buffer.revision,
         )
+        .with_token(token)
         .with_lib(syntax.lib())
         .with_highlights_context(old_highlights, &pending_edits)
         .with_incremental_bytes(cached_logical_bytes, single_edit);
 
-        Some(self.job_manager.spawn(job))
+        Some(self.job_manager.spawn_with_token(job, token))
     }
-
     /// No-op when tree-sitter is compiled out: there is no syntax state to reparse.
     #[cfg(not(feature = "treesitter"))]
     pub(super) fn spawn_syntax_parse_job(
@@ -187,19 +194,68 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
+    /// Validates an async token: epoch is current, handle/kind still match,
+    /// and any owning plugin generation is still active.
+    fn is_async_token_valid(&self, token: &AsyncToken) -> bool {
+        if !self.job_manager.is_token_current(token) {
+            return false;
+        }
+        let Some(doc) = self.document_manager.get_document_by_handle(token.handle) else {
+            return false;
+        };
+        if !doc.matches_kind(token.expected_kind) {
+            return false;
+        }
+        if let Some(owner) = token.owner {
+            if !self.plugin_host.is_generation_active(owner) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Resolves a job's token: registered tokens require full staleness
+    /// validation; untracked jobs fall back to a plain document lookup.
+    fn resolve_and_validate_token(
+        &self,
+        job_id: usize,
+        token: Option<AsyncToken>,
+        doc_id: DocumentId,
+        expected_domain: crate::job_manager::AsyncOpDomain,
+    ) -> Option<AsyncToken> {
+        if let Some(token) = token.or_else(|| self.job_manager.job_token(job_id)) {
+            if token.doc_id() != doc_id || token.domain != expected_domain {
+                return None;
+            }
+            if !self.is_async_token_valid(&token) {
+                return None;
+            }
+            return Some(token);
+        }
+        let doc = self.document_manager.get_document(doc_id)?;
+        Some(AsyncToken::with_domain(
+            doc.handle(),
+            doc.buffer_kind_id(),
+            0,
+            expected_domain,
+        ))
+    }
+
     /// Handle a message from a background job
     pub(super) fn handle_job_message(
         &mut self,
         msg: crate::job_manager::JobMessage,
     ) -> Result<(), RiftError> {
-        #[cfg(feature = "treesitter")]
-        use crate::job_manager::jobs::syntax::SyntaxParseResult;
         use crate::job_manager::JobMessage;
         // Parser import not needed here
 
+        for doc in self.document_manager.documents_iter() {
+            self.job_manager
+                .register_document_handle(doc.handle(), doc.buffer_kind_id(), None);
+        }
+
         // Update manager state
         self.job_manager.update_job_state(&msg);
-
         match msg {
             JobMessage::Started(id, silent) => {
                 let name = self.job_manager.job_name(id);
@@ -230,6 +286,11 @@ impl<T: TerminalBackend> Editor<T> {
                 );
             }
             JobMessage::Error(id, err) => {
+                if let Some(t) = self.job_manager.job_token(id) {
+                    if !self.is_async_token_valid(&t) {
+                        return Ok(());
+                    }
+                }
                 self.on_file_load_failed(id);
                 let silent = self.job_manager.is_job_silent(id);
                 let name = self.job_manager.job_name(id);
@@ -245,6 +306,11 @@ impl<T: TerminalBackend> Editor<T> {
                 );
             }
             JobMessage::Cancelled(id) => {
+                if let Some(t) = self.job_manager.job_token(id) {
+                    if !self.is_async_token_valid(&t) {
+                        return Ok(());
+                    }
+                }
                 let silent = self.job_manager.is_job_silent(id);
                 let name = self.job_manager.job_name(id);
                 self.state.error_manager.notifications_mut().log_job_event(
@@ -267,686 +333,58 @@ impl<T: TerminalBackend> Editor<T> {
                     );
                 }
             }
-            JobMessage::Custom(id, payload) => {
-                let any_payload = payload.into_any();
-
-                // Try DirectoryListing;  route to the document by id
-                let any_payload = match any_payload
-                    .downcast::<crate::job_manager::jobs::explorer::DirectoryListing>(
-                ) {
-                    Ok(listing) => {
-                        let doc_id = listing.doc_id as crate::document::DocumentId;
-                        let entries: Vec<crate::document::DirEntry> = listing
-                            .entries
-                            .iter()
-                            .map(|e| crate::document::DirEntry {
-                                path: e.path.clone(),
-                                is_dir: e.is_dir,
-                                id: 0,
-                            })
-                            .collect();
-                        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                            // Discard stale results if the doc has navigated to a different path
-                            let path_matches = matches!(&doc.kind,
-                                crate::document::BufferKind::Directory { path, .. }
-                                if *path == listing.path);
-                            if path_matches {
-                                doc.populate_directory_buffer(entries);
-                            }
-                        }
-                        // Restore cursor to the child entry we navigated away from, if any.
-                        if let Some(target_name) = self.pending_cursor_entry.take() {
-                            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                                let path_matches = matches!(&doc.kind,
-                                    crate::document::BufferKind::Directory { path, .. }
-                                    if *path == listing.path);
-                                if path_matches {
-                                    let line_pos = doc
-                                        .annotations
-                                        .directory_entries_by_line()
-                                        .into_iter()
-                                        .find_map(|(line, eid)| {
-                                            if let crate::document::BufferKind::Directory {
-                                                entries,
-                                                ..
-                                            } = &doc.kind
-                                            {
-                                                entries.iter().find(|e| e.id == eid).and_then(|e| {
-                                                    e.path
-                                                        .file_name()
-                                                        .and_then(|n| n.to_str())
-                                                        .filter(|n| *n == target_name)
-                                                        .map(|_| {
-                                                            doc.buffer
-                                                                .line_index
-                                                                .get_start(line)
-                                                                .unwrap_or(0)
-                                                        })
-                                                })
-                                            } else {
-                                                None
-                                            }
-                                        });
-                                    if let Some(pos) = line_pos {
-                                        let _ = doc.buffer.set_cursor(pos);
-                                    }
-                                }
-                            }
-                        }
-                        if matches!(self.document_manager.get_document(doc_id),
-                            Some(doc) if matches!(&doc.kind,
-                                crate::document::BufferKind::Directory { path, .. }
-                                if *path == listing.path))
-                        {
-                            self.sync_state_with_active_document();
-                            let _ = self.force_full_redraw();
-                            self.update_explorer_preview();
-                        }
-                        self.job_manager
-                            .update_job_state(&JobMessage::Finished(id, true));
-                        return Ok(());
-                    }
-                    Err(p) => p,
-                };
-
-                // Try GitStatusResult;  populate the matching git status buffer
-                let any_payload = match any_payload
-                    .downcast::<crate::job_manager::jobs::git::GitStatusResult>()
-                {
-                    Ok(result) => {
-                        let doc_id = result.doc_id as crate::document::DocumentId;
-                        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                            let root_matches = matches!(&doc.kind,
-                                crate::document::BufferKind::GitStatus { repo_root, .. }
-                                if *repo_root == result.repo_root);
-                            if root_matches {
-                                doc.populate_git_status_buffer(
-                                    result.snapshot,
-                                    result.head_subject,
-                                );
-                            }
-                        }
-                        if let Some(staged_side) =
-                            self.pending_git_status_expand_all.remove(&doc_id)
-                        {
-                            self.spawn_expand_all_git_status_hunks(doc_id, staged_side);
-                        }
-                        if self.active_document_id() == doc_id {
-                            self.sync_state_with_active_document();
-                            let _ = self.force_full_redraw();
-                        }
-                        self.job_manager
-                            .update_job_state(&JobMessage::Finished(id, true));
-                        return Ok(());
-                    }
-                    Err(p) => p,
-                };
-
-                // Try GitDiffResult;  expand the matching hunk block inline
-                let any_payload =
-                    match any_payload.downcast::<crate::job_manager::jobs::git::GitDiffResult>() {
-                        Ok(result) => {
-                            let doc_id = result.doc_id as crate::document::DocumentId;
-                            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                                if doc.is_git_status() {
-                                    doc.set_git_status_expanded(
-                                        result.path,
-                                        result.staged_side,
-                                        result.hunks,
-                                    );
-                                }
-                            }
-                            if self.active_document_id() == doc_id {
-                                self.sync_state_with_active_document();
-                                let _ = self.force_full_redraw();
-                            }
-                            self.job_manager
-                                .update_job_state(&JobMessage::Finished(id, true));
-                            return Ok(());
-                        }
-                        Err(p) => p,
-                    };
-
-                // Try GitBlameResult;  populate the matching blame buffer
-                let any_payload =
-                    match any_payload.downcast::<crate::job_manager::jobs::git::GitBlameResult>() {
-                        Ok(result) => {
-                            let doc_id = result.doc_id as crate::document::DocumentId;
-                            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                                if doc.is_git_blame() {
-                                    doc.populate_git_blame_buffer(result.lines);
-                                }
-                            }
-                            if self.active_document_id() == doc_id {
-                                self.sync_state_with_active_document();
-                                let _ = self.force_full_redraw();
-                            }
-                            self.job_manager
-                                .update_job_state(&JobMessage::Finished(id, true));
-                            return Ok(());
-                        }
-                        Err(p) => p,
-                    };
-
-                // Try GitLogResult;  populate the matching log buffer
-                let any_payload =
-                    match any_payload.downcast::<crate::job_manager::jobs::git::GitLogResult>() {
-                        Ok(result) => {
-                            let doc_id = result.doc_id as crate::document::DocumentId;
-                            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                                if doc.is_git_log() {
-                                    doc.populate_git_log_buffer(result.commits);
-                                }
-                            }
-                            if self.pending_git_log_expand_head.remove(&doc_id) {
-                                let head =
-                                    self.document_manager.get_document(doc_id).and_then(|doc| {
-                                        match &doc.kind {
-                                            crate::document::BufferKind::GitLog {
-                                                repo_root,
-                                                commits,
-                                                ..
-                                            } => commits
-                                                .first()
-                                                .map(|c| (repo_root.clone(), c.sha.clone())),
-                                            _ => None,
-                                        }
-                                    });
-                                if let Some((repo_root, sha)) = head {
-                                    let job = crate::job_manager::jobs::git::GitShowJob::new(
-                                        doc_id as usize,
-                                        repo_root,
-                                        sha,
-                                    );
-                                    self.job_manager.spawn(job);
-                                }
-                            }
-                            if self.active_document_id() == doc_id {
-                                self.sync_state_with_active_document();
-                                let _ = self.force_full_redraw();
-                            }
-                            self.job_manager
-                                .update_job_state(&JobMessage::Finished(id, true));
-                            return Ok(());
-                        }
-                        Err(p) => p,
-                    };
-
-                // Try GitShowResult;  expand the matching commit's body inline
-                let any_payload =
-                    match any_payload.downcast::<crate::job_manager::jobs::git::GitShowResult>() {
-                        Ok(result) => {
-                            let doc_id = result.doc_id as crate::document::DocumentId;
-                            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                                if doc.is_git_log() {
-                                    doc.set_git_log_expanded(Some(result.sha), Some(result.body));
-                                }
-                            }
-                            if self.active_document_id() == doc_id {
-                                self.sync_state_with_active_document();
-                                let _ = self.force_full_redraw();
-                            }
-                            self.job_manager
-                                .update_job_state(&JobMessage::Finished(id, true));
-                            return Ok(());
-                        }
-                        Err(p) => p,
-                    };
-
-                // Try GitCommandResult;  show `:Git <args>` output
-                let any_payload = match any_payload
-                    .downcast::<crate::job_manager::jobs::git::GitCommandResult>()
-                {
-                    Ok(result) => {
-                        self.refresh_git_status_buffers_for(&result.repo_root);
-                        self.show_git_command_result(&result.args, result.output, result.success);
-                        self.job_manager
-                            .update_job_state(&JobMessage::Finished(id, true));
-                        return Ok(());
-                    }
-                    Err(p) => p,
-                };
-
-                // Try GitGutterDiffResult;  color the gutter for lines that changed
-                let any_payload = match any_payload
-                    .downcast::<crate::job_manager::jobs::git::GitGutterDiffResult>(
-                ) {
-                    Ok(result) => {
-                        let doc_id = result.doc_id as crate::document::DocumentId;
-                        if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                            // Discard a stale result: the buffer moved on
-                            // while this job was still running.
-                            if doc.buffer.revision == result.revision {
-                                doc.set_git_gutter_signs(&result.signs);
-                            }
-                        }
-                        if self.active_document_id() == doc_id {
-                            let _ = self.force_full_redraw();
-                        }
-                        self.job_manager
-                            .update_job_state(&JobMessage::Finished(id, true));
-                        return Ok(());
-                    }
-                    Err(p) => p,
-                };
-
-                // Try UndoTreeRenderResult;  populate the matching undotree buffer
-                let any_payload = match any_payload
-                    .downcast::<crate::job_manager::jobs::undotree::UndoTreeRenderResult>(
-                ) {
-                    Ok(res) => {
-                        if let Some(ut_doc) = self.document_manager.get_document_mut(res.ut_doc_id)
-                        {
-                            ut_doc.populate_undotree_buffer(
-                                res.text,
-                                res.sequences,
-                                res.highlights,
-                            );
-                        }
-                        self.sync_state_with_active_document();
-                        let _ = self.force_full_redraw();
-                        self.job_manager
-                            .update_job_state(&JobMessage::Finished(id, true));
-                        return Ok(());
-                    }
-                    Err(p) => p,
-                };
-
-                // Try ExplorerPreviewResult;  populate the preview pane
-                let any_payload = match any_payload
-                    .downcast::<crate::job_manager::jobs::explorer_preview::ExplorerPreviewResult>()
-                {
-                    Ok(res) => {
-                        // Clear in-flight tracking for this job regardless of staleness.
-                        if self
-                            .pending_explorer_preview
-                            .as_ref()
-                            .is_some_and(|p| p.job_id == id)
-                        {
-                            self.pending_explorer_preview = None;
-                        }
-
-                        // Discard stale results: the cursor may have moved to a different
-                        // entry since this job was spawned.
-                        let current_target = self.current_explorer_target_path();
-                        if current_target.as_deref() != Some(res.path.as_path()) {
-                            self.job_manager
-                                .update_job_state(&JobMessage::Finished(id, true));
-                            return Ok(());
-                        }
-
-                        let preview_doc_id = res.right_doc_id;
-                        let preview_path = res.path.clone();
-                        #[cfg_attr(not(feature = "treesitter"), allow(unused_variables))]
-                        let is_file_preview = res.dir_entries.is_none();
-                        if let Some(doc) = self.document_manager.get_document_mut(preview_doc_id) {
-                            doc.replace_buffer_content("");
-                            doc.syntax = None;
-                            doc.custom_highlights.clear();
-
-                            if let Some(entries) = res.dir_entries {
-                                // Placeholder: populate_directory_buffer assigns IDs
-                                // and writes the final entries into doc.kind itself.
-                                doc.kind = crate::document::BufferKind::Directory {
-                                    path: res.path.clone(),
-                                    entries: Vec::new(),
-                                    show_hidden: false,
-                                };
-                                doc.populate_directory_buffer(entries);
-                            } else if let Some(text) = res.file_text {
-                                doc.kind = crate::document::BufferKind::File;
-                                doc.set_path(&preview_path);
-                                let _ = doc.buffer.insert_str(&text);
-                                let _ = doc.buffer.set_cursor(0);
-                            }
-                        }
-
-                        #[cfg(feature = "treesitter")]
-                        if is_file_preview {
-                            if let Ok(loaded) = self.language_loader.load_language_for_file(&preview_path) {
-                                let highlights = self
-                                    .language_loader
-                                    .load_query(&loaded.name, "highlights")
-                                    .ok()
-                                    .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
-                                    .map(Arc::new);
-                                if let Ok(syntax) = crate::syntax::build_syntax(
-                                    loaded,
-                                    highlights,
-                                    self.language_loader.clone(),
-                                ) {
-                                    if let Some(doc) = self.document_manager.get_document_mut(preview_doc_id) {
-                                        doc.set_syntax(syntax);
-                                        // Synchronously parse so highlights are ready for the
-                                        // immediately following render (no async timing gap).
-                                        if doc.buffer.byte_len() <= super::SYNC_PARSE_MAX_BYTES {
-                                            let source = doc.buffer.to_logical_bytes();
-                                            if let Some(s) = &mut doc.syntax {
-                                                s.incremental_parse(&source);
-                                            }
-                                        }
-                                    }
-                                    self.spawn_syntax_parse_job(preview_doc_id);
-                                }
-                            }
-                        }
-
-                        self.sync_state_with_active_document();
-                        let _ = self.update_and_render();
-                        self.job_manager
-                            .update_job_state(&JobMessage::Finished(id, true));
-                        return Ok(());
-                    }
-                    Err(p) => p,
-                };
-
-                // Try FileSaveResult
-                let any_payload = match any_payload
-                    .downcast::<crate::job_manager::jobs::file_operations::FileSaveResult>(
-                ) {
-                    Ok(res) => {
-                        if let Some(doc) = self.document_manager.get_document_mut(res.document_id) {
-                            doc.mark_as_saved(res.saved_seq);
-                            doc.set_path(res.path.clone());
-
-                            // Update cached filename in state
-                            let display_name = doc.display_name().to_string();
-                            self.state.update_filename(display_name);
-                        }
-
-                        // Show success notification
-                        self.state.notify(
-                            crate::notification::NotificationType::Success,
-                            format!("Written to {}", res.path.display()),
-                        );
-
-                        self.update_lua_state();
-                        self.plugin_host
-                            .dispatch(&crate::plugin::EditorEvent::BufSavePost {
-                                buf: res.document_id,
-                                path: res.path.clone(),
-                            });
-                        self.apply_plugin_mutations();
-                        #[cfg(feature = "lsp")]
-                        self.lsp_manager.did_save(&res.path, None);
-
-                        if self.pending_quit_job_id == Some(id) {
-                            self.should_quit = true;
-                        }
-
-                        // Sync state and redraw to update dirty indicator
-                        self.sync_state_with_active_document();
-                        let _ = self.update_and_render();
-
-                        self.job_manager
-                            .update_job_state(&JobMessage::Finished(id, true));
-                        return Ok(());
-                    }
-                    Err(p) => p,
-                };
-
-                // Try FileLoadResult
-                let any_payload = match any_payload
-                    .downcast::<crate::job_manager::jobs::file_operations::FileLoadResult>(
-                ) {
-                    Ok(res) => {
-                        self.file_load_jobs.remove(&id);
-                        // Scope for doc mutation
-                        let warming_data = if let Some(doc) =
-                            self.document_manager.get_document_mut(res.document_id)
-                        {
-                            doc.apply_loaded_content(res.line_index, res.line_ending);
-                            if res.is_reload {
-                                // The server still holds the pre-reload text.
-                                doc.mark_lsp_full_sync();
-                            }
-                            // Extract data for cache warming
-                            let table = doc.buffer.line_index.table.clone();
-                            let revision = doc.buffer.revision;
-                            Some((table, revision))
-                        } else {
-                            None
-                        };
-
-                        self.attach_syntax_for_document(res.document_id);
-
-                        // Spawn syntax parse (requires self)
-                        self.spawn_syntax_parse_job(res.document_id);
-
-                        // Spawn cache warming if data extracted
-                        if let Some((table, revision)) = warming_data {
-                            let job = crate::job_manager::jobs::cache_warming::CacheWarmingJob::new(
-                                table, revision,
-                            );
-                            self.job_manager.spawn(job);
-                        }
-
-                        if let Some(doc) = self.document_manager.get_document(res.document_id) {
-                            let path = doc.path().map(|p| p.to_path_buf());
-                            let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
-                            self.update_lua_state();
-                            if res.is_reload {
-                                self.plugin_host
-                                    .dispatch(&crate::plugin::EditorEvent::BufReload {
-                                        buf: res.document_id,
-                                    });
-                            } else {
-                                self.plugin_host
-                                    .dispatch(&crate::plugin::EditorEvent::BufOpen {
-                                        buf: res.document_id,
-                                        path,
-                                        filetype,
-                                    });
-                            }
-                            self.apply_plugin_mutations();
-                        }
-
-                        // Notify LSP after opening a new (non-reload) file
-                        #[cfg(feature = "lsp")]
-                        if !res.is_reload {
-                            self.lsp_notify_open(res.document_id);
-                        }
-
-                        // Apply any deferred goto-definition jump that was stashed
-                        // because the file wasn't open when the LSP response arrived.
-                        #[cfg(feature = "lsp")]
-                        if let Some((goto_doc, goto_line, goto_col)) =
-                            self.pending_goto_target.take()
-                        {
-                            if goto_doc == res.document_id {
-                                let encoding = self
-                                    .document_manager
-                                    .get_document(res.document_id)
-                                    .and_then(|d| d.path())
-                                    .map(|p| self.lsp_manager.position_encoding_for_path(p))
-                                    .unwrap_or_default();
-                                if let Some(doc) =
-                                    self.document_manager.get_document_mut(res.document_id)
-                                {
-                                    let char_col = doc.lsp_char_offset_in_line(
-                                        goto_line,
-                                        goto_col as u32,
-                                        encoding,
-                                    );
-                                    let line_offset = doc.buffer.line_start(goto_line);
-                                    let target = (line_offset + char_col).min(doc.buffer.len());
-                                    doc.buffer.clear_desired_col();
-                                    let _ = doc.buffer.set_cursor(target);
-                                }
-                            } else if self.document_manager.get_document(goto_doc).is_some() {
-                                // Another document loaded first; keep waiting for ours.
-                                self.pending_goto_target = Some((goto_doc, goto_line, goto_col));
-                            }
-                        }
-
-                        self.sync_state_with_active_document();
-                        let _ = self.force_full_redraw();
-
-                        self.job_manager
-                            .update_job_state(&JobMessage::Finished(id, true));
-                        return Ok(());
-                    }
-                    Err(p) => p,
-                };
-
-                #[cfg(feature = "treesitter")]
-                match any_payload.downcast::<SyntaxParseResult>() {
-                    Ok(result) => {
-                        let doc_id = result.document_id;
-                        let is_current = self
-                            .document_manager
-                            .get_document(doc_id)
-                            .is_some_and(|doc| doc.buffer.revision == result.revision);
-
-                        if is_current {
-                            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                                if let Some(syntax) = &mut doc.syntax {
-                                    // Capture the pre-update tree/edit so injections can be
-                                    // scoped to the changed region below.
-                                    let (old_host_tree, edit): (
-                                        Option<tree_sitter::Tree>,
-                                        Option<tree_sitter::InputEdit>,
-                                    ) = if syntax.injections_query.is_some() {
-                                        (syntax.tree.clone(), syntax.single_pending_edit())
-                                    } else {
-                                        (None, None)
-                                    };
-                                    syntax.update_from_result(*result);
-                                    // The background job only parses the host grammar, so
-                                    // re-derive injections here from the live source.
-                                    if syntax.injections_query.is_some() {
-                                        let source = doc.buffer.to_logical_bytes();
-                                        syntax.parse_injections_pub(
-                                            &source,
-                                            old_host_tree.as_ref(),
-                                            edit,
-                                        );
-                                    }
-                                }
-                            }
-                        }
-
-                        if let Some(entry) = self.pending_syntax_reparse.get_mut(&doc_id) {
-                            if entry.in_flight_job == Some(id) {
-                                entry.in_flight_job = None;
-                            }
-                            if entry.debounce_deadline.is_none() && entry.in_flight_job.is_none() {
-                                self.pending_syntax_reparse.remove(&doc_id);
-                            }
-                        }
-
-                        // The buffer moved on while this job ran; reparse the current
-                        // content instead of leaving highlights permanently stale.
-                        if !is_current {
-                            self.debounce_syntax_reparse(doc_id);
-                        }
-
-                        // Re-render after syntax update; always use update_and_render so that
-                        // the display map (soft-wrap) is rebuilt correctly.
-                        self.update_and_render()?;
-                    }
-                    Err(any_payload) => {
-                        // Try CompletionPayload
-                        let any_payload = match any_payload
-                            .downcast::<crate::job_manager::jobs::completion::CompletionPayload>()
-                        {
-                            Ok(payload) => {
-                                self.handle_completion_result(*payload);
-                                return Ok(());
-                            }
-                            Err(p) => p,
-                        };
-
-                        // Try ByteLineMap (CacheWarmingJob)
-                        if let Ok(map) =
-                            any_payload.downcast::<crate::buffer::byte_map::ByteLineMap>()
-                        {
-                            if let Some(doc) = self.document_manager.active_document_mut() {
-                                if doc.buffer.revision == map.revision {
-                                    *doc.buffer.byte_map_cache.borrow_mut() = Some(*map);
-                                    if self.state.debug_mode {
-                                        self.state.notify(
-                                            crate::notification::NotificationType::Info,
-                                            "Search cache warmed".to_string(),
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
+            JobMessage::CustomToken(id, token, payload) => {
+                if !self.is_async_token_valid(&token) {
+                    return Ok(());
                 }
-
-                // Without tree-sitter, no job ever produces a SyntaxParseResult;
-                // go straight to the rest of the downcast chain.
-                #[cfg(not(feature = "treesitter"))]
-                {
-                    // Try CompletionPayload
-                    let any_payload = match any_payload
-                        .downcast::<crate::job_manager::jobs::completion::CompletionPayload>(
-                    ) {
-                        Ok(payload) => {
-                            self.handle_completion_result(*payload);
-                            return Ok(());
-                        }
-                        Err(p) => p,
-                    };
-
-                    // Try ByteLineMap (CacheWarmingJob)
-                    if let Ok(map) = any_payload.downcast::<crate::buffer::byte_map::ByteLineMap>()
-                    {
-                        if let Some(doc) = self.document_manager.active_document_mut() {
-                            if doc.buffer.revision == map.revision {
-                                *doc.buffer.byte_map_cache.borrow_mut() = Some(*map);
-                                if self.state.debug_mode {
-                                    self.state.notify(
-                                        crate::notification::NotificationType::Info,
-                                        "Search cache warmed".to_string(),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
+                self.handle_custom_job_payload(id, Some(token), payload)?;
             }
-            JobMessage::TerminalOutput(doc_id, data) => {
-                if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                    doc.handle_terminal_data(&data);
+            JobMessage::Custom(id, payload) => {
+                let token = self.job_manager.job_token(id);
+                if let Some(t) = token {
+                    if !self.is_async_token_valid(&t) {
+                        return Ok(());
+                    }
                 }
-                if !self.split_tree.windows_for_document(doc_id).is_empty() {
+                self.handle_custom_job_payload(id, token, payload)?;
+            }
+            JobMessage::TerminalOutput(token, data) => {
+                if !self.is_async_token_valid(&token) {
+                    return Ok(());
+                }
+                let Some(doc) = self
+                    .document_manager
+                    .get_document_by_handle_mut(token.handle)
+                else {
+                    return Ok(());
+                };
+                doc.handle_terminal_data(&data);
+                if !self
+                    .split_tree
+                    .windows_for_document(token.doc_id())
+                    .is_empty()
+                {
                     let _ = self.update_and_render();
                 }
             }
-            JobMessage::TerminalExit(doc_id) => {
-                // Switch back to Normal mode if this is the active terminal
+            JobMessage::TerminalExit(token) => {
+                if !self.is_async_token_valid(&token) {
+                    return Ok(());
+                }
+                let doc_id = token.doc_id();
                 if self.active_document_id() == doc_id {
                     self.set_mode(Mode::Normal);
                 }
-                // Collect split windows showing this terminal before removing the doc
-                let affected_windows = self.split_tree.windows_for_document(doc_id);
-
-                // Force-remove the terminal buffer (skips dirty check)
-                match self.document_manager.remove_document_force(doc_id) {
-                    Err(e) => {
-                        self.state.notify(
-                            crate::notification::NotificationType::Error,
-                            format!("Failed to close terminal: {}", e),
-                        );
-                    }
-                    Ok(()) => {
-                        self.state.notify(
-                            crate::notification::NotificationType::Info,
-                            "Terminal closed".to_string(),
-                        );
-                        // Close each split showing this terminal; reassign if it's the last window.
-                        let new_doc_id = self.document_manager.active_document_id().unwrap_or(1);
-                        for window_id in affected_windows {
-                            if !self.split_tree.close_window(window_id) {
-                                if let Some(w) = self.split_tree.get_window_mut(window_id) {
-                                    w.document_id = new_doc_id;
-                                }
-                            }
-                        }
-                    }
+                if let Err(e) = self.remove_document_force(doc_id) {
+                    self.state.notify(
+                        crate::notification::NotificationType::Error,
+                        format!("Failed to close terminal: {}", e),
+                    );
+                } else {
+                    self.state.notify(
+                        crate::notification::NotificationType::Info,
+                        "Terminal closed".to_string(),
+                    );
                 }
                 self.sync_state_with_active_document();
                 let _ = self.update_and_render();
@@ -955,6 +393,789 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Periodic cleanup of finished jobs
         self.job_manager.cleanup_finished_jobs();
+        Ok(())
+    }
+    fn handle_custom_job_payload(
+        &mut self,
+        id: usize,
+        token: Option<AsyncToken>,
+        payload: Box<dyn crate::job_manager::JobPayload>,
+    ) -> Result<(), RiftError> {
+        #[cfg(feature = "treesitter")]
+        use crate::job_manager::jobs::syntax::SyntaxParseResult;
+        use crate::job_manager::JobMessage;
+
+        let any_payload = payload.into_any();
+
+        // Try DirectoryListing; route to the document by id
+        let any_payload = match any_payload
+            .downcast::<crate::job_manager::jobs::explorer::DirectoryListing>()
+        {
+            Ok(listing) => {
+                let doc_id = listing.doc_id as crate::document::DocumentId;
+                let Some(token) = self.resolve_and_validate_token(
+                    id,
+                    token,
+                    doc_id,
+                    crate::job_manager::AsyncOpDomain::DirectoryListing,
+                ) else {
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                };
+                let Some(doc) = self
+                    .document_manager
+                    .get_document_by_handle_mut(token.handle)
+                else {
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                };
+                let path_matches = doc.directory_path() == Some(&listing.path);
+                if !path_matches {
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                }
+                let entries: Vec<crate::document::DirEntry> = listing
+                    .entries
+                    .iter()
+                    .map(|e| crate::document::DirEntry {
+                        path: e.path.clone(),
+                        is_dir: e.is_dir,
+                        id: 0,
+                    })
+                    .collect();
+                doc.populate_directory_buffer(entries);
+
+                // Restore cursor to the child entry we navigated away from, if any.
+                if let Some(target_name) = self.pending_cursor_entry.take() {
+                    let line_pos = doc
+                        .annotations
+                        .directory_entries_by_line()
+                        .into_iter()
+                        .find_map(|(line, eid)| {
+                            doc.directory_entries().and_then(|entries| {
+                                entries.iter().find(|e| e.id == eid).and_then(|e| {
+                                    e.path
+                                        .file_name()
+                                        .and_then(|n| n.to_str())
+                                        .filter(|n| *n == target_name)
+                                        .map(|_| doc.buffer.line_index.get_start(line).unwrap_or(0))
+                                })
+                            })
+                        });
+                    if let Some(pos) = line_pos {
+                        let _ = doc.buffer.set_cursor(pos);
+                    }
+                }
+                self.sync_state_with_active_document();
+                let _ = self.force_full_redraw();
+                self.update_explorer_preview();
+                self.job_manager
+                    .update_job_state(&JobMessage::Finished(id, true));
+                return Ok(());
+            }
+            Err(p) => p,
+        };
+
+        // Try GitStatusResult; populate the matching git status buffer
+        let any_payload =
+            match any_payload.downcast::<crate::job_manager::jobs::git::GitStatusResult>() {
+                Ok(result) => {
+                    let doc_id = result.doc_id as crate::document::DocumentId;
+                    let Some(token) = self.resolve_and_validate_token(
+                        id,
+                        token,
+                        doc_id,
+                        crate::job_manager::AsyncOpDomain::GitStatus,
+                    ) else {
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    };
+                    let Some(doc) = self
+                        .document_manager
+                        .get_document_by_handle_mut(token.handle)
+                    else {
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    };
+                    let root_matches = doc.is_git_status()
+                        && doc.git_repo_root() == Some(result.repo_root.as_path());
+                    if !root_matches {
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    }
+                    doc.populate_git_status_buffer(result.snapshot, result.head_subject);
+                    if let Some(staged_side) = self.pending_git_status_expand_all.remove(&doc_id) {
+                        self.spawn_expand_all_git_status_hunks(doc_id, staged_side);
+                    }
+                    if self.active_document_id() == doc_id {
+                        self.sync_state_with_active_document();
+                        let _ = self.force_full_redraw();
+                    }
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                }
+                Err(p) => p,
+            };
+
+        // Try GitDiffResult; expand the matching hunk block inline
+        let any_payload =
+            match any_payload.downcast::<crate::job_manager::jobs::git::GitDiffResult>() {
+                Ok(result) => {
+                    let doc_id = result.doc_id as crate::document::DocumentId;
+                    let Some(token) = self.resolve_and_validate_token(
+                        id,
+                        token,
+                        doc_id,
+                        crate::job_manager::AsyncOpDomain::GitDiff,
+                    ) else {
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    };
+                    let Some(doc) = self
+                        .document_manager
+                        .get_document_by_handle_mut(token.handle)
+                    else {
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    };
+                    if doc.is_git_status() {
+                        doc.set_git_status_expanded(result.path, result.staged_side, result.hunks);
+                    }
+                    if self.active_document_id() == doc_id {
+                        self.sync_state_with_active_document();
+                        let _ = self.force_full_redraw();
+                    }
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                }
+                Err(p) => p,
+            };
+
+        // Try GitBlameResult; populate the matching blame buffer
+        let any_payload =
+            match any_payload.downcast::<crate::job_manager::jobs::git::GitBlameResult>() {
+                Ok(result) => {
+                    let doc_id = result.doc_id as crate::document::DocumentId;
+                    let Some(token) = self.resolve_and_validate_token(
+                        id,
+                        token,
+                        doc_id,
+                        crate::job_manager::AsyncOpDomain::GitBlame,
+                    ) else {
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    };
+                    let Some(doc) = self
+                        .document_manager
+                        .get_document_by_handle_mut(token.handle)
+                    else {
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    };
+                    if doc.is_git_blame() {
+                        doc.populate_git_blame_buffer(result.lines);
+                    }
+                    if self.active_document_id() == doc_id {
+                        self.sync_state_with_active_document();
+                        let _ = self.force_full_redraw();
+                    }
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                }
+                Err(p) => p,
+            };
+
+        // Try GitLogResult; populate the matching log buffer
+        let any_payload =
+            match any_payload.downcast::<crate::job_manager::jobs::git::GitLogResult>() {
+                Ok(result) => {
+                    let doc_id = result.doc_id as crate::document::DocumentId;
+                    let Some(token) = self.resolve_and_validate_token(
+                        id,
+                        token,
+                        doc_id,
+                        crate::job_manager::AsyncOpDomain::GitLog,
+                    ) else {
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    };
+                    let Some(doc) = self
+                        .document_manager
+                        .get_document_by_handle_mut(token.handle)
+                    else {
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    };
+                    if doc.is_git_log() {
+                        doc.populate_git_log_buffer(result.commits);
+                    }
+                    if self.pending_git_log_expand_head.remove(&doc_id) {
+                        let head = if doc.is_git_log() {
+                            doc.git_repo_root().map(|r| r.to_path_buf()).zip(
+                                doc.git_log_commits()
+                                    .and_then(|c| c.first().map(|c| c.sha.clone())),
+                            )
+                        } else {
+                            None
+                        };
+                        if let Some((repo_root, sha)) = head {
+                            let show_token = self.job_manager.next_token(
+                                token.handle,
+                                token.expected_kind,
+                                crate::job_manager::AsyncOpDomain::GitShow,
+                            );
+                            let job = crate::job_manager::jobs::git::GitShowJob::new(
+                                doc_id as usize,
+                                repo_root,
+                                sha,
+                            )
+                            .with_token(show_token);
+                            self.job_manager.spawn_with_token(job, show_token);
+                        }
+                    }
+                    if self.active_document_id() == doc_id {
+                        self.sync_state_with_active_document();
+                        let _ = self.force_full_redraw();
+                    }
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                }
+                Err(p) => p,
+            };
+
+        // Try GitShowResult; expand the matching commit's body inline
+        let any_payload =
+            match any_payload.downcast::<crate::job_manager::jobs::git::GitShowResult>() {
+                Ok(result) => {
+                    let doc_id = result.doc_id as crate::document::DocumentId;
+                    let Some(token) = self.resolve_and_validate_token(
+                        id,
+                        token,
+                        doc_id,
+                        crate::job_manager::AsyncOpDomain::GitShow,
+                    ) else {
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    };
+                    let Some(doc) = self
+                        .document_manager
+                        .get_document_by_handle_mut(token.handle)
+                    else {
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    };
+                    if doc.is_git_log() {
+                        doc.set_git_log_expanded(Some(result.sha), Some(result.body));
+                    }
+                    if self.active_document_id() == doc_id {
+                        self.sync_state_with_active_document();
+                        let _ = self.force_full_redraw();
+                    }
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                }
+                Err(p) => p,
+            };
+
+        // Try GitCommandResult; show `:Git <args>` output
+        let any_payload =
+            match any_payload.downcast::<crate::job_manager::jobs::git::GitCommandResult>() {
+                Ok(result) => {
+                    self.refresh_git_status_buffers_for(&result.repo_root);
+                    self.show_git_command_result(&result.args, result.output, result.success);
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                }
+                Err(p) => p,
+            };
+
+        // Try GitGutterDiffResult; color the gutter for lines that changed
+        let any_payload =
+            match any_payload.downcast::<crate::job_manager::jobs::git::GitGutterDiffResult>() {
+                Ok(result) => {
+                    let doc_id = result.doc_id as crate::document::DocumentId;
+                    let Some(token) = self.resolve_and_validate_token(
+                        id,
+                        token,
+                        doc_id,
+                        crate::job_manager::AsyncOpDomain::GitGutter,
+                    ) else {
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    };
+                    let Some(doc) = self
+                        .document_manager
+                        .get_document_by_handle_mut(token.handle)
+                    else {
+                        self.job_manager
+                            .update_job_state(&JobMessage::Finished(id, true));
+                        return Ok(());
+                    };
+                    if doc.buffer.revision == result.revision {
+                        doc.set_git_gutter_signs(&result.signs);
+                    }
+                    if self.active_document_id() == doc_id {
+                        let _ = self.force_full_redraw();
+                    }
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                }
+                Err(p) => p,
+            };
+
+        // Try UndoTreeRenderResult; populate the matching undotree buffer
+        let any_payload = match any_payload
+            .downcast::<crate::job_manager::jobs::undotree::UndoTreeRenderResult>()
+        {
+            Ok(res) => {
+                let Some(token) = self.resolve_and_validate_token(
+                    id,
+                    token,
+                    res.ut_doc_id,
+                    crate::job_manager::AsyncOpDomain::UndoTree,
+                ) else {
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                };
+                let Some(ut_doc) = self
+                    .document_manager
+                    .get_document_by_handle_mut(token.handle)
+                else {
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                };
+                ut_doc.populate_undotree_buffer(res.text, res.sequences, res.highlights);
+                self.sync_state_with_active_document();
+                let _ = self.force_full_redraw();
+                self.job_manager
+                    .update_job_state(&JobMessage::Finished(id, true));
+                return Ok(());
+            }
+            Err(p) => p,
+        };
+
+        // Try ExplorerPreviewResult; populate the preview pane
+        let any_payload = match any_payload
+            .downcast::<crate::job_manager::jobs::explorer_preview::ExplorerPreviewResult>(
+        ) {
+            Ok(res) => {
+                // Clear in-flight tracking for this job regardless of staleness.
+                if self
+                    .pending_explorer_preview
+                    .as_ref()
+                    .is_some_and(|p| p.job_id == id)
+                {
+                    self.pending_explorer_preview = None;
+                }
+
+                let Some(token) = self.resolve_and_validate_token(
+                    id,
+                    token,
+                    res.right_doc_id,
+                    crate::job_manager::AsyncOpDomain::ExplorerPreview,
+                ) else {
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                };
+
+                // Discard stale results: the cursor may have moved to a different
+                // entry since this job was spawned.
+                let current_target = self.current_explorer_target_path();
+                if current_target.as_deref() != Some(res.path.as_path()) {
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                }
+
+                #[cfg_attr(not(feature = "treesitter"), allow(unused_variables))]
+                let preview_doc_id = res.right_doc_id;
+                let preview_path = res.path.clone();
+                #[cfg_attr(not(feature = "treesitter"), allow(unused_variables))]
+                let is_file_preview = res.dir_entries.is_none();
+                let Some(doc) = self
+                    .document_manager
+                    .get_document_by_handle_mut(token.handle)
+                else {
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                };
+                doc.replace_buffer_content("");
+                doc.syntax = None;
+                doc.custom_highlights.clear();
+
+                if let Some(entries) = res.dir_entries {
+                    doc.convert_to_directory(res.path.clone());
+                    doc.set_directory_show_hidden(false);
+                    doc.populate_directory_buffer(entries);
+                } else if let Some(text) = res.file_text {
+                    doc.convert_to_file();
+                    doc.set_path(&preview_path);
+                    let _ = doc.buffer.insert_str(&text);
+                    let _ = doc.buffer.set_cursor(0);
+                }
+
+                #[cfg(feature = "treesitter")]
+                if is_file_preview {
+                    if let Ok(loaded) = self.language_loader.load_language_for_file(&preview_path) {
+                        let highlights = self
+                            .language_loader
+                            .load_query(&loaded.name, "highlights")
+                            .ok()
+                            .and_then(|src| tree_sitter::Query::new(&loaded.language, &src).ok())
+                            .map(Arc::new);
+                        if let Ok(syntax) = crate::syntax::build_syntax(
+                            loaded,
+                            highlights,
+                            self.language_loader.clone(),
+                        ) {
+                            if let Some(doc) = self
+                                .document_manager
+                                .get_document_by_handle_mut(token.handle)
+                            {
+                                doc.set_syntax(syntax);
+                                // Synchronously parse so highlights are ready for the
+                                // immediately following render (no async timing gap).
+                                if doc.buffer.byte_len() <= super::SYNC_PARSE_MAX_BYTES {
+                                    let source = doc.buffer.to_logical_bytes();
+                                    if let Some(s) = &mut doc.syntax {
+                                        s.incremental_parse(&source);
+                                    }
+                                }
+                            }
+                            self.spawn_syntax_parse_job(preview_doc_id);
+                        }
+                    }
+                }
+
+                self.sync_state_with_active_document();
+                let _ = self.update_and_render();
+                self.job_manager
+                    .update_job_state(&JobMessage::Finished(id, true));
+                return Ok(());
+            }
+            Err(p) => p,
+        };
+
+        // Try FileSaveResult
+        let any_payload = match any_payload
+            .downcast::<crate::job_manager::jobs::file_operations::FileSaveResult>()
+        {
+            Ok(res) => {
+                let Some(token) = self.resolve_and_validate_token(
+                    id,
+                    token,
+                    res.document_id,
+                    crate::job_manager::AsyncOpDomain::FileSave,
+                ) else {
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                };
+                let Some(doc) = self
+                    .document_manager
+                    .get_document_by_handle_mut(token.handle)
+                else {
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                };
+
+                doc.mark_as_saved(res.saved_seq);
+                doc.set_path(res.path.clone());
+
+                let display_name = doc.display_name().to_string();
+                self.state.update_filename(display_name);
+
+                self.state.notify(
+                    crate::notification::NotificationType::Success,
+                    format!("Written to {}", res.path.display()),
+                );
+
+                self.update_lua_state();
+                self.plugin_host
+                    .dispatch(&crate::plugin::EditorEvent::BufSavePost {
+                        buf: res.document_id,
+                        path: res.path.clone(),
+                    });
+                self.apply_plugin_mutations();
+                #[cfg(feature = "lsp")]
+                self.lsp_manager.did_save(&res.path, None);
+
+                if self.pending_quit_job_id == Some(id) {
+                    self.should_quit = true;
+                }
+
+                self.sync_state_with_active_document();
+                let _ = self.update_and_render();
+
+                self.job_manager
+                    .update_job_state(&JobMessage::Finished(id, true));
+                return Ok(());
+            }
+            Err(p) => p,
+        };
+
+        // Try FileLoadResult
+        let any_payload = match any_payload
+            .downcast::<crate::job_manager::jobs::file_operations::FileLoadResult>()
+        {
+            Ok(res) => {
+                self.file_load_jobs.remove(&id);
+                let Some(token) = self.resolve_and_validate_token(
+                    id,
+                    token,
+                    res.document_id,
+                    crate::job_manager::AsyncOpDomain::FileLoad,
+                ) else {
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                };
+                let Some(doc) = self
+                    .document_manager
+                    .get_document_by_handle_mut(token.handle)
+                else {
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                };
+
+                doc.apply_loaded_content(res.line_index, res.line_ending);
+                if res.is_reload {
+                    doc.mark_lsp_full_sync();
+                }
+                let table = doc.buffer.line_index.table.clone();
+                let revision = doc.buffer.revision;
+                let path = doc.path().map(|p| p.to_path_buf());
+                let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
+
+                self.attach_syntax_for_document(res.document_id);
+                self.spawn_syntax_parse_job(res.document_id);
+                let warm_job =
+                    crate::job_manager::jobs::cache_warming::CacheWarmingJob::new(table, revision);
+                self.job_manager.spawn(warm_job);
+
+                self.update_lua_state();
+                if res.is_reload {
+                    self.plugin_host
+                        .dispatch(&crate::plugin::EditorEvent::BufReload {
+                            buf: res.document_id,
+                        });
+                } else {
+                    self.plugin_host
+                        .dispatch(&crate::plugin::EditorEvent::BufOpen {
+                            buf: res.document_id,
+                            path,
+                            filetype,
+                        });
+                }
+                self.apply_plugin_mutations();
+
+                #[cfg(feature = "lsp")]
+                if !res.is_reload {
+                    self.lsp_notify_open(res.document_id);
+                }
+
+                #[cfg(feature = "lsp")]
+                if let Some((goto_doc, goto_line, goto_col)) = self.pending_goto_target.take() {
+                    if goto_doc == res.document_id {
+                        let doc_path = self
+                            .document_manager
+                            .get_document_by_handle(token.handle)
+                            .and_then(|doc| doc.path().map(|p| p.to_path_buf()));
+                        let encoding = doc_path
+                            .as_deref()
+                            .map(|p| self.lsp_manager.position_encoding_for_path(p))
+                            .unwrap_or_default();
+                        if let Some(doc) = self
+                            .document_manager
+                            .get_document_by_handle_mut(token.handle)
+                        {
+                            let char_col =
+                                doc.lsp_char_offset_in_line(goto_line, goto_col as u32, encoding);
+                            let line_offset = doc.buffer.line_start(goto_line);
+                            let target = (line_offset + char_col).min(doc.buffer.len());
+                            doc.buffer.clear_desired_col();
+                            let _ = doc.buffer.set_cursor(target);
+                        }
+                    } else if self.document_manager.get_document(goto_doc).is_some() {
+                        self.pending_goto_target = Some((goto_doc, goto_line, goto_col));
+                    }
+                }
+
+                self.sync_state_with_active_document();
+                let _ = self.force_full_redraw();
+
+                self.job_manager
+                    .update_job_state(&JobMessage::Finished(id, true));
+                return Ok(());
+            }
+            Err(p) => p,
+        };
+
+        #[cfg(feature = "treesitter")]
+        match any_payload.downcast::<SyntaxParseResult>() {
+            Ok(result) => {
+                let doc_id = result.document_id;
+                let Some(token) = self.resolve_and_validate_token(
+                    id,
+                    token,
+                    doc_id,
+                    crate::job_manager::AsyncOpDomain::SyntaxParse,
+                ) else {
+                    if let Some(entry) = self.pending_syntax_reparse.get_mut(&doc_id) {
+                        if entry.in_flight_job == Some(id) {
+                            entry.in_flight_job = None;
+                        }
+                        if entry.debounce_deadline.is_none() && entry.in_flight_job.is_none() {
+                            self.pending_syntax_reparse.remove(&doc_id);
+                        }
+                    }
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                };
+                let Some(doc) = self
+                    .document_manager
+                    .get_document_by_handle_mut(token.handle)
+                else {
+                    if let Some(entry) = self.pending_syntax_reparse.get_mut(&doc_id) {
+                        if entry.in_flight_job == Some(id) {
+                            entry.in_flight_job = None;
+                        }
+                        if entry.debounce_deadline.is_none() && entry.in_flight_job.is_none() {
+                            self.pending_syntax_reparse.remove(&doc_id);
+                        }
+                    }
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                };
+
+                let is_current = doc.buffer.revision == result.revision;
+
+                if is_current {
+                    if let Some(syntax) = &mut doc.syntax {
+                        let (old_host_tree, edit): (
+                            Option<tree_sitter::Tree>,
+                            Option<tree_sitter::InputEdit>,
+                        ) = if syntax.injections_query.is_some() {
+                            (syntax.tree.clone(), syntax.single_pending_edit())
+                        } else {
+                            (None, None)
+                        };
+                        syntax.update_from_result(*result);
+                        if syntax.injections_query.is_some() {
+                            let source = doc.buffer.to_logical_bytes();
+                            syntax.parse_injections_pub(&source, old_host_tree.as_ref(), edit);
+                        }
+                    }
+                }
+
+                if let Some(entry) = self.pending_syntax_reparse.get_mut(&doc_id) {
+                    if entry.in_flight_job == Some(id) {
+                        entry.in_flight_job = None;
+                    }
+                    if entry.debounce_deadline.is_none() && entry.in_flight_job.is_none() {
+                        self.pending_syntax_reparse.remove(&doc_id);
+                    }
+                }
+
+                if !is_current {
+                    self.debounce_syntax_reparse(doc_id);
+                }
+
+                self.update_and_render()?;
+                self.job_manager
+                    .update_job_state(&JobMessage::Finished(id, true));
+                return Ok(());
+            }
+            Err(any_payload) => {
+                // Try CompletionPayload
+                let any_payload = match any_payload
+                    .downcast::<crate::job_manager::jobs::completion::CompletionPayload>(
+                ) {
+                    Ok(payload) => {
+                        self.handle_completion_result(*payload);
+                        return Ok(());
+                    }
+                    Err(p) => p,
+                };
+
+                // Try ByteLineMap (CacheWarmingJob)
+                if let Ok(map) = any_payload.downcast::<crate::buffer::byte_map::ByteLineMap>() {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        if doc.buffer.revision == map.revision {
+                            *doc.buffer.byte_map_cache.borrow_mut() = Some(*map);
+                            if self.state.debug_mode {
+                                self.state.notify(
+                                    crate::notification::NotificationType::Info,
+                                    "Search cache warmed".to_string(),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Without tree-sitter, no job ever produces a SyntaxParseResult;
+        // go straight to the rest of the downcast chain.
+        #[cfg(not(feature = "treesitter"))]
+        {
+            // Try CompletionPayload
+            let any_payload = match any_payload
+                .downcast::<crate::job_manager::jobs::completion::CompletionPayload>(
+            ) {
+                Ok(payload) => {
+                    self.handle_completion_result(*payload);
+                    return Ok(());
+                }
+                Err(p) => p,
+            };
+
+            // Try ByteLineMap (CacheWarmingJob)
+            if let Ok(map) = any_payload.downcast::<crate::buffer::byte_map::ByteLineMap>() {
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    if doc.buffer.revision == map.revision {
+                        *doc.buffer.byte_map_cache.borrow_mut() = Some(*map);
+                        if self.state.debug_mode {
+                            self.state.notify(
+                                crate::notification::NotificationType::Info,
+                                "Search cache warmed".to_string(),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 }
