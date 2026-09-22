@@ -627,9 +627,10 @@ fn rebase_todo_key_bindings_resolve_to_the_new_actions() {
         (Key::Enter, EditorAction::GitRebaseToggleFold),
     ];
     for (key, expected) in cases {
-        let result = editor
-            .keymap
-            .lookup(KeyContext::GitRebaseTodo, std::slice::from_ref(key));
+        let result = editor.keymap.lookup(
+            KeyContext::Buffer(crate::document::BufferKindId::GIT_REBASE_TODO),
+            std::slice::from_ref(key),
+        );
         match result {
             MatchResult::Exact(Action::Editor(a)) => {
                 assert_eq!(*a, *expected, "key {key:?}")
@@ -637,9 +638,10 @@ fn rebase_todo_key_bindings_resolve_to_the_new_actions() {
             other => panic!("key {key:?}: expected {expected:?}, got {other:?}"),
         }
     }
-    let dd = editor
-        .keymap
-        .lookup(KeyContext::GitRebaseTodo, &[Key::Char('d'), Key::Char('d')]);
+    let dd = editor.keymap.lookup(
+        KeyContext::Buffer(crate::document::BufferKindId::GIT_REBASE_TODO),
+        &[Key::Char('d'), Key::Char('d')],
+    );
     match dd {
         MatchResult::Exact(Action::Editor(EditorAction::GitRebaseDrop)) => {}
         other => panic!("expected 'dd' to resolve to GitRebaseDrop, got {other:?}"),
@@ -660,7 +662,7 @@ fn git_rebase_todo_is_read_only_and_blocks_insert_mode() {
     editor.open_git_rebase(dir.clone());
 
     let doc = editor.document_manager.active_document().unwrap();
-    assert!(doc.is_read_only, "GitRebaseTodo must be read-only");
+    assert!(doc.is_read_only(), "GitRebaseTodo must be read-only");
     let before = doc.buffer.to_string();
     editor.handle_mode_management(crate::command::Command::EnterInsertMode);
     assert_eq!(

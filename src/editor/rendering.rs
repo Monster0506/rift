@@ -609,7 +609,7 @@ impl<T: TerminalBackend> Editor<T> {
             cursor_row_offset: 0,
             cursor_col_offset: 0,
             cursor_viewport: None,
-            terminal_cursor: doc.terminal_cursor,
+            terminal_cursor: doc.terminal_cursor(),
             custom_highlights: if doc.custom_highlights.is_empty() {
                 None
             } else {
@@ -645,11 +645,9 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 Some(&annotation_concealed)
             },
-            terminal_cell_colors: if doc.terminal_cell_colors.is_empty() {
-                None
-            } else {
-                Some(&doc.terminal_cell_colors)
-            },
+            terminal_cell_colors: doc
+                .terminal_cell_colors()
+                .filter(|colors| !colors.is_empty()),
             show_line_numbers: doc.options.show_line_numbers,
             display_map,
             scroll_hint,
@@ -729,10 +727,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let blame_line_count = self
                     .document_manager
                     .get_document(blame_doc_id)
-                    .and_then(|doc| match &doc.kind {
-                        crate::document::BufferKind::GitBlame { lines, .. } => Some(lines.len()),
-                        _ => None,
-                    })
+                    .map(|doc| doc.git_blame_lines_len())
                     .unwrap_or(0);
                 let wrap_spec =
                     self.document_manager
@@ -767,15 +762,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let already_current = wrap_spec.as_ref().is_some_and(|(key, _)| {
                     self.document_manager
                         .get_document(blame_doc_id)
-                        .is_some_and(|doc| {
-                            matches!(
-                                &doc.kind,
-                                crate::document::BufferKind::GitBlame {
-                                    wrap_key: Some(current),
-                                    ..
-                                } if current == key
-                            )
-                        })
+                        .is_some_and(|doc| doc.git_blame_wrap_key() == Some(*key))
                 });
                 if let Some((wrap_key, params)) = wrap_spec.filter(|_| !already_current) {
                     let wrap_rows = self
@@ -858,9 +845,8 @@ impl<T: TerminalBackend> Editor<T> {
                     let new_rows = layout.rows as u16;
                     let new_cols = layout.cols as u16;
                     let needs = doc
-                        .terminal
-                        .as_ref()
-                        .map(|t| t.size != (new_rows, new_cols))
+                        .terminal()
+                        .map(|terminal| terminal.size != (new_rows, new_cols))
                         .unwrap_or(false);
                     if needs {
                         Some((new_rows, new_cols))
@@ -883,7 +869,7 @@ impl<T: TerminalBackend> Editor<T> {
 
             if let Some((new_rows, new_cols)) = terminal_resize {
                 if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                    if let Some(terminal) = &mut doc.terminal {
+                    if let Some(terminal) = doc.terminal_mut() {
                         let _ = terminal.resize(new_rows, new_cols);
                     }
                     doc.handle_terminal_data(&[]);
@@ -1250,11 +1236,9 @@ impl<T: TerminalBackend> Editor<T> {
                 } else {
                     Some(&annotation_concealed)
                 },
-                terminal_cell_colors: if doc.terminal_cell_colors.is_empty() {
-                    None
-                } else {
-                    Some(&doc.terminal_cell_colors)
-                },
+                terminal_cell_colors: doc
+                    .terminal_cell_colors()
+                    .filter(|colors| !colors.is_empty()),
                 show_line_numbers: doc.options.show_line_numbers,
                 display_map: display_map.as_deref(),
                 gutter_width_override: Some(gutter_width),
@@ -1373,7 +1357,7 @@ impl<T: TerminalBackend> Editor<T> {
             cursor_row_offset: row_off,
             cursor_col_offset: col_off,
             cursor_viewport: Some(focused_vp),
-            terminal_cursor: focused_doc.terminal_cursor,
+            terminal_cursor: focused_doc.terminal_cursor(),
             custom_highlights: if focused_doc.custom_highlights.is_empty() {
                 None
             } else {
@@ -1392,11 +1376,9 @@ impl<T: TerminalBackend> Editor<T> {
             annotation_adornments: None,
             annotation_inline: None,
             annotation_concealed: None,
-            terminal_cell_colors: if focused_doc.terminal_cell_colors.is_empty() {
-                None
-            } else {
-                Some(&focused_doc.terminal_cell_colors)
-            },
+            terminal_cell_colors: focused_doc
+                .terminal_cell_colors()
+                .filter(|colors| !colors.is_empty()),
             show_line_numbers: focused_doc.options.show_line_numbers,
             display_map: focused_display_map.as_deref(),
             scroll_hint: None,

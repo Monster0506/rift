@@ -78,8 +78,6 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn handle_clipboard_select(&mut self) {
-        use crate::document::BufferKind;
-
         let layout = match self.panel_layout_of(PanelKind::Clipboard) {
             Some(l) => l,
             None => return,
@@ -99,16 +97,13 @@ impl<T: TerminalBackend> Editor<T> {
                 .strip_prefix('[')
                 .and_then(|r| r.strip_suffix(']'))
                 .and_then(|inner| inner.parse::<usize>().ok());
-            match idx {
-                Some(i) => match &doc.kind {
-                    BufferKind::Clipboard { entries } => match entries.get(i) {
-                        Some(text) => (text.clone(), i),
-                        None => return,
-                    },
-                    _ => return,
-                },
-                None => return,
-            }
+            let Some(index) = idx else {
+                return;
+            };
+            let Some(text) = doc.clipboard_entry(index) else {
+                return;
+            };
+            (text.to_vec(), index)
         };
 
         // Populate the preview pane with the full entry text as an editable scratch buffer
@@ -124,9 +119,7 @@ impl<T: TerminalBackend> Editor<T> {
                 preview.buffer = new_buf;
             }
             preview.custom_highlights.clear();
-            preview.kind = BufferKind::ClipboardEntry {
-                entry_index: Some(entry_index),
-            };
+            preview.convert_to_clipboard_entry(Some(entry_index));
             preview.history.mark_saved();
         }
 
@@ -143,8 +136,6 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn handle_clipboard_new(&mut self) {
-        use crate::document::BufferKind;
-
         let layout = match self.panel_layout_of(PanelKind::Clipboard) {
             Some(l) => l,
             None => return,
@@ -160,7 +151,7 @@ impl<T: TerminalBackend> Editor<T> {
                 preview.buffer = new_buf;
             }
             preview.custom_highlights.clear();
-            preview.kind = BufferKind::ClipboardEntry { entry_index: None };
+            preview.convert_to_clipboard_entry(None);
             preview.history.mark_saved();
         }
 
@@ -178,20 +169,16 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Save an edited clipboard entry back to the ring.
     pub(super) fn apply_clipboard_entry_save(&mut self) {
-        use crate::document::BufferKind;
-
         let (entry_index, new_text) = {
             let doc = match self.document_manager.active_document() {
                 Some(d) => d,
                 None => return,
             };
-            match &doc.kind {
-                BufferKind::ClipboardEntry { entry_index } => {
-                    let len = doc.buffer.len();
-                    (*entry_index, doc.buffer.chars(0..len).collect::<Vec<_>>())
-                }
-                _ => return,
-            }
+            let Some(entry_index) = doc.clipboard_entry_index() else {
+                return;
+            };
+            let len = doc.buffer.len();
+            (entry_index, doc.buffer.chars(0..len).collect::<Vec<_>>())
         };
 
         match entry_index {
@@ -274,8 +261,6 @@ impl<T: TerminalBackend> Editor<T> {
 
     #[cfg(feature = "lsp")]
     fn handle_location_list_select(&mut self) {
-        use crate::document::BufferKind;
-
         let layout = match self.panel_layout_of(PanelKind::LocationList) {
             Some(l) => l,
             None => return,
@@ -288,10 +273,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
-            match &doc.kind {
-                BufferKind::LocationList { entries, .. } => entries.get(line_num).cloned(),
-                _ => return,
-            }
+            doc.location_list_entry_at(line_num)
         };
 
         let Some(entry) = entry else { return };
@@ -333,8 +315,6 @@ impl<T: TerminalBackend> Editor<T> {
     /// Space on a diagnostic entry: send a code action request scoped to that diagnostic.
     #[cfg(feature = "lsp")]
     fn handle_location_list_code_action(&mut self) {
-        use crate::document::BufferKind;
-
         let layout = match self.panel_layout_of(PanelKind::LocationList) {
             Some(l) => l,
             None => return,
@@ -347,10 +327,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
-            match &doc.kind {
-                BufferKind::LocationList { entries, .. } => entries.get(line_num).cloned(),
-                _ => return,
-            }
+            doc.location_list_entry_at(line_num)
         };
 
         let Some(entry) = entry else { return };

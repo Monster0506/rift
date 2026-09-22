@@ -124,7 +124,7 @@ fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    assert!(doc.is_read_only, "GitStatus must be read-only");
+    assert!(doc.is_read_only(), "GitStatus must be read-only");
 
     // `dd` must not remove the branch header line from the buffer.
     let before = doc.buffer.to_string();
@@ -1077,10 +1077,7 @@ fn git_blame_walk_back_on_the_root_commit_shows_a_notice_instead_of_a_raw_git_er
         before_sha, after_sha,
         "the root commit's blame must be unchanged"
     );
-    let (at_commit_is_none,) = match &doc.kind {
-        crate::document::BufferKind::GitBlame { at_commit, .. } => (at_commit.is_none(),),
-        _ => panic!("expected GitBlame kind"),
-    };
+    let at_commit_is_none = doc.git_blame_at_commit().is_none();
     assert!(
         at_commit_is_none,
         "must not record a walk-back target that was refused"
@@ -1489,7 +1486,7 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    assert!(doc.is_read_only, "GitBlame must be read-only");
+    assert!(doc.is_read_only(), "GitBlame must be read-only");
     let before = doc.buffer.to_string();
     editor.handle_mode_management(crate::command::Command::EnterInsertMode);
     assert_eq!(
@@ -1512,7 +1509,7 @@ fn git_blame_and_log_buffers_block_insert_and_delete() {
     editor.open_git_log(dir.path().to_path_buf(), None);
     drain_jobs(&mut editor);
     let doc = editor.document_manager.active_document().unwrap();
-    assert!(doc.is_read_only, "GitLog must be read-only");
+    assert!(doc.is_read_only(), "GitLog must be read-only");
     let before = doc.buffer.to_string();
     editor.handle_mode_management(crate::command::Command::EnterInsertMode);
     assert_eq!(
@@ -1544,17 +1541,12 @@ fn bare_git_show_command_opens_log_with_head_expanded() {
     drain_jobs(&mut editor);
 
     let doc = editor.document_manager.active_document().unwrap();
-    let crate::document::BufferKind::GitLog {
-        expanded,
-        expanded_body,
-        ..
-    } = &doc.kind
-    else {
-        panic!("bare :Git show must open the log buffer: {:?}", doc.kind);
-    };
-    assert!(expanded.is_some(), "HEAD's commit must already be expanded");
     assert!(
-        expanded_body.is_some(),
+        doc.git_log_expanded().is_some(),
+        "HEAD's commit must already be expanded"
+    );
+    assert!(
+        doc.git_log_expanded_body().is_some(),
         "the expanded commit's git show body must be populated"
     );
 }
@@ -1592,7 +1584,7 @@ fn g_question_mark_opens_a_read_only_help_buffer_for_each_git_buffer_kind() {
     drain_jobs(&mut editor);
     editor.open_git_help();
     let doc = editor.document_manager.active_document().unwrap();
-    assert!(doc.is_read_only, "help buffer must be read-only");
+    assert!(doc.is_read_only(), "help buffer must be read-only");
     let text = doc.buffer.to_string();
     assert!(text.contains("Git Status"), "expected status help: {text}");
     assert!(
@@ -1636,10 +1628,10 @@ fn g_question_mark_key_sequence_resolves_to_git_help() {
 
     let editor = create_editor();
     for ctx in [
-        KeyContext::GitStatus,
-        KeyContext::GitBlame,
-        KeyContext::GitLog,
-        KeyContext::GitRebaseTodo,
+        KeyContext::Buffer(crate::document::BufferKindId::GIT_STATUS),
+        KeyContext::Buffer(crate::document::BufferKindId::GIT_BLAME),
+        KeyContext::Buffer(crate::document::BufferKindId::GIT_LOG),
+        KeyContext::Buffer(crate::document::BufferKindId::GIT_REBASE_TODO),
     ] {
         let result = editor.keymap.lookup(ctx, &[Key::Char('g'), Key::Char('?')]);
         match result {

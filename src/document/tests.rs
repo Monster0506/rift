@@ -9,7 +9,7 @@ fn create_manager() -> DocumentManager {
 #[test]
 fn test_new_doc_is_file_kind() {
     let doc = Document::new(1).unwrap();
-    assert!(matches!(doc.kind, BufferKind::File));
+    assert!(doc.is_file());
 }
 
 #[cfg(feature = "lsp")]
@@ -303,12 +303,7 @@ fn test_new_directory_kind() {
 #[test]
 fn test_new_directory_show_hidden_defaults_false() {
     let doc = Document::new_directory(1, PathBuf::from("/tmp/test")).unwrap();
-    match &doc.kind {
-        BufferKind::Directory { show_hidden, .. } => {
-            assert!(!show_hidden, "show_hidden should default to false");
-        }
-        _ => panic!("expected Directory kind"),
-    }
+    assert_eq!(doc.directory_show_hidden(), Some(false));
 }
 
 #[test]
@@ -351,50 +346,40 @@ fn test_new_undotree_kind() {
 #[test]
 fn test_new_undotree_is_read_only() {
     let doc = Document::new_undotree(1, 42).unwrap();
-    assert!(doc.is_read_only);
+    assert!(doc.is_read_only());
 }
 
 #[test]
 fn test_new_directory_not_read_only() {
     let doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    assert!(!doc.is_read_only);
+    assert!(!doc.is_read_only());
 }
 
 #[test]
 fn test_new_undotree_stores_linked_doc_id() {
     let doc = Document::new_undotree(5, 99).unwrap();
-    match doc.kind {
-        BufferKind::UndoTree { linked_doc_id, .. } => assert_eq!(linked_doc_id, 99),
-        _ => panic!("expected UndoTree kind"),
-    }
+    assert_eq!(doc.undotree_linked_doc_id(), Some(99));
 }
 
 #[test]
 fn test_new_directory_stores_path() {
     let path = PathBuf::from("/home/user/projects");
     let doc = Document::new_directory(1, path.clone()).unwrap();
-    match &doc.kind {
-        BufferKind::Directory { path: p, .. } => assert_eq!(p, &path),
-        _ => panic!("expected Directory kind"),
-    }
+    assert_eq!(doc.directory_path(), Some(&path));
 }
 
 #[test]
 fn test_new_directory_entries_empty() {
     let doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
-    match &doc.kind {
-        BufferKind::Directory { entries, .. } => assert!(entries.is_empty()),
-        _ => panic!("expected Directory kind"),
-    }
+    assert!(doc.directory_entries().is_some_and(<[DirEntry]>::is_empty));
 }
 
 #[test]
 fn test_new_undotree_sequences_empty() {
     let doc = Document::new_undotree(1, 42).unwrap();
-    match &doc.kind {
-        BufferKind::UndoTree { sequences, .. } => assert!(sequences.is_empty()),
-        _ => panic!("expected UndoTree kind"),
-    }
+    assert!(doc
+        .undotree_sequences()
+        .is_some_and(<[crate::history::EditSeq]>::is_empty));
 }
 
 #[test]
@@ -527,10 +512,7 @@ fn test_populate_directory_updates_entries_snapshot() {
     let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("file.txt", false)], "/tmp");
     doc.populate_directory_buffer(entries);
-    match &doc.kind {
-        BufferKind::Directory { entries, .. } => assert_eq!(entries.len(), 1),
-        _ => panic!("expected Directory kind"),
-    }
+    assert_eq!(doc.directory_entries().map(<[DirEntry]>::len), Some(1));
 }
 
 #[test]
@@ -824,10 +806,7 @@ fn test_populate_undotree_stores_sequences() {
     let mut doc = Document::new_undotree(1, 42).unwrap();
     let seqs = vec![5u64, 3u64, 1u64];
     doc.populate_undotree_buffer("text".to_string(), seqs.clone(), vec![]);
-    match &doc.kind {
-        BufferKind::UndoTree { sequences, .. } => assert_eq!(sequences, &seqs),
-        _ => panic!("expected UndoTree kind"),
-    }
+    assert_eq!(doc.undotree_sequences(), Some(seqs.as_slice()));
 }
 
 #[test]
@@ -844,10 +823,7 @@ fn test_populate_undotree_stores_highlights() {
 fn test_populate_undotree_preserves_linked_doc_id() {
     let mut doc = Document::new_undotree(1, 99).unwrap();
     doc.populate_undotree_buffer("x".to_string(), vec![], vec![]);
-    match &doc.kind {
-        BufferKind::UndoTree { linked_doc_id, .. } => assert_eq!(*linked_doc_id, 99),
-        _ => panic!("expected UndoTree kind"),
-    }
+    assert_eq!(doc.undotree_linked_doc_id(), Some(99));
 }
 
 #[test]
@@ -925,9 +901,9 @@ fn test_iter_documents_mut_allows_mutation() {
     let mut manager = create_manager();
     manager.add_document(Document::new(1).unwrap());
     for doc in manager.iter_documents_mut() {
-        doc.is_read_only = true;
+        doc.set_read_only(true);
     }
-    assert!(manager.active_document().unwrap().is_read_only);
+    assert!(manager.active_document().unwrap().is_read_only());
 }
 // DirEntry struct
 
@@ -1308,54 +1284,6 @@ fn test_populate_undotree_increments_revision() {
         doc.buffer.revision > rev0,
         "revision should increment after populate"
     );
-}
-// BufferKind;  cloneability
-
-#[test]
-fn test_buffer_kind_file_clones() {
-    let kind = BufferKind::File;
-    let cloned = kind.clone();
-    assert!(matches!(cloned, BufferKind::File));
-}
-
-#[test]
-fn test_buffer_kind_directory_clones() {
-    let kind = BufferKind::Directory {
-        path: PathBuf::from("/tmp"),
-        entries: vec![DirEntry {
-            path: PathBuf::from("/tmp/a"),
-            is_dir: false,
-            id: 0,
-        }],
-        show_hidden: false,
-    };
-    let cloned = kind.clone();
-    match cloned {
-        BufferKind::Directory { path, entries, .. } => {
-            assert_eq!(path, PathBuf::from("/tmp"));
-            assert_eq!(entries.len(), 1);
-        }
-        _ => panic!("expected Directory"),
-    }
-}
-
-#[test]
-fn test_buffer_kind_undotree_clones() {
-    let kind = BufferKind::UndoTree {
-        linked_doc_id: 7,
-        sequences: vec![1, 2, 3],
-    };
-    let cloned = kind.clone();
-    match cloned {
-        BufferKind::UndoTree {
-            linked_doc_id,
-            sequences,
-        } => {
-            assert_eq!(linked_doc_id, 7);
-            assert_eq!(sequences, vec![1, 2, 3]);
-        }
-        _ => panic!("expected UndoTree"),
-    }
 }
 
 #[test]

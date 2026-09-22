@@ -218,7 +218,7 @@ impl<T: TerminalBackend> Editor<T> {
             .active_document()
             .map(|d| d.selection_set.is_empty())
             .unwrap_or(true);
-        if is_empty || self.active_doc_is(|d| d.is_read_only) {
+        if is_empty || self.active_doc_is(|d| d.is_read_only()) {
             return false;
         }
 
@@ -595,11 +595,10 @@ impl<T: TerminalBackend> Editor<T> {
                 return;
             }
         };
-        doc.is_read_only = true;
         if let Some(source) = self.document_manager.active_document() {
             doc.populate_regions_buffer(&source.buffer, &regions);
         }
-        doc.kind = crate::document::BufferKind::Regions { source_doc_id };
+        doc.set_regions(source_doc_id);
         self.document_manager.add_private_document(doc);
 
         let size = self
@@ -647,9 +646,12 @@ impl<T: TerminalBackend> Editor<T> {
             .active_document()
             .map(|d| d.buffer.line_index.get_line_at(d.buffer.cursor()))
             .unwrap_or(0);
-        let source_doc_id = match self.document_manager.active_document().map(|d| &d.kind) {
-            Some(crate::document::BufferKind::Regions { source_doc_id }) => *source_doc_id,
-            _ => return false,
+        let Some(source_doc_id) = self
+            .document_manager
+            .active_document()
+            .and_then(|doc| doc.regions_source_doc_id())
+        else {
+            return false;
         };
         let Some(source) = self.document_manager.get_document_mut(source_doc_id) else {
             return false;

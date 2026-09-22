@@ -346,7 +346,7 @@ pub fn contrasting_color(bg: Color) -> Color {
 }
 
 /// Applies per-character terminal fg+bg colors, used exclusively for
-/// `BufferKind::Terminal` documents where every alacritty grid cell has its own colors.
+/// terminal documents where every alacritty grid cell has its own colors.
 pub struct TerminalColorDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     colors: &'a [crate::color::CellColorSpan],
