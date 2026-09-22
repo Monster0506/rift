@@ -534,7 +534,7 @@ mod sync_parse_tests {
         let mut matches = cursor.matches(query, root, source);
         let mut items = Vec::new();
         while let Some(m) = matches.next() {
-            for capture in m.captures {
+            for capture in m.captures() {
                 items.push((capture.node.byte_range(), capture.index));
             }
         }
