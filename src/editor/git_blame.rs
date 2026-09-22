@@ -1,7 +1,7 @@
 //! Git blame view: open, populate, and walk-back navigation. Read-only; no `:w` reconciliation.
 
 use super::Editor;
-use crate::document::{BufferKind, Document};
+use crate::document::BufferKindId;
 use crate::term::TerminalBackend;
 
 const BLAME_PANE_WIDTH_RATIO: f64 = 0.33;
@@ -63,11 +63,8 @@ impl<T: TerminalBackend> Editor<T> {
         self.split_tree.set_focus(blame_win_id);
         let _ = self.document_manager.switch_to_document(blame_doc_id);
         if let Some(doc) = self.document_manager.get_document_mut(blame_doc_id) {
-            if let BufferKind::GitBlame {
-                linked_window_id, ..
-            } = &mut doc.kind
-            {
-                *linked_window_id = focused;
+            if doc.buffer_kind_id() == BufferKindId::GIT_BLAME {
+                doc.set_git_blame_linked_window_id(focused);
             }
         }
 
@@ -86,27 +83,22 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn git_blame_walk_back(&mut self) {
         let (repo_root, path, sha, linked_doc_id, linked_window_id) = {
             let doc = self.active_document();
-            let BufferKind::GitBlame {
-                repo_root,
-                path,
-                linked_doc_id,
-                linked_window_id,
-                ..
-            } = &doc.kind
-            else {
+            if doc.buffer_kind_id() != BufferKindId::GIT_BLAME {
+                return;
+            }
+            let (Some(repo_root), Some(path), Some(linked_doc_id), Some(linked_window_id)) = (
+                doc.git_repo_root().map(std::path::Path::to_path_buf),
+                doc.git_blame_path().map(std::path::Path::to_path_buf),
+                doc.git_blame_linked_doc_id(),
+                doc.git_blame_linked_window_id(),
+            ) else {
                 return;
             };
             let line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
             let Some(sha) = doc.annotations.git_blame_sha_at_line(line) else {
                 return;
             };
-            (
-                repo_root.clone(),
-                path.clone(),
-                sha,
-                *linked_doc_id,
-                *linked_window_id,
-            )
+            (repo_root, path, sha, linked_doc_id, linked_window_id)
         };
         let parent_commit = format!("{sha}^");
         if !crate::git::run(
@@ -133,12 +125,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
         let doc_id = self.active_document_id();
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-            if let BufferKind::GitBlame {
-                at_commit, history, ..
-            } = &mut doc.kind
-            {
-                history.push(at_commit.clone());
-                *at_commit = Some(parent_commit.clone());
+            if doc.buffer_kind_id() == BufferKindId::GIT_BLAME {
+                let current_commit = doc.git_blame_at_commit().map(str::to_string);
+                doc.push_git_blame_history(current_commit);
+                doc.set_git_blame_at_commit(Some(parent_commit.clone()));
             }
         }
         self.job_manager
@@ -153,27 +143,21 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn git_blame_walk_forward(&mut self) {
         let (repo_root, path, linked_doc_id, linked_window_id, previous) = {
             let doc = self.active_document();
-            let BufferKind::GitBlame {
-                repo_root,
-                path,
-                linked_doc_id,
-                linked_window_id,
-                history,
-                ..
-            } = &doc.kind
-            else {
+            if doc.buffer_kind_id() != BufferKindId::GIT_BLAME {
+                return;
+            }
+            let (Some(repo_root), Some(path), Some(linked_doc_id), Some(linked_window_id)) = (
+                doc.git_repo_root().map(std::path::Path::to_path_buf),
+                doc.git_blame_path().map(std::path::Path::to_path_buf),
+                doc.git_blame_linked_doc_id(),
+                doc.git_blame_linked_window_id(),
+            ) else {
                 return;
             };
-            let Some(previous) = history.last().cloned() else {
+            let Some(previous) = doc.git_blame_history().and_then(|h| h.last().cloned()) else {
                 return;
             };
-            (
-                repo_root.clone(),
-                path.clone(),
-                *linked_doc_id,
-                *linked_window_id,
-                previous,
-            )
+            (repo_root, path, linked_doc_id, linked_window_id, previous)
         };
         if !self.set_git_blame_source(
             &repo_root,
@@ -186,11 +170,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
         let doc_id = self.active_document_id();
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-            if let BufferKind::GitBlame {
-                at_commit, history, ..
-            } = &mut doc.kind
-            {
-                *at_commit = history.pop().unwrap();
+            if doc.buffer_kind_id() == BufferKindId::GIT_BLAME {
+                if let Some(previous_commit) = doc.pop_git_blame_history() {
+                    doc.set_git_blame_at_commit(previous_commit);
+                }
             }
         }
         self.job_manager
@@ -243,25 +226,23 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 };
                 doc.replace_buffer_content(&content);
-                doc.is_read_only = true;
-                doc.kind = BufferKind::Scratch {
-                    title: format!(
-                        "[Git] {} @ {}",
-                        path.display(),
-                        &commit[..commit.len().min(8)]
-                    ),
-                };
+                doc.set_read_only(true);
+                doc.convert_to_scratch(format!(
+                    "[Git] {} @ {}",
+                    path.display(),
+                    &commit[..commit.len().min(8)]
+                ));
                 self.document_manager.add_private_document(doc);
                 self.split_tree.set_window_document(linked_window_id, id);
                 if let Some(old_doc_id) = old_doc_id.filter(|id| *id != linked_doc_id) {
-                    self.document_manager.remove_private_document(old_doc_id);
+                    let _ = self.remove_private_document(old_doc_id);
                 }
             }
             None => {
                 self.split_tree
                     .set_window_document(linked_window_id, linked_doc_id);
                 if let Some(old_doc_id) = old_doc_id.filter(|id| *id != linked_doc_id) {
-                    self.document_manager.remove_private_document(old_doc_id);
+                    let _ = self.remove_private_document(old_doc_id);
                 }
             }
         }
@@ -269,10 +250,8 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// Keep a blame pane and its linked source pane on the same logical line.
-    ///
-    /// Viewports are cursor-driven, so mirror the focused pane's cursor into
-    /// its partner before their viewports are updated.
+    /// Mirrors the focused pane's cursor into its blame/source partner
+    /// before viewports update, since viewports are cursor-driven.
     pub(super) fn sync_git_blame_cursor(&mut self) {
         let line = {
             let window = self.split_tree.focused_window();
@@ -321,47 +300,48 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn git_blame_partner_window_id(&self) -> Option<crate::split::window::WindowId> {
         let focused_window_id = self.split_tree.focused_window_id();
         let focused_doc_id = self.split_tree.focused_window().document_id;
-        match self.document_manager.get_document(focused_doc_id) {
-            Some(Document {
-                kind:
-                    BufferKind::GitBlame {
-                        linked_window_id, ..
-                    },
-                ..
-            }) => Some(*linked_window_id),
-            _ => self
-                .document_manager
-                .documents_iter()
-                .find_map(|doc| match &doc.kind {
-                    BufferKind::GitBlame {
-                        linked_window_id, ..
-                    } if *linked_window_id == focused_window_id => Some(doc.id),
-                    _ => None,
-                })
-                .and_then(|blame_doc_id| {
-                    self.split_tree
-                        .windows
-                        .iter()
-                        .find_map(|(window_id, window)| {
-                            (window.document_id == blame_doc_id).then_some(*window_id)
-                        })
-                }),
+        if let Some(linked_window_id) = self
+            .document_manager
+            .get_document(focused_doc_id)
+            .and_then(|doc| doc.git_blame_linked_window_id())
+        {
+            return Some(linked_window_id);
         }
-    }
 
+        self.document_manager
+            .documents_iter()
+            .find_map(|doc| {
+                if doc.buffer_kind_id() == BufferKindId::GIT_BLAME
+                    && doc.git_blame_linked_window_id() == Some(focused_window_id)
+                {
+                    Some(doc.id)
+                } else {
+                    None
+                }
+            })
+            .and_then(|blame_doc_id| {
+                self.split_tree
+                    .windows
+                    .iter()
+                    .find_map(|(window_id, window)| {
+                        (window.document_id == blame_doc_id).then_some(*window_id)
+                    })
+            })
+    }
     /// `Escape` in a blame buffer: close it and return focus to the linked file.
     pub(super) fn close_git_blame(&mut self) {
         let (doc_id, linked_doc_id, linked_window_id) = {
             let doc = self.active_document();
-            let BufferKind::GitBlame {
-                linked_doc_id,
-                linked_window_id,
-                ..
-            } = &doc.kind
-            else {
+            if doc.buffer_kind_id() != BufferKindId::GIT_BLAME {
+                return;
+            }
+            let (Some(linked_doc_id), Some(linked_window_id)) = (
+                doc.git_blame_linked_doc_id(),
+                doc.git_blame_linked_window_id(),
+            ) else {
                 return;
             };
-            (doc.id, *linked_doc_id, *linked_window_id)
+            (doc.id, linked_doc_id, linked_window_id)
         };
         self.set_git_blame_source(
             std::path::Path::new(""),

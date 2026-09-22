@@ -3,9 +3,62 @@ use super::PostPasteState;
 #[allow(unused_imports)]
 use crate::buffer::api::BufferView;
 use crate::command::Command;
+use crate::document::{ActionDispatch, BufferKindId, NavigationPolicy};
 use crate::mode::Mode;
 use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
+
+pub(super) type NativeActionHandler<T> = fn(&mut Editor<T>, &str);
+
+pub(super) fn native_action_handlers<T: TerminalBackend>(
+) -> std::collections::HashMap<BufferKindId, NativeActionHandler<T>> {
+    let mut handlers = std::collections::HashMap::new();
+    handlers.insert(
+        BufferKindId::DIRECTORY,
+        Editor::handle_directory_buffer_action as NativeActionHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::GIT_STATUS,
+        Editor::handle_git_status_buffer_action as NativeActionHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::GIT_BLAME,
+        Editor::handle_git_blame_buffer_action as NativeActionHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::GIT_LOG,
+        Editor::handle_git_log_buffer_action as NativeActionHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::UNDO_TREE,
+        Editor::handle_undotree_buffer_action as NativeActionHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::MESSAGES,
+        Editor::handle_messages_buffer_action as NativeActionHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::CLIPBOARD,
+        Editor::handle_clipboard_buffer_action as NativeActionHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::CLIPBOARD_ENTRY,
+        Editor::handle_clipboard_entry_action as NativeActionHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::LOCATION_LIST,
+        Editor::handle_location_list_action as NativeActionHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::REGIONS,
+        Editor::handle_regions_buffer_action as NativeActionHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::BUFFER_LIST,
+        Editor::handle_buffer_list_action as NativeActionHandler<T>,
+    );
+    handlers
+}
 
 impl<T: TerminalBackend> Editor<T> {
     /// Dispatch `action`, then snap the cursor off any pending ghost it may
@@ -37,21 +90,47 @@ impl<T: TerminalBackend> Editor<T> {
                     self.open_messages(false);
                     return true;
                 }
-                use crate::document::BufferKind;
-                let kind = self.active_document().kind.clone();
-                match kind {
-                    BufferKind::Directory { .. } => self.handle_directory_buffer_action(id),
-                    BufferKind::GitStatus { .. } => self.handle_git_status_buffer_action(id),
-                    BufferKind::GitBlame { .. } => self.handle_git_blame_buffer_action(id),
-                    BufferKind::GitLog { .. } => self.handle_git_log_buffer_action(id),
-                    BufferKind::UndoTree { .. } => self.handle_undotree_buffer_action(id),
-                    BufferKind::Messages { .. } => self.handle_messages_buffer_action(id),
-                    BufferKind::Clipboard { .. } => self.handle_clipboard_buffer_action(id),
-                    BufferKind::ClipboardEntry { .. } => self.handle_clipboard_entry_action(id),
-                    BufferKind::LocationList { .. } => self.handle_location_list_action(id),
-                    BufferKind::Regions { .. } => self.handle_regions_buffer_action(id),
-                    BufferKind::BufferList { .. } => self.handle_buffer_list_action(id),
-                    _ => {}
+                // Capture dispatch metadata upfront without holding a document borrow across execution.
+                let Some((doc_id, kind_id, kind_name, action_dispatch, handle, is_tombstone)) =
+                    self.document_manager.active_document().map(|document| {
+                        (
+                            document.id,
+                            document.buffer_kind_id(),
+                            document.descriptor().name().to_string(),
+                            document.descriptor().action_dispatch,
+                            document.handle(),
+                            document.descriptor().is_tombstone(),
+                        )
+                    })
+                else {
+                    return true;
+                };
+
+                if is_tombstone || matches!(action_dispatch, ActionDispatch::Disabled) {
+                    return true;
+                }
+
+                if matches!(action_dispatch, ActionDispatch::Reject) {
+                    self.state.notify(
+                        crate::notification::NotificationType::Warning,
+                        "Action not supported in this buffer".to_string(),
+                    );
+                    return true;
+                }
+
+                match action_dispatch {
+                    ActionDispatch::Native(handler) => {
+                        handler(handle);
+                        if let Some(handler) = self.native_action_handlers.get(&kind_id).copied() {
+                            handler(self, id);
+                        }
+                    }
+                    ActionDispatch::Lua => {
+                        self.plugin_host
+                            .invoke_buffer_action(doc_id, &kind_name, id);
+                        self.apply_plugin_mutations();
+                    }
+                    ActionDispatch::Disabled | ActionDispatch::Reject => {}
                 }
                 return true;
             }
@@ -98,7 +177,7 @@ impl<T: TerminalBackend> Editor<T> {
 
                 if self.current_mode == Mode::Normal
                     && matches!(motion, Motion::Up | Motion::Down)
-                    && self.active_doc_is(|doc| doc.is_git_blame())
+                    && self.active_doc_is(|doc| doc.buffer_kind_id() == BufferKindId::GIT_BLAME)
                 {
                     let _ = self.snap_to_actionable_line(matches!(motion, Motion::Down));
                     return true;
@@ -108,7 +187,8 @@ impl<T: TerminalBackend> Editor<T> {
                 // lines, else fall through to ordinary motion.
                 if self.current_mode == Mode::Normal
                     && matches!(motion, Motion::Up | Motion::Down)
-                    && self.active_doc_is(|d| d.is_interface_mode())
+                    && self
+                        .active_doc_is(|d| d.policies().navigation == NavigationPolicy::ActionRows)
                     && self.snap_to_actionable_line(matches!(motion, Motion::Down))
                 {
                     self.update_explorer_preview();
@@ -424,8 +504,8 @@ impl<T: TerminalBackend> Editor<T> {
                     .document_manager
                     .active_document()
                     .and_then(|d| {
-                        if let crate::document::BufferKind::Directory { path, .. } = &d.kind {
-                            return Some(path.clone());
+                        if let Some(dir) = d.directory_path() {
+                            return Some(dir.clone());
                         }
                         d.path().map(|p| {
                             if p.is_dir() {
@@ -847,7 +927,7 @@ impl<T: TerminalBackend> Editor<T> {
             EditorAction::TerminalScrollback(delta) => {
                 let doc_id = self.active_document_id();
                 if let Some(doc) = self.document_manager.get_document(doc_id) {
-                    if let Some(term) = &doc.terminal {
+                    if let Some(term) = doc.terminal() {
                         term.scroll_display(*delta);
                     }
                 }
@@ -1239,7 +1319,7 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
         };
-        if doc.is_read_only {
+        if doc.is_read_only() {
             return false;
         }
 
@@ -1318,7 +1398,7 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
         };
-        if doc.is_read_only {
+        if doc.is_read_only() {
             return false;
         }
         doc.begin_transaction("Paste");

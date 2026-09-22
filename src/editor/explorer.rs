@@ -19,20 +19,11 @@ impl<T: TerminalBackend> Editor<T> {
         let show_hidden = self
             .document_manager
             .get_document(doc_id)
-            .and_then(|d| {
-                if let crate::document::BufferKind::Directory { show_hidden, .. } = &d.kind {
-                    Some(*show_hidden)
-                } else {
-                    None
-                }
-            })
+            .and_then(|doc| doc.directory_show_hidden())
             .unwrap_or(false);
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-            doc.kind = crate::document::BufferKind::Directory {
-                path: new_path.clone(),
-                entries: vec![],
-                show_hidden,
-            };
+            doc.convert_to_directory(new_path.clone());
+            doc.set_directory_show_hidden(show_hidden);
             doc.replace_buffer_content("");
         }
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
@@ -45,8 +36,6 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Handle <CR> in a directory (file explorer) buffer.
     pub(super) fn handle_explorer_select(&mut self) {
-        use crate::document::BufferKind;
-
         // If we're in the explorer center pane, delegate to split-aware select.
         let is_explorer_dir = self
             .panel_layout
@@ -78,9 +67,8 @@ impl<T: TerminalBackend> Editor<T> {
             let line_num = doc.buffer.line_index.get_line_at(cursor);
             let line_bytes = doc.buffer.get_line_bytes(line_num);
             let line_text = String::from_utf8_lossy(&line_bytes).trim_end().to_string();
-            let dir_path = match &doc.kind {
-                BufferKind::Directory { path, .. } => path.clone(),
-                _ => return,
+            let Some(dir_path) = doc.directory_path().cloned() else {
+                return;
             };
             // Prefer the entry's name/is_dir from its fs.entry payload (dynamic),
             // falling back to line-text parsing below when absent.
@@ -121,8 +109,6 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Handle `-` in a directory buffer: navigate to parent.
     pub(super) fn handle_explorer_parent(&mut self) {
-        use crate::document::BufferKind;
-
         // If we're in the explorer center pane, delegate to split-aware parent.
         let is_explorer_dir = self
             .panel_layout
@@ -142,10 +128,10 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(d) => d,
                 None => return,
             };
-            let parent = match &doc.kind {
-                BufferKind::Directory { path, .. } => path.parent().map(|p| p.to_path_buf()),
-                _ => return,
+            let Some(path) = doc.directory_path() else {
+                return;
             };
+            let parent = path.parent().map(|parent| parent.to_path_buf());
             (doc.id, parent)
         };
         if let Some(parent_path) = parent {
@@ -241,12 +227,10 @@ impl<T: TerminalBackend> Editor<T> {
             PanelKind::FileExplorer => {
                 // Close preview window, restore original doc to dir window, remove both private docs.
                 self.split_tree.close_window(layout.preview_win_id);
-                self.document_manager
-                    .remove_private_document(layout.preview_doc_id);
+                let _ = self.remove_private_document(layout.preview_doc_id);
                 self.split_tree
                     .set_window_document(layout.dir_win_id, layout.original_doc_id);
-                self.document_manager
-                    .remove_private_document(layout.dir_doc_id);
+                let _ = self.remove_private_document(layout.dir_doc_id);
                 self.split_tree.set_focus(layout.dir_win_id);
                 let _ = self
                     .document_manager
@@ -257,10 +241,8 @@ impl<T: TerminalBackend> Editor<T> {
                 self.split_tree
                     .set_window_document(layout.preview_win_id, layout.original_doc_id);
                 self.split_tree.close_window(layout.dir_win_id);
-                self.document_manager
-                    .remove_private_document(layout.dir_doc_id);
-                self.document_manager
-                    .remove_private_document(layout.preview_doc_id);
+                let _ = self.remove_private_document(layout.dir_doc_id);
+                let _ = self.remove_private_document(layout.preview_doc_id);
                 self.split_tree.set_focus(layout.preview_win_id);
                 let _ = self
                     .document_manager
@@ -268,12 +250,10 @@ impl<T: TerminalBackend> Editor<T> {
             }
             PanelKind::Clipboard => {
                 self.split_tree.close_window(layout.preview_win_id);
-                self.document_manager
-                    .remove_private_document(layout.preview_doc_id);
+                let _ = self.remove_private_document(layout.preview_doc_id);
                 self.split_tree
                     .set_window_document(layout.dir_win_id, layout.original_doc_id);
-                self.document_manager
-                    .remove_private_document(layout.dir_doc_id);
+                let _ = self.remove_private_document(layout.dir_doc_id);
                 self.split_tree.set_focus(layout.dir_win_id);
                 let _ = self
                     .document_manager
@@ -282,8 +262,7 @@ impl<T: TerminalBackend> Editor<T> {
             PanelKind::LocationList => {
                 // Close the location list window; focus returns to the source window.
                 self.split_tree.close_window(layout.dir_win_id);
-                self.document_manager
-                    .remove_private_document(layout.dir_doc_id);
+                let _ = self.remove_private_document(layout.dir_doc_id);
                 self.split_tree.set_focus(layout.preview_win_id);
                 let _ = self
                     .document_manager
@@ -291,8 +270,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             PanelKind::Regions => {
                 self.split_tree.close_window(layout.dir_win_id);
-                self.document_manager
-                    .remove_private_document(layout.dir_doc_id);
+                let _ = self.remove_private_document(layout.dir_doc_id);
                 self.split_tree.set_focus(layout.preview_win_id);
                 let _ = self
                     .document_manager
@@ -304,8 +282,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.split_tree.close_window(layout.preview_win_id);
                 self.split_tree
                     .set_window_document(layout.dir_win_id, layout.original_doc_id);
-                self.document_manager
-                    .remove_private_document(layout.dir_doc_id);
+                let _ = self.remove_private_document(layout.dir_doc_id);
                 self.split_tree.set_focus(layout.dir_win_id);
                 let _ = self
                     .document_manager
@@ -527,14 +504,12 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
-            match &doc.kind {
-                crate::document::BufferKind::BufferList { entries } => {
-                    match entries.get(line_num) {
-                        Some(id) => *id,
-                        None => return,
-                    }
-                }
-                _ => return,
+            match doc
+                .buffer_list_entries()
+                .and_then(|entries| entries.get(line_num))
+            {
+                Some(id) => *id,
+                None => return,
             }
         };
 
@@ -567,14 +542,12 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
-            match &doc.kind {
-                crate::document::BufferKind::BufferList { entries } => {
-                    match entries.get(line_num) {
-                        Some(id) => *id,
-                        None => return,
-                    }
-                }
-                _ => return,
+            match doc
+                .buffer_list_entries()
+                .and_then(|entries| entries.get(line_num))
+            {
+                Some(id) => *id,
+                None => return,
             }
         };
         let target_exists = self.document_manager.get_document(target_id).is_some();
@@ -616,15 +589,10 @@ impl<T: TerminalBackend> Editor<T> {
                 .and_then(|r| r.strip_suffix(']'))
                 .and_then(|inner| inner.parse::<usize>().ok());
 
-            let text = match idx {
-                Some(i) => match &doc.kind {
-                    crate::document::BufferKind::Clipboard { entries } => {
-                        entries.get(i).cloned().unwrap_or_default()
-                    }
-                    _ => Vec::new(),
-                },
-                None => Vec::new(),
-            };
+            let text = idx
+                .and_then(|index| doc.clipboard_entry(index))
+                .map(|entry| entry.to_vec())
+                .unwrap_or_default();
 
             (text, layout.preview_doc_id)
         };
@@ -645,16 +613,13 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Apply the order/deletions from the clipboard index buffer back to the ring.
     pub(super) fn apply_clipboard_diff(&mut self) {
-        use crate::document::BufferKind;
-
         let (entries_snapshot, order) = {
             let doc = match self.document_manager.active_document() {
                 Some(d) => d,
                 None => return,
             };
-            let entries = match &doc.kind {
-                BufferKind::Clipboard { entries } => entries.clone(),
-                _ => return,
+            let Some(entries) = doc.clipboard_entries().map(|entries| entries.to_vec()) else {
+                return;
             };
             let order = doc.parse_clipboard_order();
             (entries, order)
@@ -802,10 +767,7 @@ impl<T: TerminalBackend> Editor<T> {
         let line_num = doc.buffer.line_index.get_line_at(cursor);
         let line_bytes = doc.buffer.get_line_bytes(line_num);
         let line_text = String::from_utf8_lossy(&line_bytes).trim_end().to_string();
-        let dir_path = match &doc.kind {
-            crate::document::BufferKind::Directory { path, .. } => path.clone(),
-            _ => return None,
-        };
+        let dir_path = doc.directory_path()?.clone();
         let entry_name = line_text.trim_end_matches('/');
         if entry_name.is_empty() || entry_name == ".." {
             return None;
@@ -825,9 +787,8 @@ impl<T: TerminalBackend> Editor<T> {
             _ => return,
         };
 
-        let target_path = match self.current_explorer_target_path() {
-            Some(p) => p,
-            None => return,
+        let Some(target_path) = self.current_explorer_target_path() else {
+            return;
         };
         let preview_doc_id = layout.preview_doc_id;
 
@@ -835,9 +796,10 @@ impl<T: TerminalBackend> Editor<T> {
         let already_showing = self
             .document_manager
             .get_document(preview_doc_id)
-            .map(|d| match &d.kind {
-                crate::document::BufferKind::Directory { path, .. } => *path == target_path,
-                _ => d.path() == Some(target_path.as_path()),
+            .map(|doc| {
+                doc.directory_path()
+                    .map(|path| path == &target_path)
+                    .unwrap_or_else(|| doc.path() == Some(target_path.as_path()))
             })
             .unwrap_or(false);
         if already_showing {
@@ -887,11 +849,12 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
-            match &doc.kind {
-                crate::document::BufferKind::UndoTree { sequences, .. } => {
-                    sequences.get(line_num).copied().unwrap_or(u64::MAX)
-                }
-                _ => return,
+            match doc
+                .undotree_sequences()
+                .and_then(|sequences| sequences.get(line_num))
+            {
+                Some(sequence) => *sequence,
+                None => return,
             }
         };
 
@@ -935,9 +898,8 @@ impl<T: TerminalBackend> Editor<T> {
             let line_num = doc.buffer.line_index.get_line_at(cursor);
             let line_bytes = doc.buffer.get_line_bytes(line_num);
             let line_text = String::from_utf8_lossy(&line_bytes).trim_end().to_string();
-            let dir_path = match &doc.kind {
-                crate::document::BufferKind::Directory { path, .. } => path.clone(),
-                _ => return,
+            let Some(dir_path) = doc.directory_path().cloned() else {
+                return;
             };
             let entry_info = doc.annotations.directory_entry_info_at_line(line_num);
             (line_text, dir_path, entry_info)
@@ -990,18 +952,16 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(d) => d,
                 None => return,
             };
-            match &doc.kind {
-                crate::document::BufferKind::Directory { path, .. } => {
-                    let child = path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .map(|s| s.to_string());
-                    match path.parent().map(|p| p.to_path_buf()) {
-                        Some(p) => (p, child),
-                        None => return,
-                    }
-                }
-                _ => return,
+            let Some(path) = doc.directory_path() else {
+                return;
+            };
+            let child = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_string);
+            match path.parent().map(|parent| parent.to_path_buf()) {
+                Some(parent) => (parent, child),
+                None => return,
             }
         };
 
@@ -1014,8 +974,6 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Handle <CR> in an undo-tree buffer: jump to the node on the cursor line.
     pub(super) fn handle_undotree_select(&mut self) {
-        use crate::document::BufferKind;
-
         let (linked_doc_id, seq) = {
             let doc_id = self.active_document_id();
             let doc = match self.document_manager.get_document(doc_id) {
@@ -1024,16 +982,13 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor);
-            let (linked_id, seq) = match &doc.kind {
-                BufferKind::UndoTree {
-                    linked_doc_id,
-                    sequences,
-                } => {
-                    let seq = sequences.get(line_num).copied().unwrap_or(u64::MAX);
-                    (*linked_doc_id, seq)
-                }
-                _ => return,
+            let Some(linked_id) = doc.undotree_linked_doc_id() else {
+                return;
             };
+            let Some(sequences) = doc.undotree_sequences() else {
+                return;
+            };
+            let seq = sequences.get(line_num).copied().unwrap_or(u64::MAX);
             (linked_id, seq)
         };
 
@@ -1054,8 +1009,6 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Move the cursor up (`delta=-1`) or down (`delta=1`) in the undo tree, skipping connector lines.
     pub(super) fn handle_undotree_move(&mut self, delta: i64) {
-        use crate::document::BufferKind;
-
         let doc_id = self.active_document_id();
         let target_line = {
             let doc = match self.document_manager.get_document(doc_id) {
@@ -1065,9 +1018,8 @@ impl<T: TerminalBackend> Editor<T> {
             let cursor = doc.buffer.cursor();
             let line_num = doc.buffer.line_index.get_line_at(cursor) as i64;
             let total = doc.buffer.get_total_lines() as i64;
-            let sequences = match &doc.kind {
-                BufferKind::UndoTree { sequences, .. } => sequences,
-                _ => return,
+            let Some(sequences) = doc.undotree_sequences() else {
+                return;
             };
             let mut target = line_num + delta;
             // Skip over connector lines in the direction of travel.
@@ -1089,8 +1041,6 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Toggle hidden-file visibility for the active file explorer pane.
     pub(super) fn handle_explorer_toggle_hidden(&mut self) {
-        use crate::document::BufferKind;
-
         // Find the directory document for the active explorer (split or standalone).
         let dir_doc_id = if let Some(layout) = self.panel_layout.as_ref() {
             if layout.kind == PanelKind::FileExplorer {
@@ -1106,14 +1056,14 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
 
-        let (path, show_hidden) = match self.document_manager.get_document(dir_doc_id) {
-            Some(d) => match &d.kind {
-                BufferKind::Directory {
-                    path, show_hidden, ..
-                } => (path.clone(), *show_hidden),
-                _ => return,
-            },
-            None => return,
+        let Some(doc) = self.document_manager.get_document(dir_doc_id) else {
+            return;
+        };
+        let Some(path) = doc.directory_path().cloned() else {
+            return;
+        };
+        let Some(show_hidden) = doc.directory_show_hidden() else {
+            return;
         };
 
         // Guard: refuse to discard unsaved renames/deletes/creates.
@@ -1131,9 +1081,7 @@ impl<T: TerminalBackend> Editor<T> {
         let new_show_hidden = !show_hidden;
 
         if let Some(doc) = self.document_manager.get_document_mut(dir_doc_id) {
-            if let BufferKind::Directory { show_hidden, .. } = &mut doc.kind {
-                *show_hidden = new_show_hidden;
-            }
+            doc.set_directory_show_hidden(new_show_hidden);
         }
 
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
@@ -1146,8 +1094,6 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Re-read the directory listing for the active file explorer pane.
     pub(super) fn handle_explorer_refresh(&mut self) {
-        use crate::document::BufferKind;
-
         let dir_doc_id = if let Some(l) = self.panel_layout.as_ref() {
             if l.kind == PanelKind::FileExplorer {
                 l.dir_doc_id
@@ -1161,14 +1107,14 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
 
-        let (path, show_hidden) = match self.document_manager.get_document(dir_doc_id) {
-            Some(d) => match &d.kind {
-                BufferKind::Directory {
-                    path, show_hidden, ..
-                } => (path.clone(), *show_hidden),
-                _ => return,
-            },
-            None => return,
+        let Some(doc) = self.document_manager.get_document(dir_doc_id) else {
+            return;
+        };
+        let Some(path) = doc.directory_path().cloned() else {
+            return;
+        };
+        let Some(show_hidden) = doc.directory_show_hidden() else {
+            return;
         };
 
         if let Some(doc) = self.document_manager.get_document(dir_doc_id) {
@@ -1208,18 +1154,16 @@ impl<T: TerminalBackend> Editor<T> {
 
     /// Apply the diff from a directory buffer to the filesystem.
     pub(super) fn apply_directory_diff(&mut self) {
-        use crate::document::BufferKind;
-
         let (dir_doc_id, dir_path, dir_show_hidden, diff) = {
             let doc = match self.document_manager.active_document() {
                 Some(d) => d,
                 None => return,
             };
-            let (path, show_hidden) = match &doc.kind {
-                BufferKind::Directory {
-                    path, show_hidden, ..
-                } => (path.clone(), *show_hidden),
-                _ => return,
+            let Some(path) = doc.directory_path().cloned() else {
+                return;
+            };
+            let Some(show_hidden) = doc.directory_show_hidden() else {
+                return;
             };
             (doc.id, path, show_hidden, doc.parse_directory_diff())
         };

@@ -3,7 +3,7 @@
 use super::Editor;
 #[allow(unused_imports)]
 use crate::buffer::api::BufferView;
-use crate::document::{BufferKind, GitCommitTarget, GitStatusAction};
+use crate::document::{GitCommitTarget, GitStatusAction};
 use crate::error::{ErrorType, RiftError};
 use crate::term::TerminalBackend;
 use std::path::{Path, PathBuf};
@@ -90,10 +90,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
         let base_dir = {
             let doc = self.active_document();
-            match &doc.kind {
-                BufferKind::Directory { path, .. } => path.clone(),
-                _ => doc
-                    .path()
+            if let Some(path) = doc.directory_path() {
+                path.clone()
+            } else {
+                doc.path()
                     .map(|p| {
                         if p.is_dir() {
                             p.to_path_buf()
@@ -101,7 +101,7 @@ impl<T: TerminalBackend> Editor<T> {
                             p.parent().unwrap_or(p).to_path_buf()
                         }
                     })
-                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
             }
         };
         crate::git::discover_repo(&base_dir).map(|p| p.root)
@@ -160,15 +160,15 @@ impl<T: TerminalBackend> Editor<T> {
         let Some(doc) = self.document_manager.get_document(doc_id) else {
             return;
         };
-        let BufferKind::GitStatus {
-            repo_root,
-            snapshot,
-            ..
-        } = &doc.kind
-        else {
+        if !doc.is_git_status() {
+            return;
+        }
+        let Some(repo_root) = doc.git_repo_root().map(Path::to_path_buf) else {
             return;
         };
-        let repo_root = repo_root.clone();
+        let Some(snapshot) = doc.git_status_snapshot() else {
+            return;
+        };
         let paths: Vec<PathBuf> = snapshot
             .entries
             .iter()
@@ -199,9 +199,7 @@ impl<T: TerminalBackend> Editor<T> {
         let doc_ids: Vec<crate::document::DocumentId> = self
             .document_manager
             .documents_iter()
-            .filter(
-                |d| matches!(&d.kind, BufferKind::GitStatus { repo_root: r, .. } if r == repo_root),
-            )
+            .filter(|d| d.is_git_status() && d.git_repo_root() == Some(repo_root))
             .map(|d| d.id)
             .collect();
         for doc_id in doc_ids {
@@ -229,14 +227,9 @@ impl<T: TerminalBackend> Editor<T> {
                 doc.annotations.git_hunk_line_at_line(line)
             {
                 let path = PathBuf::from(path);
-                let hunk = match &doc.kind {
-                    BufferKind::GitStatus { expanded_diffs, .. } => expanded_diffs
-                        .get(&(path.clone(), staged_side))
-                        .and_then(|h| h.get(hunk_index))
-                        .cloned(),
-                    _ => None,
+                let Some(hunk) = doc.git_status_hunk(&path, staged_side, hunk_index) else {
+                    return;
                 };
-                let Some(hunk) = hunk else { return };
                 let is_new_file = doc.is_git_status_entry_untracked(&path);
                 let selected = crate::git::diff::diff_line_change_block(&hunk, line_index);
                 let hunk = crate::git::diff::filter_hunk_to_lines(&hunk, &selected);
@@ -264,14 +257,9 @@ impl<T: TerminalBackend> Editor<T> {
                 doc.annotations.git_hunk_at_line(line)
             {
                 let path = PathBuf::from(path);
-                let hunk = match &doc.kind {
-                    BufferKind::GitStatus { expanded_diffs, .. } => expanded_diffs
-                        .get(&(path.clone(), staged_side))
-                        .and_then(|h| h.get(hunk_index))
-                        .cloned(),
-                    _ => None,
+                let Some(hunk) = doc.git_status_hunk(&path, staged_side, hunk_index) else {
+                    return;
                 };
-                let Some(hunk) = hunk else { return };
                 let is_new_file = doc.is_git_status_entry_untracked(&path);
                 match verb {
                     "stage" | "toggle" if !staged_side => Some(GitStatusAction::StageHunk {
@@ -592,11 +580,14 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(d) => d,
                 None => return,
             };
-            let (repo_root, target) = match &doc.kind {
-                BufferKind::GitCommitMessage { repo_root, target } => {
-                    (repo_root.clone(), target.clone())
-                }
-                _ => return,
+            if !doc.is_git_commit_message() {
+                return;
+            }
+            let (Some(repo_root), Some(target)) = (
+                doc.git_repo_root().map(Path::to_path_buf),
+                doc.git_commit_target().cloned(),
+            ) else {
+                return;
             };
             let message: String = doc
                 .buffer
@@ -811,7 +802,7 @@ impl<T: TerminalBackend> Editor<T> {
         let doc = match crate::document::Document::new_scratch(id, format!("[Git: {args}]"), &lines)
         {
             Ok(mut d) => {
-                d.is_read_only = true;
+                d.set_read_only(true);
                 d
             }
             Err(e) => {
@@ -832,14 +823,14 @@ impl<T: TerminalBackend> Editor<T> {
     /// `g?` in a git status/log/blame/rebase-todo buffer: open a read-only
     /// scratch buffer listing that buffer's key reference.
     pub(super) fn open_git_help(&mut self) {
-        let Some(lines) = git_help_lines(&self.active_document().kind) else {
+        let Some(lines) = self.active_document().help_lines().map(<[String]>::to_vec) else {
             return;
         };
         let id = self.document_manager.next_id();
         let doc = match crate::document::Document::new_scratch(id, "[Git Help]".to_string(), &lines)
         {
             Ok(mut d) => {
-                d.is_read_only = true;
+                d.set_read_only(true);
                 d
             }
             Err(e) => {
@@ -856,61 +847,4 @@ impl<T: TerminalBackend> Editor<T> {
         self.sync_state_with_active_document();
         let _ = self.force_full_redraw();
     }
-}
-
-/// Key reference lines for `g?`, one per git buffer kind. `None` for anything else (the keymap only binds `g?` inside these four contexts, but a defensive default keeps this total). Terse, one line per key; same register as a vim `:help` table, not prose.
-fn git_help_lines(kind: &BufferKind) -> Option<Vec<String>> {
-    let text: &[&str] = match kind {
-        BufferKind::GitStatus { .. } => &[
-            "Git Status",
-            "",
-            "g?      help",
-            "s       stage",
-            "u       unstage",
-            "-       toggle stage",
-            "X       discard",
-            "=       toggle diff",
-            "]c [c   next/prev hunk",
-            "<CR>    expand / open Log (on HEAD line)",
-            "b       blame file",
-            "r       rebase onto upstream",
-            "cc      commit",
-            "ca cw   amend",
-            "cf      fixup!",
-            "j k     move",
-        ],
-        BufferKind::GitBlame { .. } => &[
-            "Git Blame",
-            "",
-            "g?      help",
-            "<CR>    blame parent",
-            "<BS>    blame next revision",
-            "<Esc>   close",
-        ],
-        BufferKind::GitLog { .. } => &[
-            "Git Log",
-            "",
-            "g?      help",
-            "<CR> =  toggle show",
-            "r       rebase from here",
-            "j k     move",
-        ],
-        BufferKind::GitRebaseTodo { .. } => &[
-            "Git Rebase Todo",
-            "",
-            "g?      help",
-            "K J     move commit up/down",
-            "p       pick",
-            "s       squash",
-            "f       fixup",
-            "e       edit",
-            "dd      drop",
-            "c r     reword (opens message editor)",
-            "<CR> =  toggle body preview",
-            "X       abort",
-            ":w      run",
-        ],
-        _ => return None,
-    };
-    Some(text.iter().map(|s| s.to_string()).collect())
 }

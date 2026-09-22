@@ -1,4 +1,4 @@
-//! Patch synthesis and hunk-level `git apply` invocation for staging/unstaging individual hunks from a `BufferKind::GitStatus` buffer. Whole-file mutations (`git add`, `git restore`) need no patch; they're issued directly via [`super::run_checked`] by the editor layer. Only hunk-granularity actions go through.
+//! Patch synthesis and hunk-level `git apply` invocation for staging/unstaging individual hunks from a git-status buffer. Whole-file mutations (`git add`, `git restore`) need no patch; they're issued directly via [`super::run_checked`] by the editor layer. Only hunk-granularity actions go through.
 
 use super::diff::{DiffLineKind, Hunk};
 use crate::error::{ErrorType, RiftError};

@@ -129,7 +129,7 @@ impl<T: TerminalBackend> Editor<T> {
                 result
             }
             crate::action::OperatorType::Change => {
-                if self.active_doc_is(|d| d.is_read_only) {
+                if self.active_doc_is(|d| d.is_read_only()) {
                     self.reject_read_only_edit();
                     self.set_mode(Mode::Normal);
                     return false;
@@ -257,7 +257,7 @@ impl<T: TerminalBackend> Editor<T> {
                 result
             }
             crate::action::OperatorType::Change => {
-                if self.active_doc_is(|d| d.is_read_only) {
+                if self.active_doc_is(|d| d.is_read_only()) {
                     self.reject_read_only_edit();
                     self.set_mode(Mode::Normal);
                     return false;

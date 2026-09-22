@@ -2,7 +2,7 @@
 //! (Phase 8). Pure read/navigate;  no `:w` reconciliation.
 
 use super::Editor;
-use crate::document::BufferKind;
+use crate::document::BufferKindId;
 use crate::term::TerminalBackend;
 
 impl<T: TerminalBackend> Editor<T> {
@@ -56,6 +56,9 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn git_log_toggle_expand(&mut self) {
         let (repo_root, sha, already_expanded) = {
             let doc = self.active_document();
+            if doc.buffer_kind_id() != BufferKindId::GIT_LOG {
+                return;
+            }
             let repo_root = match doc.git_repo_root() {
                 Some(r) => r.to_path_buf(),
                 None => return,
@@ -65,10 +68,7 @@ impl<T: TerminalBackend> Editor<T> {
             let Some(sha) = doc.annotations.git_log_commit_sha_at_line(line) else {
                 return;
             };
-            let already_expanded = matches!(
-                &doc.kind,
-                BufferKind::GitLog { expanded, .. } if expanded.as_deref() == Some(sha.as_str())
-            );
+            let already_expanded = doc.git_log_expanded() == Some(sha.as_str());
             (repo_root, sha, already_expanded)
         };
 

@@ -36,6 +36,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let mut jobs_changed = false;
+        for doc in self.document_manager.documents_iter() {
+            self.job_manager
+                .register_document_handle(doc.handle(), doc.buffer_kind_id(), None);
+        }
         const MAX_JOB_MESSAGES: usize = 10;
         let mut processed_jobs = 0;
         while processed_jobs < MAX_JOB_MESSAGES {
@@ -102,6 +106,8 @@ impl<T: TerminalBackend> Editor<T> {
                 return self.handle_paste(text);
             }
 
+            let bytes = key_press.to_vt100_bytes();
+
             // Update debug info
             self.state.update_keypress(key_press.clone());
 
@@ -155,7 +161,7 @@ impl<T: TerminalBackend> Editor<T> {
             };
 
             if is_terminal_insert {
-                let terminal_match = self.keymap.lookup(
+                let terminal_match = self.lookup_key_sequence(
                     crate::keymap::KeyContext::Terminal,
                     std::slice::from_ref(&key_press),
                 );
@@ -173,8 +179,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
 
                 if let Some(doc) = self.document_manager.active_document_mut() {
-                    if let Some(term) = &mut doc.terminal {
-                        let bytes = key_press.to_vt100_bytes();
+                    if let Some(term) = doc.terminal_mut() {
                         if !bytes.is_empty() {
                             term.scroll_to_bottom();
                             if let Err(e) = term.write(&bytes) {
@@ -259,7 +264,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let context = self.resolve_key_context();
 
                 // 2. Lookup Action in KeyMap
-                let match_result = self.keymap.lookup(context, &self.pending_keys);
+                let match_result = self.lookup_key_sequence(context, &self.pending_keys);
 
                 match match_result {
                     MatchResult::Exact(action) => {
@@ -329,7 +334,7 @@ impl<T: TerminalBackend> Editor<T> {
                         if self.pending_keys.len() > 1 {
                             let last = self.pending_keys.pop().unwrap();
                             // Check if prefix was ambiguous (valid action)
-                            match self.keymap.lookup(context, &self.pending_keys) {
+                            match self.lookup_key_sequence(context, &self.pending_keys) {
                                 MatchResult::Ambiguous(action) | MatchResult::Exact(action) => {
                                     let action = action.clone();
                                     self.pending_keys.clear();
@@ -342,7 +347,7 @@ impl<T: TerminalBackend> Editor<T> {
                                         // Mode unchanged: normal re-dispatch.
                                         continue;
                                     }
-                                    match self.keymap.lookup(context, &[last]) {
+                                    match self.lookup_key_sequence(context, &[last]) {
                                         MatchResult::Exact(a) | MatchResult::Ambiguous(a) => {
                                             let a = a.clone();
                                             self.pending_keys.clear();
@@ -467,63 +472,74 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn resolve_key_context(&self) -> crate::keymap::KeyContext {
         use crate::keymap::KeyContext;
 
-        let is_directory = self.active_doc_is(|d| d.is_directory());
-        let is_undotree = self.active_doc_is(|d| d.is_undotree());
-        let is_clipboard = self.active_doc_is(|d| d.is_clipboard());
-        let is_clipboard_entry = self.active_doc_is(|d| {
-            matches!(d.kind, crate::document::BufferKind::ClipboardEntry { .. })
-        });
-        let is_terminal = self.active_doc_is(|d| d.is_terminal());
-        let is_location_list = self.active_doc_is(|d| d.is_location_list());
-        let is_regions = self.active_doc_is(|d| d.is_regions());
-        let is_git_status = self.active_doc_is(|d| d.is_git_status());
-        let is_git_blame = self.active_doc_is(|d| d.is_git_blame());
-        let is_git_log = self.active_doc_is(|d| d.is_git_log());
-        let is_git_rebase_todo = self.active_doc_is(|d| d.is_git_rebase_todo());
-        let is_buffer_list = self.active_doc_is(|d| d.is_buffer_list());
         match self.current_mode {
-            Mode::Normal
-            | Mode::OperatorPending
-            | Mode::Visual
-            | Mode::VisualLine
-            | Mode::VisualBlock => {
-                if self.current_mode.is_visual() {
-                    KeyContext::Visual
-                } else if is_directory {
-                    KeyContext::FileExplorer
-                } else if is_undotree {
-                    KeyContext::UndoTree
-                } else if is_clipboard {
-                    KeyContext::Clipboard
-                } else if is_clipboard_entry {
-                    KeyContext::ClipboardEntry
-                } else if is_terminal {
+            Mode::Normal => {
+                if self.active_doc_is(|d| d.is_terminal()) {
                     KeyContext::TerminalNormal
-                } else if is_location_list {
-                    KeyContext::LocationList
-                } else if is_regions {
-                    KeyContext::Regions
-                } else if is_git_status {
-                    KeyContext::GitStatus
-                } else if is_git_blame {
-                    KeyContext::GitBlame
-                } else if is_git_log {
-                    KeyContext::GitLog
-                } else if is_git_rebase_todo {
-                    KeyContext::GitRebaseTodo
-                } else if is_buffer_list {
-                    KeyContext::BufferList
-                } else if self.current_mode == Mode::OperatorPending {
-                    KeyContext::OperatorPending
+                } else if let Some(doc) = self.document_manager.active_document() {
+                    KeyContext::Buffer(doc.buffer_kind_id())
                 } else {
                     KeyContext::Normal
                 }
             }
+            Mode::Visual | Mode::VisualLine | Mode::VisualBlock => KeyContext::Visual,
+            Mode::OperatorPending => KeyContext::OperatorPending,
             Mode::Insert | Mode::Replace => KeyContext::Insert,
-            Mode::Command => KeyContext::Command,
+            Mode::Command | Mode::Rename => KeyContext::Command,
             Mode::Search => KeyContext::Search,
-            Mode::Rename => KeyContext::Command,
         }
+    }
+
+    /// Resolve the parent context for a given `KeyContext` using the active document's
+    /// descriptor policy for buffer kinds, and falling back to built-in parent rules.
+    pub(super) fn resolve_parent_key_context(
+        &self,
+        context: crate::keymap::KeyContext,
+    ) -> Option<crate::keymap::KeyContext> {
+        match context {
+            crate::keymap::KeyContext::Buffer(id) => {
+                if let Some(doc) = self.document_manager.active_document() {
+                    if doc.buffer_kind_id() == id {
+                        return match doc.key_fallback() {
+                            crate::document::KeyFallback::Normal => {
+                                Some(crate::keymap::KeyContext::Normal)
+                            }
+                            crate::document::KeyFallback::Global => {
+                                Some(crate::keymap::KeyContext::Global)
+                            }
+                            crate::document::KeyFallback::None => None,
+                        };
+                    }
+                }
+                if let Some(desc) = self.buffer_kinds.get_by_id(id) {
+                    return match desc.policies.key_fallback {
+                        crate::document::KeyFallback::Normal => {
+                            Some(crate::keymap::KeyContext::Normal)
+                        }
+                        crate::document::KeyFallback::Global => {
+                            Some(crate::keymap::KeyContext::Global)
+                        }
+                        crate::document::KeyFallback::None => None,
+                    };
+                }
+                if id == crate::document::BufferKindId::TERMINAL {
+                    None
+                } else {
+                    Some(crate::keymap::KeyContext::Normal)
+                }
+            }
+            other => crate::keymap::KeyMap::parent_context(other),
+        }
+    }
+
+    /// Look up a key sequence in the keymap using the active editor parent resolver.
+    pub(super) fn lookup_key_sequence<'a>(
+        &'a self,
+        context: crate::keymap::KeyContext,
+        keys: &[crate::key::Key],
+    ) -> crate::keymap::MatchResult<'a> {
+        self.keymap
+            .lookup_with_parent(context, keys, |ctx| self.resolve_parent_key_context(ctx))
     }
 
     /// Handle an atomic bracketed-paste block, so no character in it can be
@@ -537,7 +553,7 @@ impl<T: TerminalBackend> Editor<T> {
             self.current_mode == Mode::Insert && self.active_doc_is(|d| d.is_terminal());
         if is_terminal_insert {
             if let Some(doc) = self.document_manager.active_document_mut() {
-                if let Some(term) = &mut doc.terminal {
+                if let Some(term) = doc.terminal_mut() {
                     term.scroll_to_bottom();
                     if let Err(e) = term.write(text.as_bytes()) {
                         self.state.notify(
@@ -586,12 +602,14 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let context = self.resolve_key_context();
-        let match_result = self.keymap.lookup(context, &self.pending_keys);
+        let action = match self.lookup_key_sequence(context, &self.pending_keys) {
+            MatchResult::Exact(action) | MatchResult::Ambiguous(action) => Some(action.clone()),
+            _ => None,
+        };
         self.pending_keys.clear();
         self.pending_keys_started_at = None;
 
-        if let MatchResult::Exact(action) | MatchResult::Ambiguous(action) = match_result {
-            let action = action.clone();
+        if let Some(action) = action {
             self.handle_action(&action);
             self.pending_count = 0;
             self.update_and_render()?;

@@ -23,7 +23,7 @@ fn enters_edit_mode(command: &Command) -> bool {
 }
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_mode_management(&mut self, command: crate::command::Command) {
-        if enters_edit_mode(&command) && self.active_doc_is(|d| d.is_read_only) {
+        if enters_edit_mode(&command) && self.active_doc_is(|d| d.is_read_only()) {
             self.reject_read_only_edit();
             return;
         }

@@ -387,3 +387,117 @@ fn test_panicking_job_reaches_terminal_state() {
     assert!(cleaned.contains(&id), "panicked job should be reapable");
     assert!(!manager.jobs.contains_key(&id));
 }
+
+#[test]
+fn test_async_token_advances_epoch_and_invalidates_older() {
+    let mut manager = JobManager::new();
+    let handle = DocumentHandle::new(1, 1);
+    let kind = BufferKindId::FILE;
+    let domain = AsyncOpDomain::FileLoad;
+
+    let token1 = manager.next_token(handle, kind, domain);
+    assert_eq!(token1.epoch, 1);
+    assert!(manager.is_token_current(&token1));
+
+    let token2 = manager.next_token(handle, kind, domain);
+    assert_eq!(token2.epoch, 2);
+    assert!(manager.is_token_current(&token2));
+    // Older token is now invalidated
+    assert!(!manager.is_token_current(&token1));
+}
+
+#[test]
+fn test_domain_isolation_for_epochs() {
+    let mut manager = JobManager::new();
+    let handle = DocumentHandle::new(1, 1);
+    let kind = BufferKindId::FILE;
+
+    let token_load = manager.next_token(handle, kind, AsyncOpDomain::FileLoad);
+    let token_save = manager.next_token(handle, kind, AsyncOpDomain::FileSave);
+    let token_syntax = manager.next_token(handle, kind, AsyncOpDomain::SyntaxParse);
+
+    assert!(manager.is_token_current(&token_load));
+    assert!(manager.is_token_current(&token_save));
+    assert!(manager.is_token_current(&token_syntax));
+
+    // Newer load request only invalidates older load, not save or syntax
+    let token_load2 = manager.next_token(handle, kind, AsyncOpDomain::FileLoad);
+    assert!(!manager.is_token_current(&token_load));
+    assert!(manager.is_token_current(&token_load2));
+    assert!(manager.is_token_current(&token_save));
+    assert!(manager.is_token_current(&token_syntax));
+}
+
+#[test]
+fn test_cancel_jobs_for_handle_purges_tokens_and_epochs() {
+    let mut manager = JobManager::new();
+    let handle1 = DocumentHandle::new(1, 1);
+    let handle2 = DocumentHandle::new(2, 1);
+    let kind = BufferKindId::FILE;
+
+    let token1 = manager.next_token(handle1, kind, AsyncOpDomain::FileLoad);
+    let token2 = manager.next_token(handle2, kind, AsyncOpDomain::FileLoad);
+
+    let job1 = NamedJob {
+        name: "j1",
+        silent: true,
+    };
+    let job2 = NamedJob {
+        name: "j2",
+        silent: true,
+    };
+
+    let id1 = manager.spawn_with_token(job1, token1);
+    let id2 = manager.spawn_with_token(job2, token2);
+
+    assert_eq!(manager.job_token(id1), Some(token1));
+    assert_eq!(manager.job_token(id2), Some(token2));
+    assert!(manager.is_token_current(&token1));
+    assert!(manager.is_token_current(&token2));
+
+    // Cancel jobs for handle1
+    let cancelled = manager.cancel_jobs_for_handle(handle1);
+    assert!(cancelled.contains(&id1));
+    assert!(!cancelled.contains(&id2));
+
+    assert_eq!(manager.job_token(id1), None);
+    assert!(!manager.is_token_current(&token1));
+    assert_eq!(manager.job_token(id2), Some(token2));
+    assert!(manager.is_token_current(&token2));
+}
+
+#[test]
+fn test_spawn_document_job_auto_generates_token() {
+    let mut manager = JobManager::new();
+    let handle = DocumentHandle::new(10, 1);
+    manager.register_document_handle(handle, BufferKindId::DIRECTORY, None);
+
+    let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
+        10,
+        std::path::PathBuf::from("/tmp"),
+        false,
+    );
+
+    let id = manager.spawn(job);
+    let token = manager
+        .job_token(id)
+        .expect("token should be automatically generated");
+    assert_eq!(token.handle, handle);
+    assert_eq!(token.expected_kind, BufferKindId::DIRECTORY);
+    assert_eq!(token.domain, AsyncOpDomain::DirectoryListing);
+    assert!(manager.is_token_current(&token));
+
+    // Spawning a newer request for the same document and domain advances the epoch
+    let job2 = crate::job_manager::jobs::explorer::DirectoryListJob::new(
+        10,
+        std::path::PathBuf::from("/tmp"),
+        false,
+    );
+    let id2 = manager.spawn(job2);
+    let token2 = manager
+        .job_token(id2)
+        .expect("token should be automatically generated");
+    assert_eq!(token2.epoch, token.epoch + 1);
+    assert!(manager.is_token_current(&token2));
+    assert!(!manager.is_token_current(&token));
+}

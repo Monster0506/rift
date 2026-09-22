@@ -95,10 +95,7 @@ impl<T: TerminalBackend> Editor<T> {
                 // active directory buffer's path + the fs.entry payload.
                 let doc_id = self.active_document_id();
                 let info = self.document_manager.active_document_mut().and_then(|doc| {
-                    let dir = match &doc.kind {
-                        crate::document::BufferKind::Directory { path, .. } => Some(path.clone()),
-                        _ => None,
-                    }?;
+                    let dir = doc.directory_path()?.clone();
                     let ann = doc.annotations.get(ann_id)?;
                     let name = crate::annotations::payload::fs::name(&ann.payload)?.to_string();
                     let is_dir =
@@ -1175,7 +1172,8 @@ Search: needle here and another needle over there.";
         use crate::action::{Action as EdAction, EditorAction, Motion};
         // Six lines; only lines 1, 3, 5 carry an interactive annotation.
         let mut e = editor_with_text("l0\nl1\nl2\nl3\nl4\nl5");
-        e.active_document().set_interface_mode(true);
+        e.active_document()
+            .convert_to_directory(std::path::PathBuf::new());
         let line_start = |e: &mut Editor<MockTerminal>, l: usize| {
             e.active_document().buffer.line_index.get_start(l).unwrap()
         };

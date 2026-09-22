@@ -261,6 +261,35 @@ fn test_editor_remove_dirty_tab() {
 }
 
 #[test]
+fn rejected_close_has_no_cleanup_side_effects() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static CLOSE_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    fn count_close(_handle: crate::document::DocumentHandle) {
+        CLOSE_COUNT.fetch_add(1, Ordering::SeqCst);
+    }
+
+    CLOSE_COUNT.store(0, Ordering::SeqCst);
+    let mut editor = create_editor();
+    let doc_id = editor.active_document_id();
+    let mut descriptor =
+        (*crate::document::builtin_descriptor(crate::document::BufferKindId::FILE)).clone();
+    descriptor.on_close = crate::document::CloseHandler::Native(count_close);
+    editor.active_document().kind =
+        crate::document::BufferKind::new(std::sync::Arc::new(descriptor));
+    editor.active_document().insert_char('x').unwrap();
+
+    assert!(editor.remove_document(doc_id).is_err());
+    assert_eq!(CLOSE_COUNT.load(Ordering::SeqCst), 0);
+    assert!(editor.document_manager.get_document(doc_id).is_some());
+
+    editor.remove_document_force(doc_id).unwrap();
+    assert_eq!(CLOSE_COUNT.load(Ordering::SeqCst), 1);
+    assert!(editor.document_manager.get_document(doc_id).is_none());
+}
+
+#[test]
 fn test_editor_open_file() {
     let mut editor = create_editor();
     editor
@@ -725,7 +754,6 @@ fn test_split_file_not_found_emits_error() {
 #[test]
 fn test_explorer_toggle_hidden_flips_show_hidden() {
     use crate::action::{Action, EditorAction};
-    use crate::document::BufferKind;
 
     let mut editor = create_editor();
 
@@ -739,35 +767,21 @@ fn test_explorer_toggle_hidden_flips_show_hidden() {
     let dir_doc_id = layout.dir_doc_id;
     {
         let doc = editor.document_manager.get_document(dir_doc_id).unwrap();
-        match &doc.kind {
-            BufferKind::Directory { show_hidden, .. } => assert!(!show_hidden),
-            _ => panic!("expected Directory kind"),
-        }
+        assert_eq!(doc.directory_show_hidden(), Some(false));
     }
 
     editor.handle_action(&Action::Editor(EditorAction::ExplorerToggleHidden));
 
     {
         let doc = editor.document_manager.get_document(dir_doc_id).unwrap();
-        match &doc.kind {
-            BufferKind::Directory { show_hidden, .. } => {
-                assert!(show_hidden, "show_hidden should be true after first toggle")
-            }
-            _ => panic!("expected Directory kind"),
-        }
+        assert_eq!(doc.directory_show_hidden(), Some(true));
     }
 
     editor.handle_action(&Action::Editor(EditorAction::ExplorerToggleHidden));
 
     {
         let doc = editor.document_manager.get_document(dir_doc_id).unwrap();
-        match &doc.kind {
-            BufferKind::Directory { show_hidden, .. } => assert!(
-                !show_hidden,
-                "show_hidden should be false after second toggle"
-            ),
-            _ => panic!("expected Directory kind"),
-        }
+        assert_eq!(doc.directory_show_hidden(), Some(false));
     }
 }
 
@@ -865,10 +879,7 @@ fn test_explorer_split_select_does_not_follow_swapped_symlink() {
     // Directory: split stays open, dir pane path changes to the descended dir.
     // File: split closes and the dir doc is removed.
     let descended = match editor.document_manager.get_document(layout.dir_doc_id) {
-        Some(doc) => match &doc.kind {
-            crate::document::BufferKind::Directory { path, .. } => *path != base,
-            _ => false,
-        },
+        Some(doc) => doc.directory_path().is_some_and(|path| *path != base),
         None => false,
     };
 
@@ -4591,10 +4602,10 @@ fn regions_window_x_drops_the_selected_entry() {
 
     editor.handle_action(&Action::Editor(EditorAction::RegionsListDrop));
 
-    let source_id = match editor.active_document().kind {
-        crate::document::BufferKind::Regions { source_doc_id } => source_doc_id,
-        _ => panic!("expected to still be focused in the regions window"),
-    };
+    let source_id = editor
+        .active_document()
+        .regions_source_doc_id()
+        .expect("expected to still be focused in the regions window");
     assert_eq!(
         editor
             .document_manager
@@ -5256,10 +5267,7 @@ fn test_explorer_preview_populates_for_real_file_and_directory_targets() {
         .get_document(preview_doc_id)
         .unwrap();
     assert!(
-        matches!(
-            preview_doc.kind,
-            crate::document::BufferKind::Directory { .. }
-        ),
+        preview_doc.is_directory(),
         "expected a directory preview for the subdir entry"
     );
 

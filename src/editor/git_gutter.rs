@@ -22,7 +22,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn poll_git_gutter_diff(&mut self) {
         let doc_id = self.active_document_id();
         let Some((revision, path)) = self.document_manager.get_document(doc_id).and_then(|doc| {
-            if !matches!(doc.kind, crate::document::BufferKind::File) {
+            if doc.buffer_kind_id() != crate::document::BufferKindId::FILE {
                 return None;
             }
             doc.path().map(|p| (doc.buffer.revision, p.to_path_buf()))
