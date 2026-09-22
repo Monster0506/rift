@@ -6,9 +6,11 @@ mod edit;
 mod factories;
 mod ghost;
 mod history;
+mod kind;
 pub mod manager;
 mod persistence;
 mod populate;
+pub mod runtime;
 mod search;
 mod selection_render;
 
@@ -16,13 +18,33 @@ use crate::annotations::AnnotationStore;
 #[cfg(feature = "lsp")]
 use crate::buffer::api::BufferView;
 use crate::buffer::TextBuffer;
-use crate::history::{EditSeq, EditTransaction, UndoTree};
+use crate::history::{EditTransaction, UndoTree};
 use crate::syntax::Syntax;
 use crate::term::Terminal;
 use definitions::DocumentOptions;
 pub(crate) use factories::decode_file_bytes;
-pub use manager::DocumentManager;
-use std::path::PathBuf;
+pub use kind::BufferKind;
+pub use manager::{
+    CreationReservation, DocumentDraft, DocumentManager, DraftCommitTarget, PreparedRemoval,
+    RemovalIntent,
+};
+pub use runtime::{
+    builtin_descriptor, ActionDispatch, BufferKindId, BufferKindRegistry, BufferListState,
+    BufferPolicies, ClipboardEntryState, ClipboardState, CloseHandler, ClosePolicy,
+    DescriptorOwner, DirectoryState, DisplayNameStrategy, DocumentHandle, FileState,
+    GhostCutPolicy, GitBlameState, GitCommitMessageState, GitLogState, GitRebaseTodoState,
+    GitStatusState, InputPolicy, KeyFallback, KeyFallbackPolicy, KindDescriptor,
+    LanguageServicesPolicy, LocationListState, MessagesState, NativeActionHandler,
+    NativeCloseHandler, NativeSaveHandler, NavigationPolicy, PluginBufferState, ReadOnlyPolicy,
+    RegionsState, RegistryError, SaveDispatch, SaveResult, ScratchState, StateKey, StateKeyId,
+    StateSlot, StructuralEditPolicy, TerminalState, TextProjection, TextProjectionPolicy,
+    TombstoneMetadata, UndoTreeState, BUFFER_LIST_STATE_KEY, CLIPBOARD_ENTRY_STATE_KEY,
+    CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY, EMPTY_STATE_KEY, FILE_STATE_KEY, GIT_BLAME_STATE_KEY,
+    GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY, GIT_REBASE_TODO_STATE_KEY,
+    GIT_STATUS_STATE_KEY, LOCATION_LIST_STATE_KEY, MESSAGES_STATE_KEY, PLUGIN_BUFFER_STATE_KEY,
+    REGIONS_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_TREE_STATE_KEY,
+};
+use std::path::{Path, PathBuf};
 
 /// Unique identifier for documents
 pub type DocumentId = u64;
@@ -124,118 +146,7 @@ pub struct LocationEntry {
     pub display: String,
 }
 
-/// Identifies the role and behaviour of a document
-#[derive(Debug, Clone)]
-pub enum BufferKind {
-    /// Regular file buffer (default)
-    File,
-    /// Terminal emulator buffer
-    Terminal,
-    /// Directory browser
-    Directory {
-        path: PathBuf,
-        /// Snapshot of entries at populate time; used to diff user edits on :w
-        entries: Vec<DirEntry>,
-        /// Whether hidden files (dot-files) are shown
-        show_hidden: bool,
-    },
-    /// Undo tree visualisation for a linked document
-    UndoTree {
-        linked_doc_id: DocumentId,
-        /// Maps buffer line index -> EditSeq; u64::MAX = non-navigable connector line
-        sequences: Vec<EditSeq>,
-    },
-    /// Messages log buffer showing all editor notifications
-    Messages {
-        /// When true, shows all job events including silent ones
-        show_all: bool,
-    },
-    /// Clipboard ring index buffer, editable: :w syncs back to the ring
-    Clipboard {
-        /// Snapshot of ring entries at populate time; used for content-matching on save
-        entries: Vec<Vec<crate::character::Character>>,
-    },
-    /// Scratch buffer for editing a single clipboard ring entry in place.
-    ClipboardEntry { entry_index: Option<usize> },
-    /// Read-only location list (diagnostics, references, quickfix).
-    LocationList {
-        source_doc_id: DocumentId,
-        entries: Vec<LocationEntry>,
-    },
-    /// `gv` regions window: a read-only list of the active document's
-    /// banked `SelectionSet`, one line per region.
-    Regions { source_doc_id: DocumentId },
-    /// Plugin-created in-memory buffer with no disk path (`rift.create_scratch_buf`).
-    /// `title` is shown as the tab label in place of a filename.
-    Scratch { title: String },
-    /// Git status buffer: staged/unstaged/untracked/unmerged files. Read-only; changes happen only through its key actions (`s`/`u`/`X`/`=`/`c...`), never by editing the rendered text.
-    GitStatus {
-        repo_root: PathBuf,
-        /// Snapshot of the status listing at the last populate/refresh.
-        snapshot: crate::git::status::StatusSnapshot,
-        /// Diff hunks fetched for currently-expanded entries, keyed by
-        /// `(path, staged_side)` (`staged_side` = hunks came from `git diff --cached`).
-        expanded_diffs: std::collections::HashMap<(PathBuf, bool), Vec<crate::git::diff::Hunk>>,
-        /// HEAD's subject line, for the `HEAD <sha> <subject>` header summary (Enter on it opens the Log browser). `None` on an unborn branch with no commits yet.
-        head_subject: Option<String>,
-    },
-    /// Commit message buffer; `:w`/`:wq` commits.
-    GitCommitMessage {
-        repo_root: PathBuf,
-        target: GitCommitTarget,
-    },
-    /// `git blame` view for a file. Read-only navigation walks to a commit parent and opens in an adjacent split.
-    GitBlame {
-        repo_root: PathBuf,
-        linked_doc_id: DocumentId,
-        linked_window_id: crate::split::window::WindowId,
-        path: PathBuf,
-        at_commit: Option<String>,
-        history: Vec<Option<String>>,
-        lines: Vec<crate::git::blame::BlameLine>,
-        /// Number of visual rows occupied by each linked source line.
-        wrap_rows: Vec<usize>,
-        /// Linked source document, wrap width, tab width, and revision used
-        /// to derive `wrap_rows`.
-        wrap_key: Option<(DocumentId, usize, usize, u64)>,
-    },
-    /// `git log` browser for the repository (or scoped to one `path`). `=` expands a commit's `git show` inline, the same mechanism as status-buffer hunk expansion. Read-only, pure navigation.
-    GitLog {
-        repo_root: PathBuf,
-        path: Option<PathBuf>,
-        commits: Vec<crate::git::log::CommitSummary>,
-        /// SHA of the commit currently expanded inline, if any.
-        expanded: Option<String>,
-        /// Cached `git show` body for `expanded`, so re-collapsing/expanding
-        /// the same commit doesn't re-fetch.
-        expanded_body: Option<String>,
-    },
-    /// Rebase todo: a `pick`/`squash`/`fixup`/`reword`/`edit` plan for `base..saved_head`, rendered from `steps`/`message_overrides`/ `expanded_bodies` (the buffer's text is a derived view, not the source of truth; `K`/`J`/verb keys/`dd`/`c`/`r` mutate `steps` or `message_overrides` directly and re-render). `:w`.
-    GitRebaseTodo {
-        repo_root: PathBuf,
-        base: String,
-        /// Original branch tip before the rebase started, for `abort`.
-        saved_head: String,
-        /// Original branch name, moved to the new tip on completion.
-        branch: String,
-        pause: Option<crate::git::rebase::RebasePause>,
-        /// The plan, in execution order. Authoritative: `:w` runs this
-        /// list directly, it does not re-parse the rendered text.
-        steps: Vec<crate::git::rebase::RebaseStep>,
-        /// Per-commit full-message override (sha -> `<subject>\n\n<body>`), set via the `c`/`r` message sub-editor. A step with no entry here executes using its real, current commit message untouched.
-        message_overrides: std::collections::HashMap<String, String>,
-        /// Which commits currently have their body previewed inline (sha
-        /// set). Fresh entries start collapsed (not a member).
-        expanded_bodies: std::collections::HashSet<String>,
-        /// Cache of each commit's real body text (sha -> body, the part of the message after the subject line), fetched lazily the first time a commit is expanded with no override yet. Kept separate from `message_overrides` so merely *looking* at a commit never counts as editing it.
-        original_bodies: std::collections::HashMap<String, String>,
-    },
-    /// Interactive buffer-list split panel: one line per open buffer.
-    /// `entries[line]` is the DocumentId shown on that line.
-    BufferList { entries: Vec<DocumentId> },
-}
-
-/// What saving a `BufferKind::GitCommitMessage` buffer does.
+/// What saving a git-commit-message buffer does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitCommitTarget {
     /// `git commit -F <file>`.
@@ -249,30 +160,6 @@ pub enum GitCommitTarget {
         rebase_doc_id: DocumentId,
         sha: String,
     },
-}
-
-impl BufferKind {
-    /// Short lowercase string identifier for this kind (e.g. "file", "terminal").
-    pub fn kind_str(&self) -> &'static str {
-        match self {
-            BufferKind::File => "file",
-            BufferKind::Terminal => "terminal",
-            BufferKind::Directory { .. } => "directory",
-            BufferKind::UndoTree { .. } => "undotree",
-            BufferKind::Messages { .. } => "messages",
-            BufferKind::Clipboard { .. } => "clipboard",
-            BufferKind::ClipboardEntry { .. } => "clipboard_entry",
-            BufferKind::LocationList { .. } => "location_list",
-            BufferKind::Regions { .. } => "regions",
-            BufferKind::BufferList { .. } => "buffer_list",
-            BufferKind::Scratch { .. } => "scratch",
-            BufferKind::GitStatus { .. } => "git_status",
-            BufferKind::GitCommitMessage { .. } => "git_commit_message",
-            BufferKind::GitBlame { .. } => "git_blame",
-            BufferKind::GitLog { .. } => "git_log",
-            BufferKind::GitRebaseTodo { .. } => "git_rebase_todo",
-        }
-    }
 }
 
 /// Line ending types supported by Rift
@@ -307,21 +194,20 @@ pub struct Document {
     pub buffer: TextBuffer,
     pub options: DocumentOptions,
     file_path: Option<PathBuf>,
-    pub is_read_only: bool,
-    /// Interface-mode buffer: read-only, vertical navigation snaps between
-    /// actionable lines (magit/explorer/undotree as buffers).
-    pub interface_mode: bool,
+    /// `File`/`Scratch` per-instance read-only override; ignored for any
+    /// kind whose read-only-ness is fixed (see `BufferKind::fixed_read_only`).
+    readonly_override: bool,
     pub syntax: Option<Syntax>,
     pub history: UndoTree,
     current_transaction: Option<EditTransaction>,
     transaction_depth: usize,
+    pub handle: DocumentHandle,
     pub view_state: ViewState,
-    pub terminal: Option<Terminal>,
-    pub terminal_cursor: Option<(usize, usize)>,
     pub kind: BufferKind,
+    pub state: StateSlot,
+    pub vars: std::collections::HashMap<String, crate::annotations::Value>,
     pub custom_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
     pub plugin_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
-    pub terminal_cell_colors: crate::color::CellColorSpans,
     pub highlight_slots:
         std::collections::HashMap<u32, Vec<(std::ops::Range<usize>, crate::color::Color)>>,
     /// Structured metadata sidecar.
@@ -351,6 +237,40 @@ pub struct Document {
     pub pending_ghost: Vec<GhostCut>,
 }
 
+// Rust generics can't reflect into a struct's fields, so each field
+// accessor is still hand-written; these macros only cut the try_get wrapper.
+
+/// Read accessor: `self.state.try_get($key).map(|s| $body)`.
+/// Use when `$body` returns the field's value directly (not already `Option`).
+macro_rules! state_get {
+    ($vis:vis fn $name:ident(&self) -> $ret:ty = $key:expr, |$s:ident| $body:expr) => {
+        $vis fn $name(&self) -> Option<$ret> {
+            self.state.try_get($key).map(|$s| $body)
+        }
+    };
+}
+
+/// Read accessor: `try_get($key).and_then(|s| $body)`, for closures that
+/// themselves return `Option<$ret>` (e.g. via `.as_deref()`).
+macro_rules! state_get_opt {
+    ($vis:vis fn $name:ident(&self) -> $ret:ty = $key:expr, |$s:ident| $body:expr) => {
+        $vis fn $name(&self) -> Option<$ret> {
+            self.state.try_get($key).and_then(|$s| $body)
+        }
+    };
+}
+
+/// Write accessor: assigns one field if the `StateKey` matches, else no-op.
+macro_rules! state_set {
+    ($vis:vis fn $name:ident(&mut self, $arg:ident: $arg_ty:ty) = $key:expr, |$s:ident| $body:expr) => {
+        $vis fn $name(&mut self, $arg: $arg_ty) {
+            if let Some($s) = self.state.try_get_mut($key) {
+                $body
+            }
+        }
+    };
+}
+
 impl Document {
     /// Monotonic edit sequence number for this document.
     pub fn version(&self) -> u64 {
@@ -359,36 +279,6 @@ impl Document {
 
     pub fn set_syntax(&mut self, syntax: Syntax) {
         self.syntax = Some(syntax);
-    }
-
-    /// Check if this document is a terminal
-    pub fn is_terminal(&self) -> bool {
-        matches!(self.kind, BufferKind::Terminal)
-    }
-
-    /// Check if this document is a directory buffer
-    pub fn is_directory(&self) -> bool {
-        matches!(self.kind, BufferKind::Directory { .. })
-    }
-
-    /// Check if this document is an undo-tree buffer
-    pub fn is_undotree(&self) -> bool {
-        matches!(self.kind, BufferKind::UndoTree { .. })
-    }
-
-    /// Check if this document is a messages buffer
-    pub fn is_messages(&self) -> bool {
-        matches!(self.kind, BufferKind::Messages { .. })
-    }
-
-    /// Check if this document is a clipboard index buffer
-    pub fn is_clipboard(&self) -> bool {
-        matches!(self.kind, BufferKind::Clipboard { .. })
-    }
-
-    /// Check if this document is a location list buffer (diagnostics/references).
-    pub fn is_location_list(&self) -> bool {
-        matches!(self.kind, BufferKind::LocationList { .. })
     }
 
     /// Convert an LSP `Position.character` on `line` (in `encoding`'s units)
@@ -595,78 +485,353 @@ impl Document {
         self.buffer.chars(start..end)
     }
 
-    /// Check if this document is a `gv` regions list buffer.
-    pub fn is_regions(&self) -> bool {
-        matches!(self.kind, BufferKind::Regions { .. })
+    /// Handle identifying this document incarnation.
+    pub fn handle(&self) -> DocumentHandle {
+        self.handle
     }
 
-    /// Whether deletes on this buffer may defer through a ghost-cut annotation
-    pub fn ghost_cut_allowed(&self) -> bool {
-        !matches!(
-            self.kind,
-            BufferKind::Terminal
-                | BufferKind::Directory { .. }
-                | BufferKind::Regions { .. }
-                | BufferKind::Messages { .. }
-                | BufferKind::Clipboard { .. }
-                | BufferKind::UndoTree { .. }
-                | BufferKind::GitStatus { .. }
-                | BufferKind::GitBlame { .. }
-                | BufferKind::GitLog { .. }
-                | BufferKind::GitRebaseTodo { .. }
-        )
+    /// Updates the document handle.
+    pub fn set_handle(&mut self, handle: DocumentHandle) {
+        self.handle = handle;
     }
 
-    /// Check if this document is a git status buffer.
-    pub fn is_git_status(&self) -> bool {
-        matches!(self.kind, BufferKind::GitStatus { .. })
+    /// Reference to this document's kind descriptor.
+    pub fn descriptor(&self) -> &KindDescriptor {
+        self.kind.descriptor()
     }
 
-    /// Check if this document is a git rebase todo buffer.
-    pub fn is_git_rebase_todo(&self) -> bool {
-        matches!(self.kind, BufferKind::GitRebaseTodo { .. })
+    /// Interned buffer kind ID.
+    pub fn buffer_kind_id(&self) -> BufferKindId {
+        self.kind.id()
     }
 
-    /// Check if this document is a git blame buffer.
-    pub fn is_git_blame(&self) -> bool {
-        matches!(self.kind, BufferKind::GitBlame { .. })
+    /// Policies bundle governing generic editor behavior for this buffer.
+    pub fn policies(&self) -> &BufferPolicies {
+        self.kind.policies()
     }
 
-    /// Check if this document is a git log buffer.
-    pub fn is_git_log(&self) -> bool {
-        matches!(self.kind, BufferKind::GitLog { .. })
+    /// Key fallback context for this buffer kind.
+    pub fn key_fallback(&self) -> KeyFallback {
+        self.policies().key_fallback
     }
 
-    /// Check if this document is the interactive buffer-list panel.
-    pub fn is_buffer_list(&self) -> bool {
-        matches!(self.kind, BufferKind::BufferList { .. })
+    /// Text projection model for rendering.
+    pub fn projection(&self) -> TextProjection {
+        self.policies().projection
     }
 
-    /// Check if this document is any clipboard-related buffer
-    pub fn is_any_clipboard(&self) -> bool {
-        matches!(
-            self.kind,
-            BufferKind::Clipboard { .. } | BufferKind::ClipboardEntry { .. }
-        )
+    /// Whether this document matches the expected handle.
+    pub fn matches_handle(&self, handle: DocumentHandle) -> bool {
+        self.handle == handle
     }
 
-    /// Returns true for any non-file buffer.
-    pub fn is_special(&self) -> bool {
-        !matches!(self.kind, BufferKind::File)
+    /// Whether this document matches the expected buffer kind ID.
+    pub fn matches_kind(&self, id: BufferKindId) -> bool {
+        self.buffer_kind_id() == id
     }
 
-    /// Whether this buffer is in interface mode (read-only + snapping
-    /// navigation between actionable regions).
-    pub fn is_interface_mode(&self) -> bool {
-        self.interface_mode
+    /// Whether this document has an inert tombstone descriptor.
+    pub fn is_tombstone(&self) -> bool {
+        self.descriptor().is_tombstone()
     }
 
-    /// Flag this buffer as an interface-mode buffer. Also marks it read-only.
-    pub fn set_interface_mode(&mut self, on: bool) {
-        self.interface_mode = on;
-        if on {
-            self.is_read_only = true;
+    /// Optional immutable help lines for this buffer kind.
+    pub fn help_lines(&self) -> Option<&[String]> {
+        self.descriptor().help_lines()
+    }
+
+    // Terminal helpers
+
+    /// Reference to live terminal emulator instance, if any.
+    pub fn terminal(&self) -> Option<&Terminal> {
+        self.state
+            .try_get(TERMINAL_STATE_KEY)
+            .and_then(|s| s.terminal.as_ref())
+    }
+
+    /// Mutable reference to live terminal emulator instance, if any.
+    pub fn terminal_mut(&mut self) -> Option<&mut Terminal> {
+        self.state
+            .try_get_mut(TERMINAL_STATE_KEY)
+            .and_then(|s| s.terminal.as_mut())
+    }
+
+    /// Terminal cursor position (line, col).
+    pub fn terminal_cursor(&self) -> Option<(usize, usize)> {
+        self.state
+            .try_get(TERMINAL_STATE_KEY)
+            .and_then(|s| s.terminal_cursor)
+    }
+
+    /// Sets the terminal cursor position.
+    pub fn set_terminal_cursor(&mut self, cursor: Option<(usize, usize)>) {
+        if let Some(s) = self.state.try_get_mut(TERMINAL_STATE_KEY) {
+            s.terminal_cursor = cursor;
         }
+    }
+
+    /// Reference to terminal cell color spans.
+    pub fn terminal_cell_colors(&self) -> Option<&[crate::color::CellColorSpan]> {
+        self.state
+            .try_get(TERMINAL_STATE_KEY)
+            .map(|state| state.terminal_cell_colors.as_slice())
+    }
+
+    // Predicate helpers
+
+    pub fn is_file(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::FILE
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::TERMINAL
+    }
+
+    pub fn is_directory(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::DIRECTORY
+    }
+
+    pub fn is_undotree(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::UNDO_TREE
+    }
+
+    pub fn is_messages(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::MESSAGES
+    }
+
+    pub fn is_clipboard(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::CLIPBOARD
+    }
+
+    pub fn is_clipboard_entry(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::CLIPBOARD_ENTRY
+    }
+
+    pub fn is_any_clipboard(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::CLIPBOARD
+            || self.buffer_kind_id() == BufferKindId::CLIPBOARD_ENTRY
+    }
+
+    pub fn is_location_list(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::LOCATION_LIST
+    }
+
+    pub fn is_regions(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::REGIONS
+    }
+
+    pub fn is_scratch(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::SCRATCH
+    }
+
+    pub fn is_git_status(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::GIT_STATUS
+    }
+
+    pub fn is_git_commit_message(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::GIT_COMMIT_MESSAGE
+    }
+
+    pub fn is_git_blame(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::GIT_BLAME
+    }
+
+    pub fn is_git_log(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::GIT_LOG
+    }
+
+    pub fn is_git_rebase_todo(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::GIT_REBASE_TODO
+    }
+
+    pub fn is_buffer_list(&self) -> bool {
+        self.buffer_kind_id() == BufferKindId::BUFFER_LIST
+    }
+
+    pub fn is_special(&self) -> bool {
+        self.buffer_kind_id() != BufferKindId::FILE
+    }
+
+    pub fn ghost_cut_allowed(&self) -> bool {
+        self.policies().ghost_cut == GhostCutPolicy::Allow
+    }
+
+    pub fn is_interface_mode(&self) -> bool {
+        self.policies().navigation == NavigationPolicy::ActionRows
+    }
+
+    pub fn is_read_only(&self) -> bool {
+        match self.policies().read_only {
+            ReadOnlyPolicy::FixedReadOnly => true,
+            ReadOnlyPolicy::FixedWritable => false,
+            ReadOnlyPolicy::DocumentOverride => self.readonly_override,
+        }
+    }
+
+    pub fn set_read_only(&mut self, on: bool) {
+        self.readonly_override = on;
+    }
+
+    // Feature state helpers
+
+    state_get!(pub fn directory_path(&self) -> &PathBuf = DIRECTORY_STATE_KEY, |s| &s.path);
+    state_get!(pub fn directory_entries(&self) -> &[DirEntry] = DIRECTORY_STATE_KEY, |s| s.entries.as_slice());
+    state_get!(pub fn directory_show_hidden(&self) -> bool = DIRECTORY_STATE_KEY, |s| s.show_hidden);
+    state_set!(pub fn set_directory_show_hidden(&mut self, show_hidden: bool) = DIRECTORY_STATE_KEY, |s| s.show_hidden = show_hidden);
+
+    pub fn convert_to_file(&mut self) {
+        self.kind = BufferKind::for_builtin(BufferKindId::FILE);
+        self.state = StateSlot::new(FILE_STATE_KEY, FileState);
+    }
+
+    pub fn convert_to_directory(&mut self, path: PathBuf) {
+        self.kind = BufferKind::for_builtin(BufferKindId::DIRECTORY);
+        self.state = StateSlot::new(
+            DIRECTORY_STATE_KEY,
+            DirectoryState {
+                path,
+                entries: vec![],
+                show_hidden: false,
+            },
+        );
+    }
+
+    state_get!(pub fn undotree_linked_doc_id(&self) -> DocumentId = UNDO_TREE_STATE_KEY, |s| s.linked_doc_id);
+    state_get!(pub fn undotree_sequences(&self) -> &[crate::history::EditSeq] = UNDO_TREE_STATE_KEY, |s| s.sequences.as_slice());
+    state_get!(pub fn messages_show_all(&self) -> bool = MESSAGES_STATE_KEY, |s| s.show_all);
+    state_set!(pub fn set_messages_show_all(&mut self, show_all: bool) = MESSAGES_STATE_KEY, |s| s.show_all = show_all);
+    state_get!(pub fn clipboard_entries(&self) -> &[Vec<crate::character::Character>] = CLIPBOARD_STATE_KEY, |s| s.entries.as_slice());
+
+    pub fn clipboard_entry(&self, idx: usize) -> Option<&[crate::character::Character]> {
+        self.state
+            .try_get(CLIPBOARD_STATE_KEY)
+            .and_then(|s| s.entries.get(idx).map(|v| v.as_slice()))
+    }
+
+    state_get!(pub fn clipboard_entry_index(&self) -> Option<usize> = CLIPBOARD_ENTRY_STATE_KEY, |s| s.entry_index);
+    state_set!(pub fn set_clipboard_entry_index(&mut self, entry_index: Option<usize>) = CLIPBOARD_ENTRY_STATE_KEY, |s| s.entry_index = entry_index);
+
+    pub fn convert_to_clipboard_entry(&mut self, entry_index: Option<usize>) {
+        self.kind = BufferKind::for_builtin(BufferKindId::CLIPBOARD_ENTRY);
+        self.state = StateSlot::new(
+            CLIPBOARD_ENTRY_STATE_KEY,
+            ClipboardEntryState { entry_index },
+        );
+    }
+
+    state_get!(pub fn location_list_source_doc_id(&self) -> DocumentId = LOCATION_LIST_STATE_KEY, |s| s.source_doc_id);
+    state_get!(pub fn location_list_entries(&self) -> &[LocationEntry] = LOCATION_LIST_STATE_KEY, |s| s.entries.as_slice());
+
+    pub fn location_list_entry_at(&self, line: usize) -> Option<LocationEntry> {
+        self.state
+            .try_get(LOCATION_LIST_STATE_KEY)
+            .and_then(|s| s.entries.get(line).cloned())
+    }
+
+    pub fn set_location_list(&mut self, source_doc_id: DocumentId, entries: Vec<LocationEntry>) {
+        self.kind = BufferKind::for_builtin(BufferKindId::LOCATION_LIST);
+        self.state = StateSlot::new(
+            LOCATION_LIST_STATE_KEY,
+            LocationListState {
+                source_doc_id,
+                entries,
+            },
+        );
+    }
+
+    state_get!(pub fn regions_source_doc_id(&self) -> DocumentId = REGIONS_STATE_KEY, |s| s.source_doc_id);
+
+    pub fn set_regions(&mut self, source_doc_id: DocumentId) {
+        self.kind = BufferKind::for_builtin(BufferKindId::REGIONS);
+        self.state = StateSlot::new(REGIONS_STATE_KEY, RegionsState { source_doc_id });
+    }
+
+    state_get!(pub fn scratch_title(&self) -> &str = SCRATCH_STATE_KEY, |s| s.title.as_str());
+
+    pub fn convert_to_scratch(&mut self, title: String) {
+        self.kind = BufferKind::for_builtin(BufferKindId::SCRATCH);
+        self.state = StateSlot::new(SCRATCH_STATE_KEY, ScratchState { title });
+    }
+
+    state_get!(pub fn buffer_list_entries(&self) -> &[DocumentId] = BUFFER_LIST_STATE_KEY, |s| s.entries.as_slice());
+    state_get!(pub fn git_status_snapshot(&self) -> &crate::git::status::StatusSnapshot = GIT_STATUS_STATE_KEY, |s| &s.snapshot);
+    state_get!(pub fn git_status_expanded_diffs(&self) -> &std::collections::HashMap<(PathBuf, bool), Vec<crate::git::diff::Hunk>> = GIT_STATUS_STATE_KEY, |s| &s.expanded_diffs);
+
+    pub fn git_status_hunk(
+        &self,
+        path: &Path,
+        staged_side: bool,
+        hunk_index: usize,
+    ) -> Option<crate::git::diff::Hunk> {
+        self.state.try_get(GIT_STATUS_STATE_KEY).and_then(|s| {
+            s.expanded_diffs
+                .get(&(path.to_path_buf(), staged_side))
+                .and_then(|h| h.get(hunk_index).cloned())
+        })
+    }
+
+    state_get_opt!(pub fn git_status_head_subject(&self) -> &str = GIT_STATUS_STATE_KEY, |s| s.head_subject.as_deref());
+    state_get!(pub fn git_commit_target(&self) -> &GitCommitTarget = GIT_COMMIT_MESSAGE_STATE_KEY, |s| &s.target);
+    state_get!(pub fn git_blame_path(&self) -> &Path = GIT_BLAME_STATE_KEY, |s| s.path.as_path());
+    state_get!(pub fn git_blame_linked_doc_id(&self) -> DocumentId = GIT_BLAME_STATE_KEY, |s| s.linked_doc_id);
+    state_get!(pub fn git_blame_linked_window_id(&self) -> crate::split::window::WindowId = GIT_BLAME_STATE_KEY, |s| s.linked_window_id);
+    state_set!(pub fn set_git_blame_linked_window_id(&mut self, window_id: crate::split::window::WindowId) = GIT_BLAME_STATE_KEY, |s| s.linked_window_id = window_id);
+    state_get_opt!(pub fn git_blame_at_commit(&self) -> &str = GIT_BLAME_STATE_KEY, |s| s.at_commit.as_deref());
+    state_set!(pub fn set_git_blame_at_commit(&mut self, at_commit: Option<String>) = GIT_BLAME_STATE_KEY, |s| s.at_commit = at_commit);
+    state_get!(pub fn git_blame_history(&self) -> &[Option<String>] = GIT_BLAME_STATE_KEY, |s| s.history.as_slice());
+
+    pub fn push_git_blame_history(&mut self, commit: Option<String>) {
+        if let Some(s) = self.state.try_get_mut(GIT_BLAME_STATE_KEY) {
+            s.history.push(commit);
+        }
+    }
+
+    pub fn pop_git_blame_history(&mut self) -> Option<Option<String>> {
+        self.state
+            .try_get_mut(GIT_BLAME_STATE_KEY)
+            .and_then(|s| s.history.pop())
+    }
+
+    state_get!(pub fn git_blame_lines(&self) -> &[crate::git::blame::BlameLine] = GIT_BLAME_STATE_KEY, |s| s.lines.as_slice());
+
+    pub fn git_blame_lines_len(&self) -> usize {
+        self.state
+            .try_get(GIT_BLAME_STATE_KEY)
+            .map(|s| s.lines.len())
+            .unwrap_or(0)
+    }
+
+    state_get_opt!(pub fn git_blame_wrap_key(&self) -> (DocumentId, usize, usize, u64) = GIT_BLAME_STATE_KEY, |s| s.wrap_key);
+    state_get!(pub fn git_blame_wrap_rows(&self) -> &[usize] = GIT_BLAME_STATE_KEY, |s| s.wrap_rows.as_slice());
+    state_get!(pub fn git_log_path(&self) -> Option<&Path> = GIT_LOG_STATE_KEY, |s| s.path.as_deref());
+    state_get!(pub fn git_log_commits(&self) -> &[crate::git::log::CommitSummary] = GIT_LOG_STATE_KEY, |s| s.commits.as_slice());
+    state_get_opt!(pub fn git_log_expanded(&self) -> &str = GIT_LOG_STATE_KEY, |s| s.expanded.as_deref());
+    state_get_opt!(pub fn git_log_expanded_body(&self) -> &str = GIT_LOG_STATE_KEY, |s| s.expanded_body.as_deref());
+    state_get!(pub fn git_rebase_base(&self) -> &str = GIT_REBASE_TODO_STATE_KEY, |s| s.base.as_str());
+    state_get!(pub fn git_rebase_saved_head(&self) -> &str = GIT_REBASE_TODO_STATE_KEY, |s| s.saved_head.as_str());
+    state_get!(pub fn git_rebase_branch(&self) -> &str = GIT_REBASE_TODO_STATE_KEY, |s| s.branch.as_str());
+    state_get_opt!(pub fn git_rebase_pause(&self) -> &crate::git::rebase::RebasePause = GIT_REBASE_TODO_STATE_KEY, |s| s.pause.as_ref());
+    state_set!(pub fn set_git_rebase_pause(&mut self, pause: Option<crate::git::rebase::RebasePause>) = GIT_REBASE_TODO_STATE_KEY, |s| s.pause = pause);
+    state_get!(pub fn git_rebase_steps(&self) -> &[crate::git::rebase::RebaseStep] = GIT_REBASE_TODO_STATE_KEY, |s| s.steps.as_slice());
+    state_get!(pub fn git_rebase_message_overrides(&self) -> &std::collections::HashMap<String, String> = GIT_REBASE_TODO_STATE_KEY, |s| &s.message_overrides);
+
+    pub fn git_repo_root(&self) -> Option<&Path> {
+        if let Some(s) = self.state.try_get(GIT_STATUS_STATE_KEY) {
+            return Some(&s.repo_root);
+        }
+        if let Some(s) = self.state.try_get(GIT_COMMIT_MESSAGE_STATE_KEY) {
+            return Some(&s.repo_root);
+        }
+        if let Some(s) = self.state.try_get(GIT_BLAME_STATE_KEY) {
+            return Some(&s.repo_root);
+        }
+        if let Some(s) = self.state.try_get(GIT_LOG_STATE_KEY) {
+            return Some(&s.repo_root);
+        }
+        if let Some(s) = self.state.try_get(GIT_REBASE_TODO_STATE_KEY) {
+            return Some(&s.repo_root);
+        }
+        None
     }
 }
 

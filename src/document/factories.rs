@@ -1,7 +1,15 @@
 //! Document factory constructors: `Document::new`, `from_file`, `new_terminal`, etc.
 
 use super::definitions;
-use super::{BufferKind, Document, LineEnding, ViewState};
+use super::{
+    BufferKind, BufferListState, ClipboardState, DirectoryState, Document, DocumentHandle,
+    FileState, GitBlameState, GitCommitMessageState, GitLogState, GitRebaseTodoState,
+    GitStatusState, LineEnding, MessagesState, ScratchState, StateSlot, TerminalState,
+    UndoTreeState, ViewState, BUFFER_LIST_STATE_KEY, CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY,
+    FILE_STATE_KEY, GIT_BLAME_STATE_KEY, GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY,
+    GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY, MESSAGES_STATE_KEY, SCRATCH_STATE_KEY,
+    TERMINAL_STATE_KEY, UNDO_TREE_STATE_KEY,
+};
 use crate::annotations::AnnotationStore;
 use crate::buffer::TextBuffer;
 use crate::error::{ErrorType, RiftError};
@@ -82,19 +90,18 @@ impl Document {
             buffer,
             options: DocumentOptions::default(),
             file_path: None,
-            is_read_only: false,
-            interface_mode: false,
+            readonly_override: false,
             syntax: None,
             history: UndoTree::new(),
             current_transaction: None,
             transaction_depth: 0,
+            handle: DocumentHandle::new(id, 0),
             view_state: ViewState::default(),
-            terminal: None,
-            terminal_cursor: None,
-            kind: BufferKind::File,
-            custom_highlights: vec![],
-            plugin_highlights: vec![],
-            terminal_cell_colors: vec![],
+            kind: BufferKind::file(),
+            state: StateSlot::new(FILE_STATE_KEY, FileState),
+            vars: std::collections::HashMap::new(),
+            custom_highlights: Vec::new(),
+            plugin_highlights: Vec::new(),
             highlight_slots: std::collections::HashMap::new(),
             annotations: AnnotationStore::new(),
             selection_set: crate::selection::SelectionSet::default(),
@@ -162,38 +169,35 @@ impl Document {
         let (terminal, rx) = Terminal::new(rows, cols, shell)
             .map_err(|e| RiftError::new(ErrorType::Internal, "TERMINAL_INIT", e.to_string()))?;
 
-        Ok((
-            Document {
-                options: DocumentOptions {
-                    show_line_numbers: false,
-                    ..DocumentOptions::default()
-                },
+        let mut doc = Self::skeleton(id, buffer);
+        doc.options.show_line_numbers = false;
+        doc.kind = BufferKind::terminal();
+        doc.state = StateSlot::new(
+            TERMINAL_STATE_KEY,
+            TerminalState {
                 terminal: Some(terminal),
-                kind: BufferKind::Terminal,
-                ..Self::skeleton(id, buffer)
+                ..TerminalState::default()
             },
-            rx,
-        ))
+        );
+
+        Ok((doc, rx))
     }
 
     /// Create a new directory buffer. Content is populated later when a DirectoryListJob completes.
     pub fn new_directory(id: super::DocumentId, path: PathBuf) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        Ok(Document {
-            options: DocumentOptions {
-                show_line_numbers: false,
-                ..DocumentOptions::default()
-            },
-            // The explorer is the canonical interface-mode buffer: its rows are
-            // fs.entry annotations activated through the dispatch registry.
-            interface_mode: true,
-            kind: BufferKind::Directory {
+        let mut doc = Self::skeleton(id, buffer);
+        doc.options.show_line_numbers = false;
+        doc.kind = BufferKind::directory();
+        doc.state = StateSlot::new(
+            DIRECTORY_STATE_KEY,
+            DirectoryState {
                 path,
-                entries: vec![],
+                entries: Vec::new(),
                 show_hidden: false,
             },
-            ..Self::skeleton(id, buffer)
-        })
+        );
+        Ok(doc)
     }
 
     /// Create a new undo-tree buffer linked to another document.
@@ -202,19 +206,17 @@ impl Document {
         linked_doc_id: super::DocumentId,
     ) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        Ok(Document {
-            options: DocumentOptions {
-                show_line_numbers: false,
-                ..DocumentOptions::default()
-            },
-            is_read_only: true,
-            interface_mode: true,
-            kind: BufferKind::UndoTree {
+        let mut doc = Self::skeleton(id, buffer);
+        doc.options.show_line_numbers = false;
+        doc.kind = BufferKind::undotree();
+        doc.state = StateSlot::new(
+            UNDO_TREE_STATE_KEY,
+            UndoTreeState {
                 linked_doc_id,
-                sequences: vec![],
+                sequences: Vec::new(),
             },
-            ..Self::skeleton(id, buffer)
-        })
+        );
+        Ok(doc)
     }
 
     /// Create a read-only preview document for the undotree pane.
@@ -229,7 +231,7 @@ impl Document {
             },
             file_path: linked.file_path.clone(),
             // Read-only copy of a linked file with ordinary line-by-line navigation.
-            is_read_only: true,
+            readonly_override: true,
             history: linked.history.clone(),
             ..Self::skeleton(id, linked.buffer.clone())
         })
@@ -238,14 +240,11 @@ impl Document {
     /// Create a new messages buffer showing the accumulated notification log.
     pub fn new_messages(id: super::DocumentId, show_all: bool) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        Ok(Document {
-            options: DocumentOptions {
-                show_line_numbers: false,
-                ..DocumentOptions::default()
-            },
-            kind: BufferKind::Messages { show_all },
-            ..Self::skeleton(id, buffer)
-        })
+        let mut doc = Self::skeleton(id, buffer);
+        doc.options.show_line_numbers = false;
+        doc.kind = BufferKind::messages();
+        doc.state = StateSlot::new(MESSAGES_STATE_KEY, MessagesState { show_all });
+        Ok(doc)
     }
 
     /// Create an in-memory buffer with no disk path, populated with `lines`.
@@ -259,44 +258,37 @@ impl Document {
         let mut buffer = TextBuffer::new(content.len().max(64))?;
         let _ = buffer.insert_str(&content);
         buffer.move_to_start();
-        Ok(Document {
-            kind: BufferKind::Scratch { title },
-            ..Self::skeleton(id, buffer)
-        })
+        let mut doc = Self::skeleton(id, buffer);
+        doc.kind = BufferKind::scratch();
+        doc.state = StateSlot::new(SCRATCH_STATE_KEY, ScratchState { title });
+        Ok(doc)
     }
 
     pub fn new_clipboard(id: super::DocumentId) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        Ok(Document {
-            options: DocumentOptions {
-                show_line_numbers: false,
-                ..DocumentOptions::default()
-            },
-            kind: BufferKind::Clipboard { entries: vec![] },
-            ..Self::skeleton(id, buffer)
-        })
+        let mut doc = Self::skeleton(id, buffer);
+        doc.options.show_line_numbers = false;
+        doc.kind = BufferKind::clipboard();
+        doc.state = StateSlot::new(CLIPBOARD_STATE_KEY, ClipboardState::default());
+        Ok(doc)
     }
 
     /// Create a new git status buffer. Content is populated later when a `GitStatusJob` completes. Read-only: changes only happen through its specific key actions (`s`/`u`/`X`/`=`/`c...`), never by editing the rendered text directly (that content is regenerated on every refresh anyway, and the line-anchored.
     pub fn new_git_status(id: super::DocumentId, repo_root: PathBuf) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        Ok(Document {
-            options: DocumentOptions {
-                show_line_numbers: false,
-                ..DocumentOptions::default()
-            },
-            // Status buffer rows are git.status_entry/git.hunk annotations
-            // These rows are interactive through the action dispatch registry.
-            interface_mode: true,
-            is_read_only: true,
-            kind: BufferKind::GitStatus {
+        let mut doc = Self::skeleton(id, buffer);
+        doc.options.show_line_numbers = false;
+        doc.kind = BufferKind::git_status();
+        doc.state = StateSlot::new(
+            GIT_STATUS_STATE_KEY,
+            GitStatusState {
                 repo_root,
                 snapshot: crate::git::status::StatusSnapshot::default(),
                 expanded_diffs: std::collections::HashMap::new(),
                 head_subject: None,
             },
-            ..Self::skeleton(id, buffer)
-        })
+        );
+        Ok(doc)
     }
 
     /// Create a new commit message buffer, pre-filled with `initial_message`
@@ -312,10 +304,13 @@ impl Document {
             let _ = buffer.insert_str(initial_message);
             buffer.move_to_start();
         }
-        Ok(Document {
-            kind: BufferKind::GitCommitMessage { repo_root, target },
-            ..Self::skeleton(id, buffer)
-        })
+        let mut doc = Self::skeleton(id, buffer);
+        doc.kind = BufferKind::git_commit_message();
+        doc.state = StateSlot::new(
+            GIT_COMMIT_MESSAGE_STATE_KEY,
+            GitCommitMessageState { repo_root, target },
+        );
+        Ok(doc)
     }
 
     /// Create a new git blame buffer. Content is populated later when a
@@ -328,27 +323,25 @@ impl Document {
         at_commit: Option<String>,
     ) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        Ok(Document {
-            options: DocumentOptions {
-                show_line_numbers: false,
-                wrap: Some(super::definitions::WrapMode::Off),
-                ..DocumentOptions::default()
-            },
-            is_read_only: true,
-            interface_mode: true,
-            kind: BufferKind::GitBlame {
+        let mut doc = Self::skeleton(id, buffer);
+        doc.options.show_line_numbers = false;
+        doc.options.wrap = Some(super::definitions::WrapMode::Off);
+        doc.kind = BufferKind::git_blame();
+        doc.state = StateSlot::new(
+            GIT_BLAME_STATE_KEY,
+            GitBlameState {
                 repo_root,
                 linked_doc_id,
                 linked_window_id: 0,
                 path,
                 at_commit,
-                history: vec![],
-                lines: vec![],
-                wrap_rows: vec![],
+                history: Vec::new(),
+                lines: Vec::new(),
+                wrap_rows: Vec::new(),
                 wrap_key: None,
             },
-            ..Self::skeleton(id, buffer)
-        })
+        );
+        Ok(doc)
     }
 
     /// Create a new git log buffer. Content is populated later when a
@@ -359,22 +352,20 @@ impl Document {
         path: Option<PathBuf>,
     ) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        Ok(Document {
-            options: DocumentOptions {
-                show_line_numbers: false,
-                ..DocumentOptions::default()
-            },
-            is_read_only: true,
-            interface_mode: true,
-            kind: BufferKind::GitLog {
+        let mut doc = Self::skeleton(id, buffer);
+        doc.options.show_line_numbers = false;
+        doc.kind = BufferKind::git_log();
+        doc.state = StateSlot::new(
+            GIT_LOG_STATE_KEY,
+            GitLogState {
                 repo_root,
                 path,
-                commits: vec![],
+                commits: Vec::new(),
                 expanded: None,
                 expanded_body: None,
             },
-            ..Self::skeleton(id, buffer)
-        })
+        );
+        Ok(doc)
     }
 
     /// Create a new git rebase todo buffer, pre-populated with `steps`.
@@ -387,14 +378,12 @@ impl Document {
         steps: &[crate::git::rebase::RebaseStep],
     ) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(64)?;
-        let mut doc = Document {
-            options: DocumentOptions {
-                show_line_numbers: false,
-                ..DocumentOptions::default()
-            },
-            interface_mode: true,
-            is_read_only: true,
-            kind: BufferKind::GitRebaseTodo {
+        let mut doc = Self::skeleton(id, buffer);
+        doc.options.show_line_numbers = false;
+        doc.kind = BufferKind::git_rebase_todo();
+        doc.state = StateSlot::new(
+            GIT_REBASE_TODO_STATE_KEY,
+            GitRebaseTodoState {
                 repo_root,
                 base,
                 saved_head,
@@ -405,8 +394,7 @@ impl Document {
                 expanded_bodies: std::collections::HashSet::new(),
                 original_bodies: std::collections::HashMap::new(),
             },
-            ..Self::skeleton(id, buffer)
-        };
+        );
         doc.render_git_rebase_todo("Initial plan");
         doc.history = UndoTree::new();
         Ok(doc)
@@ -415,15 +403,10 @@ impl Document {
     /// Create a new interactive buffer-list panel document (read-only, interface-mode).
     pub fn new_buffer_list(id: super::DocumentId) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
-        Ok(Document {
-            options: DocumentOptions {
-                show_line_numbers: false,
-                ..DocumentOptions::default()
-            },
-            is_read_only: true,
-            interface_mode: true,
-            kind: BufferKind::BufferList { entries: vec![] },
-            ..Self::skeleton(id, buffer)
-        })
+        let mut doc = Self::skeleton(id, buffer);
+        doc.options.show_line_numbers = false;
+        doc.kind = BufferKind::buffer_list();
+        doc.state = StateSlot::new(BUFFER_LIST_STATE_KEY, BufferListState::default());
+        Ok(doc)
     }
 }
