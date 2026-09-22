@@ -234,7 +234,7 @@ impl Job for SyntaxParseJob {
                         return;
                     }
                     let pattern_index = m.pattern_index;
-                    for capture in m.captures {
+                    for capture in m.captures() {
                         fresh.push((capture.node.byte_range(), capture.index, pattern_index));
                     }
                 }
@@ -339,7 +339,7 @@ mod tests {
             let mut matches = cursor.matches(&query, root, source.as_slice());
             let mut items = Vec::new();
             while let Some(m) = matches.next() {
-                for capture in m.captures {
+                for capture in m.captures() {
                     items.push((capture.node.byte_range(), capture.index));
                 }
             }
@@ -402,7 +402,7 @@ mod tests {
             let mut matches = cursor.matches(&query, root, expected_source.as_slice());
             let mut items = Vec::new();
             while let Some(m) = matches.next() {
-                for capture in m.captures {
+                for capture in m.captures() {
                     items.push((capture.node.byte_range(), capture.index));
                 }
             }
@@ -607,7 +607,7 @@ mod tests {
         let mut matches = cursor.matches(query, root, source);
         let mut items = Vec::new();
         while let Some(m) = matches.next() {
-            for capture in m.captures {
+            for capture in m.captures() {
                 items.push((capture.node.byte_range(), capture.index));
             }
         }
