@@ -1,4 +1,4 @@
-use crate::document::{Document, DocumentId};
+use crate::document::{Document, DocumentHandle, DocumentId};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -7,6 +7,151 @@ use std::path::{Path, PathBuf};
 /// a new file if no missing directories would need to be created for it.
 pub(crate) fn parent_dir_missing(path: &Path) -> bool {
     crate::fs_backend::backend().parent_dir_missing(path)
+}
+
+/// Intent for document removal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemovalIntent {
+    /// Normal close: checks dirty state and close policy.
+    Normal,
+    /// Forced close: bypasses dirty checks (e.g. :q! or terminal buffer).
+    Force,
+}
+
+impl RemovalIntent {
+    /// Returns true if this removal is forced.
+    pub fn is_forced(self) -> bool {
+        matches!(self, Self::Force)
+    }
+}
+
+/// A reservation for a pending document creation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CreationReservation {
+    id: DocumentId,
+    handle: DocumentHandle,
+}
+
+impl CreationReservation {
+    pub const fn new(id: DocumentId, handle: DocumentHandle) -> Self {
+        Self { id, handle }
+    }
+
+    pub const fn id(&self) -> DocumentId {
+        self.id
+    }
+
+    pub const fn handle(&self) -> DocumentHandle {
+        self.handle
+    }
+}
+
+/// An uncommitted document draft that is not yet visible in tabs or document maps.
+pub struct DocumentDraft {
+    reservation: CreationReservation,
+    document: Document,
+}
+
+impl DocumentDraft {
+    pub fn new(reservation: CreationReservation, document: Document) -> Result<Self, RiftError> {
+        if document.id != reservation.id() {
+            return Err(RiftError::new(
+                ErrorType::Internal,
+                crate::constants::errors::INTERNAL_ERROR,
+                format!(
+                    "Draft document ID {} does not match reserved ID {}",
+                    document.id,
+                    reservation.id()
+                ),
+            ));
+        }
+        if document.descriptor().state_key() != document.state.key_id() {
+            return Err(RiftError::new(
+                ErrorType::Internal,
+                crate::constants::errors::INTERNAL_ERROR,
+                format!(
+                    "Document {} state key '{}' does not match descriptor key '{}'",
+                    document.id,
+                    document.state.key_id(),
+                    document.descriptor().state_key()
+                ),
+            ));
+        }
+
+        Ok(Self {
+            reservation,
+            document,
+        })
+    }
+
+    pub fn reservation(&self) -> CreationReservation {
+        self.reservation
+    }
+
+    pub fn document(&self) -> &Document {
+        &self.document
+    }
+
+    pub fn document_mut(&mut self) -> &mut Document {
+        &mut self.document
+    }
+
+    pub fn into_document(self) -> Document {
+        self.document
+    }
+}
+
+/// Placement target for a committed document draft.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DraftCommitTarget {
+    /// Add as the active tab.
+    ActiveTab,
+    /// Add as an inactive tab.
+    InactiveTab,
+    /// Add as a private document hidden from tab navigation.
+    Private,
+}
+
+/// Prepared, side-effect-free document removal plan: preflight validation
+/// plus pre-materialized replacement state so commit can't fail.
+pub struct PreparedRemoval {
+    /// Document to remove.
+    pub id: DocumentId,
+    /// Intent with which removal was requested.
+    pub intent: RemovalIntent,
+    /// Pre-materialized replacement document if closing the last tab.
+    pub replacement: Option<Document>,
+}
+
+impl std::fmt::Debug for PreparedRemoval {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PreparedRemoval")
+            .field("id", &self.id)
+            .field("intent", &self.intent)
+            .field("has_replacement", &self.replacement.is_some())
+            .finish()
+    }
+}
+
+pub type RemovalPlan = PreparedRemoval;
+
+impl PreparedRemoval {
+    pub fn id(&self) -> DocumentId {
+        self.id
+    }
+
+    pub fn intent(&self) -> RemovalIntent {
+        self.intent
+    }
+
+    pub fn replacement_id(&self) -> Option<DocumentId> {
+        self.replacement.as_ref().map(|d| d.id)
+    }
+
+    pub fn has_replacement(&self) -> bool {
+        self.replacement.is_some()
+    }
 }
 
 /// Manages multiple open documents (tabs)
@@ -23,6 +168,10 @@ pub struct DocumentManager {
     /// Which document holds the most recently created ghost cut, for Put's
     /// "paste this specific cut back" resolution.
     most_recent_ghost_doc: Option<DocumentId>,
+    /// Next available instance generation for DocumentHandle
+    next_instance: u64,
+    /// Active document handles mapped by DocumentId
+    handles: HashMap<DocumentId, DocumentHandle>,
 }
 
 impl DocumentManager {
@@ -35,6 +184,8 @@ impl DocumentManager {
             next_document_id: 1,
             private_document_ids: HashSet::new(),
             most_recent_ghost_doc: None,
+            next_instance: 1,
+            handles: HashMap::new(),
         }
     }
 
@@ -48,13 +199,99 @@ impl DocumentManager {
         self.most_recent_ghost_doc = id;
     }
 
+    /// Get document handle by document ID
+    pub fn get_handle(&self, id: DocumentId) -> Option<DocumentHandle> {
+        self.handles.get(&id).copied()
+    }
+
+    /// Get handle of the active document
+    pub fn active_document_handle(&self) -> Option<DocumentHandle> {
+        let id = self.active_document_id()?;
+        self.get_handle(id)
+    }
+
+    /// Get document by handle, verifying instance generation
+    pub fn get_document_by_handle(&self, handle: DocumentHandle) -> Option<&Document> {
+        if self.handles.get(&handle.doc_id) == Some(&handle) {
+            self.documents.get(&handle.doc_id)
+        } else {
+            None
+        }
+    }
+
+    /// Get mutable document by handle, verifying instance generation
+    pub fn get_document_by_handle_mut(&mut self, handle: DocumentHandle) -> Option<&mut Document> {
+        if self.handles.get(&handle.doc_id) == Some(&handle) {
+            self.documents.get_mut(&handle.doc_id)
+        } else {
+            None
+        }
+    }
+
+    /// Reserve a fresh document ID and handle for two-stage creation.
+    pub fn reserve_creation(&mut self) -> CreationReservation {
+        let id = self.next_document_id;
+        self.next_document_id += 1;
+        let instance = self.next_instance;
+        self.next_instance += 1;
+        let handle = DocumentHandle::new(id, instance);
+        CreationReservation::new(id, handle)
+    }
+
+    /// Commit a prepared document draft through an infallible insertion path.
+    pub fn commit_draft(
+        &mut self,
+        draft: DocumentDraft,
+        target: DraftCommitTarget,
+    ) -> DocumentHandle {
+        let handle = draft.reservation.handle();
+        let doc = draft.into_document();
+        let id = doc.id;
+        self.handles.insert(id, handle);
+        match target {
+            DraftCommitTarget::ActiveTab => {
+                self.add_document(doc);
+            }
+            DraftCommitTarget::InactiveTab => {
+                self.add_document_inactive(doc);
+            }
+            DraftCommitTarget::Private => {
+                let _ = self.add_private_document(doc);
+            }
+        }
+        handle
+    }
+
+    /// Commit a prepared draft as an active tab.
+    pub fn commit_draft_active(&mut self, draft: DocumentDraft) -> DocumentHandle {
+        self.commit_draft(draft, DraftCommitTarget::ActiveTab)
+    }
+
+    /// Commit a prepared draft as an inactive tab.
+    pub fn commit_draft_inactive(&mut self, draft: DocumentDraft) -> DocumentHandle {
+        self.commit_draft(draft, DraftCommitTarget::InactiveTab)
+    }
+
+    /// Commit a prepared draft as a private document.
+    pub fn commit_draft_private(&mut self, draft: DocumentDraft) -> DocumentHandle {
+        self.commit_draft(draft, DraftCommitTarget::Private)
+    }
+
     /// Add a document and make it active
-    pub fn add_document(&mut self, document: Document) {
+    pub fn add_document(&mut self, mut document: Document) {
         let id = document.id;
-        // Ensure we advance next ID if we're adding one manually
         if id >= self.next_document_id {
             self.next_document_id = id + 1;
         }
+        let handle = if let Some(&handle) = self.handles.get(&id) {
+            handle
+        } else {
+            let handle = DocumentHandle::new(id, self.next_instance);
+            self.next_instance += 1;
+            self.handles.insert(id, handle);
+            handle
+        };
+        document.set_handle(handle);
 
         self.documents.insert(id, document);
         self.tab_order.push(id);
@@ -62,11 +299,21 @@ impl DocumentManager {
     }
 
     /// Add a document as a tab without making it active.
-    pub fn add_document_inactive(&mut self, document: Document) {
+    pub fn add_document_inactive(&mut self, mut document: Document) {
         let id = document.id;
         if id >= self.next_document_id {
             self.next_document_id = id + 1;
         }
+        let handle = if let Some(&handle) = self.handles.get(&id) {
+            handle
+        } else {
+            let handle = DocumentHandle::new(id, self.next_instance);
+            self.next_instance += 1;
+            self.handles.insert(id, handle);
+            handle
+        };
+        document.set_handle(handle);
+
         self.documents.insert(id, document);
         self.tab_order.push(id);
     }
@@ -134,22 +381,34 @@ impl DocumentManager {
         }
     }
 
-    /// Remove a document by ID with strict tab semantics
-    pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
-        // 1. Check if document exists
-        if !self.documents.contains_key(&id) {
-            return Ok(());
+    /// Side-effect-free preflight for document removal; materializes a
+    /// last-tab replacement so `commit_removal` cannot fail.
+    pub fn prepare_removal(
+        &self,
+        id: DocumentId,
+        intent: RemovalIntent,
+    ) -> Result<PreparedRemoval, RiftError> {
+        let doc = self.documents.get(&id).ok_or_else(|| {
+            RiftError::new(
+                ErrorType::Internal,
+                crate::constants::errors::INTERNAL_ERROR,
+                format!("Document {} not found", id),
+            )
+        })?;
+
+        // Verify document is in tab order
+        if !self.tab_order.contains(&id) {
+            return Err(RiftError::new(
+                ErrorType::Internal,
+                crate::constants::errors::INTERNAL_ERROR,
+                format!("Document {} in storage but not in tab order", id),
+            ));
         }
 
-        let doc = self.documents.get(&id).unwrap();
-
-        // 2. Special buffers (directory, undo-tree, messages, terminal) can always be closed
-        if doc.is_special() {
-            return self.remove_document_force(id);
-        }
-
-        // 3. Check dirty state for regular file buffers
-        if doc.is_dirty() {
+        if intent == RemovalIntent::Normal
+            && doc.policies().close == crate::document::ClosePolicy::ConfirmDirty
+            && doc.is_dirty()
+        {
             return Err(RiftError::warning(
                 ErrorType::Execution,
                 crate::constants::errors::UNSAVED_CHANGES,
@@ -157,7 +416,62 @@ impl DocumentManager {
             ));
         }
 
-        self.remove_document_inner(id)
+        // Pre-create replacement document if closing the last tab so commit cannot fail
+        let replacement = if self.tab_order.len() == 1 {
+            let new_doc = Document::new(self.next_document_id).map_err(|e| {
+                RiftError::new(
+                    ErrorType::Internal,
+                    crate::constants::errors::INTERNAL_ERROR,
+                    e.to_string(),
+                )
+            })?;
+            Some(new_doc)
+        } else {
+            None
+        };
+
+        Ok(PreparedRemoval {
+            id,
+            intent,
+            replacement,
+        })
+    }
+
+    /// Commit a prepared removal plan; cannot fail after preflight.
+    pub fn commit_removal(&mut self, plan: PreparedRemoval) -> Option<Document> {
+        if let Some(replacement) = plan.replacement {
+            self.add_document(replacement);
+        }
+
+        if let Some(pos) = self.tab_order.iter().position(|&x| x == plan.id) {
+            self.tab_order.remove(pos);
+            if pos < self.current_tab {
+                self.current_tab -= 1;
+            } else if pos == self.current_tab && self.current_tab >= self.tab_order.len() {
+                self.current_tab = self.tab_order.len().saturating_sub(1);
+            }
+            if self.current_tab >= self.tab_order.len() {
+                self.current_tab = self.tab_order.len().saturating_sub(1);
+            }
+        }
+
+        self.private_document_ids.remove(&plan.id);
+        self.handles.remove(&plan.id);
+        if self.most_recent_ghost_doc == Some(plan.id) {
+            self.most_recent_ghost_doc = None;
+        }
+
+        self.documents.remove(&plan.id)
+    }
+
+    /// Remove a document by ID with strict tab semantics
+    pub fn remove_document(&mut self, id: DocumentId) -> Result<(), RiftError> {
+        if !self.documents.contains_key(&id) {
+            return Ok(());
+        }
+        let plan = self.prepare_removal(id, RemovalIntent::Normal)?;
+        self.commit_removal(plan);
+        Ok(())
     }
 
     /// Remove a document by ID, bypassing the dirty check.
@@ -166,47 +480,8 @@ impl DocumentManager {
         if !self.documents.contains_key(&id) {
             return Ok(());
         }
-        self.remove_document_inner(id)
-    }
-
-    /// Internal removal logic shared by remove_document and remove_document_force
-    fn remove_document_inner(&mut self, id: DocumentId) -> Result<(), RiftError> {
-        // Auto-create new document if closing last tab
-        if self.tab_order.len() == 1 {
-            let new_id = self.next_document_id;
-            let new_doc = Document::new(new_id).map_err(|e| {
-                RiftError::new(
-                    ErrorType::Internal,
-                    crate::constants::errors::INTERNAL_ERROR,
-                    e.to_string(),
-                )
-            })?;
-            self.add_document(new_doc);
-        }
-
-        // Re-find position as it MUST exist (checked above) and tab_order might have changed if we added one
-        let pos = self
-            .tab_order
-            .iter()
-            .position(|&x| x == id)
-            .expect("Document in storage but not in tab_order");
-
-        // Remove
-        self.tab_order.remove(pos);
-        self.documents.remove(&id);
-
-        // Update active tab
-        if pos < self.current_tab {
-            self.current_tab -= 1;
-        } else if pos == self.current_tab && self.current_tab >= self.tab_order.len() {
-            self.current_tab = self.tab_order.len().saturating_sub(1);
-        }
-
-        // Ensure bounds validation
-        if self.current_tab >= self.tab_order.len() {
-            self.current_tab = self.tab_order.len().saturating_sub(1);
-        }
-
+        let plan = self.prepare_removal(id, RemovalIntent::Force)?;
+        self.commit_removal(plan);
         Ok(())
     }
 
@@ -403,7 +678,7 @@ impl DocumentManager {
                     index: i,
                     name: doc.display_name().to_string(),
                     is_dirty: doc.is_dirty(),
-                    is_read_only: doc.is_read_only,
+                    is_read_only: doc.is_read_only(),
                     is_current: i == self.current_tab,
                     is_special: doc.is_special(),
                 }
@@ -471,11 +746,20 @@ impl DocumentManager {
     }
 
     /// Add a fully-constructed document and mark it as private (hidden from tabs).
-    pub fn add_private_document(&mut self, doc: Document) -> DocumentId {
+    pub fn add_private_document(&mut self, mut doc: Document) -> DocumentId {
         let id = doc.id;
         if id >= self.next_document_id {
             self.next_document_id = id + 1;
         }
+        let handle = if let Some(&handle) = self.handles.get(&id) {
+            handle
+        } else {
+            let handle = DocumentHandle::new(id, self.next_instance);
+            self.next_instance += 1;
+            self.handles.insert(id, handle);
+            handle
+        };
+        doc.set_handle(handle);
         self.documents.insert(id, doc);
         self.tab_order.push(id);
         self.current_tab = self.tab_order.len() - 1;
@@ -556,5 +840,93 @@ mod tests {
         let err = mgr.open_file(Some(path_str), false).unwrap_err();
 
         assert_eq!(err.code, crate::constants::errors::NOT_A_FILE);
+    }
+
+    #[test]
+    fn prepare_removal_normal_rejects_dirty_without_side_effects() {
+        let mut mgr = DocumentManager::new();
+        let mut doc = Document::new(mgr.next_id()).unwrap();
+        doc.insert_str("unsaved changes").unwrap();
+        let id = doc.id;
+        mgr.add_document(doc);
+
+        assert!(mgr.documents.get(&id).unwrap().is_dirty());
+        let err = mgr.prepare_removal(id, RemovalIntent::Normal).unwrap_err();
+        assert_eq!(err.code, crate::constants::errors::UNSAVED_CHANGES);
+
+        // Verify side-effect-free: document still in manager and tab order intact
+        assert!(mgr.documents.contains_key(&id));
+        assert_eq!(mgr.tab_order.len(), 1);
+        assert_eq!(mgr.active_document_id(), Some(id));
+    }
+
+    #[test]
+    fn prepare_removal_force_accepts_dirty() {
+        let mut mgr = DocumentManager::new();
+        let mut doc = Document::new(mgr.next_id()).unwrap();
+        doc.buffer.insert_str("unsaved changes").unwrap();
+        let id = doc.id;
+        mgr.add_document(doc);
+
+        let plan = mgr.prepare_removal(id, RemovalIntent::Force).unwrap();
+        assert_eq!(plan.id(), id);
+        assert_eq!(plan.intent(), RemovalIntent::Force);
+        assert!(plan.has_replacement());
+
+        let removed = mgr.commit_removal(plan).unwrap();
+        assert_eq!(removed.id, id);
+        assert_eq!(mgr.tab_order.len(), 1);
+        assert_ne!(mgr.active_document_id(), Some(id));
+    }
+
+    #[test]
+    fn prepare_removal_last_tab_prepares_replacement_before_commit() {
+        let mut mgr = DocumentManager::new();
+        let doc = Document::new(mgr.next_id()).unwrap();
+        let id = doc.id;
+        mgr.add_document(doc);
+
+        let plan = mgr.prepare_removal(id, RemovalIntent::Normal).unwrap();
+        assert!(plan.replacement.is_some());
+        let repl_id = plan.replacement.as_ref().unwrap().id;
+        assert_ne!(repl_id, id);
+
+        let removed = mgr.commit_removal(plan).unwrap();
+        assert_eq!(removed.id, id);
+        assert_eq!(mgr.tab_order.len(), 1);
+        assert_eq!(mgr.active_document_id(), Some(repl_id));
+    }
+
+    #[test]
+    fn creation_reservation_and_draft_commit() {
+        let mut mgr = DocumentManager::new();
+        let res = mgr.reserve_creation();
+        assert_eq!(res.id(), 1);
+        assert_eq!(res.handle().doc_id(), 1);
+
+        let doc = Document::new(res.id()).unwrap();
+        let draft = DocumentDraft::new(res, doc).unwrap();
+
+        assert!(mgr.get_document(res.id()).is_none());
+
+        let handle = mgr.commit_draft_active(draft);
+        assert_eq!(handle, res.handle());
+        assert_eq!(mgr.active_document_id(), Some(res.id()));
+        assert_eq!(mgr.active_document_handle(), Some(handle));
+        assert_eq!(mgr.active_document().map(Document::handle), Some(handle));
+    }
+
+    #[test]
+    fn draft_rejects_descriptor_state_mismatch() {
+        let mut manager = DocumentManager::new();
+        let reservation = manager.reserve_creation();
+        let mut document = Document::new(reservation.id()).unwrap();
+        document.kind = crate::document::BufferKind::directory();
+
+        let error = DocumentDraft::new(reservation, document)
+            .err()
+            .expect("mismatched descriptor state must be rejected");
+        assert_eq!(error.kind, ErrorType::Internal);
+        assert!(manager.get_document(reservation.id()).is_none());
     }
 }

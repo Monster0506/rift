@@ -1,6 +1,10 @@
 //! Buffer population methods: rendering special buffer kinds into text.
 
-use super::{BufferKind, DirEntry, DirectoryDiff, Document};
+use super::{
+    DirEntry, DirectoryDiff, Document, BUFFER_LIST_STATE_KEY, CLIPBOARD_STATE_KEY,
+    DIRECTORY_STATE_KEY, GIT_BLAME_STATE_KEY, GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY,
+    MESSAGES_STATE_KEY, TERMINAL_STATE_KEY, UNDO_TREE_STATE_KEY,
+};
 use crate::buffer::TextBuffer;
 use crate::character::Character;
 use std::collections::HashSet;
@@ -40,12 +44,11 @@ impl Document {
     pub fn populate_directory_buffer(&mut self, mut entries: Vec<DirEntry>) {
         use crate::color::Color;
 
-        let (dir_path, show_hidden) = match &self.kind {
-            BufferKind::Directory {
-                path, show_hidden, ..
-            } => (path.clone(), *show_hidden),
-            _ => return,
+        let Some(state) = self.state.try_get(DIRECTORY_STATE_KEY) else {
+            return;
         };
+        let dir_path = state.path.clone();
+        let show_hidden = state.show_hidden;
 
         let mut chars: Vec<Character> = Vec::new();
         let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
@@ -97,11 +100,12 @@ impl Document {
 
         self.replace_buffer_content_chars(&chars);
         self.custom_highlights = highlights;
-        self.kind = BufferKind::Directory {
-            path: dir_path,
-            entries,
-            show_hidden,
+        let Some(state) = self.state.try_get_mut(DIRECTORY_STATE_KEY) else {
+            return;
         };
+        state.path = dir_path;
+        state.entries = entries;
+        state.show_hidden = show_hidden;
         self.history.mark_saved();
     }
 
@@ -110,26 +114,23 @@ impl Document {
     pub fn recompute_directory_highlights(&mut self) {
         use crate::color::Color;
 
-        if !matches!(&self.kind, BufferKind::Directory { .. }) {
+        let Some(state) = self.state.try_get(DIRECTORY_STATE_KEY) else {
             return;
-        }
-
-        let id_to_orig: std::collections::HashMap<u16, String> = match &self.kind {
-            BufferKind::Directory { entries, .. } => entries
-                .iter()
-                .filter(|e| e.id != 0)
-                .map(|e| {
-                    let name = e
-                        .path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("")
-                        .to_string();
-                    (e.id, name)
-                })
-                .collect(),
-            _ => std::collections::HashMap::new(),
         };
+        let id_to_orig: std::collections::HashMap<u16, String> = state
+            .entries
+            .iter()
+            .filter(|entry| entry.id != 0)
+            .map(|entry| {
+                let name = entry
+                    .path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                (entry.id, name)
+            })
+            .collect();
 
         let mut highlights: Vec<(std::ops::Range<usize>, Color)> = Vec::new();
         let mut byte_pos = 0usize;
@@ -192,17 +193,13 @@ impl Document {
         sequences: Vec<crate::history::EditSeq>,
         highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
     ) {
-        let linked_doc_id = match self.kind {
-            BufferKind::UndoTree { linked_doc_id, .. } => linked_doc_id,
-            _ => return,
+        let Some(state) = self.state.try_get_mut(UNDO_TREE_STATE_KEY) else {
+            return;
         };
+        state.sequences = sequences;
 
         self.replace_buffer_content(&text);
         self.custom_highlights = highlights;
-        self.kind = BufferKind::UndoTree {
-            linked_doc_id,
-            sequences,
-        };
         self.history.mark_saved();
     }
 
@@ -211,9 +208,12 @@ impl Document {
         use crate::color::Color;
         use crate::notification::{JobEventKind, MessageEntry, NotificationType};
 
-        let show_all = match self.kind {
-            BufferKind::Messages { show_all } => show_all,
-            _ => return,
+        let Some(show_all) = self
+            .state
+            .try_get(MESSAGES_STATE_KEY)
+            .map(|state| state.show_all)
+        else {
+            return;
         };
 
         let mut content = String::new();
@@ -327,9 +327,10 @@ impl Document {
 
         self.replace_buffer_content(&content);
         self.custom_highlights = highlights;
-        self.kind = BufferKind::Clipboard {
-            entries: entries.iter().cloned().collect(),
+        let Some(state) = self.state.try_get_mut(CLIPBOARD_STATE_KEY) else {
+            return;
         };
+        state.entries = entries.iter().cloned().collect();
         self.history.mark_saved();
     }
 
@@ -376,7 +377,10 @@ impl Document {
 
         self.replace_buffer_content(&content);
         self.custom_highlights = highlights;
-        self.kind = BufferKind::BufferList { entries };
+        let Some(state) = self.state.try_get_mut(BUFFER_LIST_STATE_KEY) else {
+            return;
+        };
+        state.entries = entries;
         self.history.mark_saved();
     }
 
@@ -421,9 +425,12 @@ impl Document {
     /// Parse the current buffer content of a clipboard index buffer and return the
     /// ordered list of original entry indices.
     pub fn parse_clipboard_order(&self) -> Vec<usize> {
-        let entries_len = match &self.kind {
-            BufferKind::Clipboard { entries } => entries.len(),
-            _ => return vec![],
+        let Some(entries_len) = self
+            .state
+            .try_get(CLIPBOARD_STATE_KEY)
+            .map(|state| state.entries.len())
+        else {
+            return Vec::new();
         };
 
         let content = self.buffer.to_string();
@@ -446,10 +453,11 @@ impl Document {
     /// Parse the current buffer content of a directory buffer and produce a diff, by
     /// comparing each line's annotation-store entry ID against its visible buffer text.
     pub fn parse_directory_diff(&self) -> DirectoryDiff {
-        let (entries, dir_path) = match &self.kind {
-            BufferKind::Directory { entries, path, .. } => (entries, path),
-            _ => return DirectoryDiff::default(),
+        let Some(state) = self.state.try_get(DIRECTORY_STATE_KEY) else {
+            return DirectoryDiff::default();
         };
+        let entries = &state.entries;
+        let dir_path = &state.path;
 
         let id_map: std::collections::HashMap<u16, &DirEntry> = entries
             .iter()
@@ -549,14 +557,6 @@ impl Document {
         }
     }
 
-    /// Return the current directory path if this is a Directory buffer.
-    pub fn directory_path(&self) -> Option<&std::path::PathBuf> {
-        match &self.kind {
-            BufferKind::Directory { path, .. } => Some(path),
-            _ => None,
-        }
-    }
-
     /// Update terminal buffer content from the emulator's screen.
     pub fn handle_terminal_data(&mut self, _data: &[u8]) {
         self.sync_terminal_buffer();
@@ -564,11 +564,9 @@ impl Document {
 
     /// Re-read the terminal emulator's current visible grid into the document buffer.
     pub fn sync_terminal_buffer(&mut self) {
-        let (content, cursor_line, cursor_col, cell_colors) = if let Some(terminal) = &self.terminal
-        {
-            terminal.read_screen()
-        } else {
-            return;
+        let (content, cursor_line, cursor_col, cell_colors) = match self.terminal() {
+            Some(terminal) => terminal.read_screen(),
+            None => return,
         };
 
         let old_revision = self.buffer.revision;
@@ -589,8 +587,10 @@ impl Document {
 
             new_buffer.revision = old_revision + 1;
             self.buffer = new_buffer;
-            self.terminal_cursor = Some((cursor_line, cursor_col));
-            self.terminal_cell_colors = cell_colors;
+            if let Some(state) = self.state.try_get_mut(TERMINAL_STATE_KEY) {
+                state.terminal_cursor = Some((cursor_line, cursor_col));
+                state.terminal_cell_colors = cell_colors;
+            }
         }
     }
 
@@ -600,16 +600,12 @@ impl Document {
         snapshot: crate::git::status::StatusSnapshot,
         head_subject: Option<String>,
     ) {
-        let repo_root = match &self.kind {
-            BufferKind::GitStatus { repo_root, .. } => repo_root.clone(),
-            _ => return,
+        let Some(state) = self.state.try_get_mut(GIT_STATUS_STATE_KEY) else {
+            return;
         };
-        self.kind = BufferKind::GitStatus {
-            repo_root,
-            snapshot,
-            expanded_diffs: std::collections::HashMap::new(),
-            head_subject,
-        };
+        state.snapshot = snapshot;
+        state.expanded_diffs.clear();
+        state.head_subject = head_subject;
         self.render_git_status();
         self.history.mark_saved();
     }
@@ -621,65 +617,59 @@ impl Document {
         staged_side: bool,
         hunks: Vec<crate::git::diff::Hunk>,
     ) {
-        match &mut self.kind {
-            BufferKind::GitStatus { expanded_diffs, .. } => {
-                expanded_diffs.insert((path, staged_side), hunks);
-            }
-            _ => return,
-        }
+        let Some(state) = self.state.try_get_mut(GIT_STATUS_STATE_KEY) else {
+            return;
+        };
+        state.expanded_diffs.insert((path, staged_side), hunks);
         self.render_git_status();
     }
 
     /// Remove `path`'s expanded diff on the given side and re-render.
     pub fn collapse_git_status_entry(&mut self, path: &std::path::Path, staged_side: bool) {
-        match &mut self.kind {
-            BufferKind::GitStatus { expanded_diffs, .. } => {
-                expanded_diffs.remove(&(path.to_path_buf(), staged_side));
-            }
-            _ => return,
-        }
+        let Some(state) = self.state.try_get_mut(GIT_STATUS_STATE_KEY) else {
+            return;
+        };
+        state
+            .expanded_diffs
+            .remove(&(path.to_path_buf(), staged_side));
         self.render_git_status();
     }
 
     /// Whether `path`'s diff is currently expanded on the given side.
     pub fn is_git_status_expanded(&self, path: &std::path::Path, staged_side: bool) -> bool {
-        match &self.kind {
-            BufferKind::GitStatus { expanded_diffs, .. } => {
-                expanded_diffs.contains_key(&(path.to_path_buf(), staged_side))
-            }
-            _ => false,
-        }
+        self.state
+            .try_get(GIT_STATUS_STATE_KEY)
+            .is_some_and(|state| {
+                state
+                    .expanded_diffs
+                    .contains_key(&(path.to_path_buf(), staged_side))
+            })
     }
 
     /// Whether `path`'s snapshot entry is untracked (never in the index),
     /// so staging any part of it needs a "new file" patch header.
     pub fn is_git_status_entry_untracked(&self, path: &std::path::Path) -> bool {
-        match &self.kind {
-            BufferKind::GitStatus { snapshot, .. } => snapshot
-                .entries
-                .iter()
-                .any(|e| e.path == path && e.is_untracked()),
-            _ => false,
-        }
+        self.state
+            .try_get(GIT_STATUS_STATE_KEY)
+            .is_some_and(|state| {
+                state
+                    .snapshot
+                    .entries
+                    .iter()
+                    .any(|entry| entry.path == path && entry.is_untracked())
+            })
     }
 
     /// Rebuild buffer text + annotations from this git status buffer's current `snapshot`/`expanded_diffs`. Does not touch `self.kind` itself (callers update the snapshot/expanded_diffs before calling this).
     fn render_git_status(&mut self) {
         use crate::color::Color;
 
-        let (snapshot, expanded_diffs, head_subject) = match &self.kind {
-            BufferKind::GitStatus {
-                snapshot,
-                expanded_diffs,
-                head_subject,
-                ..
-            } => (
-                snapshot.clone(),
-                expanded_diffs.clone(),
-                head_subject.clone(),
-            ),
-            _ => return,
+        let Some(state) = self.state.try_get(GIT_STATUS_STATE_KEY) else {
+            return;
         };
+        let snapshot = state.snapshot.clone();
+        let expanded_diffs = state.expanded_diffs.clone();
+        let head_subject = state.head_subject.clone();
 
         // Capture what the cursor is currently "on" so it can be restored after the rebuild below; without this, every expand/collapse/ stage/unstage/discard silently snaps the cursor back to line 0, which then desyncs `j`'s next stop from where the user thinks they are (landing back on the file entry instead of.
         enum CursorTarget {
@@ -1035,21 +1025,13 @@ impl Document {
 
     /// Rebuild this rebase-todo buffer's text + annotations from `steps`/ `message_overrides`/`expanded_bodies`/`original_bodies`, preserving which commit's head line the cursor was on. Unlike `render_git_status` (a read-only buffer, wholesale-swapped with no undo concerns), this buffer is genuinely editable, and.
     pub(super) fn render_git_rebase_todo(&mut self, description: &str) {
-        let (steps, message_overrides, expanded_bodies, original_bodies) = match &self.kind {
-            BufferKind::GitRebaseTodo {
-                steps,
-                message_overrides,
-                expanded_bodies,
-                original_bodies,
-                ..
-            } => (
-                steps.clone(),
-                message_overrides.clone(),
-                expanded_bodies.clone(),
-                original_bodies.clone(),
-            ),
-            _ => return,
+        let Some(state) = self.state.try_get(GIT_REBASE_TODO_STATE_KEY) else {
+            return;
         };
+        let steps = state.steps.clone();
+        let message_overrides = state.message_overrides.clone();
+        let expanded_bodies = state.expanded_bodies.clone();
+        let original_bodies = state.original_bodies.clone();
 
         let cursor_sha = {
             let cursor = self.buffer.cursor();
@@ -1100,22 +1082,13 @@ impl Document {
         remaining: &[crate::git::rebase::RebaseStep],
         banner: &str,
     ) {
-        let (message_overrides, expanded_bodies, original_bodies) = match &self.kind {
-            BufferKind::GitRebaseTodo {
-                message_overrides,
-                expanded_bodies,
-                original_bodies,
-                ..
-            } => (
-                message_overrides.clone(),
-                expanded_bodies.clone(),
-                original_bodies.clone(),
-            ),
-            _ => return,
+        let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
+            return;
         };
-        if let BufferKind::GitRebaseTodo { steps, .. } = &mut self.kind {
-            *steps = remaining.to_vec();
-        }
+        let message_overrides = state.message_overrides.clone();
+        let expanded_bodies = state.expanded_bodies.clone();
+        let original_bodies = state.original_bodies.clone();
+        state.steps = remaining.to_vec();
         let RebasePlanRender {
             text,
             highlights,
@@ -1139,9 +1112,10 @@ impl Document {
     /// Swap the plan's step at `sha` with its neighbor (up or down).
     /// No-op at either edge or if `sha` isn't found.
     pub fn move_git_rebase_step(&mut self, sha: &str, down: bool) {
-        let BufferKind::GitRebaseTodo { steps, .. } = &mut self.kind else {
+        let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
         };
+        let steps = &mut state.steps;
         let Some(idx) = steps.iter().position(|s| s.sha == sha) else {
             return;
         };
@@ -1168,9 +1142,10 @@ impl Document {
     /// Set the verb of the step at `sha` (never `Reword`/`Drop`;  those go
     /// through the message editor and `remove_git_rebase_step` respectively).
     pub fn set_git_rebase_verb(&mut self, sha: &str, verb: crate::git::rebase::RebaseVerb) {
-        let BufferKind::GitRebaseTodo { steps, .. } = &mut self.kind else {
+        let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
         };
+        let steps = &mut state.steps;
         let Some(step) = steps.iter_mut().find(|s| s.sha == sha) else {
             return;
         };
@@ -1180,9 +1155,10 @@ impl Document {
 
     /// Remove the step at `sha` from the plan entirely (drop).
     pub fn remove_git_rebase_step(&mut self, sha: &str) {
-        let BufferKind::GitRebaseTodo { steps, .. } = &mut self.kind else {
+        let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
         };
+        let steps = &mut state.steps;
         let before = steps.len();
         steps.retain(|s| s.sha != sha);
         if steps.len() == before {
@@ -1194,63 +1170,36 @@ impl Document {
     /// Toggle whether `sha`'s body is previewed inline. Lazily fetches and
     /// caches its real body text on first expand if there's no override yet.
     pub fn toggle_git_rebase_expand(&mut self, sha: &str, repo_root: &std::path::Path) {
-        let already_expanded = match &self.kind {
-            BufferKind::GitRebaseTodo {
-                expanded_bodies, ..
-            } => expanded_bodies.contains(sha),
-            _ => return,
+        let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
+            return;
         };
-        if already_expanded {
-            if let BufferKind::GitRebaseTodo {
-                expanded_bodies, ..
-            } = &mut self.kind
-            {
-                expanded_bodies.remove(sha);
-            }
-        } else {
-            let needs_fetch = match &self.kind {
-                BufferKind::GitRebaseTodo {
-                    message_overrides,
-                    original_bodies,
-                    ..
-                } => !message_overrides.contains_key(sha) && !original_bodies.contains_key(sha),
-                _ => false,
-            };
-            if needs_fetch {
-                let full = crate::git::run_checked(repo_root, &["log", "-1", "--format=%B", sha])
-                    .unwrap_or_default();
-                let mut lines = full.lines();
-                lines.next(); // subject, already shown in the head line
-                let body = lines.collect::<Vec<_>>().join("\n").trim().to_string();
-                if let BufferKind::GitRebaseTodo {
-                    original_bodies, ..
-                } = &mut self.kind
-                {
-                    original_bodies.insert(sha.to_string(), body);
-                }
-            }
-            if let BufferKind::GitRebaseTodo {
-                expanded_bodies, ..
-            } = &mut self.kind
-            {
-                expanded_bodies.insert(sha.to_string());
-            }
+        if state.expanded_bodies.remove(sha) {
+            self.render_git_rebase_todo("Toggle commit preview");
+            return;
         }
+
+        let needs_fetch =
+            !state.message_overrides.contains_key(sha) && !state.original_bodies.contains_key(sha);
+        if needs_fetch {
+            let full = crate::git::run_checked(repo_root, &["log", "-1", "--format=%B", sha])
+                .unwrap_or_default();
+            let mut lines = full.lines();
+            lines.next();
+            let body = lines.collect::<Vec<_>>().join("\n").trim().to_string();
+            state.original_bodies.insert(sha.to_string(), body);
+        }
+        state.expanded_bodies.insert(sha.to_string());
         self.render_git_rebase_todo("Toggle commit preview");
     }
 
     /// The current full message for `sha` (override if set, else its real
     /// current commit message), for prefilling the `c`/`r` sub-editor.
     pub fn git_rebase_current_message(&self, sha: &str, repo_root: &std::path::Path) -> String {
-        match &self.kind {
-            BufferKind::GitRebaseTodo {
-                message_overrides, ..
-            } => {
-                if let Some(m) = message_overrides.get(sha) {
-                    return m.clone();
-                }
-            }
-            _ => return String::new(),
+        let Some(state) = self.state.try_get(GIT_REBASE_TODO_STATE_KEY) else {
+            return String::new();
+        };
+        if let Some(message) = state.message_overrides.get(sha) {
+            return message.clone();
         }
         crate::git::run_checked(repo_root, &["log", "-1", "--format=%B", sha])
             .unwrap_or_default()
@@ -1261,14 +1210,11 @@ impl Document {
     /// Set (or clear, if `message` is empty) `sha`'s message override and
     /// re-render;  called when the `c`/`r` sub-editor is saved.
     pub fn set_git_rebase_message_override(&mut self, sha: &str, message: String) {
-        let BufferKind::GitRebaseTodo {
-            message_overrides,
-            expanded_bodies,
-            ..
-        } = &mut self.kind
-        else {
+        let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
         };
+        let message_overrides = &mut state.message_overrides;
+        let expanded_bodies = &mut state.expanded_bodies;
         if message.trim().is_empty() {
             message_overrides.remove(sha);
         } else {
@@ -1276,18 +1222,6 @@ impl Document {
             expanded_bodies.insert(sha.to_string());
         }
         self.render_git_rebase_todo("Reword commit");
-    }
-
-    /// Return the repo root for any git buffer kind.
-    pub fn git_repo_root(&self) -> Option<&std::path::Path> {
-        match &self.kind {
-            BufferKind::GitStatus { repo_root, .. } => Some(repo_root),
-            BufferKind::GitCommitMessage { repo_root, .. } => Some(repo_root),
-            BufferKind::GitBlame { repo_root, .. } => Some(repo_root),
-            BufferKind::GitLog { repo_root, .. } => Some(repo_root),
-            BufferKind::GitRebaseTodo { repo_root, .. } => Some(repo_root),
-            _ => None,
-        }
     }
 
     /// Replace this file buffer's git-gutter signs (add/change/delete per line), computed by a `GitGutterDiffJob` against the buffer's live (possibly unsaved) content.
@@ -1298,38 +1232,12 @@ impl Document {
     /// Populate (or repopulate) this git blame buffer from a fresh
     /// `git blame --porcelain` listing.
     pub fn populate_git_blame_buffer(&mut self, lines: Vec<crate::git::blame::BlameLine>) {
-        let (repo_root, linked_doc_id, linked_window_id, path, at_commit, history) =
-            match &self.kind {
-                BufferKind::GitBlame {
-                    repo_root,
-                    linked_doc_id,
-                    linked_window_id,
-                    path,
-                    at_commit,
-                    history,
-                    ..
-                } => (
-                    repo_root.clone(),
-                    *linked_doc_id,
-                    *linked_window_id,
-                    path.clone(),
-                    at_commit.clone(),
-                    history.clone(),
-                ),
-                _ => return,
-            };
-        let wrap_rows = vec![1; lines.len()];
-        self.kind = BufferKind::GitBlame {
-            repo_root,
-            linked_doc_id,
-            linked_window_id,
-            path,
-            at_commit,
-            history,
-            lines,
-            wrap_rows,
-            wrap_key: None,
+        let Some(state) = self.state.try_get_mut(GIT_BLAME_STATE_KEY) else {
+            return;
         };
+        state.wrap_rows = vec![1; lines.len()];
+        state.lines = lines;
+        state.wrap_key = None;
         self.render_git_blame();
         self.history.mark_saved();
     }
@@ -1341,28 +1249,14 @@ impl Document {
         wrap_key: (super::DocumentId, usize, usize, u64),
         wrap_rows: Vec<usize>,
     ) {
-        let unchanged = matches!(
-            &self.kind,
-            BufferKind::GitBlame {
-                wrap_key: current_key,
-                wrap_rows: current,
-                ..
-            } if *current_key == Some(wrap_key) && *current == wrap_rows
-        );
-        if unchanged {
+        let Some(state) = self.state.try_get_mut(GIT_BLAME_STATE_KEY) else {
+            return;
+        };
+        if state.wrap_key == Some(wrap_key) && state.wrap_rows == wrap_rows {
             return;
         }
-        if let BufferKind::GitBlame {
-            wrap_key: current_key,
-            wrap_rows: current,
-            ..
-        } = &mut self.kind
-        {
-            *current_key = Some(wrap_key);
-            *current = wrap_rows;
-        } else {
-            return;
-        }
+        state.wrap_key = Some(wrap_key);
+        state.wrap_rows = wrap_rows;
         self.render_git_blame();
     }
 
@@ -1373,12 +1267,11 @@ impl Document {
                 .git_blame_source_line_at_line(buffer_line)
                 .unwrap_or(buffer_line)
         };
-        let (lines, wrap_rows) = match &self.kind {
-            BufferKind::GitBlame {
-                lines, wrap_rows, ..
-            } => (lines.clone(), wrap_rows.clone()),
-            _ => return,
+        let Some(state) = self.state.try_get(GIT_BLAME_STATE_KEY) else {
+            return;
         };
+        let lines = state.lines.clone();
+        let wrap_rows = state.wrap_rows.clone();
 
         let total_rows: usize = wrap_rows.iter().map(|rows| (*rows).max(1)).sum();
         let mut text = String::new();
@@ -1433,19 +1326,12 @@ impl Document {
     /// Populate (or repopulate) this git log buffer from a fresh commit
     /// listing. Collapses any previously-expanded `git show` body.
     pub fn populate_git_log_buffer(&mut self, commits: Vec<crate::git::log::CommitSummary>) {
-        let (repo_root, path) = match &self.kind {
-            BufferKind::GitLog {
-                repo_root, path, ..
-            } => (repo_root.clone(), path.clone()),
-            _ => return,
+        let Some(state) = self.state.try_get_mut(super::GIT_LOG_STATE_KEY) else {
+            return;
         };
-        self.kind = BufferKind::GitLog {
-            repo_root,
-            path,
-            commits,
-            expanded: None,
-            expanded_body: None,
-        };
+        state.commits = commits;
+        state.expanded = None;
+        state.expanded_body = None;
         self.render_git_log();
         self.history.mark_saved();
     }
@@ -1453,30 +1339,21 @@ impl Document {
     /// Set (or clear, via `None`) the inline-expanded `git show` body for
     /// `sha` and re-render.
     pub fn set_git_log_expanded(&mut self, sha: Option<String>, body: Option<String>) {
-        match &mut self.kind {
-            BufferKind::GitLog {
-                expanded,
-                expanded_body,
-                ..
-            } => {
-                *expanded = sha;
-                *expanded_body = body;
-            }
-            _ => return,
-        }
+        let Some(state) = self.state.try_get_mut(super::GIT_LOG_STATE_KEY) else {
+            return;
+        };
+        state.expanded = sha;
+        state.expanded_body = body;
         self.render_git_log();
     }
 
     fn render_git_log(&mut self) {
-        let (commits, expanded, expanded_body) = match &self.kind {
-            BufferKind::GitLog {
-                commits,
-                expanded,
-                expanded_body,
-                ..
-            } => (commits.clone(), expanded.clone(), expanded_body.clone()),
-            _ => return,
+        let Some(state) = self.state.try_get(super::GIT_LOG_STATE_KEY) else {
+            return;
         };
+        let commits = state.commits.clone();
+        let expanded = state.expanded.clone();
+        let expanded_body = state.expanded_body.clone();
 
         let mut lines: Vec<String> = Vec::new();
         let mut commit_annotations: Vec<(usize, String)> = Vec::new();
