@@ -243,9 +243,9 @@ impl Job for SyntaxParseJob {
             };
 
             let mut fresh: Vec<(std::ops::Range<usize>, u32, usize)> = Vec::new();
-            for range in query_ranges {
+            for range in &query_ranges {
                 let mut cursor = QueryCursor::new();
-                cursor.set_byte_range(range);
+                cursor.set_byte_range(range.clone());
                 let mut matches = cursor.matches(query, root_node, source_bytes.as_slice());
                 while let Some(m) = matches.next() {
                     if signal.is_cancelled() {
@@ -258,12 +258,8 @@ impl Job for SyntaxParseJob {
                 }
             }
 
-            // Keep old entries the fresh requery above doesn't overlap; only
-            // it can tell whether a boundary-touching range was affected.
-            let fresh_ranges: Vec<(std::ops::Range<usize>, u32)> =
-                fresh.iter().map(|(r, c, _)| (r.clone(), *c)).collect();
             if let Some((_, edit)) = scoped {
-                let kept = crate::syntax::scoped_kept_items(&old_highlights, edit, &fresh_ranges);
+                let kept = crate::syntax::scoped_kept_items(&old_highlights, edit, &query_ranges);
                 highlights.extend(kept.into_iter().map(|(r, c)| (r, c, 0)));
             }
             highlights.extend(fresh);
