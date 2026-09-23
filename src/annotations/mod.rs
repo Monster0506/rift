@@ -301,12 +301,6 @@ impl AnnotationStore {
         self.revision
     }
 
-    /// Whether the interval tree index is currently stale. Test-only.
-    #[cfg(test)]
-    pub(crate) fn is_index_dirty(&self) -> bool {
-        self.index_dirty.get()
-    }
-
     /// Rebuild `by_id` + `line_index` if stale (a single O(n) pass). Used by
     /// line-anchor edit tracking, which never needs the interval tree.
     fn ensure_aux(&self) {

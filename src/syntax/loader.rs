@@ -184,43 +184,6 @@ impl LanguageLoader {
         Err("tree-sitter support is not compiled in".to_string())
     }
 
-    #[cfg(all(test, feature = "treesitter"))]
-    pub(crate) fn register_grammar_for_test(&self, lang_name: &str, language: Language) -> bool {
-        if self
-            .dynamic_languages
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains_key(lang_name)
-        {
-            return false;
-        }
-        let lib = Arc::new(unsafe { RawLib::open(test_lib_path()).expect("open test library") });
-        self.loaded_libs
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(lib.clone());
-        self.dynamic_languages
-            .write()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(
-                lang_name.to_string(),
-                LoadedLanguage {
-                    language,
-                    name: lang_name.to_string(),
-                    lib: Some(lib),
-                },
-            );
-        true
-    }
-
-    #[cfg(all(test, feature = "treesitter"))]
-    pub(crate) fn loaded_libs_count(&self) -> usize {
-        self.loaded_libs
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .len()
-    }
-
     // Language loading
 
     /// Load a language based on file extension, checking the dynamic registry first.
@@ -507,27 +470,6 @@ fn get_bundled_injections_query(lang_name: &str) -> Option<&'static str> {
     }
 }
 
-/// A library path guaranteed loadable on this platform, for test-only use.
-#[cfg(all(test, feature = "treesitter"))]
-fn test_lib_path() -> &'static str {
-    #[cfg(windows)]
-    {
-        "kernel32.dll"
-    }
-    #[cfg(target_os = "macos")]
-    {
-        "/usr/lib/libSystem.dylib"
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        "libc.so.6"
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        "unused"
-    }
-}
-
 pub struct RawLib(*mut std::ffi::c_void);
 
 unsafe impl Send for RawLib {}
@@ -618,36 +560,7 @@ mod sys {
     pub unsafe fn close(_: *mut std::ffi::c_void) {}
 }
 
-#[cfg(all(test, any(unix, windows)))]
-mod tests {
-    use super::RawLib;
-    use std::sync::Arc;
-
-    #[cfg(windows)]
-    const ALWAYS_LOADED_LIB: &str = "kernel32.dll";
-    #[cfg(all(unix, not(target_os = "macos")))]
-    const ALWAYS_LOADED_LIB: &str = "libc.so.6";
-    #[cfg(target_os = "macos")]
-    const ALWAYS_LOADED_LIB: &str = "libSystem.B.dylib";
-
-    #[test]
-    fn arc_rawlib_outlives_original_storage_slot() {
-        let lib = unsafe { RawLib::open(ALWAYS_LOADED_LIB) }.expect("open a system library");
-        let lib = Arc::new(lib);
-
-        let mut loaded_libs: Vec<Arc<RawLib>> = vec![lib.clone()];
-        let handed_out: Arc<RawLib> = lib.clone();
-        drop(lib);
-
-        assert_eq!(Arc::strong_count(&handed_out), 2);
-
-        loaded_libs.clear();
-        drop(loaded_libs);
-
-        assert_eq!(
-            Arc::strong_count(&handed_out),
-            1,
-            "the library must still be alive via the outstanding Arc clone"
-        );
-    }
-}
+#[cfg(test)]
+#[cfg(any(unix, windows))]
+#[path = "loader_tests.rs"]
+mod loader_tests;

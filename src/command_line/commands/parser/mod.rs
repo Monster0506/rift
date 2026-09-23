@@ -203,12 +203,6 @@ impl CommandParser {
         let bangs = input.len() - trimmed.len();
         (trimmed, bangs)
     }
-
-    // Helper for tests
-    #[cfg(test)]
-    pub fn get_option_registry(&self) -> CommandRegistry {
-        self.settings_registry.build_option_registry()
-    }
 }
 
 #[cfg(test)]

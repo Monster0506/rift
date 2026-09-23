@@ -1,0 +1,105 @@
+use super::*;
+use crate::history::UndoTree;
+use crate::job_manager::JobPayload;
+
+fn make_test_tree() -> UndoTree {
+    use crate::history::{EditNode, EditTransaction};
+    let mut tree = UndoTree::new();
+    tree.nodes.clear();
+    tree.root_seq = 0;
+    tree.nodes
+        .insert(0, EditNode::new(0, EditTransaction::new("root"), None));
+    tree.nodes
+        .insert(1, EditNode::new(1, EditTransaction::new("edit1"), Some(0)));
+    tree.nodes.get_mut(&0).unwrap().children.push(1);
+    tree.current = 1;
+    tree
+}
+
+#[test]
+fn test_undotree_render_result_implements_job_payload() {
+    let result = UndoTreeRenderResult {
+        ut_doc_id: 1,
+        text: "* [1] edit1\n* [0] root".to_string(),
+        sequences: vec![1, 0],
+        highlights: vec![(0..1, Color::Magenta)],
+    };
+    // JobPayload::as_any downcasting round-trip
+    let boxed: Box<dyn JobPayload> = Box::new(result);
+    assert!(boxed
+        .as_any()
+        .downcast_ref::<UndoTreeRenderResult>()
+        .is_some());
+}
+
+#[test]
+fn test_undotree_render_job_produces_result() {
+    use crate::job_manager::{CancellationSignal, JobMessage};
+    use std::sync::mpsc;
+
+    let tree = make_test_tree();
+    let job = Box::new(UndoTreeRenderJob::new(42, tree));
+    let (tx, rx) = mpsc::channel();
+    let signal = CancellationSignal::new(false);
+
+    job.run(1, tx, signal);
+
+    let messages: Vec<JobMessage> = rx.try_iter().collect();
+    // Should have a Custom payload and a Finished message
+    let has_custom = messages
+        .iter()
+        .any(|m| matches!(m, JobMessage::Custom(1, _)));
+    let has_finished = messages
+        .iter()
+        .any(|m| matches!(m, JobMessage::Finished(1, true)));
+    assert!(has_custom, "expected Custom message");
+    assert!(has_finished, "expected Finished message");
+}
+
+#[test]
+fn test_undotree_render_job_result_content() {
+    use crate::job_manager::CancellationSignal;
+    use std::sync::mpsc;
+
+    let tree = make_test_tree();
+    let job = Box::new(UndoTreeRenderJob::new(7, tree));
+    let (tx, rx) = mpsc::channel();
+    let signal = CancellationSignal::new(false);
+
+    job.run(1, tx, signal);
+
+    let result =
+        crate::job_manager::jobs::test_support::recv_custom_payload::<UndoTreeRenderResult>(&rx)
+            .expect("no Custom message received");
+    assert_eq!(result.ut_doc_id, 7);
+    assert!(!result.text.is_empty());
+    assert!(!result.sequences.is_empty());
+    // sequences count must match line count
+    assert_eq!(result.sequences.len(), result.text.lines().count());
+}
+
+#[test]
+fn test_undotree_render_job_cancelled_before_run() {
+    use crate::job_manager::{CancellationSignal, JobMessage};
+    use std::sync::mpsc;
+
+    let tree = make_test_tree();
+    let job = Box::new(UndoTreeRenderJob::new(1, tree));
+    let (tx, rx) = mpsc::channel();
+    let signal = CancellationSignal::new(true); // pre-cancelled
+
+    job.run(1, tx, signal);
+
+    let messages: Vec<JobMessage> = rx.try_iter().collect();
+    // Should produce no Custom message when cancelled
+    assert!(!messages
+        .iter()
+        .any(|m| matches!(m, JobMessage::Custom(_, _))));
+}
+
+#[test]
+fn test_undotree_render_job_is_silent() {
+    let tree = make_test_tree();
+    let job = UndoTreeRenderJob::new(1, tree);
+    assert!(job.is_silent());
+}
