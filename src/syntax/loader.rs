@@ -6,16 +6,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::{Arc, RwLock};
 
-/// The loaded-grammar handle type; a real tree-sitter `Language` when the
-/// feature is on, or an inert stand-in when it's compiled out entirely.
 #[cfg(feature = "treesitter")]
 pub type Language = tree_sitter::Language;
 #[cfg(not(feature = "treesitter"))]
 #[derive(Clone)]
 pub struct Language;
 
-/// Handle to a loaded language, keeping the backing dynamic library alive.
-/// `lib` must be cloned alongside every clone of `language` or the memory it points into can be unmapped.
 #[derive(Clone)]
 pub struct LoadedLanguage {
     pub language: Language,
@@ -24,7 +20,6 @@ pub struct LoadedLanguage {
 }
 
 impl LoadedLanguage {
-    /// Create a LoadedLanguage for bundled grammars (no library handle needed)
     #[allow(dead_code)]
     pub fn bundled(language: Language, name: &str) -> Self {
         Self {
@@ -49,8 +44,6 @@ pub struct DynamicRegistry {
 pub struct LanguageLoader {
     _grammar_dir: PathBuf,
     pub dynamic: RwLock<DynamicRegistry>,
-    /// Shared libraries loaded at runtime, kept alive only via the `Arc<RawLib>`
-    /// bundled into each `dynamic_languages` entry; never removed once inserted.
     #[cfg(feature = "treesitter")]
     loaded_libs: Mutex<Vec<Arc<RawLib>>>,
     /// Grammars registered via `register_grammar()`, keyed by language name.
@@ -76,8 +69,6 @@ impl LanguageLoader {
             .insert(ext.to_string(), lang_name.to_string());
     }
 
-    /// Return the language name for a file path from the filetype registry alone,
-    /// without requiring a tree-sitter grammar. `None` for no/unrecognised extension.
     pub fn language_name_for_file(&self, path: &Path) -> Option<String> {
         let ext = path.extension()?.to_str()?;
         // Dynamic registry (from plugins) takes priority.
@@ -128,8 +119,6 @@ impl LanguageLoader {
             .insert(lang_name.to_string(), query_src.to_string());
     }
 
-    /// Load a tree-sitter grammar from a shared library (`so_path`, with exported
-    /// C symbol `fn_name`) at runtime; kept alive for the loader's lifetime.
     #[cfg(feature = "treesitter")]
     pub fn register_grammar(
         &self,
@@ -137,8 +126,6 @@ impl LanguageLoader {
         so_path: &str,
         fn_name: &str,
     ) -> Result<(), String> {
-        // Re-registering an already-loaded grammar is a no-op: avoids leaking
-        // a second library handle and shadowing the existing Language entry.
         if self
             .dynamic_languages
             .read()
@@ -151,8 +138,6 @@ impl LanguageLoader {
         let lib =
             unsafe { RawLib::open(so_path).map_err(|e| format!("dlopen '{}': {}", so_path, e))? };
 
-        // SAFETY: `language` borrows code/data inside `lib`; the `Arc<RawLib>`
-        // below must be cloned into every copy of `language` that escapes this loader.
         let language: Language = unsafe {
             type LangFn = unsafe extern "C" fn() -> *const tree_sitter::ffi::TSLanguage;
             let sym = lib
@@ -199,8 +184,6 @@ impl LanguageLoader {
         Err("tree-sitter support is not compiled in".to_string())
     }
 
-    /// Test-only entry point exercising the same dedup check as `register_grammar`,
-    /// without requiring a caller-supplied dynamic library on disk.
     #[cfg(all(test, feature = "treesitter"))]
     pub(crate) fn register_grammar_for_test(&self, lang_name: &str, language: Language) -> bool {
         if self
@@ -341,6 +324,31 @@ impl LanguageLoader {
             }
 
             #[cfg(feature = "treesitter")]
+            if lang_name == "rust" {
+                return Ok(format!(
+                    "{}\n{}",
+                    tree_sitter_rust::HIGHLIGHTS_QUERY,
+                    concat!(
+                        "(let_declaration pattern: (identifier) @variable)\n",
+                        "(for_expression pattern: (identifier) @variable)\n",
+                        "(let_condition pattern: (identifier) @variable)\n",
+                        "(closure_parameters (identifier) @variable)\n",
+                        "(match_pattern (identifier) @variable)\n",
+                        "(tuple_pattern (identifier) @variable)"
+                    )
+                ));
+            }
+
+            #[cfg(feature = "treesitter")]
+            if lang_name == "bash" {
+                return Ok(format!(
+                    "{}\n{}",
+                    tree_sitter_bash::HIGHLIGHT_QUERY,
+                    "(variable_name) @variable"
+                ));
+            }
+
+            #[cfg(feature = "treesitter")]
             if lang_name == "typescript" || lang_name == "tsx" {
                 return Ok(format!(
                     "{}\n{}",
@@ -452,7 +460,10 @@ fn get_bundled_language(lang_name: &str) -> Option<(Language, &'static str)> {
             tree_sitter_java::LANGUAGE.into(),
             tree_sitter_java::HIGHLIGHTS_QUERY,
         )),
-        "c_sharp" => Some((tree_sitter_c_sharp::LANGUAGE.into(), "")),
+        "c_sharp" => Some((
+            tree_sitter_c_sharp::LANGUAGE.into(),
+            tree_sitter_c_sharp::HIGHLIGHTS_QUERY,
+        )),
         "ruby" => Some((
             tree_sitter_ruby::LANGUAGE.into(),
             tree_sitter_ruby::HIGHLIGHTS_QUERY,
@@ -517,10 +528,6 @@ fn test_lib_path() -> &'static str {
     }
 }
 
-// Raw dynamic library handle
-
-/// Owns a dlopen/LoadLibrary handle. Any `Language` derived from this library
-/// is only valid as long as an `Arc<RawLib>` for it is still reachable.
 pub struct RawLib(*mut std::ffi::c_void);
 
 unsafe impl Send for RawLib {}
@@ -551,8 +558,6 @@ impl RawLib {
 }
 
 impl Drop for RawLib {
-    /// Unmaps the library. Safe only because every `Language` derived from it
-    /// is paired with an `Arc<RawLib>`, so this runs after the last one drops.
     fn drop(&mut self) {
         unsafe { sys::close(self.0) };
     }
@@ -625,26 +630,20 @@ mod tests {
     #[cfg(target_os = "macos")]
     const ALWAYS_LOADED_LIB: &str = "libSystem.B.dylib";
 
-    /// A `Language`-bearing `Arc<RawLib>` clone must outlive the original
-    /// storage slot, mirroring `register_grammar`/`load_language`.
     #[test]
     fn arc_rawlib_outlives_original_storage_slot() {
         let lib = unsafe { RawLib::open(ALWAYS_LOADED_LIB) }.expect("open a system library");
         let lib = Arc::new(lib);
 
-        // Simulates `loaded_libs` holding one reference...
         let mut loaded_libs: Vec<Arc<RawLib>> = vec![lib.clone()];
-        // ...and a `LoadedLanguage`-like clone holding another, handed out to a caller.
         let handed_out: Arc<RawLib> = lib.clone();
         drop(lib);
 
         assert_eq!(Arc::strong_count(&handed_out), 2);
 
-        // Drop the loader-side storage entirely (e.g. loader itself goes away).
         loaded_libs.clear();
         drop(loaded_libs);
 
-        // The handed-out clone must still keep the library mapped.
         assert_eq!(
             Arc::strong_count(&handed_out),
             1,

@@ -455,9 +455,9 @@ impl Syntax {
         let mut fresh: Vec<(std::ops::Range<usize>, usize)> = Vec::new();
         {
             let root = tree.root_node();
-            for range in query_ranges {
+            for range in &query_ranges {
                 let mut cursor = QueryCursor::new();
-                cursor.set_byte_range(range);
+                cursor.set_byte_range(range.clone());
                 let mut matches = cursor.matches(query, root, source);
 
                 while let Some(m) = matches.next() {
@@ -477,7 +477,9 @@ impl Syntax {
         }
 
         let mut pairs: Vec<(std::ops::Range<usize>, usize)> = match scoped {
-            Some((_, edit)) => scoped_kept_items(&self.static_injection_ranges, edit, &fresh),
+            Some((_, edit)) => {
+                scoped_kept_items(&self.static_injection_ranges, edit, &query_ranges)
+            }
             None => Vec::new(),
         };
         pairs.extend(fresh);
@@ -583,9 +585,9 @@ impl Syntax {
         let mut fresh: Vec<(std::ops::Range<usize>, String)> = Vec::new();
         {
             let root = tree.root_node();
-            for range in query_ranges {
+            for range in &query_ranges {
                 let mut cursor = QueryCursor::new();
-                cursor.set_byte_range(range);
+                cursor.set_byte_range(range.clone());
                 let mut matches = cursor.matches(query, root, source);
 
                 while let Some(m) = matches.next() {
@@ -625,7 +627,9 @@ impl Syntax {
         }
 
         let mut pairs: Vec<(std::ops::Range<usize>, String)> = match scoped {
-            Some((_, edit)) => scoped_kept_items(&self.dynamic_injection_ranges, edit, &fresh),
+            Some((_, edit)) => {
+                scoped_kept_items(&self.dynamic_injection_ranges, edit, &query_ranges)
+            }
             None => Vec::new(),
         };
         pairs.extend(fresh);
@@ -891,6 +895,18 @@ pub(crate) fn scoped_query_ranges(
         .map(|r| r.start_byte..r.end_byte)
         .collect();
     ranges.push(edit.start_byte..edit.new_end_byte.max(edit.start_byte + 1));
+
+    let mut ancestor = new_tree
+        .root_node()
+        .descendant_for_byte_range(edit.start_byte, edit.new_end_byte);
+    while let Some(n) = ancestor {
+        if n.is_named() && n.start_byte() < edit.start_byte {
+            ranges.push(n.start_byte()..n.end_byte());
+            break;
+        }
+        ancestor = n.parent();
+    }
+
     ranges.sort_by_key(|r| r.start);
 
     let mut merged: Vec<std::ops::Range<usize>> = Vec::new();
@@ -903,20 +919,18 @@ pub(crate) fn scoped_query_ranges(
     merged
 }
 
-/// Old items surviving a single edit, shifted by its byte delta, with
-/// anything overlapping `fresh` dropped (`fresh` is authoritative for whatever it covers).
 pub(crate) fn scoped_kept_items<T: Clone>(
     old_items: &IntervalTree<T>,
     edit: InputEdit,
-    fresh: &[(std::ops::Range<usize>, T)],
+    query_ranges: &[std::ops::Range<usize>],
 ) -> Vec<(std::ops::Range<usize>, T)> {
     old_items
         .shift_for_edit(edit.start_byte, edit.old_end_byte, edit.new_end_byte)
         .into_iter()
         .filter(|(r, _)| {
-            !fresh
+            !query_ranges
                 .iter()
-                .any(|(fr, _)| r.start < fr.end && fr.start < r.end)
+                .any(|qr| r.start < qr.end && qr.start < r.end)
         })
         .collect()
 }
@@ -956,9 +970,9 @@ pub(crate) fn scoped_query_highlights(
     };
 
     let mut fresh: Vec<(std::ops::Range<usize>, u32, usize)> = Vec::new();
-    for range in query_ranges {
+    for range in &query_ranges {
         let mut cursor = QueryCursor::new();
-        cursor.set_byte_range(range);
+        cursor.set_byte_range(range.clone());
         let mut matches = cursor.matches(query, root_node, source);
         while let Some(m) = matches.next() {
             let pattern_index = m.pattern_index;
@@ -968,10 +982,8 @@ pub(crate) fn scoped_query_highlights(
         }
     }
 
-    let fresh_ranges: Vec<(std::ops::Range<usize>, u32)> =
-        fresh.iter().map(|(r, c, _)| (r.clone(), *c)).collect();
     let kept = match scoped {
-        Some((_, edit)) => scoped_kept_items(old_highlights, edit, &fresh_ranges),
+        Some((_, edit)) => scoped_kept_items(old_highlights, edit, &query_ranges),
         None => Vec::new(),
     };
 
