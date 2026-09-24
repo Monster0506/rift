@@ -125,7 +125,30 @@ pub fn run(config: &FuzzConfig) -> Result<usize, FuzzFailure> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::shrink::{bracket_list, ddmin, reproduces_area};
     use super::*;
+
+    fn panic_on_failure(seed_desc: &str, failure: FuzzFailure) -> ! {
+        let Some(violation) = failure.violations.first().cloned() else {
+            panic!(
+                "{seed_desc}: failed via a tick error, which shrink doesn't cover yet: {:?}",
+                failure.tick_error
+            );
+        };
+
+        let original_step = failure.step;
+        let original_keys = failure.keys.len();
+
+        let minimal = ddmin(failure.keys, |keys| reproduces_area(keys, violation.area));
+
+        panic!(
+            "\nInvariant failure:\n  {}\n  {}\n\nOriginal:\n  {seed_desc}, step={original_step}, keys={original_keys}\n\nShrunk:\n  keys={}\n\nReproducer:\n  {}\n",
+            violation.area,
+            violation.detail,
+            minimal.len(),
+            bracket_list(&minimal),
+        );
+    }
 
     #[test]
     fn short_random_session_holds_its_invariants() {
@@ -134,10 +157,7 @@ mod tests {
             ..FuzzConfig::default()
         };
         if let Err(failure) = run(&config) {
-            panic!(
-                "invariant violation at step {}: {:?}\nkeys: {:?}\ntick_error: {:?}",
-                failure.step, failure.violations, failure.keys, failure.tick_error
-            );
+            panic_on_failure(&format!("seed={}", config.seed), failure);
         }
     }
 
@@ -153,10 +173,7 @@ mod tests {
                 ..FuzzConfig::default()
             };
             if let Err(failure) = run(&config) {
-                panic!(
-                    "seed {seed}: invariant violation at step {}: {:?}\nkeys: {:?}\ntick_error: {:?}",
-                    failure.step, failure.violations, failure.keys, failure.tick_error
-                );
+                panic_on_failure(&format!("seed={seed}"), failure);
             }
         }
     }
