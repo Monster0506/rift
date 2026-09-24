@@ -329,16 +329,7 @@ impl<T: TerminalBackend> Editor<T> {
                     self.do_incremental_syntax_parse();
                 }
                 if self.current_mode.is_visual() {
-                    if let (Some(anchor), Some(kind)) =
-                        (self.visual_anchor, self.current_mode.visual_range_kind())
-                    {
-                        if let Some(doc) = self.document_manager.active_document_mut() {
-                            let cursor = doc.buffer.cursor();
-                            doc.selection_set
-                                .bank(crate::selection::Region::new(anchor, cursor, kind));
-                        }
-                    }
-                    self.visual_anchor = None;
+                    self.bank_visual_selection();
                 } else if let Some(doc) = self.document_manager.active_document_mut() {
                     doc.selection_set.clear();
                     self.region_build_recording.clear();
@@ -687,16 +678,7 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
                 if self.current_mode.is_visual() {
-                    if let (Some(anchor), Some(kind)) =
-                        (self.visual_anchor, self.current_mode.visual_range_kind())
-                    {
-                        if let Some(doc) = self.document_manager.active_document_mut() {
-                            let cursor = doc.buffer.cursor();
-                            doc.selection_set
-                                .bank(crate::selection::Region::new(anchor, cursor, kind));
-                        }
-                    }
-                    self.visual_anchor = None;
+                    self.bank_visual_selection();
                     self.set_mode(Mode::Normal);
                 }
                 if self.try_run_set_aware_operator(*op) {

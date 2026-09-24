@@ -208,10 +208,26 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// `i`/`a`/`I`/`A`/`o`/`O` against non-empty `SelectionSet`: enter
-    /// multi-insert instead of single-cursor path; `false` if empty or unhandled.
+    pub(super) fn bank_visual_selection(&mut self) {
+        if !self.current_mode.is_visual() {
+            return;
+        }
+        if let (Some(anchor), Some(kind)) =
+            (self.visual_anchor, self.current_mode.visual_range_kind())
+        {
+            if let Some(doc) = self.document_manager.active_document_mut() {
+                let cursor = doc.buffer.cursor();
+                doc.selection_set
+                    .bank(crate::selection::Region::new(anchor, cursor, kind));
+            }
+        }
+        self.visual_anchor = None;
+    }
+
     pub(super) fn try_multi_insert_for_command(&mut self, entry: crate::command::Command) -> bool {
         use crate::command::Command;
+
+        self.bank_visual_selection();
 
         let is_empty = self
             .document_manager
@@ -259,8 +275,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// `d`/`y`/`c` against a non-empty `SelectionSet`: run the whole banked set as one batch
-    /// instead of `OperatorPending`. Returns `false` if empty so the caller falls through.
     pub(super) fn try_run_set_aware_operator(&mut self, op: crate::action::OperatorType) -> bool {
         use crate::action::OperatorType;
         use crate::buffer::api::BufferView;
@@ -285,8 +299,6 @@ impl<T: TerminalBackend> Editor<T> {
                 if batch.is_empty() {
                     return false;
                 }
-                // Commit any pending ghost first: its commit can shift the
-                // buffer, so regions below must resolve against it after.
                 let committed_prior = self
                     .document_manager
                     .active_document_mut()
@@ -320,8 +332,6 @@ impl<T: TerminalBackend> Editor<T> {
                     .active_document()
                     .is_some_and(|doc| doc.ghost_cut_allowed());
                 if self.state.settings.ghost_cut && ghost_allowed {
-                    // Cursor lands on the lowest-offset region's start so it
-                    // stays valid after every region is ghosted for deletion.
                     let cursor_target = ranges.iter().map(|&(s, _)| s).min();
                     let ghosted_doc = self.document_manager.active_document_mut().map(|doc| {
                         doc.create_ghosts(&ranges);
@@ -335,8 +345,6 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                     ghosted_doc.is_some()
                 } else {
-                    // `ranges` is already highest-offset-first (from
-                    // take_for_batch), so no delete invalidates an earlier one.
                     if let Some(doc) = self.document_manager.active_document_mut() {
                         doc.begin_transaction("MultiRegion");
                         for &(start, end) in &ranges {
@@ -370,8 +378,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// `r<ch>` against a non-empty `SelectionSet`: fill each region's exact
-    /// range with `ch`, ignoring any numeric count.
     pub(super) fn try_run_set_aware_replace_char(&mut self, ch: char) -> bool {
         let is_empty = self
             .document_manager
@@ -394,16 +400,12 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
-    /// `sd<ch>` against a non-empty `SelectionSet`: reuse the existing
-    /// single-cursor `Command::DeleteSurround` resolution once per region.
     pub(super) fn try_run_set_aware_delete_surround(&mut self, ch: char, count: usize) -> bool {
         self.apply_to_each_region_surround(ch, count, |editor| {
             editor.execute_buffer_command(crate::command::Command::DeleteSurround(ch, count))
         })
     }
 
-    /// `sc<from><to>` against a non-empty `SelectionSet`: same pattern as
-    /// `try_run_set_aware_delete_surround`.
     pub(super) fn try_run_set_aware_change_surround(
         &mut self,
         from: char,
@@ -415,8 +417,6 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
-    /// Like `apply_to_each_region`, but for sd/sc: two regions can share an
-    /// enclosing pair, so skip a region already absorbed by an earlier one.
     fn apply_to_each_region_surround<F>(
         &mut self,
         resolve_ch: char,
@@ -477,8 +477,6 @@ impl<T: TerminalBackend> Editor<T> {
         any
     }
 
-    /// `sg<ch>` against a non-empty `SelectionSet`: each region supplies its own
-    /// range directly, instead of resolving one from a motion.
     pub(super) fn try_run_set_aware_add_surround(&mut self, ch: char, delim_count: usize) -> bool {
         let is_empty = self
             .document_manager
@@ -504,8 +502,6 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
-    /// `p`/`P` (and `PutSystemClipboard`) against a non-empty `SelectionSet`: insert
-    /// `text` at every region (after its end for `p`, before its start for `P`). Non-destructive.
     pub(super) fn try_run_set_aware_put(&mut self, before: bool, text: &[Character]) -> bool {
         let is_empty = self
             .document_manager
@@ -527,8 +523,6 @@ impl<T: TerminalBackend> Editor<T> {
         })
     }
 
-    /// Replay the just-finished Insert session at every pending anchor; must run
-    /// before the outer `MultiInsert` transaction commits so all anchors share the live-typed undo step (S5.8).
     pub(super) fn replay_multi_insert_at_remaining_anchors(&mut self) {
         let anchors = std::mem::take(&mut self.pending_multi_insert_anchors);
         let Some(crate::dot_repeat::DotRegister::InsertSession { commands, .. }) =
@@ -548,8 +542,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.dot_repeat.set_replaying(false);
     }
 
-    /// Finalize the accumulated selection-building actions into a
-    /// `DotRegister::RegionBuildSession`, if anything was recorded.
     pub(super) fn finish_region_build(&mut self, follow_up: Option<crate::action::Action>) {
         if self.region_build_recording.is_empty() {
             return;
@@ -561,8 +553,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// `gv`: toggle the regions list window. Always means "stop looking at
-    /// the list" when one is already open, regardless of current focus.
     pub(super) fn toggle_regions_window(&mut self) {
         if let Some(layout) = self.panel_layout.clone() {
             if layout.kind == crate::editor::PanelKind::Regions {
@@ -632,8 +622,6 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = self.force_full_redraw();
     }
 
-    /// `x` inside the regions window: drop the entry at the cursor's line
-    /// from the *source* document's `SelectionSet`, then refresh the list.
     pub(super) fn drop_regions_window_entry(&mut self) -> bool {
         let Some(layout) = self.panel_layout.clone() else {
             return false;
