@@ -539,6 +539,79 @@ impl SplitTree {
         self.windows.len()
     }
 
+    pub(crate) fn check_invariants(
+        &self,
+        document_manager: &crate::document::DocumentManager,
+        tier: crate::invariants::InvariantTier,
+    ) -> Vec<String> {
+        use crate::invariants::InvariantTier;
+
+        let mut out = Vec::new();
+
+        let mut leaves = Vec::new();
+        Self::collect_leaves(&self.root, &mut leaves);
+
+        for id in &leaves {
+            if !self.windows.contains_key(id) {
+                out.push(format!("split tree leaf {id} has no matching Window"));
+            }
+        }
+        for id in self.windows.keys() {
+            if !leaves.contains(id) {
+                out.push(format!(
+                    "window {id} exists but is not a leaf in the split tree"
+                ));
+            }
+        }
+        if !leaves.contains(&self.focused_window) {
+            out.push(format!(
+                "focused_window {} is not a live leaf",
+                self.focused_window
+            ));
+        }
+
+        Self::check_ratios(&self.root, &mut out);
+
+        if tier >= InvariantTier::Standard {
+            for (id, window) in &self.windows {
+                if document_manager.get_document(window.document_id).is_none() {
+                    out.push(format!(
+                        "window {id} points at document {} which no longer exists",
+                        window.document_id
+                    ));
+                }
+            }
+        }
+
+        out
+    }
+
+    fn collect_leaves(node: &SplitNode, out: &mut Vec<WindowId>) {
+        match node {
+            SplitNode::Leaf(id) => out.push(*id),
+            SplitNode::Split { first, second, .. } => {
+                Self::collect_leaves(first, out);
+                Self::collect_leaves(second, out);
+            }
+        }
+    }
+
+    fn check_ratios(node: &SplitNode, out: &mut Vec<String>) {
+        if let SplitNode::Split {
+            ratio,
+            first,
+            second,
+            ..
+        } = node
+        {
+            if !(*ratio > 0.0 && *ratio < 1.0) {
+                out.push(format!("split ratio {ratio} outside (0.0, 1.0)"));
+            }
+            Self::check_ratios(first, out);
+            Self::check_ratios(second, out);
+        }
+    }
+
     pub fn all_window_ids(&self) -> Vec<WindowId> {
         self.windows.keys().copied().collect()
     }

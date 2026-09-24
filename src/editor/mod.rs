@@ -22,6 +22,7 @@ mod git_status;
 mod handle_action;
 mod history;
 mod init;
+mod invariants;
 mod jobs;
 #[cfg(feature = "lsp")]
 mod lsp_ops;

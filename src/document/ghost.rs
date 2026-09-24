@@ -88,7 +88,7 @@ impl Document {
         }
         // Highest-offset-first so each delete's shift never invalidates an
         // earlier range's already-captured live position.
-        ranges.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        ranges.sort_unstable_by_key(|b| std::cmp::Reverse(b.0));
 
         let cursor_before = self.buffer.cursor();
         self.begin_transaction("Delete");

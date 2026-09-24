@@ -354,6 +354,67 @@ impl DocumentManager {
         self.documents.values()
     }
 
+    pub(crate) fn check_invariants(&self) -> Vec<String> {
+        let mut out = Vec::new();
+
+        for id in &self.tab_order {
+            if !self.documents.contains_key(id) {
+                out.push(format!("tab_order references missing document {id}"));
+            }
+        }
+        if self.tab_order.is_empty() {
+            if self.current_tab != 0 {
+                out.push(format!(
+                    "tab_order is empty but current_tab={}",
+                    self.current_tab
+                ));
+            }
+        } else if self.current_tab >= self.tab_order.len() {
+            out.push(format!(
+                "current_tab {} >= tab_order.len() {}",
+                self.current_tab,
+                self.tab_order.len()
+            ));
+        }
+
+        for id in self.documents.keys() {
+            match self.handles.get(id) {
+                None => out.push(format!("document {id} has no matching handle entry")),
+                Some(h) if h.doc_id != *id => out.push(format!(
+                    "handle for document {id} carries doc_id {}",
+                    h.doc_id
+                )),
+                _ => {}
+            }
+        }
+
+        for id in &self.private_document_ids {
+            if !self.documents.contains_key(id) {
+                out.push(format!(
+                    "private_document_ids references missing document {id}"
+                ));
+            }
+        }
+
+        if let Some(id) = self.most_recent_ghost_doc {
+            if !self.documents.contains_key(&id) {
+                out.push(format!(
+                    "most_recent_ghost_doc {id} is not an open document"
+                ));
+            }
+        }
+
+        let max_id = self.documents.keys().copied().max().unwrap_or(0);
+        if !self.documents.is_empty() && self.next_document_id <= max_id {
+            out.push(format!(
+                "next_document_id {} <= max existing document id {max_id}",
+                self.next_document_id
+            ));
+        }
+
+        out
+    }
+
     /// Find the ID of an open messages buffer, if any.
     pub fn find_messages_doc_id(&self) -> Option<DocumentId> {
         self.documents

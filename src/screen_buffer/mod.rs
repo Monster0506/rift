@@ -238,6 +238,38 @@ impl DoubleBuffer {
         self.force_full_redraw = true;
     }
 
+    pub(crate) fn check_invariants(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let expected = self.rows * self.cols;
+        if self.current.len() != expected {
+            out.push(format!(
+                "current.len()={} != rows*cols={expected}",
+                self.current.len()
+            ));
+        }
+        if self.previous.len() != expected {
+            out.push(format!(
+                "previous.len()={} != rows*cols={expected}",
+                self.previous.len()
+            ));
+        }
+        if let Some(rect) = self.frame_dirty_rect {
+            if self.rows > 0 && rect.end_row >= self.rows {
+                out.push(format!(
+                    "frame_dirty_rect.end_row={} >= rows={}",
+                    rect.end_row, self.rows
+                ));
+            }
+            if self.cols > 0 && rect.end_col >= self.cols {
+                out.push(format!(
+                    "frame_dirty_rect.end_col={} >= cols={}",
+                    rect.end_col, self.cols
+                ));
+            }
+        }
+        out
+    }
+
     /// Check if a full redraw is pending
     pub fn needs_full_redraw(&self) -> bool {
         self.force_full_redraw

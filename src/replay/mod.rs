@@ -3,10 +3,12 @@
 
 mod assert;
 pub mod backend;
+pub mod fuzz;
 pub mod ops;
 pub mod runner;
 
 pub use backend::ReplayBackend;
+pub use fuzz::{run as run_fuzz, FuzzConfig, FuzzFailure};
 pub use ops::{parse, Assertion, ParseError, ScriptOp};
 #[cfg(feature = "perf_instrumentation")]
 pub use runner::PerfSpanSummary;

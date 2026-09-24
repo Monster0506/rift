@@ -24,6 +24,7 @@ pub mod floating_window;
 pub mod fs_backend;
 pub mod git;
 pub mod history;
+pub mod invariants;
 #[cfg(feature = "ipc")]
 pub mod ipc;
 pub mod job_manager;
