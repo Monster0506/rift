@@ -6,6 +6,7 @@ pub mod backend;
 pub mod fuzz;
 pub mod ops;
 pub mod runner;
+pub mod shrink;
 
 pub use backend::ReplayBackend;
 pub use fuzz::{run as run_fuzz, FuzzConfig, FuzzFailure};
