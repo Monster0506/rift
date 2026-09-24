@@ -263,6 +263,54 @@ impl DisplayMap {
         self.complete
     }
 
+    pub(crate) fn check_invariants(
+        &self,
+        buf_len: usize,
+        tier: crate::invariants::InvariantTier,
+    ) -> Vec<String> {
+        use crate::invariants::InvariantTier;
+
+        let mut out = Vec::new();
+
+        if let Some(last) = self.rows.last() {
+            if last.char_end > buf_len {
+                out.push(format!(
+                    "display map's last row char_end={} exceeds buffer len={buf_len}",
+                    last.char_end
+                ));
+            }
+        }
+        if let Some(&last_lf) = self.line_first_visual.last() {
+            if last_lf > self.rows.len() {
+                out.push(format!(
+                    "line_first_visual entry {last_lf} exceeds rows.len()={}",
+                    self.rows.len()
+                ));
+            }
+        }
+
+        if tier >= InvariantTier::Deep {
+            for w in self.rows.windows(2) {
+                if w[0].char_end > w[1].char_start {
+                    out.push(format!(
+                        "display map rows overlap: row char_end={} then next row char_start={}",
+                        w[0].char_end, w[1].char_start
+                    ));
+                }
+            }
+            for w in self.line_first_visual.windows(2) {
+                if w[0] > w[1] {
+                    out.push(format!(
+                        "line_first_visual not non-decreasing: {} then {}",
+                        w[0], w[1]
+                    ));
+                }
+            }
+        }
+
+        out
+    }
+
     /// Wrap the next unwrapped batch of lines and append to `rows`/`line_first_visual`.
     /// A no-op once `complete`.
     fn extend_batch(&mut self, buf: &TextBuffer) {

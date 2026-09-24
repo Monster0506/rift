@@ -191,6 +191,36 @@ impl LineIndex {
     pub fn bytes_range(&self, range: std::ops::Range<usize>) -> Vec<u8> {
         self.table.bytes_range(range)
     }
+
+    pub(crate) fn check_invariants(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        self.ensure_built();
+        let cache = self.line_starts.borrow();
+        let starts = cache.as_ref().expect("just built");
+        let line_count = self.table.get_line_count();
+        if starts.len() != line_count {
+            out.push(format!(
+                "line_starts.len()={} != table.get_line_count()={}",
+                starts.len(),
+                line_count
+            ));
+        }
+        if let Some(&first) = starts.first() {
+            if first != 0 {
+                out.push(format!("line_starts[0]={first} != 0"));
+            }
+        }
+        for w in starts.windows(2) {
+            if w[1] <= w[0] {
+                out.push(format!(
+                    "line_starts not strictly increasing: {} then {}",
+                    w[0], w[1]
+                ));
+                break;
+            }
+        }
+        out
+    }
 }
 
 impl Default for LineIndex {

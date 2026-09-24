@@ -744,6 +744,62 @@ impl UndoTree {
         self.saved_seq = seq;
     }
 
+    pub(crate) fn check_invariants(&self, tier: crate::invariants::InvariantTier) -> Vec<String> {
+        use crate::invariants::InvariantTier;
+
+        let mut out = Vec::new();
+
+        if !self.nodes.contains_key(&self.current) {
+            out.push(format!("current={} not in nodes", self.current));
+        }
+        if !self.nodes.contains_key(&self.saved_seq) {
+            out.push(format!("saved_seq={} not in nodes", self.saved_seq));
+        }
+        match self.nodes.get(&self.root_seq) {
+            None => out.push(format!("root_seq={} not in nodes", self.root_seq)),
+            Some(root) if root.parent.is_some() => out.push(format!(
+                "root node {} has a parent ({:?}); roots must be parentless",
+                self.root_seq, root.parent
+            )),
+            _ => {}
+        }
+        let max_seq = self.nodes.keys().copied().max().unwrap_or(self.root_seq);
+        if self.next_seq <= max_seq {
+            out.push(format!(
+                "next_seq {} <= max existing node seq {max_seq}",
+                self.next_seq
+            ));
+        }
+
+        if tier >= InvariantTier::Deep {
+            for (&seq, node) in &self.nodes {
+                if let Some(parent_seq) = node.parent {
+                    match self.nodes.get(&parent_seq) {
+                        None => {
+                            out.push(format!("node {seq}'s parent {parent_seq} does not exist"))
+                        }
+                        Some(parent) if !parent.children.contains(&seq) => out.push(format!(
+                            "node {seq}'s parent {parent_seq} does not list it as a child"
+                        )),
+                        _ => {}
+                    }
+                }
+                for &child_seq in &node.children {
+                    match self.nodes.get(&child_seq) {
+                        None => out.push(format!("node {seq}'s child {child_seq} does not exist")),
+                        Some(child) if child.parent != Some(seq) => out.push(format!(
+                            "node {seq}'s child {child_seq} has parent {:?} instead",
+                            child.parent
+                        )),
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        out
+    }
+
     /// Check if the current node is the saved state
     pub fn is_at_saved(&self) -> bool {
         self.current == self.saved_seq

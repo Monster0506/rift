@@ -508,6 +508,25 @@ impl LayerCompositor {
         }
     }
 
+    pub(crate) fn check_invariants(&self) -> Vec<String> {
+        let mut out = self.buffer.check_invariants();
+        if self.buffer.rows() != self.rows {
+            out.push(format!(
+                "compositor.rows={} != buffer.rows()={}",
+                self.rows,
+                self.buffer.rows()
+            ));
+        }
+        if self.buffer.cols() != self.cols {
+            out.push(format!(
+                "compositor.cols={} != buffer.cols()={}",
+                self.cols,
+                self.buffer.cols()
+            ));
+        }
+        out
+    }
+
     /// Get or create a layer with the given priority
     pub fn get_layer_mut(&mut self, priority: LayerPriority) -> &mut Layer {
         self.layers

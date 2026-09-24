@@ -500,6 +500,49 @@ impl TextBuffer {
         }
     }
 
+    pub(crate) fn check_invariants(&self, tier: crate::invariants::InvariantTier) -> Vec<String> {
+        use crate::invariants::InvariantTier;
+
+        let mut out = Vec::new();
+        let len = self.len();
+        if self.cursor > len {
+            out.push(format!("cursor {} > buffer len {}", self.cursor, len));
+        }
+
+        let byte_len = self.byte_len();
+        let cursor_byte = self.char_to_byte(len);
+        if cursor_byte != byte_len {
+            out.push(format!(
+                "char_to_byte(len())={cursor_byte} != byte_len()={byte_len}"
+            ));
+        }
+
+        if self.cursor <= len {
+            let total_lines = self.get_total_lines();
+            let line = self.line_index.get_line_at(self.cursor);
+            if line >= total_lines {
+                out.push(format!(
+                    "get_line_at(cursor)={line} >= get_total_lines()={total_lines}"
+                ));
+            } else if let Some(start) = self.line_index.get_start(line) {
+                if start > self.cursor {
+                    out.push(format!(
+                        "get_line_at(cursor={})={line} but get_start({line})={start} > cursor",
+                        self.cursor
+                    ));
+                }
+            }
+        }
+
+        if tier >= InvariantTier::Standard {
+            out.extend(self.line_index.check_invariants());
+        }
+        if tier >= InvariantTier::Deep {
+            out.extend(self.line_index.table.check_invariants());
+        }
+        out
+    }
+
     /// Move cursor up one line, preserving desired_col across short lines.
     pub fn move_up(&mut self) -> bool {
         let current_line = self.get_line();

@@ -281,6 +281,59 @@ impl Document {
         self.syntax = Some(syntax);
     }
 
+    pub(crate) fn check_invariants(
+        &self,
+        registry: &BufferKindRegistry,
+        tier: crate::invariants::InvariantTier,
+    ) -> Vec<String> {
+        use crate::invariants::InvariantTier;
+
+        let mut out = Vec::new();
+        let id = self.id;
+
+        if self.kind.descriptor().state_key() != self.state.key_id() {
+            out.push(format!(
+                "doc {id}: kind descriptor state_key {:?} != state.key_id() {:?}",
+                self.kind.descriptor().state_key(),
+                self.state.key_id()
+            ));
+        }
+
+        if (self.transaction_depth == 0) != self.current_transaction.is_none() {
+            out.push(format!(
+                "doc {id}: transaction_depth={} but current_transaction.is_some()={}",
+                self.transaction_depth,
+                self.current_transaction.is_some()
+            ));
+        }
+
+        for detail in self.history.check_invariants(tier) {
+            out.push(format!("doc {id}: {detail}"));
+        }
+        if self.history.current == self.history.root_seq && !self.annotation_undo_stack.is_empty() {
+            out.push(format!(
+                "doc {id}: history.current == root_seq but annotation_undo_stack has {} entries",
+                self.annotation_undo_stack.len()
+            ));
+        }
+
+        out.extend(self.buffer.check_invariants(tier));
+        out.extend(self.selection_set.check_invariants(&self.buffer, tier));
+
+        if tier >= InvariantTier::Standard && !self.kind.id.is_builtin() {
+            if let Some(current) = registry.get_by_id(self.kind.id) {
+                if !std::sync::Arc::ptr_eq(&current, &self.kind.descriptor) {
+                    out.push(format!(
+                        "doc {id}: kind descriptor is stale (registry has since replaced the descriptor for id {:?})",
+                        self.kind.id
+                    ));
+                }
+            }
+        }
+
+        out
+    }
+
     /// Convert an LSP `Position.character` on `line` (in `encoding`'s units)
     /// to a code-point offset. Use before indexing any LSP position.
     #[cfg(feature = "lsp")]

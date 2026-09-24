@@ -117,6 +117,12 @@ impl PieceTable {
         self.len() == 0
     }
 
+    pub(crate) fn check_invariants(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        check_tree_metadata(self.root.as_deref(), &mut out);
+        out
+    }
+
     pub fn chunks<'a>(&'a self) -> PieceTableChunkIterator<'a> {
         PieceTableChunkIterator::new(self.root.as_deref(), &self.original, &self.add)
     }
@@ -1343,6 +1349,40 @@ fn get_char_idx_recursive(
             )
     }
 }
+fn check_tree_metadata(node: Option<&Node>, out: &mut Vec<String>) {
+    if let Some(n) = node {
+        let left_len = n.left.as_ref().map_or(0, |l| l.len);
+        let right_len = n.right.as_ref().map_or(0, |r| r.len);
+        if n.len != left_len + n.piece.len + right_len {
+            out.push(format!(
+                "rope node len corrupt: node.len={} left.len={} piece.len={} right.len={}",
+                n.len, left_len, n.piece.len, right_len
+            ));
+        }
+
+        let left_nl = n.left.as_ref().map_or(0, |l| l.newlines);
+        let right_nl = n.right.as_ref().map_or(0, |r| r.newlines);
+        if n.newlines != left_nl + n.piece_newlines + right_nl {
+            out.push(format!(
+                "rope node newlines corrupt: node.newlines={} left.newlines={} piece_newlines={} right.newlines={}",
+                n.newlines, left_nl, n.piece_newlines, right_nl
+            ));
+        }
+
+        let left_byte_len = n.left.as_ref().map_or(0, |l| l.byte_len);
+        let right_byte_len = n.right.as_ref().map_or(0, |r| r.byte_len);
+        if n.byte_len != left_byte_len + n.piece_byte_len + right_byte_len {
+            out.push(format!(
+                "rope node byte_len corrupt: node.byte_len={} left.byte_len={} piece_byte_len={} right.byte_len={}",
+                n.byte_len, left_byte_len, n.piece_byte_len, right_byte_len
+            ));
+        }
+
+        check_tree_metadata(n.left.as_deref(), out);
+        check_tree_metadata(n.right.as_deref(), out);
+    }
+}
+
 #[cfg(debug_assertions)]
 fn assert_tree_metadata(node: Option<&Node>) {
     if let Some(n) = node {

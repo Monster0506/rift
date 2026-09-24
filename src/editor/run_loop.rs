@@ -27,9 +27,17 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    /// One iteration of the main loop: drains job/LSP/plugin work, then
-    /// processes at most one keypress through the same path `run()` uses.
     pub fn tick(&mut self) -> Result<(), RiftError> {
+        let result = self.tick_inner();
+        #[cfg(debug_assertions)]
+        {
+            let violations = self.assert_invariants(crate::invariants::InvariantTier::Fast);
+            crate::invariants::log_violations(&violations);
+        }
+        result
+    }
+
+    fn tick_inner(&mut self) -> Result<(), RiftError> {
         // Pending-key timer only applies while a sequence is in progress.
         if self.pending_keys.is_empty() {
             self.pending_keys_started_at = None;
@@ -100,8 +108,6 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             };
 
-            // A pasted block is handled atomically so its chars can never be
-            // reinterpreted as vim commands (e.g. a stray 'i' mid-paste).
             if let Key::Paste(text) = key_press {
                 return self.handle_paste(text);
             }
@@ -221,8 +227,6 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
 
-            // Digits accumulate into a count, but only at the start of a
-            // sequence and outside Insert mode (where digits are typed text).
             if self.pending_keys.is_empty()
                 && self.current_mode != Mode::Insert
                 && self.current_mode != Mode::Replace
@@ -233,8 +237,6 @@ impl<T: TerminalBackend> Editor<T> {
                 if let Key::Char(ch) = key_press {
                     if ch.is_ascii_digit() && (ch != '0' || self.pending_count > 0) {
                         let digit = ch.to_digit(10).unwrap() as usize;
-                        // First digit of the motion's own count (the 3 in
-                        // `2d3w`): stash the operator's count, don't concat.
                         if self.current_mode == Mode::OperatorPending
                             && self.pending_operator_count == 0
                         {
@@ -260,10 +262,8 @@ impl<T: TerminalBackend> Editor<T> {
 
             // Input Processing Loop (allows backtracking)
             loop {
-                // 1. Resolve Context
                 let context = self.resolve_key_context();
 
-                // 2. Lookup Action in KeyMap
                 let match_result = self.lookup_key_sequence(context, &self.pending_keys);
 
                 match match_result {
@@ -271,11 +271,8 @@ impl<T: TerminalBackend> Editor<T> {
                         let action = action.clone();
                         self.pending_keys.clear();
 
-                        // 3. Dispatch Action
                         let _handled = self.handle_action(&action);
 
-                        // Don't clear count if we just entered OperatorPending mode or
-                        // set pending_replace_char (count is consumed on the next keypress).
                         if self.current_mode != Mode::OperatorPending
                             && !matches!(
                                 self.pending_grammar,
@@ -293,8 +290,6 @@ impl<T: TerminalBackend> Editor<T> {
                         break;
                     }
                     MatchResult::Ambiguous(action) => {
-                        // Valid prefix and executable action (e.g. 'd'). Operators run
-                        // immediately so following digits resolve as the motion's count.
                         if let Action::Editor(EditorAction::Operator(_)) = action {
                             let action = action.clone();
                             self.pending_keys.clear();
@@ -308,7 +303,6 @@ impl<T: TerminalBackend> Editor<T> {
                             )?;
                             break;
                         }
-                        // For non-operators, wait for more keys (subject to timeout).
                         self.pending_keys_started_at
                             .get_or_insert_with(crate::time::Instant::now);
                         self.update_state_and_render(
@@ -319,7 +313,6 @@ impl<T: TerminalBackend> Editor<T> {
                         break;
                     }
                     MatchResult::Prefix => {
-                        // Wait for more keys (subject to timeout).
                         self.pending_keys_started_at
                             .get_or_insert_with(crate::time::Instant::now);
                         self.update_state_and_render(
@@ -330,10 +323,8 @@ impl<T: TerminalBackend> Editor<T> {
                         break;
                     }
                     MatchResult::None => {
-                        // Invalid sequence. Backtrack?
                         if self.pending_keys.len() > 1 {
                             let last = self.pending_keys.pop().unwrap();
-                            // Check if prefix was ambiguous (valid action)
                             match self.lookup_key_sequence(context, &self.pending_keys) {
                                 MatchResult::Ambiguous(action) | MatchResult::Exact(action) => {
                                     let action = action.clone();
@@ -396,8 +387,6 @@ impl<T: TerminalBackend> Editor<T> {
                             || self.current_mode == Mode::Search
                             || self.current_mode == Mode::Rename
                         {
-                            // Command Line typing handling (fallback)
-                            // Since KeyMap might not have all chars registered
                             let k = self.pending_keys[0].clone();
                             self.pending_keys.clear();
                             match k {
@@ -467,8 +456,6 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    /// Resolve the active `KeyContext` for `self.pending_keys` lookups, based
-    /// on the current mode and active document kind.
     pub(super) fn resolve_key_context(&self) -> crate::keymap::KeyContext {
         use crate::keymap::KeyContext;
 
@@ -490,8 +477,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Resolve the parent context for a given `KeyContext` using the active document's
-    /// descriptor policy for buffer kinds, and falling back to built-in parent rules.
     pub(super) fn resolve_parent_key_context(
         &self,
         context: crate::keymap::KeyContext,
@@ -542,8 +527,6 @@ impl<T: TerminalBackend> Editor<T> {
             .lookup_with_parent(context, keys, |ctx| self.resolve_parent_key_context(ctx))
     }
 
-    /// Handle an atomic bracketed-paste block, so no character in it can be
-    /// reinterpreted as a leader key, count digit, operator, or mode switch.
     pub(super) fn handle_paste(&mut self, text: String) -> Result<(), RiftError> {
         if text.is_empty() {
             return Ok(());
@@ -575,8 +558,6 @@ impl<T: TerminalBackend> Editor<T> {
                     self.handle_mode_management(Command::AppendToCommandLine(ch));
                 }
             }
-            // Normal/Visual/OperatorPending: insert like vim's `p`, without
-            // changing mode or touching pending-grammar/leader-key state.
             _ => {
                 let chars: Vec<crate::character::Character> = text
                     .chars()
@@ -589,8 +570,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_and_render()
     }
 
-    /// Past timeout, flush a pending non-operator sequence: run the shorter
-    /// exact action if one exists, otherwise just clear the pending state.
     pub(super) fn flush_pending_keys_on_timeout(&mut self) -> Result<(), RiftError> {
         use crate::keymap::MatchResult;
 

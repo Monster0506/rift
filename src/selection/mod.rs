@@ -56,6 +56,24 @@ impl Region {
         let (b_start, b_end) = other.span();
         a_start < b_end && b_start < a_end
     }
+
+    pub(crate) fn check_invariants(&self, buf: &TextBuffer) -> Vec<String> {
+        let mut out = Vec::new();
+        if self.anchor == usize::MAX || self.cursor == usize::MAX {
+            out.push(format!(
+                "region anchor/cursor at usize::MAX (span() would overflow): anchor={} cursor={}",
+                self.anchor, self.cursor
+            ));
+        }
+        let len = buf.len();
+        if self.anchor > len {
+            out.push(format!("region anchor {} > buffer len {len}", self.anchor));
+        }
+        if self.cursor > len {
+            out.push(format!("region cursor {} > buffer len {len}", self.cursor));
+        }
+        out
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -77,10 +95,7 @@ impl SelectionSet {
     /// Merge overlapping same-kind regions; touching regions stay separate.
     pub fn bank(&mut self, region: Region) {
         let mut cur = region;
-        loop {
-            let Some(idx) = self.regions.iter().position(|r| r.overlaps(&cur)) else {
-                break;
-            };
+        while let Some(idx) = self.regions.iter().position(|r| r.overlaps(&cur)) {
             let other = self.regions.remove(idx);
             let (a_start, a_end) = cur.span();
             let (b_start, b_end) = other.span();
@@ -185,6 +200,45 @@ impl SelectionSet {
         let region = Region::new(new_start, new_end, last.kind);
         self.bank(region);
         Some((region, needle))
+    }
+
+    pub(crate) fn check_invariants(
+        &self,
+        buf: &TextBuffer,
+        tier: crate::invariants::InvariantTier,
+    ) -> Vec<String> {
+        use crate::invariants::InvariantTier;
+
+        let mut out = Vec::new();
+        for region in self.regions.iter().chain(self.active.iter()) {
+            out.extend(region.check_invariants(buf));
+        }
+
+        if tier >= InvariantTier::Standard {
+            for i in 0..self.regions.len() {
+                for j in (i + 1)..self.regions.len() {
+                    if self.regions[i].overlaps(&self.regions[j]) {
+                        out.push(format!(
+                            "regions {i} and {j} of the same kind overlap: {:?} and {:?}",
+                            self.regions[i], self.regions[j]
+                        ));
+                    }
+                }
+            }
+
+            let line_count = buf.get_total_lines();
+            for (i, region) in self.regions.iter().enumerate() {
+                let anchor_line = buf.line_index.get_line_at(region.anchor.min(buf.len()));
+                let cursor_line = buf.line_index.get_line_at(region.cursor.min(buf.len()));
+                if anchor_line >= line_count || cursor_line >= line_count {
+                    out.push(format!(
+                        "region {i} references line outside buffer: anchor_line={anchor_line} cursor_line={cursor_line} line_count={line_count}"
+                    ));
+                }
+            }
+        }
+
+        out
     }
 }
 
