@@ -2,7 +2,6 @@
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Where to position the cursor after opening.
 #[derive(Debug, PartialEq)]
 pub enum Goto {
     LastLine,
@@ -20,12 +19,9 @@ pub struct Args {
     pub detach: bool,
     pub connect: Option<String>,
     pub list_sessions: bool,
-    /// Internal: run as an LSP keepalive broker for the given key.
     pub lsp_broker: Option<String>,
 }
 
-/// Parse `std::env::args()`. Prints version and exits 0 for `-v`/`--version`.
-/// Prints usage and exits 1 on any error.
 pub fn parse() -> Args {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     let strs: Vec<&str> = raw.iter().map(String::as_str).collect();
@@ -45,8 +41,6 @@ pub fn parse() -> Args {
     }
 }
 
-/// Internal parser. `Ok(None)` means the version flag was seen (caller
-/// prints version and exits); `Err` means bad input (caller prints and exits).
 pub fn parse_args(args: &[&str]) -> Result<Option<Args>, String> {
     let mut result = Args::default();
     let mut i = 0;
