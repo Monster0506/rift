@@ -316,6 +316,17 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn set_mode(&mut self, mode: Mode) {
         let old_mode = self.current_mode;
+
+        // Leaving Visual/VisualLine/VisualBlock for a non-visual mode always
+        // banks the pending selection and clears `visual_anchor`, no matter
+        // which of the many keys/grammars triggered the transition. Callers
+        // used to have to remember this bookkeeping themselves, and some
+        // (e.g. the surround-grammar's fallback-to-Normal arms) didn't,
+        // leaving `visual_anchor` set once `mode` was no longer visual.
+        if old_mode.is_visual() && !mode.is_visual() {
+            self.bank_visual_selection();
+        }
+
         self.current_mode = mode;
 
         if old_mode != mode {
