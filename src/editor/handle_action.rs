@@ -61,8 +61,6 @@ pub(super) fn native_action_handlers<T: TerminalBackend>(
 }
 
 impl<T: TerminalBackend> Editor<T> {
-    /// Dispatch `action`, then snap the cursor off any pending ghost it may
-    /// have landed inside of (only the ghost's own start is landable).
     pub(super) fn handle_action(&mut self, action: &crate::action::Action) -> bool {
         let before = self
             .document_manager
@@ -85,12 +83,10 @@ impl<T: TerminalBackend> Editor<T> {
         let editor_action = match action {
             Action::Editor(act) => act,
             Action::Buffer(id) => {
-                // messages:open works globally regardless of active buffer kind
                 if id == "messages:open" {
                     self.open_messages(false);
                     return true;
                 }
-                // Capture dispatch metadata upfront without holding a document borrow across execution.
                 let Some((doc_id, kind_id, kind_name, action_dispatch, handle, is_tombstone)) =
                     self.document_manager.active_document().map(|document| {
                         (
@@ -137,13 +133,10 @@ impl<T: TerminalBackend> Editor<T> {
             Action::Noop => return false,
         };
 
-        // Clear post-paste cycling state on any action except CyclePaste itself.
         if !matches!(editor_action, EditorAction::CyclePaste { .. }) {
             self.post_paste_state = None;
         }
 
-        // Accumulate selection-building actions for dot-repeat (S5.9). A
-        // plain Normal-mode Move is navigation, not selection-building.
         let is_region_building = matches!(
             editor_action,
             EditorAction::EnterVisualChar
@@ -183,8 +176,6 @@ impl<T: TerminalBackend> Editor<T> {
                     return true;
                 }
 
-                // Interface-mode buffers snap vertical motion between actionable
-                // lines, else fall through to ordinary motion.
                 if self.current_mode == Mode::Normal
                     && matches!(motion, Motion::Up | Motion::Down)
                     && self
@@ -251,7 +242,6 @@ impl<T: TerminalBackend> Editor<T> {
                     1
                 };
                 let command = crate::command::Command::Move(resolved, count);
-                // Execute immediately
                 self.handle_mode_management(command);
                 let consumed = self.execute_buffer_command(command);
                 self.update_explorer_preview();
@@ -328,14 +318,13 @@ impl<T: TerminalBackend> Editor<T> {
                 if committed_prior {
                     self.do_incremental_syntax_parse();
                 }
-                if self.current_mode.is_visual() {
-                    self.bank_visual_selection();
-                } else if let Some(doc) = self.document_manager.active_document_mut() {
-                    doc.selection_set.clear();
-                    self.region_build_recording.clear();
+                if !self.current_mode.is_visual() {
+                    if let Some(doc) = self.document_manager.active_document_mut() {
+                        doc.selection_set.clear();
+                        self.region_build_recording.clear();
+                    }
                 }
                 if self.current_mode == Mode::Insert || self.current_mode == Mode::Replace {
-                    // Finalize insert recording for dot-repeat
                     if !self.dot_repeat.is_replaying() {
                         self.dot_repeat.finish_insert_recording();
                     }
@@ -346,7 +335,6 @@ impl<T: TerminalBackend> Editor<T> {
                         doc.commit_transaction();
                     }
                 }
-                // Reset history navigation when exiting command/search mode
                 self.state.command_history.reset_navigation();
                 self.state.search_history.reset_navigation();
                 #[cfg(feature = "lsp")]
@@ -367,9 +355,8 @@ impl<T: TerminalBackend> Editor<T> {
                 self.do_quit(false);
                 true
             }
-            EditorAction::Submit => {
-                // Without `lsp`, the Rename arm below reduces to a bare
-                // `true`/`false` pair; that's a real branch, not needless.
+            EditorAction::Submit =>
+            {
                 #[cfg_attr(not(feature = "lsp"), allow(clippy::needless_bool))]
                 if self.current_mode == Mode::Command {
                     self.handle_mode_management(crate::command::Command::ExecuteCommandLine);
@@ -390,7 +377,6 @@ impl<T: TerminalBackend> Editor<T> {
                     || self.current_mode == Mode::Search
                     || self.current_mode == Mode::Rename
                 {
-                    // Assuming left motion is backspace
                     if *motion == crate::action::Motion::Left {
                         self.handle_mode_management(crate::command::Command::DeleteFromCommandLine);
                         return true;
@@ -405,7 +391,6 @@ impl<T: TerminalBackend> Editor<T> {
                 } else {
                     1
                 };
-                // Capture deleted text to ring in Normal mode (x / X).
                 if self.current_mode == Mode::Normal {
                     let viewport_height = self.render_system.viewport.visible_rows();
                     let last_search_query = self.state.last_search_query.clone();
@@ -678,7 +663,6 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
                 if self.current_mode.is_visual() {
-                    self.bank_visual_selection();
                     self.set_mode(Mode::Normal);
                 }
                 if self.try_run_set_aware_operator(*op) {
@@ -692,7 +676,6 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                     }
                 }
-                // A fresh operator key always supersedes any in-progress `ys`.
                 self.pending_surround_add = None;
                 self.pending_operator = Some(*op);
                 self.set_mode(Mode::OperatorPending);
@@ -797,8 +780,6 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             EditorAction::Put { before } => {
-                // Capture the same-location-paste check before any commit
-                // touches the buffer or moves the cursor.
                 let active_doc_id = self.document_manager.active_document_id();
                 let cursor_before_resolve = self
                     .document_manager
@@ -812,8 +793,6 @@ impl<T: TerminalBackend> Editor<T> {
                         let (text, live_start) = doc.most_recent_ghost()?;
                         Some((doc_id, text.to_vec(), live_start))
                     });
-                // Drain every document's ghosts before any insert/transaction
-                // call, or the mutation hook races Put's own move-finalize.
                 self.commit_all_pending_ghosts();
 
                 let (text, same_location_origin) = match &ghost_move {
@@ -863,8 +842,6 @@ impl<T: TerminalBackend> Editor<T> {
                     if let Some(text) = self.clipboard_ring.get(next).map(|s| s.to_owned()) {
                         if let Some(doc) = self.document_manager.active_document_mut() {
                             doc.undo();
-                            // Restore cursor to where it was before the original paste so
-                            // insert_text_at_cursor starts from the same position each cycle.
                             let _ = doc.buffer.set_cursor(state.original_cursor);
                         }
                         let result = self.insert_text_at_cursor(&text, state.before);
@@ -1085,8 +1062,6 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::SurroundGiveLine => {
                 use crate::text_objects::{Direction, Modifier, ObjectKind, TextObjectSpec};
-                // Only meaningful mid-`sg`; otherwise cancels back to Normal
-                // like any other unrecognized key mid-operator.
                 let Some(delim_count) = self.pending_surround_add.take() else {
                     self.pending_operator = None;
                     self.set_mode(Mode::Normal);
@@ -1134,8 +1109,6 @@ impl<T: TerminalBackend> Editor<T> {
                 if layout.kind != crate::editor::PanelKind::Regions {
                     return false;
                 }
-                // `j`/`k` are bound directly to this arm (not through the
-                // generic Move action), so move the list's own cursor first.
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     match editor_action {
                         EditorAction::RegionsListDown => {
@@ -1220,8 +1193,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// `v`/`V`/`Ctrl-V`: start a fresh active region at the cursor, or if it sits inside a
-    /// banked region of the same kind, pop that back out with its original direction.
     pub(super) fn enter_visual_or_resume(&mut self, mode: Mode) -> bool {
         let Some(kind) = mode.visual_range_kind() else {
             return false;
@@ -1247,8 +1218,6 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// Commit every open document's pending ghost cut as an ordinary delete.
-    /// Put is the only globally-resolving event; the rest touch one document.
     fn commit_all_pending_ghosts(&mut self) {
         let doc_ids: Vec<crate::document::DocumentId> = self
             .document_manager
@@ -1270,8 +1239,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.document_manager.set_most_recent_ghost_doc(None);
     }
 
-    /// Insert `text` at `pos` verbatim and leave the cursor on `pos`: a true
-    /// no-op restore (`ddp` with no intervening motion must not move it).
     fn insert_ghost_text_verbatim(
         &mut self,
         text: &[crate::character::Character],
@@ -1289,8 +1256,6 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// Insert `text` at the cursor. Linewise text (ends with `\n`) inserts
-    /// below (`p`) or above (`P`) the line; Charwise `p` advances one first.
     pub(super) fn insert_text_at_cursor(
         &mut self,
         text: &[crate::character::Character],
@@ -1305,15 +1270,12 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         }
 
-        // Track whether we need to prepend a newline (last-line edge case).
         let mut needs_leading_newline = false;
 
         if is_linewise {
             if before {
-                // P: insert above -> start of current line
                 doc.buffer.move_to_line_start();
             } else {
-                // p: insert below -> start of next line
                 let line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
                 let total = doc.buffer.get_total_lines();
                 if line + 1 < total {
@@ -1324,7 +1286,6 @@ impl<T: TerminalBackend> Editor<T> {
                         .unwrap_or(doc.buffer.len());
                     let _ = doc.buffer.set_cursor(next);
                 } else {
-                    // Last line has no trailing newline: go to end and prepend one.
                     doc.buffer.move_to_end();
                     needs_leading_newline = true;
                 }
@@ -1333,11 +1294,8 @@ impl<T: TerminalBackend> Editor<T> {
             doc.buffer.move_right();
         }
 
-        // For linewise paste, remember where the pasted line starts so we can
-        // land the cursor there after the transaction (not at the end of the insert).
         let linewise_start = if is_linewise {
             if needs_leading_newline {
-                // The pasted content starts one char after the prepended \n.
                 Some(doc.buffer.cursor() + 1)
             } else {
                 Some(doc.buffer.cursor())
@@ -1348,7 +1306,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         doc.begin_transaction("Put");
         if needs_leading_newline {
-            // Insert "\n" then the text content without its own trailing newline.
             if doc
                 .insert_characters(&[crate::character::Character::Newline])
                 .is_ok()
@@ -1363,7 +1320,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
         doc.commit_transaction();
 
-        // Place cursor at the start of the pasted line, not at the end of the insert.
         if let Some(start) = linewise_start {
             let _ = doc.buffer.set_cursor(start);
         }
@@ -1372,7 +1328,6 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// Insert pasted text literally at the cursor, exactly as if typed, one undo transaction.
     pub(super) fn insert_pasted_text_at_cursor(&mut self, text: &str) -> bool {
         if text.is_empty() {
             return false;
