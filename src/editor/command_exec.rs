@@ -14,6 +14,12 @@ impl<T: TerminalBackend> Editor<T> {
             return false;
         }
         let current_mode = self.current_mode;
+        let is_mutating = command.is_mutating();
+
+        if is_mutating && current_mode.is_visual() {
+            self.set_mode(Mode::Normal);
+        }
+
         if current_mode == Mode::Normal
             || current_mode == Mode::Insert
             || current_mode == Mode::Replace
@@ -49,12 +55,15 @@ impl<T: TerminalBackend> Editor<T> {
             let doc = self.document_manager.active_document_mut().unwrap();
             let expand_tabs = doc.options.expand_tabs;
             let tab_width = doc.options.tab_width;
-            let is_mutating = command.is_mutating();
             let rests_on_last_char = current_mode == Mode::Normal
                 && matches!(
                     command,
                     crate::command::Command::Move(crate::action::Motion::EndOfLine, _)
                 );
+
+            if is_mutating {
+                doc.selection_set.clear();
+            }
 
             let _ = execute_command(
                 command,
@@ -66,8 +75,6 @@ impl<T: TerminalBackend> Editor<T> {
                 display_map.as_mut().map(std::sync::Arc::make_mut),
             );
 
-            // Normal-mode `$` rests on the last character, not on the line
-            // break (operators and `A` still use the line-break position).
             if rests_on_last_char {
                 let cursor = doc.buffer.cursor();
                 let on_newline =
@@ -78,18 +85,13 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
 
-            // Record insert-mode mutations for dot-repeat
             if is_mutating && self.current_mode == Mode::Insert && !self.dot_repeat.is_replaying() {
                 self.dot_repeat.record_insert_command(command);
             }
 
-            // Synchronous incremental parse for mutating commands
-            // Tree-sitter incremental parsing is fast (~1ms for small edits)
             if is_mutating {
                 self.do_incremental_syntax_parse();
 
-                // Refresh the display-map cache with the post-mutation revision so
-                // subsequent non-mutating commands in the same frame get cache hits.
                 let cursor_after = self
                     .document_manager
                     .active_document()
@@ -103,7 +105,6 @@ impl<T: TerminalBackend> Editor<T> {
                 );
             }
 
-            // Collect event info from doc before taking mutable borrows.
             let plugin_events = self.document_manager.active_document().map(|doc| {
                 let buf = doc.id;
                 let cursor_event = cursor_before.and_then(|(prev_buf, prev_cursor)| {
@@ -123,14 +124,11 @@ impl<T: TerminalBackend> Editor<T> {
             if let Some((buf, mutating, cursor_event)) = plugin_events {
                 if mutating {
                     self.adjust_plugin_highlights_for_edits();
-                    // Defer TextChangedCoarse to the next render cycle so multiple
-                    // mutations within a single frame produce only one event.
                     self.pending_text_changed = Some(buf);
                     #[cfg(feature = "lsp")]
                     self.lsp_notify_change(buf);
                 }
 
-                // Defer CursorMoved so several moves within one frame fire once.
                 if let Some(event) = cursor_event {
                     self.pending_cursor_moved = Some(event);
                 }
@@ -141,8 +139,6 @@ impl<T: TerminalBackend> Editor<T> {
         false
     }
 
-    /// Dispatch a pending `TextChangedCoarse` event if one was queued since the last render.
-    /// Called once per render cycle so multiple mutations within a frame fire a single event.
     pub(super) fn flush_pending_text_changed(&mut self) {
         if let Some(buf) = self.pending_text_changed.take() {
             self.update_lua_state();
@@ -156,8 +152,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Dispatch the latest pending `CursorMoved` event, so several moves within
-    /// a frame (e.g. a multi-line motion) fire a single event.
     pub(super) fn flush_pending_cursor_moved(&mut self) {
         if let Some((buf, row, col)) = self.pending_cursor_moved.take() {
             self.plugin_host
@@ -166,13 +160,9 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Time-budgeted incremental syntax parse for the active document; past
-    /// the budget, falls back to a debounced background `SyntaxParseJob`.
     pub(super) fn do_incremental_syntax_parse(&mut self) {
         use crate::syntax::ParseOutcome;
 
-        // 1.5ms was too tight even for a few-hundred-line file (incremental
-        // reparse alone can take 1-2ms), forcing every keystroke into a flicker-visible fallback.
         const SYNC_PARSE_BUDGET: std::time::Duration = std::time::Duration::from_micros(5000);
         use super::SYNC_PARSE_MAX_BYTES;
 

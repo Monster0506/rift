@@ -1,16 +1,11 @@
-//! Region-set navigation (`n`/`N` when banked regions exist).
-
 use super::Editor;
 use crate::character::Character;
 use crate::term::TerminalBackend;
 
-/// Char offset of the start of `row`.
 fn line_start_offset(buf: &crate::buffer::TextBuffer, row: usize) -> usize {
     buf.line_index.get_start(row).unwrap_or(0)
 }
 
-/// Char offset of the end of `row` (trailing newline or buffer's end).
-/// Clamps to the buffer end so a last line without a trailing newline can't overshoot.
 fn line_end_offset(buf: &crate::buffer::TextBuffer, row: usize) -> usize {
     if row + 1 < buf.get_total_lines() {
         buf.line_index
@@ -37,8 +32,6 @@ const EXPAND_CANDIDATES: &[(crate::text_objects::ObjectKind, u8)] = &[
 ];
 
 impl<T: TerminalBackend> Editor<T> {
-    /// `<Space>`: grow the active Visual region to the smallest enclosing candidate strictly
-    /// larger than the current span, pushing the prior extent onto `expand_history` first.
     pub(super) fn expand_active_region(&mut self) -> bool {
         let Some(anchor) = self.visual_anchor else {
             return false;
@@ -63,7 +56,6 @@ impl<T: TerminalBackend> Editor<T> {
             };
             let end_offset = if range.inclusive { 1 } else { 0 };
             let s = range.anchor.min(range.new_cursor);
-            // Clamp: a last line with no trailing newline can overshoot by one.
             let e = (range.anchor.max(range.new_cursor) + end_offset).min(doc.buffer.len());
             let strictly_larger =
                 s <= current.0 && e >= current.1 && (s < current.0 || e > current.1);
@@ -86,7 +78,6 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// `<Shift-Space>`: pop the last expand step and restore it.
     pub(super) fn shrink_active_region(&mut self) -> bool {
         if self.visual_anchor.is_none() {
             return false;
@@ -101,8 +92,6 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// `n`/`N` when the `SelectionSet` is non-empty: cycle the cursor between
-    /// banked regions instead of repeat-find/search.
     pub(super) fn cycle_to_region(&mut self, forward: bool) -> bool {
         let Some(doc) = self.document_manager.active_document_mut() else {
             return false;
@@ -126,8 +115,6 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// Run `f` once per banked region, highest-offset-first, in one transaction so the batch
-    /// undoes as a single step. Returns `false` without acting if the set is empty.
     pub(super) fn apply_to_each_region<F>(&mut self, mut f: F) -> bool
     where
         F: FnMut(&mut Self, crate::selection::Region) -> bool,
@@ -153,14 +140,10 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(doc) = self.document_manager.active_document_mut() {
             doc.commit_transaction();
         }
-        // Each region edits the doc directly, bypassing execute_buffer_command's
-        // sync reparse trigger -- without this, tree-sitter highlights go stale.
         self.do_incremental_syntax_parse();
         any
     }
 
-    /// Enter Insert mode at the highest-offset anchor (`anchor_for` may mutate
-    /// the doc, e.g. deleting the region for `c`); records via dot-repeat so exit replays at remaining anchors.
     pub(super) fn enter_multi_insert<F>(
         &mut self,
         entry: crate::command::Command,
@@ -192,8 +175,6 @@ impl<T: TerminalBackend> Editor<T> {
             }
             anchors
         };
-        // anchor_for mutates the doc directly (e.g. Change's deletion, O/o's
-        // newline), bypassing execute_buffer_command's sync reparse trigger.
         self.do_incremental_syntax_parse();
         let mut anchors = anchors;
         let first = anchors.remove(0);
@@ -227,6 +208,15 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn try_multi_insert_for_command(&mut self, entry: crate::command::Command) -> bool {
         use crate::command::Command;
 
+        let has_candidate = self.current_mode.is_visual()
+            || self
+                .document_manager
+                .active_document()
+                .is_some_and(|d| !d.selection_set.is_empty());
+        if !has_candidate || self.active_doc_is(|d| d.is_read_only()) {
+            return false;
+        }
+
         self.bank_visual_selection();
 
         let is_empty = self
@@ -234,7 +224,7 @@ impl<T: TerminalBackend> Editor<T> {
             .active_document()
             .map(|d| d.selection_set.is_empty())
             .unwrap_or(true);
-        if is_empty || self.active_doc_is(|d| d.is_read_only()) {
+        if is_empty {
             return false;
         }
 
