@@ -1,6 +1,3 @@
-//! Command line tab completion logic (pure functions; filesystem completion is handled by CompletionJob).
-//! `resolve_command_descriptor` strips the leading `:` and matches by exact name/alias, then name prefix, then alias prefix.
-
 use crate::command_line::commands::definitions::{CompletionHint, COMMANDS};
 use crate::command_line::commands::{CommandDescriptor, MatchResult};
 use crate::command_line::settings::{SettingType, SettingsRegistry};
@@ -74,7 +71,6 @@ impl CompletionResult {
     }
 }
 
-/// Result of parsing the command line to determine completion context.
 #[derive(Debug, Clone)]
 pub struct ParsedContext {
     pub context: CompletionContext,
@@ -133,7 +129,6 @@ pub fn parse_context(
                 }
             };
 
-            // Commands with subcommands: check if current token matches the subcommand prefix
             if !desc.subcommands.is_empty() {
                 let pfx = desc.subcommand_prefix;
                 if pfx.is_empty() {
@@ -240,8 +235,6 @@ pub fn parse_context(
     }
 }
 
-/// Shared name+alias completion (same prefix/alias rule as command and setting parsing), used
-/// by both complete_from_descriptors and complete_setting_name so parsing and completion stay identical.
 fn candidates_from_name_aliases(
     name: &str,
     aliases: &[&str],
@@ -426,22 +419,22 @@ pub fn complete_setting_value<T: 'static>(
             }
             candidates
         }
-        SettingType::Integer { .. } | SettingType::Float { .. } | SettingType::Color => {
-            match (desc.get, current) {
-                (Some(getter), Some(val)) => vec![CompletionCandidate {
-                    text: getter(val),
-                    description: "current value".into(),
-                    is_directory: false,
-                }],
-                _ => vec![],
-            }
-        }
+        SettingType::Integer { .. }
+        | SettingType::Float { .. }
+        | SettingType::Color
+        | SettingType::Path => match (desc.get, current) {
+            (Some(getter), Some(val)) => vec![CompletionCandidate {
+                text: getter(val),
+                description: "current value".into(),
+                is_directory: false,
+            }],
+            _ => vec![],
+        },
     };
 
     CompletionResult::from_candidates(candidates)
 }
 
-/// Pure description of what the editor should do with a completion result.
 #[derive(Debug)]
 pub enum CompletionAction {
     Discard,
@@ -575,8 +568,6 @@ fn resolve_command_descriptor(token: &str) -> Option<&'static CommandDescriptor>
     }
 }
 
-/// Resolve a setting token to its canonical name using the same registry and
-/// matching order as command parsing (exact name/alias, then single prefix match).
 fn resolve_setting_name<T: 'static>(
     token: &str,
     settings_registry: &SettingsRegistry<T>,
@@ -611,6 +602,7 @@ fn type_hint_for(ty: &SettingType) -> String {
         SettingType::Float { .. } => "float".into(),
         SettingType::Enum { variants } => variants.join("|"),
         SettingType::Color => "color".into(),
+        SettingType::Path => "path".into(),
         SettingType::IntegerOrKeyword { keywords, .. } => format!("integer|{}", keywords.join("|")),
     }
 }

@@ -1,64 +1,40 @@
-//! Setting descriptor types
-//! Type definitions for declarative setting configuration
-
-/// Typed value after parsing and validation
-/// Setters receive this, never raw strings
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettingValue {
-    /// Boolean value
     Bool(bool),
-    /// Integer value
     Integer(usize),
-    /// Floating point value
     Float(f64),
-    /// Enum value (canonicalized identifier)
     Enum(String),
-    /// Color value
     Color(crate::color::Color),
+    Path(String),
 }
 
-/// Setting type definition for parsing and validation
 #[derive(Debug, Clone)]
 pub enum SettingType {
-    /// Boolean setting (true/false, on/off, yes/no, 1/0)
     Boolean,
-    /// Integer setting with optional min/max bounds
     Integer {
-        /// Minimum value (inclusive)
         min: Option<usize>,
-        /// Maximum value (inclusive)
         max: Option<usize>,
     },
-    /// Float setting with optional min/max bounds
     Float {
-        /// Minimum value (inclusive)
         min: Option<f64>,
-        /// Maximum value (inclusive)
         max: Option<f64>,
     },
-    /// Enum setting with static variant list
     Enum {
-        /// Valid enum variants (static string slices)
         variants: &'static [&'static str],
     },
-    /// Integer setting that also accepts a fixed set of keyword alternatives
     IntegerOrKeyword {
         min: Option<usize>,
         max: Option<usize>,
         keywords: &'static [&'static str],
     },
-    /// Color setting (supports color names, RGB, and 256-color indices)
     Color,
+    Path,
 }
 
-/// Structured error for setting operations
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingError {
-    /// Failed to parse string value
     ParseError(String),
-    /// Value failed validation (out of range, etc.)
     ValidationError(String),
-    /// Unknown option name
     UnknownOption(String),
 }
 
@@ -98,30 +74,17 @@ impl From<SettingError> for crate::error::RiftError {
     }
 }
 
-/// Setter function pointer (static dispatch), receiving parsed/validated `SettingValue`.
 pub type SettingSetter<T> = fn(&mut T, SettingValue) -> Result<(), SettingError>;
 
-/// Getter returning the current value as a display string for tab completion;
-/// `None` for Boolean/Enum settings, which complete their full variant list instead.
 pub type SettingGetter<T> = fn(&T) -> String;
 
-/// Name, aliases, type, setter, and optional getter for one setting. Name
-/// encodes path (e.g. "`command_line_window.width_ratio`") for nested settings.
 #[derive(Debug, Clone)]
 pub struct SettingDescriptor<T> {
-    /// Canonical setting name (e.g., "expandtabs" or "`command_line_window.width_ratio`")
     pub name: &'static str,
-    /// Short aliases (e.g., &["et"])
     pub aliases: &'static [&'static str],
-    /// Description of the setting
     pub description: &'static str,
-    /// Setting type for parsing and validation
     pub ty: SettingType,
-    /// Setter function pointer
     pub set: SettingSetter<T>,
-    /// Optional getter: returns current value as a display string for tab completion.
-    /// Provide for Integer, Float, and Color settings; use `None` for Boolean/Enum.
     pub get: Option<SettingGetter<T>>,
-    /// Whether setting this option requires a full screen redraw
     pub needs_full_redraw: bool,
 }

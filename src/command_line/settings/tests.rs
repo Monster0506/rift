@@ -1,5 +1,3 @@
-//! Tests for settings registry
-
 use crate::command_line::settings::create_settings_registry;
 use crate::command_line::settings::descriptor::{
     SettingDescriptor, SettingError, SettingType, SettingValue,
@@ -8,7 +6,6 @@ use crate::command_line::settings::registry::SettingsRegistry;
 use crate::error::RiftError;
 use crate::state::{State, UserSettings};
 
-// Test setters for various types
 fn set_expand_tabs(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
     match value {
         SettingValue::Bool(b) => {
@@ -55,18 +52,13 @@ fn set_width_ratio(settings: &mut UserSettings, value: SettingValue) -> Result<(
 
 fn set_border_style(_settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
     match value {
-        SettingValue::Enum(style) => {
-            match style.as_str() {
-                "unicode" | "ascii" | "none" => {
-                    // Just verify it's a valid enum value
-                    Ok(())
-                }
-                _ => Err(SettingError::ValidationError(format!(
-                    "Unknown border style: {}",
-                    style
-                ))),
-            }
-        }
+        SettingValue::Enum(style) => match style.as_str() {
+            "unicode" | "ascii" | "none" => Ok(()),
+            _ => Err(SettingError::ValidationError(format!(
+                "Unknown border style: {}",
+                style
+            ))),
+        },
         _ => Err(SettingError::ValidationError("Expected enum".to_string())),
     }
 }
@@ -165,7 +157,6 @@ fn test_parse_boolean_true() {
     let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "yes");
     assert_eq!(result, Ok(SettingValue::Bool(true)));
 
-    // Case insensitive
     let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "TRUE");
     assert_eq!(result, Ok(SettingValue::Bool(true)));
 
@@ -189,7 +180,6 @@ fn test_parse_boolean_false() {
     let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "no");
     assert_eq!(result, Ok(SettingValue::Bool(false)));
 
-    // Case insensitive
     let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "FALSE");
     assert_eq!(result, Ok(SettingValue::Bool(false)));
 }
@@ -226,15 +216,12 @@ fn test_parse_integer_valid() {
 fn test_parse_integer_with_bounds() {
     let desc = &TEST_SETTINGS[1]; // tabwidth (min: 1)
 
-    // Below minimum
     let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "0");
     assert!(matches!(result, Err(SettingError::ValidationError(_))));
 
-    // At minimum
     let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "1");
     assert_eq!(result, Ok(SettingValue::Integer(1)));
 
-    // Above minimum
     let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "8");
     assert_eq!(result, Ok(SettingValue::Integer(8)));
 }
@@ -274,23 +261,18 @@ fn test_parse_float_valid() {
 fn test_parse_float_with_bounds() {
     let desc = &TEST_SETTINGS[2]; // width_ratio (min: 0.0, max: 1.0)
 
-    // Below minimum
     let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "-0.1");
     assert!(matches!(result, Err(SettingError::ValidationError(_))));
 
-    // At minimum
     let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "0.0");
     assert_eq!(result, Ok(SettingValue::Float(0.0)));
 
-    // In range
     let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "0.6");
     assert_eq!(result, Ok(SettingValue::Float(0.6)));
 
-    // At maximum
     let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "1.0");
     assert_eq!(result, Ok(SettingValue::Float(1.0)));
 
-    // Above maximum
     let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "1.1");
     assert!(matches!(result, Err(SettingError::ValidationError(_))));
 }
@@ -324,7 +306,6 @@ fn test_parse_enum_valid() {
 fn test_parse_enum_case_insensitive() {
     let desc = &TEST_SETTINGS[3]; // borderstyle
 
-    // Case insensitive matching, but returns canonical form
     let result = SettingsRegistry::<UserSettings>::parse_value(&desc.ty, "UNICODE");
     assert_eq!(result, Ok(SettingValue::Enum("unicode".to_string())));
 
@@ -354,32 +335,27 @@ fn test_build_option_registry() {
     let registry = create_test_registry();
     let option_registry = registry.build_option_registry();
 
-    // Test exact match
     use crate::command_line::commands::MatchResult;
     match option_registry.match_command("expandtabs") {
         MatchResult::Exact(name) => assert_eq!(name, "expandtabs"),
         _ => panic!("Expected exact match"),
     }
 
-    // Test alias match
     match option_registry.match_command("et") {
         MatchResult::Exact(name) => assert_eq!(name, "expandtabs"),
         _ => panic!("Expected alias match"),
     }
 
-    // Test prefix match
     match option_registry.match_command("expa") {
         MatchResult::Prefix(name) => assert_eq!(name, "expandtabs"),
         _ => panic!("Expected prefix match"),
     }
 
-    // Test nested setting
     match option_registry.match_command("command_line_window.width_ratio") {
         MatchResult::Exact(name) => assert_eq!(name, "command_line_window.width_ratio"),
         _ => panic!("Expected exact match for nested setting"),
     }
 
-    // Test nested setting alias
     match option_registry.match_command("cmdwidth") {
         MatchResult::Exact(name) => assert_eq!(name, "command_line_window.width_ratio"),
         _ => panic!("Expected alias match for nested setting"),
@@ -604,7 +580,6 @@ fn test_execute_setting_invalid_value() {
     let mut errors = Vec::new();
     let mut error_handler = |e: RiftError| errors.push(e);
 
-    // Invalid boolean
     let result = registry.execute_setting(
         "expandtabs",
         Some("maybe".to_string()),
@@ -616,7 +591,6 @@ fn test_execute_setting_invalid_value() {
         crate::command_line::commands::ExecutionResult::Failure
     ));
 
-    // Invalid integer
     let result = registry.execute_setting(
         "tabwidth",
         Some("not_a_number".to_string()),
@@ -628,7 +602,6 @@ fn test_execute_setting_invalid_value() {
         crate::command_line::commands::ExecutionResult::Failure
     ));
 
-    // Invalid enum
     let result = registry.execute_setting(
         "borderstyle",
         Some("invalid".to_string()),
@@ -650,7 +623,6 @@ fn test_execute_setting_validation_error() {
     let mut errors = Vec::new();
     let mut error_handler = |e: RiftError| errors.push(e);
 
-    // tabwidth below minimum (0)
     let result = registry.execute_setting(
         "tabwidth",
         Some("0".to_string()),
@@ -662,7 +634,6 @@ fn test_execute_setting_validation_error() {
         crate::command_line::commands::ExecutionResult::Failure
     ));
 
-    // width_ratio out of range
     let result = registry.execute_setting(
         "command_line_window.width_ratio",
         Some("1.5".to_string()),
@@ -688,7 +659,6 @@ fn test_execute_setting_validation_error() {
 
 #[test]
 fn test_execute_setting_ambiguous() {
-    // Create registry with ambiguous options
     const AMBIGUOUS_SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         SettingDescriptor {
             name: "expandtabs",
@@ -717,7 +687,6 @@ fn test_execute_setting_ambiguous() {
     let mut errors = Vec::new();
     let mut error_handler = |e: RiftError| errors.push(e);
 
-    // "expa" is ambiguous
     let result = registry.execute_setting(
         "expa",
         Some("true".to_string()),
@@ -729,7 +698,6 @@ fn test_execute_setting_ambiguous() {
         crate::command_line::commands::ExecutionResult::Failure
     ));
 
-    // But "expandtabs" is unambiguous
     let result = registry.execute_setting(
         "expandtabs",
         Some("true".to_string()),
@@ -925,7 +893,6 @@ fn test_execute_setting_theme_overwrites_previous() {
 
     let mut errors = Vec::new();
     let mut error_handler = |e: RiftError| errors.push(e);
-    // Apply light theme
     let result = registry.execute_setting(
         "appearance.theme",
         Some("light".to_string()),
@@ -940,7 +907,6 @@ fn test_execute_setting_theme_overwrites_previous() {
     assert_eq!(settings.theme, Some("light".to_string()));
     let light_bg = settings.editor_bg;
 
-    // Apply dark theme - should overwrite
     let result = registry.execute_setting(
         "appearance.theme",
         Some("dark".to_string()),
@@ -968,7 +934,6 @@ fn test_execute_setting_theme_alias_colorscheme() {
 
     let mut errors = Vec::new();
     let mut error_handler = |e: RiftError| errors.push(e);
-    // Test alias "colorscheme"
     let result = registry.execute_setting(
         "colorscheme",
         Some("light".to_string()),
@@ -991,7 +956,6 @@ fn test_execute_setting_theme_canonical_name() {
 
     let mut errors = Vec::new();
     let mut error_handler = |e: RiftError| errors.push(e);
-    // Test canonical name "appearance.theme"
     let result = registry.execute_setting(
         "appearance.theme",
         Some("dark".to_string()),
@@ -1004,4 +968,79 @@ fn test_execute_setting_theme_canonical_name() {
     ));
     settings = state.settings.clone();
     assert_eq!(settings.theme, Some("dark".to_string()));
+}
+
+#[test]
+fn test_execute_setting_undofile_toggles_persistent_undo() {
+    let registry = create_settings_registry();
+    let mut settings = UserSettings::new();
+    let mut state = State::with_settings(settings.clone());
+    assert!(state.settings.persistent_undo, "undofile defaults to on");
+
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result = registry.execute_setting(
+        "undofile",
+        Some("false".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
+    assert!(matches!(
+        result,
+        crate::command_line::commands::ExecutionResult::Success
+    ));
+    settings = state.settings.clone();
+    assert!(!settings.persistent_undo);
+
+    let result = registry.execute_setting(
+        "udf",
+        Some("true".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
+    assert!(matches!(
+        result,
+        crate::command_line::commands::ExecutionResult::Success
+    ));
+    settings = state.settings.clone();
+    assert!(settings.persistent_undo);
+    assert!(errors.is_empty());
+}
+
+#[test]
+fn test_execute_setting_undodir_sets_and_expands_path() {
+    let registry = create_settings_registry();
+    let settings = UserSettings::new();
+    let mut state = State::with_settings(settings.clone());
+    assert_eq!(state.settings.undo_dir, None);
+
+    let mut errors = Vec::new();
+    let mut error_handler = |e: RiftError| errors.push(e);
+    let result = registry.execute_setting(
+        "undodir",
+        Some("/tmp/my-rift-undo".to_string()),
+        &mut state.settings,
+        &mut error_handler,
+    );
+    assert!(matches!(
+        result,
+        crate::command_line::commands::ExecutionResult::Success
+    ));
+    assert_eq!(
+        state.settings.undo_dir,
+        Some(std::path::PathBuf::from("/tmp/my-rift-undo"))
+    );
+
+    let result = registry.execute_setting(
+        "udir",
+        Some(String::new()),
+        &mut state.settings,
+        &mut error_handler,
+    );
+    assert!(matches!(
+        result,
+        crate::command_line::commands::ExecutionResult::Success
+    ));
+    assert_eq!(state.settings.undo_dir, None);
+    assert!(errors.is_empty());
 }

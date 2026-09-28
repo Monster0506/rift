@@ -428,6 +428,43 @@ fn set_ghost_cut(settings: &mut UserSettings, value: SettingValue) -> Result<(),
     }
 }
 
+fn set_persistent_undo(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Bool(b) => {
+            settings.persistent_undo = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
+    }
+}
+
+fn set_undo_dir(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Path(s) => {
+            let s = s.trim();
+            settings.undo_dir = if s.is_empty() {
+                None
+            } else {
+                Some(crate::history::persist::expand_tilde(s))
+            };
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError("Expected path".to_string())),
+    }
+}
+
+fn get_undo_dir(s: &UserSettings) -> String {
+    s.undo_dir
+        .as_deref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default()
+}
+
 pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "command_line.borderstyle",
@@ -661,6 +698,24 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         ty: SettingType::Boolean,
         set: set_ghost_cut,
         get: None,
+        needs_full_redraw: false,
+    },
+    SettingDescriptor {
+        name: "undofile",
+        aliases: &["udf"],
+        description: "Persist undo history to disk so it survives editor restarts",
+        ty: SettingType::Boolean,
+        set: set_persistent_undo,
+        get: None,
+        needs_full_redraw: false,
+    },
+    SettingDescriptor {
+        name: "undodir",
+        aliases: &["udir"],
+        description: "Directory for persisted undo files (default: <config_dir>/undofiles)",
+        ty: SettingType::Path,
+        set: set_undo_dir,
+        get: Some(get_undo_dir),
         needs_full_redraw: false,
     },
 ];

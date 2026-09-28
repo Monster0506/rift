@@ -73,6 +73,8 @@ pub struct UserSettings {
     pub lsp_virtual_text: bool,
     pub lsp_diagnostic_tooltip: bool,
     pub ghost_cut: bool,
+    pub persistent_undo: bool,
+    pub undo_dir: Option<std::path::PathBuf>,
 }
 
 impl UserSettings {
@@ -100,6 +102,8 @@ impl UserSettings {
             lsp_virtual_text: true,
             lsp_diagnostic_tooltip: true,
             ghost_cut: true,
+            persistent_undo: true,
+            undo_dir: None,
         };
 
         let default_theme = Theme::gruvbox();

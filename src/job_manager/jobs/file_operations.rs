@@ -1,4 +1,3 @@
-//! --- File Operations ---
 use crate::buffer::line_index::LineIndex;
 use crate::buffer::rope::PieceTable;
 use crate::character::Character;
@@ -10,17 +9,16 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
-/// Payload for a successful file save
 #[derive(Debug)]
 pub struct FileSaveResult {
     pub document_id: DocumentId,
     pub saved_seq: EditSeq,
     pub path: PathBuf,
+    pub content_hash: crate::history::persist::Sha256Digest,
 }
 
 crate::impl_job_payload!(FileSaveResult);
 
-/// Job to save a file asynchronously
 #[derive(Debug)]
 pub struct FileSaveJob {
     pub document_id: DocumentId,
@@ -82,12 +80,10 @@ impl Job for FileSaveJob {
                 .unwrap_or("file")
         ));
 
-        // Helper to handle IO errors and send Error message
         let do_write = || -> std::io::Result<()> {
             let file = fs::File::create(&temp_path)?;
             let line_ending_bytes = self.line_ending.as_bytes();
 
-            // Buffering for performance
             let mut writer = std::io::BufWriter::new(file);
 
             for chunk in self.piece_table.chunks() {
@@ -98,14 +94,12 @@ impl Job for FileSaveJob {
                 let mut current_chunk_bytes = Vec::with_capacity(chunk.len());
                 for ch in chunk {
                     if *ch == Character::Newline {
-                        // Flush current pending bytes
                         if !current_chunk_bytes.is_empty() {
                             writer.write_all(&current_chunk_bytes)?;
                             current_chunk_bytes.clear();
                         }
                         writer.write_all(line_ending_bytes)?;
                     } else {
-                        // Encode char to bytes
                         ch.encode_utf8(&mut current_chunk_bytes);
                     }
                 }
@@ -116,12 +110,10 @@ impl Job for FileSaveJob {
 
             writer.flush()?;
 
-            // Check cancellation before rename
             if signal.is_cancelled() {
                 return Ok(());
             }
 
-            // Sync and Rename
             writer.get_ref().sync_all()?;
             drop(writer); // Close file
             fs::rename(&temp_path, &self.path)?;
@@ -136,6 +128,9 @@ impl Job for FileSaveJob {
                         document_id: self.document_id,
                         saved_seq: self.saved_seq,
                         path: self.path.clone(),
+                        content_hash: crate::history::persist::sha256(
+                            &self.piece_table.to_logical_bytes(),
+                        ),
                     };
                     if let Some(token) = self.token {
                         crate::job_manager::send_job_result_with_token(
@@ -148,13 +143,11 @@ impl Job for FileSaveJob {
                         crate::job_manager::send_job_result(&sender, id, Box::new(result));
                     }
                 } else {
-                    // Clean up temp file
                     let _ = fs::remove_file(&temp_path);
                     let _ = sender.send(JobMessage::Cancelled(id));
                 }
             }
             Err(e) => {
-                // Try clean up temp file
                 let _ = fs::remove_file(&temp_path);
                 let _ = sender.send(JobMessage::Error(id, e.to_string()));
             }
@@ -166,7 +159,6 @@ impl Job for FileSaveJob {
     }
 }
 
-/// Payload for a successful file load
 #[derive(Debug)]
 pub struct FileLoadResult {
     pub document_id: DocumentId,
@@ -174,11 +166,11 @@ pub struct FileLoadResult {
     pub line_ending: LineEnding,
     pub path: PathBuf,
     pub is_reload: bool,
+    pub content_hash: crate::history::persist::Sha256Digest,
 }
 
 crate::impl_job_payload!(FileLoadResult);
 
-/// Job to load a file asynchronously
 #[derive(Debug)]
 pub struct FileLoadJob {
     pub document_id: DocumentId,
@@ -243,6 +235,7 @@ impl Job for FileLoadJob {
             let (normalized_chars, line_ending, starts) =
                 crate::document::decode_file_bytes(&bytes);
             let piece_table = PieceTable::new(normalized_chars);
+            let content_hash = crate::history::persist::sha256(&piece_table.to_logical_bytes());
             let line_index = LineIndex::from_table_with_starts(piece_table, starts);
 
             Ok(FileLoadResult {
@@ -251,6 +244,7 @@ impl Job for FileLoadJob {
                 line_ending,
                 path: self.path.clone(),
                 is_reload: self.is_reload,
+                content_hash,
             })
         };
 
