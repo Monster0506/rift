@@ -1,6 +1,3 @@
-//! Settings definitions
-//! Declarative registry of all :set command options
-
 use crate::color::Color;
 use crate::command_line::settings::descriptor::{
     SettingDescriptor, SettingError, SettingType, SettingValue,
@@ -9,7 +6,6 @@ use crate::command_line::settings::registry::SettingsRegistry;
 use crate::floating_window::BorderChars;
 use crate::state::UserSettings;
 
-/// Format a `Color` value as the string a user would type (inverse of `parse_color`).
 fn format_color(color: Option<Color>) -> String {
     match color {
         None | Some(Color::Reset) => "none".to_string(),
@@ -34,7 +30,6 @@ fn format_color(color: Option<Color>) -> String {
     }
 }
 
-// Helper functions to create border presets
 fn create_unicode_border() -> BorderChars {
     BorderChars {
         top_left: '╭',
@@ -56,8 +51,6 @@ fn create_ascii_border() -> BorderChars {
         vertical: '|',
     }
 }
-
-// Setter functions for each setting
 
 fn set_border_style(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
     match value {
@@ -222,8 +215,6 @@ fn set_theme(settings: &mut UserSettings, value: SettingValue) -> Result<(), Set
     match value {
         SettingValue::Enum(theme_name) => {
             if let Some(theme) = crate::color::Theme::by_name(&theme_name) {
-                // Apply theme using the theme handler
-                // This allows themes to apply more than just background/foreground
                 theme.apply_to_settings(settings);
                 Ok(())
             } else {
@@ -312,8 +303,6 @@ fn set_show_status_line(
     }
 }
 
-// Getter functions for non-discrete settings
-
 fn get_cmd_window_width_ratio(s: &UserSettings) -> String {
     s.command_line_window.width_ratio.to_string()
 }
@@ -370,7 +359,6 @@ fn get_cursor_speed(s: &UserSettings) -> String {
     s.cursor_speed.to_string()
 }
 
-/// Static registry of all settings
 fn set_equalize_proportional(
     settings: &mut UserSettings,
     value: SettingValue,
@@ -438,6 +426,43 @@ fn set_ghost_cut(settings: &mut UserSettings, value: SettingValue) -> Result<(),
             "Expected boolean".to_string(),
         )),
     }
+}
+
+fn set_persistent_undo(
+    settings: &mut UserSettings,
+    value: SettingValue,
+) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Bool(b) => {
+            settings.persistent_undo = b;
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError(
+            "Expected boolean".to_string(),
+        )),
+    }
+}
+
+fn set_undo_dir(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
+    match value {
+        SettingValue::Path(s) => {
+            let s = s.trim();
+            settings.undo_dir = if s.is_empty() {
+                None
+            } else {
+                Some(crate::history::persist::expand_tilde(s))
+            };
+            Ok(())
+        }
+        _ => Err(SettingError::ValidationError("Expected path".to_string())),
+    }
+}
+
+fn get_undo_dir(s: &UserSettings) -> String {
+    s.undo_dir
+        .as_deref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default()
 }
 
 pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
@@ -675,9 +700,26 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
         get: None,
         needs_full_redraw: false,
     },
+    SettingDescriptor {
+        name: "undofile",
+        aliases: &["udf"],
+        description: "Persist undo history to disk so it survives editor restarts",
+        ty: SettingType::Boolean,
+        set: set_persistent_undo,
+        get: None,
+        needs_full_redraw: false,
+    },
+    SettingDescriptor {
+        name: "undodir",
+        aliases: &["udir"],
+        description: "Directory for persisted undo files (default: <config_dir>/undofiles)",
+        ty: SettingType::Path,
+        set: set_undo_dir,
+        get: Some(get_undo_dir),
+        needs_full_redraw: false,
+    },
 ];
 
-/// Create the settings registry
 #[must_use]
 pub fn create_settings_registry() -> SettingsRegistry<UserSettings> {
     SettingsRegistry::new(SETTINGS)

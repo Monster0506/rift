@@ -1,9 +1,27 @@
-//! Renders the undo history as a vertical "git-graph" style tree.
-
 use crate::character::Character;
 use crate::history::{EditSeq, UndoTree};
+use crate::time::SystemTime;
 
-/// Render the undo tree to a list of lines (Cells) and a mapping of sequences
+fn format_age(timestamp: SystemTime) -> String {
+    let secs = SystemTime::now()
+        .duration_since(timestamp)
+        .unwrap_or_default()
+        .as_secs();
+    if secs < 5 {
+        "now".to_string()
+    } else if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        format!("{}m", secs / 60)
+    } else if secs < 86400 {
+        format!("{}h", secs / 3600)
+    } else if secs < 30 * 86400 {
+        format!("{}d", secs / 86400)
+    } else {
+        format!("{}mo", secs / (30 * 86400))
+    }
+}
+
 pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSeq>, usize) {
     use crate::color::Color;
     use crate::layer::Cell;
@@ -17,7 +35,6 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
 
     let mut columns: Vec<Option<EditSeq>> = Vec::new();
 
-    // Define colors
     let node_color = Color::DarkYellow;
     let branch_color = Color::DarkRed;
     let text_color = Color::Grey;
@@ -41,10 +58,8 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
             .map(|(i, _)| i)
             .collect();
 
-        // If no column is waiting for us, we are a Tip (new branch head)
         let is_tip = col_indices.is_empty();
         if is_tip {
-            // Assign a new column (allocating slot)
             let slot = if let Some(idx) = columns.iter().position(|c| c.is_none()) {
                 idx
             } else {
@@ -54,10 +69,8 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
             col_indices.push(slot);
         }
 
-        // The "main" column for this node is usually the first one found or allocated
         let main_col = col_indices[0];
 
-        // We need to extend chars to cover all active columns
         let max_col = columns.len();
 
         if col_indices.len() > 1 {
@@ -92,7 +105,6 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
         const NODE_CHAR: char = '*';
         const SNAPSHOT_CHAR: char = '#';
         const SAVED_CHAR: char = 'S';
-        // 1. Draw Graph part
         for (c, item) in columns.iter().enumerate().take(max_col) {
             let cell = if c == main_col {
                 if is_current {
@@ -115,8 +127,12 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
             final_row.push(Cell::new(Character::from(' ')));
         }
 
-        // 2. Draw Text part
-        let desc_str = format!(" [{}] {}", seq, node.transaction.description);
+        let desc_str = format!(
+            " [{}] {} - {}",
+            seq,
+            format_age(node.timestamp),
+            node.transaction.description
+        );
 
         let desc_color = if is_current {
             current_text_color
@@ -150,8 +166,6 @@ pub fn render_tree(tree: &UndoTree) -> (Vec<Vec<crate::layer::Cell>>, Vec<EditSe
 }
 
 type Highlights = Vec<(std::ops::Range<usize>, crate::color::Color)>;
-/// Render the undo tree to plain text for use in a buffer. Returns `(text, sequences, highlights)`:
-/// `sequences[i]` is the EditSeq for line i (u64::MAX for connector lines); `highlights` are `(byte_range, Color)` pairs.
 pub fn render_tree_to_text(tree: &UndoTree) -> (String, Vec<EditSeq>, Highlights) {
     let (lines, sequences, _cursor) = render_tree(tree);
     let mut text = String::new();
@@ -163,7 +177,6 @@ pub fn render_tree_to_text(tree: &UndoTree) -> (String, Vec<EditSeq>, Highlights
             if let Some(color) = cell.fg {
                 let start = text.len();
                 let end = start + ch.len_utf8();
-                // Merge with the previous range if same color and contiguous
                 if let Some(last) = highlights.last_mut() {
                     if last.1 == color && last.0.end == start {
                         last.0.end = end;

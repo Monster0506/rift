@@ -1,18 +1,12 @@
-//! Undo/Redo history management with a transaction-centric undo tree: each
-//! user command is one atomic entry, branches preserve alternative histories.
-
 pub mod command;
+pub mod persist;
 
 use crate::character::Character;
 use crate::time::SystemTime;
 use std::collections::HashMap;
 
-/// Unique sequential identifier for each edit
 pub type EditSeq = u64;
 
-// Position and Range Types
-
-/// Position in document (line, column)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Position {
     pub line: u32,
@@ -25,7 +19,6 @@ impl Position {
     }
 }
 
-/// Range spanning start to end positions
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Range {
     pub start: Position,
@@ -37,38 +30,30 @@ impl Range {
         Self { start, end }
     }
 
-    /// Check if range is empty (start == end)
     pub fn is_empty(&self) -> bool {
         self.start == self.end
     }
 }
 
-// Edit Operations
-
-/// A single atomic edit operation in the document
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditOperation {
-    /// Insert text at position
     Insert {
         position: Position,
         text: Vec<Character>,
         len: usize,
     },
 
-    /// Delete text in range
     Delete {
         range: Range,
         deleted_text: Vec<Character>,
     },
 
-    /// Replace text (atomic delete + insert)
     Replace {
         range: Range,
         old_text: Vec<Character>,
         new_text: Vec<Character>,
     },
 
-    /// Multi-line block change (e.g., reformat, sort lines)
     BlockChange {
         range: Range,
         old_content: Vec<Vec<Character>>,
@@ -76,7 +61,6 @@ pub enum EditOperation {
     },
 }
 
-/// Error applying an operation
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApplyError {
     PositionOutOfBounds { position: Position },
@@ -101,7 +85,6 @@ impl std::fmt::Display for ApplyError {
 impl std::error::Error for ApplyError {}
 
 impl EditOperation {
-    /// Return the document position where this operation begins.
     pub fn start_position(&self) -> Position {
         match self {
             EditOperation::Insert { position, .. } => *position,
@@ -111,7 +94,6 @@ impl EditOperation {
         }
     }
 
-    /// Get the inverse operation (for undo)
     #[must_use]
     pub fn inverse(&self) -> EditOperation {
         match self {
@@ -189,7 +171,6 @@ impl EditOperation {
         }
     }
 
-    /// Get minimal diff size (for memory estimation)
     #[must_use]
     pub fn estimated_size(&self) -> usize {
         match self {
@@ -211,18 +192,11 @@ impl EditOperation {
     }
 }
 
-// Transaction
-
-/// Transaction groups multiple edits into one undo entry
 #[derive(Clone, Debug, Default)]
 pub struct EditTransaction {
     pub ops: Vec<EditOperation>,
     pub description: String,
-    /// Cursor offset (char index) at the moment the transaction was opened.
-    /// Used to restore cursor on undo regardless of operation range direction.
     pub cursor_before: Option<usize>,
-    /// Cursor offset (char index) right after the transaction's edits were
-    /// applied. Used to restore cursor on redo, symmetric with `cursor_before`.
     pub cursor_after: Option<usize>,
 }
 
@@ -236,38 +210,29 @@ impl EditTransaction {
         }
     }
 
-    /// Record operation within transaction
     pub fn record(&mut self, operation: EditOperation) {
         self.ops.push(operation);
     }
 
-    /// Get inverse operations in REVERSE order (for undo)
     #[must_use]
     pub fn inverse(&self) -> Vec<EditOperation> {
         self.ops.iter().rev().map(|op| op.inverse()).collect()
     }
 
-    /// Check if transaction is empty
     pub fn is_empty(&self) -> bool {
         self.ops.is_empty()
     }
 
-    /// Estimated memory size
     pub fn estimated_size(&self) -> usize {
         self.ops.iter().map(|op| op.estimated_size()).sum::<usize>() + self.description.len() + 16
     }
 }
 
-// Snapshot for Checkpoints
-
-/// Snapshot for checkpoint nodes (delta strategy)
 #[derive(Clone, Debug)]
 pub struct DocumentSnapshot {
     pub full_text: Vec<Character>,
     pub byte_count: usize,
     pub line_count: u32,
-    /// Annotation state at checkpoint time, restored alongside the text so a
-    /// snapshot-based `goto_seq` jump doesn't lose/misplace annotations.
     pub annotations: Vec<crate::annotations::Annotation>,
 }
 
@@ -284,20 +249,14 @@ impl DocumentSnapshot {
     }
 }
 
-// Edit Node
-
-/// A node in the undo tree
 #[derive(Clone, Debug)]
 pub struct EditNode {
     pub seq: EditSeq,
     pub transaction: EditTransaction,
     pub parent: Option<EditSeq>,
     pub children: Vec<EditSeq>,
-    /// Which child was last visited (for redo path tracking)
     pub last_visited_child: Option<usize>,
-    /// Snapshot if this is a checkpoint node
     pub snapshot: Option<Box<DocumentSnapshot>>,
-    /// Timestamp when edit was made
     pub timestamp: SystemTime,
 }
 
@@ -315,25 +274,15 @@ impl EditNode {
     }
 }
 
-// Replay Path
-
-/// Describes how to reach a specific edit via replay
 #[derive(Debug, Clone)]
 pub struct ReplayPath {
     pub from_seq: EditSeq,
     pub to_seq: EditSeq,
-    /// Operations to undo (apply inverse in order)
     pub undo_ops: Vec<EditTransaction>,
-    /// Operations to redo (apply forward in order)
     pub redo_ops: Vec<EditTransaction>,
-    /// When set, restore from this checkpoint instead of `undo_ops`, then
-    /// apply `redo_ops` forward from there (cheaper for a distant jump).
     pub snapshot_restore: Option<DocumentSnapshot>,
 }
 
-// Undo Tree
-
-/// Error type for undo tree operations
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UndoError {
     NoUndoAvailable,
@@ -353,17 +302,14 @@ impl std::fmt::Display for UndoError {
 
 impl std::error::Error for UndoError {}
 
-/// Undo tree with branching history and checkpoint strategy
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct UndoTree {
     pub nodes: HashMap<EditSeq, EditNode>,
     pub current: EditSeq,
     next_seq: EditSeq,
     pub root_seq: EditSeq,
-    /// The edit sequence that was current when the document was last saved
     pub(crate) saved_seq: EditSeq,
 
-    // Checkpoint configuration
     checkpoint_interval: u64,
     checkpoint_memory_threshold: usize,
     edits_since_checkpoint: u64,
@@ -371,14 +317,11 @@ pub struct UndoTree {
 }
 
 impl UndoTree {
-    /// Create a new undo tree
     pub fn new() -> Self {
         Self::with_config(50, 1024 * 1024) // Default: checkpoint every 50 edits or 1MB
     }
 
-    /// Create undo tree with custom configuration
     pub fn with_config(checkpoint_interval: u64, memory_threshold: usize) -> Self {
-        // Create root node (represents empty/initial state)
         let root = EditNode::new(0, EditTransaction::new("Initial state"), None);
         let mut nodes = HashMap::new();
         nodes.insert(0, root);
@@ -396,25 +339,32 @@ impl UndoTree {
         }
     }
 
-    /// Get current edit sequence
+    pub(crate) fn from_parts(nodes: HashMap<EditSeq, EditNode>, current: EditSeq) -> Self {
+        let total_memory = nodes.values().map(|n| n.transaction.estimated_size()).sum();
+        let next_seq = nodes.keys().copied().max().map_or(1, |max| max + 1);
+        let mut tree = Self::new();
+        tree.nodes = nodes;
+        tree.current = current;
+        tree.next_seq = next_seq;
+        tree.saved_seq = current;
+        tree.total_memory = total_memory;
+        tree
+    }
+
     pub fn current_seq(&self) -> EditSeq {
         self.current
     }
 
-    /// Move to parent node, returns transaction to undo
     pub fn undo(&mut self) -> Option<&EditTransaction> {
         let current_node = self.nodes.get(&self.current)?;
         let parent_seq = current_node.parent?;
 
-        // Move to parent
         self.current = parent_seq;
 
-        // Return the transaction that was undone (caller applies inverse)
         self.nodes
             .get(&(parent_seq + 1))
             .map(|n| &n.transaction)
             .or_else(|| {
-                // Find the child we just came from
                 let parent = self.nodes.get(&parent_seq)?;
                 for &child_seq in &parent.children {
                     if child_seq == self.current + 1 {
@@ -423,13 +373,9 @@ impl UndoTree {
                 }
                 None
             })
-            .or_else(|| {
-                // Fallback: return current node's transaction
-                Some(&self.nodes.get(&(self.current + 1))?.transaction)
-            })
+            .or_else(|| Some(&self.nodes.get(&(self.current + 1))?.transaction))
     }
 
-    /// Get the transaction at current position (for undo)
     pub fn current_transaction(&self) -> Option<&EditTransaction> {
         if self.current == self.root_seq {
             return None;
@@ -437,7 +383,6 @@ impl UndoTree {
         self.nodes.get(&self.current).map(|n| &n.transaction)
     }
 
-    /// Move to last-visited child, returns transaction to redo
     pub fn redo(&mut self) -> Option<&EditTransaction> {
         let current_node = self.nodes.get(&self.current)?;
 
@@ -448,15 +393,11 @@ impl UndoTree {
         let child_idx = current_node.last_visited_child.unwrap_or(0);
         let child_seq = *current_node.children.get(child_idx)?;
 
-        // Move to child
         self.current = child_seq;
 
-        // Return transaction to apply
         self.nodes.get(&child_seq).map(|n| &n.transaction)
     }
 
-    /// Nearest ancestor of `seq` (inclusive) carrying a checkpoint snapshot,
-    /// and how many forward ops separate it from `seq`.
     fn nearest_checkpoint(&self, ancestors: &[EditSeq]) -> Option<(usize, &DocumentSnapshot)> {
         ancestors.iter().enumerate().find_map(|(depth, seq)| {
             self.nodes
@@ -466,10 +407,7 @@ impl UndoTree {
         })
     }
 
-    /// Compute replay path from one edit to another without mutating state.
-    /// Prefers a checkpoint near `to` over diffing when that's cheaper.
     pub fn compute_replay_path(&self, from: EditSeq, to: EditSeq) -> Result<ReplayPath, UndoError> {
-        // Validate targets exist
         if !self.nodes.contains_key(&from) {
             return Err(UndoError::InvalidSeq(from));
         }
@@ -477,7 +415,6 @@ impl UndoTree {
             return Err(UndoError::InvalidSeq(to));
         }
 
-        // If same, return empty
         if from == to {
             return Ok(ReplayPath {
                 from_seq: from,
@@ -488,14 +425,11 @@ impl UndoTree {
             });
         }
 
-        // Find ancestors
         let current_ancestors = self.get_ancestors(from);
         let target_ancestors = self.get_ancestors(to);
 
-        // Find common ancestor
         let common_ancestor = self.find_common_ancestor(&current_ancestors, &target_ancestors);
 
-        // Build undo path: from -> common_ancestor
         let mut undo_ops = Vec::new();
         let mut seq = from;
         while seq != common_ancestor {
@@ -511,7 +445,6 @@ impl UndoTree {
             }
         }
 
-        // Build redo path: common_ancestor -> to
         let mut redo_path = Vec::new();
         seq = to;
         while seq != common_ancestor {
@@ -535,8 +468,6 @@ impl UndoTree {
             }
         }
 
-        // A checkpoint nearer to `to` than the diff path's total op count
-        // makes a snapshot restore + short forward replay cheaper.
         if let Some((depth, snapshot)) = self.nearest_checkpoint(&target_ancestors) {
             if depth < undo_ops.len() + redo_ops.len() {
                 let mut snap_redo_ops = Vec::new();
@@ -564,13 +495,9 @@ impl UndoTree {
         })
     }
 
-    /// Jump to edit #n via checkpoint+replay. Returns a ReplayPath; the
-    /// caller is responsible for applying the operations to the buffer.
     pub fn goto_seq(&mut self, target: EditSeq) -> Result<ReplayPath, UndoError> {
-        // Compute path first
         let path = self.compute_replay_path(self.current, target)?;
 
-        // Update internal state (last_visited_child) along the redo path
         let current_ancestors = self.get_ancestors(self.current);
         let target_ancestors = self.get_ancestors(target);
         let common_ancestor = self.find_common_ancestor(&current_ancestors, &target_ancestors);
@@ -591,7 +518,6 @@ impl UndoTree {
         }
         path_to_target.reverse();
 
-        // Update last_visited_child for each node in the path
         for i in 0..path_to_target.len().saturating_sub(1) {
             let parent_seq = path_to_target[i];
             let child_seq = path_to_target[i + 1];
@@ -602,7 +528,6 @@ impl UndoTree {
             }
         }
 
-        // Move to target
         self.current = target;
 
         debug_assert_eq!(
@@ -616,7 +541,6 @@ impl UndoTree {
         Ok(path)
     }
 
-    /// Get all ancestors of a node (including the node itself)
     fn get_ancestors(&self, seq: EditSeq) -> Vec<EditSeq> {
         let mut ancestors = Vec::new();
         let mut current = seq;
@@ -631,23 +555,18 @@ impl UndoTree {
         ancestors
     }
 
-    /// Find the lowest common ancestor of two nodes
     fn find_common_ancestor(&self, ancestors_a: &[EditSeq], ancestors_b: &[EditSeq]) -> EditSeq {
-        // Convert one to a set for O(1) lookup
         let set_a: std::collections::HashSet<_> = ancestors_a.iter().copied().collect();
 
-        // Find first ancestor of B that's in A's ancestors
         for &seq in ancestors_b {
             if set_a.contains(&seq) {
                 return seq;
             }
         }
 
-        // Fallback to root (should always be reachable)
         self.root_seq
     }
 
-    /// Record a new edit (creates new node as child of current)
     pub fn push(
         &mut self,
         transaction: EditTransaction,
@@ -656,16 +575,12 @@ impl UndoTree {
         let seq = self.next_seq;
         self.next_seq += 1;
 
-        // Track memory
         let tx_size = transaction.estimated_size();
         self.total_memory += tx_size;
         self.edits_since_checkpoint += 1;
 
-        // Create node
         let mut node = EditNode::new(seq, transaction, Some(self.current));
 
-        // total_memory never decreases (no eviction policy yet), so once
-        // it crosses the threshold, only the interval check still matters.
         let should_checkpoint = snapshot.is_some()
             || (self.total_memory < self.checkpoint_memory_threshold
                 && self.edits_since_checkpoint >= self.checkpoint_interval);
@@ -677,7 +592,6 @@ impl UndoTree {
             self.edits_since_checkpoint = 0;
         }
 
-        // Update parent's children and last_visited_child
         if let Some(parent) = self.nodes.get_mut(&self.current) {
             let child_idx = parent.children.len();
             parent.children.push(seq);
@@ -690,7 +604,6 @@ impl UndoTree {
         seq
     }
 
-    /// Force checkpoint at current position
     pub fn checkpoint(&mut self, snapshot: DocumentSnapshot) {
         if let Some(node) = self.nodes.get_mut(&self.current) {
             node.snapshot = Some(Box::new(snapshot));
@@ -698,7 +611,6 @@ impl UndoTree {
         }
     }
 
-    /// Get number of children at current node (for branch info)
     pub fn branch_count(&self) -> usize {
         self.nodes
             .get(&self.current)
@@ -706,12 +618,10 @@ impl UndoTree {
             .unwrap_or(0)
     }
 
-    /// Check if we can undo
     pub fn can_undo(&self) -> bool {
         self.current != self.root_seq
     }
 
-    /// Check if we can redo
     pub fn can_redo(&self) -> bool {
         self.nodes
             .get(&self.current)
@@ -719,7 +629,6 @@ impl UndoTree {
             .unwrap_or(false)
     }
 
-    /// Clear all history (keep only root)
     pub fn clear(&mut self) {
         self.nodes.retain(|&seq, _| seq == self.root_seq);
         self.current = self.root_seq;
@@ -734,17 +643,14 @@ impl UndoTree {
         }
     }
 
-    /// Mark the current node as the saved state
     pub fn mark_saved(&mut self) {
         self.saved_seq = self.current;
     }
 
-    /// Mark a specific sequence as the saved state (used when loading from disk)
     pub(crate) fn mark_saved_at(&mut self, seq: EditSeq) {
         self.saved_seq = seq;
     }
 
-    /// Check if the current node is the saved state
     pub fn is_at_saved(&self) -> bool {
         self.current == self.saved_seq
     }

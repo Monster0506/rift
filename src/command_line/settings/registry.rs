@@ -1,20 +1,13 @@
-//! Settings registry
-//! Registry that holds setting descriptors and provides execution
-
 use super::descriptor::{SettingDescriptor, SettingError, SettingType, SettingValue};
 use crate::command_line::commands::{CommandDef, CommandRegistry, ExecutionResult, MatchResult};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
 
-/// Holds static setting descriptors; provides option registry building
-/// (for the parser) and setting execution (for the executor).
 #[derive(Clone, Copy)]
 pub struct SettingsRegistry<T: 'static> {
-    /// Static array of setting descriptors
     settings: &'static [SettingDescriptor<T>],
 }
 
 impl<T> SettingsRegistry<T> {
-    /// Create a new registry from static descriptors
     #[must_use]
     pub const fn new(descriptors: &'static [SettingDescriptor<T>]) -> Self {
         SettingsRegistry {
@@ -22,13 +15,10 @@ impl<T> SettingsRegistry<T> {
         }
     }
 
-    /// Iterate all setting descriptors (used by tab completion)
     pub fn descriptors(&self) -> &[SettingDescriptor<T>] {
         self.settings
     }
 
-    /// Builds a `CommandRegistry` from all setting descriptors, enabling
-    /// prefix matching and alias resolution for option names.
     #[must_use]
     pub fn build_option_registry(&self) -> CommandRegistry {
         let mut registry = CommandRegistry::new();
@@ -42,8 +32,6 @@ impl<T> SettingsRegistry<T> {
         registry
     }
 
-    /// Parses and validates a string value into a `SettingValue` per the
-    /// given `SettingType`, or returns a structured error.
     pub(crate) fn parse_value(ty: &SettingType, value: &str) -> Result<SettingValue, SettingError> {
         match ty {
             SettingType::Boolean => {
@@ -100,7 +88,6 @@ impl<T> SettingsRegistry<T> {
             }
             SettingType::Enum { variants } => {
                 let val_lower = value.to_lowercase();
-                // Find canonical variant (case-insensitive match)
                 if let Some(canonical) = variants.iter().find(|v| v.to_lowercase() == val_lower) {
                     Ok(SettingValue::Enum(canonical.to_string()))
                 } else {
@@ -138,21 +125,18 @@ impl<T> SettingsRegistry<T> {
                 }
                 Ok(SettingValue::Enum(value.to_string()))
             }
+            SettingType::Path => Ok(SettingValue::Path(value.to_string())),
         }
     }
 
-    /// Parses a color string: named colors, `rgb(255,128,64)`/`#ff8040`,
-    /// `ansi256(100)`/bare `100`, or reset/default/none.
     fn parse_color(value: &str) -> Result<SettingValue, SettingError> {
         use crate::color::Color;
         let val_lower = value.to_lowercase().trim().to_string();
 
-        // Handle reset/default/none
         if val_lower == "reset" || val_lower == "default" || val_lower == "none" {
             return Ok(SettingValue::Color(Color::Reset));
         }
 
-        // Handle RGB format: rgb(255,128,64) or #ff8040
         if val_lower.starts_with("rgb(") && val_lower.ends_with(')') {
             let rgb_str = &val_lower[4..val_lower.len() - 1];
             let parts: Vec<&str> = rgb_str.split(',').map(str::trim).collect();
@@ -170,7 +154,6 @@ impl<T> SettingsRegistry<T> {
             }
         }
 
-        // Handle hex format: #ff8040 or #fff
         if let Some(hex) = val_lower.strip_prefix("#") {
             if hex.len() == 6 {
                 let r = u8::from_str_radix(&hex[0..2], 16)
@@ -181,7 +164,6 @@ impl<T> SettingsRegistry<T> {
                     .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {value}")))?;
                 return Ok(SettingValue::Color(Color::Rgb { r, g, b }));
             } else if hex.len() == 3 {
-                // Short hex format: #fff -> #ffffff
                 let r = u8::from_str_radix(&hex[0..1], 16)
                     .map_err(|_| SettingError::ParseError(format!("Invalid hex color: {value}")))?;
                 let g = u8::from_str_radix(&hex[1..2], 16)
@@ -195,7 +177,6 @@ impl<T> SettingsRegistry<T> {
             }
         }
 
-        // Handle ansi256 format: ansi256(100) or just 100
         if val_lower.starts_with("ansi256(") && val_lower.ends_with(')') {
             let num_str = &val_lower[8..val_lower.len() - 1];
             let n = num_str.parse::<u8>().map_err(|_| {
@@ -204,12 +185,10 @@ impl<T> SettingsRegistry<T> {
             return Ok(SettingValue::Color(Color::Ansi256(n)));
         }
 
-        // Try parsing as a number (256-color index)
         if let Ok(n) = val_lower.parse::<u8>() {
             return Ok(SettingValue::Color(Color::Ansi256(n)));
         }
 
-        // Handle color names
         let color = match val_lower.as_str() {
             "black" => Color::Black,
             "darkgrey" | "dark_grey" => Color::DarkGrey,
@@ -237,8 +216,6 @@ impl<T> SettingsRegistry<T> {
         Ok(SettingValue::Color(color))
     }
 
-    /// Resolves the name via registry matching (aliases/prefixes), finds
-    /// its descriptor, parses the value, and calls the setter.
     pub fn execute_setting(
         &self,
         name: &str,
@@ -246,10 +223,8 @@ impl<T> SettingsRegistry<T> {
         target: &mut T,
         error_handler: &mut dyn FnMut(RiftError),
     ) -> ExecutionResult {
-        // Build registry for name matching
         let registry = self.build_option_registry();
 
-        // Resolve option name (handles aliases, prefixes, ambiguity)
         let matched_name = match registry.match_command(name) {
             MatchResult::Exact(n) | MatchResult::Prefix(n) => n,
             MatchResult::Ambiguous { prefix, matches } => {
@@ -273,7 +248,6 @@ impl<T> SettingsRegistry<T> {
             }
         };
 
-        // Find descriptor by matched name
         let desc = match self.settings.iter().find(|d| d.name == matched_name) {
             Some(d) => d,
             None => {
@@ -287,7 +261,6 @@ impl<T> SettingsRegistry<T> {
             }
         };
 
-        // Parse value
         let value_str = match value.as_ref() {
             Some(v) => v,
             None => {
@@ -309,7 +282,6 @@ impl<T> SettingsRegistry<T> {
             }
         };
 
-        // Apply setter
         match (desc.set)(target, typed_value) {
             Ok(()) => {
                 if desc.needs_full_redraw {
