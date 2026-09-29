@@ -5,8 +5,6 @@ use crate::render;
 use crate::screen_buffer::FrameStats;
 use crate::term::TerminalBackend;
 
-/// Per-frame update_state result: active document, whether a full redraw is
-/// required, the soft-wrap display map, and the scroll-region hint.
 type FrameState = (
     crate::document::DocumentId,
     bool,
@@ -14,8 +12,6 @@ type FrameState = (
     Option<(usize, usize, isize)>,
 );
 
-/// Force a real render at least this often during a burst, so a very long
-/// one still gives periodic visual feedback instead of looking hung.
 const MAX_UNRENDERED_KEYS: usize = 32;
 
 impl<T: TerminalBackend> Editor<T> {
@@ -28,12 +24,9 @@ impl<T: TerminalBackend> Editor<T> {
         self.handle_key_actions(action);
         self.handle_mode_management(command);
 
-        // Update input tracking (happens during state update, not input handling)
         self.state.update_keypress(keypress);
         self.state.update_command(command);
 
-        // Nothing on the input path reads back rendered output, so a burst
-        // that outruns rendering can coalesce into one render, not one per key.
         self.unrendered_key_count += 1;
         let more_input_queued = self
             .term
@@ -47,8 +40,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_and_render()
     }
 
-    /// A filtered event (e.g. Windows key-release) skips the coalescing
-    /// check, stranding a render owed from the key just before it; flush it here.
     pub(super) fn flush_coalesced_render_if_idle(&mut self) -> Result<(), RiftError> {
         if self.unrendered_key_count == 0 {
             return Ok(());
@@ -64,13 +55,10 @@ impl<T: TerminalBackend> Editor<T> {
         self.update_and_render()
     }
 
-    /// State-update phase: syncs viewport/cursor/document-derived state ahead of
-    /// rendering. No cell composition or layer writes happen here.
     fn update_state(&mut self) -> Option<FrameState> {
         crate::perf_span!("update_state", crate::perf::PerfFields::default());
         self.flush_pending_text_changed();
         self.flush_pending_cursor_moved();
-        // Fire cursor enter/leave annotation hooks for any transition this frame.
         self.update_annotation_hover();
         if self.split_tree.window_count() == 1 {
             let rows = self.render_system.viewport.visible_rows();
@@ -81,13 +69,11 @@ impl<T: TerminalBackend> Editor<T> {
                 .set_size(rows, cols);
         }
 
-        // Sync buffer cursor to focused window
         let doc_id = self.split_tree.focused_window().document_id;
         if let Some(doc) = self.document_manager.get_document(doc_id) {
             self.split_tree.focused_window_mut().cursor_position = doc.buffer.cursor();
         }
 
-        // Recompute highlights before reading cursor state so the status bar col is correct.
         if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
             doc.recompute_directory_highlights();
         }
@@ -98,8 +84,6 @@ impl<T: TerminalBackend> Editor<T> {
                 let line = doc.buffer.get_line();
                 let cursor = doc.buffer.cursor();
                 let line_start = doc.buffer.line_index.get_start(line).unwrap_or(0);
-                // Offset the cursor by leading virtual text before it; `cursor + 1`
-                // because a marker on the cursor's own char renders before it.
                 let col = render::calculate_cursor_column_at(&doc.buffer, line, tw, cursor)
                     + doc.annotations.leading_width_in(line_start, cursor + 1);
                 let total = doc.buffer.get_total_lines();
@@ -135,8 +119,6 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let needs_clear = if let Some(ref dm) = display_map {
-            // Already extended by resolve_display_map_cached to cover cursor_char
-            // plus a screen's worth of rows, so no further extension needed here.
             let visual_row = dm.char_to_visual_row(cursor_char);
             let total_visual = dm.total_visual_rows();
             self.render_system
@@ -149,8 +131,6 @@ impl<T: TerminalBackend> Editor<T> {
                 .update(cursor_line, viewport_col, total_lines, gutter_width)
         };
 
-        // A pure vertical scroll rides the terminal's scroll region; content
-        // occupies rows 0..=visible_rows-2 (status bar on the last row).
         let scroll_hint = {
             let vp = &self.render_system.viewport;
             let content_bottom = vp.visible_rows().saturating_sub(2);
@@ -175,8 +155,6 @@ impl<T: TerminalBackend> Editor<T> {
         Some((doc_id, needs_clear, display_map, scroll_hint))
     }
 
-    /// Recompute `ui.selection.*` annotations from the active Visual region
-    /// (if any) and the active document's banked `SelectionSet`.
     pub(super) fn update_selection_highlights(&mut self) {
         crate::perf_span!(
             "update_selection_highlights",
@@ -196,8 +174,6 @@ impl<T: TerminalBackend> Editor<T> {
             None
         };
         let banked = doc.selection_set.sorted();
-        // Nothing selected and no leftover ui.selection.* annotation: skip
-        // the full annotation clear + interval-index rebuild.
         if active.is_none()
             && banked.is_empty()
             && doc.annotations.query_kind("ui.selection").next().is_none()
@@ -207,7 +183,50 @@ impl<T: TerminalBackend> Editor<T> {
         doc.sync_selection_annotations(active, &banked);
     }
 
+    fn visible_document_ids(&self) -> Vec<crate::document::DocumentId> {
+        let mut ids: Vec<crate::document::DocumentId> = self
+            .split_tree
+            .windows
+            .values()
+            .map(|w| w.document_id)
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
+    fn begin_ghost_paint(&mut self) {
+        for id in self.visible_document_ids() {
+            let Some(doc) = self.document_manager.get_document_mut(id) else {
+                continue;
+            };
+            let Some(outcome) = doc.begin_ghost_paint() else {
+                continue;
+            };
+            self.apply_syntax_sync(id, outcome);
+        }
+    }
+
+    fn end_ghost_paint(&mut self) {
+        for id in self.visible_document_ids() {
+            let Some(doc) = self.document_manager.get_document_mut(id) else {
+                continue;
+            };
+            let Some(outcome) = doc.end_ghost_paint() else {
+                continue;
+            };
+            self.apply_syntax_sync(id, outcome);
+        }
+    }
+
     pub fn update_and_render(&mut self) -> Result<(), RiftError> {
+        self.begin_ghost_paint();
+        let result = self.update_and_render_painted();
+        self.end_ghost_paint();
+        result
+    }
+
+    fn update_and_render_painted(&mut self) -> Result<(), RiftError> {
         #[cfg(feature = "perf_instrumentation")]
         let _frame_guard = crate::perf::begin_frame();
 
@@ -224,8 +243,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.render_plugin_float();
 
-        // Populate the TOOLTIP layer before the main render so it's included
-        // in the same compositor flush.
         if self.post_paste_state.is_some() {
             self.render_clipboard_tooltip();
         } else {
@@ -242,8 +259,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Screen row where the focused window's cursor will be drawn, from the
-    /// viewports as last synced by `update_state` / `update_window_viewports`.
     pub(crate) fn cursor_screen_row(&mut self) -> usize {
         let focused_id = self.split_tree.focused_window_id();
         let doc_id = self.split_tree.focused_window().document_id;
@@ -296,8 +311,6 @@ impl<T: TerminalBackend> Editor<T> {
         row_off + row
     }
 
-    /// Resolve the display map through the per-(doc, width) cache, grown in
-    /// place to lazily cover `cursor_char` plus `extend_margin_rows` rows.
     pub(super) fn resolve_display_map_cached(
         &mut self,
         doc_id: crate::document::DocumentId,
@@ -317,8 +330,6 @@ impl<T: TerminalBackend> Editor<T> {
         let params = super::resolve_wrap_params(doc, content_width, soft_wrap, wrap_width);
         let edits = doc.buffer.take_char_edits();
 
-        // Lines whose trailing virtual text needs an EOL row when they exactly
-        // fill the wrap width; computed only when the annotations changed.
         let eol_rows = |doc: &crate::document::Document| {
             doc.annotations.trailing_adornment_lines(include_lsp, |b| {
                 doc.buffer
@@ -351,8 +362,6 @@ impl<T: TerminalBackend> Editor<T> {
                         map = entry.map;
                     }
                 } else if entry.revision.wrapping_add(edits.len() as u64) == revision {
-                    // Every logged edit accounted for by the revision delta (no
-                    // foreign mutation slipped in): rewrap only the affected lines.
                     if let Some(combined) = combine_char_edits(&edits) {
                         if let Some(mut m) = entry.map {
                             if Arc::make_mut(&mut m).apply_edit(
@@ -377,8 +386,6 @@ impl<T: TerminalBackend> Editor<T> {
             }),
         };
 
-        // Check via shared &DisplayMap first: Arc::make_mut clones unconditionally
-        // if another Arc to the same map is alive, even if nothing needs growing.
         let already_covered = map
             .as_deref()
             .is_some_and(|m| !m.needs_extension(cursor_char, extend_margin_rows));
@@ -406,8 +413,6 @@ impl<T: TerminalBackend> Editor<T> {
         map
     }
 
-    /// The display-map cache key a window `cols` wide resolves to, i.e. its
-    /// (doc_id, content_width) after subtracting the gutter.
     fn window_map_key(
         &self,
         doc_id: crate::document::DocumentId,
@@ -423,7 +428,6 @@ impl<T: TerminalBackend> Editor<T> {
         Some((doc_id, cols.saturating_sub(gutter_width).max(1)))
     }
 
-    /// Render the clipboard ring tooltip to the TOOLTIP layer.
     pub(super) fn render_clipboard_tooltip(&mut self) {
         crate::perf_span!(
             "render_clipboard_tooltip",
@@ -452,8 +456,6 @@ impl<T: TerminalBackend> Editor<T> {
         );
     }
 
-    /// Render the editor interface (pure read - no mutations)
-    /// Uses the layer compositor for composited rendering
     pub fn render_to_terminal(&mut self, needs_clear: bool) -> Result<FrameStats, RiftError> {
         self.term.hide_cursor()?;
         let stats = self
@@ -472,8 +474,6 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(stats)
     }
 
-    /// Render the editor interface (pure read - no mutations)
-    /// Uses the layer compositor for composited rendering
     pub(super) fn render(
         &mut self,
         needs_clear: bool,
@@ -493,8 +493,6 @@ impl<T: TerminalBackend> Editor<T> {
             ..
         } = self;
 
-        // We need mutable access to call syntax.highlights() which potentially
-        // updates parse tree, and to recompute directory highlights.
         let doc = match document_manager.active_document_mut() {
             Some(d) => d,
             None => return Ok(()),
@@ -533,7 +531,6 @@ impl<T: TerminalBackend> Editor<T> {
             doc.buffer.len()
         };
 
-        // Convert to byte offsets for tree-sitter
         let start_byte = doc.buffer.char_to_byte(start_char);
         let end_byte = doc.buffer.char_to_byte(end_char);
 
@@ -548,8 +545,6 @@ impl<T: TerminalBackend> Editor<T> {
             .as_ref()
             .map(|s| s.injection_highlights_named(Some(start_byte..end_byte)));
 
-        // Generic annotation presentation overlay, restricted to the visible
-        // viewport rather than a full-document scan.
         let annotation_styles = doc.annotations.presentation_spans(
             state.settings.syntax_colors.as_ref(),
             Some(kind_registry),
@@ -572,8 +567,6 @@ impl<T: TerminalBackend> Editor<T> {
             Some(kind_registry),
             start_byte..end_byte,
         );
-        // Conceal ranges, minus those on the cursor's line (reveal-on-cursor-line).
-        // `s` is a byte offset but line_index is char-indexed, so convert first.
         let cursor_line = doc.buffer.line_index.get_line_at(doc.buffer.cursor());
         let annotation_concealed: Vec<(usize, usize)> = doc
             .annotations
@@ -620,11 +613,6 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 Some(&git_gutter_colors_data)
             },
-            plugin_highlights: if doc.plugin_highlights.is_empty() {
-                None
-            } else {
-                Some(&doc.plugin_highlights)
-            },
             annotation_styles: if annotation_styles.is_empty() {
                 None
             } else {
@@ -661,8 +649,6 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    /// If a plugin float is open, render it into the POPUP layer.
-    /// Clears the layer once when a float is closed.
     pub(super) fn render_plugin_float(&mut self) {
         crate::perf_span!("render_plugin_float", crate::perf::PerfFields::default());
         if self.plugin_host.has_open_float() {
@@ -880,8 +866,6 @@ impl<T: TerminalBackend> Editor<T> {
                 Some(w) => w,
                 None => continue,
             };
-            // +1 because render_content_to_layer_offset does saturating_sub(1)
-            // for the global status bar; multi-window layouts don't need that.
             window.viewport.set_size(layout.rows + 1, layout.cols);
             window
                 .viewport
@@ -1001,8 +985,6 @@ impl<T: TerminalBackend> Editor<T> {
         let content_rows = total_rows.saturating_sub(1);
         let layouts = self.split_tree.compute_layout(content_rows, total_cols);
 
-        // The window loop below borrows all of self at once, so resolve each
-        // window's display map through the &mut self cache up front.
         let mut window_maps: Vec<Option<std::sync::Arc<crate::wrap::DisplayMap>>> =
             Vec::with_capacity(layouts.len());
         for layout in &layouts {
@@ -1055,8 +1037,6 @@ impl<T: TerminalBackend> Editor<T> {
             render_system.compositor.resize(total_rows, total_cols);
         }
 
-        // A changed window SET clears the whole layer as a safety net (a
-        // leftover window fragment is worse than one extra full clear).
         let resolvable_window_ids: std::collections::HashSet<_> = layouts
             .iter()
             .filter(|l| {
@@ -1066,7 +1046,6 @@ impl<T: TerminalBackend> Editor<T> {
             })
             .map(|l| l.window_id)
             .collect();
-        // A full redraw invalidates every window paint cache.
         let window_set_changed = needs_clear
             || resolvable_window_ids.len() != render_system.window_paint_caches.len()
             || !resolvable_window_ids
@@ -1211,11 +1190,6 @@ impl<T: TerminalBackend> Editor<T> {
                 } else {
                     Some(&git_gutter_colors_data)
                 },
-                plugin_highlights: if doc.plugin_highlights.is_empty() {
-                    None
-                } else {
-                    Some(&doc.plugin_highlights)
-                },
                 annotation_styles: if annotation_styles.is_empty() {
                     None
                 } else {
@@ -1261,8 +1235,6 @@ impl<T: TerminalBackend> Editor<T> {
                     layout: layout.clone(),
                 });
             if window_cache.layout != *layout || window_set_changed {
-                // Moved/resized or the window set changed (layer cleared
-                // above) - force a real paint/blit, never the no-op skip.
                 window_cache.blit_key = None;
                 window_cache.layout = layout.clone();
             }
@@ -1348,8 +1320,6 @@ impl<T: TerminalBackend> Editor<T> {
             pending_count: *pending_count,
             needs_clear,
             tab_width: focused_tab_width,
-            // Cursor-only overlay (skip_content): highlights are never drawn
-            // from this state, so skip the full-file capture collection.
             highlights: None,
             capture_map: None,
             injection_highlights: None,
@@ -1363,15 +1333,7 @@ impl<T: TerminalBackend> Editor<T> {
             } else {
                 Some(&focused_doc.custom_highlights)
             },
-            // Cursor-only overlay (skip_content); gutter is redrawn by the
-            // full content pass, not this one.
             git_gutter_colors: None,
-            plugin_highlights: if focused_doc.plugin_highlights.is_empty() {
-                None
-            } else {
-                Some(&focused_doc.plugin_highlights)
-            },
-            // Cursor-only overlay (skip_content); no content styling needed.
             annotation_styles: None,
             annotation_adornments: None,
             annotation_inline: None,
@@ -1382,8 +1344,6 @@ impl<T: TerminalBackend> Editor<T> {
             show_line_numbers: focused_doc.options.show_line_numbers,
             display_map: focused_display_map.as_deref(),
             scroll_hint: None,
-            // Cursor-only overlay (skip_content): compute_content_blit_key
-            // is never reached from this state, so these are never read.
             syntax_generation: 0,
             annotations_revision: 0,
             kind_registry_generation: 0,
@@ -1394,8 +1354,6 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    /// Render a hover tooltip for the annotation under the cursor (e.g. an LSP
-    /// diagnostic message) into the TOOLTIP layer. Clears it when there is none.
     pub(super) fn render_annotation_tooltip(&mut self, cursor_row: usize) {
         crate::perf_span!(
             "render_annotation_tooltip",
@@ -1431,8 +1389,6 @@ impl<T: TerminalBackend> Editor<T> {
                             )
                         })
                         .map(|s| s.to_string());
-                    // Affordance hint for the interactive annotation under the
-                    // cursor, so its actions + key bindings are discoverable.
                     let affordance = doc
                         .annotations
                         .interactive_at(cursor_byte)
@@ -1480,7 +1436,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
         let width = rows.iter().map(|r| r.len()).max().unwrap_or(0) + 2;
         let height = rows.len() + 2;
-        // Bottom placement would cover the cursor row: flip to the top instead.
         let position = if cursor_row + height + 1 >= screen_rows {
             WindowPosition::Top
         } else {
@@ -1501,8 +1456,6 @@ impl<T: TerminalBackend> Editor<T> {
         window.render_cells(layer, &rows);
     }
 
-    /// Render a pending-changes tooltip at the top of the screen when a directory
-    /// buffer has unsaved edits. Clears the HOVER layer when there is nothing to show.
     pub(super) fn render_explorer_diff_tooltip(&mut self) {
         crate::perf_span!(
             "render_explorer_diff_tooltip",
@@ -1526,8 +1479,6 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        // parse_directory_diff compares live buffer text against annotated originals,
-        // so it correctly reflects in-progress insert-mode edits even before history commits.
         let diff = self
             .document_manager
             .get_document(doc_id)
@@ -1597,8 +1548,6 @@ impl<T: TerminalBackend> Editor<T> {
     }
 }
 
-/// Collapse a batch of same-frame char edits into the single net edit
-/// `DisplayMap::apply_edit` expects; `None` if not one contiguous region.
 pub(crate) fn combine_char_edits(
     edits: &[crate::buffer::CharEdit],
 ) -> Option<crate::buffer::CharEdit> {

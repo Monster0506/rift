@@ -62,19 +62,7 @@ pub(super) fn native_action_handlers<T: TerminalBackend>(
 
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn handle_action(&mut self, action: &crate::action::Action) -> bool {
-        let before = self
-            .document_manager
-            .active_document()
-            .map(|d| (d.id, d.buffer.cursor()));
-        let result = self.handle_action_inner(action);
-        if let Some((doc_id, cursor_before)) = before {
-            if self.document_manager.active_document_id() == Some(doc_id) {
-                if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
-                    doc.skip_cursor_over_ghosts(cursor_before);
-                }
-            }
-        }
-        result
+        self.handle_action_inner(action)
     }
 
     fn handle_action_inner(&mut self, action: &crate::action::Action) -> bool {
@@ -311,12 +299,8 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             EditorAction::EnterNormalMode => {
-                let committed_prior = self
-                    .document_manager
-                    .active_document_mut()
-                    .is_some_and(|doc| doc.commit_pending_ghost());
-                if committed_prior {
-                    self.do_incremental_syntax_parse();
+                if let Some(doc) = self.document_manager.active_document_mut() {
+                    doc.commit_pending_ghost();
                 }
                 if !self.current_mode.is_visual() {
                     if let Some(doc) = self.document_manager.active_document_mut() {
@@ -1224,16 +1208,9 @@ impl<T: TerminalBackend> Editor<T> {
             .iter_documents()
             .map(|d| d.id)
             .collect();
-        let active_id = self.document_manager.active_document().map(|d| d.id);
         for id in doc_ids {
-            let Some(doc) = self.document_manager.get_document_mut(id) else {
-                continue;
-            };
-            if !doc.commit_pending_ghost() {
-                continue;
-            }
-            if Some(id) != active_id {
-                self.debounce_syntax_reparse(id);
+            if let Some(doc) = self.document_manager.get_document_mut(id) {
+                doc.commit_pending_ghost();
             }
         }
         self.document_manager.set_most_recent_ghost_doc(None);

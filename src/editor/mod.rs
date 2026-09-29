@@ -1,6 +1,3 @@
-//! Editor core
-//! Main editor logic that ties everything together
-
 pub mod actions;
 mod annotations_ops;
 
@@ -100,12 +97,6 @@ fn plugin_dirs() -> Vec<std::path::PathBuf> {
     dirs
 }
 
-/// Above this size a synchronous parse reliably exceeds its time budget, so
-/// callers skip the O(N) source copy and go straight to the background job.
-pub(crate) const SYNC_PARSE_MAX_BYTES: usize = 256 * 1024;
-
-/// Resolve the wrap/tab width a display map would use, or `None` for no
-/// soft-wrap. Cheap, so it can validate a cached display map before reuse.
 fn resolve_wrap_params(
     doc: &Document,
     content_width: usize,
@@ -140,9 +131,7 @@ fn resolve_display_map(
     Some(crate::wrap::DisplayMap::build(&doc.buffer, w, tab_width))
 }
 
-/// Main editor struct
 pub struct Editor<T: TerminalBackend> {
-    /// Terminal backend
     pub term: T,
     pub document_manager: crate::document::DocumentManager,
     pub buffer_kinds: crate::document::BufferKindRegistry,
@@ -154,9 +143,7 @@ pub struct Editor<T: TerminalBackend> {
     settings_registry: SettingsRegistry<UserSettings>,
     document_settings_registry: SettingsRegistry<crate::document::definitions::DocumentOptions>,
     language_loader: Arc<crate::syntax::loader::LanguageLoader>,
-    /// Background job manager
     pub job_manager: crate::job_manager::JobManager,
-    /// Job ID required to finish before quitting
     pending_quit_job_id: Option<usize>,
     pub keymap: KeyMap,
     pub split_tree: SplitTree,
@@ -166,143 +153,73 @@ pub struct Editor<T: TerminalBackend> {
     >,
     native_save_handlers:
         std::collections::HashMap<crate::document::BufferKindId, file_ops::NativeSaveHandler<T>>,
-    // Input state
     pending_keys: Vec<crate::key::Key>,
     pending_count: usize,
-    /// 0 = not yet captured. Set from `pending_count` on the first digit
-    /// typed for the motion (the 2 in `2d3w`), then multiplied with it.
     pending_operator_count: usize,
     pending_operator: Option<crate::action::OperatorType>,
     pending_grammar: Option<pending_grammar::PendingGrammar>,
-    /// When `Some`, `pending_keys` is non-empty waiting on a non-operator
-    /// Ambiguous/Prefix match; cleared once resolved or flushed by timeout.
     pending_keys_started_at: Option<crate::time::Instant>,
-    /// Set while `ys` is waiting for its motion/text-object before the delimiter
-    /// char. Carries the delimiter-repeat count captured when the first `s` fired.
     pending_surround_add: Option<usize>,
-    /// Char offset of the in-progress Visual region's anchor; `None` outside
-    /// Visual/VisualLine/VisualBlock. The cursor side is `buffer.cursor()`.
     pub(super) visual_anchor: Option<usize>,
-    /// Insert anchors still waiting for the recorded session to replay at,
-    /// once the live-typed Insert session at the first anchor finishes.
     pub(super) pending_multi_insert_anchors: Vec<usize>,
-    /// Selection-building actions accumulated since a set-aware command last consumed
-    /// the set (finalized into `DotRegister::RegionBuildSession`).
     pub(super) region_build_recording: Vec<crate::action::Action>,
-    /// Stack of prior selection extents, for `<Shift-Space>` shrink (Task 24).
-    /// Cleared whenever a fresh Visual region starts.
     pub(super) expand_history: Vec<(usize, usize)>,
-    /// Display-map entries keyed by (doc_id, content_width), so each split
-    /// window keeps its own reusable map. LRU order: most recent at the back.
     display_map_cache: Vec<DisplayMapCacheEntry>,
-    /// Doc whose TextChangedCoarse event is pending dispatch at the next render.
     pending_text_changed: Option<crate::document::DocumentId>,
-    /// Latest CursorMoved event pending dispatch at the next render.
     pending_cursor_moved: Option<(crate::document::DocumentId, usize, usize)>,
     dot_repeat: DotRepeat,
     pub panel_layout: Option<PanelLayout>,
-    /// Last seen notification generation; used to detect when to refresh open messages buffers.
     last_notification_generation: u64,
-    /// Plugin host: dispatches editor events to registered plugin handlers.
     pub plugin_host: crate::plugin::PluginHost,
-    /// Clipboard ring buffer: stores yanked/deleted text, capacity 10.
     pub clipboard_ring: crate::clipboard::ClipboardRing,
-    /// Cached system-clipboard read for the tooltip, refreshed out-of-band.
     system_clipboard_cache: crate::clipboard::SystemClipboardCache,
-    /// Tracks the active paste so <C-n> can cycle to the next ring entry.
     post_paste_state: Option<PostPasteState>,
-    /// After navigating to a parent directory, the name of the child entry to
-    /// restore the cursor to once the listing arrives.
     pending_cursor_entry: Option<String>,
-    /// In-flight file-load job id -> document it will populate, so a failed
-    /// load can be attributed to its placeholder.
     file_load_jobs: std::collections::HashMap<usize, crate::document::DocumentId>,
-    /// LSP integration layer.
     #[cfg(feature = "lsp")]
     pub lsp_manager: crate::lsp::LspManager,
-    /// Cached LSP diagnostics per document URI for navigation ([d / ]d).
     #[cfg(feature = "lsp")]
     lsp_diagnostics: std::collections::HashMap<String, Vec<crate::lsp::protocol::LspDiagnostic>>,
-    /// Languages whose server has completed initialization and indexing.
-    /// Diagnostic notifications are suppressed until the language appears here.
     #[cfg(feature = "lsp")]
     lsp_ready_servers: std::collections::HashSet<String>,
-    /// Code actions returned by the last textDocument/codeAction request.
-    /// Used to apply the selection from the code-action picker panel.
     #[cfg(feature = "lsp")]
     pending_code_actions: Vec<serde_json::Value>,
-    /// Stored position when LSP rename dialog was opened (path, line, col).
     #[cfg(feature = "lsp")]
     rename_context: Option<(std::path::PathBuf, u32, u32)>,
-    /// Deferred goto-definition target (doc_id, line, col; 0-indexed) for a
-    /// destination file that had to load asynchronously first.
     #[cfg(feature = "lsp")]
     pending_goto_target: Option<(crate::document::DocumentId, usize, usize)>,
-    /// Resolves annotation (kind, verb) activations to handlers.
     pub dispatch_registry: crate::annotations::registry::DispatchRegistry,
-    /// Per-kind presentation/description defaults applied at render and hover time
-    /// when an annotation supplies none.
     pub kind_registry: crate::annotations::registry::KindRegistry,
-    /// Id of the annotation the cursor currently rests on, tracked so cursor
-    /// enter/leave hooks fire once per transition.
     hovered_annotation: Option<crate::annotations::AnnotationId>,
-    /// Debounced background syntax reparse state per document, keyed off a
-    /// sync `try_incremental_parse` exceeding its time budget.
     pending_syntax_reparse:
         std::collections::HashMap<crate::document::DocumentId, jobs::PendingSyntaxReparse>,
-    /// Debounced git-gutter-diff state per document (revision-driven: armed
-    /// whenever `poll_git_gutter_diff` notices the buffer revision moved).
     pending_git_gutter_diff:
         std::collections::HashMap<crate::document::DocumentId, git_gutter::PendingGitGutterDiff>,
-    /// Discovered repo root per document, memoized so gutter-diff polling
-    /// doesn't shell `git rev-parse` every tick. `None` = confirmed not in a repo.
     git_gutter_repo_cache:
         std::collections::HashMap<crate::document::DocumentId, Option<std::path::PathBuf>>,
-    /// `:Git diff`/`:Git diff --cached` opened this `GitStatus` doc id and wants every hunk in the given section (`true` = staged) expanded as soon as the async status snapshot populates the buffer.
     pending_git_status_expand_all: std::collections::HashMap<crate::document::DocumentId, bool>,
-    /// `:Git show` opened this `GitLog` doc id and wants HEAD's commit
-    /// expanded as soon as the async commit list populates the buffer.
     pending_git_log_expand_head: std::collections::HashSet<crate::document::DocumentId>,
-    /// Deadline for a debounced search-highlight refresh after undo/redo, so
-    /// a burst of undos pays one full-buffer re-search instead of one each.
     pending_search_refresh: Option<crate::time::Instant>,
-    /// (doc id, buffer revision, query) of the last search-highlight sync, so
-    /// the per-frame call skips the full re-search when nothing changed.
     search_highlights_synced: Option<(crate::document::DocumentId, u64, String)>,
-    /// Tracks the most recently requested explorer preview path and its
-    /// in-flight job id, so cursor moves dedupe/cancel instead of piling up jobs.
     pending_explorer_preview: Option<explorer::PendingExplorerPreview>,
-    /// When startup finished its first contentful paint, for perf reporting.
     pub(crate) startup_first_paint: Option<crate::time::Instant>,
-    /// Keys since the last real render, so a burst that keeps the terminal's
-    /// input queue non-empty coalesces into one render instead of one per key.
     pub(super) unrendered_key_count: usize,
 }
 
-/// One `display_map_cache` slot. `map` is `None` when wrap is off for the
-/// doc, cached so that lookup is also cheap. Arc-shared: hits hand out a pointer.
 struct DisplayMapCacheEntry {
     doc_id: DocumentId,
     revision: u64,
-    /// `apply_loaded_content` resets revision to 0 rather than bumping it, so
-    /// a placeholder-to-loaded swap is tracked by buffer length instead.
     buf_len: usize,
     content_width: usize,
-    /// Annotation revision (and LSP virtual-text setting) the map's EOL-row
-    /// set was derived from.
     annotations_revision: u64,
     lsp_virtual_text: bool,
     map: Option<std::sync::Arc<crate::wrap::DisplayMap>>,
 }
 
-/// State retained between a `Put` and a `CyclePaste` action.
 #[derive(Debug, Clone)]
 struct PostPasteState {
-    /// Which ring index is currently pasted.
     ring_index: usize,
-    /// Whether the paste was before the cursor (`P`) or after (`p`).
     before: bool,
-    /// Cursor position before the paste, so cycling can restore it after undo.
     original_cursor: usize,
 }
 
@@ -311,15 +228,11 @@ pub enum PanelKind {
     FileExplorer,
     UndoTree,
     Clipboard,
-    /// Diagnostics or references location list.
     LocationList,
-    /// `gv` regions list.
     Regions,
-    /// Interactive buffer-list split panel.
     BufferList,
 }
 
-/// Tracks the two windows and documents that make up a live explorer session.
 #[derive(Debug, Clone)]
 pub struct PanelLayout {
     pub kind: PanelKind,
@@ -327,7 +240,6 @@ pub struct PanelLayout {
     pub preview_win_id: crate::split::window::WindowId,
     pub dir_doc_id: DocumentId,
     pub preview_doc_id: DocumentId,
-    /// For FileExplorer: the document that was showing in `dir_win_id` before the explorer opened.
     pub original_doc_id: DocumentId,
 }
 

@@ -5,8 +5,6 @@ use crate::dot_repeat::DotRegister;
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
 
-/// Rebuild `cmd` with its embedded count replaced by `count`, for command
-/// variants that carry one. `None` for variants with no count to override.
 fn with_count_override(cmd: Command, count: usize) -> Option<Command> {
     match cmd {
         Command::Move(m, _) => Some(Command::Move(m, count)),
@@ -30,8 +28,6 @@ impl<T: TerminalBackend> Editor<T> {
         op: crate::action::OperatorType,
         motion: Motion,
     ) -> bool {
-        // .take() unconditionally so a stale flag from an interrupted `sg`
-        // never leaks into an unrelated operator below.
         if let Some(delim_count) = self.pending_surround_add.take() {
             if op == crate::action::OperatorType::Yank {
                 let count = self.pending_operator_count.max(1) * self.pending_count.max(1);
@@ -51,7 +47,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.pending_operator_count = 0;
         self.pending_count = 0;
 
-        // Capture text to ring before any destructive operation, and for yank.
         let viewport_height = self.render_system.viewport.visible_rows();
         let last_search_query = self.state.last_search_query.clone();
         let motion_range = self.document_manager.active_document_mut().and_then(|doc| {
@@ -86,26 +81,8 @@ impl<T: TerminalBackend> Editor<T> {
                     .active_document()
                     .is_some_and(|doc| doc.ghost_cut_allowed());
                 let result = if self.state.settings.ghost_cut && ghost_allowed {
-                    // Commit any pending ghost, then recompute fresh: reusing
-                    // `motion_range` would target offsets from before that shift.
-                    let committed_prior = self
-                        .document_manager
-                        .active_document_mut()
-                        .is_some_and(|doc| doc.commit_pending_ghost());
-                    if committed_prior {
-                        self.do_incremental_syntax_parse();
-                    }
-                    let fresh_range = self.document_manager.active_document_mut().and_then(|doc| {
-                        crate::executor::compute_motion_range(
-                            motion,
-                            count,
-                            doc,
-                            viewport_height,
-                            last_search_query.as_deref(),
-                        )
-                    });
                     let mut ghosted_doc = None;
-                    if let Some(range) = fresh_range {
+                    if let Some(range) = motion_range {
                         if let Some(doc) = self.document_manager.active_document_mut() {
                             let (start, end) = crate::executor::range_to_offsets(&range, doc, true);
                             if end > start {
@@ -114,6 +91,9 @@ impl<T: TerminalBackend> Editor<T> {
                                 ghosted_doc = Some(doc.id);
                             }
                         }
+                    }
+                    if ghosted_doc.is_some() {
+                        self.do_incremental_syntax_parse();
                     }
                     if let Some(id) = ghosted_doc {
                         self.document_manager.set_most_recent_ghost_doc(Some(id));
@@ -168,7 +148,6 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             crate::action::OperatorType::Yank => {
-                // Text already captured above; just return to Normal.
                 self.set_mode(Mode::Normal);
                 true
             }
@@ -178,13 +157,10 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn execute_operator_linewise(&mut self, op: crate::action::OperatorType) -> bool {
         self.pending_operator = None;
         self.pending_surround_add = None;
-        // Consume both counts and clear them so neither leaks into the
-        // next motion.
         let count = self.pending_operator_count.max(1) * self.pending_count.max(1);
         self.pending_operator_count = 0;
         self.pending_count = 0;
 
-        // Capture current line(s) text for all operators.
         let captured = self
             .document_manager
             .active_document()
@@ -207,11 +183,7 @@ impl<T: TerminalBackend> Editor<T> {
                     .is_some_and(|doc| doc.ghost_cut_allowed());
                 let result = if self.state.settings.ghost_cut && ghost_allowed {
                     let mut ghosted_doc = None;
-                    let mut committed_prior = false;
                     if let Some(doc) = self.document_manager.active_document_mut() {
-                        // Commit any pending ghost first: its commit can shift the
-                        // buffer, so the line range below must reflect that.
-                        committed_prior = doc.commit_pending_ghost();
                         doc.buffer.move_to_line_start();
                         let start = doc.buffer.cursor();
                         let mut reached_last_line = false;
@@ -226,8 +198,6 @@ impl<T: TerminalBackend> Editor<T> {
                         } else {
                             doc.buffer.move_to_line_end();
                             let end = doc.buffer.cursor();
-                            // Last line: ghost the preceding newline too, so the
-                            // ghosted range still merges into the line above it.
                             if start > 0 {
                                 (start - 1, end)
                             } else {
@@ -240,7 +210,7 @@ impl<T: TerminalBackend> Editor<T> {
                             ghosted_doc = Some(doc.id);
                         }
                     }
-                    if committed_prior {
+                    if ghosted_doc.is_some() {
                         self.do_incremental_syntax_parse();
                     }
                     if let Some(id) = ghosted_doc {
@@ -275,14 +245,12 @@ impl<T: TerminalBackend> Editor<T> {
                 true
             }
             crate::action::OperatorType::Yank => {
-                // Text already captured above; just return to Normal.
                 self.set_mode(Mode::Normal);
                 true
             }
         }
     }
 
-    /// Replay the last repeatable action (dot-repeat)
     pub(super) fn execute_dot_repeat(&mut self) -> bool {
         let register = match self.dot_repeat.register() {
             Some(reg) => reg.clone(),
@@ -299,8 +267,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         match register {
             DotRegister::Single(cmd) => {
-                // A leading count on `.` replaces (not multiplies) an
-                // embedded count: 3. after d2w runs d3w once, matching vim.
                 match (self.pending_count > 0, with_count_override(cmd, count)) {
                     (true, Some(overridden)) => {
                         self.execute_buffer_command(overridden);
@@ -314,15 +280,12 @@ impl<T: TerminalBackend> Editor<T> {
             }
             DotRegister::InsertSession { entry, commands } => {
                 for _ in 0..count {
-                    // Enter insert mode (handles cursor positioning for a/A/I)
                     self.handle_mode_management(entry);
 
-                    // Replay all commands from the session
                     for &cmd in &commands {
                         self.execute_buffer_command(cmd);
                     }
 
-                    // Exit insert mode: commit transaction
                     if let Some(doc) = self.document_manager.active_document_mut() {
                         doc.commit_transaction();
                     }
@@ -330,8 +293,6 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             DotRegister::RegionBuildSession { actions, follow_up } => {
-                // Rebuild relative to the current cursor by replaying the
-                // recorded actions; count doesn't apply (would re-bank).
                 for action in &actions {
                     self.handle_action(action);
                 }

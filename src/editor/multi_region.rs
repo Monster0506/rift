@@ -289,13 +289,6 @@ impl<T: TerminalBackend> Editor<T> {
                 if batch.is_empty() {
                     return false;
                 }
-                let committed_prior = self
-                    .document_manager
-                    .active_document_mut()
-                    .is_some_and(|doc| doc.commit_pending_ghost());
-                if committed_prior {
-                    self.do_incremental_syntax_parse();
-                }
                 let ranges: Vec<(usize, usize)> = {
                     let Some(doc) = self.document_manager.active_document() else {
                         return false;
@@ -330,6 +323,9 @@ impl<T: TerminalBackend> Editor<T> {
                         }
                         doc.id
                     });
+                    if ghosted_doc.is_some() {
+                        self.do_incremental_syntax_parse();
+                    }
                     if let Some(id) = ghosted_doc {
                         self.document_manager.set_most_recent_ghost_doc(Some(id));
                     }

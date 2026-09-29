@@ -1,5 +1,3 @@
-//! Centralized editor state for settings and runtime information.
-
 use crate::color::{Color, Theme};
 use crate::command::Command;
 use crate::command_line::commands::completion::CompletionCandidate;
@@ -11,23 +9,16 @@ use crate::key::Key;
 use crate::notification::NotificationType;
 use crate::search::{SearchDirection, SearchMatch};
 
-/// Command line window settings
 #[derive(Debug, Clone)]
 pub struct CommandLineWindowSettings {
-    /// Width as a ratio of terminal width (0.0 to 1.0)
     pub width_ratio: f64,
-    /// Minimum width in columns
     pub min_width: usize,
-    /// Height in rows (including borders)
     pub height: usize,
-    /// Whether to draw a border around the window
     pub border: bool,
-    /// Whether to use reverse video (inverted colors)
     pub reverse_video: bool,
 }
 
 impl Default for CommandLineWindowSettings {
-    /// Create default command line window settings
     fn default() -> Self {
         CommandLineWindowSettings {
             width_ratio: 0.6, // 60% of terminal width
@@ -40,21 +31,15 @@ impl Default for CommandLineWindowSettings {
 }
 impl CommandLineWindowSettings {}
 
-/// Status line settings
 #[derive(Debug, Clone)]
 pub struct StatusLineSettings {
-    /// Whether to show the status line at all
     pub show_status_line: bool,
-    /// Whether to show filename in status bar (normal mode)
     pub show_filename: bool,
-    /// Whether to show dirty state indicator (*) in status bar
     pub show_dirty_indicator: bool,
-    /// Whether to use reverse video for status bar
     pub reverse_video: bool,
 }
 
 impl Default for StatusLineSettings {
-    /// Create default status line settings
     fn default() -> Self {
         StatusLineSettings {
             show_status_line: true,
@@ -65,57 +50,32 @@ impl Default for StatusLineSettings {
     }
 }
 
-/// User settings that persist across sessions
-/// These are preferences that should be saved and loaded from a config file
 #[derive(Debug, Clone)]
 pub struct UserSettings {
-    /// Whether to show line numbers
     pub show_line_numbers: bool,
-    /// Default border characters for floating windows
     pub default_border_chars: Option<BorderChars>,
-    /// Command line window settings
     pub command_line_window: CommandLineWindowSettings,
-    /// Status line settings
     pub status_line: StatusLineSettings,
-    /// Editor background color (None means use terminal default)
     pub editor_bg: Option<Color>,
-    /// Editor foreground color (None means use terminal default)
     pub editor_fg: Option<Color>,
-    /// Current theme name (None means no theme applied)
     pub theme: Option<String>,
-    /// Main loop poll timeout in milliseconds
     pub poll_timeout_ms: u64,
-    /// Tab width in spaces
     pub tab_width: usize,
-    /// Whether to expand tabs to spaces
     pub expand_tabs: bool,
-    /// Optional syntax highlighting colors from current theme
     pub syntax_colors: Option<crate::color::theme::SyntaxColors>,
-    /// Enable soft line wrapping
     pub soft_wrap: bool,
-    /// Fixed wrap column; None means use the terminal content width
     pub wrap_width: Option<usize>,
-    /// Maximum number of entries in the clipboard ring
     pub clipboard_ring_size: usize,
-    /// When true, ^w= distributes space proportionally to leaf count instead of 50/50
     pub equalize_proportional: bool,
-    /// Cursor accent color (block fill in Normal, bar color in Insert)
     pub cursor_color: Option<Color>,
-    /// Cursor animation speed: fraction of remaining distance covered per frame (0.0-1.0)
     pub cursor_speed: f64,
-    /// Emit LSP protocol events as info notifications for debugging
     pub lsp_debug_log: bool,
-    /// Render LSP diagnostics as trailing end-of-line virtual text
     pub lsp_virtual_text: bool,
-    /// Show the diagnostic tooltip for the cursor line
     pub lsp_diagnostic_tooltip: bool,
-    /// Defer `d`-cuts into a ghosted span until something resolves them;
-    /// when off, `d` deletes right away, as before the ghost-cut feature.
     pub ghost_cut: bool,
 }
 
 impl UserSettings {
-    /// Create default user settings
     #[must_use]
     pub fn new() -> Self {
         let mut settings = UserSettings {
@@ -142,20 +102,16 @@ impl UserSettings {
             ghost_cut: true,
         };
 
-        // Apply default Dark theme
         let default_theme = Theme::gruvbox();
         settings.apply_theme(&default_theme);
 
         settings
     }
 
-    /// Apply a theme to the settings using the theme handler
-    /// This delegates to the theme handler which can apply all theme properties
     pub fn apply_theme(&mut self, theme: &Theme) {
         theme.apply_to_settings(self);
     }
 
-    /// Get the current theme name
     #[must_use]
     pub fn get_theme_name(&self) -> Option<&str> {
         self.theme.as_deref()
@@ -168,11 +124,8 @@ impl Default for UserSettings {
     }
 }
 
-/// Maximum number of visible rows in the completion dropdown
 pub const COMPLETION_MAX_VISIBLE: usize = 8;
 
-/// Editor runtime state (session-specific, not persisted)
-/// Active tab-completion session
 #[derive(Debug, Clone)]
 pub struct CompletionSession {
     pub input_at_tab: String,
@@ -244,61 +197,34 @@ impl CompletionSession {
 }
 
 pub struct State {
-    /// User settings (persistent preferences)
     pub settings: UserSettings,
-    /// Whether debug mode is enabled (session-only, does not persist)
     pub debug_mode: bool,
-    /// Current file path (None if no file loaded)
     pub file_path: Option<String>,
-    /// Cached filename for display
     pub file_name: String,
-    /// Last keypress received
     pub last_keypress: Option<Key>,
-    /// Last command that will be executed
     pub last_command: Option<Command>,
-    /// Current cursor position (line, column)
     pub cursor_pos: (usize, usize),
-    /// Total number of lines in buffer
     pub total_lines: usize,
-    /// Current gutter width (cached for optimization)
     pub gutter_width: usize,
-    /// Threshold at which gutter width must increase
     pub next_gutter_threshold: usize,
-    /// Buffer size
     pub buffer_size: usize,
-    /// Command line input (for command mode)
     pub command_line: String,
-    /// Command line cursor position (index in bytes)
     pub command_line_cursor: usize,
-    /// Whether the current document has unsaved changes
     pub is_dirty: bool,
-    /// Line ending type of the current document
     pub line_ending: LineEnding,
-    /// Error and notification manager
     pub error_manager: ErrorManager,
-    /// Last f/F/t/T find: (char, forward, is_till). Used by n/N (RepeatFind*) motions.
     pub last_find_char: Option<(char, bool, bool)>,
-    /// Last search query
     pub last_search_query: Option<String>,
-    /// Search direction
     pub search_direction: SearchDirection,
-    /// Search matches
     pub search_matches: Vec<SearchMatch>,
-    /// Command history (for : commands)
     pub command_history: crate::history::command::CommandHistory,
-    /// Search history (for / searches)
     pub search_history: crate::history::command::CommandHistory,
-    /// Active tab-completion session (None when not completing)
     pub completion_session: Option<CompletionSession>,
-    /// LSP status indicator for the status bar (e.g. "LSP: 2/5 indexing").
-    /// None when no LSP activity is in progress.
     pub lsp_status: Option<String>,
-    /// True when running inside an IPC daemon (remote session).
     pub is_remote: bool,
 }
 
 impl State {
-    /// Create a new state instance with default values
     #[must_use]
     pub fn new() -> Self {
         State {
@@ -330,7 +256,6 @@ impl State {
         }
     }
 
-    /// Create a new state instance with custom user settings
     #[must_use]
     pub fn with_settings(settings: UserSettings) -> Self {
         State {
@@ -362,64 +287,52 @@ impl State {
         }
     }
 
-    /// Set default border characters for floating windows
     pub fn set_default_border_chars(&mut self, border_chars: Option<BorderChars>) {
         self.settings.default_border_chars = border_chars;
     }
 
-    /// Set whether to expand tabs to spaces
     pub fn set_expand_tabs(&mut self, expand: bool) {
         self.settings.expand_tabs = expand;
     }
 
-    /// Set tab width
     pub fn set_tab_width(&mut self, width: usize) {
         self.settings.tab_width = width;
     }
 
-    /// Set the current file path
     pub fn set_file_path(&mut self, path: Option<String>) {
         self.file_path = path;
     }
 
-    /// Toggle debug mode
     pub fn toggle_debug(&mut self) {
         self.debug_mode = !self.debug_mode;
     }
 
-    /// Update last keypress
     pub fn update_keypress(&mut self, key: Key) {
         self.last_keypress = Some(key);
     }
 
-    /// Update last command
     pub fn update_command(&mut self, cmd: Command) {
         self.last_command = Some(cmd);
     }
 
-    /// Update cursor position
     pub fn update_cursor(&mut self, line: usize, col: usize) {
         self.cursor_pos = (line, col);
     }
 
-    /// Update buffer statistics
     pub fn update_buffer_stats(
         &mut self,
         total_lines: usize,
         buffer_size: usize,
         line_ending: LineEnding,
     ) {
-        // If total lines crossed a threshold, update gutter width
         if total_lines >= self.next_gutter_threshold
             || (total_lines < self.next_gutter_threshold / 10 && self.gutter_width > 2)
         {
-            // Recalculate gutter width: number of digits + 2 (one pad each side)
             self.gutter_width = if total_lines == 0 {
                 0
             } else {
                 total_lines.to_string().len() + 2
             };
-            // Set next threshold to next power of 10
             let mut threshold = 10;
             while threshold <= total_lines {
                 threshold *= 10;
@@ -432,7 +345,6 @@ impl State {
         self.line_ending = line_ending;
     }
 
-    /// Append a character to the command line at cursor position
     pub fn append_to_command_line(&mut self, ch: char) {
         if self.command_line_cursor >= self.command_line.len() {
             self.command_line.push(ch);
@@ -442,7 +354,6 @@ impl State {
         self.command_line_cursor += ch.len_utf8();
     }
 
-    /// Remove character before cursor (Backspace)
     pub fn remove_from_command_line(&mut self) {
         if self.command_line_cursor > 0 {
             let prev_len = self.command_line[..self.command_line_cursor]
@@ -455,20 +366,17 @@ impl State {
         }
     }
 
-    /// Delete character at cursor (Delete)
     pub fn delete_forward_command_line(&mut self) {
         if self.command_line_cursor < self.command_line.len() {
             self.command_line.remove(self.command_line_cursor);
         }
     }
 
-    /// Clear the command line
     pub fn clear_command_line(&mut self) {
         self.command_line.clear();
         self.command_line_cursor = 0;
     }
 
-    /// Move command line cursor left
     pub fn move_command_line_left(&mut self) {
         let prev_len = self.command_line[..self.command_line_cursor]
             .chars()
@@ -477,7 +385,6 @@ impl State {
         self.command_line_cursor -= prev_len;
     }
 
-    /// Move command line cursor right
     pub fn move_command_line_right(&mut self) {
         let next_len = self.command_line[self.command_line_cursor..]
             .chars()
@@ -486,24 +393,20 @@ impl State {
         self.command_line_cursor += next_len;
     }
 
-    /// Move command line cursor to start
     pub fn move_command_line_home(&mut self) {
         self.command_line_cursor = 0;
     }
 
-    /// Move command line cursor to previous word start
     pub fn move_command_line_word_left(&mut self) {
         self.command_line_cursor =
             crate::movement::boundaries::prev_word(&self.command_line, self.command_line_cursor);
     }
 
-    /// Move command line cursor to next word start
     pub fn move_command_line_word_right(&mut self) {
         self.command_line_cursor =
             crate::movement::boundaries::next_word(&self.command_line, self.command_line_cursor);
     }
 
-    /// Delete word backwards in command line
     pub fn delete_word_back_command_line(&mut self) {
         let start =
             crate::movement::boundaries::prev_word(&self.command_line, self.command_line_cursor);
@@ -514,24 +417,19 @@ impl State {
         }
     }
 
-    /// Move command line cursor to end
     pub fn move_command_line_end(&mut self) {
         self.command_line_cursor = self.command_line.len();
     }
 
-    /// Handle a RiftError by delegating to the ErrorManager
     pub fn handle_error(&mut self, err: RiftError) {
         self.error_manager.handle(err);
     }
 
-    /// Update filename for display (should match Document's display_name)
     pub fn update_filename(&mut self, filename: String) {
         self.file_name = filename;
     }
 
-    /// Add a notification
     pub fn notify(&mut self, kind: NotificationType, message: impl Into<String>) {
-        // Notifications are ephemeral by default unless error
         let ttl = match kind {
             NotificationType::Error => Some(std::time::Duration::from_secs(10)),
             NotificationType::Warning => Some(std::time::Duration::from_secs(8)),
@@ -543,7 +441,6 @@ impl State {
             .add(kind, message, ttl);
     }
 
-    /// Update dirty state
     pub fn update_dirty(&mut self, is_dirty: bool) {
         self.is_dirty = is_dirty;
     }

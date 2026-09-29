@@ -123,7 +123,6 @@ impl<T: TerminalBackend> Editor<T> {
 
             if let Some((buf, mutating, cursor_event)) = plugin_events {
                 if mutating {
-                    self.adjust_plugin_highlights_for_edits();
                     self.pending_text_changed = Some(buf);
                     #[cfg(feature = "lsp")]
                     self.lsp_notify_change(buf);
@@ -161,32 +160,28 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn do_incremental_syntax_parse(&mut self) {
-        use crate::syntax::ParseOutcome;
+        if let Some(doc_id) = self.document_manager.active_document_id() {
+            self.do_incremental_syntax_parse_for(doc_id);
+        }
+    }
 
-        const SYNC_PARSE_BUDGET: std::time::Duration = std::time::Duration::from_micros(5000);
-        use super::SYNC_PARSE_MAX_BYTES;
-
-        let Some(doc) = self.document_manager.active_document_mut() else {
+    pub(super) fn do_incremental_syntax_parse_for(&mut self, doc_id: crate::document::DocumentId) {
+        let Some(doc) = self.document_manager.get_document_mut(doc_id) else {
             return;
         };
-        if doc.syntax.is_none() {
-            return;
-        }
-        let doc_id = doc.id;
-        if doc.buffer.byte_len() > SYNC_PARSE_MAX_BYTES {
-            self.debounce_syntax_reparse(doc_id);
-            return;
-        }
-        let source = doc.buffer.to_logical_bytes();
-        let outcome = doc
-            .syntax
-            .as_mut()
-            .map(|syntax| syntax.try_incremental_parse(&source, SYNC_PARSE_BUDGET));
+        let outcome = doc.resync_syntax();
+        self.apply_syntax_sync(doc_id, outcome);
+    }
 
+    pub(super) fn apply_syntax_sync(
+        &mut self,
+        doc_id: crate::document::DocumentId,
+        outcome: crate::document::SyntaxSync,
+    ) {
         match outcome {
-            Some(ParseOutcome::Completed) => self.cancel_pending_syntax_reparse(doc_id),
-            Some(ParseOutcome::Aborted) => self.debounce_syntax_reparse(doc_id),
-            Some(ParseOutcome::NoLanguage) | None => {}
+            crate::document::SyntaxSync::Completed => self.cancel_pending_syntax_reparse(doc_id),
+            crate::document::SyntaxSync::Deferred => self.debounce_syntax_reparse(doc_id),
+            crate::document::SyntaxSync::NoSyntax => {}
         }
     }
 }
