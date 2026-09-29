@@ -1,6 +1,3 @@
-//! Core runtime buffer-kind types, descriptors, policies, capability-keyed state,
-//! and sparse registry.
-
 use super::{DirEntry, DocumentId, GitCommitTarget, LocationEntry};
 use std::borrow::Cow;
 use std::collections::hash_map::Entry;
@@ -9,15 +6,10 @@ use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 
-// Identifiers
-
-/// Interned process-local buffer kind identity: a non-zero u32, never reused.
-/// Hot paths use this copyable symbol directly, never a hashed/compared string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BufferKindId(pub NonZeroU32);
 
 impl BufferKindId {
-    // Reserved built-in kind IDs (1..=16)
     pub const FILE: Self = Self(NonZeroU32::new(1).unwrap());
     pub const TERMINAL: Self = Self(NonZeroU32::new(2).unwrap());
     pub const DIRECTORY: Self = Self(NonZeroU32::new(3).unwrap());
@@ -34,19 +26,16 @@ impl BufferKindId {
     pub const GIT_LOG: Self = Self(NonZeroU32::new(14).unwrap());
     pub const GIT_REBASE_TODO: Self = Self(NonZeroU32::new(15).unwrap());
     pub const BUFFER_LIST: Self = Self(NonZeroU32::new(16).unwrap());
+    pub const UNDO_FILE_VIEW: Self = Self(NonZeroU32::new(17).unwrap());
 
-    /// Upper bound (inclusive) of the reserved range for built-in buffer kinds.
     pub const RESERVED_BUILTIN_END: u32 = 64;
 
-    /// First ID allocated for dynamic runtime / plugin buffer kinds.
     pub const FIRST_RUNTIME_ID: u32 = 65;
 
-    /// Creates a new `BufferKindId` from a `NonZeroU32`.
     pub const fn new(id: NonZeroU32) -> Self {
         Self(id)
     }
 
-    /// Attempts to create a `BufferKindId` from a raw `u32`.
     pub const fn from_u32(raw: u32) -> Option<Self> {
         match NonZeroU32::new(raw) {
             Some(nz) => Some(Self(nz)),
@@ -54,17 +43,14 @@ impl BufferKindId {
         }
     }
 
-    /// Returns the raw numeric value.
     pub const fn get(self) -> u32 {
         self.0.get()
     }
 
-    /// Returns the underlying `NonZeroU32`.
     pub const fn non_zero(self) -> NonZeroU32 {
         self.0
     }
 
-    /// Returns `true` if this ID belongs to the reserved built-in range.
     pub const fn is_builtin(self) -> bool {
         self.get() <= Self::RESERVED_BUILTIN_END
     }
@@ -76,8 +62,6 @@ impl std::fmt::Display for BufferKindId {
     }
 }
 
-/// Identifies a document incarnation: base ID plus a creation-instance
-/// generation, so async completions can't misdeliver to a recycled ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DocumentHandle {
     pub doc_id: DocumentId,
@@ -104,9 +88,6 @@ impl std::fmt::Display for DocumentHandle {
     }
 }
 
-// Policies
-
-/// Whether edits are admitted and whether per-document overrides apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReadOnlyPolicy {
     FixedReadOnly,
@@ -114,35 +95,30 @@ pub enum ReadOnlyPolicy {
     DocumentOverride,
 }
 
-/// Dirty-close behavior for a buffer kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClosePolicy {
     ConfirmDirty,
     DiscardDirty,
 }
 
-/// Whether ordinary edits may change row count/structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StructuralEditPolicy {
     FreeText,
     PreserveRows,
 }
 
-/// Whether deferred ghost cuts are admitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GhostCutPolicy {
     Allow,
     Deny,
 }
 
-/// How insert-mode input is consumed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InputPolicy {
     EditorText,
     TerminalRaw,
 }
 
-/// Rendering and coordinate projection model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TextProjectionPolicy {
     PlainText,
@@ -150,17 +126,14 @@ pub enum TextProjectionPolicy {
     ScreenGrid,
 }
 
-/// Alias for `TextProjectionPolicy`.
 pub type TextProjection = TextProjectionPolicy;
 
-/// Whether vertical motion snaps to actionable rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NavigationPolicy {
     Text,
     ActionRows,
 }
 
-/// File, LSP, and filesystem watcher eligibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LanguageServicesPolicy {
     FileBacked,
@@ -168,7 +141,6 @@ pub enum LanguageServicesPolicy {
     ProcessBacked,
 }
 
-/// Parent key context fallback when a kind-local mapping misses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyFallback {
     Normal,
@@ -176,10 +148,8 @@ pub enum KeyFallback {
     None,
 }
 
-/// Alias for `KeyFallback`.
 pub type KeyFallbackPolicy = KeyFallback;
 
-/// Immutable bundle of editor decision policies for a buffer kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BufferPolicies {
     pub read_only: ReadOnlyPolicy,
@@ -194,7 +164,6 @@ pub struct BufferPolicies {
 }
 
 impl BufferPolicies {
-    /// Default policy bundle for normal writable file buffers.
     pub const fn file_default() -> Self {
         Self {
             read_only: ReadOnlyPolicy::DocumentOverride,
@@ -209,8 +178,6 @@ impl BufferPolicies {
         }
     }
 
-    /// Read-only, structured, action-row panel with system-regenerated
-    /// content (git status/blame/log, undo tree); dirty-close never blocks.
     pub const fn read_only_panel() -> Self {
         Self {
             read_only: ReadOnlyPolicy::FixedReadOnly,
@@ -225,8 +192,6 @@ impl BufferPolicies {
         }
     }
 
-    /// Read-only structured panel navigated with ordinary text motion rather
-    /// than action-row snapping: location lists, region lists.
     pub const fn read_only_list() -> Self {
         Self {
             navigation: NavigationPolicy::Text,
@@ -234,8 +199,6 @@ impl BufferPolicies {
         }
     }
 
-    /// Writable free-text buffer with no backing file: commit messages,
-    /// clipboard ring entries.
     pub const fn writable_scratch_text() -> Self {
         Self {
             read_only: ReadOnlyPolicy::FixedWritable,
@@ -257,10 +220,6 @@ impl Default for BufferPolicies {
     }
 }
 
-// Descriptor Owner Metadata (independent of crate::plugin)
-
-/// Authority that registered a buffer kind descriptor, decoupled from
-/// `crate::plugin` so `crate::document` stays foundational.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DescriptorOwner {
     BuiltIn,
@@ -297,18 +256,13 @@ impl DescriptorOwner {
     }
 }
 
-/// Metadata retained when a descriptor is converted into an inert tombstone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TombstoneMetadata {
     pub reason: String,
 }
 
-// Dispatch & Handlers
-
-/// Native action handler function pointer.
 pub type NativeActionHandler = fn(DocumentHandle);
 
-/// Buffer action routing dispatch representation.
 #[derive(Debug, Clone, Copy)]
 pub enum ActionDispatch {
     Native(NativeActionHandler),
@@ -317,7 +271,6 @@ pub enum ActionDispatch {
     Reject,
 }
 
-/// Structured outcome of a save operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveResult {
     Saved,
@@ -325,10 +278,8 @@ pub enum SaveResult {
     Failed,
 }
 
-/// Native save handler function pointer.
 pub type NativeSaveHandler = fn(DocumentHandle) -> SaveResult;
 
-/// Buffer save routing dispatch representation.
 #[derive(Debug, Clone, Copy)]
 pub enum SaveDispatch {
     Native(NativeSaveHandler),
@@ -337,10 +288,8 @@ pub enum SaveDispatch {
     Reject,
 }
 
-/// Mandatory close cleanup handler.
 pub type NativeCloseHandler = fn(DocumentHandle);
 
-/// Buffer close dispatch representation.
 #[derive(Debug, Clone, Copy)]
 pub enum CloseHandler {
     Native(NativeCloseHandler),
@@ -354,12 +303,28 @@ fn builtin_save(_handle: DocumentHandle) -> SaveResult {
     SaveResult::Rejected
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReloadOutcome {
+    Reloaded,
+    Unsupported,
+}
+
+pub type NativeReloadHandler = fn(DocumentHandle) -> ReloadOutcome;
+
+#[derive(Debug, Clone, Copy)]
+pub enum ReloadDispatch {
+    Native(NativeReloadHandler),
+    Unsupported,
+}
+
+fn builtin_reload(_handle: DocumentHandle) -> ReloadOutcome {
+    ReloadOutcome::Unsupported
+}
+
 impl CloseHandler {
-    /// Const-safe no-op close handler for built-ins with no external resources.
     pub const NOOP: Self = Self::Native(noop_close);
 }
 
-/// Strategy for generating tab/buffer display labels without arbitrary Lua during render.
 #[derive(Debug, Clone)]
 pub enum DisplayNameStrategy {
     KindName,
@@ -395,9 +360,6 @@ impl DisplayNameStrategy {
     }
 }
 
-// Capability-Keyed Typed State Access
-
-/// Erased identity of a typed feature state key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StateKeyId {
     type_id: std::any::TypeId,
@@ -405,7 +367,6 @@ pub struct StateKeyId {
 }
 
 impl StateKeyId {
-    /// Creates a key ID from a static type and symbolic name.
     pub const fn of<T: 'static>(name: &'static str) -> Self {
         Self {
             type_id: std::any::TypeId::of::<T>(),
@@ -424,7 +385,6 @@ impl std::fmt::Display for StateKeyId {
     }
 }
 
-/// Private capability token held by a feature module to access its typed state.
 #[derive(Debug)]
 pub struct StateKey<T: 'static> {
     id: StateKeyId,
@@ -454,7 +414,6 @@ impl<T: 'static> std::hash::Hash for StateKey<T> {
 }
 
 impl<T: 'static> StateKey<T> {
-    /// Creates a new typed state capability key.
     pub const fn new(name: &'static str) -> Self {
         Self {
             id: StateKeyId::of::<T>(name),
@@ -471,12 +430,10 @@ impl<T: 'static> StateKey<T> {
     }
 }
 
-/// State for file buffers.
 #[derive(Debug, Clone, Default)]
 pub struct FileState;
 pub static FILE_STATE_KEY: StateKey<FileState> = StateKey::new("file");
 
-/// State for terminal emulator buffers.
 #[derive(Debug, Default)]
 pub struct TerminalState {
     pub terminal: Option<crate::term::Terminal>,
@@ -485,7 +442,6 @@ pub struct TerminalState {
 }
 pub static TERMINAL_STATE_KEY: StateKey<TerminalState> = StateKey::new("terminal");
 
-/// State for directory browser buffers.
 #[derive(Debug, Clone)]
 pub struct DirectoryState {
     pub path: PathBuf,
@@ -494,7 +450,6 @@ pub struct DirectoryState {
 }
 pub static DIRECTORY_STATE_KEY: StateKey<DirectoryState> = StateKey::new("directory");
 
-/// State for undo-tree buffers.
 #[derive(Debug, Clone)]
 pub struct UndoTreeState {
     pub linked_doc_id: DocumentId,
@@ -502,21 +457,18 @@ pub struct UndoTreeState {
 }
 pub static UNDO_TREE_STATE_KEY: StateKey<UndoTreeState> = StateKey::new("undotree");
 
-/// State for notifications/messages buffers.
 #[derive(Debug, Clone, Default)]
 pub struct MessagesState {
     pub show_all: bool,
 }
 pub static MESSAGES_STATE_KEY: StateKey<MessagesState> = StateKey::new("messages");
 
-/// State for clipboard index buffers.
 #[derive(Debug, Clone, Default)]
 pub struct ClipboardState {
     pub entries: Vec<Vec<crate::character::Character>>,
 }
 pub static CLIPBOARD_STATE_KEY: StateKey<ClipboardState> = StateKey::new("clipboard");
 
-/// State for single clipboard entry buffers.
 #[derive(Debug, Clone, Default)]
 pub struct ClipboardEntryState {
     pub entry_index: Option<usize>,
@@ -524,7 +476,6 @@ pub struct ClipboardEntryState {
 pub static CLIPBOARD_ENTRY_STATE_KEY: StateKey<ClipboardEntryState> =
     StateKey::new("clipboard_entry");
 
-/// State for location list (diagnostics/references) buffers.
 #[derive(Debug, Clone)]
 pub struct LocationListState {
     pub source_doc_id: DocumentId,
@@ -532,21 +483,18 @@ pub struct LocationListState {
 }
 pub static LOCATION_LIST_STATE_KEY: StateKey<LocationListState> = StateKey::new("location_list");
 
-/// State for regions (`gv`) list buffers.
 #[derive(Debug, Clone)]
 pub struct RegionsState {
     pub source_doc_id: DocumentId,
 }
 pub static REGIONS_STATE_KEY: StateKey<RegionsState> = StateKey::new("regions");
 
-/// State for scratch buffers.
 #[derive(Debug, Clone)]
 pub struct ScratchState {
     pub title: String,
 }
 pub static SCRATCH_STATE_KEY: StateKey<ScratchState> = StateKey::new("scratch");
 
-/// State for git status buffers.
 #[derive(Debug, Clone)]
 pub struct GitStatusState {
     pub repo_root: PathBuf,
@@ -556,7 +504,6 @@ pub struct GitStatusState {
 }
 pub static GIT_STATUS_STATE_KEY: StateKey<GitStatusState> = StateKey::new("git_status");
 
-/// State for git commit message buffers.
 #[derive(Debug, Clone)]
 pub struct GitCommitMessageState {
     pub repo_root: PathBuf,
@@ -565,7 +512,6 @@ pub struct GitCommitMessageState {
 pub static GIT_COMMIT_MESSAGE_STATE_KEY: StateKey<GitCommitMessageState> =
     StateKey::new("git_commit_message");
 
-/// State for git blame buffers.
 #[derive(Debug, Clone)]
 pub struct GitBlameState {
     pub repo_root: PathBuf,
@@ -580,7 +526,6 @@ pub struct GitBlameState {
 }
 pub static GIT_BLAME_STATE_KEY: StateKey<GitBlameState> = StateKey::new("git_blame");
 
-/// State for git log buffers.
 #[derive(Debug, Clone)]
 pub struct GitLogState {
     pub repo_root: PathBuf,
@@ -591,7 +536,6 @@ pub struct GitLogState {
 }
 pub static GIT_LOG_STATE_KEY: StateKey<GitLogState> = StateKey::new("git_log");
 
-/// State for git rebase todo buffers.
 #[derive(Debug, Clone)]
 pub struct GitRebaseTodoState {
     pub repo_root: PathBuf,
@@ -607,31 +551,31 @@ pub struct GitRebaseTodoState {
 pub static GIT_REBASE_TODO_STATE_KEY: StateKey<GitRebaseTodoState> =
     StateKey::new("git_rebase_todo");
 
-/// State for buffer list panel buffers.
 #[derive(Debug, Clone, Default)]
 pub struct BufferListState {
     pub entries: Vec<DocumentId>,
 }
 pub static BUFFER_LIST_STATE_KEY: StateKey<BufferListState> = StateKey::new("buffer_list");
 
-/// Marker state for Lua plugin-defined buffers.
+#[derive(Debug, Clone, Default)]
+pub struct UndoFileViewState {
+    pub sequences: Vec<crate::history::EditSeq>,
+}
+pub static UNDO_FILE_VIEW_STATE_KEY: StateKey<UndoFileViewState> = StateKey::new("undo_file_view");
+
 #[derive(Debug, Clone, Default)]
 pub struct PluginBufferState;
 pub static PLUGIN_BUFFER_STATE_KEY: StateKey<PluginBufferState> =
     StateKey::new("plugin_buffer_state");
 
-/// Key used for buffers without custom local state.
 pub static EMPTY_STATE_KEY: StateKey<()> = StateKey::new("empty");
 
-/// Document-owned storage for one kind-local state object; access requires
-/// the matching private `StateKey<T>`.
 pub struct StateSlot {
     key_id: StateKeyId,
     state: Box<dyn std::any::Any>,
 }
 
 impl StateSlot {
-    /// Creates a new state slot with the specified capability key and state payload.
     pub fn new<T: 'static>(key: StateKey<T>, state: T) -> Self {
         Self {
             key_id: key.id(),
@@ -639,23 +583,18 @@ impl StateSlot {
         }
     }
 
-    /// Creates an empty unit state slot.
     pub fn empty() -> Self {
         Self::new(EMPTY_STATE_KEY, ())
     }
 
-    /// Returns the erased identity of the stored state key.
     pub fn key_id(&self) -> StateKeyId {
         self.key_id
     }
 
-    /// Checks whether this slot holds state for the given capability key.
     pub fn matches<T: 'static>(&self, key: StateKey<T>) -> bool {
         self.key_id == key.id()
     }
 
-    /// Obtains a reference to the typed state; panics if `key` doesn't
-    /// match this slot's stored key identity.
     pub fn get<T: 'static>(&self, key: StateKey<T>) -> &T {
         assert_eq!(
             self.key_id,
@@ -669,8 +608,6 @@ impl StateSlot {
             .expect("StateSlot internal invariant failed: downcast failed despite key match")
     }
 
-    /// Obtains a mutable reference to the typed state; panics if `key`
-    /// doesn't match this slot's stored key identity.
     pub fn get_mut<T: 'static>(&mut self, key: StateKey<T>) -> &mut T {
         assert_eq!(
             self.key_id,
@@ -684,7 +621,6 @@ impl StateSlot {
             .expect("StateSlot internal invariant failed: downcast failed despite key match")
     }
 
-    /// Attempts to obtain a reference to the typed state without panicking on key mismatch.
     pub fn try_get<T: 'static>(&self, key: StateKey<T>) -> Option<&T> {
         if self.key_id == key.id() {
             Some(
@@ -697,7 +633,6 @@ impl StateSlot {
         }
     }
 
-    /// Attempts to obtain a mutable reference to the typed state without panicking on key mismatch.
     pub fn try_get_mut<T: 'static>(&mut self, key: StateKey<T>) -> Option<&mut T> {
         if self.key_id == key.id() {
             Some(
@@ -711,10 +646,6 @@ impl StateSlot {
     }
 }
 
-// KindDescriptor
-
-/// Immutable descriptor defining the static behavior, policies, and dispatch
-/// rules for a buffer kind.
 #[derive(Debug, Clone)]
 pub struct KindDescriptor {
     pub id: BufferKindId,
@@ -725,6 +656,7 @@ pub struct KindDescriptor {
     pub display_name: DisplayNameStrategy,
     pub help_lines: Option<Arc<[String]>>,
     pub on_close: CloseHandler,
+    pub reload_dispatch: ReloadDispatch,
     pub state_key: StateKeyId,
     pub owner: DescriptorOwner,
     pub tombstone: Option<TombstoneMetadata>,
@@ -767,8 +699,6 @@ impl KindDescriptor {
         self.help_lines.as_deref()
     }
 
-    /// Converts this descriptor into an inert tombstone: keeps identity and
-    /// display metadata, forces read-only, disables actions/saves.
     pub fn to_tombstone(&self, reason: String) -> Self {
         let mut policies = self.policies;
         policies.read_only = ReadOnlyPolicy::FixedReadOnly;
@@ -786,13 +716,13 @@ impl KindDescriptor {
             display_name: self.display_name.clone(),
             help_lines: None,
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Unsupported,
             state_key: self.state_key,
             owner: self.owner,
             tombstone: Some(TombstoneMetadata { reason }),
         }
     }
 
-    /// Resolves the display label using this descriptor's strategy.
     pub fn resolve_display_name<'a>(
         &'a self,
         file_path: Option<&'a Path>,
@@ -803,9 +733,6 @@ impl KindDescriptor {
     }
 }
 
-// Registry
-
-/// Registry error variants.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegistryError {
     DuplicateName(String),
@@ -831,8 +758,6 @@ impl std::fmt::Display for RegistryError {
 
 impl std::error::Error for RegistryError {}
 
-/// Cold-path registry mapping kind names to interned IDs/descriptors; sparse
-/// maps avoid unbounded growth while IDs stay monotonic and never reused.
 pub struct BufferKindRegistry {
     names: HashMap<Box<str>, BufferKindId>,
     descriptors: HashMap<BufferKindId, Arc<KindDescriptor>>,
@@ -841,7 +766,6 @@ pub struct BufferKindRegistry {
 }
 
 impl BufferKindRegistry {
-    /// Creates a new, empty registry.
     pub fn new() -> Self {
         Self {
             names: HashMap::new(),
@@ -851,7 +775,6 @@ impl BufferKindRegistry {
         }
     }
 
-    /// Creates a registry pre-populated with all 16 built-in descriptors.
     pub fn with_builtins() -> Self {
         let mut reg = Self::new();
         reg.register_builtins()
@@ -859,7 +782,6 @@ impl BufferKindRegistry {
         reg
     }
 
-    /// Registers a descriptor in the reserved built-in range.
     pub fn register_builtin(
         &mut self,
         descriptor: KindDescriptor,
@@ -882,7 +804,6 @@ impl BufferKindRegistry {
         Ok(arc)
     }
 
-    /// Registers a dynamic runtime/plugin descriptor with a newly allocated monotonic ID.
     pub fn register_runtime(
         &mut self,
         name: &str,
@@ -907,33 +828,26 @@ impl BufferKindRegistry {
 
         let arc = Arc::new(descriptor);
         self.descriptors.insert(id, Arc::clone(&arc));
-        // Active textual name now resolves to the new ID.
         self.names.insert(name.into(), id);
         Ok(arc)
     }
 
-    /// Looks up an active or tombstone descriptor by interned ID.
     pub fn get_by_id(&self, id: BufferKindId) -> Option<Arc<KindDescriptor>> {
         self.descriptors.get(&id).cloned()
     }
 
-    /// Looks up the current active descriptor by kind name.
     pub fn get_by_name(&self, name: &str) -> Option<Arc<KindDescriptor>> {
         self.names.get(name).and_then(|id| self.get_by_id(*id))
     }
 
-    /// Resolves the current interned ID for an active kind name.
     pub fn id_by_name(&self, name: &str) -> Option<BufferKindId> {
         self.names.get(name).copied()
     }
 
-    /// Increments open document count for this buffer kind.
     pub fn increment_open_count(&mut self, id: BufferKindId) {
         *self.open_counts.entry(id).or_insert(0) += 1;
     }
 
-    /// Decrements open document count; releases a zero-count tombstone
-    /// descriptor from memory (its ID still never reused).
     pub fn decrement_open_count(&mut self, id: BufferKindId) -> usize {
         match self.open_counts.entry(id) {
             Entry::Occupied(mut entry) => {
@@ -954,13 +868,10 @@ impl BufferKindRegistry {
         }
     }
 
-    /// Returns the current open document count for an ID.
     pub fn open_count(&self, id: BufferKindId) -> usize {
         self.open_counts.get(&id).copied().unwrap_or(0)
     }
 
-    /// Replaces an active descriptor with a tombstone, releasing it
-    /// immediately if no documents currently hold this ID.
     pub fn tombstone_descriptor(
         &mut self,
         id: BufferKindId,
@@ -971,7 +882,6 @@ impl BufferKindRegistry {
 
         if self.open_count(id) == 0 {
             self.descriptors.remove(&id);
-            // Also remove active name if it still pointed here.
             if self.names.get(active.name()).copied() == Some(id) {
                 self.names.remove(active.name());
             }
@@ -985,7 +895,6 @@ impl BufferKindRegistry {
         }
     }
 
-    /// Retires all descriptors owned by a plugin generation.
     pub fn retire_plugin(
         &mut self,
         plugin_id: NonZeroU32,
@@ -1011,7 +920,6 @@ impl BufferKindRegistry {
         ids_to_retire
     }
 
-    /// Populates all 16 built-in kind descriptors.
     pub fn register_builtins(&mut self) -> Result<(), RegistryError> {
         self.register_builtin(KindDescriptor {
             id: BufferKindId::FILE,
@@ -1022,6 +930,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::FileName,
             help_lines: None,
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Native(builtin_reload),
             state_key: FILE_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1046,6 +955,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Terminal,
             help_lines: None,
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Unsupported,
             state_key: TERMINAL_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1064,6 +974,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::FileName,
             help_lines: None,
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Native(builtin_reload),
             state_key: DIRECTORY_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1078,6 +989,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[UndoTree]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Native(builtin_reload),
             state_key: UNDO_TREE_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1096,6 +1008,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Messages]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Native(builtin_reload),
             state_key: MESSAGES_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1114,6 +1027,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Clipboard]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Native(builtin_reload),
             state_key: CLIPBOARD_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1128,6 +1042,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Clipboard:entry]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Unsupported,
             state_key: CLIPBOARD_ENTRY_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1142,6 +1057,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Locations]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Unsupported,
             state_key: LOCATION_LIST_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1156,6 +1072,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Regions]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Unsupported,
             state_key: REGIONS_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1174,6 +1091,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::KindName,
             help_lines: None,
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Unsupported,
             state_key: SCRATCH_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1206,6 +1124,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Git Status]".into()),
             help_lines: Some(status_help.into()),
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Native(builtin_reload),
             state_key: GIT_STATUS_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1220,6 +1139,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Git Commit]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Unsupported,
             state_key: GIT_COMMIT_MESSAGE_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1242,6 +1162,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Git Blame]".into()),
             help_lines: Some(blame_help.into()),
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Native(builtin_reload),
             state_key: GIT_BLAME_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1264,6 +1185,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Git Log]".into()),
             help_lines: Some(log_help.into()),
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Native(builtin_reload),
             state_key: GIT_LOG_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1296,6 +1218,7 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Git Rebase Todo]".into()),
             help_lines: Some(rebase_help.into()),
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Unsupported,
             state_key: GIT_REBASE_TODO_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
@@ -1310,7 +1233,28 @@ impl BufferKindRegistry {
             display_name: DisplayNameStrategy::Label("[Buffers]".into()),
             help_lines: None,
             on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Native(builtin_reload),
             state_key: BUFFER_LIST_STATE_KEY.id(),
+            owner: DescriptorOwner::BuiltIn,
+            tombstone: None,
+        })?;
+
+        let undo_file_view_help: Vec<String> = vec![
+            "Persisted Undo File".into(),
+            "".into(),
+            "Read-only view of a `.undo` file's history.".into(),
+        ];
+        self.register_builtin(KindDescriptor {
+            id: BufferKindId::UNDO_FILE_VIEW,
+            name: "undo_file_view".into(),
+            policies: BufferPolicies::read_only_list(),
+            action_dispatch: ActionDispatch::Disabled,
+            save_dispatch: SaveDispatch::Reject,
+            display_name: DisplayNameStrategy::FileName,
+            help_lines: Some(undo_file_view_help.into()),
+            on_close: CloseHandler::NOOP,
+            reload_dispatch: ReloadDispatch::Native(builtin_reload),
+            state_key: UNDO_FILE_VIEW_STATE_KEY.id(),
             owner: DescriptorOwner::BuiltIn,
             tombstone: None,
         })?;
@@ -1328,7 +1272,6 @@ impl Default for BufferKindRegistry {
 static BUILTIN_REGISTRY: LazyLock<BufferKindRegistry> =
     LazyLock::new(BufferKindRegistry::with_builtins);
 
-/// Resolves the descriptor for a reserved built-in buffer kind.
 pub fn builtin_descriptor(id: BufferKindId) -> Arc<KindDescriptor> {
     BUILTIN_REGISTRY
         .get_by_id(id)

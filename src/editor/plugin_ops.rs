@@ -675,6 +675,7 @@ impl<T: TerminalBackend> Editor<T> {
                             } else {
                                 crate::document::SaveDispatch::Disabled
                             },
+                            reload_dispatch: crate::document::ReloadDispatch::Unsupported,
                             display_name: display_name
                                 .clone()
                                 .map(|label| {

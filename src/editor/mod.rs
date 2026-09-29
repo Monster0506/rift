@@ -32,6 +32,7 @@ mod plugin_ops;
 pub(crate) mod rendering;
 mod run_loop;
 mod text_object_input;
+mod undo_persist;
 
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -67,7 +68,7 @@ use crate::state::{State, UserSettings};
 use crate::term::TerminalBackend;
 use std::sync::Arc;
 
-fn user_config_dir() -> std::path::PathBuf {
+pub(crate) fn user_config_dir() -> std::path::PathBuf {
     if cfg!(windows) {
         std::env::var("APPDATA")
             .map(std::path::PathBuf::from)
@@ -96,6 +97,7 @@ fn plugin_dirs() -> Vec<std::path::PathBuf> {
     dirs.push(user_config_dir().join("plugins"));
     dirs
 }
+
 
 fn resolve_wrap_params(
     doc: &Document,
@@ -153,6 +155,8 @@ pub struct Editor<T: TerminalBackend> {
     >,
     native_save_handlers:
         std::collections::HashMap<crate::document::BufferKindId, file_ops::NativeSaveHandler<T>>,
+    native_reload_handlers:
+        std::collections::HashMap<crate::document::BufferKindId, file_ops::NativeReloadHandler<T>>,
     pending_keys: Vec<crate::key::Key>,
     pending_count: usize,
     pending_operator_count: usize,

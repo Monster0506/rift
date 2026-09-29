@@ -1,5 +1,3 @@
-//! End-to-end tests of the git status/commit workflow against a real, disposable temp repository; the async job round-trip (`GitStatusJob`, `GitDiffJob`), stage/unstage/discard via the cursor-action fast paths, and the commit/fixup buffers, all exercised through the real `Editor`.
-
 use super::Editor;
 #[allow(unused_imports)]
 use crate::buffer::api::BufferView;
@@ -12,7 +10,6 @@ fn create_editor() -> Editor<MockTerminal> {
     Editor::new(term).unwrap()
 }
 
-/// Drains pending job messages, blocking until every spawned job thread has actually finished (not just "no message arrived in the last 50ms"; under heavy parallel test load, spawning a `git` subprocess can take longer than that, so a fixed short window is unreliable here).
 fn drain_jobs(editor: &mut Editor<MockTerminal>) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
@@ -45,7 +42,6 @@ fn init_repo_with_commit(dir: &std::path::Path) {
     crate::git::run_checked(dir, &["commit", "-m", "init", "--quiet"]).unwrap();
 }
 
-/// Open `path` as the active document and drain its (possibly async) load job.
 fn open_and_load(editor: &mut Editor<MockTerminal>, path: &std::path::Path) {
     editor
         .open_file(Some(path.display().to_string()), false)
@@ -86,7 +82,6 @@ fn cursor_stage_action_runs_git_add_and_refreshes_the_buffer() {
     editor.open_git_status();
     drain_jobs(&mut editor);
 
-    // Move the cursor onto the "new.txt" untracked entry line and stage it.
     let doc_id = editor.active_document_id();
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
@@ -114,7 +109,6 @@ fn cursor_stage_action_runs_git_add_and_refreshes_the_buffer() {
 
 #[test]
 fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
-    // Regression: `GitStatus` used to be editable via cut/paste-between- sections + `:w` reconciliation. That model let plain `dd`/insert-mode keys silently mutate displayed text with zero git effect while desyncing the line-anchored annotations `s`/`u`/`X`/`=` rely on. Changes now only happen through those.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -126,7 +120,6 @@ fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
     let doc = editor.document_manager.active_document().unwrap();
     assert!(doc.is_read_only(), "GitStatus must be read-only");
 
-    // `dd` must not remove the branch header line from the buffer.
     let before = doc.buffer.to_string();
     assert!(!editor.execute_buffer_command(crate::command::Command::DeleteLine(1)));
     let after = editor
@@ -154,7 +147,6 @@ fn git_status_buffer_is_read_only_and_wq_reports_cannot_be_saved() {
 
 #[test]
 fn wq_on_a_git_commit_message_buffer_commits_and_quits_instead_of_erroring() {
-    // Regression: `do_save_and_quit` (`:wq`/`EditorAction::SaveAndQuit`) used to always take the `File`-only async-save path regardless of `BufferKind`, so `:wq` on any non-`File` special buffer (this commit message buffer, but also pre-existing Directory/Clipboard buffers) failed with "No file name" instead of.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
     std::fs::write(dir.path().join("tracked.txt"), "line one\nline TWO\n").unwrap();
@@ -331,7 +323,6 @@ fn expand_and_stage_hunk_leaves_other_hunks_unstaged() {
     assert_eq!(files[0].hunks.len(), 2, "expected two separate hunks");
     let first_hunk = files[0].hunks[0].clone();
 
-    // Stage exactly the first hunk via the pure apply.rs primitive (already covered end-to-end in git::apply::tests; here we confirm the second hunk survives untouched in the worktree).
     crate::git::apply::stage_hunk(dir.path(), "multi.txt", &first_hunk, false).unwrap();
 
     let staged =
@@ -354,7 +345,6 @@ fn expand_and_stage_hunk_leaves_other_hunks_unstaged() {
 
 #[test]
 fn cursor_stage_action_on_a_single_diff_line_stages_only_that_line() {
-    // Two changes close enough together to land in one hunk; staging via the cursor on just ONE of the two `+` lines must leave the other change unstaged, both in the index and in the worktree.
     let dir = tempfile::tempdir().unwrap();
     crate::git::run_checked(dir.path(), &["init", "--quiet"]).unwrap();
     crate::git::run_checked(dir.path(), &["config", "user.email", "t@example.com"]).unwrap();
@@ -382,8 +372,6 @@ fn cursor_stage_action_on_a_single_diff_line_stages_only_that_line() {
     editor.git_status_toggle_expand();
     drain_jobs(&mut editor);
 
-    // Land the cursor on the "+A" line specifically (hunk_line_index 1: the
-    // pair is [-a, +A, ctx b, ctx c, -d, +D, ctx e, ctx f]).
     let doc_id = editor.active_document_id();
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
@@ -489,8 +477,6 @@ fn cursor_stage_action_on_an_untracked_files_hunk_line_stages_only_that_line() {
     editor.git_status_toggle_expand();
     drain_jobs(&mut editor);
 
-    // Land on the "+two" line specifically (hunk_line_index 1 of
-    // [+one, +two, +three]) and stage just that one line.
     {
         let doc = editor.document_manager.get_document_mut(doc_id).unwrap();
         let target_line = (0..doc.buffer.get_total_lines())
@@ -507,7 +493,6 @@ fn cursor_stage_action_on_an_untracked_files_hunk_line_stages_only_that_line() {
     editor.git_status_cursor_action("stage");
     drain_jobs(&mut editor);
 
-    // git's own status parser reclassifies a partially-staged untracked file as `AM` (added in index, modified in worktree) once any part of it is staged; confirm the index has exactly the staged line, worktree has the full original file untouched.
     let status = crate::git::run_checked(dir.path(), &["status", "--porcelain=v2"]).unwrap();
     assert!(
         status.contains("AM") && status.contains("new.txt"),
@@ -997,7 +982,6 @@ fn git_blame_walk_back_re_blames_at_the_parent_commit() {
     editor.open_git_blame(dir.path().join("tracked.txt"), dir.path().to_path_buf());
     drain_jobs(&mut editor);
 
-    // Cursor starts at line 0 (the "line ONE" line, attributed to the 2nd commit).
     let doc_id = editor.active_document_id();
     let before_sha = editor
         .document_manager
@@ -1007,7 +991,6 @@ fn git_blame_walk_back_re_blames_at_the_parent_commit() {
         .git_blame_sha_at_line(0)
         .unwrap();
 
-    // Walk back through the dispatched buffer action.
     editor.handle_git_blame_buffer_action("git_blame:walk_back");
     drain_jobs(&mut editor);
 
@@ -1050,7 +1033,6 @@ fn git_blame_walk_back_re_blames_at_the_parent_commit() {
 
 #[test]
 fn git_blame_walk_back_on_the_root_commit_shows_a_notice_instead_of_a_raw_git_error() {
-    // Regression: walking back from a line the root commit introduced tried `git blame <root-sha>^`, which git rejects ("bad revision") since a root commit has no parent; surfaced to the user as a raw subprocess error instead of a sensible "nothing earlier" notice.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -1086,7 +1068,6 @@ fn git_blame_walk_back_on_the_root_commit_shows_a_notice_instead_of_a_raw_git_er
 
 #[test]
 fn git_blame_walk_back_from_a_middle_line_re_blames_that_lines_own_history() {
-    // A multi-line file where only ONE line was touched by a later commit; walking back with the cursor on THAT line (not line 0) must re-blame using that line's own sha, not silently do nothing.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
     std::fs::write(dir.path().join("tracked.txt"), "line one\nline TWO\n").unwrap();
@@ -1173,7 +1154,6 @@ fn git_command_escape_hatch_runs_and_shows_output() {
 
 #[test]
 fn bare_git_command_opens_the_status_buffer() {
-    // Fugitive convention: `:Git`/`:G` with no arguments opens Git Status.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -1192,8 +1172,6 @@ fn bare_git_command_opens_the_status_buffer() {
 
 #[test]
 fn bare_git_log_command_opens_the_log_buffer() {
-    // Fugitive convention: `:Git log` with no other args opens the
-    // structured log browser.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -1301,7 +1279,6 @@ fn git_blame_command_with_explicit_path_blames_that_file_not_the_active_one() {
 
 #[test]
 fn git_blame_command_with_a_flag_falls_through_to_raw_output() {
-    // Regression: `blame -C` and every other flag-shaped argument must reach raw command output.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -1319,7 +1296,6 @@ fn git_blame_command_with_a_flag_falls_through_to_raw_output() {
 
 #[test]
 fn git_log_command_with_a_flag_falls_through_to_raw_output() {
-    // Regression: adding path-argument support for `blame` must not also make `log -1` (a pre-existing, tested raw-passthrough case) get hijacked as "log scoped to a file named -1".
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -1464,8 +1440,6 @@ fn space_g_key_resolves_to_git_status_with_no_prefix_ambiguity() {
         MatchResult::Exact(Action::Editor(EditorAction::GitStatus)) => {}
         other => panic!("expected '<Space>g' to resolve to GitStatus, got {other:?}"),
     }
-    // Bare 'gr' (no leading space) must remain LSP references, unaffected
-    // by the rebase consolidation.
     match editor
         .keymap
         .lookup(KeyContext::Normal, &[Key::Char('g'), Key::Char('r')])
@@ -1553,7 +1527,6 @@ fn bare_git_show_command_opens_log_with_head_expanded() {
 
 #[test]
 fn running_a_git_command_from_the_command_line_returns_to_normal_mode() {
-    // Regression: `ExecutionResult::RunGit`'s handler returned early, skipping the shared cleanup that resets `Mode::Command` back to `Mode::Normal`; the floating command-line window stayed open after `:G`/`:Git log` (or any `:Git ...`) even though the target buffer (status/log/scratch) had already opened.
     let dir = tempfile::tempdir().unwrap();
     init_repo_with_commit(dir.path());
 
@@ -1643,7 +1616,6 @@ fn g_question_mark_key_sequence_resolves_to_git_help() {
 
 #[test]
 fn expanding_a_hunk_via_real_keys_lets_one_j_reach_the_first_hunk_line() {
-    // Regression: `render_git_status` unconditionally reset the cursor to buffer offset 0 on every rebuild (expand/collapse/stage/unstage/ discard). Pressing `=` to expand then `j` once looked like it should land inside the hunk, but the reset-to-0 meant `j` actually landed back on the file entry (the first.
     use crate::replay::backend::ReplayBackend;
 
     fn send<W: std::io::Write>(editor: &mut Editor<ReplayBackend<W>>, seq: &str) {
@@ -1740,4 +1712,84 @@ fn drain_jobs_replay<W: std::io::Write>(
             break;
         }
     }
+}
+
+#[test]
+fn reload_on_git_status_buffer_refreshes_entries_via_native_dispatch() {
+    let dir = tempfile::tempdir().unwrap();
+    init_repo_with_commit(dir.path());
+
+    let mut editor = create_editor();
+    open_and_load(&mut editor, &dir.path().join("tracked.txt"));
+    editor.open_git_status();
+    drain_jobs(&mut editor);
+    let text_before = editor.active_document().buffer.to_string();
+    assert!(!text_before.contains("fresh.txt"));
+
+    std::fs::write(dir.path().join("fresh.txt"), "content\n").unwrap();
+
+    editor.open_file(None, false).unwrap();
+    drain_jobs(&mut editor);
+
+    let text_after = editor.active_document().buffer.to_string();
+    assert!(
+        text_after.contains("fresh.txt"),
+        "git status reload should show newly added file; text was: {text_after}"
+    );
+}
+
+#[test]
+fn reload_on_git_log_buffer_refreshes_entries_via_native_dispatch() {
+    let dir = tempfile::tempdir().unwrap();
+    init_repo_with_commit(dir.path());
+
+    let mut editor = create_editor();
+    editor.open_git_log(dir.path().to_path_buf(), None);
+    drain_jobs(&mut editor);
+
+    let text_before = editor.active_document().buffer.to_string();
+    assert!(!text_before.contains("second commit"));
+
+    crate::git::run_checked(
+        dir.path(),
+        &["commit", "--allow-empty", "-m", "second commit", "--quiet"],
+    )
+    .unwrap();
+
+    editor.open_file(None, false).unwrap();
+    drain_jobs(&mut editor);
+
+    let text_after = editor.active_document().buffer.to_string();
+    assert!(
+        text_after.contains("second commit"),
+        "git log reload should show newly added commit; text was: {text_after}"
+    );
+}
+
+#[test]
+fn reload_on_git_blame_buffer_refreshes_entries_via_native_dispatch() {
+    let dir = tempfile::tempdir().unwrap();
+    init_repo_with_commit(dir.path());
+
+    let mut editor = create_editor();
+    let path = dir.path().join("tracked.txt");
+    open_and_load(&mut editor, &path);
+    editor.open_git_blame(path.clone(), dir.path().to_path_buf());
+    drain_jobs(&mut editor);
+
+    let lines_before = editor.active_document().buffer.to_string().lines().count();
+    assert_eq!(lines_before, 2);
+
+    std::fs::write(&path, "line one\nline two\nthird line added\n").unwrap();
+    crate::git::run_checked(dir.path(), &["commit", "-am", "new line", "--quiet"]).unwrap();
+
+    editor.open_file(None, false).unwrap();
+    drain_jobs(&mut editor);
+
+    let text_after = editor.active_document().buffer.to_string();
+    let lines_after = text_after.lines().count();
+    assert_eq!(
+        lines_after, 3,
+        "git blame reload should now have 3 lines; text was: {text_after}"
+    );
 }

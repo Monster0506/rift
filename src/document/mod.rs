@@ -33,14 +33,16 @@ pub use runtime::{
     GhostCutPolicy, GitBlameState, GitCommitMessageState, GitLogState, GitRebaseTodoState,
     GitStatusState, InputPolicy, KeyFallback, KeyFallbackPolicy, KindDescriptor,
     LanguageServicesPolicy, LocationListState, MessagesState, NativeActionHandler,
-    NativeCloseHandler, NativeSaveHandler, NavigationPolicy, PluginBufferState, ReadOnlyPolicy,
-    RegionsState, RegistryError, SaveDispatch, SaveResult, ScratchState, StateKey, StateKeyId,
-    StateSlot, StructuralEditPolicy, TerminalState, TextProjection, TextProjectionPolicy,
-    TombstoneMetadata, UndoTreeState, BUFFER_LIST_STATE_KEY, CLIPBOARD_ENTRY_STATE_KEY,
-    CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY, EMPTY_STATE_KEY, FILE_STATE_KEY, GIT_BLAME_STATE_KEY,
+    NativeCloseHandler, NativeReloadHandler, NativeSaveHandler, NavigationPolicy,
+    PluginBufferState, ReadOnlyPolicy, RegionsState, RegistryError, ReloadDispatch, ReloadOutcome,
+    SaveDispatch, SaveResult, ScratchState, StateKey, StateKeyId, StateSlot, StructuralEditPolicy,
+    TerminalState, TextProjection, TextProjectionPolicy, TombstoneMetadata, UndoFileViewState,
+    UndoTreeState, BUFFER_LIST_STATE_KEY, CLIPBOARD_ENTRY_STATE_KEY, CLIPBOARD_STATE_KEY,
+    DIRECTORY_STATE_KEY, EMPTY_STATE_KEY, FILE_STATE_KEY, GIT_BLAME_STATE_KEY,
     GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY, GIT_REBASE_TODO_STATE_KEY,
     GIT_STATUS_STATE_KEY, LOCATION_LIST_STATE_KEY, MESSAGES_STATE_KEY, PLUGIN_BUFFER_STATE_KEY,
-    REGIONS_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_TREE_STATE_KEY,
+    REGIONS_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_FILE_VIEW_STATE_KEY,
+    UNDO_TREE_STATE_KEY,
 };
 use std::path::{Path, PathBuf};
 pub use syntax_sync::SyntaxSync;
@@ -645,6 +647,11 @@ impl Document {
                 show_hidden: false,
             },
         );
+    }
+
+    pub fn convert_to_undo_file_view(&mut self) {
+        self.kind = BufferKind::for_builtin(BufferKindId::UNDO_FILE_VIEW);
+        self.state = StateSlot::new(UNDO_FILE_VIEW_STATE_KEY, UndoFileViewState::default());
     }
 
     state_get!(pub fn undotree_linked_doc_id(&self) -> DocumentId = UNDO_TREE_STATE_KEY, |s| s.linked_doc_id);

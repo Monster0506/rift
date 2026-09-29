@@ -5,8 +5,6 @@ use crate::error::{ErrorSeverity, ErrorType, RiftError};
 use crate::search::SearchDirection;
 use crate::term::TerminalBackend;
 
-/// Rebase a relative target onto `base_dir` only when it does not already resolve
-/// against the cwd; absolute paths and unresolved targets are returned unchanged.
 fn resolve_link_path_in(path_str: String, base_dir: Option<&std::path::Path>) -> String {
     let p = std::path::Path::new(&path_str);
     if p.is_absolute() || p.exists() {
@@ -22,7 +20,6 @@ fn resolve_link_path_in(path_str: String, base_dir: Option<&std::path::Path>) ->
 }
 
 impl<T: TerminalBackend> Editor<T> {
-    /// Whether the active document (if any) satisfies `pred`; `false` if none is active.
     pub(super) fn active_doc_is(&self, pred: impl Fn(&crate::document::Document) -> bool) -> bool {
         self.document_manager
             .active_document()
@@ -30,7 +27,6 @@ impl<T: TerminalBackend> Editor<T> {
             .unwrap_or(false)
     }
 
-    /// Notify that an edit was refused because the buffer is read-only.
     pub(super) fn reject_read_only_edit(&mut self) {
         self.state.notify(
             crate::notification::NotificationType::Warning,
@@ -143,8 +139,6 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    /// Resolve a relative target against the active document's directory when it
-    /// does not already resolve against the cwd, so links open next to their file.
     fn resolve_link_path(&self, path_str: String) -> String {
         let base = self
             .document_manager
@@ -154,8 +148,6 @@ impl<T: TerminalBackend> Editor<T> {
         resolve_link_path_in(path_str, base.as_deref())
     }
 
-    /// Open `file_path` in a new document (async load if not already open,
-    /// else switch to it), or reload the current active document if `None`.
     pub fn open_file(&mut self, file_path: Option<String>, force: bool) -> Result<(), RiftError> {
         if let Some(path_str) = file_path {
             let path_str = self.resolve_link_path(path_str);
@@ -165,23 +157,27 @@ impl<T: TerminalBackend> Editor<T> {
                 .find_open_document_index(&path)
                 .is_some()
             {
-                // Save current document's view state before switching
                 self.save_current_view_state();
-                // Already open, use manager to switch
                 self.document_manager.open_file(Some(path_str), force)?;
-                // Restore the switched-to document's view state
                 self.restore_view_state();
             } else if path.exists() {
-                // Save current document's view state before switching
                 self.save_current_view_state();
-                // Not open, create placeholder and async load
-                let doc_id = self.document_manager.create_placeholder(&path_str)?;
-                let job = crate::job_manager::jobs::file_operations::FileLoadJob::new(
-                    doc_id,
-                    path.clone(),
-                );
-                let job_id = self.job_manager.spawn(job);
-                self.file_load_jobs.insert(job_id, doc_id);
+                let id = self.document_manager.next_id();
+                match crate::document::Document::try_open_undo_file(id, &path) {
+                    Some(Ok(doc)) => {
+                        self.document_manager.add_document(doc);
+                    }
+                    Some(Err(e)) => return Err(e),
+                    None => {
+                        let doc_id = self.document_manager.create_placeholder(&path_str)?;
+                        let job = crate::job_manager::jobs::file_operations::FileLoadJob::new(
+                            doc_id,
+                            path.clone(),
+                        );
+                        let job_id = self.job_manager.spawn(job);
+                        self.file_load_jobs.insert(job_id, doc_id);
+                    }
+                }
             } else if crate::document::manager::parent_dir_missing(&path) {
                 return Err(RiftError::new(
                     ErrorType::Io,
@@ -189,8 +185,6 @@ impl<T: TerminalBackend> Editor<T> {
                     crate::constants::errors::MSG_PARENT_DIR_MISSING,
                 ));
             } else {
-                // Brand-new file: nothing on disk to load, so open an empty
-                // buffer directly instead of spawning a job that would error.
                 self.save_current_view_state();
                 let doc_id = self.document_manager.create_placeholder(&path_str)?;
                 #[cfg(feature = "lsp")]
@@ -198,39 +192,62 @@ impl<T: TerminalBackend> Editor<T> {
                 #[cfg(not(feature = "lsp"))]
                 let _ = doc_id;
             }
-        } else {
-            // Reload current
-            if let Some(doc) = self.document_manager.active_document() {
-                if let Some(path) = doc.path() {
-                    if !force && doc.is_dirty() {
-                        return Err(RiftError {
-                            severity: ErrorSeverity::Warning,
-                            kind: ErrorType::Execution,
-                            code: crate::constants::errors::UNSAVED_CHANGES.to_string(),
-                            message: crate::constants::errors::MSG_UNSAVED_CHANGES.to_string(),
-                        });
-                    }
-                    let job = crate::job_manager::jobs::file_operations::FileLoadJob::new_reload(
-                        doc.id,
-                        path.to_path_buf(),
-                    );
-                    let doc_id = doc.id;
-                    let job_id = self.job_manager.spawn(job);
-                    self.file_load_jobs.insert(job_id, doc_id);
-                } else {
+        } else if let Some(doc) = self.document_manager.active_document() {
+            if doc.buffer_kind_id() == crate::document::BufferKindId::FILE {
+                let Some(path) = doc.path() else {
                     return Err(RiftError::new(
                         ErrorType::Execution,
                         crate::constants::errors::NO_PATH,
                         "No file name",
                     ));
+                };
+                if !force && doc.is_dirty() {
+                    return Err(RiftError {
+                        severity: ErrorSeverity::Warning,
+                        kind: ErrorType::Execution,
+                        code: crate::constants::errors::UNSAVED_CHANGES.to_string(),
+                        message: crate::constants::errors::MSG_UNSAVED_CHANGES.to_string(),
+                    });
                 }
+                let job = crate::job_manager::jobs::file_operations::FileLoadJob::new_reload(
+                    doc.id,
+                    path.to_path_buf(),
+                );
+                let doc_id = doc.id;
+                let job_id = self.job_manager.spawn(job);
+                self.file_load_jobs.insert(job_id, doc_id);
             } else {
-                return Err(RiftError::new(
-                    ErrorType::Internal,
-                    crate::constants::errors::INTERNAL_ERROR,
-                    "No active document",
-                ));
+                let kind_id = doc.buffer_kind_id();
+                let reload_dispatch = doc.descriptor().reload_dispatch;
+                match reload_dispatch {
+                    crate::document::ReloadDispatch::Native(_) => {
+                        let handler = self.native_reload_handlers.get(&kind_id).copied();
+                        match handler {
+                            Some(handler) => handler(self)?,
+                            None => {
+                                return Err(RiftError::new(
+                                    ErrorType::Execution,
+                                    crate::constants::errors::RELOAD_UNSUPPORTED,
+                                    crate::constants::errors::MSG_RELOAD_UNSUPPORTED,
+                                ))
+                            }
+                        }
+                    }
+                    crate::document::ReloadDispatch::Unsupported => {
+                        return Err(RiftError::new(
+                            ErrorType::Execution,
+                            crate::constants::errors::RELOAD_UNSUPPORTED,
+                            crate::constants::errors::MSG_RELOAD_UNSUPPORTED,
+                        ));
+                    }
+                }
             }
+        } else {
+            return Err(RiftError::new(
+                ErrorType::Internal,
+                crate::constants::errors::INTERNAL_ERROR,
+                "No active document",
+            ));
         }
 
         if let Some(doc_id) = self.document_manager.active_document_id() {
@@ -240,7 +257,6 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    /// Create an in-memory scratch buffer with `lines` as its content and switch to it.
     pub fn create_scratch_buffer(
         &mut self,
         title: String,
@@ -262,7 +278,6 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(id)
     }
 
-    /// Open a new terminal buffer
     pub fn open_terminal(&mut self, shell_cmd: Option<String>) -> Result<(), RiftError> {
         let size = self
             .term
@@ -316,14 +331,12 @@ impl<T: TerminalBackend> Editor<T> {
         Ok(())
     }
 
-    /// Perform a search in the document
     pub(super) fn perform_search(
         &mut self,
         query: &str,
         direction: SearchDirection,
         skip_current: bool,
     ) -> bool {
-        // Find all matches first to populate state for highlighting
         self.update_search_highlights();
         let _ = self.force_full_redraw();
 
@@ -333,14 +346,12 @@ impl<T: TerminalBackend> Editor<T> {
             .expect("No active document");
         match doc.perform_search(query, direction, skip_current) {
             Ok((Some(m), _stats)) => {
-                // Move cursor to start of match
                 doc.buffer.clear_desired_col();
                 let _ = doc.buffer.set_cursor(m.range.start);
                 true
             }
             Ok((None, _stats)) => false,
             Err(e) => {
-                // Actual search error (e.g., regex compilation failure)
                 self.state.notify(
                     crate::notification::NotificationType::Error,
                     format!("Search error: {}", e),
@@ -350,17 +361,14 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Jump to a 1-indexed line. 0 means last line.
     pub fn goto_line(&mut self, line: usize) {
         self.handle_action(&Action::Editor(EditorAction::GotoLine(line)));
     }
 
-    /// Run an ex command string (e.g. `"set wrap"`).
     pub fn run_command(&mut self, cmd: String) {
         self.handle_action(&Action::Editor(EditorAction::RunCommand(cmd)));
     }
 
-    /// Search for a pattern and jump to the first match.
     pub fn jump_to_pattern(&mut self, pattern: &str) {
         self.handle_action(&Action::Editor(EditorAction::Search(pattern.to_string())));
     }

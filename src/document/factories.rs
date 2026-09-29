@@ -145,6 +145,76 @@ impl Document {
         })
     }
 
+    #[must_use]
+    pub fn sniff_undo_file(
+        bytes: &[u8],
+    ) -> Option<Result<crate::history::persist::ParsedUndoFile, RiftError>> {
+        if !crate::history::persist::has_magic(bytes) {
+            return None;
+        }
+        Some(
+            crate::history::persist::parse_for_display(bytes).map_err(|msg| {
+                RiftError::new(
+                    ErrorType::Parse,
+                    crate::constants::errors::UNDOFILE_CORRUPT,
+                    msg,
+                )
+            }),
+        )
+    }
+
+    pub fn try_open_undo_file(
+        id: super::DocumentId,
+        path: &Path,
+    ) -> Option<Result<Document, RiftError>> {
+        let bytes = crate::fs_backend::backend().read_file(path).ok()?;
+        Self::sniff_undo_file(&bytes)
+            .map(|result| result.map(|parsed| Self::build_undo_file_view(id, path, parsed)))
+    }
+
+    fn build_undo_file_view(
+        id: super::DocumentId,
+        path: &Path,
+        parsed: crate::history::persist::ParsedUndoFile,
+    ) -> Document {
+        let buffer = TextBuffer::new(4096).unwrap_or_else(|_| panic!("Failed to create buffer"));
+        let mut doc = Document {
+            file_path: Some(Self::normalize_path(path)),
+            readonly_override: true,
+            kind: BufferKind::undo_file_view(),
+            state: StateSlot::new(
+                super::UNDO_FILE_VIEW_STATE_KEY,
+                super::UndoFileViewState::default(),
+            ),
+            ..Self::skeleton(id, buffer)
+        };
+        doc.populate_undo_file_view(&parsed);
+        doc
+    }
+
+    pub fn reload_undo_file_view(&mut self) -> Result<(), RiftError> {
+        let path = self
+            .path()
+            .ok_or_else(|| {
+                RiftError::new(
+                    ErrorType::Execution,
+                    crate::constants::errors::NO_PATH,
+                    crate::constants::errors::MSG_NO_FILE_NAME,
+                )
+            })?
+            .to_path_buf();
+        let bytes = crate::fs_backend::backend().read_file(&path)?;
+        let parsed = Self::sniff_undo_file(&bytes).unwrap_or_else(|| {
+            Err(RiftError::new(
+                ErrorType::Parse,
+                crate::constants::errors::UNDOFILE_CORRUPT,
+                "no longer a valid undo file".to_string(),
+            ))
+        })?;
+        self.populate_undo_file_view(&parsed);
+        Ok(())
+    }
+
     pub fn new_terminal(
         id: super::DocumentId,
         rows: u16,
