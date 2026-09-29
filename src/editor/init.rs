@@ -12,8 +12,6 @@ use crate::state::State;
 use crate::term::TerminalBackend;
 use std::sync::Arc;
 
-/// Number of base-10 digits in `n` (matches `n.to_string().len()` without
-/// allocating - called every frame from `sync_state_with_active_document`).
 fn decimal_digit_count(mut n: usize) -> usize {
     let mut count = 1;
     while n >= 10 {
@@ -24,14 +22,11 @@ fn decimal_digit_count(mut n: usize) -> usize {
 }
 
 impl<T: TerminalBackend> Editor<T> {
-    /// Create a new editor instance
     pub fn new(terminal: T) -> Result<Self, RiftError> {
         Self::with_file(terminal, None)
     }
 
-    /// Create a new editor instance with an optional file to load
     pub fn with_file(mut terminal: T, file_path: Option<String>) -> Result<Self, RiftError> {
-        // Init language loader
         let grammar_dir = std::env::current_exe()
             .ok()
             .and_then(|p| {
@@ -42,14 +37,11 @@ impl<T: TerminalBackend> Editor<T> {
 
         let language_loader = Arc::new(crate::syntax::loader::LanguageLoader::new(grammar_dir));
 
-        // Create document (either from file or empty)
-        // Create document manager
         let mut document_manager = crate::document::DocumentManager::new();
 
         if let Some(ref path) = file_path {
             document_manager.open_file(Some(path.clone()), false)?;
         } else {
-            // Create empty document
             let new_doc = Document::new(1).map_err(|e| {
                 RiftError::new(
                     ErrorType::Internal,
@@ -63,18 +55,13 @@ impl<T: TerminalBackend> Editor<T> {
         let mut buffer_kinds = crate::document::BufferKindRegistry::with_builtins();
         buffer_kinds.increment_open_count(crate::document::BufferKindId::FILE);
 
-        // Init terminal (clears screen, enters raw mode) AFTER loading the
-        // document, so a load failure doesn't leave the terminal messed up.
         terminal.init()?;
 
-        // Get terminal size
         let size = terminal.get_size()?;
 
-        // Create render system
         let render_system =
             crate::render::RenderSystem::new(size.rows as usize, size.cols as usize);
 
-        // Create command registry and settings registry
         let settings_registry = create_settings_registry();
         let command_parser = CommandParser::new(settings_registry.clone());
 
@@ -108,6 +95,7 @@ impl<T: TerminalBackend> Editor<T> {
             split_tree,
             native_action_handlers: super::handle_action::native_action_handlers(),
             native_save_handlers: super::file_ops::native_save_handlers(),
+            native_reload_handlers: super::file_ops::native_reload_handlers(),
             pending_keys: Vec::new(),
             pending_count: 0,
             pending_operator_count: 0,
@@ -125,7 +113,6 @@ impl<T: TerminalBackend> Editor<T> {
             dot_repeat: DotRepeat::new(),
             panel_layout: None,
             last_notification_generation: 0,
-            // 25 idle polls * 16 ms = 400 ms before CursorHold fires.
             plugin_host: crate::plugin::PluginHost::new(25),
             clipboard_ring: crate::clipboard::ClipboardRing::new(),
             system_clipboard_cache: crate::clipboard::SystemClipboardCache::new(),
@@ -159,7 +146,6 @@ impl<T: TerminalBackend> Editor<T> {
             unrendered_key_count: 0,
         };
 
-        // Register default keymaps
         crate::keymap::defaults::register_defaults(&mut editor.keymap);
 
         if let Err(e) = editor.load_plugins() {
@@ -168,12 +154,19 @@ impl<T: TerminalBackend> Editor<T> {
                 .notify(crate::notification::NotificationType::Error, e.to_string())
         }
 
-        // First contentful paint: show the buffer before syntax setup, plugin
-        // event dispatch, and job spawns; highlights/annotations repaint later.
+        if file_path.is_some() {
+            if let Some(hash) = editor
+                .document_manager
+                .get_document(initial_doc_id)
+                .map(|doc| crate::history::persist::sha256(&doc.buffer.to_logical_bytes()))
+            {
+                editor.restore_persisted_undo(initial_doc_id, hash);
+            }
+        }
+
         let _ = editor.update_and_render();
         editor.startup_first_paint = Some(crate::time::Instant::now());
 
-        // Trigger background search cache warming for initial document
         if let Some(doc) = editor.document_manager.active_document() {
             let table = doc.buffer.line_index.table.clone();
             let revision = doc.buffer.revision;
@@ -183,7 +176,6 @@ impl<T: TerminalBackend> Editor<T> {
             editor.job_manager.spawn(job);
         }
 
-        // Trigger initial syntax parse
         if let Some(doc_id) = editor.document_manager.active_document_id() {
             editor.attach_syntax_for_document(doc_id);
             if editor
@@ -195,7 +187,6 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        // Dispatch BufOpen for the initial synchronously-loaded document.
         {
             let buf_info = editor.document_manager.active_document().map(|doc| {
                 let buf = doc.id;
@@ -218,7 +209,6 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        // Dispatch EditorStart after all initialization is complete.
         editor.update_lua_state();
         editor
             .plugin_host
@@ -280,7 +270,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Restore view state from the active document after switching
     pub(super) fn restore_view_state(&mut self) {
         if let Some(doc) = self.document_manager.active_document() {
             let view_state = doc.get_view_state();
@@ -290,7 +279,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Sync editor state with the active document
     pub(super) fn sync_state_with_active_document(&mut self) {
         let (display_name, file_path, is_dirty, line_ending) = {
             let doc = self.active_document();
@@ -311,9 +299,7 @@ impl<T: TerminalBackend> Editor<T> {
         self.state
             .update_buffer_stats(total_lines, buffer_size, line_ending);
 
-        // Update gutter width
         if self.state.settings.show_line_numbers {
-            // 1 space padding on each side
             self.state.gutter_width = decimal_digit_count(total_lines) + 2;
         } else {
             self.state.gutter_width = 0;
@@ -322,7 +308,6 @@ impl<T: TerminalBackend> Editor<T> {
         self.refresh_search_highlights_if_stale();
     }
 
-    /// Force a full redraw of the editor
     pub(super) fn force_full_redraw(&mut self) -> Result<(), RiftError> {
         self.render_system.viewport.mark_needs_full_redraw();
         self.update_and_render().map_err(|e| {
@@ -379,8 +364,6 @@ impl<T: TerminalBackend> Editor<T> {
             ));
         }
 
-        // Load bundled plugins before user config; riftpm.lua in particular
-        // must load before init.lua so `require("riftpm")` works.
         for dir in plugin_dirs() {
             if let Some(err) = self.plugin_host.lua_load_dir(&dir).into_iter().next() {
                 return Err(RiftError::new(
@@ -391,7 +374,6 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        // Execute ~/.config/rift/init.lua after bundled plugins.
         let init_lua = user_config_dir().join("init.lua");
         if init_lua.is_file() {
             if let Some(err) = self.plugin_host.lua_load_file(&init_lua) {
@@ -403,12 +385,10 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        // Apply any mutations queued by top-level plugin code (e.g. rift.map()).
         self.apply_plugin_mutations();
         Ok(())
     }
 
-    /// Mark this editor as running in a remote IPC daemon session.
     pub fn set_remote(&mut self, remote: bool) {
         self.state.is_remote = remote;
     }

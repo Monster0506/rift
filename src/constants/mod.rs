@@ -1,18 +1,12 @@
-//! Global constants for the Rift editor
-
 pub mod paths {
-    /// Directory name for grammar files
     pub const GRAMMARS_DIR: &str = "grammars";
 }
 
 pub mod ui {
-    /// Display text for documents with no file path
     pub const NO_NAME: &str = "[No Name]";
 
-    /// Marker for undo tree nodes with snapshots
     pub const SNAPSHOT_MARKER: &str = "*";
 
-    /// Border character sets for UI components
     pub mod borders {
         #[derive(Debug, Clone, PartialEq, Eq)]
         pub struct BorderSet {
@@ -45,7 +39,6 @@ pub mod ui {
 }
 
 pub mod errors {
-    // Error Codes
     pub const LOAD_FAILED: &str = "LOAD_FAILED";
     pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
     pub const UNSAVED_CHANGES: &str = "UNSAVED_CHANGES";
@@ -63,14 +56,16 @@ pub mod errors {
     pub const REGEX_COMPILE_ERROR: &str = "REGEX_COMPILE_ERROR";
     pub const UTF8_ERROR: &str = "UTF8_ERROR";
     pub const PARENT_DIR_MISSING: &str = "PARENT_DIR_MISSING";
+    pub const UNDOFILE_CORRUPT: &str = "UNDOFILE_CORRUPT";
+    pub const RELOAD_UNSUPPORTED: &str = "RELOAD_UNSUPPORTED";
 
-    // Error Messages
     pub const MSG_UNSAVED_CHANGES: &str = "No write since last change (add ! to override)";
     pub const MSG_NO_FILE_NAME: &str = "No file name";
     pub const MSG_NOT_A_FILE: &str = "Cannot edit a directory";
     pub const MSG_NOT_A_DIRECTORY: &str = "Not a directory; :file expects a directory path";
     pub const MSG_FILE_NOT_FOUND_WIN: &str = "The system cannot find the file specified";
     pub const MSG_PARENT_DIR_MISSING: &str = "No such directory; create the parent directory first";
+    pub const MSG_RELOAD_UNSUPPORTED: &str = "This buffer cannot be reloaded";
 }
 
 pub mod history {
@@ -220,7 +215,6 @@ pub mod captures {
     pub const VARIABLE: &str = "variable";
     pub const VARIABLE_BUILTIN: &str = "variable.builtin";
     pub const VARIABLE_PARAMETER: &str = "variable.parameter";
-    // Explicit keywords found in coverage test
     pub const KEYWORD_IMPORT: &str = "import";
     pub const KEYWORD_DIRECTIVE: &str = "keyword.directive";
     pub const C_IMPORT: &str = "cImport";

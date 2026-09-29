@@ -1,6 +1,3 @@
-//! Document management
-//! Encapsulates buffer + file metadata for multi-buffer support
-
 pub mod definitions;
 mod edit;
 mod factories;
@@ -35,36 +32,30 @@ pub use runtime::{
     GhostCutPolicy, GitBlameState, GitCommitMessageState, GitLogState, GitRebaseTodoState,
     GitStatusState, InputPolicy, KeyFallback, KeyFallbackPolicy, KindDescriptor,
     LanguageServicesPolicy, LocationListState, MessagesState, NativeActionHandler,
-    NativeCloseHandler, NativeSaveHandler, NavigationPolicy, PluginBufferState, ReadOnlyPolicy,
-    RegionsState, RegistryError, SaveDispatch, SaveResult, ScratchState, StateKey, StateKeyId,
-    StateSlot, StructuralEditPolicy, TerminalState, TextProjection, TextProjectionPolicy,
-    TombstoneMetadata, UndoTreeState, BUFFER_LIST_STATE_KEY, CLIPBOARD_ENTRY_STATE_KEY,
-    CLIPBOARD_STATE_KEY, DIRECTORY_STATE_KEY, EMPTY_STATE_KEY, FILE_STATE_KEY, GIT_BLAME_STATE_KEY,
+    NativeCloseHandler, NativeReloadHandler, NativeSaveHandler, NavigationPolicy,
+    PluginBufferState, ReadOnlyPolicy, RegionsState, RegistryError, ReloadDispatch, ReloadOutcome,
+    SaveDispatch, SaveResult, ScratchState, StateKey, StateKeyId, StateSlot, StructuralEditPolicy,
+    TerminalState, TextProjection, TextProjectionPolicy, TombstoneMetadata, UndoFileViewState,
+    UndoTreeState, BUFFER_LIST_STATE_KEY, CLIPBOARD_ENTRY_STATE_KEY, CLIPBOARD_STATE_KEY,
+    DIRECTORY_STATE_KEY, EMPTY_STATE_KEY, FILE_STATE_KEY, GIT_BLAME_STATE_KEY,
     GIT_COMMIT_MESSAGE_STATE_KEY, GIT_LOG_STATE_KEY, GIT_REBASE_TODO_STATE_KEY,
     GIT_STATUS_STATE_KEY, LOCATION_LIST_STATE_KEY, MESSAGES_STATE_KEY, PLUGIN_BUFFER_STATE_KEY,
-    REGIONS_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_TREE_STATE_KEY,
+    REGIONS_STATE_KEY, SCRATCH_STATE_KEY, TERMINAL_STATE_KEY, UNDO_FILE_VIEW_STATE_KEY,
+    UNDO_TREE_STATE_KEY,
 };
 use std::path::{Path, PathBuf};
 
-/// Unique identifier for documents
 pub type DocumentId = u64;
 
-/// One entry on the annotation undo/redo stacks. A pure insertion replays
-/// its exact inverse shift; deletes/replaces (which can collapse markers) snapshot.
 enum AnnotationUndo {
-    /// Pure insertion: bytes [start, new_end) inserted, lines inserted at
-    /// `line_inserts` in order. Undo/redo replay the inverse/forward edit.
     Insertion {
         start: usize,
         new_end: usize,
         line_inserts: Vec<usize>,
     },
-    /// Full pre-edit annotation snapshot (correct for any edit).
     Snapshot(Vec<crate::annotations::Annotation>),
 }
 
-/// Hint passed to `record_edit` for the annotation undo entry. Kept separate
-/// from [`AnnotationUndo`] so the snapshot is only taken when needed.
 pub(crate) enum AnnotationUndoHint {
     Insertion {
         start: usize,
@@ -74,16 +65,13 @@ pub(crate) enum AnnotationUndoHint {
     Snapshot,
 }
 
-/// A single entry in a directory buffer
 #[derive(Debug, Clone)]
 pub struct DirEntry {
     pub path: PathBuf,
     pub is_dir: bool,
-    /// Stable identifier assigned at populate time. 0 means "not yet assigned".
     pub id: u16,
 }
 
-/// Diff produced by parsing a directory buffer before save
 #[derive(Debug, Default)]
 pub struct DirectoryDiff {
     pub renames: Vec<(PathBuf, String)>,
@@ -91,32 +79,24 @@ pub struct DirectoryDiff {
     pub creates: Vec<String>,
 }
 
-/// A git-state mutation invoked by GitStatus cursor actions. Unmerged entries require conflict resolution and have no action.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitStatusAction {
-    /// `git add -- path` (untracked or unstaged -> staged, whole file).
     Stage(PathBuf),
-    /// `git restore --staged -- path` (staged -> unstaged, whole file).
     Unstage(PathBuf),
-    /// Revert all changes to `path`: tracked files via `git restore --staged --worktree` (also restoring `orig_path`, if this was a rename), untracked files by deleting them from disk.
     Discard {
         path: PathBuf,
         orig_path: Option<PathBuf>,
         was_untracked: bool,
     },
-    /// Apply exactly this hunk to the index (`git apply --cached`): a hunk block moved from the Unstaged section into Staged, or a portion of an untracked file's content (`is_new_file`: no index entry exists for `path` yet, so the patch needs a "new file" header).
     StageHunk {
         path: PathBuf,
         hunk: crate::git::diff::Hunk,
         is_new_file: bool,
     },
-    /// Reverse-apply this hunk from the index (`git apply --cached -R`): a
-    /// hunk block moved from the Staged section into Unstaged.
     UnstageHunk {
         path: PathBuf,
         hunk: crate::git::diff::Hunk,
     },
-    /// Reverse-apply this hunk to discard it entirely: for a staged hunk (`staged_side: true`), reverts both the index (`git apply --cached -R`) and the worktree (`git apply -R`); for an unstaged hunk, reverts only the worktree (`git apply -R`).
     DiscardHunk {
         path: PathBuf,
         hunk: crate::git::diff::Hunk,
@@ -124,8 +104,6 @@ pub enum GitStatusAction {
     },
 }
 
-/// A deferred `d`-cut: `text` still sits in the buffer, greyed out, until
-/// a later action turns it into a real delete.
 pub struct GhostCut {
     pub start: usize,
     pub end: usize,
@@ -133,46 +111,34 @@ pub struct GhostCut {
     pub annotation_id: crate::annotations::AnnotationId,
 }
 
-/// A single entry in a location list (diagnostics, references, etc.)
 #[derive(Debug, Clone)]
 pub struct LocationEntry {
-    /// Document URI for this location.
     pub uri: String,
-    /// 0-indexed line.
     pub line: u32,
-    /// 0-indexed column.
     pub col: u32,
-    /// Pre-formatted display string shown in the buffer.
     pub display: String,
 }
 
-/// What saving a git-commit-message buffer does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitCommitTarget {
-    /// `git commit -F <file>`.
     New,
-    /// `git commit --amend -F <file>`.
     Amend,
-    /// Message for a paused rebase `reword` step: saving amends the just-cherry-picked commit with this message, then resumes `rebase_doc_id`'s remaining steps.
-    RebaseReword { rebase_doc_id: DocumentId },
-    /// Message for a commit still being planned in `rebase_doc_id` (not cherry-picked yet; the rebase hasn't started). Saving updates that todo's `message_overrides` for `sha` and returns to it; no git command runs here at all.
+    RebaseReword {
+        rebase_doc_id: DocumentId,
+    },
     RebasePlanReword {
         rebase_doc_id: DocumentId,
         sha: String,
     },
 }
 
-/// Line ending types supported by Rift
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LineEnding {
-    /// Unix line endings (\n)
     LF,
-    /// Windows line endings (\r\n)
     CRLF,
 }
 
 impl LineEnding {
-    /// Get the byte sequence for this line ending
     pub fn as_bytes(&self) -> &'static [u8] {
         match self {
             LineEnding::LF => b"\n",
@@ -181,21 +147,17 @@ impl LineEnding {
     }
 }
 
-/// Per-document view state (scroll position, etc.)
 #[derive(Debug, Clone, Default)]
 pub struct ViewState {
     pub top_line: usize,
     pub left_col: usize,
 }
 
-/// Document combining buffer and file metadata
 pub struct Document {
     pub id: DocumentId,
     pub buffer: TextBuffer,
     pub options: DocumentOptions,
     file_path: Option<PathBuf>,
-    /// `File`/`Scratch` per-instance read-only override; ignored for any
-    /// kind whose read-only-ness is fixed (see `BufferKind::fixed_read_only`).
     readonly_override: bool,
     pub syntax: Option<Syntax>,
     pub history: UndoTree,
@@ -210,38 +172,18 @@ pub struct Document {
     pub plugin_highlights: Vec<(std::ops::Range<usize>, crate::color::Color)>,
     pub highlight_slots:
         std::collections::HashMap<u32, Vec<(std::ops::Range<usize>, crate::color::Color)>>,
-    /// Structured metadata sidecar.
     pub annotations: AnnotationStore,
-    /// Non-contiguous multi-region selection set.
     pub selection_set: crate::selection::SelectionSet,
-    /// Full annotation snapshot captured before a transaction, restored on undo.
     pending_annotation_snapshot: Option<Vec<crate::annotations::Annotation>>,
-    /// Undo stack parallel to the edit history; one entry per standalone
-    /// edit or committed transaction.
     annotation_undo_stack: Vec<AnnotationUndo>,
-    /// Redo annotations paired with the edit-history redo stack.
     annotation_redo_stack: Vec<AnnotationUndo>,
-    /// Monotonic edit sequence number, incremented once per applied edit.
-    /// Lets producers reconcile stale annotation positions.
     document_version: u64,
-    /// Edits recorded since the last `take_lsp_edits`, for an LSP client to
-    /// express as incremental changes instead of resending the whole document.
     pending_lsp_edits: Vec<crate::history::EditOperation>,
-    /// `buffer.revision` when the LSP client last synced this document. Any
-    /// drift not explained by `pending_lsp_edits` forces a full resync.
     lsp_synced_revision: u64,
-    /// Set when the buffer was swapped wholesale (reload); cleared on sync.
     lsp_full_sync_needed: bool,
-    /// Deferred `d`-cuts not yet materialized into real deletes. A banked or
-    /// visual-selection delete produces multiple entries from one cut action.
     pub pending_ghost: Vec<GhostCut>,
 }
 
-// Rust generics can't reflect into a struct's fields, so each field
-// accessor is still hand-written; these macros only cut the try_get wrapper.
-
-/// Read accessor: `self.state.try_get($key).map(|s| $body)`.
-/// Use when `$body` returns the field's value directly (not already `Option`).
 macro_rules! state_get {
     ($vis:vis fn $name:ident(&self) -> $ret:ty = $key:expr, |$s:ident| $body:expr) => {
         $vis fn $name(&self) -> Option<$ret> {
@@ -250,8 +192,6 @@ macro_rules! state_get {
     };
 }
 
-/// Read accessor: `try_get($key).and_then(|s| $body)`, for closures that
-/// themselves return `Option<$ret>` (e.g. via `.as_deref()`).
 macro_rules! state_get_opt {
     ($vis:vis fn $name:ident(&self) -> $ret:ty = $key:expr, |$s:ident| $body:expr) => {
         $vis fn $name(&self) -> Option<$ret> {
@@ -260,7 +200,6 @@ macro_rules! state_get_opt {
     };
 }
 
-/// Write accessor: assigns one field if the `StateKey` matches, else no-op.
 macro_rules! state_set {
     ($vis:vis fn $name:ident(&mut self, $arg:ident: $arg_ty:ty) = $key:expr, |$s:ident| $body:expr) => {
         $vis fn $name(&mut self, $arg: $arg_ty) {
@@ -272,7 +211,6 @@ macro_rules! state_set {
 }
 
 impl Document {
-    /// Monotonic edit sequence number for this document.
     pub fn version(&self) -> u64 {
         self.document_version
     }
@@ -281,8 +219,6 @@ impl Document {
         self.syntax = Some(syntax);
     }
 
-    /// Convert an LSP `Position.character` on `line` (in `encoding`'s units)
-    /// to a code-point offset. Use before indexing any LSP position.
     #[cfg(feature = "lsp")]
     pub fn lsp_char_offset_in_line(
         &self,
@@ -294,8 +230,6 @@ impl Document {
         encoding.char_offset_in_line(chars, character)
     }
 
-    /// Convert a code-point offset on `line` to `encoding`'s wire units. Use
-    /// before sending any cursor/selection position to an LSP server.
     #[cfg(feature = "lsp")]
     pub fn lsp_position_units_in_line(
         &self,
@@ -307,8 +241,6 @@ impl Document {
         encoding.units_for_char_offset(chars, char_offset)
     }
 
-    /// Drain edits since the last call as one incremental LSP change: a
-    /// single-line insert/delete/replace, or a chained run of inserts. Anything else returns `None`, meaning full sync.
     #[cfg(feature = "lsp")]
     pub fn take_incremental_lsp_changes(
         &mut self,
@@ -403,8 +335,6 @@ impl Document {
         }
     }
 
-    /// LSP start/end for a range since removed: `start` reads the still-valid
-    /// current prefix; `end` chains that prefix with the removed text itself.
     #[cfg(feature = "lsp")]
     fn lsp_range_across_removed(
         &self,
@@ -443,30 +373,22 @@ impl Document {
         )
     }
 
-    /// Discard edits recorded since the last drain, so they don't linger for
-    /// next time; call this when skipping incremental sync for this edit.
     pub fn discard_pending_lsp_changes(&mut self) {
         self.pending_lsp_edits.clear();
         self.lsp_synced_revision = self.buffer.revision;
         self.lsp_full_sync_needed = false;
     }
 
-    /// Flag the whole buffer as changed behind the LSP client's back (e.g. a
-    /// reload swapped it in), so the next sync resends everything.
     pub fn mark_lsp_full_sync(&mut self) {
         self.lsp_full_sync_needed = true;
     }
 
-    /// True when the buffer changed since the LSP client last synced it,
-    /// whether or not the change went through `record_edit`.
     pub fn has_pending_lsp_edits(&self) -> bool {
         self.lsp_full_sync_needed
             || !self.pending_lsp_edits.is_empty()
             || self.buffer.revision != self.lsp_synced_revision
     }
 
-    /// True only if every buffer mutation since the last sync was recorded, so
-    /// the pending edits can be replayed incrementally (undo/redo bypass recording).
     #[cfg(feature = "lsp")]
     fn pending_lsp_edits_are_complete(&self) -> bool {
         let recorded = self.pending_lsp_edits.len() as u64;
@@ -485,99 +407,79 @@ impl Document {
         self.buffer.chars(start..end)
     }
 
-    /// Handle identifying this document incarnation.
     pub fn handle(&self) -> DocumentHandle {
         self.handle
     }
 
-    /// Updates the document handle.
     pub fn set_handle(&mut self, handle: DocumentHandle) {
         self.handle = handle;
     }
 
-    /// Reference to this document's kind descriptor.
     pub fn descriptor(&self) -> &KindDescriptor {
         self.kind.descriptor()
     }
 
-    /// Interned buffer kind ID.
     pub fn buffer_kind_id(&self) -> BufferKindId {
         self.kind.id()
     }
 
-    /// Policies bundle governing generic editor behavior for this buffer.
     pub fn policies(&self) -> &BufferPolicies {
         self.kind.policies()
     }
 
-    /// Key fallback context for this buffer kind.
     pub fn key_fallback(&self) -> KeyFallback {
         self.policies().key_fallback
     }
 
-    /// Text projection model for rendering.
     pub fn projection(&self) -> TextProjection {
         self.policies().projection
     }
 
-    /// Whether this document matches the expected handle.
     pub fn matches_handle(&self, handle: DocumentHandle) -> bool {
         self.handle == handle
     }
 
-    /// Whether this document matches the expected buffer kind ID.
     pub fn matches_kind(&self, id: BufferKindId) -> bool {
         self.buffer_kind_id() == id
     }
 
-    /// Whether this document has an inert tombstone descriptor.
     pub fn is_tombstone(&self) -> bool {
         self.descriptor().is_tombstone()
     }
 
-    /// Optional immutable help lines for this buffer kind.
     pub fn help_lines(&self) -> Option<&[String]> {
         self.descriptor().help_lines()
     }
 
-    // Terminal helpers
-
-    /// Reference to live terminal emulator instance, if any.
     pub fn terminal(&self) -> Option<&Terminal> {
         self.state
             .try_get(TERMINAL_STATE_KEY)
             .and_then(|s| s.terminal.as_ref())
     }
 
-    /// Mutable reference to live terminal emulator instance, if any.
     pub fn terminal_mut(&mut self) -> Option<&mut Terminal> {
         self.state
             .try_get_mut(TERMINAL_STATE_KEY)
             .and_then(|s| s.terminal.as_mut())
     }
 
-    /// Terminal cursor position (line, col).
     pub fn terminal_cursor(&self) -> Option<(usize, usize)> {
         self.state
             .try_get(TERMINAL_STATE_KEY)
             .and_then(|s| s.terminal_cursor)
     }
 
-    /// Sets the terminal cursor position.
     pub fn set_terminal_cursor(&mut self, cursor: Option<(usize, usize)>) {
         if let Some(s) = self.state.try_get_mut(TERMINAL_STATE_KEY) {
             s.terminal_cursor = cursor;
         }
     }
 
-    /// Reference to terminal cell color spans.
     pub fn terminal_cell_colors(&self) -> Option<&[crate::color::CellColorSpan]> {
         self.state
             .try_get(TERMINAL_STATE_KEY)
             .map(|state| state.terminal_cell_colors.as_slice())
     }
-
-    // Predicate helpers
 
     pub fn is_file(&self) -> bool {
         self.buffer_kind_id() == BufferKindId::FILE
@@ -672,8 +574,6 @@ impl Document {
         self.readonly_override = on;
     }
 
-    // Feature state helpers
-
     state_get!(pub fn directory_path(&self) -> &PathBuf = DIRECTORY_STATE_KEY, |s| &s.path);
     state_get!(pub fn directory_entries(&self) -> &[DirEntry] = DIRECTORY_STATE_KEY, |s| s.entries.as_slice());
     state_get!(pub fn directory_show_hidden(&self) -> bool = DIRECTORY_STATE_KEY, |s| s.show_hidden);
@@ -694,6 +594,11 @@ impl Document {
                 show_hidden: false,
             },
         );
+    }
+
+    pub fn convert_to_undo_file_view(&mut self) {
+        self.kind = BufferKind::for_builtin(BufferKindId::UNDO_FILE_VIEW);
+        self.state = StateSlot::new(UNDO_FILE_VIEW_STATE_KEY, UndoFileViewState::default());
     }
 
     state_get!(pub fn undotree_linked_doc_id(&self) -> DocumentId = UNDO_TREE_STATE_KEY, |s| s.linked_doc_id);
@@ -835,8 +740,6 @@ impl Document {
     }
 }
 
-/// The document position immediately after inserting `text` at `start`,
-/// tracking line/col across any newlines `text` itself contains.
 #[cfg(feature = "lsp")]
 fn advance_position(
     start: crate::history::Position,
@@ -855,8 +758,6 @@ fn advance_position(
     crate::history::Position { line, col }
 }
 
-/// Combine a chained run of `Insert` ops (each landing where the previous
-/// one ended) into one start position and concatenated text. `None` otherwise.
 #[cfg(feature = "lsp")]
 fn combine_insert_run(
     ops: &[crate::history::EditOperation],

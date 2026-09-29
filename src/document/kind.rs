@@ -1,16 +1,8 @@
-//! `BufferKind` descriptor-backed handle.
-//!
-//! A document directly holds its descriptor handle (`BufferKind { id, descriptor }`).
-//! Generic editor behavior, policies, and display metadata are resolved through
-//! the descriptor rather than an exhaustive data-carrying enum.
-
 use super::runtime::{builtin_descriptor, BufferKindId, BufferPolicies, KindDescriptor};
 use std::borrow::Cow;
 use std::path::Path;
 use std::sync::Arc;
 
-/// Descriptor-backed buffer kind handle: interned `BufferKindId` plus its
-/// immutable `KindDescriptor`, so hot paths avoid string hashing/matching.
 #[derive(Debug, Clone)]
 pub struct BufferKind {
     pub id: BufferKindId,
@@ -18,7 +10,6 @@ pub struct BufferKind {
 }
 
 impl BufferKind {
-    /// Creates a new `BufferKind` handle wrapping a descriptor.
     pub fn new(descriptor: Arc<KindDescriptor>) -> Self {
         Self {
             id: descriptor.id(),
@@ -26,7 +17,6 @@ impl BufferKind {
         }
     }
 
-    /// Creates a `BufferKind` handle for a reserved built-in kind ID.
     pub fn for_builtin(id: BufferKindId) -> Self {
         Self {
             id,
@@ -98,37 +88,34 @@ impl BufferKind {
         Self::for_builtin(BufferKindId::BUFFER_LIST)
     }
 
-    /// Interned process-local ID for this kind.
+    pub fn undo_file_view() -> Self {
+        Self::for_builtin(BufferKindId::UNDO_FILE_VIEW)
+    }
+
     pub fn buffer_kind_id(&self) -> BufferKindId {
         self.id
     }
 
-    /// Alias for [`buffer_kind_id`](Self::buffer_kind_id).
     pub fn id(&self) -> BufferKindId {
         self.id
     }
 
-    /// Reference to the underlying descriptor.
     pub fn descriptor(&self) -> &KindDescriptor {
         &self.descriptor
     }
 
-    /// Cloned `Arc` reference to the underlying descriptor.
     pub fn descriptor_arc(&self) -> Arc<KindDescriptor> {
         Arc::clone(&self.descriptor)
     }
 
-    /// Reference to the policy bundle.
     pub fn policies(&self) -> &BufferPolicies {
         self.descriptor.policies()
     }
 
-    /// Short lowercase string identifier for this kind (e.g. "file", "terminal").
     pub fn kind_str(&self) -> &str {
         self.descriptor.name()
     }
 
-    /// Tab/UI label for this kind.
     pub fn display_name<'a>(
         &'a self,
         file_path: Option<&'a Path>,

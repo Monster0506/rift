@@ -5,8 +5,6 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_lua_state(&self) {
         use crate::plugin::lua_host::BufEntry;
 
-        // Snapshotting materializes the whole buffer; skip it until some Lua
-        // code has actually run and could observe the state.
         if !self.plugin_host.lua_state_wanted() {
             return;
         }
@@ -30,8 +28,6 @@ impl<T: TerminalBackend> Editor<T> {
         ) = if let Some(doc) = self.document_manager.active_document() {
             let buf_id = doc.id as usize;
             let buf_kind = doc.kind.kind_str().to_string();
-            // The buffer clone is the expensive part of this snapshot; skip it
-            // when the buffer hasn't changed since the last sync.
             let source = if self
                 .plugin_host
                 .synced_buf_matches(doc.id, doc.buffer.revision)
@@ -155,7 +151,6 @@ impl<T: TerminalBackend> Editor<T> {
             .lsp_diagnostics
             .iter()
             .map(|(uri, diags)| {
-                // Wire columns are encoding units; give Lua code points when we can.
                 let doc = crate::lsp::protocol::uri_to_path(uri)
                     .and_then(|p| self.document_manager.find_open_document_id(&p))
                     .and_then(|id| self.document_manager.get_document(id));
@@ -216,7 +211,6 @@ impl<T: TerminalBackend> Editor<T> {
             lsp_diagnostics,
             buffer_vars,
         );
-        // Skip the annotation snapshot update when its revision is unchanged.
         use crate::annotations::Anchor;
         use crate::plugin::lua_host::AnnotationView;
         if let Some(doc) = self.document_manager.active_document() {
@@ -326,12 +320,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Drain the plugin mutation queue and apply each mutation.
     pub(super) fn apply_plugin_mutations(&mut self) {
         use crate::color::Color;
         use crate::plugin::PluginMutation;
 
-        /// Parse a color name or "#rrggbb" hex string into a `Color`.
         fn plugin_color(s: &str) -> Color {
             match s.to_lowercase().as_str() {
                 "red" => Color::Red,
@@ -360,7 +352,6 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        // Drain into a Vec first so we don't hold a borrow on plugin_host.
         let envelopes: Vec<crate::plugin::PluginMutationEnvelope> =
             self.plugin_host.drain_mutation_envelopes().collect();
 
@@ -759,6 +750,7 @@ impl<T: TerminalBackend> Editor<T> {
                             } else {
                                 crate::document::SaveDispatch::Disabled
                             },
+                            reload_dispatch: crate::document::ReloadDispatch::Unsupported,
                             display_name: display_name
                                 .clone()
                                 .map(|label| {
@@ -1026,7 +1018,6 @@ impl<T: TerminalBackend> Editor<T> {
                 #[cfg(feature = "lsp")]
                 PluginMutation::LspRegisterServer { language, config } => {
                     self.lsp_manager.register_server(language, config);
-                    // Attach already-open files; other languages no-op in did_open.
                     self.lsp_notify_open_all();
                 }
                 PluginMutation::LspGotoDefinition => {

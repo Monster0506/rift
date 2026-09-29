@@ -1,5 +1,3 @@
-//! Document factory constructors: `Document::new`, `from_file`, `new_terminal`, etc.
-
 use super::definitions;
 use super::{
     BufferKind, BufferListState, ClipboardState, DirectoryState, Document, DocumentHandle,
@@ -20,8 +18,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 
-/// Decode raw file bytes into buffer characters plus line starts, normalizing
-/// CRLF (and a standalone `\r`, which is dropped) and skipping a UTF-8 BOM.
 pub(crate) fn decode_file_bytes(
     bytes: &[u8],
 ) -> (Vec<crate::character::Character>, LineEnding, Vec<usize>) {
@@ -42,7 +38,6 @@ pub(crate) fn decode_file_bytes(
             }
             Err(e) => {
                 let valid_up_to = e.valid_up_to();
-                // SAFETY: from_utf8 guarantees remaining[..valid_up_to] is valid UTF-8
                 let valid = unsafe { std::str::from_utf8_unchecked(&remaining[..valid_up_to]) };
                 push_normalized(valid, &mut chars, &mut starts, &mut line_ending);
                 let error_len = e.error_len().unwrap_or(1);
@@ -82,8 +77,6 @@ fn push_normalized(
 }
 
 impl Document {
-    /// A document with every field at its default value; only `id` and
-    /// `buffer` are meaningful. Callers override fields via `..Self::skeleton(..)`.
     fn skeleton(id: super::DocumentId, buffer: TextBuffer) -> Document {
         Document {
             id,
@@ -116,28 +109,22 @@ impl Document {
         }
     }
 
-    /// Create a new empty document
     pub fn new(id: super::DocumentId) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         Ok(Self::skeleton(id, buffer))
     }
 
-    /// Load document from file
     pub fn from_file(id: super::DocumentId, path: impl AsRef<Path>) -> Result<Self, RiftError> {
         let path = path.as_ref();
         let bytes = crate::fs_backend::backend().read_file(path)?;
         Self::from_bytes(id, Some(path), bytes)
     }
 
-    /// Build a document from raw bytes already in memory, skipping the
-    /// filesystem read. `path` sets the document's file path, if any.
     pub fn from_bytes(
         id: super::DocumentId,
         path: Option<&Path>,
         bytes: Vec<u8>,
     ) -> Result<Self, RiftError> {
-        // Bulk construction: the chars vec becomes the piece table's original
-        // slice directly, skipping the general insert path and its copies.
         let (chars, line_ending, starts) = decode_file_bytes(&bytes);
         drop(bytes);
         let table = crate::buffer::rope::PieceTable::new(chars);
@@ -158,7 +145,76 @@ impl Document {
         })
     }
 
-    /// Create a new terminal document
+    #[must_use]
+    pub fn sniff_undo_file(
+        bytes: &[u8],
+    ) -> Option<Result<crate::history::persist::ParsedUndoFile, RiftError>> {
+        if !crate::history::persist::has_magic(bytes) {
+            return None;
+        }
+        Some(
+            crate::history::persist::parse_for_display(bytes).map_err(|msg| {
+                RiftError::new(
+                    ErrorType::Parse,
+                    crate::constants::errors::UNDOFILE_CORRUPT,
+                    msg,
+                )
+            }),
+        )
+    }
+
+    pub fn try_open_undo_file(
+        id: super::DocumentId,
+        path: &Path,
+    ) -> Option<Result<Document, RiftError>> {
+        let bytes = crate::fs_backend::backend().read_file(path).ok()?;
+        Self::sniff_undo_file(&bytes)
+            .map(|result| result.map(|parsed| Self::build_undo_file_view(id, path, parsed)))
+    }
+
+    fn build_undo_file_view(
+        id: super::DocumentId,
+        path: &Path,
+        parsed: crate::history::persist::ParsedUndoFile,
+    ) -> Document {
+        let buffer = TextBuffer::new(4096).unwrap_or_else(|_| panic!("Failed to create buffer"));
+        let mut doc = Document {
+            file_path: Some(Self::normalize_path(path)),
+            readonly_override: true,
+            kind: BufferKind::undo_file_view(),
+            state: StateSlot::new(
+                super::UNDO_FILE_VIEW_STATE_KEY,
+                super::UndoFileViewState::default(),
+            ),
+            ..Self::skeleton(id, buffer)
+        };
+        doc.populate_undo_file_view(&parsed);
+        doc
+    }
+
+    pub fn reload_undo_file_view(&mut self) -> Result<(), RiftError> {
+        let path = self
+            .path()
+            .ok_or_else(|| {
+                RiftError::new(
+                    ErrorType::Execution,
+                    crate::constants::errors::NO_PATH,
+                    crate::constants::errors::MSG_NO_FILE_NAME,
+                )
+            })?
+            .to_path_buf();
+        let bytes = crate::fs_backend::backend().read_file(&path)?;
+        let parsed = Self::sniff_undo_file(&bytes).unwrap_or_else(|| {
+            Err(RiftError::new(
+                ErrorType::Parse,
+                crate::constants::errors::UNDOFILE_CORRUPT,
+                "no longer a valid undo file".to_string(),
+            ))
+        })?;
+        self.populate_undo_file_view(&parsed);
+        Ok(())
+    }
+
     pub fn new_terminal(
         id: super::DocumentId,
         rows: u16,
@@ -183,7 +239,6 @@ impl Document {
         Ok((doc, rx))
     }
 
-    /// Create a new directory buffer. Content is populated later when a DirectoryListJob completes.
     pub fn new_directory(id: super::DocumentId, path: PathBuf) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         let mut doc = Self::skeleton(id, buffer);
@@ -200,7 +255,6 @@ impl Document {
         Ok(doc)
     }
 
-    /// Create a new undo-tree buffer linked to another document.
     pub fn new_undotree(
         id: super::DocumentId,
         linked_doc_id: super::DocumentId,
@@ -219,7 +273,6 @@ impl Document {
         Ok(doc)
     }
 
-    /// Create a read-only preview document for the undotree pane.
     pub fn new_undotree_preview(
         id: super::DocumentId,
         linked: &Document,
@@ -230,14 +283,12 @@ impl Document {
                 ..linked.options.clone()
             },
             file_path: linked.file_path.clone(),
-            // Read-only copy of a linked file with ordinary line-by-line navigation.
             readonly_override: true,
             history: linked.history.clone(),
             ..Self::skeleton(id, linked.buffer.clone())
         })
     }
 
-    /// Create a new messages buffer showing the accumulated notification log.
     pub fn new_messages(id: super::DocumentId, show_all: bool) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         let mut doc = Self::skeleton(id, buffer);
@@ -247,8 +298,6 @@ impl Document {
         Ok(doc)
     }
 
-    /// Create an in-memory buffer with no disk path, populated with `lines`.
-    /// Used by `rift.create_scratch_buf`
     pub fn new_scratch(
         id: super::DocumentId,
         title: String,
@@ -273,7 +322,6 @@ impl Document {
         Ok(doc)
     }
 
-    /// Create a new git status buffer. Content is populated later when a `GitStatusJob` completes. Read-only: changes only happen through its specific key actions (`s`/`u`/`X`/`=`/`c...`), never by editing the rendered text directly (that content is regenerated on every refresh anyway, and the line-anchored.
     pub fn new_git_status(id: super::DocumentId, repo_root: PathBuf) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         let mut doc = Self::skeleton(id, buffer);
@@ -291,8 +339,6 @@ impl Document {
         Ok(doc)
     }
 
-    /// Create a new commit message buffer, pre-filled with `initial_message`
-    /// (empty for a new commit, the previous message for amend/reword).
     pub fn new_git_commit_message(
         id: super::DocumentId,
         repo_root: PathBuf,
@@ -313,8 +359,6 @@ impl Document {
         Ok(doc)
     }
 
-    /// Create a new git blame buffer. Content is populated later when a
-    /// `GitBlameJob` completes.
     pub fn new_git_blame(
         id: super::DocumentId,
         repo_root: PathBuf,
@@ -344,8 +388,6 @@ impl Document {
         Ok(doc)
     }
 
-    /// Create a new git log buffer. Content is populated later when a
-    /// `GitLogJob` completes.
     pub fn new_git_log(
         id: super::DocumentId,
         repo_root: PathBuf,
@@ -368,7 +410,6 @@ impl Document {
         Ok(doc)
     }
 
-    /// Create a new git rebase todo buffer, pre-populated with `steps`.
     pub fn new_git_rebase_todo(
         id: super::DocumentId,
         repo_root: PathBuf,
@@ -400,7 +441,6 @@ impl Document {
         Ok(doc)
     }
 
-    /// Create a new interactive buffer-list panel document (read-only, interface-mode).
     pub fn new_buffer_list(id: super::DocumentId) -> Result<Self, RiftError> {
         let buffer = TextBuffer::new(4096)?;
         let mut doc = Self::skeleton(id, buffer);

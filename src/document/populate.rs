@@ -1,9 +1,7 @@
-//! Buffer population methods: rendering special buffer kinds into text.
-
 use super::{
     DirEntry, DirectoryDiff, Document, BUFFER_LIST_STATE_KEY, CLIPBOARD_STATE_KEY,
     DIRECTORY_STATE_KEY, GIT_BLAME_STATE_KEY, GIT_REBASE_TODO_STATE_KEY, GIT_STATUS_STATE_KEY,
-    MESSAGES_STATE_KEY, TERMINAL_STATE_KEY, UNDO_TREE_STATE_KEY,
+    MESSAGES_STATE_KEY, TERMINAL_STATE_KEY, UNDO_FILE_VIEW_STATE_KEY, UNDO_TREE_STATE_KEY,
 };
 use crate::buffer::TextBuffer;
 use crate::character::Character;
@@ -16,7 +14,6 @@ struct RebasePlanRender {
 }
 
 impl Document {
-    /// Replace this document's buffer with new content, resetting cursor to the top.
     pub fn replace_buffer_content(&mut self, content: &str) {
         let old_revision = self.buffer.revision;
         if let Ok(mut new_buffer) = TextBuffer::new(content.len().max(64)) {
@@ -27,7 +24,6 @@ impl Document {
         }
     }
 
-    /// Replace this document's buffer with a sequence of Characters.
     pub(super) fn replace_buffer_content_chars(&mut self, chars: &[Character]) {
         let old_revision = self.buffer.revision;
         let byte_len: usize = chars.iter().map(|c| c.len_utf8()).sum();
@@ -39,8 +35,6 @@ impl Document {
         }
     }
 
-    /// Populate (or repopulate) this directory buffer from a fresh directory listing.
-    /// Entry IDs live in the annotation store, not the buffer; the buffer holds only filenames.
     pub fn populate_directory_buffer(&mut self, mut entries: Vec<DirEntry>) {
         use crate::color::Color;
 
@@ -109,8 +103,6 @@ impl Document {
         self.history.mark_saved();
     }
 
-    /// Recompute `custom_highlights` from the current buffer state for directory buffers.
-    /// Called before each render so that highlights stay accurate after user edits.
     pub fn recompute_directory_highlights(&mut self) {
         use crate::color::Color;
 
@@ -172,7 +164,6 @@ impl Document {
             byte_pos += char_len;
         }
 
-        // Last line (no trailing newline)
         if line_has_content {
             let color = dir_entry_color(
                 &id_to_orig,
@@ -186,7 +177,6 @@ impl Document {
         self.custom_highlights = highlights;
     }
 
-    /// Populate this undo-tree buffer from the given history.
     pub fn populate_undotree_buffer(
         &mut self,
         text: String,
@@ -203,7 +193,38 @@ impl Document {
         self.history.mark_saved();
     }
 
-    /// Populate this messages buffer from the notification log.
+    pub fn populate_undo_file_view(&mut self, parsed: &crate::history::persist::ParsedUndoFile) {
+        let hash_hex: String = parsed
+            .content_hash
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let header = format!(
+            "Undo history for {}\nSHA-256 {}\n{} edit(s), currently at #{}\n\n",
+            parsed.source_path.display(),
+            hash_hex,
+            parsed.tree.nodes.len().saturating_sub(1),
+            parsed.tree.current_seq(),
+        );
+        let (tree_text, sequences, highlights) =
+            crate::undotree_view::render_tree_to_text(&parsed.tree);
+        let offset = header.len();
+        let mut content = header;
+        content.push_str(&tree_text);
+
+        let highlights = highlights
+            .into_iter()
+            .map(|(range, color)| (range.start + offset..range.end + offset, color))
+            .collect();
+
+        self.replace_buffer_content(&content);
+        self.custom_highlights = highlights;
+        if let Some(state) = self.state.try_get_mut(UNDO_FILE_VIEW_STATE_KEY) {
+            state.sequences = sequences;
+        }
+        self.history.mark_saved();
+    }
+
     pub fn populate_messages_buffer(&mut self, log: &[crate::notification::MessageEntry]) {
         use crate::color::Color;
         use crate::notification::{JobEventKind, MessageEntry, NotificationType};
@@ -300,7 +321,6 @@ impl Document {
         self.history.mark_saved();
     }
 
-    /// Populate (or repopulate) this clipboard index buffer from the ring.
     pub fn populate_clipboard_buffer(
         &mut self,
         entries: &std::collections::VecDeque<Vec<crate::character::Character>>,
@@ -334,8 +354,6 @@ impl Document {
         self.history.mark_saved();
     }
 
-    /// Populate (or repopulate) the interactive buffer-list panel from the
-    /// current buffer set, showing each entry's index, name, and status flags.
     pub fn populate_buffer_list_buffer(&mut self, infos: &[crate::document::manager::BufferInfo]) {
         use crate::color::Color;
 
@@ -384,8 +402,6 @@ impl Document {
         self.history.mark_saved();
     }
 
-    /// Populate (or repopulate) the `gv` regions list from `regions`,
-    /// computed against `source_buf` (the document the set belongs to).
     pub fn populate_regions_buffer(
         &mut self,
         source_buf: &TextBuffer,
@@ -422,8 +438,6 @@ impl Document {
         self.history.mark_saved();
     }
 
-    /// Parse the current buffer content of a clipboard index buffer and return the
-    /// ordered list of original entry indices.
     pub fn parse_clipboard_order(&self) -> Vec<usize> {
         let Some(entries_len) = self
             .state
@@ -450,8 +464,6 @@ impl Document {
         order
     }
 
-    /// Parse the current buffer content of a directory buffer and produce a diff, by
-    /// comparing each line's annotation-store entry ID against its visible buffer text.
     pub fn parse_directory_diff(&self) -> DirectoryDiff {
         let Some(state) = self.state.try_get(DIRECTORY_STATE_KEY) else {
             return DirectoryDiff::default();
@@ -478,7 +490,6 @@ impl Document {
                 .get_end(line_idx, self.buffer.len())
                 .unwrap_or(self.buffer.len());
 
-            // Collect the visible text of this line (no annotation bytes to strip).
             let line_text: String = self
                 .buffer
                 .iter_at(line_start)
@@ -492,19 +503,15 @@ impl Document {
                 })
                 .collect();
 
-            // Look up the annotation for this line in the store.
             let annotation_entry_id = self.annotations.directory_entry_id_at_line(line_idx);
 
             if let Some(entry_id) = annotation_entry_id {
-                // Line has a known annotation. entry_id=0 is the "no-id" sentinel -> skip silently.
                 if entry_id == 0 {
                     continue;
                 }
 
-                // Primary entry name: visible line content with trailing slash and whitespace stripped.
                 let primary_name = line_text.trim_end_matches('/').trim().to_string();
 
-                // A blank annotated line means the user erased the entry: treat as deleted.
                 if primary_name.is_empty() {
                     continue;
                 }
@@ -557,12 +564,10 @@ impl Document {
         }
     }
 
-    /// Update terminal buffer content from the emulator's screen.
     pub fn handle_terminal_data(&mut self, _data: &[u8]) {
         self.sync_terminal_buffer();
     }
 
-    /// Re-read the terminal emulator's current visible grid into the document buffer.
     pub fn sync_terminal_buffer(&mut self) {
         let (content, cursor_line, cursor_col, cell_colors) = match self.terminal() {
             Some(terminal) => terminal.read_screen(),
@@ -594,7 +599,6 @@ impl Document {
         }
     }
 
-    /// Populate (or repopulate) this git status buffer from a fresh `git status` snapshot. Collapses any previously-expanded hunks; callers that want to keep an expansion across a refresh must re-expand it after this call.
     pub fn populate_git_status_buffer(
         &mut self,
         snapshot: crate::git::status::StatusSnapshot,
@@ -610,7 +614,6 @@ impl Document {
         self.history.mark_saved();
     }
 
-    /// Record `hunks` as the expanded diff for `path` on the given side (`staged_side`: `true` = `git diff --cached`, `false` = `git diff`) and re-render. No-op if this isn't a git status buffer.
     pub fn set_git_status_expanded(
         &mut self,
         path: std::path::PathBuf,
@@ -624,7 +627,6 @@ impl Document {
         self.render_git_status();
     }
 
-    /// Remove `path`'s expanded diff on the given side and re-render.
     pub fn collapse_git_status_entry(&mut self, path: &std::path::Path, staged_side: bool) {
         let Some(state) = self.state.try_get_mut(GIT_STATUS_STATE_KEY) else {
             return;
@@ -635,7 +637,6 @@ impl Document {
         self.render_git_status();
     }
 
-    /// Whether `path`'s diff is currently expanded on the given side.
     pub fn is_git_status_expanded(&self, path: &std::path::Path, staged_side: bool) -> bool {
         self.state
             .try_get(GIT_STATUS_STATE_KEY)
@@ -646,8 +647,6 @@ impl Document {
             })
     }
 
-    /// Whether `path`'s snapshot entry is untracked (never in the index),
-    /// so staging any part of it needs a "new file" patch header.
     pub fn is_git_status_entry_untracked(&self, path: &std::path::Path) -> bool {
         self.state
             .try_get(GIT_STATUS_STATE_KEY)
@@ -660,7 +659,6 @@ impl Document {
             })
     }
 
-    /// Rebuild buffer text + annotations from this git status buffer's current `snapshot`/`expanded_diffs`. Does not touch `self.kind` itself (callers update the snapshot/expanded_diffs before calling this).
     fn render_git_status(&mut self) {
         use crate::color::Color;
 
@@ -671,7 +669,6 @@ impl Document {
         let expanded_diffs = state.expanded_diffs.clone();
         let head_subject = state.head_subject.clone();
 
-        // Capture what the cursor is currently "on" so it can be restored after the rebuild below; without this, every expand/collapse/ stage/unstage/discard silently snaps the cursor back to line 0, which then desyncs `j`'s next stop from where the user thinks they are (landing back on the file entry instead of.
         enum CursorTarget {
             HunkLine {
                 path: String,
@@ -930,7 +927,6 @@ impl Document {
         }
     }
 
-    /// Verb-specific color for a rebase-todo head line.
     fn git_rebase_verb_color(verb: crate::git::rebase::RebaseVerb) -> crate::color::Color {
         use crate::color::Color;
         use crate::git::rebase::RebaseVerb;
@@ -944,7 +940,6 @@ impl Document {
         }
     }
 
-    /// Pure computation: build the plan's rendered text, highlight spans, and `(line, sha)` head-line list for `steps`, optionally prefixed with a non-interactive `banner` line (e.g. a pause status). Shared by the normal interactive render and the paused-state render, which apply the result to the buffer.
     fn build_rebase_plan_lines(
         steps: &[crate::git::rebase::RebaseStep],
         message_overrides: &std::collections::HashMap<String, String>,
@@ -1023,7 +1018,6 @@ impl Document {
         }
     }
 
-    /// Rebuild this rebase-todo buffer's text + annotations from `steps`/ `message_overrides`/`expanded_bodies`/`original_bodies`, preserving which commit's head line the cursor was on. Unlike `render_git_status` (a read-only buffer, wholesale-swapped with no undo concerns), this buffer is genuinely editable, and.
     pub(super) fn render_git_rebase_todo(&mut self, description: &str) {
         let Some(state) = self.state.try_get(GIT_REBASE_TODO_STATE_KEY) else {
             return;
@@ -1076,7 +1070,6 @@ impl Document {
         }
     }
 
-    /// Render a paused rebase-todo: `remaining` (already trimmed to what's left) with a status banner on top, in the same rich annotated/ colored view as the interactive plan; not a plain-text dump; so pausing doesn't jar into a visually different "other" buffer. K/J/ verb keys/fold/reword all keep working on the.
     pub fn render_git_rebase_paused(
         &mut self,
         remaining: &[crate::git::rebase::RebaseStep],
@@ -1109,8 +1102,6 @@ impl Document {
         self.history.mark_saved();
     }
 
-    /// Swap the plan's step at `sha` with its neighbor (up or down).
-    /// No-op at either edge or if `sha` isn't found.
     pub fn move_git_rebase_step(&mut self, sha: &str, down: bool) {
         let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
@@ -1139,8 +1130,6 @@ impl Document {
         self.render_git_rebase_todo(description);
     }
 
-    /// Set the verb of the step at `sha` (never `Reword`/`Drop`;  those go
-    /// through the message editor and `remove_git_rebase_step` respectively).
     pub fn set_git_rebase_verb(&mut self, sha: &str, verb: crate::git::rebase::RebaseVerb) {
         let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
@@ -1153,7 +1142,6 @@ impl Document {
         self.render_git_rebase_todo(&format!("Set commit to {}", verb.as_str()));
     }
 
-    /// Remove the step at `sha` from the plan entirely (drop).
     pub fn remove_git_rebase_step(&mut self, sha: &str) {
         let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
@@ -1167,8 +1155,6 @@ impl Document {
         self.render_git_rebase_todo("Drop commit");
     }
 
-    /// Toggle whether `sha`'s body is previewed inline. Lazily fetches and
-    /// caches its real body text on first expand if there's no override yet.
     pub fn toggle_git_rebase_expand(&mut self, sha: &str, repo_root: &std::path::Path) {
         let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
@@ -1192,8 +1178,6 @@ impl Document {
         self.render_git_rebase_todo("Toggle commit preview");
     }
 
-    /// The current full message for `sha` (override if set, else its real
-    /// current commit message), for prefilling the `c`/`r` sub-editor.
     pub fn git_rebase_current_message(&self, sha: &str, repo_root: &std::path::Path) -> String {
         let Some(state) = self.state.try_get(GIT_REBASE_TODO_STATE_KEY) else {
             return String::new();
@@ -1207,8 +1191,6 @@ impl Document {
             .to_string()
     }
 
-    /// Set (or clear, if `message` is empty) `sha`'s message override and
-    /// re-render;  called when the `c`/`r` sub-editor is saved.
     pub fn set_git_rebase_message_override(&mut self, sha: &str, message: String) {
         let Some(state) = self.state.try_get_mut(GIT_REBASE_TODO_STATE_KEY) else {
             return;
@@ -1224,13 +1206,10 @@ impl Document {
         self.render_git_rebase_todo("Reword commit");
     }
 
-    /// Replace this file buffer's git-gutter signs (add/change/delete per line), computed by a `GitGutterDiffJob` against the buffer's live (possibly unsaved) content.
     pub fn set_git_gutter_signs(&mut self, signs: &[(usize, crate::git::diff::GutterSignKind)]) {
         self.annotations.replace_git_gutter_signs(signs);
     }
 
-    /// Populate (or repopulate) this git blame buffer from a fresh
-    /// `git blame --porcelain` listing.
     pub fn populate_git_blame_buffer(&mut self, lines: Vec<crate::git::blame::BlameLine>) {
         let Some(state) = self.state.try_get_mut(GIT_BLAME_STATE_KEY) else {
             return;
@@ -1242,8 +1221,6 @@ impl Document {
         self.history.mark_saved();
     }
 
-    /// Reflow blame metadata to match the linked source pane's visual rows.
-    /// Continuation rows are blank and deliberately carry no annotation.
     pub fn set_git_blame_wrap_rows(
         &mut self,
         wrap_key: (super::DocumentId, usize, usize, u64),
@@ -1323,8 +1300,6 @@ impl Document {
         }
     }
 
-    /// Populate (or repopulate) this git log buffer from a fresh commit
-    /// listing. Collapses any previously-expanded `git show` body.
     pub fn populate_git_log_buffer(&mut self, commits: Vec<crate::git::log::CommitSummary>) {
         let Some(state) = self.state.try_get_mut(super::GIT_LOG_STATE_KEY) else {
             return;
@@ -1336,8 +1311,6 @@ impl Document {
         self.history.mark_saved();
     }
 
-    /// Set (or clear, via `None`) the inline-expanded `git show` body for
-    /// `sha` and re-render.
     pub fn set_git_log_expanded(&mut self, sha: Option<String>, body: Option<String>) {
         let Some(state) = self.state.try_get_mut(super::GIT_LOG_STATE_KEY) else {
             return;
@@ -1382,8 +1355,6 @@ impl Document {
     }
 }
 
-/// Truncate `s` to at most `max_chars` characters, for fixed-width columns
-/// like a blame author name (never panics on multi-byte boundaries).
 fn truncate_display(s: &str, max_chars: usize) -> String {
     if s.chars().count() <= max_chars {
         s.to_string()
@@ -1391,7 +1362,6 @@ fn truncate_display(s: &str, max_chars: usize) -> String {
         s.chars().take(max_chars).collect()
     }
 }
-/// Determine the highlight color for one directory buffer line.
 fn dir_entry_color(
     id_to_orig: &std::collections::HashMap<u16, String>,
     annotation_entry_id: Option<u16>,
@@ -1423,7 +1393,6 @@ fn dir_entry_color(
     }
 }
 
-/// Status-buffer section identifiers and the header text they render as.
 mod git_status_sections {
     pub const UNMERGED: &str = "unmerged";
     pub const STAGED: &str = "staged";
@@ -1441,7 +1410,6 @@ mod git_status_sections {
     }
 }
 
-/// Whether `entry` belongs under `section` for status-buffer rendering.
 fn git_status_entry_matches_section(
     entry: &crate::git::status::StatusEntry,
     section: &str,
@@ -1455,8 +1423,6 @@ fn git_status_entry_matches_section(
     }
 }
 
-/// The short status-code prefix shown for `entry` in `section` (e.g. `"M"`,
-/// `"UU"`, or empty for untracked, which has no meaningful code).
 fn git_status_entry_code(entry: &crate::git::status::StatusEntry, section: &str) -> String {
     use crate::git::status::FileState;
 
@@ -1485,8 +1451,6 @@ fn git_status_entry_code(entry: &crate::git::status::StatusEntry, section: &str)
     }
 }
 
-/// Append `text` plus a trailing newline to `chars`, advancing `byte_offset`.
-/// Returns the byte range of `text` itself (excluding the newline), for highlights.
 fn git_status_push_line(
     chars: &mut Vec<Character>,
     byte_offset: &mut usize,

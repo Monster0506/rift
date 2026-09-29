@@ -57,6 +57,137 @@ pub(super) fn native_save_handlers<T: TerminalBackend>(
     handlers
 }
 
+pub(super) type NativeReloadHandler<T> = fn(&mut Editor<T>) -> Result<(), RiftError>;
+
+fn reload_undo_file_view_handler<T: TerminalBackend>(
+    editor: &mut Editor<T>,
+) -> Result<(), RiftError> {
+    let doc_id = editor.active_document_id();
+    let Some(doc) = editor.document_manager.get_document_mut(doc_id) else {
+        return Ok(());
+    };
+    doc.reload_undo_file_view()
+}
+
+fn reload_directory<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+    editor.handle_explorer_refresh();
+    Ok(())
+}
+
+fn reload_undotree<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+    editor.handle_undotree_refresh();
+    Ok(())
+}
+
+fn reload_messages<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+    editor.refresh_messages_buffer_if_open();
+    Ok(())
+}
+
+fn reload_clipboard<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+    editor.refresh_clipboard_buffer_if_open();
+    Ok(())
+}
+
+fn reload_git_status<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+    let doc_id = editor.active_document_id();
+    let Some(repo_root) = editor
+        .document_manager
+        .get_document(doc_id)
+        .and_then(|d| d.git_repo_root())
+        .map(std::path::Path::to_path_buf)
+    else {
+        return Ok(());
+    };
+    editor.refresh_git_status_buffers_for(&repo_root);
+    Ok(())
+}
+
+fn reload_git_log<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+    let doc_id = editor.active_document_id();
+    let Some((repo_root, path)) = editor.document_manager.get_document(doc_id).and_then(|d| {
+        let repo_root = d.git_repo_root()?.to_path_buf();
+        let path = d.git_log_path().flatten().map(std::path::Path::to_path_buf);
+        Some((repo_root, path))
+    }) else {
+        return Ok(());
+    };
+    let job = crate::job_manager::jobs::git::GitLogJob::new(doc_id as usize, repo_root, path);
+    editor.job_manager.spawn(job);
+    Ok(())
+}
+
+fn reload_git_blame<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+    let doc_id = editor.active_document_id();
+    let Some((repo_root, path, at_commit)) =
+        editor.document_manager.get_document(doc_id).and_then(|d| {
+            let repo_root = d.git_repo_root()?.to_path_buf();
+            let path = d.git_blame_path()?.to_path_buf();
+            let at_commit = d.git_blame_at_commit().map(str::to_string);
+            Some((repo_root, path, at_commit))
+        })
+    else {
+        return Ok(());
+    };
+    let job = crate::job_manager::jobs::git::GitBlameJob::new(
+        doc_id as usize,
+        repo_root,
+        path,
+        at_commit,
+    );
+    editor.job_manager.spawn(job);
+    Ok(())
+}
+
+fn reload_buffer_list<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), RiftError> {
+    editor.refresh_buffer_list_panel();
+    Ok(())
+}
+
+pub(super) fn native_reload_handlers<T: TerminalBackend>(
+) -> std::collections::HashMap<crate::document::BufferKindId, NativeReloadHandler<T>> {
+    use crate::document::BufferKindId;
+
+    let mut handlers = std::collections::HashMap::new();
+    handlers.insert(
+        BufferKindId::UNDO_FILE_VIEW,
+        reload_undo_file_view_handler::<T> as NativeReloadHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::DIRECTORY,
+        reload_directory::<T> as NativeReloadHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::UNDO_TREE,
+        reload_undotree::<T> as NativeReloadHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::MESSAGES,
+        reload_messages::<T> as NativeReloadHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::CLIPBOARD,
+        reload_clipboard::<T> as NativeReloadHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::GIT_STATUS,
+        reload_git_status::<T> as NativeReloadHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::GIT_LOG,
+        reload_git_log::<T> as NativeReloadHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::GIT_BLAME,
+        reload_git_blame::<T> as NativeReloadHandler<T>,
+    );
+    handlers.insert(
+        BufferKindId::BUFFER_LIST,
+        reload_buffer_list::<T> as NativeReloadHandler<T>,
+    );
+    handlers
+}
+
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn dispatch_save_sync(&mut self) -> crate::document::SaveResult {
         let Some((doc_id, kind_id, kind_name, dispatch)) =
@@ -236,14 +367,11 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        // Synchronous descriptor save dispatch
         let save_result = self.dispatch_save_sync();
         if save_result != crate::document::SaveResult::Saved {
-            // Failed or rejected save leaves the document open without quitting
             return;
         }
 
-        // Revalidate source handle
         if self
             .document_manager
             .get_document_by_handle(handle)
@@ -259,7 +387,6 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn do_quit(&mut self, force: bool) {
-        // If focused on a clipboard entry scratch buffer, return to the index pane
         let in_clipboard_entry = self
             .document_manager
             .active_document()
@@ -295,7 +422,6 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.handle_error(e);
             }
         } else if self.document_manager.tab_count() <= 1 {
-            // Last buffer: quit the editor
             if !force {
                 let doc_id = self.active_document_id();
                 if let Some(doc) = self.document_manager.get_document(doc_id) {
@@ -387,7 +513,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Jump to the buffer at 1-based `index`, matching the order buffers were opened in.
     pub(super) fn do_buffer_goto(&mut self, index: usize) {
         let Some(target) = self
             .document_manager
@@ -425,7 +550,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Delete the buffer at 1-based `index`, or the current buffer when `None`.
     pub(super) fn do_buffer_delete(&mut self, index: Option<usize>, force: bool) {
         let target = match index {
             Some(i) => match self
