@@ -347,10 +347,10 @@ impl<T: TerminalBackend> Editor<T> {
                 .clear_layer(crate::layer::LayerPriority::FLOATING_WINDOW);
         }
 
-        // Clear operator if leaving OperatorPending (and not entering it)
         if mode != Mode::OperatorPending {
             self.pending_operator = None;
             self.pending_operator_count = 0;
+            self.pending_surround_add = None;
         }
 
         match mode {

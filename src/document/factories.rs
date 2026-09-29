@@ -397,6 +397,8 @@ impl Document {
         );
         doc.render_git_rebase_todo("Initial plan");
         doc.history = UndoTree::new();
+        doc.annotation_undo_stack.clear();
+        doc.annotation_redo_stack.clear();
         Ok(doc)
     }
 
