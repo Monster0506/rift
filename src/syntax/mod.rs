@@ -20,16 +20,16 @@ pub enum SyntaxNotification {
     Error(String),
 }
 
-/// Result of a budgeted synchronous parse attempt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParseOutcome {
-    /// Parsed and re-highlighted within the budget; state is up to date.
     Completed,
-    /// Exceeded the time budget; state is unchanged, caller should background it.
     Aborted,
-    /// No language configured for this document.
     NoLanguage,
 }
+
+pub(crate) const SYNC_PARSE_MAX_BYTES: usize = 256 * 1024;
+
+pub(crate) const SYNC_PARSE_BUDGET: std::time::Duration = std::time::Duration::from_micros(5000);
 
 #[cfg(test)]
 #[path = "tests.rs"]

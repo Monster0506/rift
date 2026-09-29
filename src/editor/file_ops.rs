@@ -128,19 +128,13 @@ impl<T: TerminalBackend> Editor<T> {
             .active_document()
             .is_some_and(|doc| doc.buffer_kind_id() == crate::document::BufferKindId::FILE);
         if is_plain_file {
-            let (save_info, committed_prior) = {
+            let save_info = {
                 let document = self.document_manager.active_document_mut().unwrap();
-                let committed_prior = document.commit_pending_ghost();
-                (
-                    document
-                        .path()
-                        .map(|path| (document.id, path.to_path_buf())),
-                    committed_prior,
-                )
+                document.commit_pending_ghost();
+                document
+                    .path()
+                    .map(|path| (document.id, path.to_path_buf()))
             };
-            if committed_prior {
-                self.do_incremental_syntax_parse();
-            }
             if let Some((buf_id, path)) = save_info {
                 self.plugin_host
                     .dispatch(&crate::plugin::EditorEvent::BufSavePre {
@@ -176,12 +170,8 @@ impl<T: TerminalBackend> Editor<T> {
             .active_document()
             .is_some_and(|doc| doc.buffer_kind_id() == crate::document::BufferKindId::FILE);
         if is_plain_file {
-            let committed_prior = self
-                .document_manager
-                .active_document_mut()
-                .is_some_and(|doc| doc.commit_pending_ghost());
-            if committed_prior {
-                self.do_incremental_syntax_parse();
+            if let Some(doc) = self.document_manager.active_document_mut() {
+                doc.commit_pending_ghost();
             }
             let res = {
                 let doc = self.document_manager.active_document().unwrap();
@@ -236,14 +226,11 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         };
 
-        // Synchronous descriptor save dispatch
         let save_result = self.dispatch_save_sync();
         if save_result != crate::document::SaveResult::Saved {
-            // Failed or rejected save leaves the document open without quitting
             return;
         }
 
-        // Revalidate source handle
         if self
             .document_manager
             .get_document_by_handle(handle)
@@ -259,7 +246,6 @@ impl<T: TerminalBackend> Editor<T> {
     }
 
     pub(super) fn do_quit(&mut self, force: bool) {
-        // If focused on a clipboard entry scratch buffer, return to the index pane
         let in_clipboard_entry = self
             .document_manager
             .active_document()
@@ -295,7 +281,6 @@ impl<T: TerminalBackend> Editor<T> {
                 self.state.handle_error(e);
             }
         } else if self.document_manager.tab_count() <= 1 {
-            // Last buffer: quit the editor
             if !force {
                 let doc_id = self.active_document_id();
                 if let Some(doc) = self.document_manager.get_document(doc_id) {
@@ -387,7 +372,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Jump to the buffer at 1-based `index`, matching the order buffers were opened in.
     pub(super) fn do_buffer_goto(&mut self, index: usize) {
         let Some(target) = self
             .document_manager
@@ -425,7 +409,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Delete the buffer at 1-based `index`, or the current buffer when `None`.
     pub(super) fn do_buffer_delete(&mut self, index: Option<usize>, force: bool) {
         let target = match index {
             Some(i) => match self

@@ -1,6 +1,3 @@
-//! Settings definitions
-//! Declarative registry of all :set command options
-
 use crate::color::Color;
 use crate::command_line::settings::descriptor::{
     SettingDescriptor, SettingError, SettingType, SettingValue,
@@ -9,7 +6,6 @@ use crate::command_line::settings::registry::SettingsRegistry;
 use crate::floating_window::BorderChars;
 use crate::state::UserSettings;
 
-/// Format a `Color` value as the string a user would type (inverse of `parse_color`).
 fn format_color(color: Option<Color>) -> String {
     match color {
         None | Some(Color::Reset) => "none".to_string(),
@@ -34,7 +30,6 @@ fn format_color(color: Option<Color>) -> String {
     }
 }
 
-// Helper functions to create border presets
 fn create_unicode_border() -> BorderChars {
     BorderChars {
         top_left: '╭',
@@ -56,8 +51,6 @@ fn create_ascii_border() -> BorderChars {
         vertical: '|',
     }
 }
-
-// Setter functions for each setting
 
 fn set_border_style(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
     match value {
@@ -222,8 +215,6 @@ fn set_theme(settings: &mut UserSettings, value: SettingValue) -> Result<(), Set
     match value {
         SettingValue::Enum(theme_name) => {
             if let Some(theme) = crate::color::Theme::by_name(&theme_name) {
-                // Apply theme using the theme handler
-                // This allows themes to apply more than just background/foreground
                 theme.apply_to_settings(settings);
                 Ok(())
             } else {
@@ -312,8 +303,6 @@ fn set_show_status_line(
     }
 }
 
-// Getter functions for non-discrete settings
-
 fn get_cmd_window_width_ratio(s: &UserSettings) -> String {
     s.command_line_window.width_ratio.to_string()
 }
@@ -370,7 +359,6 @@ fn get_cursor_speed(s: &UserSettings) -> String {
     s.cursor_speed.to_string()
 }
 
-/// Static registry of all settings
 fn set_equalize_proportional(
     settings: &mut UserSettings,
     value: SettingValue,
@@ -669,7 +657,7 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     SettingDescriptor {
         name: "ghostcut",
         aliases: &["gc"],
-        description: "Defer d-cuts into a ghosted span until something resolves them, instead of deleting immediately",
+        description: "Delete d-cuts immediately but grey them out in place until something resolves the paint, instead of removing them from the screen right away",
         ty: SettingType::Boolean,
         set: set_ghost_cut,
         get: None,
@@ -677,7 +665,6 @@ pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
     },
 ];
 
-/// Create the settings registry
 #[must_use]
 pub fn create_settings_registry() -> SettingsRegistry<UserSettings> {
     SettingsRegistry::new(SETTINGS)

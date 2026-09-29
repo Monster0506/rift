@@ -1,20 +1,14 @@
-//! Document editing operations: insert, delete, and Tree-sitter incremental updates.
-
 use super::{AnnotationUndo, AnnotationUndoHint, Document};
 use crate::character::Character;
 use crate::error::RiftError;
 use crate::history::{EditOperation, EditTransaction, Position, Range};
 
 impl Document {
-    /// (row, byte column) for a byte offset; `line_index` is char-indexed, so
-    /// the row lookup and column both need a char/byte conversion.
     pub(super) fn get_point(&self, byte_offset: usize) -> (usize, usize) {
         let (point, _) = self.get_edit_points(byte_offset);
         point
     }
 
-    /// Return both the (row, byte column) point and history `Position`
-    /// (char column) for the same byte offset.
     pub(crate) fn get_edit_points(&self, byte_offset: usize) -> ((usize, usize), Position) {
         let char_offset = self.buffer.byte_to_char(byte_offset);
         let line = self.buffer.line_index.get_line_at(char_offset);
@@ -28,8 +22,6 @@ impl Document {
         )
     }
 
-    /// `cursor_before` is the cursor position right before this edit (caller
-    /// must capture it pre-mutation); used to restore the cursor on undo/redo.
     pub(super) fn record_edit(
         &mut self,
         op: EditOperation,
@@ -37,14 +29,14 @@ impl Document {
         annotation_undo: AnnotationUndoHint,
         cursor_before: usize,
     ) {
-        // Bump the monotonic edit sequence number once per applied edit.
+        if self.ghost_paint_active {
+            return;
+        }
         self.document_version = self.document_version.wrapping_add(1);
         self.pending_lsp_edits.push(op.clone());
         if let Some(ref mut tx) = self.current_transaction {
             tx.record(op);
         } else {
-            // A pure insertion stores just its parameters (exactly invertible);
-            // everything else takes a full pre-edit snapshot.
             let entry = match annotation_undo {
                 AnnotationUndoHint::Insertion {
                     start,
@@ -64,8 +56,6 @@ impl Document {
             let mut tx = EditTransaction::new(description);
             tx.cursor_before = Some(cursor_before);
             tx.record(op);
-            // The buffer has already been mutated by the caller, so its
-            // current cursor is exactly where this single-op edit left it.
             tx.cursor_after = Some(self.buffer.cursor());
             self.history.push(tx, None);
         }
@@ -76,8 +66,6 @@ impl Document {
             return Ok(());
         }
         let inserting_newline = ch == '\n';
-        // Track line shifts for line-anchored annotations in every buffer (not
-        // just directories): diagnostics and line adornments must move with edits.
         let line_before_insert = if inserting_newline {
             Some(self.buffer.get_line())
         } else {
@@ -93,8 +81,6 @@ impl Document {
         let added_bytes = ch.len_utf8();
         let new_end_byte = start_byte + added_bytes;
 
-        // Pure insertion: undo replays the exact inverse shift. A newline also
-        // shifts line anchors at `before_line + 1`, undone in lockstep.
         let line_inserts = match line_before_insert {
             Some(before_line) => vec![before_line + 1],
             None => Vec::new(),
@@ -130,11 +116,9 @@ impl Document {
             );
         }
 
-        // Maintain byte-offset annotation markers for this edit.
         self.annotations
             .on_edit(start_byte, start_byte, new_end_byte);
 
-        // Update directory annotation line numbers when a newline was inserted.
         if let Some(before_line) = line_before_insert {
             self.annotations.on_line_inserted(before_line + 1);
         }
@@ -143,8 +127,6 @@ impl Document {
     }
 
     pub fn insert_str(&mut self, s: &str) -> Result<(), RiftError> {
-        // Dispatch handles read-only edits; internal rendering needs undo tracking.
-        // Count newlines to shift line annotations after multi-line inserts.
         let newline_count = s.chars().filter(|&c| c == '\n').count();
         let line_before_insert = if newline_count > 0 {
             Some(self.buffer.get_line())
@@ -161,8 +143,6 @@ impl Document {
         let added_bytes = s.len();
         let new_end_byte = start_byte + added_bytes;
 
-        // Pure insertion: one line-anchor shift per inserted newline, applied
-        // (and later inverted) at before_line+1, +2, ... in order.
         let line_inserts: Vec<usize> = match line_before_insert {
             Some(before_line) => (0..newline_count).map(|i| before_line + 1 + i).collect(),
             None => Vec::new(),
@@ -199,11 +179,9 @@ impl Document {
             );
         }
 
-        // Maintain byte-offset annotation markers for this edit.
         self.annotations
             .on_edit(start_byte, start_byte, new_end_byte);
 
-        // Update annotation line numbers for each newline inserted.
         if let Some(before_line) = line_before_insert {
             for i in 0..newline_count {
                 self.annotations.on_line_inserted(before_line + 1 + i);
@@ -213,8 +191,6 @@ impl Document {
         Ok(())
     }
 
-    /// Insert `Character`s at the cursor, preserving raw bytes/control chars
-    /// (the byte-faithful counterpart of `insert_str`).
     pub fn insert_characters(&mut self, chars: &[Character]) -> Result<(), RiftError> {
         if self.is_read_only() {
             return Ok(());
@@ -341,7 +317,6 @@ impl Document {
             }
             self.annotations
                 .on_edit(start_byte, old_end_byte, start_byte);
-            // Deleting a newline merges the next line up: renumber line anchors.
             if deleted_char == Character::Newline {
                 self.annotations
                     .on_lines_deleted(start_position.0 + 1, 1, start_position.0);
@@ -404,7 +379,6 @@ impl Document {
             }
             self.annotations
                 .on_edit(start_byte, old_end_byte, start_byte);
-            // Deleting a newline merges the next line up: renumber line anchors.
             if deleted_char == Character::Newline {
                 self.annotations
                     .on_lines_deleted(start_position.0 + 1, 1, start_position.0);
@@ -414,7 +388,6 @@ impl Document {
         false
     }
 
-    /// Replace `count` chars at `pos` with `new_chars`
     pub fn replace_chars(
         &mut self,
         pos: usize,
@@ -477,16 +450,12 @@ impl Document {
         Ok(())
     }
 
-    /// Replace `count` chars at `pos` with `count` copies of `ch`.
-    /// Allocates once, creates one add-buffer piece, and one undo record.
     pub fn replace_repeat(&mut self, pos: usize, count: usize, ch: char) -> Result<(), RiftError> {
         let fill: Vec<Character> = vec![Character::from(ch); count];
         self.replace_chars(pos, count, &fill)
     }
 
-    /// Delete a range of characters, integrating with the undo system.
     pub fn delete_range(&mut self, start: usize, end: usize) -> Result<(), RiftError> {
-        // Command dispatch prevents user edits of read-only buffers.
         if start >= end {
             return Ok(());
         }
@@ -507,8 +476,6 @@ impl Document {
         let cursor_before = self.buffer.cursor();
         let deleted_chars: Vec<Character> = self.buffer.chars(start..end).collect();
 
-        // Track deleted lines for line-anchored annotations in every buffer. The
-        // start line survives unless the range begins at column 0; all merge into it.
         let deleted_line_info: Option<(usize, usize, usize)> = {
             let newline_count = deleted_chars
                 .iter()
@@ -557,7 +524,6 @@ impl Document {
         self.annotations
             .on_edit(start_byte, old_end_byte, start_byte);
 
-        // Update line-anchored annotations after the buffer mutation.
         if let Some((first_line, newline_count, merge_line)) = deleted_line_info {
             self.annotations
                 .on_lines_deleted(first_line, newline_count, merge_line);
