@@ -1,6 +1,3 @@
-//! Rendering: draws the editor UI to the terminal using layers. A pure,
-//! side-effect-free read of already-updated state -- always safe to full-redraw.
-
 use crate::buffer::api::BufferView;
 use crate::buffer::TextBuffer;
 use crate::character::Character;
@@ -19,55 +16,35 @@ pub mod system;
 pub use pipeline::*;
 pub use system::RenderSystem;
 
-/// Explicitly tracked cursor information for rendering comparison
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CursorInfo {
     pub row: usize,
     pub col: usize,
 }
 
-/// Minimal state required to trigger a re-render of the buffer content
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContentDrawState {
     pub revision: u64,
     pub top_line: usize,
-    /// Wrapped scroll position; `top_line` does not move under soft wrap.
     pub top_visual_row: usize,
     pub left_col: usize,
     pub rows: usize,
     pub tab_width: usize,
-    /// Whether to show line numbers
     pub show_line_numbers: bool,
-    /// Hash/Generation of highlights to trigger redraw on syntax update
     pub highlights_hash: u64,
-    /// Current gutter width
     pub gutter_width: usize,
-    /// Number of search matches (to trigger redraw on search)
     pub search_matches_count: usize,
-    /// Number of plugin custom highlights (to trigger redraw when highlights change)
-    pub plugin_highlights_len: usize,
-    /// Hash of the active conceal ranges (which depend on the cursor line), so
-    /// moving onto/off a concealed line redraws. Zero when nothing is concealed.
     pub conceal_hash: u64,
-    /// Hash of generic annotation presentation spans (ui.selection.*, ui.link,
-    /// etc.), so e.g. a Visual-mode selection redraws with no edit or scroll.
     pub annotation_styles_hash: u64,
-    /// Hash of inline/adornment virtual text (e.g. LSP inlay hints), so changes
-    /// redraw even when every other field stays the same.
     pub annotation_text_hash: u64,
-    /// Theme/Color context
     pub editor_bg: Option<crate::color::Color>,
     pub editor_fg: Option<crate::color::Color>,
     pub theme: Option<String>,
 }
 
-/// Snapshot of every render_content input that must stay identical between
-/// two calls for a dirty-row scroll blit to be safe - only `scroll_top` may differ.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ContentBlitKey {
     revision: u64,
-    /// `apply_loaded_content` resets revision to 0 rather than bumping it, so
-    /// an empty placeholder and its just-loaded replacement need this too.
     buf_len: usize,
     tab_width: usize,
     show_line_numbers: bool,
@@ -78,25 +55,15 @@ pub(crate) struct ContentBlitKey {
     has_display_map: bool,
     editor_bg: Option<Color>,
     editor_fg: Option<Color>,
-    /// `Syntax::highlights_generation`/`injection_generation`, combined -
-    /// changes only on a real reparse, never when the query window shifts.
     syntax_generation: u64,
     custom_highlights_hash: u64,
     terminal_colors_hash: u64,
-    plugin_highlights_hash: u64,
     search_matches_hash: u64,
-    /// `AnnotationStore::revision()` combined with the active theme and
-    /// Kind-registry generation included in the content blit cache key.
     annotation_presentation_generation: u64,
-    /// Content hash of concealed-range annotations, excluding the cursor line.
-    /// Used in the content blit cache key.
     annotation_concealed_hash: u64,
-    /// Top visible buffer line; changing it permits a scroll blit.
     scroll_top: usize,
 }
 
-/// Content hash of a `(Range<usize>, E)`-shaped span slice - order- and
-/// value-sensitive, so any real change changes the hash.
 fn hash_ranged_spans<E: std::hash::Hash>(spans: &[(std::ops::Range<usize>, E)]) -> u64 {
     use std::hash::Hasher;
     let mut h: u64 = spans.len() as u64;
@@ -116,7 +83,6 @@ fn hash_ranged_spans<E: std::hash::Hash>(spans: &[(std::ops::Range<usize>, E)]) 
     h
 }
 
-/// Content hash of the global search-match list (not viewport-scoped).
 fn hash_search_matches(matches: &[crate::search::SearchMatch]) -> u64 {
     let mut h: u64 = matches.len() as u64;
     for m in matches {
@@ -130,8 +96,6 @@ fn hash_search_matches(matches: &[crate::search::SearchMatch]) -> u64 {
     h
 }
 
-/// Content hash of concealed (zero-width-dropped) byte ranges - the queried,
-/// Hash of content annotations excluding the cursor line.
 fn hash_concealed_ranges(items: &[(usize, usize)]) -> u64 {
     let mut h: u64 = items.len() as u64;
     for (s, e) in items {
@@ -143,14 +107,10 @@ fn hash_concealed_ranges(items: &[(usize, usize)]) -> u64 {
     h
 }
 
-/// Combine two generation-like values into one, order-sensitive so a change
-/// to either input changes the result.
 pub(crate) fn mix_generation(a: u64, b: u64) -> u64 {
     a.wrapping_mul(6364136223846793005).wrapping_add(b)
 }
 
-/// Content hash of a byte string (e.g. a theme name), for folding a small
-/// piece of identity into a generation value without cloning it.
 fn hash_bytes(bytes: &[u8]) -> u64 {
     let mut h: u64 = bytes.len() as u64;
     for b in bytes {
@@ -173,8 +133,6 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
     } else {
         ctx.viewport.top_line()
     };
-    // Annotation presentation resolves color through theme + kind-registry
-    // defaults on top of the annotation set - all three must be folded in.
     let theme_hash = hash_bytes(ctx.state.settings.theme.as_deref().unwrap_or("").as_bytes());
     let annotation_presentation_generation = mix_generation(
         mix_generation(ctx.annotations_revision, theme_hash),
@@ -195,7 +153,6 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
         syntax_generation: ctx.syntax_generation,
         custom_highlights_hash: hash_ranged_spans(ctx.custom_highlights.unwrap_or(&[])),
         terminal_colors_hash: hash_ranged_spans(ctx.terminal_cell_colors.unwrap_or(&[])),
-        plugin_highlights_hash: hash_ranged_spans(ctx.plugin_highlights.unwrap_or(&[])),
         search_matches_hash: hash_search_matches(ctx.search_matches()),
         annotation_presentation_generation,
         annotation_concealed_hash: hash_concealed_ranges(ctx.annotation_concealed.unwrap_or(&[])),
@@ -203,8 +160,6 @@ fn compute_content_blit_key(ctx: &DrawContext, visible_rows: usize) -> ContentBl
     }
 }
 
-/// If `old`/`new` differ only in `scroll_top` with a shift small enough to
-/// leave overlap, returns the row delta to blit by; `None` means full render.
 fn scroll_blit_delta(old: &ContentBlitKey, new: &ContentBlitKey) -> Option<isize> {
     let same_except_scroll = ContentBlitKey {
         scroll_top: old.scroll_top,
@@ -220,8 +175,6 @@ fn scroll_blit_delta(old: &ContentBlitKey, new: &ContentBlitKey) -> Option<isize
     Some(delta)
 }
 
-/// Fast-forward `idx` past every span whose range ends before `boundary`,
-/// without processing them - for a row reused via dirty-row scroll blit.
 fn advance_idx_past<T>(
     spans: &[T],
     idx: &mut usize,
@@ -234,7 +187,6 @@ fn advance_idx_past<T>(
     }
 }
 
-/// Minimal state required to trigger a re-render of the status bar
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusDrawState {
     pub mode: Mode,
@@ -251,24 +203,18 @@ pub struct StatusDrawState {
     pub search_match_index: Option<usize>,
     pub search_total_matches: usize,
     pub reverse_video: bool,
-    /// Whether the status line renders at all; if false the row is blanked.
     pub show_status_line: bool,
     pub show_filename: bool,
     pub show_dirty_indicator: bool,
-    /// Theme/Color context
     pub editor_bg: Option<crate::color::Color>,
     pub editor_fg: Option<crate::color::Color>,
-    /// LSP indexing progress shown in the status bar, e.g. "rust: 2/5".
     pub lsp_status: Option<String>,
-    /// Theme colors for LSP status states
     pub lsp_ok_color: Option<crate::color::Color>,
     pub lsp_error_color: Option<crate::color::Color>,
     pub lsp_warn_color: Option<crate::color::Color>,
-    /// True when running in an IPC daemon (remote session).
     pub is_remote: bool,
 }
 
-/// Minimal state required to trigger a re-render of the command line
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandDrawState {
     pub content: String,
@@ -277,48 +223,33 @@ pub struct CommandDrawState {
     pub height: usize,
     pub has_border: bool,
     pub reverse_video: bool,
-    /// Theme/Color context
     pub editor_bg: Option<crate::color::Color>,
     pub editor_fg: Option<crate::color::Color>,
 }
 
-/// State for rendering the completion dropdown menu
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompletionMenuDrawState {
-    /// (display_text, description) pairs
     pub candidates: Vec<(String, String)>,
-    /// Currently highlighted index
     pub selected: Option<usize>,
-    /// Terminal columns (for matching the command line width/position)
     pub terminal_cols: usize,
-    /// Command line width ratio
     pub cmd_width_ratio: f64,
-    /// Command line minimum width
     pub cmd_min_width: usize,
-    /// Command line total height in rows (including borders)
     pub cmd_height: usize,
-    /// Theme/Color context
     pub editor_bg: Option<crate::color::Color>,
     pub editor_fg: Option<crate::color::Color>,
-    /// First visible candidate (scroll offset)
     pub scroll_offset: usize,
 }
 
-/// Minimal state required to trigger a re-render of notifications
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotificationDrawState {
     pub generation: u64,
     pub count: usize,
 }
 
-/// Inline (Overlay/Leading) annotation adornment: (start, end, text, color, is_leading).
 pub type InlineAdornment = (usize, usize, String, Color, bool);
 
-/// Trailing end-of-line adornment: (line, text, color). Text borrows the
-/// annotation store; only a ` (+N)` summary is owned.
 pub type LineAdornment<'a> = (usize, std::borrow::Cow<'a, str>, Color);
 
-/// External state passed to RenderSystem::render
 pub struct RenderState<'a> {
     pub buf: &'a TextBuffer,
     pub current_mode: Mode,
@@ -329,58 +260,34 @@ pub struct RenderState<'a> {
     pub tab_width: usize,
     pub highlights: Option<&'a [(std::ops::Range<usize>, u32)]>,
     pub capture_map: Option<&'a [&'a str]>,
-    /// Injection-layer highlights (capture name resolved, sorted by range start).
     pub injection_highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
     pub skip_content: bool,
     pub cursor_row_offset: usize,
     pub cursor_col_offset: usize,
     pub cursor_viewport: Option<&'a Viewport>,
-    /// Terminal cursor (row, col); bypasses text-editor cursor math when set.
     pub terminal_cursor: Option<(usize, usize)>,
-    /// Optional per-byte-range foreground color overrides (used by directory/undotree buffers).
     pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
-    /// Per-line gutter foreground color overrides from git-gutter-diff
-    /// signs;  `(0-indexed line, color)`, tints the line-number digits.
     pub git_gutter_colors: Option<&'a [(usize, Color)]>,
-    /// Plugin highlights: rendered as bg color with contrasting fg.
-    pub plugin_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
-    /// Generic annotation presentation styles (fg, bg) composed over base color.
     pub annotation_styles: Option<&'a [(std::ops::Range<usize>, crate::layer::CellStyle)]>,
-    /// Trailing end-of-line annotation adornments (line, text, color).
     pub annotation_adornments: Option<&'a [LineAdornment<'a>]>,
-    /// Inline (Overlay/Leading) adornments (byte_offset, text, color, is_leading).
     pub annotation_inline: Option<&'a [InlineAdornment]>,
-    /// Byte ranges hidden by Conceal adornments (already excluding the cursor line).
     pub annotation_concealed: Option<&'a [(usize, usize)]>,
-    /// Per-character fg+bg colors from the terminal emulator (terminal documents only).
     pub terminal_cell_colors: Option<&'a [crate::color::CellColorSpan]>,
-    /// Per-document line number override (AND-ed with global setting).
     pub show_line_numbers: bool,
     pub display_map: Option<&'a DisplayMap>,
-    /// Vertical scroll this frame as `(top, bottom, delta)` content rows, so
-    /// the compositor can ride the terminal's scroll region.
     pub scroll_hint: Option<(usize, usize, isize)>,
-    /// Combined `Syntax::highlights_generation`/`injection_generation` -
-    /// distinguishes a real reparse from a shifted viewport query window.
     pub syntax_generation: u64,
-    /// `AnnotationStore::revision()` of the active document.
     pub annotations_revision: u64,
-    /// `KindRegistry::generation()`, so a plugin changing a kind's default
-    /// presentation invalidates annotation-derived styling.
     pub kind_registry_generation: u64,
 }
 
-/// Context for rendering passed to helpers
 pub struct DrawContext<'a> {
     pub buf: &'a TextBuffer,
     pub viewport: &'a Viewport,
     pub current_mode: Mode,
     pub pending_key: Option<Key>,
     pub custom_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
-    /// Per-line gutter foreground color overrides from git-gutter-diff
-    /// signs;  `(0-indexed line, color)`, tints the line-number digits.
     pub git_gutter_colors: Option<&'a [(usize, Color)]>,
-    pub plugin_highlights: Option<&'a [(std::ops::Range<usize>, Color)]>,
     pub annotation_styles: Option<&'a [(std::ops::Range<usize>, crate::layer::CellStyle)]>,
     pub annotation_adornments: Option<&'a [LineAdornment<'a>]>,
     pub annotation_inline: Option<&'a [InlineAdornment]>,
@@ -392,21 +299,13 @@ pub struct DrawContext<'a> {
     pub tab_width: usize,
     pub highlights: Option<&'a [(std::ops::Range<usize>, u32)]>,
     pub capture_map: Option<&'a [&'a str]>,
-    /// Injection-layer highlights (capture name resolved, sorted by range start).
     pub injection_highlights: Option<&'a [(std::ops::Range<usize>, String)]>,
-    /// Per-document line number override (AND-ed with global setting).
     pub show_line_numbers: bool,
     pub display_map: Option<&'a DisplayMap>,
-    /// Overrides state.gutter_width for content rendering (per-window in multi-pane mode).
     pub gutter_width_override: Option<usize>,
-    /// When set, use these matches instead of state.search_matches for this pane.
-    /// Pass `Some(&[])` for non-active panes to suppress cross-pane highlights.
     pub search_matches_override: Option<&'a [crate::search::SearchMatch]>,
-    /// Syntax-highlight generation used for cache invalidation.
     pub syntax_generation: u64,
-    /// Annotation revision used for cache invalidation.
     pub annotations_revision: u64,
-    /// Kind-registry generation used for cache invalidation.
     pub kind_registry_generation: u64,
 }
 
@@ -417,15 +316,11 @@ impl<'a> DrawContext<'a> {
     }
 }
 
-/// Cursor position information returned from layer-based rendering
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorPosition {
-    /// Absolute terminal position (row, col)
     Absolute(u16, u16),
 }
 
-/// Render buffer content to the content layer. `blit_cache` enables the
-/// dirty-row scroll blit; pass `None` if `frame` has no persistent identity.
 pub(crate) fn render_content_to_layer(
     layer: &mut Layer,
     ctx: &DrawContext,
@@ -435,8 +330,6 @@ pub(crate) fn render_content_to_layer(
     render_content_to_layer_offset(layer, ctx, 0, 0, frame, blit_cache)
 }
 
-/// Which visible rows must be freshly painted vs. left as-is from a scroll
-/// blit - decorator cursors still advance past every row either way.
 enum RowPolicy {
     All,
     Only(std::ops::Range<usize>),
@@ -451,8 +344,6 @@ impl RowPolicy {
     }
 }
 
-/// Render buffer content with row/col offsets applied to all cell positions.
-/// `frame` is caller-owned scratch space, reset here rather than reallocated.
 pub(crate) fn render_content_to_layer_offset(
     layer: &mut Layer,
     ctx: &DrawContext,
@@ -463,8 +354,6 @@ pub(crate) fn render_content_to_layer_offset(
 ) -> Result<(), String> {
     crate::perf_span!("render_content", crate::perf::PerfFields::default());
 
-    // `frame` paints in local zero-based coordinates.
-    // and can be one row taller than `painted_rows` (a blank trailing row).
     let painted_rows = ctx.viewport.visible_rows().saturating_sub(1);
     let frame_rows = ctx.viewport.visible_rows();
 
@@ -517,8 +406,6 @@ pub(crate) fn render_content_to_layer_offset(
     Ok(())
 }
 
-/// Builds the content layer's PaintFrame in local coordinates. Rows outside
-/// `policy` keep existing content, but cursors still advance past them.
 fn render_content_to_paint_frame(
     frame: &mut crate::paint::PaintFrame,
     ctx: &DrawContext,
@@ -546,13 +433,10 @@ fn render_content_to_paint_frame(
 
         let mut highlight_idx: usize = 0;
         let mut search_match_idx: usize = 0;
-        // Already scoped to the visible viewport, so 0 is correct to start;
-        // only need the same carry-over-across-rows treatment as `highlight_idx`.
         let mut annotation_style_idx: usize = 0;
         let mut injection_idx: usize = 0;
         let mut custom_color_idx: usize = 0;
         let mut terminal_color_idx: usize = 0;
-        let mut plugin_highlight_idx: usize = 0;
         let mut last_logical_line: Option<usize> = None;
         let mut highlight_idx_at_line_start: usize = 0;
         let mut search_match_idx_at_line_start: usize = 0;
@@ -560,7 +444,6 @@ fn render_content_to_paint_frame(
         let mut injection_idx_at_line_start: usize = 0;
         let mut custom_color_idx_at_line_start: usize = 0;
         let mut terminal_color_idx_at_line_start: usize = 0;
-        let mut plugin_highlight_idx_at_line_start: usize = 0;
 
         if let Some(row_info) = dm.get_visual_row(top_visual_row) {
             let first_char = row_info.char_start;
@@ -597,7 +480,6 @@ fn render_content_to_paint_frame(
                 injection_idx_at_line_start = injection_idx;
                 custom_color_idx_at_line_start = custom_color_idx;
                 terminal_color_idx_at_line_start = terminal_color_idx;
-                plugin_highlight_idx_at_line_start = plugin_highlight_idx;
             } else {
                 highlight_idx = highlight_idx_at_line_start;
                 search_match_idx = search_match_idx_at_line_start;
@@ -605,12 +487,9 @@ fn render_content_to_paint_frame(
                 injection_idx = injection_idx_at_line_start;
                 custom_color_idx = custom_color_idx_at_line_start;
                 terminal_color_idx = terminal_color_idx_at_line_start;
-                plugin_highlight_idx = plugin_highlight_idx_at_line_start;
             }
 
             if !policy.paints(i) {
-                // Already correct from a scroll blit - advance cursors past
-                // it. search_matches is char-indexed; the rest are byte-indexed.
                 let char_boundary = row_info.char_end;
                 let byte_boundary = buf.char_to_byte(row_info.char_end);
                 advance_idx_past(
@@ -643,12 +522,6 @@ fn render_content_to_paint_frame(
                 advance_idx_past(
                     ctx.terminal_cell_colors.unwrap_or(&[]),
                     &mut terminal_color_idx,
-                    byte_boundary,
-                    |(r, _)| r.end,
-                );
-                advance_idx_past(
-                    ctx.plugin_highlights.unwrap_or(&[]),
-                    &mut plugin_highlight_idx,
                     byte_boundary,
                     |(r, _)| r.end,
                 );
@@ -700,12 +573,9 @@ fn render_content_to_paint_frame(
                 &mut injection_idx,
                 &mut custom_color_idx,
                 &mut terminal_color_idx,
-                &mut plugin_highlight_idx,
             );
         }
     } else {
-        // Non-wrap mode: one row per logical line, so a scroll blit may reuse
-        // A changed line defines the boundary for an incremental render.
         let top_line = viewport.top_line();
         let search_matches = ctx.search_matches();
         let first_visible_char = buf.line_index.get_start(top_line).unwrap_or(0);
@@ -717,7 +587,6 @@ fn render_content_to_paint_frame(
         let mut injection_idx = 0;
         let mut custom_color_idx = 0;
         let mut terminal_color_idx = 0;
-        let mut plugin_highlight_idx = 0;
 
         for i in 0..visible_rows {
             let line_num = top_line + i;
@@ -733,8 +602,6 @@ fn render_content_to_paint_frame(
             };
 
             if !policy.paints(i) {
-                // Already correct from a scroll blit - advance cursors past
-                // it. search_matches is char-indexed; the rest are byte-indexed.
                 if let Some(char_boundary) = find_line_render_boundary(ctx, &config) {
                     let byte_boundary = buf.char_to_byte(char_boundary);
                     advance_idx_past(
@@ -770,12 +637,6 @@ fn render_content_to_paint_frame(
                         byte_boundary,
                         |(r, _)| r.end,
                     );
-                    advance_idx_past(
-                        ctx.plugin_highlights.unwrap_or(&[]),
-                        &mut plugin_highlight_idx,
-                        byte_boundary,
-                        |(r, _)| r.end,
-                    );
                 }
                 crate::perf_row_blit_skipped!();
                 continue;
@@ -808,7 +669,6 @@ fn render_content_to_paint_frame(
                 &mut injection_idx,
                 &mut custom_color_idx,
                 &mut terminal_color_idx,
-                &mut plugin_highlight_idx,
             );
         }
     }
@@ -816,7 +676,6 @@ fn render_content_to_paint_frame(
     Ok(())
 }
 
-/// Look up a per-line gutter foreground override with a linear scan over visible rows.
 fn gutter_color_for_line(colors: Option<&[(usize, Color)]>, line: usize) -> Option<Color> {
     colors?.iter().find(|&&(l, _)| l == line).map(|&(_, c)| c)
 }
@@ -875,19 +734,11 @@ fn render_gutter(
     }
 }
 
-/// Decision for drawing a single glyph at a given visual column, accounting
-/// for horizontal scroll clipping at the left edge.
 struct GlyphDrawPlan {
-    /// Columns this glyph occupies in the visible area (0 if fully clipped
-    /// or zero-width).
     visible_width: usize,
-    /// True if this glyph is wider than its visible_width: it straddles the
-    /// left scroll edge and must render as a space, not its clipped glyph.
     straddles_left_edge: bool,
 }
 
-/// Computes how much of a glyph of `width` columns, starting at
-/// `current_visual_col`, is visible given the viewport's `left_col` scroll.
 fn plan_glyph_draw(width: usize, current_visual_col: usize, left_col: usize) -> GlyphDrawPlan {
     let next_visual_col = current_visual_col + width;
     let visible_width = next_visual_col.saturating_sub(left_col.max(current_visual_col));
@@ -908,8 +759,6 @@ struct RenderLineConfig {
     segment_content_cols: Option<usize>,
 }
 
-/// Content-column budget for a row, shared by `render_line` and
-/// `find_line_render_boundary` so both agree on where content is clipped.
 fn line_content_cols(ctx: &DrawContext, config: &RenderLineConfig) -> usize {
     let buf = ctx.buf;
     let base_content_cols = config
@@ -930,8 +779,6 @@ fn line_content_cols(ctx: &DrawContext, config: &RenderLineConfig) -> usize {
     (base_content_cols + leading_extra).min(config.visible_cols.saturating_sub(config.gutter_width))
 }
 
-/// Char offset one past the last char `render_line` would pull from the
-/// decorator chain, via a bare `TabLayout` with no color decorators attached.
 fn find_line_render_boundary(ctx: &DrawContext, config: &RenderLineConfig) -> Option<usize> {
     let buf = ctx.buf;
     if config.line_num >= buf.get_total_lines() {
@@ -977,8 +824,6 @@ fn find_line_render_boundary(ctx: &DrawContext, config: &RenderLineConfig) -> Op
         let width = item.width;
         let next_visual_col = current_visual_col + width;
 
-        // Consumes the same render budget as `render_line`.
-        // leading-adornment char loop), so rendered_col tracks in lockstep.
         if next_visual_col > left_col {
             let plan = plan_glyph_draw(width, current_visual_col, left_col);
             let mut display_col = rendered_col + config.gutter_width;
@@ -1016,11 +861,9 @@ fn render_line(
     injection_idx: &mut usize,
     custom_color_idx: &mut usize,
     terminal_color_idx: &mut usize,
-    plugin_highlight_idx: &mut usize,
 ) {
     let buf = ctx.buf;
     if config.line_num >= buf.get_total_lines() {
-        // Render empty line (past end of buffer)
         for col in config.gutter_width..config.visible_cols {
             frame.set_cell(
                 config.row_idx,
@@ -1034,7 +877,6 @@ fn render_line(
     let source = pipeline::new_line_source(buf, config.line_num);
     let highlights = ctx.highlights.unwrap_or(&[]);
     let custom_highlights = ctx.custom_highlights.unwrap_or(&[]);
-    let plugin_highlights = ctx.plugin_highlights.unwrap_or(&[]);
     let terminal_cell_colors = ctx.terminal_cell_colors.unwrap_or(&[]);
 
     let syntax = SyntaxDecorator::new(
@@ -1054,18 +896,10 @@ fn render_line(
     let colored = pipeline::ColorDecorator::new(injected, custom_highlights, custom_color_idx);
     let term_colored =
         pipeline::TerminalColorDecorator::new(colored, terminal_cell_colors, terminal_color_idx);
-    let plugin = pipeline::PluginHighlightDecorator::new(
-        term_colored,
-        plugin_highlights,
-        plugin_highlight_idx,
-    );
     let annotation_styles = ctx.annotation_styles.unwrap_or(&[]);
-    // Search highlights now render via ui.search annotations (PresentationDecorator),
-    // so there is no dedicated search decorator in the chain.
     let presented =
-        pipeline::PresentationDecorator::new(plugin, annotation_styles, annotation_style_idx);
+        pipeline::PresentationDecorator::new(term_colored, annotation_styles, annotation_style_idx);
 
-    // Layout
     let layout = TabLayout::new(presented, ctx.tab_width);
 
     let content_cols = line_content_cols(ctx, &config);
@@ -1075,34 +909,24 @@ fn render_line(
         .segment_left_col
         .unwrap_or_else(|| ctx.viewport.left_col());
 
-    // Internal tracker for absolute visual column (including horizontal scroll)
     let mut current_visual_col = 0;
 
-    // Whether this render reached the logical line's end rather than running out
-    // of horizontal space. Trailing adornments only draw on that final segment.
     let mut reached_line_end = true;
 
-    // Inline (Overlay/Leading) adornments: record each adornment's display columns
-    // as content is laid out, then draw them once the line is done.
     let inline = ctx.annotation_inline.unwrap_or(&[]);
     let mut inline_cols: Vec<(Option<usize>, Option<usize>)> = vec![(None, None); inline.len()];
 
     let concealed = ctx.annotation_concealed.unwrap_or(&[]);
     for item in layout {
-        // Newline first: an exactly-full row still counts as reaching line end.
         if item.char == Character::Newline {
             break;
         }
 
-        // Out of room only once the segment's own columns have been reached
-        // (an EOL-only segment has zero width but starts past its text).
         if rendered_col >= content_cols && current_visual_col >= left_col {
             reached_line_end = false;
             break;
         }
 
-        // Zero-width conceal: drop this char's cell and width so following text
-        // reflows left. Cursor-line ranges are pre-excluded (revealed).
         if concealed
             .iter()
             .any(|(s, e)| item.byte_offset >= *s && item.byte_offset < *e)
@@ -1113,16 +937,12 @@ fn render_line(
         let width = item.width;
         let next_visual_col = current_visual_col + width;
 
-        // Check visibility against viewport
         if next_visual_col > left_col {
             let plan = plan_glyph_draw(width, current_visual_col, left_col);
             let visible_width = plan.visible_width;
 
-            // Calculate where to draw in the layer (relative to gutter)
             let mut display_col = rendered_col + config.gutter_width;
 
-            // Leading adornments insert virtual text before this item, pushing real
-            // content right. Only the display column advances, not the visual column.
             for (start, _end, text, color, is_leading) in inline {
                 if *is_leading && *start == item.byte_offset {
                     for ch in text.chars() {
@@ -1141,7 +961,6 @@ fn render_line(
                 }
             }
 
-            // Record the display columns of overlay span endpoints (post-leading).
             for (i, (start, end, _t, _c, _l)) in inline.iter().enumerate() {
                 if *start == item.byte_offset {
                     inline_cols[i].0 = Some(display_col);
@@ -1169,7 +988,6 @@ fn render_line(
                         .with_attrs(item.attrs),
                 );
 
-                // Fill the rest of the visible span with spaces.
                 if visible_width > 1 {
                     let empty_cell = Cell {
                         content: Character::from(' '),
@@ -1190,8 +1008,6 @@ fn render_line(
         current_visual_col = next_visual_col;
     }
 
-    // Render a trailing adornment (display-only virtual text with its own color)
-    // on the line's last visual segment, only when the line end is on screen.
     let mut tail_col = rendered_col + config.gutter_width;
     let line_end_visible = reached_line_end && current_visual_col >= left_col;
     if let Some(adornments) = ctx.annotation_adornments.filter(|_| line_end_visible) {
@@ -1200,8 +1016,6 @@ fn render_line(
         }
     }
 
-    // Draw overlay adornments over the laid-out content (leading was drawn inline
-    // during the loop, shifting content right).
     let content_end_col = rendered_col + config.gutter_width;
     for (i, (start, end, text, color, is_leading)) in inline.iter().enumerate() {
         if *is_leading {
@@ -1212,8 +1026,6 @@ fn render_line(
         };
         let chars: Vec<char> = text.chars().collect();
         {
-            // Overlay conceals [start_col, end_col): a range covers its span, a point
-            // its own width. Short pads with blanks, long truncates within the span.
             let end_col = if *end > *start {
                 inline_cols[i].1.unwrap_or(content_end_col)
             } else {
@@ -1233,7 +1045,6 @@ fn render_line(
         }
     }
 
-    // Fill remaining line with background
     for col in tail_col..config.visible_cols {
         frame.set_cell(
             config.row_idx,
@@ -1243,8 +1054,6 @@ fn render_line(
     }
 }
 
-/// Draw ` <text>` from `col`, advancing by display width (wide chars get filler
-/// cells). Clips with `...` when short on room; returns the next free column.
 fn render_trailing_adornment(
     frame: &mut crate::paint::PaintFrame,
     config: &RenderLineConfig,
@@ -1270,7 +1079,6 @@ fn render_trailing_adornment(
     if !fits && room < 4 {
         return col;
     }
-    // Reserve the ellipsis when clipping.
     let text_limit = if fits { limit } else { limit - 3 };
     for ch in text.chars() {
         if ch.is_control() {
@@ -1304,12 +1112,10 @@ fn render_trailing_adornment(
     col
 }
 
-/// Calculate the cursor column position accounting for tab width and wide characters
 pub fn calculate_cursor_column(buf: &TextBuffer, line: usize, tab_width: usize) -> usize {
     calculate_cursor_column_at(buf, line, tab_width, buf.cursor())
 }
 
-/// Calculates a cursor column for an explicit cursor position.
 pub fn calculate_cursor_column_at(
     buf: &TextBuffer,
     line: usize,
@@ -1345,7 +1151,6 @@ pub fn calculate_cursor_column_at(
     col
 }
 
-/// Helper to wrap text to a specific width
 pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
     use unicode_width::UnicodeWidthStr;
 
@@ -1379,7 +1184,6 @@ pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
-/// Render notifications to the notification layer
 pub(crate) fn render_notifications(
     layer: &mut Layer,
     state: &State,
@@ -1391,8 +1195,6 @@ pub(crate) fn render_notifications(
     crate::paint::rasterize(&frame, layer);
 }
 
-/// Builds the notification layer's PaintFrame; render_notifications
-/// rasterizes it onto the actual Layer in a single step.
 fn render_notifications_to_paint_frame(
     frame: &mut crate::paint::PaintFrame,
     state: &State,
@@ -1470,8 +1272,6 @@ fn render_notifications_to_paint_frame(
     }
 }
 
-/// Render split dividers between windows. Layer-based, not PaintFrame-based:
-/// highlight_focused_window_border below reads these cells back to recolor them.
 pub(crate) fn render_dividers(
     layer: &mut Layer,
     tree: &crate::split::tree::SplitTree,
@@ -1567,8 +1367,6 @@ fn render_node_dividers(
     }
 }
 
-/// Reads existing divider glyphs back from `layer` to selectively recolor
-/// them, so this reads/writes Layer directly rather than going via PaintFrame.
 pub(crate) fn highlight_focused_window_border(
     layer: &mut Layer,
     layout: &crate::split::layout::WindowLayout,

@@ -15,18 +15,13 @@ use crate::mode::Mode;
 use crate::status::StatusBar;
 use crate::term::CursorShape;
 
-/// Persistent paint state for one window in multi-window rendering.
 #[derive(Debug)]
 pub(crate) struct WindowPaintCache {
     pub(crate) frame: crate::paint::PaintFrame,
     pub(crate) blit_key: Option<crate::render::ContentBlitKey>,
-    /// This window's layout as of its last render; a mismatch means it
-    /// moved/resized and the cache is stale.
     pub(crate) layout: crate::split::layout::WindowLayout,
 }
 
-/// Hash annotation presentation style spans without allocating: each style's
-/// fields are fed directly into the hasher instead of Debug-formatting to a String.
 fn hash_annotation_styles(spans: &[(std::ops::Range<usize>, CellStyle)]) -> u64 {
     let mut h: u64 = 0;
     for (range, style) in spans {
@@ -45,8 +40,6 @@ fn hash_annotation_styles(spans: &[(std::ops::Range<usize>, CellStyle)]) -> u64 
     h
 }
 
-/// Hash inline (overlay/leading) and trailing adornment virtual text so the
-/// content layer redraws when inlay hints or other virtual text change.
 fn hash_virtual_text(
     inline: &[InlineAdornment],
     adornments: &[crate::render::LineAdornment<'_>],
@@ -89,20 +82,17 @@ fn hash_virtual_text(
     h
 }
 
-/// Persistent rendering system that holds all render-related state
 pub struct RenderSystem {
     pub compositor: LayerCompositor,
     pub viewport: Viewport,
     pub world: World,
 
-    // Persistent Entities
     content_entity: Option<crate::render::ecs::EntityId>,
     status_entity: Option<crate::render::ecs::EntityId>,
     command_entity: Option<crate::render::ecs::EntityId>,
     notification_entity: Option<crate::render::ecs::EntityId>,
     completion_entity: Option<crate::render::ecs::EntityId>,
 
-    // Rendering State
     last_render_version: u64,
     last_cursor_pos: Option<CursorPosition>,
     last_command_cursor: Option<CursorPosition>,
@@ -110,27 +100,15 @@ pub struct RenderSystem {
     last_cursor_shape: Option<CursorShape>,
     cursor_animator: crate::cursor::CursorAnimator,
 
-    /// Reused across `render_content_to_layer[_offset]` calls instead of
-    /// Reuses a persistent `PaintFrame` instead of allocating one per call.
     pub(crate) content_paint_frame: crate::paint::PaintFrame,
-    /// Identity of the last successful single-window content paint, enabling
-    /// Tracks content changes that allow a dirty-row scroll blit.
     pub(crate) content_blit_key: Option<crate::render::ContentBlitKey>,
-    /// One persistent paint frame + blit key per visible split window,
-    /// keyed by `WindowId` - lets each window reuse the skip/blit machinery.
     pub(crate) window_paint_caches:
         std::collections::HashMap<crate::split::window::WindowId, WindowPaintCache>,
-    /// Reused across `StatusBar::render_to_layer` calls, same reasoning as
-    /// `content_paint_frame`.
     status_paint_frame: crate::paint::PaintFrame,
 
-    /// Reused across `render()` calls to gather+sort entities without
-    /// allocating fresh; both fields are `Copy`, so no borrow of `self.world`.
     render_order: Vec<(crate::render::ecs::EntityId, crate::layer::LayerPriority)>,
 }
 
-/// Finds the 1-based index of the search match containing (or starting at)
-/// `cursor_offset`. Matches must be sorted by range, as produced by search.
 fn match_index_at_cursor(
     matches: &[crate::search::SearchMatch],
     cursor_offset: usize,
@@ -144,7 +122,6 @@ fn match_index_at_cursor(
 }
 
 impl RenderSystem {
-    /// Create a new render system with specified dimensions
     pub fn new(rows: usize, cols: usize) -> Self {
         Self {
             compositor: LayerCompositor::new(rows, cols),
@@ -173,17 +150,14 @@ impl RenderSystem {
         self.cursor_animator.is_animating()
     }
 
-    /// Last rendered soft-cursor screen position (row, col), for tests.
     pub fn last_soft_cursor(&self) -> Option<(usize, usize)> {
         self.last_soft_cursor
     }
 
-    /// Resize the render system
     pub fn resize(&mut self, rows: usize, cols: usize) {
         self.viewport.set_size(rows, cols);
         self.compositor.resize(rows, cols);
 
-        // Force full refresh
         self.world.clear();
         self.content_entity = None;
         self.status_entity = None;
@@ -200,12 +174,10 @@ impl RenderSystem {
         self.window_paint_caches.clear();
     }
 
-    /// Update the ECS world components based on current context
     fn update_world(&mut self, ctx: &DrawContext) {
         crate::perf_span!("ecs_update_world", crate::perf::PerfFields::default());
         self.world.tick();
 
-        // 1. Content
         if self.content_entity.is_none() {
             self.content_entity = Some(self.world.create_entity());
         }
@@ -228,7 +200,6 @@ impl RenderSystem {
                 0
             },
             search_matches_count: ctx.state.search_matches.len(),
-            plugin_highlights_len: ctx.plugin_highlights.map(|h| h.len()).unwrap_or(0),
             conceal_hash: {
                 let mut h: u64 = 0;
                 for (s, e) in ctx.annotation_concealed.unwrap_or(&[]) {
@@ -284,7 +255,6 @@ impl RenderSystem {
             ),
         );
 
-        // 2. Status Bar
         if self.status_entity.is_none() {
             self.status_entity = Some(self.world.create_entity());
         }
@@ -350,7 +320,6 @@ impl RenderSystem {
         self.world
             .add_layer(status_entity, LayerPriority::STATUS_BAR);
 
-        // 3. Command Line Window
         if ctx.current_mode == Mode::Command
             || ctx.current_mode == Mode::Search
             || ctx.current_mode == Mode::Rename
@@ -381,15 +350,12 @@ impl RenderSystem {
             self.world
                 .add_layer(command_entity, LayerPriority::FLOATING_WINDOW);
         } else if let Some(entity) = self.command_entity {
-            // Mode changed, destroy entity
             self.world.destroy_entity(entity);
             self.command_entity = None;
             self.last_command_cursor = None;
-            // Also need to clear the layer
             self.compositor.clear_layer(LayerPriority::FLOATING_WINDOW);
         }
 
-        // 3b. Completion dropdown
         let show_dropdown = ctx.current_mode == Mode::Command
             && ctx
                 .state
@@ -429,7 +395,6 @@ impl RenderSystem {
             self.compositor.clear_layer(LayerPriority::HOVER);
         }
 
-        // 4. Notifications
         if self.notification_entity.is_none() {
             self.notification_entity = Some(self.world.create_entity());
         }
@@ -453,7 +418,6 @@ impl RenderSystem {
             .add_layer(notification_entity, LayerPriority::NOTIFICATION);
     }
 
-    /// Render to terminal using ECS
     pub fn render<T: TerminalBackend>(
         &mut self,
         term: &mut T,
@@ -466,7 +430,6 @@ impl RenderSystem {
                 .resize(self.viewport.visible_rows(), self.viewport.visible_cols());
         }
 
-        // Copy the viewport out to avoid holding a borrow of self across update_world.
         let viewport = self.viewport;
         let skip_content = state.skip_content;
         let scroll_hint = state.scroll_hint;
@@ -487,7 +450,6 @@ impl RenderSystem {
             injection_highlights: state.injection_highlights,
             custom_highlights: state.custom_highlights,
             git_gutter_colors: state.git_gutter_colors,
-            plugin_highlights: state.plugin_highlights,
             annotation_styles: state.annotation_styles,
             annotation_adornments: state.annotation_adornments,
             annotation_inline: state.annotation_inline,
@@ -502,15 +464,12 @@ impl RenderSystem {
             kind_registry_generation: state.kind_registry_generation,
         };
 
-        // Update the ECS world
         self.update_world(&ctx);
 
         if ctx.needs_clear {
             self.last_render_version = 0;
         }
 
-        // `render_order` holds only `Copy` data, so it's a persistent field
-        // reused here instead of a fresh `Vec` collected every frame.
         self.render_order.clear();
         self.render_order.extend(
             self.world
@@ -583,8 +542,6 @@ impl RenderSystem {
                             },
                         );
 
-                        // `offset` counts characters; convert it to terminal columns before rendering.
-                        // the byte-offset cursor to match so the column math stays consistent.
                         let cursor_char = state
                             .content
                             .get(..state.cursor.col.min(state.content.len()))
@@ -640,8 +597,6 @@ impl RenderSystem {
             } else {
                 0
             };
-            // Use the focused pane's viewport for row/col clamping when available, so the cursor
-            // never escapes the pane boundary and corrupts the outer terminal (multi-window / vsplit).
             let pane_vp = cursor_viewport.unwrap_or(&viewport);
             let max_content_row = pane_vp.visible_rows().saturating_sub(2);
             let clamped_row = term_row.min(max_content_row);
@@ -669,8 +624,6 @@ impl RenderSystem {
                     0
                 };
 
-                // Offset by any leading virtual text inserted before the cursor on
-                // its line (the display map measures buffer content only).
                 let cursor_off = ctx.buf.cursor();
                 let cline = ctx.buf.line_index.get_line_at(cursor_off);
                 let line_start = ctx.buf.line_index.get_start(cline).unwrap_or(0);
@@ -700,7 +653,6 @@ impl RenderSystem {
                     0
                 };
 
-                // Offset the cursor by any leading virtual text inserted before it.
                 let line_start = ctx.buf.line_index.get_start(cursor_line).unwrap_or(0);
                 let cursor_off = ctx.buf.cursor();
                 let leading: usize = ctx
@@ -742,8 +694,6 @@ impl RenderSystem {
         self.cursor_animator.step(ctx.state.settings.cursor_speed);
         let (anim_row, anim_col) = self.cursor_animator.display_pos();
 
-        // Blends against get_composited_cell's post-composite color (all other
-        // layers already rasterized), so this stays Layer-based, not PaintFrame-based.
         if software {
             {
                 let layer = self.compositor.get_layer_mut(LayerPriority::CURSOR);
@@ -792,13 +742,11 @@ impl RenderSystem {
         self.last_cursor_pos = Some(cursor_info);
         term.flush()?;
 
-        // Update version reference
         self.last_render_version = self.world.current_version;
 
         Ok(cursor_info)
     }
 
-    /// Force full redraw
     pub fn force_full_redraw<T: TerminalBackend>(
         &mut self,
         term: &mut T,
@@ -809,8 +757,6 @@ impl RenderSystem {
     }
 }
 
-/// Render the completion dropdown menu onto a layer using FloatingWindow, positioned directly
-/// below the command line window, matching its horizontal position and width.
 fn render_completion_menu(
     layer: &mut crate::layer::Layer,
     state: &crate::render::CompletionMenuDrawState,

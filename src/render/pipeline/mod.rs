@@ -5,19 +5,14 @@ use crate::render::Color;
 use std::iter::Iterator;
 use unicode_width::UnicodeWidthChar;
 
-/// A single item to be rendered (character with style)
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderItem {
     pub char: Character,
     pub fg: Option<Color>,
     pub bg: Option<Color>,
-    /// Text attributes (bold/italic/underline/strike/reverse).
     pub attrs: crate::layer::CellAttrs,
-    /// Original byte offset in the buffer (for syntax highlighting)
     pub byte_offset: usize,
-    /// Length of the character in bytes
     pub len_bytes: usize,
-    /// Absolute code-point (char) offset in the buffer (for search highlighting)
     pub char_offset: usize,
 }
 
@@ -35,8 +30,6 @@ impl RenderItem {
     }
 }
 
-/// Source that yields characters from a line in the buffer. Generic over the
-/// char iterator (not `Box<dyn Iterator>`) so the decorator chain on top monomorphizes and inlines.
 pub struct LineSource<'a, I: Iterator<Item = Character>> {
     chars: I,
     current_byte_offset: usize,
@@ -44,8 +37,6 @@ pub struct LineSource<'a, I: Iterator<Item = Character>> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
-/// Free function so the concrete `impl Iterator` type `buf.chars()` returns
-/// can be captured via return-position `impl Trait` without being named.
 pub fn new_line_source<'a>(
     buf: &'a TextBuffer,
     line_idx: usize,
@@ -58,7 +49,6 @@ pub fn new_line_source<'a>(
 
     let chars = buf.chars(line_start..line_end);
     let current_byte_offset = buf.char_to_byte(line_start);
-    // line_start is already an absolute code-point offset
     let current_char_offset = line_start;
 
     LineSource {
@@ -82,11 +72,9 @@ impl<'a, I: Iterator<Item = Character>> Iterator for LineSource<'a, I> {
     }
 }
 
-/// A trait for pipeline stages
 pub trait Pipe: Iterator<Item = RenderItem> {}
 impl<T: Iterator<Item = RenderItem>> Pipe for T {}
 
-/// Decorator that applies syntax highlighting
 pub struct SyntaxDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     highlights: &'a [(std::ops::Range<usize>, u32)],
@@ -119,7 +107,6 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for SyntaxDecorator<'a, I> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut item = self.input.next()?;
 
-        // Fast forward highlights
         while *self.idx < self.highlights.len() {
             if self.highlights[*self.idx].0.end <= item.byte_offset {
                 *self.idx += 1;
@@ -129,13 +116,11 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for SyntaxDecorator<'a, I> {
             }
         }
 
-        // Check if current item is covered by any highlight
         for (range, capture_idx) in self.highlights.iter().skip(*self.idx) {
             if range.start > item.byte_offset {
                 break;
             }
             if range.end > item.byte_offset {
-                // Apply color
                 if let Some(colors) = self.syntax_colors {
                     if let Some(map) = self.capture_map {
                         if let Some(name) = map.get(*capture_idx as usize) {
@@ -153,11 +138,8 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for SyntaxDecorator<'a, I> {
     }
 }
 
-/// Applies injection-layer highlights using capture names, sitting right
-/// after `SyntaxDecorator` to override colour in injected-language byte ranges.
 pub struct InjectionDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
-    /// Sorted by range start. Each entry is (byte_range, capture_name).
     highlights: &'a [(std::ops::Range<usize>, String)],
     idx: &'a mut usize,
     syntax_colors: Option<&'a crate::color::theme::SyntaxColors>,
@@ -212,8 +194,6 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for InjectionDecorator<'a, I> 
     }
 }
 
-/// Decorator that applies custom per-byte-range foreground colors.
-/// Used by directory and undo-tree buffers to reproduce the original cell-level colours.
 pub struct ColorDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     highlights: &'a [(std::ops::Range<usize>, Color)],
@@ -240,7 +220,6 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for ColorDecorator<'a, I> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut item = self.input.next()?;
 
-        // Advance past expired ranges
         while *self.idx < self.highlights.len()
             && self.highlights[*self.idx].0.end <= item.byte_offset
         {
@@ -259,8 +238,6 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for ColorDecorator<'a, I> {
     }
 }
 
-/// Decorator applying generic annotation presentation styles (sorted,
-/// non-overlapping spans). `idx` is caller-owned so the fast-forward cursor carries over across rows.
 pub struct PresentationDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     styles: &'a [(std::ops::Range<usize>, crate::layer::CellStyle)],
@@ -302,51 +279,6 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for PresentationDecorator<'a, 
     }
 }
 
-/// Pick a contrasting foreground color (black or white) for a given background.
-pub fn contrasting_color(bg: Color) -> Color {
-    match bg {
-        Color::Black
-        | Color::DarkGrey
-        | Color::Blue
-        | Color::DarkBlue
-        | Color::Red
-        | Color::DarkRed
-        | Color::Magenta
-        | Color::DarkMagenta
-        | Color::DarkGreen
-        | Color::DarkCyan
-        | Color::DarkYellow => Color::White,
-        Color::White | Color::Grey | Color::Yellow | Color::Green | Color::Cyan => Color::Black,
-        Color::Rgb { r, g, b } => {
-            let lum = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
-            if lum > 128.0 {
-                Color::Black
-            } else {
-                Color::White
-            }
-        }
-        Color::Ansi256(n) => {
-            let (r, g, b) = if n >= 232 {
-                let step = (n - 232) * 10 + 8;
-                (step, step, step)
-            } else {
-                let i = n - 16;
-                let ramp = |v: u8| if v == 0 { 0 } else { 55 + 40 * v };
-                (ramp(i / 36), ramp((i / 6) % 6), ramp(i % 6))
-            };
-            let lum = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
-            if lum > 128.0 {
-                Color::Black
-            } else {
-                Color::White
-            }
-        }
-        Color::Reset => Color::Reset,
-    }
-}
-
-/// Applies per-character terminal fg+bg colors, used exclusively for
-/// terminal documents where every alacritty grid cell has its own colors.
 pub struct TerminalColorDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     colors: &'a [crate::color::CellColorSpan],
@@ -365,7 +297,6 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for TerminalColorDecorator<'a,
     fn next(&mut self) -> Option<Self::Item> {
         let mut item = self.input.next()?;
 
-        // Advance past expired ranges.
         while *self.idx < self.colors.len() && self.colors[*self.idx].0.end <= item.byte_offset {
             *self.idx += 1;
             crate::perf_cursor_advance!();
@@ -387,54 +318,6 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for TerminalColorDecorator<'a,
     }
 }
 
-/// Decorator that applies plugin highlights as background color with contrasting foreground.
-pub struct PluginHighlightDecorator<'a, I: Iterator<Item = RenderItem>> {
-    input: I,
-    highlights: &'a [(std::ops::Range<usize>, Color)],
-    idx: &'a mut usize,
-}
-
-impl<'a, I: Iterator<Item = RenderItem>> PluginHighlightDecorator<'a, I> {
-    pub fn new(
-        input: I,
-        highlights: &'a [(std::ops::Range<usize>, Color)],
-        idx: &'a mut usize,
-    ) -> Self {
-        Self {
-            input,
-            highlights,
-            idx,
-        }
-    }
-}
-
-impl<'a, I: Iterator<Item = RenderItem>> Iterator for PluginHighlightDecorator<'a, I> {
-    type Item = RenderItem;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut item = self.input.next()?;
-
-        // Advance past expired ranges
-        while *self.idx < self.highlights.len()
-            && self.highlights[*self.idx].0.end <= item.byte_offset
-        {
-            *self.idx += 1;
-            crate::perf_cursor_advance!();
-        }
-
-        if *self.idx < self.highlights.len() {
-            let (range, bg) = &self.highlights[*self.idx];
-            if range.start <= item.byte_offset {
-                item.bg = Some(*bg);
-                item.fg = Some(contrasting_color(*bg));
-            }
-        }
-
-        Some(item)
-    }
-}
-
-/// Decorator that applies search match highlighting
 pub struct SearchDecorator<'a, I: Iterator<Item = RenderItem>> {
     input: I,
     matches: &'a [crate::search::SearchMatch],
@@ -457,7 +340,6 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for SearchDecorator<'a, I> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut item = self.input.next()?;
 
-        // Fast forward matches
         while *self.idx < self.matches.len() {
             if self.matches[*self.idx].range.end <= item.char_offset {
                 *self.idx += 1;
@@ -479,7 +361,6 @@ impl<'a, I: Iterator<Item = RenderItem>> Iterator for SearchDecorator<'a, I> {
     }
 }
 
-/// Layout stage that handles tab expansion and width calculation
 pub struct TabLayout<I: Iterator<Item = RenderItem>> {
     input: I,
     tab_width: usize,
@@ -512,12 +393,10 @@ impl<I: Iterator<Item = RenderItem>> Iterator for TabLayout<I> {
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.input.next()?;
 
-        // Handle tabs specially for width calculation
         let width = if item.char == Character::Tab {
             self.tab_width - (self.visual_col % self.tab_width)
         } else {
             match item.char {
-                // ASCII Unicode characters are one cell wide.
                 Character::Unicode(c) if c.is_ascii() => 1,
                 Character::Unicode(c) => UnicodeWidthChar::width(c).unwrap_or(0),
                 Character::Byte(_) => 4,    // \xNN

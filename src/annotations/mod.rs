@@ -1,6 +1,3 @@
-//! Structured sidecar metadata alongside buffer content
-//! Generic Value payload, namespaced kinds, edit-tracked markers; all serializable.
-
 pub mod action;
 pub mod kind;
 pub mod marker;
@@ -17,8 +14,6 @@ pub use value::Value;
 
 use serde::{Deserialize, Serialize};
 
-/// Resolve an adornment's foreground color by precedence: inline adornment
-/// style, annotation style, kind-default style, then face/kind face.
 fn adornment_color(
     a: &Annotation,
     adornment: &Adornment,
@@ -46,27 +41,18 @@ fn adornment_color(
         .unwrap_or(crate::color::Color::DarkGrey)
 }
 
-/// Stable, unique identifier for an annotation. Does not change across edits.
 pub type AnnotationId = u64;
 
-/// Identifies the subsystem or producer that created an annotation, governing
-/// lifecycle and authority (who may mutate/clear it). Orthogonal to [`Kind`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AnnotationOwner {
-    /// Created by the editor core.
     System,
-    /// Created by an LSP server.
     Lsp,
-    /// Created by a named local plugin.
     Plugin(String),
-    /// Created by the user.
     User,
-    /// Reserved: a process across the IPC boundary, unused in-process today.
     Remote(String),
 }
 
 impl AnnotationOwner {
-    /// Tiebreak rank for overlap precedence (lower wins).
     pub fn rank(&self) -> u8 {
         match self {
             AnnotationOwner::System => 0,
@@ -77,8 +63,6 @@ impl AnnotationOwner {
         }
     }
 
-    /// Stable string tag for the owner (provenance), e.g. for the Lua snapshot.
-    /// Always one of a fixed set of literals, regardless of variant data.
     pub fn as_str(&self) -> &'static str {
         match self {
             AnnotationOwner::System => "system",
@@ -90,58 +74,39 @@ impl AnnotationOwner {
     }
 }
 
-/// Where an annotation lives in the buffer
-/// Point/Range are byte-offset markers; Line is a zero-based line number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Anchor {
-    /// A single byte offset.
     Point(Marker),
-    /// A byte range [start, end) with independent endpoint gravity.
     Range(Marker, Marker),
-    /// An entire line identified by its zero-based line number.
     Line(usize),
 }
 
 impl Anchor {
-    /// Build a point anchor with left gravity at `offset`.
     pub fn point(offset: usize) -> Self {
         Anchor::Point(Marker::left(offset))
     }
 
-    /// Build a range over [start, end) with left start + right end gravity,
-    /// so text typed inside extends it.
     pub fn range(start: usize, end: usize) -> Self {
         Anchor::Range(Marker::left(start), Marker::right(end))
     }
 }
 
-/// One diagnostic for `replace_lsp_diagnostics`: (line, diagnosed byte span
-/// if the server gave a non-empty one, severity, message).
 pub type LspDiagnosticSpec<'a> = (usize, Option<std::ops::Range<usize>>, i64, &'a str);
 
-/// What happens to an annotation when its anchored span is deleted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Stickiness {
-    /// Annotation is removed when its anchor span is deleted.
     Delete,
-    /// Annotation survives at the nearest remaining position.
     Persist,
 }
 
-/// A single annotation record
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Annotation {
     pub id: AnnotationId,
     pub anchor: Anchor,
-    /// Namespaced kind string.
     pub kind: Kind,
-    /// Provenance and authority.
     pub owner: AnnotationOwner,
-    /// Generic payload.
     pub payload: Value,
-    /// Optional styling/adornment composed over base color/syntax.
     pub presentation: Option<Presentation>,
-    /// Zero or more interaction descriptors.
     pub actions: Vec<Action>,
     pub stickiness: Stickiness,
     pub visible: bool,
@@ -149,8 +114,6 @@ pub struct Annotation {
 }
 
 impl Annotation {
-    /// New annotation with default fields and unassigned id (0); the id is
-    /// assigned by `AnnotationStore::add`.
     pub fn new(kind: Kind, anchor: Anchor, owner: AnnotationOwner) -> Self {
         Annotation {
             id: 0,
@@ -196,13 +159,10 @@ impl Annotation {
         self
     }
 
-    /// Whether this annotation has any actions (i.e. it is interactive).
     pub fn is_interactive(&self) -> bool {
         !self.actions.is_empty()
     }
 
-    /// The action bound to the generic activate key: the one marked `default`,
-    /// else the sole action if there is exactly one.
     pub fn default_action(&self) -> Option<&Action> {
         self.actions
             .iter()
@@ -214,13 +174,10 @@ impl Annotation {
             })
     }
 
-    /// The first action matching `verb`, if any.
     pub fn action_for_verb(&self, verb: &str) -> Option<&Action> {
         self.actions.iter().find(|a| a.verb == verb)
     }
 
-    /// Keyboard-affordance hint for this annotation's actions, e.g.
-    /// `"Enter: run \u{b7} t: toggle"`; `activate_key` labels the default action.
     pub fn affordance_line(&self, activate_key: &str) -> Option<String> {
         if self.actions.is_empty() {
             return None;
@@ -241,29 +198,15 @@ impl Annotation {
     }
 }
 
-/// Per-document annotation store; never a global singleton.
-/// Position tracking is driven synchronously by the document edit pipeline.
 pub struct AnnotationStore {
     annotations: Vec<Annotation>,
     next_id: AnnotationId,
-    /// Lazily-rebuilt interval index over Point/Range anchors
     index: std::cell::RefCell<Option<crate::syntax::interval_tree::IntervalTree<AnnotationId>>>,
-    /// Secondary id -> vec-index map, rebuilt with the index for O(1) id lookup.
     by_id: std::cell::RefCell<std::collections::HashMap<AnnotationId, usize>>,
-    /// (start_offset, id) of interactive Point/Range anchors, sorted by offset,
-    /// rebuilt with the index. Backs O(log n) next/prev-interactive navigation.
     interactive_starts: std::cell::RefCell<Vec<(usize, AnnotationId)>>,
-    /// Line -> ids of Line-anchored annotations at that line, so edit
-    /// tracking touches only annotations at/after the affected line.
     line_index: std::cell::RefCell<std::collections::BTreeMap<usize, Vec<AnnotationId>>>,
-    /// Stale flag for the interval tree + `interactive_starts` (the
-    /// expensive-to-rebuild Point/Range query structures).
     index_dirty: std::cell::Cell<bool>,
-    /// Stale flag for `by_id` + `line_index` alone (a plain O(n) pass), so
-    /// line-anchor edit tracking never pays to rebuild the interval tree.
     aux_dirty: std::cell::Cell<bool>,
-    /// Bumped on every observable mutation, so snapshot consumers (the Lua
-    /// host) can skip re-materializing unchanged state.
     revision: u64,
 }
 
@@ -288,21 +231,16 @@ impl AnnotationStore {
         }
     }
 
-    /// Mark the interval tree and id/line-bucket structures stale, and bump
-    /// `revision` since every caller represents an observable change.
     fn invalidate_index(&mut self) {
         self.index_dirty.set(true);
         self.aux_dirty.set(true);
         self.revision += 1;
     }
 
-    /// Monotonic count of observable mutations, for external staleness gates.
     pub fn revision(&self) -> u64 {
         self.revision
     }
 
-    /// Rebuild `by_id` + `line_index` if stale (a single O(n) pass). Used by
-    /// line-anchor edit tracking, which never needs the interval tree.
     fn ensure_aux(&self) {
         if !self.aux_dirty.get() {
             return;
@@ -321,8 +259,6 @@ impl AnnotationStore {
         self.aux_dirty.set(false);
     }
 
-    /// Rebuild the interval index + `interactive_starts` from anchors if
-    /// stale; ensures `by_id`/`line_index` are fresh as a side effect.
     fn ensure_index(&self) {
         if !self.index_dirty.get() {
             return;
@@ -354,8 +290,6 @@ impl AnnotationStore {
         self.index_dirty.set(false);
     }
 
-    /// Annotations whose Point/Range anchor overlaps a byte range, in id order,
-    /// resolved through the interval index + id map.
     fn index_query(&self, range: std::ops::Range<usize>) -> Vec<&Annotation> {
         self.ensure_index();
         let mut ids: Vec<AnnotationId> = self
@@ -372,8 +306,6 @@ impl AnnotationStore {
             .collect()
     }
 
-    /// Add an annotation, assigning it a fresh stable id (overwriting any id on
-    /// the passed value). Returns the assigned id.
     pub fn add(&mut self, mut annotation: Annotation) -> AnnotationId {
         let id = self.next_id;
         self.next_id += 1;
@@ -383,14 +315,10 @@ impl AnnotationStore {
         id
     }
 
-    /// The id the next `add` will assign. Lets a deferred producer (the Lua host)
-    /// pre-claim ids so `add` can report one synchronously.
     pub fn peek_next_id(&self) -> AnnotationId {
         self.next_id
     }
 
-    /// Add an annotation under a caller-chosen id (e.g. one pre-claimed via
-    /// `peek_next_id`), keeping `next_id` ahead so later allocations never collide.
     pub fn add_with_id(&mut self, id: AnnotationId, mut annotation: Annotation) -> AnnotationId {
         annotation.id = id;
         self.annotations.push(annotation);
@@ -399,14 +327,10 @@ impl AnnotationStore {
         id
     }
 
-    /// Mutate the annotation with the given id in place (`false` if not found).
-    /// Skips the index rebuild when neither anchor nor interactivity changed.
     pub fn update(&mut self, id: AnnotationId, f: impl FnOnce(&mut Annotation)) -> bool {
         if let Some(a) = self.annotations.iter_mut().find(|a| a.id == id) {
             let before = (a.anchor, a.is_interactive());
             f(a);
-            // `f` may change fields (e.g. payload) that don't affect the
-            // index but are still externally observable - always bump.
             self.revision += 1;
             if (a.anchor, a.is_interactive()) != before {
                 self.index_dirty.set(true);
@@ -418,7 +342,6 @@ impl AnnotationStore {
         }
     }
 
-    /// Remove the annotation with the given id. Returns `true` if one was removed.
     pub fn remove(&mut self, id: AnnotationId) -> bool {
         let before = self.annotations.len();
         self.annotations.retain(|a| a.id != id);
@@ -426,54 +349,43 @@ impl AnnotationStore {
         self.annotations.len() != before
     }
 
-    /// Look up an annotation by id.
     pub fn get(&self, id: AnnotationId) -> Option<&Annotation> {
         self.annotations.iter().find(|a| a.id == id)
     }
 
-    /// Remove all annotations from the store.
     pub fn clear(&mut self) {
         self.annotations.clear();
         self.invalidate_index();
     }
 
-    /// Remove all annotations created by a given owner.
     pub fn clear_by_owner(&mut self, owner: &AnnotationOwner) {
         self.annotations.retain(|a| &a.owner != owner);
         self.invalidate_index();
     }
 
-    /// Remove all annotations whose kind matches a prefix (e.g. `"lsp."`).
     pub fn clear_by_kind_prefix(&mut self, prefix: &str) {
         self.annotations.retain(|a| !a.kind.matches_prefix(prefix));
         self.invalidate_index();
     }
 
-    /// All annotations, in insertion order.
     pub fn iter(&self) -> impl Iterator<Item = &Annotation> {
         self.annotations.iter()
     }
 
-    /// Annotations whose kind matches a prefix.
     pub fn query_kind<'a>(&'a self, prefix: &'a str) -> impl Iterator<Item = &'a Annotation> {
         self.annotations
             .iter()
             .filter(move |a| a.kind.matches_prefix(prefix))
     }
 
-    /// Annotations covering a byte offset (`Point` at the offset, or `Range`
-    /// containing it). `Line` anchors are not offset-addressable and are excluded.
     pub fn query_at(&self, offset: usize) -> impl Iterator<Item = &Annotation> {
         self.index_query(offset..offset + 1).into_iter()
     }
 
-    /// Annotations overlapping a byte range [start, end).
     pub fn query_range(&self, start: usize, end: usize) -> impl Iterator<Item = &Annotation> {
         self.index_query(start..end.max(start + 1)).into_iter()
     }
 
-    /// Trailing adornments as (line, text, color), one per line: most severe wins
-    /// and ` (+N)` marks the rest. `include_lsp` false hides LSP-owned ones.
     pub fn line_adornments(
         &self,
         colors: Option<&crate::color::theme::SyntaxColors>,
@@ -521,8 +433,6 @@ impl AnnotationStore {
         out
     }
 
-    /// Inline (Overlay/Leading) adornments overlapping `range` as (start, end,
-    /// text, color, is_leading); Overlay end = range end, Leading end = start.
     pub fn inline_adornments(
         &self,
         colors: Option<&crate::color::theme::SyntaxColors>,
@@ -544,7 +454,6 @@ impl AnnotationStore {
             };
             let (start, end) = match a.anchor {
                 Anchor::Point(p) => (p.offset, p.offset),
-                // Leading inserts at the start; Overlay conceals the whole range.
                 Anchor::Range(s, e) if is_leading => (s.offset, s.offset),
                 Anchor::Range(s, e) => (s.offset, e.offset),
                 Anchor::Line(_) => continue,
@@ -556,8 +465,6 @@ impl AnnotationStore {
         out
     }
 
-    /// Byte ranges hidden by Conceal adornments (zero display width). The renderer
-    /// skips these cells except on the cursor's own line
     pub fn concealed_ranges(&self, range: std::ops::Range<usize>) -> Vec<(usize, usize)> {
         self.index_query(range)
             .into_iter()
@@ -594,8 +501,6 @@ impl AnnotationStore {
             .sum()
     }
 
-    /// Point/Range annotations overlapping `byte_range` plus Line annotations
-    /// within `line_range`: the render-viewport candidate set, via index + bucket.
     fn viewport_candidates(
         &self,
         byte_range: std::ops::Range<usize>,
@@ -618,8 +523,6 @@ impl AnnotationStore {
         out
     }
 
-    /// First visible annotation tooltip covering a byte offset, falling back to
-    /// the kind's default description; `include_lsp` false skips LSP ones.
     pub fn tooltip_at<'a>(
         &'a self,
         offset: usize,
@@ -634,8 +537,6 @@ impl AnnotationStore {
             })
     }
 
-    /// The most severe (LSP severity, then store order) visible annotation
-    /// tooltip on `line`; range/point anchors map to a line via `line_of`.
     pub fn tooltip_at_line<'a>(
         &'a self,
         line: usize,
@@ -660,21 +561,16 @@ impl AnnotationStore {
             .map(|(_, tip)| tip)
     }
 
-    /// The interactive annotation whose span covers `offset`, if any.
     pub fn interactive_at(&self, offset: usize) -> Option<&Annotation> {
         self.query_at(offset).find(|a| a.is_interactive())
     }
 
-    /// The interactive annotation anchored at `line`, if any (for line-anchored
-    /// interface buffers like the file explorer).
     pub fn interactive_at_line(&self, line: usize) -> Option<&Annotation> {
         self.annotations
             .iter()
             .find(|a| a.is_interactive() && a.anchor == Anchor::Line(line))
     }
 
-    /// Sorted, de-duplicated lines carrying a visible trailing adornment: the
-    /// lines that need an EOL row when soft-wrapped text exactly fills them.
     pub fn trailing_adornment_lines(
         &self,
         include_lsp: bool,
@@ -701,8 +597,6 @@ impl AnnotationStore {
         lines
     }
 
-    /// Sorted, de-duplicated lines carrying an interactive annotation (offset
-    /// anchors mapped via `line_of`). Drives interface-mode snapping (sec 9.4).
     pub fn interactive_lines(&self, line_of: impl Fn(usize) -> usize) -> Vec<usize> {
         let mut lines: Vec<usize> = self
             .annotations
@@ -719,23 +613,17 @@ impl AnnotationStore {
         lines
     }
 
-    /// The next interactive annotation starting strictly after `offset`, found by
-    /// binary search over the sorted interactive-starts index
     pub fn next_interactive(&self, offset: usize) -> Option<&Annotation> {
         self.ensure_index();
         let starts = self.interactive_starts.borrow();
-        // First entry with start > offset (entries are sorted by (start, id)).
         let i = starts.partition_point(|(s, _)| *s <= offset);
         let id = starts.get(i).map(|(_, id)| *id)?;
         self.by_id.borrow().get(&id).map(|&i| &self.annotations[i])
     }
 
-    /// The previous interactive annotation starting strictly before `offset`,
-    /// found by binary search over the sorted interactive-starts index.
     pub fn prev_interactive(&self, offset: usize) -> Option<&Annotation> {
         self.ensure_index();
         let starts = self.interactive_starts.borrow();
-        // Last entry with start < offset.
         let i = starts.partition_point(|(s, _)| *s < offset);
         let id = i
             .checked_sub(1)
@@ -744,15 +632,12 @@ impl AnnotationStore {
         self.by_id.borrow().get(&id).map(|&i| &self.annotations[i])
     }
 
-    /// Flatten visible range/point presentations into sorted, non-overlapping
-    /// style spans (fg/bg/attrs); higher precedence wins each overlapping cell.
     pub fn presentation_spans(
         &self,
         colors: Option<&crate::color::theme::SyntaxColors>,
         defaults: Option<&registry::KindRegistry>,
         range: std::ops::Range<usize>,
     ) -> Vec<(std::ops::Range<usize>, crate::layer::CellStyle)> {
-        // (start, end, style, priority, owner_rank, id) per styled annotation.
         type Cand = (usize, usize, crate::layer::CellStyle, i32, u8, AnnotationId);
         let mut cands: Vec<Cand> = Vec::new();
         for a in self.index_query(range) {
@@ -787,8 +672,6 @@ impl AnnotationStore {
             return Vec::new();
         }
 
-        // Elementary intervals between all boundaries; pick the best candidate
-        // covering each, then merge adjacent equal-style segments.
         let mut bounds: Vec<usize> = Vec::with_capacity(cands.len() * 2);
         for c in &cands {
             bounds.push(c.0);
@@ -803,7 +686,6 @@ impl AnnotationStore {
             let best = cands
                 .iter()
                 .filter(|c| c.0 <= seg_s && seg_e <= c.1)
-                // higher priority, then lower owner rank, then higher id.
                 .max_by(|a, b| a.3.cmp(&b.3).then(b.4.cmp(&a.4)).then(a.5.cmp(&b.5)));
             if let Some(best) = best {
                 if let Some(last) = spans.last_mut() {
@@ -818,9 +700,6 @@ impl AnnotationStore {
         spans
     }
 
-    // -- Thin typed wrappers (preserve existing call-site behavior) --------
-
-    /// Remove all LSP diagnostic annotations (refresh before new diagnostics arrive).
     pub fn clear_lsp_diagnostics(&mut self) {
         self.annotations.retain(|a| {
             !(a.kind.matches_prefix(well_known::LSP_DIAGNOSTIC) && a.owner == AnnotationOwner::Lsp)
@@ -828,7 +707,6 @@ impl AnnotationStore {
         self.invalidate_index();
     }
 
-    /// Create an LSP diagnostic annotation anchored at `line` with a tooltip message.
     pub fn create_lsp_diagnostic(&mut self, line: usize, tooltip: String) -> AnnotationId {
         let mut payload = Value::map();
         payload.set("tooltip", Value::Str(tooltip));
@@ -844,8 +722,6 @@ impl AnnotationStore {
         )
     }
 
-    /// First non-empty line of `message` with control chars/tabs turned into
-    /// spaces and whitespace runs collapsed, so it fits one trailing text row.
     fn adornment_summary(message: &str) -> String {
         let line = message.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
         let mut out = String::with_capacity(line.len());
@@ -864,8 +740,6 @@ impl AnnotationStore {
         out
     }
 
-    /// Build (but do not insert) a diagnostic: underlined over `bytes` when the
-    /// server gave a non-empty span, else anchored to the whole `line`.
     fn build_diagnostic(
         line: usize,
         bytes: Option<std::ops::Range<usize>>,
@@ -885,8 +759,6 @@ impl AnnotationStore {
         payload.set("severity", Value::Int(severity));
         payload.set("message", Value::Str(message.to_string()));
         payload.set("tooltip", Value::Str(format!("[{}] {}", sev_str, message)));
-        // Underline only: the diagnosed text keeps its syntax color, the
-        // severity color goes on the trailing message.
         let underline = presentation::StyleOverride {
             underline: true,
             ..Default::default()
@@ -913,13 +785,10 @@ impl AnnotationStore {
         .with_read_only(true)
     }
 
-    /// Create a line-anchored LSP diagnostic (severity face + trailing EOL message).
     pub fn create_diagnostic(&mut self, line: usize, severity: i64, message: &str) -> AnnotationId {
         self.add(Self::build_diagnostic(line, None, severity, message))
     }
 
-    /// Replace the full set of LSP diagnostics in one pass; each item is
-    /// `(line, diagnosed byte span, severity, message)`.
     pub fn replace_lsp_diagnostics<'a>(
         &mut self,
         diags: impl IntoIterator<Item = LspDiagnosticSpec<'a>>,
@@ -936,14 +805,45 @@ impl AnnotationStore {
         self.invalidate_index();
     }
 
-    /// Return all LSP diagnostic annotations.
     pub fn lsp_diagnostics(&self) -> impl Iterator<Item = &Annotation> {
         self.annotations.iter().filter(|a| {
             a.kind.matches_prefix(well_known::LSP_DIAGNOSTIC) && a.owner == AnnotationOwner::Lsp
         })
     }
 
-    /// Create an `fs.entry` annotation anchored at `line` with a stable entry ID.
+    const PLUGIN_HIGHLIGHT_PRIORITY: i32 = -1;
+
+    pub fn add_plugin_highlight(
+        &mut self,
+        slot: u32,
+        start: usize,
+        end: usize,
+        bg: crate::color::Color,
+    ) -> AnnotationId {
+        let style = StyleOverride {
+            fg: Some(crate::color::contrasting_color(bg)),
+            bg: Some(bg),
+            ..Default::default()
+        };
+        self.add(
+            Annotation::new(
+                Kind::new(well_known::PLUGIN_HIGHLIGHT),
+                Anchor::range(start, end),
+                AnnotationOwner::Plugin(slot.to_string()),
+            )
+            .with_presentation(
+                Presentation::with_style(style).with_priority(Self::PLUGIN_HIGHLIGHT_PRIORITY),
+            ),
+        )
+    }
+
+    pub fn clear_plugin_highlights(&mut self, slot: Option<u32>) {
+        match slot {
+            Some(slot) => self.clear_by_owner(&AnnotationOwner::Plugin(slot.to_string())),
+            None => self.clear_by_kind_prefix(well_known::PLUGIN_HIGHLIGHT),
+        }
+    }
+
     pub fn create_directory_entry(&mut self, line: usize, entry_id: u16) -> AnnotationId {
         let mut payload = Value::map();
         payload.set("entry_id", Value::Int(entry_id as i64));
@@ -960,8 +860,6 @@ impl AnnotationStore {
         )
     }
 
-    /// Create an interactive `fs.entry` annotation carrying its display name and
-    /// directory flag in the payload, plus an `activate` action
     pub fn create_fs_entry(
         &mut self,
         line: usize,
@@ -987,8 +885,6 @@ impl AnnotationStore {
         )
     }
 
-    /// Create an interactive `buffer.entry` annotation anchored at `line`.
-    /// Used only to mark the line as actionable; the caller resolves selection itself.
     pub fn create_buffer_entry(&mut self, line: usize, doc_id: u64) -> AnnotationId {
         let mut payload = Value::map();
         payload.set("doc_id", Value::Int(doc_id as i64));
@@ -1006,8 +902,6 @@ impl AnnotationStore {
         )
     }
 
-    /// The `(name, is_dir)` for the `fs.entry` at `line`, if its payload carries
-    /// them (entries restored from undo snapshots may not).
     pub fn directory_entry_info_at_line(&self, line: usize) -> Option<(String, bool)> {
         let a = self
             .annotations
@@ -1018,8 +912,6 @@ impl AnnotationStore {
         Some((name.to_string(), is_dir))
     }
 
-    /// Return the directory entry ID for the `fs.entry` annotation anchored at
-    /// the given line, or `None` if none exists there.
     pub fn directory_entry_id_at_line(&self, line: usize) -> Option<u16> {
         self.annotations
             .iter()
@@ -1027,7 +919,6 @@ impl AnnotationStore {
             .and_then(|a| payload::fs::entry_id(&a.payload))
     }
 
-    /// Return all `(line, entry_id)` pairs for `fs.entry` annotations, sorted by line.
     pub fn directory_entries_by_line(&self) -> Vec<(usize, u16)> {
         let mut entries: Vec<(usize, u16)> = self
             .annotations
@@ -1045,7 +936,6 @@ impl AnnotationStore {
         entries
     }
 
-    /// Create a `git.status_head` annotation anchored at the status buffer's `HEAD <sha> <subject>` summary line. No payload needed; its presence alone is the signal.
     pub fn create_git_status_head(&mut self, line: usize) -> AnnotationId {
         self.add(
             Annotation::new(
@@ -1060,14 +950,12 @@ impl AnnotationStore {
         )
     }
 
-    /// Whether `line` is the status buffer's `git.status_head` summary line.
     pub fn is_git_status_head_at_line(&self, line: usize) -> bool {
         self.annotations.iter().any(|a| {
             a.kind.as_str() == well_known::GIT_STATUS_HEAD && a.anchor == Anchor::Line(line)
         })
     }
 
-    /// Create a `git.status_entry` annotation anchored at `line`, tagging it with the path it names, the status-buffer section it belongs to (`"staged"`/`"unstaged"`/`"untracked"`), and its pre-rename path if any. `Stickiness::Delete` makes deleting the line itself the "discard" signal.
     pub fn create_git_status_entry(
         &mut self,
         line: usize,
@@ -1095,7 +983,6 @@ impl AnnotationStore {
         )
     }
 
-    /// The `(path, section, orig_path)` for the `git.status_entry` at `line`.
     pub fn git_status_entry_at_line(
         &self,
         line: usize,
@@ -1109,7 +996,6 @@ impl AnnotationStore {
         Some((path, section, orig_path))
     }
 
-    /// Create a `git.hunk` annotation anchored at a hunk header line, identifying which expanded diff (`path`, `staged_side`) and which hunk within it (`hunk_index` into that snapshot's `Vec<Hunk>`) this block came from. `Stickiness::Delete` makes deleting the header line the "discard this hunk" signal; the header.
     pub fn create_git_hunk(
         &mut self,
         line: usize,
@@ -1134,7 +1020,6 @@ impl AnnotationStore {
         )
     }
 
-    /// The `(path, staged_side, hunk_index)` for the `git.hunk` at `line`.
     pub fn git_hunk_at_line(&self, line: usize) -> Option<(String, bool, usize)> {
         let a = self
             .annotations
@@ -1146,7 +1031,6 @@ impl AnnotationStore {
         Some((path, staged_side, hunk_index))
     }
 
-    /// Creates a hunk-line annotation that identifies a changed line within an expanded hunk.
     pub fn create_git_hunk_line(
         &mut self,
         line: usize,
@@ -1173,8 +1057,6 @@ impl AnnotationStore {
         )
     }
 
-    /// The `(path, staged_side, hunk_index, line_index)` for the
-    /// `git.hunk_line` at `line`.
     pub fn git_hunk_line_at_line(&self, line: usize) -> Option<(String, bool, usize, usize)> {
         let a = self.annotations.iter().find(|a| {
             a.kind.as_str() == well_known::GIT_HUNK_LINE && a.anchor == Anchor::Line(line)
@@ -1186,8 +1068,6 @@ impl AnnotationStore {
         Some((path, staged_side, hunk_index, line_index))
     }
 
-    /// Return every live `git.hunk` header's `(line, path, staged_side, hunk_index)`,
-    /// sorted by line;  used by `]c`/`[c` navigation in a status buffer.
     pub fn git_hunks_by_line(&self) -> Vec<(usize, String, bool, usize)> {
         let mut hunks: Vec<(usize, String, bool, usize)> = self
             .annotations
@@ -1207,8 +1087,6 @@ impl AnnotationStore {
         hunks
     }
 
-    /// Create a `git.blame` annotation anchored at `line`, tagging it with
-    /// the commit sha that line is attributed to (for walk-back).
     pub fn create_git_blame_line(
         &mut self,
         line: usize,
@@ -1232,7 +1110,6 @@ impl AnnotationStore {
         )
     }
 
-    /// The commit sha for the `git.blame` line at `line`, if any.
     pub fn git_blame_sha_at_line(&self, line: usize) -> Option<String> {
         let a = self
             .annotations
@@ -1269,8 +1146,6 @@ impl AnnotationStore {
         })
     }
 
-    /// Create a `git.log_commit` annotation anchored at `line`, tagging it
-    /// with the commit sha that log entry summarizes.
     pub fn create_git_log_commit(&mut self, line: usize, sha: &str) -> AnnotationId {
         let mut payload = Value::map();
         payload.set("sha", Value::Str(sha.to_string()));
@@ -1288,7 +1163,6 @@ impl AnnotationStore {
         )
     }
 
-    /// The commit sha for the `git.log_commit` line at `line`, if any.
     pub fn git_log_commit_sha_at_line(&self, line: usize) -> Option<String> {
         let a = self.annotations.iter().find(|a| {
             a.kind.as_str() == well_known::GIT_LOG_COMMIT && a.anchor == Anchor::Line(line)
@@ -1296,7 +1170,6 @@ impl AnnotationStore {
         payload::git::sha(&a.payload).map(|s| s.to_string())
     }
 
-    /// Create a `git.rebase_step` annotation anchored at a commit's head line, tagging it with that commit's sha. `Action::activate()` makes it interactive so interface-mode `j`/`k` snapping only stops on head lines, skipping inline body-preview lines entirely.
     pub fn create_git_rebase_step(&mut self, line: usize, sha: &str) -> AnnotationId {
         let mut payload = Value::map();
         payload.set("sha", Value::Str(sha.to_string()));
@@ -1314,7 +1187,6 @@ impl AnnotationStore {
         )
     }
 
-    /// The commit sha for the `git.rebase_step` head line at `line`, if any.
     pub fn git_rebase_step_at_line(&self, line: usize) -> Option<String> {
         let a = self.annotations.iter().find(|a| {
             a.kind.as_str() == well_known::GIT_REBASE_STEP && a.anchor == Anchor::Line(line)
@@ -1322,7 +1194,6 @@ impl AnnotationStore {
         payload::git::sha(&a.payload).map(|s| s.to_string())
     }
 
-    /// Every live `git.rebase_step` head line's `(line, sha)`, sorted by line; the plan's on-screen order, for reorder/execution actions that need to know where the cursor's commit currently sits.
     pub fn git_rebase_steps_by_line(&self) -> Vec<(usize, String)> {
         let mut steps: Vec<(usize, String)> = self
             .annotations
@@ -1339,7 +1210,6 @@ impl AnnotationStore {
         steps
     }
 
-    /// Replace every `git.gutter` annotation with fresh signs. Always clear-then-rebuild (never incremental): each `GitGutterDiffJob` result is a full re-diff, so stale per-line entries from a previous diff would otherwise linger past their actual line's lifetime.
     pub fn replace_git_gutter_signs(
         &mut self,
         signs: &[(usize, crate::git::diff::GutterSignKind)],
@@ -1369,8 +1239,6 @@ impl AnnotationStore {
         }
     }
 
-    /// Every live `git.gutter` sign's `(line, kind)`, sorted by line;  for
-    /// the render pipeline to color the line-number gutter.
     pub fn git_gutter_signs(&self) -> Vec<(usize, crate::git::diff::GutterSignKind)> {
         let mut signs: Vec<(usize, crate::git::diff::GutterSignKind)> = self
             .annotations
@@ -1393,13 +1261,10 @@ impl AnnotationStore {
         signs
     }
 
-    /// Whether the store holds no annotations.
     pub fn is_empty(&self) -> bool {
         self.annotations.is_empty()
     }
 
-    /// Clone the annotation state for an undo/redo snapshot. LSP-owned
-    /// annotations are excluded: the server, not history, owns their lifetime.
     pub fn snapshot(&self) -> Vec<Annotation> {
         self.annotations
             .iter()
@@ -1408,8 +1273,6 @@ impl AnnotationStore {
             .collect()
     }
 
-    /// Replace all non-LSP annotations with a captured snapshot, carrying the
-    /// current LSP set over unchanged. `next_id` only grows, so ids never collide.
     pub fn restore(&mut self, mut snapshot: Vec<Annotation>) {
         snapshot.retain(|a| a.owner != AnnotationOwner::Lsp);
         snapshot.extend(
@@ -1421,8 +1284,6 @@ impl AnnotationStore {
         self.invalidate_index();
     }
 
-    /// Update Line anchors after lines `first_line..first_line+count` are deleted
-    /// and their content collapsed into `merge_line` (Persist anchors move there).
     pub fn on_lines_deleted(&mut self, first_line: usize, count: usize, merge_line: usize) {
         if count == 0 {
             return;
@@ -1481,7 +1342,6 @@ impl AnnotationStore {
         }
     }
 
-    /// Update Line anchors after a new line is inserted at `at_line`.
     pub fn on_line_inserted(&mut self, at_line: usize) {
         self.ensure_aux();
 
@@ -1517,8 +1377,6 @@ impl AnnotationStore {
         }
     }
 
-    /// Exact inverse of `on_line_inserted(at_line)`: shift Line anchors at or
-    /// after `at_line + 1` back down by one, removing nothing.
     pub fn undo_line_inserted(&mut self, at_line: usize) {
         self.ensure_aux();
 
@@ -1554,8 +1412,6 @@ impl AnnotationStore {
         }
     }
 
-    /// Maintain Point/Range markers for an edit replacing [start, old_end) with
-    /// new_end-start bytes; applies range stickiness. Line anchors are untouched.
     pub fn on_edit(&mut self, start: usize, old_end: usize, new_end: usize) {
         if start == old_end && start == new_end {
             return;

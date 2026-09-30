@@ -124,7 +124,6 @@ fn render_loop(c: &mut Criterion) {
                     terminal_cursor: None,
                     custom_highlights: None,
                     git_gutter_colors: None,
-                    plugin_highlights: None,
                     annotation_styles: None,
                     annotation_adornments: None,
                     annotation_inline: None,
