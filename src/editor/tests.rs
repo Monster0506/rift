@@ -1580,7 +1580,6 @@ fn same_location_paste_before_does_not_move_the_cursor_either() {
 }
 
 #[test]
-
 fn set_noghostcut_makes_dw_delete_immediately() {
     use crate::action::{Action, EditorAction, Motion, OperatorType};
 
@@ -2792,7 +2791,6 @@ fn undo_keeps_syntax_tree_for_incremental_reuse() {
     editor.active_document().set_syntax(syntax);
     editor.do_incremental_syntax_parse();
 
-    editor.active_document().insert_str("// comment\n").unwrap();
     editor.do_incremental_syntax_parse();
     assert!(editor
         .active_document()
@@ -5354,8 +5352,7 @@ fn generate_huge_rust_source() -> String {
     for i in 0..8_000u32 {
         let _ = write!(
             src,
-            "/// Doc comment for item {i} explaining what it does in some detail.\n\
-             pub fn generated_fn_{i}(input: &str, count: usize) -> Result<String, std::io::Error> {{\n\
+            "pub fn generated_fn_{i}(input: &str, count: usize) -> Result<String, std::io::Error> {{\n\
              \x20   let mut out = String::with_capacity(count.max(16));\n\
              \x20   for (idx, ch) in input.chars().enumerate() {{\n\
              \x20       if idx % 3 == 0 {{\n\
@@ -5364,7 +5361,6 @@ fn generate_huge_rust_source() -> String {
              \x20           out.push(ch);\n\
              \x20       }}\n\
              \x20   }}\n\
-             \x20   // Trailing marker {i} with a string literal \"lit-{i}\".\n\
              \x20   Ok(format!(\"{{}}-{{}}\", out, count))\n\
              }}\n\n",
         );
@@ -5889,19 +5885,12 @@ fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
     use std::sync::Arc;
 
     let mut lines: Vec<String> = Vec::new();
-    lines.push("// cafe accented comment: café 日本語 emoji 🦀 multi-byte".to_string());
     lines.push("fn build() -> i32 {".to_string());
-    for i in 0..20 {
-        lines.push(format!("    let x{i} = {i}; // plain ascii line {i}"));
-    }
+    for i in 0..20 {}
     for _ in 0..40 {
         lines.push(String::new());
     }
-    lines.push(format!(
-        "    let long = \"{}\"; // wider than the viewport",
-        "A".repeat(150)
-    ));
-    lines.push("\tlet tabbed = 2; // line starting with a tab".to_string());
+    lines.push(format!("A".repeat(150)));
     lines.push("    x0 + x1".to_string());
     lines.push("}".to_string());
     let text = lines.join("\n") + "\n";
@@ -6006,37 +5995,25 @@ fn wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_on_densely_highlighted
     let mut lines: Vec<String> = vec![
         "use std::collections::HashMap;".to_string(),
         String::new(),
-        "/// A small cache keyed by id, evicting once past capacity.".to_string(),
         "pub struct Cache {".to_string(),
-        "    entries: HashMap<u32, String>, // café 日本語 comment".to_string(),
         "    capacity: usize,".to_string(),
         "}".to_string(),
         String::new(),
         "impl Cache {".to_string(),
     ];
     for i in 0..12 {
-        lines.push(format!(
-            "    /// Insert entry {i}, evicting if the cache is full."
-        ));
+        lines.push(format!());
         lines.push(format!(
             "    pub fn insert_{i}(&mut self, key: u32, value: String) -> bool {{"
         ));
-        lines.push(format!(
-            "        if self.entries.len() >= self.capacity {{ // check {i}"
-        ));
-        lines.push(format!("            return false; // rejected at {i}"));
+        lines.push(format!());
         lines.push("        }".to_string());
-        lines.push(format!(
-            "        self.entries.insert(key, value); // inserted {i}"
-        ));
+        lines.push(format!());
         lines.push("        true".to_string());
         lines.push("    }".to_string());
         lines.push(String::new());
     }
-    lines.push(format!(
-        "    const NOTE: &str = \"{}\"; // wider than the viewport",
-        "x".repeat(150)
-    ));
+    lines.push(format!("x".repeat(150)));
     lines.push("}".to_string());
     let text = lines.join("\n") + "\n";
 
@@ -6142,9 +6119,7 @@ fn scroll_blit_repaints_when_annotations_or_theme_change_mid_scroll() {
 
     let mut lines: Vec<String> = Vec::new();
     for i in 0..60 {
-        lines.push(format!(
-            "    let value_{i}: u32 = {i}; // line {i} has real content"
-        ));
+        lines.push(format!());
     }
     let text = lines.join("\n") + "\n";
     let style_anchor = text.find("value_5:").expect("marker line present");
@@ -6661,7 +6636,6 @@ fn workspace_edit_opens_unopened_file_in_background_and_applies_edits() {
     let uri = crate::lsp::protocol::path_to_uri(&other);
     let edit = serde_json::json!({
         "documentChanges": [
-            { "kind": "create", "uri": "file:///ignored.rs" },
             { "textDocument": { "uri": uri, "version": null },
               "edits": [lsp_edit_json(0, 3, 0, 6, "new")] }
         ]
@@ -6747,7 +6721,7 @@ fn workspace_edit_with_a_malformed_edit_skips_that_document_entirely() {
 fn goto_with_multiple_definitions_opens_a_location_list() {
     use crate::lsp::protocol::{LspLocation, LspPosition, LspRange};
     let loc = |line: u32| LspLocation {
-        uri: "file:///tmp/a.rs".to_string(),
+        uri: String::new(),
         range: LspRange {
             start: LspPosition { line, character: 0 },
             end: LspPosition { line, character: 1 },

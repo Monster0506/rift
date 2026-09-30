@@ -1,7 +1,3 @@
-
-
-
-
 use super::{Document, GhostCut};
 use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Presentation, StyleOverride};
 use crate::buffer::api::BufferView;
@@ -11,7 +7,6 @@ use crate::color::Color;
 const GHOST_PRIORITY: i32 = 8;
 
 impl Document {
-    
     pub fn create_ghosts(&mut self, ranges: &[(usize, usize)]) {
         self.commit_pending_ghost();
 

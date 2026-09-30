@@ -16,7 +16,6 @@ fn calculate_current_column(buf: &TextBuffer, tab_width: usize) -> usize {
     let line_idx = buf.line_index.get_line_at(cursor);
     let line_start = buf.line_index.get_start(line_idx).unwrap_or(0);
 
-    // Iterate chars from line start to cursor
     let mut col = 0;
     for ch in BufferView::chars(buf, line_start..cursor) {
         if ch == crate::character::Character::Tab {
@@ -39,7 +38,6 @@ pub fn compute_motion_range(
 ) -> Option<crate::wrap::MotionRange> {
     use crate::wrap::{MotionRange, OperatorContext};
 
-    // Text objects resolve directly without cursor simulation.
     if let Motion::TextObject(spec) = motion {
         #[cfg(feature = "treesitter")]
         {
@@ -77,6 +75,9 @@ pub fn compute_motion_range(
     );
 
     let anchor = doc.buffer.cursor();
+
+    const MAX_MOTION_REPEAT: usize = 1_000_000;
+    let count = count.min(MAX_MOTION_REPEAT);
 
     for _ in 0..count {
         motion.apply(
@@ -280,7 +281,6 @@ pub fn execute_command(
                 let end = doc.buffer.cursor();
                 let _ = doc.delete_range(start, end);
             } else {
-                // Last line: delete content then preceding newline
                 doc.buffer.move_to_line_end();
                 let end = doc.buffer.cursor();
                 if end > start {
@@ -295,11 +295,8 @@ pub fn execute_command(
         }
         Command::InsertChar(ch) => {
             if ch == '\t' && expand_tabs {
-                // Calculate current column position on the buffer (read-only)
                 let current_col = calculate_current_column(&doc.buffer, tab_width);
-                // Calculate spaces needed to reach next tab stop
                 let spaces_needed = tab_width - (current_col % tab_width);
-                // Insert that many spaces, stop on error
                 for _ in 0..spaces_needed {
                     doc.insert_char(' ')?;
                 }
@@ -317,44 +314,22 @@ pub fn execute_command(
                 doc.commit_transaction();
             }
         }
-        Command::EnterReplaceMode => {
-            // Mode change handled by editor
-        }
+        Command::EnterReplaceMode => {}
         Command::EnterInsertMode
         | Command::EnterInsertModeAfter
         | Command::EnterInsertModeAtLineStart
         | Command::EnterInsertModeAtLineEnd
         | Command::OpenLineBelow
-        | Command::OpenLineAbove => {
-            // Mode change handled by editor
-        }
-        Command::EnterCommandMode => {
-            // Mode change handled by editor
-        }
-        Command::EnterSearchMode => {
-            // Mode change handled by editor
-        }
-        Command::AppendToCommandLine(_) => {
-            // Command line editing handled by editor
-        }
-        Command::DeleteFromCommandLine => {
-            // Command line editing handled by editor
-        }
-        Command::ExecuteCommandLine => {
-            // Command execution handled by editor
-        }
-        Command::ExecuteSearch => {
-            // Search execution handled by editor
-        }
-        Command::NextMatch | Command::PreviousMatch => {
-            // Search navigation handled by editor
-        }
-        Command::Quit => {
-            // Quit handled by editor
-        }
-        Command::BufferNext | Command::BufferPrevious => {
-            // Buffer navigation handled by editor
-        }
+        | Command::OpenLineAbove => {}
+        Command::EnterCommandMode => {}
+        Command::EnterSearchMode => {}
+        Command::AppendToCommandLine(_) => {}
+        Command::DeleteFromCommandLine => {}
+        Command::ExecuteCommandLine => {}
+        Command::ExecuteSearch => {}
+        Command::NextMatch | Command::PreviousMatch => {}
+        Command::Quit => {}
+        Command::BufferNext | Command::BufferPrevious => {}
         Command::Undo => {
             crate::perf_span!("history_undo", crate::perf::PerfFields::default());
             doc.undo();
@@ -363,12 +338,8 @@ pub fn execute_command(
             crate::perf_span!("history_redo", crate::perf::PerfFields::default());
             doc.redo();
         }
-        Command::DotRepeat => {
-            // Handled at editor level
-        }
-        Command::TabComplete | Command::TabCompletePrev => {
-            // Handled at editor level
-        }
+        Command::DotRepeat => {}
+        Command::TabComplete | Command::TabCompletePrev => {}
         Command::Noop => {}
     }
     Ok(())

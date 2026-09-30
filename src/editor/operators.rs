@@ -30,7 +30,10 @@ impl<T: TerminalBackend> Editor<T> {
     ) -> bool {
         if let Some(delim_count) = self.pending_surround_add.take() {
             if op == crate::action::OperatorType::Yank {
-                let count = self.pending_operator_count.max(1) * self.pending_count.max(1);
+                let count = self
+                    .pending_operator_count
+                    .max(1)
+                    .saturating_mul(self.pending_count.max(1));
                 self.pending_count = 0;
                 self.pending_grammar =
                     Some(super::pending_grammar::PendingGrammar::AddSurroundChar {
@@ -42,7 +45,10 @@ impl<T: TerminalBackend> Editor<T> {
                 return true;
             }
         }
-        let count = self.pending_operator_count.max(1) * self.pending_count.max(1);
+        let count = self
+            .pending_operator_count
+            .max(1)
+            .saturating_mul(self.pending_count.max(1));
         self.pending_operator = None;
         self.pending_operator_count = 0;
         self.pending_count = 0;
@@ -157,7 +163,10 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn execute_operator_linewise(&mut self, op: crate::action::OperatorType) -> bool {
         self.pending_operator = None;
         self.pending_surround_add = None;
-        let count = self.pending_operator_count.max(1) * self.pending_count.max(1);
+        let count = self
+            .pending_operator_count
+            .max(1)
+            .saturating_mul(self.pending_count.max(1));
         self.pending_operator_count = 0;
         self.pending_count = 0;
 

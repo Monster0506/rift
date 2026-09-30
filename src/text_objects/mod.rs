@@ -376,8 +376,6 @@ fn resolve_word(
         }
     }
 
-    // Extend forward through (count - 1) more word spans, swallowing the
-    // whitespace gap (if any) between each, matching vim's counted objects.
     for _ in 1..count.max(1) {
         if end + 1 >= len {
             break;
@@ -404,7 +402,6 @@ fn resolve_word(
     match modifier {
         BaseModifier::Inner => Some(charwise_inclusive(start, end)),
         BaseModifier::Around => {
-            // Prefer eating trailing whitespace; fall back to leading.
             let mut aend = end;
             while aend + 1 < len {
                 match buf.char_at(aend + 1) {
@@ -465,8 +462,6 @@ fn find_bracket_open(
         pos -= 1;
     }
 
-    // Not enclosed in a bracket and not on a close bracket: scan forward to the
-    // next open bracket on the current line (default "next on line" behavior).
     if !on_close {
         let len = buf.len();
         let line = buf.line_index.get_line_at(cursor);
@@ -561,7 +556,6 @@ fn find_bracket_open_dir(
             None
         }
         Direction::Last => {
-            // Nearest complete bracket pair entirely before the cursor.
             let mut pos = cursor.checked_sub(1)?;
             loop {
                 if buf.char_at(pos) == Some(close_ch) {
@@ -747,8 +741,6 @@ fn find_quote_pair_dir(
             };
 
             if buf.char_at(cursor) == Some(quote) && !is_quote_escaped(buf, cursor) {
-                // Cursor is on an unescaped quote: parity from line start
-                // says whether it's an opener or closer of its own pair.
                 let quotes_through_cursor = (line_start..=cursor)
                     .filter(|&p| buf.char_at(p) == Some(quote) && !is_quote_escaped(buf, p))
                     .count();
@@ -762,14 +754,10 @@ fn find_quote_pair_dir(
                 };
             }
 
-            // Nearest enclosing pair: the closest quote behind the cursor is
-            // the opener, paired with the next quote after it.
             if let Some(open_pos) = scan_back(cursor) {
                 return scan_fwd(open_pos + 1).map(|close| (open_pos, close));
             }
 
-            // Nothing behind the cursor on this line: fall forward to the
-            // next quoted string instead of no-op'ing, matching vim.
             let open_pos = scan_fwd(cursor)?;
             scan_fwd(open_pos + 1).map(|close| (open_pos, close))
         }
@@ -798,7 +786,6 @@ fn find_quote_pair_dir(
             Some((open_pos, close_pos))
         }
         Direction::Last => {
-            // Nearest complete quote pair entirely before the cursor.
             let mut close_pos = cursor.checked_sub(1)?;
             loop {
                 if buf.char_at(close_pos) == Some(quote)
@@ -938,7 +925,6 @@ fn resolve_paragraph(
     let current_line = buf.line_index.get_line_at(cursor);
     let cur_is_blank = is_blank_line(current_line, buf);
 
-    // Expand to cover all contiguous lines of the same kind.
     let mut start_line = current_line;
     while start_line > 0 && is_blank_line(start_line - 1, buf) == cur_is_blank {
         start_line -= 1;
@@ -949,7 +935,6 @@ fn resolve_paragraph(
         end_line += 1;
     }
 
-    // Extend through (count - 1) more contiguous groups, alternating kind.
     let mut group_is_blank = cur_is_blank;
     for _ in 1..count.max(1) {
         if end_line + 1 >= total_lines {
@@ -965,7 +950,6 @@ fn resolve_paragraph(
     }
 
     let start = buf.line_index.get_start(start_line).unwrap_or(0);
-    // Include the newline of end_line by using start of the following line.
     let end = if end_line + 1 < total_lines {
         buf.line_index
             .get_start(end_line + 1)
@@ -983,8 +967,6 @@ fn resolve_paragraph(
             inclusive: true,
         }),
         BaseModifier::Around => {
-            // For non-blank paragraph: also eat the following blank lines.
-            // For blank run: also eat the preceding non-blank paragraph.
             if !group_is_blank {
                 let mut around_end_line = end_line;
                 while around_end_line + 1 < total_lines && is_blank_line(around_end_line + 1, buf) {
@@ -1005,7 +987,6 @@ fn resolve_paragraph(
                     inclusive: true,
                 })
             } else {
-                // On blank: eat the preceding paragraph.
                 let mut around_start_line = start_line;
                 if start_line > 0 {
                     let prev = start_line - 1;
@@ -1041,8 +1022,6 @@ fn resolve_sentence(
 
     let is_sentence_end = |ch: Character| matches!(ch, Character::Unicode('.' | '!' | '?'));
 
-    // Scan backward for the previous terminator + trailing space. If the
-    // cursor is on a terminator, start one char earlier to find the prior one.
     let on_terminator = matches!(buf.char_at(cursor), Some(ch) if is_sentence_end(ch));
     let mut prev_end_pos: Option<usize> = None;
     let mut newline_boundary: Option<usize> = None;
@@ -1070,8 +1049,6 @@ fn resolve_sentence(
         }
     }
 
-    // Sentence starts right after the found boundary (or buffer start if
-    // none), plus any trailing whitespace.
     let mut start = match (prev_end_pos, newline_boundary) {
         (Some(end_pos), _) => end_pos + 1,
         (None, Some(nl)) => nl + 1,
@@ -1084,8 +1061,6 @@ fn resolve_sentence(
         }
     }
 
-    // Find sentence end: scan forward to next terminator, repeated `count`
-    // times to extend across that many consecutive sentences.
     let mut end = cursor;
     for step in 0..count.max(1) {
         if step > 0 {
@@ -1126,7 +1101,6 @@ fn resolve_sentence(
     match modifier {
         BaseModifier::Inner => Some(charwise_inclusive(start, end.saturating_sub(1).max(start))),
         BaseModifier::Around => {
-            // Include the terminator and trailing whitespace.
             let mut aend = end;
             while aend < len {
                 match buf.char_at(aend) {
@@ -1150,7 +1124,6 @@ fn resolve_line(
     let current_line = buf.line_index.get_line_at(cursor);
     let last_line = (current_line + count.max(1) - 1).min(total_lines.saturating_sub(1));
     let line_start = buf.line_index.get_start(current_line).unwrap_or(0);
-    // get_end points to the '\n' for non-last lines, or total_len for the last.
     let line_end = buf.line_index.get_end(last_line, len).unwrap_or(len);
 
     if line_start >= line_end {
@@ -1158,14 +1131,8 @@ fn resolve_line(
     }
 
     match modifier {
-        BaseModifier::Inner => {
-            // Content without the final line's newline character.
-            Some(charwise_inclusive(line_start, line_end.saturating_sub(1)))
-        }
-        BaseModifier::Around => {
-            // Content including the final line's newline (or its last char if none).
-            Some(charwise_inclusive(line_start, line_end))
-        }
+        BaseModifier::Inner => Some(charwise_inclusive(line_start, line_end.saturating_sub(1))),
+        BaseModifier::Around => Some(charwise_inclusive(line_start, line_end)),
     }
 }
 
@@ -1277,7 +1244,8 @@ pub fn surround_strings(ch: char, count: usize) -> Option<(String, String)> {
         '"' | '\'' | '`' => (ch, ch),
         _ => return None,
     };
-    let count = count.max(1);
+    const MAX_DELIM_REPEAT: usize = 10_000;
+    let count = count.clamp(1, MAX_DELIM_REPEAT);
     if matches!(ch, '(' | '{' | '[' | '<') {
         Some((
             format!("{open} ").repeat(count),

@@ -7,12 +7,11 @@ where
     V: BufferView,
 {
     if pattern.is_empty() {
-        return Some(SearchMatch {
+        return (start_pos <= view.len()).then_some(SearchMatch {
             range: start_pos..start_pos,
         });
     }
 
-    // Smartcase: case-sensitive iff the pattern contains an uppercase char.
     let case_sensitive = pattern.chars().any(char::is_uppercase);
 
     if case_sensitive {
@@ -30,8 +29,6 @@ where
     let pattern_len = pattern_chars.len();
     let first_char = pattern_chars[0];
 
-    // Candidates near a chunk end fall back to check_match_slow (crosses chunk
-    // boundaries); the inline fast path needs remaining_in_chunk >= pattern_len.
     let chunk_iter = view.iter_chunks_at(start_pos);
     let mut current_pos = start_pos;
 
@@ -43,7 +40,6 @@ where
                 let remaining_in_chunk = chunk.len() - idx;
 
                 if remaining_in_chunk >= pattern_len {
-                    // Fast path: the entire pattern fits within the current chunk.
                     let slice = &chunk[idx..idx + pattern_len];
                     let mut match_found = true;
                     for (i, &sc) in slice.iter().skip(1).enumerate() {
@@ -58,8 +54,6 @@ where
                         });
                     }
                 } else {
-                    // Slow path: pattern spans this chunk and the next one(s).
-                    // check_match_slow uses iter_at which crosses chunk boundaries.
                     if check_match_slow(view, match_start, &pattern_chars) {
                         return Some(SearchMatch {
                             range: match_start..match_start + pattern_len,
@@ -81,7 +75,6 @@ where
         return find_literal_ignore_case_ascii(view, pattern, start_pos);
     }
 
-    // Unicode slow path
     let pattern_lower_str = pattern.to_lowercase();
     let pattern_lower: Vec<char> = pattern_lower_str.chars().collect();
     let first_char_lower = pattern_lower[0];
@@ -94,7 +87,6 @@ where
             let ch = c.to_char_lossy();
 
             if ch.to_lowercase().next() == Some(first_char_lower) {
-                // Check rest
                 let match_start = current_pos + idx;
                 if check_match_ignore_case(view, match_start, &pattern_lower) {
                     return Some(SearchMatch {

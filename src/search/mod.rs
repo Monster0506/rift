@@ -17,7 +17,6 @@ pub enum SearchDirection {
 
 #[derive(Debug, Clone)]
 pub struct SearchMatch {
-    /// Range in code-points (absolute buffer offsets)
     pub range: Range<usize>,
 }
 
@@ -56,9 +55,18 @@ pub fn find_all(
                 } else {
                     (pattern_orig, false)
                 };
-            // Unescape backslash sequences (e.g. `\.` -> `.`) so the literal search
-            // compares against the actual characters the user intends to match.
             let pattern = unescape_literal(&pattern_raw);
+
+            if pattern.is_empty() {
+                return Ok((
+                    Vec::new(),
+                    SearchStats {
+                        compilation_time: crate::time::Instant::now() - t0,
+                        index_time: std::time::Duration::from_nanos(0),
+                        search_time: std::time::Duration::from_nanos(0),
+                    },
+                ));
+            }
 
             let t1 = crate::time::Instant::now();
             let mut matches = Vec::new();
@@ -66,11 +74,9 @@ pub fn find_all(
 
             while let Some(m) = find_literal(buffer, &pattern, start_pos) {
                 if check_anchor {
-                    // Check if match is at line start
                     let is_start = if m.range.start == 0 {
                         true
                     } else {
-                        // Check previous char for newline
                         if let Some(c) = buffer.iter_at(m.range.start - 1).next() {
                             c.to_char_lossy() == '\n'
                         } else {
@@ -85,20 +91,22 @@ pub fn find_all(
                 }
 
                 matches.push(m.clone());
-                start_pos = m.range.end;
+                start_pos = if m.range.end > start_pos {
+                    m.range.end
+                } else {
+                    start_pos + 1
+                };
             }
             let t3 = crate::time::Instant::now();
             Ok((
                 matches,
                 SearchStats {
                     compilation_time: t1 - t0,
-                    index_time: std::time::Duration::from_nanos(0), // No indexing for literal
+                    index_time: std::time::Duration::from_nanos(0),
                     search_time: t3 - t1,
                 },
             ))
         }
-        // All non-literal tiers share one O(N) path: materialize once and run the
-        // regex engine over a contiguous `&str`.
         SearchTier::LineScoped | SearchTier::Full | SearchTier::Incremental => {
             find_all_materialized(buffer, query, t0)
         }
@@ -127,8 +135,6 @@ fn find_all_materialized(
     }
     let t2 = crate::time::Instant::now();
 
-    // Engine byte offsets -> absolute char offsets; matches are ascending and
-    // non-overlapping, so one forward cursor keeps the conversion O(N).
     let mut matches = Vec::new();
     let mut base_byte = 0usize;
     let mut base_char = 0usize;
@@ -162,8 +168,6 @@ enum SearchTier {
 
 fn classify_query(query: &str) -> SearchTier {
     let pattern = extract_pattern(query);
-    // Check anchored literal
-    // Allow ^literal (len > 1 to avoid just ^)
     if pattern.starts_with('^') && pattern.len() > 1 && is_literal(&pattern[1..]) {
         return SearchTier::Literal;
     }
@@ -172,7 +176,6 @@ fn classify_query(query: &str) -> SearchTier {
     } else if is_line_scoped(&pattern) {
         SearchTier::LineScoped
     } else {
-        // Check for capability/complexity
         if check_complexity(&pattern) {
             SearchTier::Incremental
         } else {
@@ -184,14 +187,10 @@ fn classify_query(query: &str) -> SearchTier {
 use monster_regex::{AstNode, CharClass, Parser};
 
 fn check_complexity(pattern: &str) -> bool {
-    let flags = monster_regex::Flags::default(); // we effectively only care about structure
-    let mut parser = Parser::new(pattern, flags);
+    let mut parser = Parser::new(pattern, monster_regex::Flags::default());
     if let Ok(ast) = parser.parse() {
-        // If parsing fails, we fallback to Full/Backup anyway or it will err later.
-        // Check AST for specific features.
         ast.iter().any(is_node_complex)
     } else {
-        // Failed to parse as AST. Treat as simple/literal for now; compile_regex will handle errors.
         false
     }
 }
@@ -199,20 +198,16 @@ fn check_complexity(pattern: &str) -> bool {
 fn is_node_complex(node: &AstNode) -> bool {
     match node {
         AstNode::ZeroOrMore { node, .. } | AstNode::OneOrMore { node, .. } => {
-            // Unbounded repetition. Check if inner is broad (like Dot or large class)
             is_broad_match(node) || is_node_complex(node)
         }
         AstNode::Range {
             max: None, node, ..
         } => is_broad_match(node) || is_node_complex(node),
-        // Recursion for other containers
         AstNode::Group { nodes, .. } => nodes.iter().any(is_node_complex),
         AstNode::Alternation(nodes_vec) => {
-            // nodes_vec is Vec<Vec<AstNode>>
             nodes_vec.iter().any(|alt| alt.iter().any(is_node_complex))
         }
         AstNode::LookAhead { nodes, .. } | AstNode::LookBehind { nodes, .. } => {
-            // Lookarounds imply complexity.
             nodes.iter().any(is_node_complex)
         }
         _ => false,
@@ -220,11 +215,7 @@ fn is_node_complex(node: &AstNode) -> bool {
 }
 
 fn is_broad_match(node: &AstNode) -> bool {
-    match node {
-        AstNode::CharClass(CharClass::Dot) => true,
-        AstNode::CharClass(CharClass::Set { negated: true, .. }) => true, // [^a] matches almost everything
-        _ => false,
-    }
+    matches!(node, AstNode::CharClass(CharClass::Dot))
 }
 
 fn extract_pattern(query: &str) -> String {
@@ -239,25 +230,20 @@ fn extract_pattern(query: &str) -> String {
 /// Returns true if `pattern` is a plain literal with no unescaped regex metacharacters.
 /// Backslash-escaped metacharacters (`\.`, `\[`, `\\`) count as literal; regex constructs don't.
 fn is_literal(pattern: &str) -> bool {
-    // Metacharacters that, when unescaped, make a pattern non-literal.
     const UNESCAPED_SPECIALS: &str = ".^$*+?()[]{}|";
 
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\\' {
             match chars.next() {
-                // Assertions / class shorthands -> not literal.
                 Some('b') | Some('B') | Some('d') | Some('D') | Some('w') | Some('W')
                 | Some('s') | Some('S') | Some('A') | Some('Z') | Some('z') | Some('G') => {
                     return false;
                 }
-                // Control-character escapes -> let the regex engine handle these.
                 Some('n') | Some('t') | Some('r') => {
                     return false;
                 }
-                // \X (incl. \. \[ \\): the pair is a literal char; keep scanning.
                 Some(_) => {}
-                // Trailing backslash: invalid, treat as non-literal.
                 None => return false,
             }
         } else if UNESCAPED_SPECIALS.contains(c) {
@@ -279,10 +265,8 @@ fn unescape_literal(pattern: &str) -> String {
     while let Some(c) = chars.next() {
         if c == '\\' {
             if let Some(next) = chars.next() {
-                // Push the escaped character literally (e.g. \. -> .)
                 out.push(next);
             }
-            // Trailing backslash: is_literal already rejects this, but be safe.
         } else {
             out.push(c);
         }
@@ -332,12 +316,10 @@ pub fn find_next(
             ..Default::default()
         }
     );
-    // Fast path: plain literals skip the engine entirely (chunk scan).
     if let SearchTier::Literal = classify_query(query) {
         return find_next_literal(buffer, start_pos, query, direction);
     }
 
-    // Rejection gate: if a mandatory literal is absent, the pattern can't match.
     if let Some(lit) = required_literal(query) {
         if find_literal(buffer, &lit, 0).is_none() {
             return Ok((None, SearchStats::default()));
@@ -348,8 +330,6 @@ pub fn find_next(
     let (re, _) = compile_regex(query)?;
     let t1 = crate::time::Instant::now();
 
-    // Run over a contiguous `&str`, far faster than the streaming `BufferHaystack`
-    // (O(log N) per-char tree descents). Lossy chars keep offsets identical.
     let mut text = String::with_capacity(buffer.len());
     let mut start_byte = None;
     for (i, c) in buffer.iter_at(0).enumerate() {
@@ -363,7 +343,6 @@ pub fn find_next(
 
     let result = match direction {
         SearchDirection::Forward => {
-            // First match at/after the cursor; otherwise wrap to the first match overall.
             let mut first_overall: Option<(usize, usize)> = None;
             let mut after: Option<(usize, usize)> = None;
             for m in re.find_all(&text) {
@@ -380,7 +359,6 @@ pub fn find_next(
                 .map(|m| byte_range_to_char_match(&text, m))
         }
         SearchDirection::Backward => {
-            // Last match before the cursor; otherwise wrap to the last match overall.
             let mut last_before: Option<(usize, usize)> = None;
             let mut last_overall: Option<(usize, usize)> = None;
             for m in re.find_all(&text) {
@@ -470,19 +448,15 @@ fn find_next_literal(
     let t1 = crate::time::Instant::now();
 
     let result = match direction {
-        SearchDirection::Forward => {
-            // Search forward from the cursor; wrap to the start if nothing found.
-            next_literal_match(buffer, &pattern, check_anchor, start_pos).or_else(|| {
+        SearchDirection::Forward => next_literal_match(buffer, &pattern, check_anchor, start_pos)
+            .or_else(|| {
                 if start_pos > 0 {
                     next_literal_match(buffer, &pattern, check_anchor, 0)
                 } else {
                     None
                 }
-            })
-        }
+            }),
         SearchDirection::Backward => {
-            // Walk all matches, tracking the last one before the cursor (and the
-            // last one overall, for wrap-around behavior matching the regex path).
             let mut last_before = None;
             let mut last_overall = None;
             let mut scan = 0;
@@ -551,7 +525,6 @@ impl RiftRegex {
         <BacktrackingRegexEngine as monster_regex::engine::RegexEngine>::Regex:
             monster_regex::engine::CompiledRegexHaystack,
     {
-        // monster_regex find_all_from returns FindMatchesIterator which implements Iterator.
         match self {
             RiftRegex::Linear(re) => Box::new(re.as_ref().find_all_from(haystack)),
             RiftRegex::Backtracking(re) => Box::new(re.as_ref().find_all_from(haystack)),
@@ -589,7 +562,6 @@ impl RiftRegex {
     }
 
     pub fn find_at(&self, text: &str, start: usize) -> Option<monster_regex::Match> {
-        // Use standard slicing for find_at, consistent with backtracking implementation
         if start > text.len() {
             return None;
         }
@@ -638,9 +610,7 @@ impl<'a, B: BufferView + ?Sized> Iterator for IncrementalSearch<'a, B> {
     fn next(&mut self) -> Option<Self::Item> {
         let m = self.regex.find_from_at(self.haystack, self.pos)?;
 
-        // Update position for next iteration
         if m.end == m.start {
-            // Empty match: must advance by 1 to avoid infinite loop
             self.pos = m.end + 1;
         } else {
             self.pos = m.end;
@@ -662,8 +632,6 @@ pub fn find_iter<'a, 'c, B: BufferView + ?Sized>(
 
 /// Compile query into Regex
 pub fn compile_regex(query: &str) -> Result<(RiftRegex, String), RiftError> {
-    // Rift format (`pattern/flags`) only applies when the query is delimiter-led,
-    // matching `extract_pattern`'s own definition.
     let is_rift_format = query.starts_with('/');
 
     let (pattern, mut flags) = if is_rift_format {
@@ -681,7 +649,6 @@ pub fn compile_regex(query: &str) -> Result<(RiftRegex, String), RiftError> {
 
     flags.multiline = true;
 
-    // Anchors go to the backtracking engine; otherwise prefer the linear engine.
     if pattern.contains('^') || pattern.contains('$') {
         let re = Regex::new(&pattern, flags).map_err(|e| {
             RiftError::new(
@@ -696,7 +663,6 @@ pub fn compile_regex(query: &str) -> Result<(RiftRegex, String), RiftError> {
     match Regex::new_linear(&pattern, flags) {
         Ok(re) => Ok((RiftRegex::Linear(Arc::new(re)), pattern)),
         Err(_) => {
-            // 2. Fallback to Backtracking Engine (supports lookarounds, backrefs, etc.)
             let re = Regex::new(&pattern, flags).map_err(|e| {
                 RiftError::new(
                     ErrorType::Internal,

@@ -98,7 +98,6 @@ fn plugin_dirs() -> Vec<std::path::PathBuf> {
     dirs
 }
 
-
 fn resolve_wrap_params(
     doc: &Document,
     content_width: usize,

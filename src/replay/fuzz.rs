@@ -58,7 +58,6 @@ pub struct FuzzConfig {
     pub seed: u64,
     pub steps: usize,
     pub tier: InvariantTier,
-    /// Escalate to `InvariantTier::Deep` every `deep_every` steps; 0 disables it.
     pub deep_every: usize,
     pub rows: u16,
     pub cols: u16,
@@ -89,9 +88,14 @@ pub fn run(config: &FuzzConfig) -> Result<usize, FuzzFailure> {
     let backend = ReplayBackend::new(std::io::sink(), config.rows, config.cols);
     let mut ed = Editor::with_file(backend, None).expect("fresh headless editor");
 
+    let trace = std::env::var_os("RIFT_FUZZ_TRACE").is_some();
+
     let mut keys = Vec::with_capacity(config.steps);
     for step in 0..config.steps {
         let key = random_key(&mut rng);
+        if trace {
+            eprintln!("step={step} key={key:?}");
+        }
         keys.push(key.clone());
         ed.term.push_keys(std::iter::once(key));
 
@@ -128,10 +132,10 @@ mod tests {
     use super::super::shrink::{bracket_list, ddmin, reproduces_area};
     use super::*;
 
-    fn panic_on_failure(seed_desc: &str, failure: FuzzFailure) -> ! {
+    fn format_failure(seed_desc: &str, failure: FuzzFailure) -> String {
         let Some(violation) = failure.violations.first().cloned() else {
-            panic!(
-                "{seed_desc}: failed via a tick error, which shrink doesn't cover yet: {:?}",
+            return format!(
+                "{seed_desc}: failed via a tick error, which shrink doesn't cover yet: {:?}\n",
                 failure.tick_error
             );
         };
@@ -141,13 +145,73 @@ mod tests {
 
         let minimal = ddmin(failure.keys, |keys| reproduces_area(keys, violation.area));
 
-        panic!(
+        format!(
             "\nInvariant failure:\n  {}\n  {}\n\nOriginal:\n  {seed_desc}, step={original_step}, keys={original_keys}\n\nShrunk:\n  keys={}\n\nReproducer:\n  {}\n",
             violation.area,
             violation.detail,
             minimal.len(),
             bracket_list(&minimal),
-        );
+        )
+    }
+
+    fn panic_on_failure(seed_desc: &str, failure: FuzzFailure) -> ! {
+        panic!("{}", format_failure(seed_desc, failure));
+    }
+
+    #[test]
+    #[ignore]
+    fn single_seed_fuzz_probe() {
+        use std::panic::{self, AssertUnwindSafe};
+
+        let seed: u64 = std::env::var("RIFT_FUZZ_SEED")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let steps: usize = std::env::var("RIFT_FUZZ_STEPS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5000);
+
+        let config = FuzzConfig {
+            seed,
+            steps,
+            tier: InvariantTier::Standard,
+            deep_every: 100,
+            ..FuzzConfig::default()
+        };
+
+        let previous_hook = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+        let outcome = panic::catch_unwind(AssertUnwindSafe(|| run(&config)));
+        panic::set_hook(previous_hook);
+
+        match outcome {
+            Ok(Ok(_)) => println!("RIFT_FUZZ_RESULT: OK seed={seed}"),
+            Ok(Err(failure)) => {
+                let seed_desc = format!("seed={seed}");
+                let previous_hook = panic::take_hook();
+                panic::set_hook(Box::new(|_| {}));
+                let report =
+                    panic::catch_unwind(AssertUnwindSafe(|| format_failure(&seed_desc, failure)))
+                        .unwrap_or_else(|_| {
+                            format!(
+                                "{seed_desc}: found a real invariant violation, but shrinking \
+                                 it crashed (ddmin's replay retriggered a panic); reporting \
+                                 unshrunk\n"
+                            )
+                        });
+                panic::set_hook(previous_hook);
+                println!("RIFT_FUZZ_RESULT: VIOLATION\n{report}");
+            }
+            Err(payload) => {
+                let message = payload
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "<non-string panic payload>".to_string());
+                println!("RIFT_FUZZ_RESULT: CRASH seed={seed}: {message}");
+            }
+        }
     }
 
     #[test]
