@@ -13,6 +13,7 @@ fn test_explorer_preview_result_job_payload() {
         path: PathBuf::from("/tmp"),
         dir_entries: Some(vec![]),
         file_text: None,
+        undo_file: None,
     };
     let boxed: Box<dyn JobPayload> = Box::new(r);
     assert!(boxed
@@ -79,7 +80,6 @@ fn test_explorer_preview_cancelled_before_run() {
 
 #[test]
 fn test_explorer_preview_dir_entries_sorted_dirs_first() {
-    // Use the current working directory which should have some contents
     let dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
     let job = Box::new(ExplorerPreviewJob::new(1, dir, true));
     let (tx, rx) = mpsc::channel();
@@ -89,7 +89,6 @@ fn test_explorer_preview_dir_entries_sorted_dirs_first() {
         crate::job_manager::jobs::test_support::recv_custom_payload::<ExplorerPreviewResult>(&rx)
             .map(|r| *r);
     if let Some(entries) = result.and_then(|r| r.dir_entries) {
-        // All directories should come before all files
         let mut saw_file = false;
         for entry in &entries {
             if !entry.is_dir {
@@ -115,8 +114,6 @@ fn test_explorer_preview_finished_message_is_sent() {
 
 #[test]
 fn test_explorer_preview_valid_utf8_split_at_boundary_is_not_binary() {
-    // "e2 82 ac" (the euro sign) straddles the FILE_PREVIEW_BYTES cutoff:
-    // 2 bytes land before it, 1 byte after, so a single 8 KiB read splits it.
     let mut content = vec![b'a'; FILE_PREVIEW_BYTES - 2];
     content.extend_from_slice("\u{20ac}".as_bytes());
     content.extend_from_slice(b"trailing text after the split char");
@@ -147,4 +144,48 @@ fn test_explorer_preview_valid_utf8_split_at_boundary_is_not_binary() {
          straddling the read boundary"
     );
     assert!(text.starts_with(&"a".repeat(100)));
+}
+
+#[test]
+fn test_explorer_preview_recognizes_a_persisted_undo_file() {
+    let dir = std::env::temp_dir().join(format!(
+        "rift_preview_undo_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source_path = dir.join("notes.txt");
+    let undo_dir = dir.join("undo");
+
+    let mut tree = crate::history::UndoTree::new();
+    let mut tx = crate::history::EditTransaction::new("insert 'hi'");
+    tx.record(crate::history::EditOperation::Insert {
+        position: crate::history::Position::new(0, 0),
+        text: "hi"
+            .chars()
+            .map(crate::character::Character::from)
+            .collect(),
+        len: 2,
+    });
+    tree.push(tx, None);
+    let hash = crate::history::persist::sha256(b"hi");
+    crate::history::persist::save(&undo_dir, &source_path, &tree, hash).unwrap();
+    let undo_file_path = crate::history::persist::undo_file_path(&undo_dir, &source_path);
+
+    let job = Box::new(ExplorerPreviewJob::new(1, undo_file_path.clone(), false));
+    let (tx_chan, rx) = mpsc::channel();
+    job.run(1, tx_chan, make_signal(false));
+    let result =
+        crate::job_manager::jobs::test_support::recv_custom_payload::<ExplorerPreviewResult>(&rx)
+            .expect("should have Custom message");
+
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(result.file_text.is_none());
+    let parsed = result.undo_file.expect("undo file must be recognized");
+    assert_eq!(parsed.tree.current_seq(), tree.current_seq());
+    assert_eq!(parsed.tree.nodes[&1].transaction.description, "insert 'hi'");
 }

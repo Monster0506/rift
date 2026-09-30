@@ -1580,6 +1580,7 @@ fn same_location_paste_before_does_not_move_the_cursor_either() {
 }
 
 #[test]
+
 fn set_noghostcut_makes_dw_delete_immediately() {
     use crate::action::{Action, EditorAction, Motion, OperatorType};
 
@@ -5009,6 +5010,7 @@ fn test_explorer_preview_discards_stale_result() {
             path: current_path,
             dir_entries: None,
             file_text: Some("new content".to_string()),
+            undo_file: None,
         },
     );
     editor
@@ -5021,6 +5023,7 @@ fn test_explorer_preview_discards_stale_result() {
             path: stale_path,
             dir_entries: None,
             file_text: Some("old content".to_string()),
+            undo_file: None,
         },
     );
     editor
@@ -5136,6 +5139,56 @@ fn test_explorer_preview_populates_for_real_file_and_directory_targets() {
         written.contains("fn") && written.contains("main"),
         "expected the incremental terminal write to contain the preview text, got:\n{written}"
     );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_explorer_preview_renders_a_persisted_undo_file_not_as_binary() {
+    let dir =
+        std::env::temp_dir().join(format!("rift_preview_undofile_e2e_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let source_path = dir.join("notes.txt");
+    let undo_dir = dir.join("undo");
+
+    let mut tree = crate::history::UndoTree::new();
+    let mut tx = crate::history::EditTransaction::new("insert 'hi'");
+    tx.record(crate::history::EditOperation::Insert {
+        position: crate::history::Position::new(0, 0),
+        text: "hi"
+            .chars()
+            .map(crate::character::Character::from)
+            .collect(),
+        len: 2,
+    });
+    tree.push(tx, None);
+    let hash = crate::history::persist::sha256(b"hi");
+    crate::history::persist::save(&undo_dir, &source_path, &tree, hash).unwrap();
+
+    let mut editor = create_editor();
+    editor.open_explorer(undo_dir.clone());
+    drain_jobs(&mut editor);
+
+    let layout = editor.panel_layout.as_ref().unwrap().clone();
+    let dir_doc_id = layout.dir_doc_id;
+    let preview_doc_id = layout.preview_doc_id;
+
+    move_explorer_cursor_to_line(&mut editor, dir_doc_id, 1);
+    editor.update_explorer_preview();
+    drain_jobs(&mut editor);
+
+    let preview_doc = editor
+        .document_manager
+        .get_document(preview_doc_id)
+        .unwrap();
+    assert_eq!(
+        preview_doc.buffer_kind_id(),
+        crate::document::BufferKindId::UNDO_FILE_VIEW,
+        "previewing a .undo file should render it with its custom buffer type"
+    );
+    let text = preview_doc.buffer.to_string();
+    assert!(text.contains("insert 'hi'"), "text was: {text}");
+    assert!(!text.contains("<binary file>"), "text was: {text}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

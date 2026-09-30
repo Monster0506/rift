@@ -3,28 +3,21 @@ use crate::job_manager::{CancellationSignal, Job, JobMessage};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
-/// Payload returned by a file-explorer preview job.
 #[derive(Debug)]
 pub struct ExplorerPreviewResult {
-    /// The document ID of the right-pane preview buffer to populate.
     pub right_doc_id: DocumentId,
-    /// The path that was previewed.
     pub path: PathBuf,
-    /// Directory entries if the path is a directory; `None` for file previews.
     pub dir_entries: Option<Vec<DirEntry>>,
-    /// Text content if the path is a file; `None` for directory previews.
     pub file_text: Option<String>,
+    pub undo_file: Option<crate::history::persist::ParsedUndoFile>,
 }
 
 crate::impl_job_payload!(ExplorerPreviewResult);
 
-/// Maximum number of bytes read for a file preview.
 const FILE_PREVIEW_BYTES: usize = 8 * 1024; // 8 KiB
-/// Maximum number of lines shown in a file preview.
+const CUSTOM_PREVIEW_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
 const FILE_PREVIEW_LINES: usize = 200;
 
-/// Decodes a read buffer as UTF-8, dropping a trailing partial char cut off
-/// by the read boundary. Only an invalid sequence earlier means real binary.
 fn decode_preview_text(slice: &[u8]) -> Option<&str> {
     match std::str::from_utf8(slice) {
         Ok(s) => Some(s),
@@ -35,8 +28,6 @@ fn decode_preview_text(slice: &[u8]) -> Option<&str> {
     }
 }
 
-/// Background job producing a file-explorer right-pane preview: directory
-/// entries, a trimmed text snippet, or a placeholder message for binary files.
 #[derive(Debug)]
 pub struct ExplorerPreviewJob {
     right_doc_id: DocumentId,
@@ -96,8 +87,6 @@ impl Job for ExplorerPreviewJob {
                     id: 0,
                 })
                 .collect();
-            // sort_by_cached_key computes each entry's lowercase name
-            // exactly once, keeping large listings fast.
             entries.sort_by_cached_key(|e| {
                 (
                     !e.is_dir,
@@ -114,6 +103,7 @@ impl Job for ExplorerPreviewJob {
                 path: self.path,
                 dir_entries: Some(entries),
                 file_text: None,
+                undo_file: None,
             });
             if let Some(token) = self.token {
                 crate::job_manager::send_job_result_with_token(&sender, id, token, result);
@@ -121,16 +111,33 @@ impl Job for ExplorerPreviewJob {
                 crate::job_manager::send_job_result(&sender, id, result);
             }
         } else {
-            let text = match fs.read_file_prefix(&self.path, FILE_PREVIEW_BYTES) {
-                Err(_) => "<cannot open file>".to_string(),
-                Ok(bytes) => match decode_preview_text(&bytes) {
-                    Some(s) => s
-                        .lines()
-                        .take(FILE_PREVIEW_LINES)
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                    None => "<binary file>".to_string(),
-                },
+            let prefix = fs.read_file_prefix(&self.path, FILE_PREVIEW_BYTES);
+            let looks_like_undo_file = prefix
+                .as_ref()
+                .map(|bytes| crate::history::persist::has_magic(bytes))
+                .unwrap_or(false);
+
+            let (text, undo_file) = if looks_like_undo_file {
+                let full = fs
+                    .read_file_prefix(&self.path, CUSTOM_PREVIEW_BYTES)
+                    .unwrap_or_default();
+                match crate::document::Document::sniff_undo_file(&full) {
+                    Some(Ok(parsed)) => (String::new(), Some(parsed)),
+                    _ => ("<corrupt undo file>".to_string(), None),
+                }
+            } else {
+                let text = match prefix {
+                    Err(_) => "<cannot open file>".to_string(),
+                    Ok(bytes) => match decode_preview_text(&bytes) {
+                        Some(s) => s
+                            .lines()
+                            .take(FILE_PREVIEW_LINES)
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                        None => "<binary file>".to_string(),
+                    },
+                };
+                (text, None)
             };
 
             if signal.is_cancelled() {
@@ -141,7 +148,8 @@ impl Job for ExplorerPreviewJob {
                 right_doc_id: self.right_doc_id,
                 path: self.path,
                 dir_entries: None,
-                file_text: Some(text),
+                file_text: undo_file.is_none().then_some(text),
+                undo_file,
             });
             if let Some(token) = self.token {
                 crate::job_manager::send_job_result_with_token(&sender, id, token, result);

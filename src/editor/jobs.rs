@@ -776,7 +776,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let preview_doc_id = res.right_doc_id;
                 let preview_path = res.path.clone();
                 #[cfg_attr(not(feature = "treesitter"), allow(unused_variables))]
-                let is_file_preview = res.dir_entries.is_none();
+                let is_file_preview = res.dir_entries.is_none() && res.undo_file.is_none();
                 let Some(doc) = self
                     .document_manager
                     .get_document_by_handle_mut(token.handle)
@@ -793,6 +793,10 @@ impl<T: TerminalBackend> Editor<T> {
                     doc.convert_to_directory(res.path.clone());
                     doc.set_directory_show_hidden(false);
                     doc.populate_directory_buffer(entries);
+                } else if let Some(parsed) = res.undo_file {
+                    doc.convert_to_undo_file_view();
+                    doc.set_path(&preview_path);
+                    doc.populate_undo_file_view(&parsed);
                 } else if let Some(text) = res.file_text {
                     doc.convert_to_file();
                     doc.set_path(&preview_path);
@@ -867,6 +871,7 @@ impl<T: TerminalBackend> Editor<T> {
                 doc.set_path(res.path.clone());
 
                 let display_name = doc.display_name().to_string();
+                self.persist_undo_after_save(res.document_id, res.content_hash);
                 self.state.update_filename(display_name);
 
                 self.state.notify(
@@ -930,6 +935,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let revision = doc.buffer.revision;
                 let path = doc.path().map(|p| p.to_path_buf());
                 let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
+                self.restore_persisted_undo(res.document_id, res.content_hash);
 
                 self.attach_syntax_for_document(res.document_id);
                 self.spawn_syntax_parse_job(res.document_id);
