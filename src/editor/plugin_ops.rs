@@ -5,8 +5,6 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn update_lua_state(&self) {
         use crate::plugin::lua_host::BufEntry;
 
-        // Snapshotting materializes the whole buffer; skip it until some Lua
-        // code has actually run and could observe the state.
         if !self.plugin_host.lua_state_wanted() {
             return;
         }
@@ -30,8 +28,6 @@ impl<T: TerminalBackend> Editor<T> {
         ) = if let Some(doc) = self.document_manager.active_document() {
             let buf_id = doc.id as usize;
             let buf_kind = doc.kind.kind_str().to_string();
-            // The buffer clone is the expensive part of this snapshot; skip it
-            // when the buffer hasn't changed since the last sync.
             let source = if self
                 .plugin_host
                 .synced_buf_matches(doc.id, doc.buffer.revision)
@@ -155,7 +151,6 @@ impl<T: TerminalBackend> Editor<T> {
             .lsp_diagnostics
             .iter()
             .map(|(uri, diags)| {
-                // Wire columns are encoding units; give Lua code points when we can.
                 let doc = crate::lsp::protocol::uri_to_path(uri)
                     .and_then(|p| self.document_manager.find_open_document_id(&p))
                     .and_then(|id| self.document_manager.get_document(id));
@@ -216,7 +211,6 @@ impl<T: TerminalBackend> Editor<T> {
             lsp_diagnostics,
             buffer_vars,
         );
-        // Skip the annotation snapshot update when its revision is unchanged.
         use crate::annotations::Anchor;
         use crate::plugin::lua_host::AnnotationView;
         if let Some(doc) = self.document_manager.active_document() {
@@ -255,83 +249,10 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    pub(super) fn adjust_plugin_highlights_for_edits(&mut self) {
-        use crate::buffer::ByteEdit;
-
-        fn adjust(range: std::ops::Range<usize>, e: &ByteEdit) -> Option<std::ops::Range<usize>> {
-            let s = range.start;
-            let end = range.end;
-            let edit_end = e.byte_pos + e.del_bytes;
-            let delta = e.ins_bytes as isize - e.del_bytes as isize;
-
-            if end <= e.byte_pos {
-                Some(s..end)
-            } else if s >= edit_end {
-                Some(((s as isize + delta) as usize)..((end as isize + delta) as usize))
-            } else if s >= e.byte_pos && end <= edit_end {
-                None
-            } else if s < e.byte_pos && end > edit_end {
-                Some(s..((end as isize + delta) as usize))
-            } else if s >= e.byte_pos && end > edit_end {
-                let ns = e.byte_pos + e.ins_bytes;
-                let ne = (end as isize + delta) as usize;
-                if ns < ne {
-                    Some(ns..ne)
-                } else {
-                    None
-                }
-            } else if s < e.byte_pos {
-                Some(s..e.byte_pos)
-            } else {
-                None
-            }
-        }
-
-        let edits: Vec<ByteEdit> = if let Some(doc) = self.document_manager.active_document_mut() {
-            doc.buffer.edit_log.drain(..).collect()
-        } else {
-            return;
-        };
-
-        if edits.is_empty() {
-            return;
-        }
-
-        if let Some(doc) = self.document_manager.active_document_mut() {
-            for slot in doc.highlight_slots.values_mut() {
-                let mut new_slot: Vec<(std::ops::Range<usize>, crate::color::Color)> =
-                    Vec::with_capacity(slot.len());
-                for (range, color) in slot.drain(..) {
-                    let mut cur = range;
-                    let mut keep = true;
-                    for e in &edits {
-                        match adjust(cur.clone(), e) {
-                            Some(r) => cur = r,
-                            None => {
-                                keep = false;
-                                break;
-                            }
-                        }
-                    }
-                    if keep {
-                        new_slot.push((cur, color));
-                    }
-                }
-                *slot = new_slot;
-            }
-            let mut merged: Vec<(std::ops::Range<usize>, crate::color::Color)> =
-                doc.highlight_slots.values().flatten().cloned().collect();
-            merged.sort_by_key(|(r, _)| r.start);
-            doc.plugin_highlights = merged;
-        }
-    }
-
-    /// Drain the plugin mutation queue and apply each mutation.
     pub(super) fn apply_plugin_mutations(&mut self) {
         use crate::color::Color;
         use crate::plugin::PluginMutation;
 
-        /// Parse a color name or "#rrggbb" hex string into a `Color`.
         fn plugin_color(s: &str) -> Color {
             match s.to_lowercase().as_str() {
                 "red" => Color::Red,
@@ -360,11 +281,9 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        // Drain into a Vec first so we don't hold a borrow on plugin_host.
         let envelopes: Vec<crate::plugin::PluginMutationEnvelope> =
             self.plugin_host.drain_mutation_envelopes().collect();
 
-        let mut needs_highlight_merge = false;
         for envelope in envelopes {
             let origin = envelope.origin;
             if let Some(gen) = origin {
@@ -567,24 +486,21 @@ impl<T: TerminalBackend> Editor<T> {
                             let start = doc.buffer.char_to_byte(start_char);
                             let end = doc.buffer.char_to_byte(end_char);
                             if start < end {
-                                doc.highlight_slots
-                                    .entry(slot)
-                                    .or_default()
-                                    .push((start..end, parsed_color));
+                                doc.annotations.add_plugin_highlight(
+                                    slot,
+                                    start,
+                                    end,
+                                    parsed_color,
+                                );
                             }
                         }
                     }
-                    needs_highlight_merge = true;
                 }
                 PluginMutation::ClearHighlights { slot } => {
                     if let Some(doc) = self.document_manager.active_document_mut() {
-                        if slot == 0 {
-                            doc.highlight_slots.clear();
-                        } else if let Some(s) = doc.highlight_slots.get_mut(&slot) {
-                            s.clear();
-                        }
+                        let slot = (slot != 0).then_some(slot);
+                        doc.annotations.clear_plugin_highlights(slot);
                     }
-                    needs_highlight_merge = true;
                 }
                 PluginMutation::SetOption { name, value } => {
                     if let Some(doc) = self.document_manager.active_document_mut() {
@@ -1026,7 +942,6 @@ impl<T: TerminalBackend> Editor<T> {
                 #[cfg(feature = "lsp")]
                 PluginMutation::LspRegisterServer { language, config } => {
                     self.lsp_manager.register_server(language, config);
-                    // Attach already-open files; other languages no-op in did_open.
                     self.lsp_notify_open_all();
                 }
                 PluginMutation::LspGotoDefinition => {
@@ -1094,15 +1009,6 @@ impl<T: TerminalBackend> Editor<T> {
                         crate::action::EditorAction::LspDiagnosticPrev,
                     ));
                 }
-            }
-        }
-
-        if needs_highlight_merge {
-            if let Some(doc) = self.document_manager.active_document_mut() {
-                let mut merged: Vec<(std::ops::Range<usize>, Color)> =
-                    doc.highlight_slots.values().flatten().cloned().collect();
-                merged.sort_by_key(|(r, _)| r.start);
-                doc.plugin_highlights = merged;
             }
         }
     }

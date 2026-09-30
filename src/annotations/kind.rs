@@ -1,11 +1,6 @@
-//! Namespaced annotation kinds.
-//! Open strings like "lsp.diagnostic"; bulk ops query by prefix, no closed enum.
-
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-/// An annotation kind: a namespaced string like `"lsp.diagnostic"` or `"ui.button"`.
-/// Backed by `Arc<str>`, so cloning it is a refcount bump, not an allocation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Kind(Arc<str>);
@@ -19,19 +14,14 @@ impl Kind {
         &self.0
     }
 
-    /// A cheap `Arc` clone of the underlying string data.
     pub fn as_arc(&self) -> Arc<str> {
         self.0.clone()
     }
 
-    /// The leading namespace segment (text before the first `.`), e.g. `"lsp"`
-    /// for `"lsp.diagnostic"`. Returns the whole string if there is no `.`.
     pub fn namespace(&self) -> &str {
         self.0.split('.').next().unwrap_or(&self.0)
     }
 
-    /// Whether this kind equals or begins with `prefix` (e.g. "lsp." matches
-    /// "lsp.diagnostic"). Basis for clear_by_kind_prefix / query_kind.
     pub fn matches_prefix(&self, prefix: &str) -> bool {
         &*self.0 == prefix || self.0.starts_with(prefix)
     }
@@ -55,35 +45,24 @@ impl std::fmt::Display for Kind {
     }
 }
 
-/// Well-known kind strings used by core subsystems. These are conveniences only:
-/// nothing about storage treats them specially.
 pub mod well_known {
     pub const FS_ENTRY: &str = "fs.entry";
     pub const LSP_DIAGNOSTIC: &str = "lsp.diagnostic";
     pub const LSP_HINT: &str = "lsp.hint";
     pub const GIT_BLAME: &str = "git.blame";
-    /// One line of a git-status buffer naming a tracked/untracked
-    /// path and the section it belonged to at populate/expand time.
     pub const GIT_STATUS_ENTRY: &str = "git.status_entry";
-    /// The `HEAD <sha> <subject>` summary line at the top of a git-status buffer. Interactive: Enter opens the Log browser.
     pub const GIT_STATUS_HEAD: &str = "git.status_head";
-    /// A hunk header line (`@@ ... @@`) inside an expanded status-buffer entry,
-    /// anchoring the whole hunk block for the `s`/`u`/`X` cursor actions.
     pub const GIT_HUNK: &str = "git.hunk";
-    /// One `+`/`-` content line inside an expanded status-buffer hunk, anchoring per-line stage/unstage/discard for the `s`/`u`/`X` cursor actions (context lines get no annotation; nothing to select).
     pub const GIT_HUNK_LINE: &str = "git.hunk_line";
-    /// One commit line of a git-log browser buffer.
     pub const GIT_LOG_COMMIT: &str = "git.log_commit";
-    /// The head line of one commit in a git-rebase-todo plan, tagging it with that commit's sha. Interactive, so `j`/`k` (via interface-mode snapping) can only land on head lines, never on a commit's inline body-preview lines.
     pub const GIT_REBASE_STEP: &str = "git.rebase_step";
-    /// A per-line gutter-diff sign (add/change/delete), for tinting the
-    /// line-number gutter of a `File` buffer against its git index.
     pub const GIT_GUTTER: &str = "git.gutter";
     pub const MARK_USER: &str = "mark.user";
     pub const UI_LINK: &str = "ui.link";
     pub const UI_BUTTON: &str = "ui.button";
     pub const UI_CHECKBOX: &str = "ui.checkbox";
     pub const BUFFER_ENTRY: &str = "buffer.entry";
+    pub const PLUGIN_HIGHLIGHT: &str = "plugin.highlight";
 }
 
 #[cfg(test)]

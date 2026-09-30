@@ -1,28 +1,18 @@
-//! Color system
-//! Provides color types, styles, and extension points for syntax highlighting
-
 pub mod buffer;
 pub mod styled;
 pub mod theme;
 
 pub use theme::{Theme, ThemeVariant};
 
-/// A pair of optional foreground and background colors.
 pub type ColorPair = (Option<Color>, Option<Color>);
 
-/// A byte-range to color-pair mapping, used for terminal cell colors.
 pub type CellColorSpan = (std::ops::Range<usize>, ColorPair);
 
-/// A slice of cell color spans.
 pub type CellColorSpans = Vec<CellColorSpan>;
 
-/// Color representation wrapping crossterm's Color enum
-/// Supports 16 colors, 256 colors, and RGB colors
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Color {
-    /// Reset to default color
     Reset,
-    /// Standard 16 colors
     Black,
     DarkGrey,
     Red,
@@ -39,18 +29,11 @@ pub enum Color {
     DarkCyan,
     White,
     Grey,
-    /// 256-color palette (0-255)
     Ansi256(u8),
-    /// RGB color (r, g, b) where each component is 0-255
-    Rgb {
-        r: u8,
-        g: u8,
-        b: u8,
-    },
+    Rgb { r: u8, g: u8, b: u8 },
 }
 
 impl Color {
-    /// Parse a named color ("red", "darkblue", ...) or a `#rrggbb` hex string.
     #[must_use]
     pub fn parse(s: &str) -> Option<Color> {
         Some(match s.to_lowercase().as_str() {
@@ -81,23 +64,60 @@ impl Color {
     }
 }
 
-/// Color style combining foreground and background colors
+pub fn contrasting_color(bg: Color) -> Color {
+    match bg {
+        Color::Black
+        | Color::DarkGrey
+        | Color::Blue
+        | Color::DarkBlue
+        | Color::Red
+        | Color::DarkRed
+        | Color::Magenta
+        | Color::DarkMagenta
+        | Color::DarkGreen
+        | Color::DarkCyan
+        | Color::DarkYellow => Color::White,
+        Color::White | Color::Grey | Color::Yellow | Color::Green | Color::Cyan => Color::Black,
+        Color::Rgb { r, g, b } => {
+            let lum = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
+            if lum > 128.0 {
+                Color::Black
+            } else {
+                Color::White
+            }
+        }
+        Color::Ansi256(n) => {
+            let (r, g, b) = if n >= 232 {
+                let step = (n - 232) * 10 + 8;
+                (step, step, step)
+            } else {
+                let i = n - 16;
+                let ramp = |v: u8| if v == 0 { 0 } else { 55 + 40 * v };
+                (ramp(i / 36), ramp((i / 6) % 6), ramp(i % 6))
+            };
+            let lum = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
+            if lum > 128.0 {
+                Color::Black
+            } else {
+                Color::White
+            }
+        }
+        Color::Reset => Color::Reset,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColorStyle {
-    /// Foreground color (None means default/unchanged)
     pub fg: Option<Color>,
-    /// Background color (None means default/unchanged)
     pub bg: Option<Color>,
 }
 
 impl ColorStyle {
-    /// Create a new color style
     #[must_use]
     pub fn new() -> Self {
         ColorStyle { fg: None, bg: None }
     }
 
-    /// Create with foreground color only
     #[must_use]
     pub fn fg(fg: Color) -> Self {
         ColorStyle {
@@ -106,7 +126,6 @@ impl ColorStyle {
         }
     }
 
-    /// Create with background color only
     #[must_use]
     pub fn bg(bg: Color) -> Self {
         ColorStyle {
@@ -115,7 +134,6 @@ impl ColorStyle {
         }
     }
 
-    /// Create with both foreground and background colors
     #[must_use]
     pub fn new_colors(fg: Color, bg: Color) -> Self {
         ColorStyle {
@@ -124,21 +142,18 @@ impl ColorStyle {
         }
     }
 
-    /// Set foreground color
     #[must_use]
     pub fn with_fg(mut self, fg: Color) -> Self {
         self.fg = Some(fg);
         self
     }
 
-    /// Set background color
     #[must_use]
     pub fn with_bg(mut self, bg: Color) -> Self {
         self.bg = Some(bg);
         self
     }
 
-    /// Check if style has any colors set
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.fg.is_none() && self.bg.is_none()
@@ -151,15 +166,9 @@ impl Default for ColorStyle {
     }
 }
 
-/// Extension trait for syntax highlighting
-/// Future syntax highlighters can implement this trait
 pub trait SyntaxHighlighter {
-    /// Get the color style for a character at the given position.
-    /// Returns None if no special styling should be applied.
     fn get_style(&self, line: usize, column: usize) -> Option<ColorStyle>;
 
-    /// Get color spans for an entire line as (`start_col`, `end_col`, style)
-    /// tuples; more efficient than calling `get_style` per character.
     fn get_line_spans(&self, line: usize, line_length: usize) -> Vec<(usize, usize, ColorStyle)> {
         let mut spans = Vec::new();
         let mut current_start = 0;
@@ -169,18 +178,15 @@ pub trait SyntaxHighlighter {
             let style = self.get_style(line, col);
 
             if style != current_style {
-                // End current span if it exists
                 if let Some(style) = current_style {
                     spans.push((current_start, col, style));
                 }
 
-                // Start new span
                 current_start = col;
                 current_style = style;
             }
         }
 
-        // Add final span if exists
         if let Some(style) = current_style {
             spans.push((current_start, line_length, style));
         }

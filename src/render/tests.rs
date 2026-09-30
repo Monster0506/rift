@@ -1,5 +1,3 @@
-//! Tests for rendering system
-
 use crate::buffer::TextBuffer;
 use crate::character::Character;
 use crate::color::Color;
@@ -16,8 +14,6 @@ use crate::state::State;
 use crate::status::StatusBar;
 use crate::test_utils::MockTerminal;
 
-/// Remove ANSI escape sequences (CSI and OSC) from a string so tests can match
-/// plain text content without being affected by color/cursor escape codes.
 fn strip_ansi(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = String::with_capacity(s.len());
@@ -70,7 +66,6 @@ fn create_default_statusdrawstate() -> StatusDrawState {
         is_remote: false,
     }
 }
-// Key formatting tests
 
 #[test]
 fn test_format_key_char() {
@@ -115,13 +110,10 @@ fn test_format_key_special() {
     assert_eq!(StatusBar::format_key(Key::PageDown), "PageDown");
 }
 
-// Cursor column calculation tests
-
 #[test]
 fn test_calculate_cursor_column_single_line() {
     let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("hello").unwrap();
-    // Cursor is at position 5 (after "hello")
     assert_eq!(calculate_cursor_column(&buf, 0, 8), 5);
 }
 
@@ -129,18 +121,14 @@ fn test_calculate_cursor_column_single_line() {
 fn test_calculate_cursor_column_multiline() {
     let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("line1\nline2\nline3").unwrap();
-    // Move to start
     for _ in 0..18 {
         buf.move_left();
     }
-    // Now cursor is at start of line 0
     assert_eq!(calculate_cursor_column(&buf, 0, 8), 0);
 
-    // Move to line 1
     buf.move_down();
     assert_eq!(calculate_cursor_column(&buf, 1, 8), 0);
 
-    // Move right 3 times on line 1
     buf.move_right();
     buf.move_right();
     buf.move_right();
@@ -157,11 +145,9 @@ fn test_calculate_cursor_column_empty_buffer() {
 fn test_calculate_cursor_column_at_gap() {
     let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("hello").unwrap();
-    // Move cursor to middle
     for _ in 0..3 {
         buf.move_left();
     }
-    // Cursor should be at column 2
     assert_eq!(calculate_cursor_column(&buf, 0, 8), 2);
 }
 
@@ -170,30 +156,24 @@ fn test_calculate_cursor_column_multiline_complex() {
     let mut buf = TextBuffer::new(100).unwrap();
     buf.insert_str("hello\nworld\ntest").unwrap();
 
-    // Move to start
     for _ in 0..17 {
         buf.move_left();
     }
     assert_eq!(calculate_cursor_column(&buf, 0, 8), 0);
 
-    // Move to end of first line
     for _ in 0..5 {
         buf.move_right();
     }
     assert_eq!(calculate_cursor_column(&buf, 0, 8), 5);
 
-    // Move to next line
     buf.move_right(); // Move past newline
     assert_eq!(calculate_cursor_column(&buf, 1, 8), 0);
 
-    // Move to middle of second line
     for _ in 0..3 {
         buf.move_right();
     }
     assert_eq!(calculate_cursor_column(&buf, 1, 8), 3);
 }
-
-// Status bar layer rendering tests
 
 #[test]
 fn test_render_status_bar_normal_mode_layer() {
@@ -204,12 +184,8 @@ fn test_render_status_bar_normal_mode_layer() {
     let mut paint_frame = crate::paint::PaintFrame::new(0);
     StatusBar::render_to_layer(&mut layer, &statusdrawstate, &mut paint_frame);
 
-    // Check that "NORMAL" was written to the layer
-    // Status bar is at last row (9), mode is at start
     let cell = layer.get_cell(9, 0);
     assert!(cell.is_some());
-    // Should contain 'N' from 'NORMAL'
-    // Note: The status bar writes to the last row of the viewport
 }
 
 #[test]
@@ -221,7 +197,6 @@ fn test_render_status_bar_insert_mode_layer() {
     let mut paint_frame = crate::paint::PaintFrame::new(0);
     StatusBar::render_to_layer(&mut layer, &statusdrawstate, &mut paint_frame);
 
-    // Check that content was written to the layer
     let cell = layer.get_cell(9, 0);
     assert!(cell.is_some());
 }
@@ -235,12 +210,9 @@ fn test_render_status_bar_pending_key_layer() {
     let mut paint_frame = crate::paint::PaintFrame::new(0);
     StatusBar::render_to_layer(&mut layer, &statusdrawstate, &mut paint_frame);
 
-    // Should have pending key indicator
     let cell = layer.get_cell(9, 0);
     assert!(cell.is_some());
 }
-
-// Full render tests with compositor
 
 #[test]
 fn test_render_does_not_clear_screen() {
@@ -273,7 +245,6 @@ fn test_render_does_not_clear_screen() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -286,7 +257,6 @@ fn test_render_does_not_clear_screen() {
         )
         .unwrap();
 
-    // First render should NOT clear screen (to prevent flicker)
     assert_eq!(term.clear_screen_calls, 0);
 }
 
@@ -322,7 +292,6 @@ fn test_render_cursor_positioning() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -335,7 +304,6 @@ fn test_render_cursor_positioning() {
         )
         .unwrap();
 
-    // Should have moved cursor
     assert!(!term.cursor_moves.is_empty());
 }
 
@@ -370,7 +338,6 @@ fn test_render_empty_buffer() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -383,9 +350,7 @@ fn test_render_empty_buffer() {
         )
         .unwrap();
 
-    // First render should NOT clear screen
     assert_eq!(term.clear_screen_calls, 0);
-    // Should still render empty lines
     assert!(!term.writes.is_empty());
 }
 
@@ -421,7 +386,6 @@ fn test_render_multiline_buffer() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -475,7 +439,6 @@ fn test_render_file_loaded_at_start() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -488,7 +451,6 @@ fn test_render_file_loaded_at_start() {
         )
         .unwrap();
 
-    // Should NOT clear screen on first render
     assert_eq!(term.clear_screen_calls, 0);
 
     let raw = term.get_written_string();
@@ -505,11 +467,9 @@ fn test_render_file_loaded_at_start() {
 fn test_render_viewport_scrolling() {
     let mut term = MockTerminal::new(5, 80); // Small viewport
     let mut buf = TextBuffer::new(100).unwrap();
-    // Create 10 lines
     for i in 0..10 {
         buf.insert_str(&format!("line{}\n", i)).unwrap();
     }
-    // Move cursor to line 8
     for _ in 0..8 {
         buf.move_up();
     }
@@ -540,7 +500,6 @@ fn test_render_viewport_scrolling() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -553,8 +512,6 @@ fn test_render_viewport_scrolling() {
         )
         .unwrap();
 
-    // Viewport should scroll to show cursor
-    // Top line should be adjusted
     assert!(system.viewport.top_line() <= 8);
 }
 
@@ -565,7 +522,6 @@ fn test_render_viewport_edge_cases() {
     let state = State::new();
     let mut system = RenderSystem::new(1, 1);
 
-    // Should not panic with minimal viewport
     system
         .render(
             &mut term,
@@ -590,7 +546,6 @@ fn test_render_viewport_edge_cases() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -608,7 +563,6 @@ fn test_render_viewport_edge_cases() {
 fn test_render_large_buffer() {
     let mut term = MockTerminal::new(10, 80);
     let mut buf = TextBuffer::new(10000).unwrap();
-    // Insert a large amount of text
     for i in 0..100 {
         buf.insert_str(&format!("line {}\n", i)).unwrap();
     }
@@ -639,7 +593,6 @@ fn test_render_large_buffer() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -652,7 +605,6 @@ fn test_render_large_buffer() {
         )
         .unwrap();
 
-    // Should render successfully - first render does NOT clear screen
     assert_eq!(term.clear_screen_calls, 0);
     assert!(!term.writes.is_empty());
 }
@@ -661,14 +613,12 @@ fn test_render_large_buffer() {
 fn test_render_cursor_at_viewport_boundaries() {
     let mut term = MockTerminal::new(5, 80);
     let mut buf = TextBuffer::new(100).unwrap();
-    // Create content
     for i in 0..20 {
         buf.insert_str(&format!("line {}\n", i)).unwrap();
     }
     let state = State::new();
     let mut system = RenderSystem::new(5, 80);
 
-    // Test cursor at top - first render should clear
     for _ in 0..20 {
         buf.move_up();
     }
@@ -696,7 +646,6 @@ fn test_render_cursor_at_viewport_boundaries() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -708,26 +657,18 @@ fn test_render_cursor_at_viewport_boundaries() {
             },
         )
         .unwrap();
-    // First render does NOT clear screen
     assert_eq!(term.clear_screen_calls, 0);
 
-    // Reset
     term.clear_screen_calls = 0;
     term.cursor_moves.clear();
     term.writes.clear();
 
-    // Test cursor at bottom - should scroll and clear
     for _ in 0..20 {
         buf.move_down();
     }
-    // Manually update viewport as Editor would
     system
         .viewport
         .update(buf.get_line(), 0, buf.get_total_lines(), 0);
-    // Note: RenderSystem manages updates automatically, but we can verify scrolling happens
-
-    // We want to simulate a second frame where changed cells trigger clear?
-    // Or just check that scrolling happened
 
     system
         .render(
@@ -753,7 +694,6 @@ fn test_render_cursor_at_viewport_boundaries() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -765,18 +705,14 @@ fn test_render_cursor_at_viewport_boundaries() {
             },
         )
         .unwrap();
-    // Should NOT clear when scrolling to show cursor at bottom (renderer logic attempts to minimize clears)
     assert_eq!(term.clear_screen_calls, 0);
     assert!(system.viewport.top_line() > 0);
 }
-
-// Layer content tests
 
 #[test]
 fn test_compositor_content_layer() {
     let mut system = RenderSystem::new(10, 80);
 
-    // Content layer should be accessible
     let content_layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
     assert_eq!(content_layer.rows(), 10);
     assert_eq!(content_layer.cols(), 80);
@@ -786,7 +722,6 @@ fn test_compositor_content_layer() {
 fn test_compositor_status_bar_layer() {
     let mut system = RenderSystem::new(10, 80);
 
-    // Status bar layer should be accessible
     let status_layer = system.compositor.get_layer_mut(LayerPriority::STATUS_BAR);
     assert_eq!(status_layer.rows(), 10);
     assert_eq!(status_layer.cols(), 80);
@@ -796,15 +731,12 @@ fn test_compositor_status_bar_layer() {
 fn test_compositor_floating_window_layer() {
     let mut system = RenderSystem::new(10, 80);
 
-    // Floating window layer should be accessible
     let floating_layer = system
         .compositor
         .get_layer_mut(LayerPriority::FLOATING_WINDOW);
     assert_eq!(floating_layer.rows(), 10);
     assert_eq!(floating_layer.cols(), 80);
 }
-
-// Line number rendering tests
 
 #[test]
 fn test_render_line_numbers_enabled() {
@@ -841,7 +773,6 @@ fn test_render_line_numbers_enabled() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -855,7 +786,6 @@ fn test_render_line_numbers_enabled() {
         .unwrap();
 
     let content_layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
-    // Gutter width for 2 lines: 1 digit + 2 padding = 3, rendered " 1 "
     assert_eq!(
         content_layer.get_cell(0, 0).unwrap().content,
         Character::from(' ')
@@ -909,7 +839,6 @@ fn test_render_line_numbers_disabled() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -923,7 +852,6 @@ fn test_render_line_numbers_disabled() {
         .unwrap();
 
     let content_layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
-    // Should start immediately with content
     assert_eq!(
         content_layer.get_cell(0, 0).unwrap().content,
         Character::from('l')
@@ -964,7 +892,6 @@ fn test_render_line_numbers_gutter_width() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -978,7 +905,6 @@ fn test_render_line_numbers_gutter_width() {
         .unwrap();
 
     let content_layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
-    // Gutter width: 3 digits + 2 padding = 5, rendered "   1 "
     assert_eq!(
         content_layer.get_cell(0, 0).unwrap().content,
         Character::from(' ')
@@ -1037,7 +963,6 @@ fn test_render_cursor_position_with_line_numbers() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -1060,7 +985,6 @@ fn test_no_redraw_on_noop() {
     state.settings.show_line_numbers = false;
     let mut system = RenderSystem::new(10, 80);
 
-    // 1. First render - populates layers and cache
     system
         .render(
             &mut term,
@@ -1085,7 +1009,6 @@ fn test_no_redraw_on_noop() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -1098,22 +1021,18 @@ fn test_no_redraw_on_noop() {
         )
         .unwrap();
 
-    // Verify content was rendered
     let content_layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
     assert_eq!(
         content_layer.get_cell(0, 0).unwrap().content,
         Character::from('t')
     );
 
-    // 2. Manually "vandalize" the layer content
-    // If selective redrawing works, this change should PERSIST because render() will skip this layer.
     content_layer.set_cell(0, 0, Cell::from_char('X'));
     assert_eq!(
         content_layer.get_cell(0, 0).unwrap().content,
         Character::from('X')
     );
 
-    // 3. Second render - no state change
     system
         .render(
             &mut term,
@@ -1138,7 +1057,6 @@ fn test_no_redraw_on_noop() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -1151,16 +1069,12 @@ fn test_no_redraw_on_noop() {
         )
         .unwrap();
 
-    // Identical state means render does nothing (render_cache), so the layer
-    // is not redrawn and 'X' should remain.
     let content_layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
     assert_eq!(
         content_layer.get_cell(0, 0).unwrap().content,
         Character::from('X')
     );
 }
-
-// Unicode cursor column tests
 
 #[test]
 fn test_cursor_column_wide_chars() {
@@ -1194,12 +1108,8 @@ fn test_cursor_column_truncated_utf8() {
     assert_eq!(calculate_cursor_column(&buf, 0, 4), 8);
 }
 
-// Tab rendering tests
-
 #[test]
 fn test_tab_rendered_as_space_not_raw_tab() {
-    // A tab is stored as space Cells so the screen buffer never writes a raw
-    // tab byte (which would jump to the terminal's tab stop, not the editor's).
     let mut term = MockTerminal::new(5, 40);
     let mut buf = TextBuffer::new(64).unwrap();
     buf.insert_str("\thello").unwrap();
@@ -1230,7 +1140,6 @@ fn test_tab_rendered_as_space_not_raw_tab() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -1244,7 +1153,6 @@ fn test_tab_rendered_as_space_not_raw_tab() {
         .unwrap();
 
     let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
-    // The first 4 cells (tab expanded to 4 spaces) must all be spaces.
     for col in 0..4 {
         let cell = layer.get_cell(0, col).unwrap();
         assert_ne!(
@@ -1258,12 +1166,9 @@ fn test_tab_rendered_as_space_not_raw_tab() {
             "col {col}: expanded tab cell should be a space"
         );
     }
-    // Column 4 should be 'h'.
     assert_eq!(layer.get_cell(0, 4).unwrap().content, Character::from('h'));
 }
 
-/// Render `text` with trailing `adornments` at horizontal scroll `left_col`
-/// and return row 0 as a string (unset cells become '.').
 fn render_row_with_adornments(
     cols: usize,
     text: &str,
@@ -1301,7 +1206,6 @@ fn render_row_with_adornments(
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: Some(adornments),
                 annotation_inline: None,
@@ -1327,7 +1231,6 @@ fn render_row_with_adornments(
 fn test_trailing_adornment_advances_by_display_width() {
     let ad = vec![(0, std::borrow::Cow::Borrowed("\u{4e2d}x"), Color::Red)];
     let row = render_row_with_adornments(8, "ab", &ad, 0);
-    // Wide char at col 3 gets a filler cell at col 4 so 'x' lands at col 5.
     assert_eq!(row, "ab \u{4e2d} x  ");
 }
 
@@ -1335,7 +1238,6 @@ fn test_trailing_adornment_advances_by_display_width() {
 fn test_trailing_adornment_clips_with_ellipsis() {
     let ad = vec![(0, std::borrow::Cow::Borrowed("0123456789"), Color::Red)];
     assert_eq!(render_row_with_adornments(10, "ab", &ad, 0), "ab 0123...");
-    // Fewer than 4 free cells: draw nothing rather than a bare ellipsis.
     assert_eq!(render_row_with_adornments(6, "ab", &ad, 0), "ab    ");
 }
 
@@ -1343,14 +1245,11 @@ fn test_trailing_adornment_clips_with_ellipsis() {
 fn test_trailing_adornment_hidden_when_line_end_scrolled_off() {
     let ad = vec![(0, std::borrow::Cow::Borrowed("msg"), Color::Red)];
     assert_eq!(render_row_with_adornments(8, "ab", &ad, 5), "        ");
-    // Exactly-full row: line end reached but no room, nothing spills over.
     assert_eq!(render_row_with_adornments(2, "ab", &ad, 0), "ab");
 }
 
 #[test]
 fn test_tab_straddling_left_col_does_not_shift_text() {
-    // A tab straddling the left_col boundary must not push following chars right
-    // by its full width: with tab_width=4 and left_col=2, 'h' sits at col 2, not 4.
     let mut term = MockTerminal::new(5, 40);
     let mut buf = TextBuffer::new(64).unwrap();
     buf.insert_str("\thello").unwrap();
@@ -1358,7 +1257,6 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
     state.update_buffer_stats(1, 6, crate::document::LineEnding::LF);
     let mut system = RenderSystem::new(5, 40);
 
-    // Scroll two columns to the right so the tab straddles left_col.
     system.viewport.set_scroll(0, 2);
 
     system
@@ -1385,7 +1283,6 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -1399,8 +1296,6 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
         .unwrap();
 
     let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
-    // With left_col=2 the tab's visible portion is 2 cells (screen cols 0-1);
-    // 'h' (first char of "hello") must appear at screen col 2, not col 4.
     assert_eq!(
         layer.get_cell(0, 2).unwrap().content,
         Character::from('h'),
@@ -1410,8 +1305,6 @@ fn test_tab_straddling_left_col_does_not_shift_text() {
 
 #[test]
 fn test_wide_char_straddling_left_col_renders_as_space() {
-    // A CJK char (width 2) followed by "hello": with left_col=1 it straddles
-    // the left edge and must render as a space, keeping later columns aligned.
     let mut term = MockTerminal::new(5, 40);
     let mut buf = TextBuffer::new(64).unwrap();
     buf.insert_str("你hello").unwrap();
@@ -1445,7 +1338,6 @@ fn test_wide_char_straddling_left_col_renders_as_space() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -1473,8 +1365,6 @@ fn test_wide_char_straddling_left_col_renders_as_space() {
 
 #[test]
 fn test_zero_width_char_does_not_write_stray_cell() {
-    // 'a' followed by a zero-width combining accent: the accent must not
-    // write its own cell, which would corrupt whatever the terminal has there.
     let mut term = MockTerminal::new(5, 40);
     let mut buf = TextBuffer::new(64).unwrap();
     buf.insert_str("a\u{0301}").unwrap();
@@ -1506,7 +1396,6 @@ fn test_zero_width_char_does_not_write_stray_cell() {
                 terminal_cursor: None,
                 custom_highlights: None,
                 git_gutter_colors: None,
-                plugin_highlights: None,
                 annotation_styles: None,
                 annotation_adornments: None,
                 annotation_inline: None,
@@ -1532,8 +1421,6 @@ fn test_zero_width_char_does_not_write_stray_cell() {
     );
 }
 
-// plan_glyph_draw: left-scroll-edge clipping decisions
-
 #[test]
 fn test_plan_glyph_draw_fully_visible() {
     use crate::render::plan_glyph_draw;
@@ -1545,8 +1432,6 @@ fn test_plan_glyph_draw_fully_visible() {
 #[test]
 fn test_plan_glyph_draw_wide_char_straddling_left_edge() {
     use crate::render::plan_glyph_draw;
-    // A width-2 glyph starting at visual col 0 with left_col=1 has only
-    // 1 column visible: it straddles the edge and must render as a space.
     let plan = plan_glyph_draw(2, 0, 1);
     assert_eq!(plan.visible_width, 1);
     assert!(plan.straddles_left_edge);
@@ -1568,14 +1453,10 @@ fn test_plan_glyph_draw_zero_width_char_is_never_drawn() {
     assert!(!plan.straddles_left_edge);
 }
 
-// wrap_text unicode display-width tests
-
 #[test]
 fn test_wrap_text_cjk_counts_as_two_columns() {
     use crate::render::wrap_text;
 
-    // The 2 CJK chars are each 2 columns wide (display width 4): they fit at
-    // wrap_width=4 but at wrap_width=3 the 4-wide word wraps to its own line.
     let lines = wrap_text("你好", 4);
     assert_eq!(
         lines.len(),
@@ -1584,8 +1465,6 @@ fn test_wrap_text_cjk_counts_as_two_columns() {
     );
     assert_eq!(lines[0], "你好");
 
-    // A word pushing total display width past the limit wraps: "AB" + space +
-    // the 4-wide CJK word is 7 columns, exceeding width 5.
     let lines = wrap_text("AB 你好", 5);
     assert_eq!(
         lines.len(),
@@ -1596,11 +1475,8 @@ fn test_wrap_text_cjk_counts_as_two_columns() {
     assert_eq!(lines[1], "你好");
 }
 
-// calculate_cursor_column_at: cursor column calculation
-
 #[test]
 fn test_cursor_column_at_matches_plain() {
-    // calculate_cursor_column_at and calculate_cursor_column should agree.
     let mut buf = TextBuffer::new(64).unwrap();
     buf.insert_str("hello").unwrap();
     assert_eq!(
@@ -1611,7 +1487,6 @@ fn test_cursor_column_at_matches_plain() {
 
 #[test]
 fn test_cursor_column_at_mid_text() {
-    // Column equals the number of chars before cursor.
     let mut buf = TextBuffer::new(64).unwrap();
     buf.insert_str("abcde").unwrap();
     let _ = buf.set_cursor(3);
@@ -1619,14 +1494,11 @@ fn test_cursor_column_at_mid_text() {
     assert_eq!(calculate_cursor_column_at(&buf, 0, 4, buf.cursor()), 3,);
 }
 
-// Annotation style hashing: must hash style fields directly, not via format!.
-
 #[test]
 fn test_cell_style_hash_no_alloc_and_distinguishes_styles() {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
-    // CellStyle must implement Hash directly (no Debug-string roundtrip).
     let style_a = CellStyle {
         fg: Some(Color::Red),
         bg: None,
@@ -1657,8 +1529,6 @@ fn test_cell_style_hash_no_alloc_and_distinguishes_styles() {
     );
 }
 
-// ContentDrawState: inline/adornment virtual text must affect redraw decisions.
-
 fn inline_render_state<'a>(
     buf: &'a TextBuffer,
     state: &'a State,
@@ -1686,7 +1556,6 @@ fn inline_render_state<'a>(
         terminal_cursor: None,
         custom_highlights: None,
         git_gutter_colors: None,
-        plugin_highlights: None,
         annotation_styles: None,
         annotation_adornments: None,
         annotation_inline: Some(inline),
@@ -1715,8 +1584,6 @@ fn test_inline_annotation_change_triggers_content_redraw() {
     let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
     let first_char_v1 = layer.get_cell(0, 0).unwrap().content;
 
-    // Same scroll etc; annotations_revision bumps the way a real annotation
-    // store would for this change, since only the virtual text itself differs.
     system
         .render(&mut term, inline_render_state(&buf, &state, &inline_v2, 2))
         .unwrap();
@@ -1734,8 +1601,6 @@ fn test_inline_annotation_change_triggers_content_redraw() {
         "changing inline annotation text alone must trigger a content redraw"
     );
 }
-
-// highlights_hash: must cover all visible highlights and their capture index
 
 fn render_state_with_highlights<'a>(
     buf: &'a TextBuffer,
@@ -1763,7 +1628,6 @@ fn render_state_with_highlights<'a>(
         terminal_cursor: None,
         custom_highlights: None,
         git_gutter_colors: None,
-        plugin_highlights: None,
         annotation_styles: None,
         annotation_adornments: None,
         annotation_inline: None,
@@ -1811,7 +1675,6 @@ fn test_highlights_hash_detects_change_beyond_take_16_cap() {
         .unwrap();
     let hash_before = content_highlights_hash(&system);
 
-    // Only the range at index 17 (beyond the old take(16) cap) changes.
     base[17] = (170..200, 1);
     system
         .render(&mut term, render_state_with_highlights(&buf, &state, &base))
@@ -1838,7 +1701,6 @@ fn test_highlights_hash_detects_capture_change_on_same_range() {
         .unwrap();
     let hash_before = content_highlights_hash(&system);
 
-    // Same byte ranges throughout, only the capture index at index 0 changes.
     base[0].1 = 2;
     system
         .render(&mut term, render_state_with_highlights(&buf, &state, &base))
@@ -1867,7 +1729,6 @@ fn base_blit_key() -> ContentBlitKey {
         syntax_generation: 0,
         custom_highlights_hash: 0,
         terminal_colors_hash: 0,
-        plugin_highlights_hash: 0,
         search_matches_hash: 0,
         annotation_presentation_generation: 0,
         annotation_concealed_hash: 0,
@@ -1893,8 +1754,6 @@ fn scroll_blit_delta_allows_a_pure_scroll() {
 
 #[test]
 fn scroll_blit_delta_allows_non_wrap_pure_scroll() {
-    // Non-wrap mode is blit-eligible too now - only wrap<->non-wrap
-    // Transitions reject mutations after a display map exists.
     let old = ContentBlitKey {
         has_display_map: false,
         ..base_blit_key()
@@ -1952,7 +1811,6 @@ fn scroll_blit_delta_rejects_any_hash_or_structural_change() {
         Box::new(|k| k.syntax_generation += 1),
         Box::new(|k| k.custom_highlights_hash += 1),
         Box::new(|k| k.terminal_colors_hash += 1),
-        Box::new(|k| k.plugin_highlights_hash += 1),
         Box::new(|k| k.annotation_presentation_generation += 1),
         Box::new(|k| k.search_matches_hash += 1),
         Box::new(|k| k.annotation_concealed_hash += 1),
@@ -1973,8 +1831,6 @@ fn scroll_blit_delta_rejects_any_hash_or_structural_change() {
 
 #[test]
 fn scroll_blit_delta_rejects_placeholder_to_loaded_transition() {
-    // apply_loaded_content resets revision to 0 rather than bumping it, so
-    // placeholder and loaded content can otherwise compute an identical key.
     let placeholder = ContentBlitKey {
         revision: 0,
         buf_len: 0,
@@ -1989,8 +1845,6 @@ fn scroll_blit_delta_rejects_placeholder_to_loaded_transition() {
     assert_eq!(scroll_blit_delta(&placeholder, &loaded), None);
 }
 
-/// Non-wrap row-skip with `left_col > 0` and growing byte/char divergence
-/// per line - a boundary mixup would show as a wrong skipped-row color.
 #[test]
 fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() {
     use crate::search::SearchMatch;
@@ -2006,12 +1860,10 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
     let mut buf = TextBuffer::new(text.len() + 16).unwrap();
     buf.insert_str(&text).unwrap();
 
-    // Byte-indexed; "line_" sits after a growing multi-byte prefix per line.
     let custom_highlights: Vec<(Range<usize>, Color)> = text
         .match_indices("line_")
         .map(|(b, m)| (b..b + m.len(), Color::Red))
         .collect();
-    // Char-indexed, same divergence-inducing shape.
     let search_matches: Vec<SearchMatch> = text
         .match_indices("filler")
         .map(|(b, m)| {
@@ -2052,7 +1904,6 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
                     terminal_cursor: None,
                     custom_highlights: Some(&custom_highlights),
                     git_gutter_colors: None,
-                    plugin_highlights: None,
                     annotation_styles: None,
                     annotation_adornments: None,
                     annotation_inline: None,
@@ -2066,8 +1917,6 @@ fn non_wrap_scroll_blit_with_left_col_tabs_and_multibyte_matches_fresh_render() 
             .unwrap();
     };
 
-    // left_col=6 straddles the tab's 4-wide expansion (visual cols 4..8) -
-    // the exact case the boundary walk must replicate via plan_glyph_draw.
     let mut system = RenderSystem::new(10, 30);
     let mut term = MockTerminal::new(10, 30);
     system.viewport.set_scroll(0, 6);
@@ -2141,7 +1990,6 @@ fn cursor_snaps_instead_of_animating_across_a_viewport_jump() {
                     terminal_cursor: None,
                     custom_highlights: None,
                     git_gutter_colors: None,
-                    plugin_highlights: None,
                     annotation_styles: None,
                     annotation_adornments: None,
                     annotation_inline: None,
@@ -2158,15 +2006,11 @@ fn cursor_snaps_instead_of_animating_across_a_viewport_jump() {
     let mut system = RenderSystem::new(41, 30);
     let mut term = MockTerminal::new(41, 30);
 
-    // Frame 1 paints with the cursor at the file top.
-    // a startup `+N`/goto is applied).
     let _ = buf.set_cursor(0);
     system.viewport.update(0, 0, 3000, 0);
     render_once(&mut system, &mut term, &buf, true);
     assert_eq!(system.last_soft_cursor(), Some((0, 0)));
 
-    // Frame 2: cursor jumps to line 1991 (goto_line-style, not incremental);
-    // the viewport recenters around it in one step.
     let target_line = 1991;
     let target_offset = buf.line_index.get_start(target_line).unwrap();
     let _ = buf.set_cursor(target_offset);
@@ -2216,7 +2060,6 @@ fn needs_clear_forces_repaint_even_when_blit_key_is_unchanged() {
                     terminal_cursor: None,
                     custom_highlights: None,
                     git_gutter_colors: None,
-                    plugin_highlights: None,
                     annotation_styles: None,
                     annotation_adornments: None,
                     annotation_inline: None,
@@ -2234,8 +2077,6 @@ fn needs_clear_forces_repaint_even_when_blit_key_is_unchanged() {
     let mut term = MockTerminal::new(10, 30);
     render_once(&mut system, &mut term);
 
-    // Simulate the leftover content a multi-window split render would have
-    // left behind: corrupt a cell the next render should legitimately own.
     let corrupt = Cell::new(Character::Unicode('X'));
     {
         let layer = system.compositor.get_layer_mut(LayerPriority::CONTENT);
@@ -2252,8 +2093,6 @@ fn needs_clear_forces_repaint_even_when_blit_key_is_unchanged() {
         "test setup problem: corruption didn't take"
     );
 
-    // Same cursor/scroll/doc state as the first render, so the blit key is
-    // unchanged - only `needs_clear` distinguishes this from a true no-op.
     render_once(&mut system, &mut term);
 
     let repainted = system
