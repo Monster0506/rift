@@ -437,7 +437,6 @@ fn test_buffer_goto_jumps_by_b_list_index() {
         .unwrap();
     assert_eq!(editor.document_manager.active_tab_index(), 2);
 
-    // ":b 1" jumps to the first-opened buffer (1-based index).
     editor.execute_command_line("b 1".to_string());
     assert_eq!(editor.document_manager.active_tab_index(), 0);
     assert_eq!(editor.active_document().display_name(), "[No Name]");
@@ -446,7 +445,6 @@ fn test_buffer_goto_jumps_by_b_list_index() {
     assert_eq!(editor.document_manager.active_tab_index(), 2);
     assert_eq!(editor.active_document().display_name(), "doc2.txt");
 
-    // Out-of-range index is a no-op, not a panic.
     editor.execute_command_line("b 99".to_string());
     assert_eq!(editor.document_manager.active_tab_index(), 2);
 }
@@ -480,7 +478,6 @@ fn test_bd_by_index_deletes_a_non_current_buffer() {
 
     editor.execute_command_line("bd 2".to_string());
     assert_eq!(editor.document_manager.tab_count(), 2);
-    // The active buffer (doc2.txt) is unaffected by deleting the one before it.
     assert_eq!(editor.active_document().display_name(), "doc2.txt");
     assert_eq!(editor.document_manager.active_tab_index(), 1);
 }
@@ -524,11 +521,9 @@ fn test_open_buffer_list_panel_shows_status_and_enter_switches() {
         .get_document(layout.dir_doc_id)
         .unwrap();
     let text = list_doc.buffer.to_string();
-    // Status flags: current/dirty/read-only/special, one char each.
     assert!(text.contains("[2] doc1.txt:  "));
     assert!(text.contains("[3] doc2.txt: %+"));
 
-    // Move onto doc1's line (tab index 1 -> line 1) and press Enter: switches to it and closes the panel.
     {
         let doc = editor
             .document_manager
@@ -563,7 +558,6 @@ fn test_buffer_list_j_snaps_between_entries_and_updates_preview() {
         .panel_layout_of(crate::editor::PanelKind::BufferList)
         .unwrap();
 
-    // Cursor starts on line 0 (the scratch doc); j moves one entry down per press.
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Down)));
     let preview_shown = editor
         .split_tree
@@ -572,7 +566,6 @@ fn test_buffer_list_j_snaps_between_entries_and_updates_preview() {
         .document_id;
     assert_eq!(preview_shown, doc1_id);
 
-    // Read-only: typing into the list pane must not mutate it.
     let before = editor
         .document_manager
         .get_document(layout.dir_doc_id)
@@ -829,8 +822,6 @@ fn test_explorer_split_select_does_not_follow_swapped_symlink() {
     std::fs::create_dir_all(&dir_b).unwrap();
     std::fs::write(&target_file, "a").unwrap();
     if symlink_file_for_test(&target_file, &link).is_err() {
-        // No permission to create symlinks in this environment (e.g.
-        // unprivileged Windows); skip rather than fail spuriously.
         let _ = std::fs::remove_dir_all(&base);
         return;
     }
@@ -839,8 +830,6 @@ fn test_explorer_split_select_does_not_follow_swapped_symlink() {
     editor.open_explorer(base.clone());
     let layout = editor.panel_layout.clone().expect("panel layout");
 
-    // No name/is_dir in the fs.entry payload forces select-time resolution;
-    // `link` pointed at a file at listing time, so is_dir is false here.
     let entries = vec![DirEntry {
         path: link.clone(),
         is_dir: false,
@@ -857,15 +846,12 @@ fn test_explorer_split_select_does_not_follow_swapped_symlink() {
         doc.annotations.create_directory_entry(1, 1);
     }
 
-    // Disk state changes between listing and selection: the symlink is
-    // swapped to point at a directory instead of a file.
     std::fs::remove_file(&link).unwrap();
     if symlink_dir_for_test(&dir_b, &link).is_err() {
         let _ = std::fs::remove_dir_all(&base);
         return;
     }
 
-    // Move cursor onto the "link" line and select it.
     {
         let doc = editor
             .document_manager
@@ -876,15 +862,11 @@ fn test_explorer_split_select_does_not_follow_swapped_symlink() {
     }
     editor.handle_explorer_split_select();
 
-    // Directory: split stays open, dir pane path changes to the descended dir.
-    // File: split closes and the dir doc is removed.
     let descended = match editor.document_manager.get_document(layout.dir_doc_id) {
         Some(doc) => doc.directory_path().is_some_and(|path| *path != base),
         None => false,
     };
 
-    // The entry was listed as a file; selecting it must not silently
-    // follow a symlink that was swapped to a directory after listing.
     assert!(
         !descended,
         "explorer followed a symlink that changed from file to directory after listing"
@@ -1251,7 +1233,6 @@ fn test_dtf_on_abcdef_leaves_f_only() {
         Motion::TillCharForward('f'),
     )));
 
-    // The cut is ghosted, not applied yet: content is untouched.
     assert_eq!(editor.active_document().buffer.to_string(), "abcdef");
     assert_eq!(editor.active_document().pending_ghost.len(), 1);
 
@@ -1305,7 +1286,6 @@ fn test_dg_deletes_from_cursor_to_end_of_file() {
     )));
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
-    // Ghosted, not applied yet.
     assert_eq!(editor.active_document().buffer.len(), 18);
     assert_eq!(editor.active_document().pending_ghost.len(), 1);
 
@@ -1327,7 +1307,6 @@ fn test_dg_with_count_deletes_to_specific_line() {
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::GotoLine(0)));
 
-    // Ghosted, not applied yet.
     assert_eq!(
         editor.active_document().buffer.get_total_lines(),
         lines_before
@@ -1355,8 +1334,6 @@ fn new_cut_commits_the_previously_pending_ghost_first() {
     assert_eq!(editor.active_document().buffer.to_string(), "abcdef");
     assert_eq!(editor.active_document().pending_ghost.len(), 1);
 
-    // A second cut before the first ever resolves must commit "a" for real
-    // first, then ghost only the new range.
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
@@ -1517,12 +1494,10 @@ fn put_drains_every_documents_pending_ghost_but_inserts_only_the_most_recent() {
 
     editor.handle_action(&Action::Editor(EditorAction::Put { before: false }));
 
-    // doc1's ghost was drained as an ordinary delete -- "a" is gone for good.
     let doc1 = editor.document_manager.get_document(doc1_id).unwrap();
     assert_eq!(doc1.buffer.to_string(), "bcdef");
     assert!(doc1.pending_ghost.is_empty());
 
-    // doc2's ghost was the most recent: its own text pasted back in place.
     let doc2 = editor.document_manager.get_document(doc2_id).unwrap();
     assert_eq!(doc2.buffer.to_string(), "xyz");
     assert!(doc2.pending_ghost.is_empty());
@@ -1618,7 +1593,6 @@ fn cursor_can_rest_at_a_ghosts_start_but_nowhere_else_inside_it() {
     let mut editor = create_editor();
     load_text(&mut editor, "abcdef");
 
-    // Ghost "abc" (0..3); creation itself must land on the one legal spot.
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
@@ -1626,8 +1600,6 @@ fn cursor_can_rest_at_a_ghosts_start_but_nowhere_else_inside_it() {
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     assert_eq!(editor.active_document().buffer.cursor(), 0);
 
-    // A single-char Right tries to land at offset 1, inside the ghost -- it
-    // must skip clean through to offset 3, never resting at 1 or 2.
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
     assert_eq!(
         editor.active_document().buffer.cursor(),
@@ -1643,7 +1615,6 @@ fn cursor_skips_backward_to_a_ghosts_start_from_beyond_it() {
     let mut editor = create_editor();
     load_text(&mut editor, "abcdef");
 
-    // Ghost "abc" (0..3).
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
@@ -1651,8 +1622,6 @@ fn cursor_skips_backward_to_a_ghosts_start_from_beyond_it() {
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
 
     editor.active_document().buffer.set_cursor(3).unwrap();
-    // A single-char Left tries to land at offset 2, inside the ghost --
-    // backward travel must land on the ghost's start (0), not stop partway.
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Left)));
     assert_eq!(editor.active_document().buffer.cursor(), 0);
 }
@@ -1679,8 +1648,6 @@ fn cursor_skips_over_each_ghost_in_a_multi_region_pending_list() {
     )));
     assert_eq!(editor.active_document().pending_ghost.len(), 2);
 
-    // Region::span() is anchor..=cursor, so these ghost "0..3" and "5..8";
-    // moving right must skip straight through both ghosted spans.
     editor.active_document().buffer.set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::Move(
         crate::action::Motion::Right,
@@ -2011,8 +1978,6 @@ fn test_display_map_cache_populated_after_command() {
     let mut editor = create_editor_sized(24, 80);
     set_content(&mut editor, "hello world\n");
 
-    // Drop the entry left by the constructor's first paint, so the command
-    // below is what populates the cache.
     editor.display_map_cache.clear();
 
     editor.execute_buffer_command(crate::command::Command::Move(
@@ -2020,7 +1985,6 @@ fn test_display_map_cache_populated_after_command() {
         1,
     ));
 
-    // Cache must be populated with the buffer's current revision.
     let rev = editor.active_document().buffer.revision;
     match editor.display_map_cache.last() {
         Some(entry) => assert_eq!(entry.revision, rev),
@@ -2045,7 +2009,6 @@ fn test_display_map_cache_revision_stable_across_moves() {
     ));
     let rev_after_second = editor.display_map_cache.last().map(|e| e.revision);
 
-    // Buffer revision unchanged (no mutations), so cached revision should be the same.
     assert_eq!(
         rev_after_first, rev_after_second,
         "cache revision should not change between non-mutating commands"
@@ -2063,7 +2026,6 @@ fn test_display_map_cache_invalidated_after_mutation() {
     ));
     let rev_before = editor.display_map_cache.last().map(|e| e.revision).unwrap();
 
-    // A mutation increments the buffer revision.
     editor.current_mode = Mode::Insert;
     editor.execute_buffer_command(crate::command::Command::InsertChar('x'));
 
@@ -2078,7 +2040,6 @@ fn test_display_map_cache_invalidated_after_mutation() {
 #[test]
 fn test_resolve_display_map_cached_reuses_across_moves() {
     let mut editor = create_editor_sized(24, 20);
-    // Long lines force multi-row wrapping at width ~20.
     set_content(
         &mut editor,
         "this is a fairly long first line that wraps\nsecond long line also wraps here\n",
@@ -2089,7 +2050,6 @@ fn test_resolve_display_map_cached_reuses_across_moves() {
     let rows_first = first.as_ref().map(|m| m.total_visual_rows());
     assert!(rows_first.unwrap() > 2, "long lines should wrap to >2 rows");
 
-    // A second call with no mutation must hit the cache and return an identical map.
     let cached_rev = editor.display_map_cache.last().map(|e| e.revision);
     let second = editor.resolve_display_map_cached(doc_id, 20, 0, 100);
     assert_eq!(second.map(|m| m.total_visual_rows()), rows_first);
@@ -2099,7 +2059,6 @@ fn test_resolve_display_map_cached_reuses_across_moves() {
         "revision must be unchanged (cache hit, no rebuild)"
     );
 
-    // Equivalence: cached result matches a fresh uncached build.
     let doc = editor.document_manager.get_document(doc_id).unwrap();
     let fresh = super::resolve_display_map(
         doc,
@@ -2129,8 +2088,6 @@ fn test_resolve_display_map_cached_rebuilds_on_tab_width_change() {
         .map(|m| m.tab_width);
     assert_eq!(before, Some(4), "default tab width");
 
-    // Change tab width WITHOUT mutating the buffer (no revision bump). The
-    // cached map's stored tab_width no longer matches, so it must rebuild.
     editor
         .document_manager
         .get_document_mut(doc_id)
@@ -2161,7 +2118,6 @@ fn test_resolve_display_map_cached_keeps_entries_per_width() {
     let wide = editor.resolve_display_map_cached(doc_id, 30, 0, 100);
     assert_eq!(editor.display_map_cache.len(), 2, "one entry per width");
 
-    // Re-resolving either width must be a cache hit: same Arc, no rebuild.
     let narrow_again = editor.resolve_display_map_cached(doc_id, 15, 0, 100);
     let wide_again = editor.resolve_display_map_cached(doc_id, 30, 0, 100);
     assert!(std::sync::Arc::ptr_eq(
@@ -2177,8 +2133,6 @@ fn test_resolve_display_map_cached_keeps_entries_per_width() {
 
 #[test]
 fn test_resolve_display_map_cached_detects_placeholder_to_loaded_swap() {
-    // Render the empty placeholder first (caching a complete empty map),
-    // then swap in loaded content at revision 0.
     let mut editor = create_editor_sized(24, 80);
     let doc_id = editor.document_manager.active_document_id().unwrap();
     editor.resolve_display_map_cached(doc_id, 80, 0, 100);
@@ -2223,8 +2177,6 @@ fn test_resolve_display_map_cached_detects_placeholder_to_loaded_swap() {
 
 #[test]
 fn test_opening_a_file_shows_its_content_immediately_not_after_a_later_edit() {
-    // End-to-end version of the swap above, through the same two-render
-    // sequence the real open-file job completion handler uses.
     let mut editor = create_editor_sized(24, 80);
     let doc_id = editor.document_manager.active_document_id().unwrap();
     editor.force_full_redraw().unwrap();
@@ -2282,7 +2234,6 @@ fn test_lazy_display_map_extends_correctly_for_far_cursor_jump() {
     let doc_id = editor.document_manager.active_document_id().unwrap();
     let content_width = editor.split_tree.focused_window().viewport.visible_cols();
 
-    // Jump the cursor far into the document, like `G` or a distant `/search` match.
     let far_char = {
         let doc = editor.document_manager.get_document(doc_id).unwrap();
         doc.buffer.len() * 3 / 4
@@ -2326,14 +2277,11 @@ fn test_edit_on_partial_display_map_stays_correct() {
     let doc_id = editor.document_manager.active_document_id().unwrap();
     let content_width = editor.split_tree.focused_window().viewport.visible_cols();
 
-    // Sanity: the map must still be partial (small viewport, huge doc).
     let dm_before = editor
         .resolve_display_map_cached(doc_id, content_width, 0, 0)
         .unwrap();
     assert!(!dm_before.is_complete());
 
-    // apply_edit's own precondition refuses to patch a partial map, so this
-    // falls back to a (still lazy) rebuild rather than corrupting anything.
     editor.current_mode = Mode::Insert;
     editor.execute_buffer_command(crate::command::Command::InsertChar('X'));
 
@@ -2373,8 +2321,6 @@ fn test_large_count_down_motion_matches_full_build_reference() {
     let doc_id = editor.document_manager.active_document_id().unwrap();
     let content_width = editor.split_tree.focused_window().viewport.visible_cols();
 
-    // A count far larger than the viewport (and larger than one internal
-    // extension batch) forces the motion itself to extend the map on demand.
     let count = 137usize;
     let expected = {
         let doc = editor.document_manager.get_document(doc_id).unwrap();
@@ -2432,7 +2378,6 @@ fn test_text_changed_coarse_fires_once_per_render() {
         "TextChangedCoarse must not fire inside execute_buffer_command"
     );
 
-    // Single render cycle flushes exactly one event.
     editor.update_and_render().unwrap();
     assert_eq!(
         *count.lock().unwrap(),
@@ -2440,7 +2385,6 @@ fn test_text_changed_coarse_fires_once_per_render() {
         "TextChangedCoarse must fire exactly once per render cycle"
     );
 
-    // A second render with no further mutations must not fire again.
     editor.update_and_render().unwrap();
     assert_eq!(
         *count.lock().unwrap(),
@@ -2482,7 +2426,6 @@ fn test_cursor_moved_fires_once_per_render_with_latest_position() {
         "CursorMoved must fire exactly once per render cycle, with the latest position"
     );
 
-    // A second render with no further moves must not fire again.
     editor.update_and_render().unwrap();
     assert_eq!(
         cols.lock().unwrap().len(),
@@ -2501,7 +2444,6 @@ fn leading_count_composes_with_nest_count_through_full_key_path() {
     load_text(&mut editor, "((((ab))))");
     editor.active_document().buffer.set_cursor(4).unwrap();
 
-    // Replay "2di2(" key by key, exactly as run_loop would dispatch it.
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -2521,7 +2463,6 @@ fn leading_count_composes_with_nest_count_through_full_key_path() {
     editor.advance_pending_grammar(grammar, Key::Char('('));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    // Composed nesting (leading 2 * typed 2 = 4) reaches the outermost pair.
     assert_eq!(editor.active_document().buffer.to_string(), "()");
 }
 
@@ -2715,7 +2656,6 @@ fn surround_escape_cancels_pending_grammar() {
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     assert!(editor.pending_grammar.is_some());
 
-    // Escape cancels OperatorPending directly, without going through key dispatch.
     editor.set_mode(Mode::Normal);
     editor.pending_count = 0;
     editor.pending_grammar = None;
@@ -2724,7 +2664,6 @@ fn surround_escape_cancels_pending_grammar() {
     assert!(editor.pending_grammar.is_none());
     let grammar = editor.pending_grammar.take();
     assert!(grammar.is_none());
-    // A stray 'j'-like keypress after cancel must not resurrect the surround grammar.
     assert_eq!(editor.active_document().buffer.to_string(), "foo(bar)baz");
     let _ = Key::Char('j');
 }
@@ -2798,8 +2737,6 @@ fn surround_add_outer_and_inner_counts_compose_for_sgg() {
     load_text(&mut editor, "line\nline");
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    // "2s2gg\"": leading 2 (before `s`) doubles the delimiter, inner 2 (typed
-    // between the two `g`'s) spans 2 lines, like `2yy`.
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
@@ -2825,7 +2762,6 @@ fn surround_interrupted_sg_does_not_corrupt_later_yank() {
     load_text(&mut editor, "foo bar");
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    // Start `sg` but abandon it by pressing an operator key before supplying a motion.
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('g'));
@@ -2835,13 +2771,9 @@ fn surround_interrupted_sg_does_not_corrupt_later_yank() {
     )));
     assert_eq!(editor.pending_surround_add, None);
 
-    // A different operator key cancels the delete too, returning to a
-    // clean Normal-mode state.
     editor.set_mode(Mode::Normal);
     editor.pending_operator = None;
 
-    // A subsequent plain `yw` must behave as an ordinary yank, not a
-    // resurrected surround-add waiting for a delimiter char.
     editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
     editor.pending_grammar = Some(pending_grammar::PendingGrammar::TextObject(
         text_object_input::PendingTextObject::new(Modifier::Inner),
@@ -2862,8 +2794,6 @@ fn surround_give_line_without_pending_add_cancels_like_unrecognized_key() {
     let mut editor = create_editor();
     load_text(&mut editor, "foo bar");
 
-    // Plain `yg` (no `sg` in progress): pending_surround_add is None, so SurroundGiveLine
-    // must cancel back to Normal, not start a phantom surround-add session.
     editor.handle_action(&Action::Editor(EditorAction::Operator(OperatorType::Yank)));
     editor.handle_action(&Action::Editor(EditorAction::SurroundGiveLine));
 
@@ -2895,8 +2825,6 @@ fn stale_syntax_job_result_does_not_clobber_newer_state() {
 
     let doc_id = editor.active_document_id();
 
-    // Spawn a background reparse, then keep typing before its result arrives --
-    // exactly the race that produced offset/flickering highlights (dcf9eaa).
     editor
         .spawn_syntax_parse_job(doc_id)
         .expect("job should spawn");
@@ -2907,8 +2835,6 @@ fn stale_syntax_job_result_does_not_clobber_newer_state() {
         doc.buffer.insert_str("\nfn extra() {}\n").unwrap();
     }
 
-    // Recompute ground truth via a full reparse -- the direct buffer mutation
-    // above bypasses `tree.edit()`, so incremental reuse can't be trusted here.
     let source = editor.active_document().buffer.to_logical_bytes();
     let syntax = editor.active_document().syntax.as_mut().unwrap();
     syntax.invalidate_trees();
@@ -2959,8 +2885,6 @@ fn undo_keeps_syntax_tree_for_incremental_reuse() {
     editor.active_document().set_syntax(syntax);
     editor.do_incremental_syntax_parse();
 
-    // A real, recorded edit (through the proper Document API, so it both
-    // informs the tree via `InputEdit` and is undo-able).
     editor.active_document().insert_str("// comment\n").unwrap();
     editor.do_incremental_syntax_parse();
     assert!(editor
@@ -2971,8 +2895,6 @@ fn undo_keeps_syntax_tree_for_incremental_reuse() {
         .tree
         .is_some());
 
-    // Undo must keep the tree around for incremental reuse, not discard it --
-    // a full reparse forced on every undo is what produced the undo flicker.
     assert!(editor.active_document().undo());
     assert!(
         editor
@@ -3008,8 +2930,6 @@ fn set_aware_delete_keeps_syntax_highlights_in_sync() {
     editor.active_document().set_syntax(syntax);
     editor.do_incremental_syntax_parse();
 
-    // Bank both "fn ... {}" lines via Visual mode (the multi-region path
-    // exercised by d/c/y/r/sg/p, not a direct handle-rolled buffer edit).
     editor.active_document().buffer.set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualLine));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
@@ -3036,7 +2956,6 @@ fn set_aware_delete_keeps_syntax_highlights_in_sync() {
         .unwrap()
         .highlights(None);
 
-    // Ground truth: force a full reparse of the (now-empty) buffer directly.
     let source = editor.active_document().buffer.to_logical_bytes();
     let syntax = editor.active_document().syntax.as_mut().unwrap();
     syntax.invalidate_trees();
@@ -3071,8 +2990,6 @@ fn visual_resumes_a_banked_region_under_the_cursor() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "hello world");
-    // Bank a region covering "hello" (0..4), drag direction cursor->anchor
-    // reversed (anchor=4, cursor=0) to prove direction is restored exactly.
     editor
         .active_document()
         .selection_set
@@ -3137,7 +3054,6 @@ fn visual_swap_ends_exchanges_anchor_and_cursor() {
     editor.handle_action(&Action::Editor(EditorAction::Move(
         crate::action::Motion::Right,
     )));
-    // anchor=0, cursor=2
 
     editor.handle_action(&Action::Editor(EditorAction::VisualSwapEnds));
 
@@ -3188,8 +3104,6 @@ fn expand_region_noop_when_already_at_buffer_extent() {
     editor.active_document().buffer.set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
 
-    // Expand repeatedly until it stops growing (terminates quickly on a
-    // 1-char buffer); the last call must leave anchor/cursor unchanged.
     editor.handle_action(&Action::Editor(EditorAction::ExpandRegion));
     let before = (
         editor.visual_anchor,
@@ -3311,8 +3225,6 @@ fn set_aware_delete_surround_handles_two_regions_sharing_one_enclosing_pair() {
     use crate::selection::Region;
     use crate::wrap::RangeKind;
 
-    // "(a(b)c)": 'a' and 'c' share the outer pair only; a stale offset for
-    // the lower region would land on the inner pair's open paren instead.
     let mut editor = create_editor();
     load_text(&mut editor, "(a(b)c)");
     {
@@ -3340,7 +3252,6 @@ fn issue_worked_example_bank_two_regions_no_delete_yet() {
     let mut editor = create_editor();
     load_text(&mut editor, "Hello\nworld\nfoo\n");
 
-    // goto line 1 (already there) -> v -> select "Ho" -> Esc
     editor.active_document().buffer.set_cursor(0).unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Right)));
@@ -3352,7 +3263,6 @@ fn issue_worked_example_bank_two_regions_no_delete_yet() {
         (0, 2)
     );
 
-    // goto line 3 (plain motion, set untouched) -> v -> select "f" -> Esc
     let line3_start = editor.active_document().buffer.line_start(2);
     let _ = editor.active_document().buffer.set_cursor(line3_start);
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
@@ -3444,7 +3354,6 @@ fn n_keeps_repeat_find_behavior_when_set_is_empty() {
         Motion::RepeatFindForward,
     )));
 
-    // Repeat-find-char behavior, completely untouched: lands on the next 'o'.
     assert_eq!(editor.active_document().buffer.cursor(), 1);
 }
 
@@ -3634,7 +3543,6 @@ fn set_aware_delete_removes_every_banked_region_as_one_op() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "foo\n\nfoofoo\n");
-    // Bank "foo" (0..2) and the two touching "foo"s inside "foofoo" (5..7, 8..10).
     editor
         .active_document()
         .selection_set
@@ -3657,7 +3565,6 @@ fn set_aware_delete_removes_every_banked_region_as_one_op() {
         OperatorType::Delete,
     )));
 
-    // Ghosted, not applied yet.
     assert_eq!(
         editor.active_document().buffer.to_string(),
         "foo\n\nfoofoo\n"
@@ -3750,7 +3657,6 @@ fn visual_d_commits_active_region_then_runs_the_batch() {
     editor.handle_action(&Action::Editor(EditorAction::Move(
         crate::action::Motion::Right,
     )));
-    // active region now 0..1 (chars "0","1"), banked set still has 5..6 ("5")
 
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -3904,7 +3810,6 @@ fn multi_capital_i_inserts_at_line_start_of_each_region_row() {
 
     let mut editor = create_editor();
     load_text(&mut editor, "aaa\nbbb\nccc");
-    // region inside "bbb" (offset 5, the second 'b') and inside "ccc" (offset 9)
     editor
         .active_document()
         .selection_set
@@ -4275,8 +4180,6 @@ fn region_build_recording_does_not_capture_plain_normal_mode_navigation() {
 
     editor.handle_action(&Action::Editor(EditorAction::EnterVisualChar));
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
-    // Plain navigation between bank operations is not part of the
-    // recorded sequence; "." rebuilds relative to the cursor's new position.
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Down)));
     editor.handle_action(&Action::Editor(EditorAction::Move(Motion::Down)));
 
@@ -4421,7 +4324,6 @@ fn operator_count_and_motion_count_multiply_not_concatenate() {
     load_text(&mut editor, "one two three four five six seven eight");
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    // "2d3w" must delete 2*3=6 words, not loop a 23-word delete.
     editor.pending_count = 2;
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
@@ -4443,7 +4345,6 @@ fn dot_repeat_leading_count_overrides_embedded_command_count() {
     load_text(&mut editor, "one two three four five six seven");
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    // Simulate "d2w" having just run and been recorded for dot-repeat.
     let d2w = Command::Delete(Motion::NextWord, 2);
     editor.execute_buffer_command(d2w);
     editor.dot_repeat.record_single(d2w);
@@ -4452,8 +4353,6 @@ fn dot_repeat_leading_count_overrides_embedded_command_count() {
         "three four five six seven"
     );
 
-    // "3." must run d3w ONCE (vim: leading count replaces the embedded
-    // count), not loop the original 2-word delete 3 times (6 words).
     editor.pending_count = 3;
     editor.execute_dot_repeat();
 
@@ -4787,7 +4686,6 @@ fn every_set_aware_command_clears_the_set_after_acting() {
             .bank(Region::new(4, 4, RangeKind::Charwise));
     };
 
-    // d
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
     fresh_set(&mut editor);
@@ -4799,7 +4697,6 @@ fn every_set_aware_command_clears_the_set_after_acting() {
         "d must clear the set"
     );
 
-    // y
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
     fresh_set(&mut editor);
@@ -4809,7 +4706,6 @@ fn every_set_aware_command_clears_the_set_after_acting() {
         "y must clear the set"
     );
 
-    // i (then Esc to finish the insert session)
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
     fresh_set(&mut editor);
@@ -4820,7 +4716,6 @@ fn every_set_aware_command_clears_the_set_after_acting() {
         "i must clear the set"
     );
 
-    // o
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
     fresh_set(&mut editor);
@@ -4831,7 +4726,6 @@ fn every_set_aware_command_clears_the_set_after_acting() {
         "o must clear the set"
     );
 
-    // p
     let mut editor = create_editor();
     load_text(&mut editor, "0123456789");
     editor.clipboard_ring.push_str("X".to_string());
@@ -4872,8 +4766,6 @@ fn dot_repeat_yank_reselects_without_reexecuting() {
     );
 }
 
-// Builds the set via `m` (RegionBankOccurrenceNext) on a repeated
-// substring so the build sequence is recorded and replays at a new cursor.
 #[test]
 fn dot_repeat_paste_genuinely_differs_from_bare_repeat() {
     use crate::action::{Action, EditorAction, Motion};
@@ -4907,8 +4799,6 @@ fn dot_repeat_paste_genuinely_differs_from_bare_repeat() {
     );
 }
 
-// The set-aware multi-region Put path never establishes `post_paste_state`,
-// so CyclePaste has no single position to act on and correctly no-ops.
 #[test]
 fn cycle_paste_after_set_clears_only_touches_the_single_most_recent_position() {
     use crate::action::{Action, EditorAction};
@@ -4967,8 +4857,6 @@ fn real_keymap_v_then_l_renders_a_visible_highlight_in_the_composited_cells() {
         }
     };
 
-    // Drive through the real keymap (not handle_action directly) so this
-    // catches keymap/context wiring gaps, not just annotation logic.
     feed_key(&mut editor, Key::Char('v'));
     feed_key(&mut editor, Key::Char('l'));
 
@@ -5004,8 +4892,6 @@ fn visual_highlight_redraws_on_a_frame_after_the_initial_one() {
     load_text(&mut editor, "hello world");
     editor.active_document().buffer.set_cursor(0).unwrap();
 
-    // Render once first: redraw detection only catches an annotation-only
-    // change if spans are hashed.
     editor.update_and_render().unwrap();
 
     let feed_key = |editor: &mut Editor<MockTerminal>, key: Key| {
@@ -5049,7 +4935,6 @@ fn visual_highlight_redraws_on_a_frame_after_the_initial_one() {
     );
 }
 
-/// Drains pending job messages synchronously, blocking briefly for each job thread to finish.
 fn drain_jobs(editor: &mut Editor<MockTerminal>) {
     use std::time::{Duration, Instant};
     let deadline = Instant::now() + Duration::from_secs(2);
@@ -5101,7 +4986,6 @@ fn test_explorer_preview_debounces_rapid_cursor_moves() {
 
     let dir_doc_id = editor.panel_layout.as_ref().unwrap().dir_doc_id;
 
-    // Simulate rapid scrolling without pausing; entries start at line 1 (line 0 is "..").
     let mut spawned_job_ids = Vec::new();
     for line in 1..=6 {
         move_explorer_cursor_to_line(&mut editor, dir_doc_id, line);
@@ -5119,8 +5003,6 @@ fn test_explorer_preview_debounces_rapid_cursor_moves() {
         "expected one job spawned per cursor move (each targets a distinct entry)"
     );
 
-    // Every job superseded by a later cursor move should have been cancelled;
-    // only the most recent one may still be running.
     let cancelled_count = spawned_job_ids[..spawned_job_ids.len() - 1]
         .iter()
         .filter(|id| {
@@ -5151,34 +5033,32 @@ fn test_explorer_preview_discards_stale_result() {
     let dir_doc_id = layout.dir_doc_id;
     let preview_doc_id = layout.preview_doc_id;
 
-    // Cursor starts on the first entry (issuing a request), then moves to the
-    // second before that request finishes (line 0 is "..", first entry is line 1).
     move_explorer_cursor_to_line(&mut editor, dir_doc_id, 1);
     let stale_path = dir.join("aaa_old.txt");
 
     move_explorer_cursor_to_line(&mut editor, dir_doc_id, 2);
     let current_path = dir.join("zzz_new.txt");
 
-    // The newer request's result lands first (e.g. small/local file)...
     let fresh_result = Box::new(
         crate::job_manager::jobs::explorer_preview::ExplorerPreviewResult {
             right_doc_id: preview_doc_id,
             path: current_path,
             dir_entries: None,
             file_text: Some("new content".to_string()),
+            undo_file: None,
         },
     );
     editor
         .handle_job_message(crate::job_manager::JobMessage::Custom(10000, fresh_result))
         .unwrap();
 
-    // ...but the older (now stale) request's result, issued earlier, arrives after it.
     let stale_result = Box::new(
         crate::job_manager::jobs::explorer_preview::ExplorerPreviewResult {
             right_doc_id: preview_doc_id,
             path: stale_path,
             dir_entries: None,
             file_text: Some("old content".to_string()),
+            undo_file: None,
         },
     );
     editor
@@ -5204,8 +5084,6 @@ fn test_explorer_preview_discards_stale_result() {
 
 #[test]
 fn test_explorer_preview_updates_on_real_j_keypress_navigation() {
-    // Interface-mode buffers (the directory pane) resolve Up/Down via the
-    // snap-to-actionable-line fast path, not ordinary Move handling.
     use crate::replay::ReplayBackend;
 
     let dir = std::env::temp_dir().join(format!("rift_replay_preview_{}", std::process::id()));
@@ -5257,7 +5135,6 @@ fn test_explorer_preview_populates_for_real_file_and_directory_targets() {
     let dir_doc_id = layout.dir_doc_id;
     let preview_doc_id = layout.preview_doc_id;
 
-    // Line 0 is "..", entries are sorted directories-first: line 1 is the subdir.
     move_explorer_cursor_to_line(&mut editor, dir_doc_id, 1);
     editor.update_explorer_preview();
     drain_jobs(&mut editor);
@@ -5271,8 +5148,6 @@ fn test_explorer_preview_populates_for_real_file_and_directory_targets() {
         "expected a directory preview for the subdir entry"
     );
 
-    // Line 2 is the file. Clear the write log so we can inspect exactly what
-    // the incremental (non-forced) render produces, not a forced full redraw.
     editor.term.clear();
     move_explorer_cursor_to_line(&mut editor, dir_doc_id, 2);
     editor.update_explorer_preview();
@@ -5294,8 +5169,6 @@ fn test_explorer_preview_populates_for_real_file_and_directory_targets() {
         "expected the preview pane to actually render its contents on screen, got:\n{screen}"
     );
 
-    // The compositor's logical buffer is correct (checked above); now check
-    // what the incremental diff-based render actually wrote to the terminal.
     let written = editor.term.get_written_string();
     assert!(
         written.contains("fn") && written.contains("main"),
@@ -5306,9 +5179,57 @@ fn test_explorer_preview_populates_for_real_file_and_directory_targets() {
 }
 
 #[test]
+fn test_explorer_preview_renders_a_persisted_undo_file_not_as_binary() {
+    let dir =
+        std::env::temp_dir().join(format!("rift_preview_undofile_e2e_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let source_path = dir.join("notes.txt");
+    let undo_dir = dir.join("undo");
+
+    let mut tree = crate::history::UndoTree::new();
+    let mut tx = crate::history::EditTransaction::new("insert 'hi'");
+    tx.record(crate::history::EditOperation::Insert {
+        position: crate::history::Position::new(0, 0),
+        text: "hi"
+            .chars()
+            .map(crate::character::Character::from)
+            .collect(),
+        len: 2,
+    });
+    tree.push(tx, None);
+    let hash = crate::history::persist::sha256(b"hi");
+    crate::history::persist::save(&undo_dir, &source_path, &tree, hash).unwrap();
+
+    let mut editor = create_editor();
+    editor.open_explorer(undo_dir.clone());
+    drain_jobs(&mut editor);
+
+    let layout = editor.panel_layout.as_ref().unwrap().clone();
+    let dir_doc_id = layout.dir_doc_id;
+    let preview_doc_id = layout.preview_doc_id;
+
+    move_explorer_cursor_to_line(&mut editor, dir_doc_id, 1);
+    editor.update_explorer_preview();
+    drain_jobs(&mut editor);
+
+    let preview_doc = editor
+        .document_manager
+        .get_document(preview_doc_id)
+        .unwrap();
+    assert_eq!(
+        preview_doc.buffer_kind_id(),
+        crate::document::BufferKindId::UNDO_FILE_VIEW,
+        "previewing a .undo file should render it with its custom buffer type"
+    );
+    let text = preview_doc.buffer.to_string();
+    assert!(text.contains("insert 'hi'"), "text was: {text}");
+    assert!(!text.contains("<binary file>"), "text was: {text}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_explorer_preview_first_move_from_blank_writes_to_terminal() {
-    // The exact real-session sequence: open explorer (preview pane starts
-    // blank, cursor on ".."), then a single move to the first real entry.
     let dir = std::env::temp_dir().join(format!("rift_preview_firstmove_{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     std::fs::write(dir.join("z_file.rs"), "fn main() {}\n").unwrap();
@@ -5358,8 +5279,6 @@ fn closing_a_document_sends_lsp_did_close() {
         },
     );
 
-    // A second buffer keeps do_quit on the "close this buffer" path instead
-    // of the "last buffer: quit the editor" one.
     editor
         .open_file(Some(other_path.display().to_string()), false)
         .unwrap();
@@ -5392,8 +5311,6 @@ fn dd_deletes_the_current_line_via_the_operator_doubling_path_not_a_keymap_seque
     let mut editor = create_editor();
     load_text(&mut editor, "first\nsecond\nthird\n");
 
-    // No [d, d] sequence is registered; the run loop's Ambiguous handler
-    // executes operator keys immediately, so each 'd' is dispatched on its own.
     let feed_key = |editor: &mut Editor<MockTerminal>, key: Key| match editor
         .keymap
         .lookup(KeyContext::Normal, std::slice::from_ref(&key))
@@ -5428,8 +5345,6 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
     let mut editor = create_editor();
     load_text(&mut editor, "line one\nline two\nline three\n");
 
-    // 'Q' is both a complete action and a prefix of [Q, Q], same shape as an
-    // Ambiguous non-operator match -- nothing in the default keymap does this.
     editor.keymap.register(
         KeyContext::Normal,
         Key::Char('Q'),
@@ -5446,8 +5361,6 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
         MatchResult::Ambiguous(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
 
-    // Back-date the pending-state stamp past the timeout instead of sleeping,
-    // so the test resolves immediately regardless of whether the fix is present.
     editor.pending_keys.push(Key::Char('Q'));
     editor.pending_keys_started_at =
         Some(std::time::Instant::now() - std::time::Duration::from_millis(1500));
@@ -5469,7 +5382,6 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
     );
 }
 
-/// Roughly 3.5 MB / 80k lines of plausible Rust for the TTFP harness.
 #[cfg(feature = "treesitter")]
 fn generate_huge_rust_source() -> String {
     use std::fmt::Write as _;
@@ -5495,8 +5407,6 @@ fn generate_huge_rust_source() -> String {
     src
 }
 
-/// Manual TTFP timing harness, not a pass/fail test. Run with:
-/// cargo test --release --features treesitter --lib -- --ignored --nocapture ttfp
 #[test]
 #[ignore = "manual timing harness"]
 #[cfg(feature = "treesitter")]
@@ -5515,7 +5425,6 @@ fn ttfp_open_huge_treesitter_annotation_doc() {
         src.matches('\n').count()
     );
 
-    // Doc-independent fixed cost: VM init, plugin load, keymap, term setup.
     let t = Instant::now();
     let empty = Editor::new(MockTerminal::new(50, 180)).unwrap();
     let fixed_init = t.elapsed();
@@ -5529,7 +5438,6 @@ fn ttfp_open_huge_treesitter_annotation_doc() {
         .map(|t| t.duration_since(t0))
         .unwrap_or(init);
 
-    // Annotation-full: 10k styled range annotations spread across the doc.
     let t = Instant::now();
     {
         let doc = editor.active_document();
@@ -5554,7 +5462,6 @@ fn ttfp_open_huge_treesitter_annotation_doc() {
     editor.update_and_render().unwrap();
     let annotated_paint = t.elapsed();
 
-    // Attribution passes: re-run the size-dependent pieces of with_file.
     let t = Instant::now();
     let doc2 = crate::document::Document::from_file(9_999, &path_str).unwrap();
     let file_load = t.elapsed();
@@ -5596,7 +5503,6 @@ fn ttfp_open_huge_treesitter_annotation_doc() {
     editor.force_full_redraw().unwrap();
     let full_redraw = t.elapsed();
 
-    // Drain jobs until the background parse lands, then paint highlighted.
     let t = Instant::now();
     let deadline = Instant::now() + Duration::from_secs(30);
     while editor
@@ -5639,7 +5545,6 @@ fn ttfp_open_huge_treesitter_annotation_doc() {
     eprintln!("highlighted repaint:                 {highlighted_paint:>10.2?}");
 }
 
-/// Paragraph-per-line prose in the shape of a Gutenberg markdown book.
 #[cfg(feature = "treesitter")]
 fn generate_prose_markdown() -> String {
     use std::fmt::Write as _;
@@ -5698,8 +5603,6 @@ fn measure_scroll(
     );
 }
 
-/// Manual scroll-latency harness for wrapped markdown prose. Run with:
-/// cargo test --release --features treesitter --lib -- --ignored --nocapture scroll_latency
 #[test]
 #[ignore = "manual timing harness"]
 #[cfg(feature = "treesitter")]
@@ -5734,7 +5637,6 @@ fn scroll_latency_wrapped_markdown() {
     )
     .unwrap();
 
-    // Let the background markdown parse land so highlights are in play.
     let deadline = Instant::now() + Duration::from_secs(30);
     while editor
         .active_document()
@@ -5787,7 +5689,6 @@ fn scroll_latency_wrapped_markdown() {
     );
     measure_scroll(&mut editor, "k back up", crate::action::Motion::Up, 300);
 
-    // A high-hit-count active search stresses the per-frame highlight sync.
     editor.state.last_search_query = Some("the".to_string());
     editor.update_search_highlights();
     editor.update_and_render().unwrap();
@@ -5798,7 +5699,6 @@ fn scroll_latency_wrapped_markdown() {
     editor.update_and_render().unwrap();
     measure_scroll(&mut editor, "j near end", crate::action::Motion::Down, 300);
 
-    // Insert-mode typing, with and without a match-heavy search active.
     editor.goto_line(2_500);
     editor.current_mode = crate::mode::Mode::Insert;
     measure_type(&mut editor, "type with /the", 200);
@@ -5809,8 +5709,6 @@ fn scroll_latency_wrapped_markdown() {
     editor.current_mode = crate::mode::Mode::Insert;
     measure_type(&mut editor, "type no search", 200);
 
-    // Attribution: split the mutation from the render, and time the big
-    // per-mutation pieces directly.
     {
         let t = Instant::now();
         editor.execute_buffer_command(crate::command::Command::InsertChar('y'));
@@ -5834,8 +5732,6 @@ fn scroll_latency_wrapped_markdown() {
     }
 }
 
-/// Drains jobs until every thread has finished (checked via the thread
-/// handle, not one `recv_timeout` miss) - a job can outlive a short poll.
 #[cfg(feature = "treesitter")]
 fn drain_jobs_until_idle(editor: &mut Editor<MockTerminal>) {
     use std::time::{Duration, Instant};
@@ -5854,8 +5750,6 @@ fn drain_jobs_until_idle(editor: &mut Editor<MockTerminal>) {
     }
 }
 
-/// A sync parse can abort under load, leaving only a debounce timer armed
-/// rather than a running job - forces the background parse to run now.
 #[cfg(feature = "treesitter")]
 fn ensure_syntax_parsed(editor: &mut Editor<MockTerminal>) {
     let has_tree = editor
@@ -5871,8 +5765,6 @@ fn ensure_syntax_parsed(editor: &mut Editor<MockTerminal>) {
     drain_jobs_until_idle(editor);
 }
 
-/// Feed a vim-notation key sequence through the real keymap, not
-/// `handle_action` directly - catches keymap/context wiring gaps too.
 fn feed_keys(editor: &mut Editor<MockTerminal>, seq: &str) {
     use crate::action::{Action, EditorAction};
     use crate::key::Key;
@@ -5908,8 +5800,6 @@ fn feed_keys(editor: &mut Editor<MockTerminal>, seq: &str) {
     }
 }
 
-/// Dirty-row scroll blit must be behaviorally invisible: a scrolling editor
-/// must render exactly what a fresh full render would, at every step.
 #[test]
 fn dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
     let paragraph = "The quick brown fox jumps over the lazy dog again and again near the riverbank while the sun sets slowly behind the distant hills. ";
@@ -5972,8 +5862,6 @@ fn dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
     );
 }
 
-/// Content layer cells only - the composited/cursor-inclusive buffer would
-/// give false-positive diffs, since the cursor animates independently.
 #[cfg(feature = "treesitter")]
 fn content_cell_grid(editor: &mut Editor<MockTerminal>) -> Vec<Vec<crate::layer::Cell>> {
     editor.update_and_render().unwrap();
@@ -6026,8 +5914,6 @@ fn assert_content_grids_match(
     }
 }
 
-/// Same property as `dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step`
-/// but for non-wrap mode, comparing full `Cell` structs so a byte/char mixup shows up.
 #[cfg(feature = "treesitter")]
 #[test]
 fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
@@ -6037,8 +5923,6 @@ fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
     use crate::syntax::build_syntax;
     use std::sync::Arc;
 
-    // A blank, zero-capture stretch keeps highlights_hash stable so the
-    // row-skip blit gets real chances to engage despite viewport-scoped highlighting.
     let mut lines: Vec<String> = Vec::new();
     lines.push("// cafe accented comment: café 日本語 emoji 🦀 multi-byte".to_string());
     lines.push("fn build() -> i32 {".to_string());
@@ -6148,8 +6032,6 @@ fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
     );
 }
 
-/// A real Rust source with captures on nearly every line (no blank-stretch
-/// workaround) - the shape that most severely defeats a viewport-scoped snapshot.
 #[cfg(feature = "treesitter")]
 #[test]
 fn wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_on_densely_highlighted_document() {
@@ -6282,8 +6164,6 @@ fn wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_on_densely_highlighted
     }
 }
 
-/// The blit must never reuse a row when an underlying source actually
-/// changed mid-scroll, even in an otherwise blit-eligible frame.
 #[cfg(feature = "treesitter")]
 #[test]
 fn scroll_blit_repaints_when_annotations_or_theme_change_mid_scroll() {
@@ -6397,8 +6277,6 @@ fn measure_type(editor: &mut Editor<MockTerminal>, label: &str, n: usize) {
     );
 }
 
-/// Wraps `MockTerminal`; `read_key` drains a pre-scripted queue of keys, one
-/// at a time, as an un-bracketed paste delivers them.
 struct ScriptedTerminal {
     inner: MockTerminal,
     queue: std::collections::VecDeque<crate::key::Key>,
@@ -6459,8 +6337,6 @@ fn chars_of(s: &str) -> Vec<crate::key::Key> {
     s.chars().map(crate::key::Key::Char).collect()
 }
 
-/// Un-bracketed paste (every byte its own `Key::Char`) into Insert mode
-/// must still reproduce the pasted text byte-for-byte.
 #[test]
 fn pasting_a_shell_command_into_insert_mode_inserts_every_character() {
     let mut keys = vec![crate::key::Key::Char('i')];
@@ -6478,8 +6354,6 @@ fn pasting_a_shell_command_into_insert_mode_inserts_every_character() {
     );
 }
 
-/// Same paste directly in Normal mode: every char is a command key, exactly
-/// like real vim without bracketed paste - must not panic or hang.
 #[test]
 fn pasting_a_shell_command_into_normal_mode_does_not_panic_or_hang() {
     let keys = chars_of(" 1 npm install -g @openai/codex");
@@ -6502,8 +6376,6 @@ fn pasting_a_shell_command_into_normal_mode_does_not_panic_or_hang() {
     );
 }
 
-/// Reads the compositor's already-composited cells without a fresh render,
-/// unlike `render_ascii` - shows exactly what the last render produced.
 fn compositor_ascii<T: crate::term::TerminalBackend>(editor: &mut Editor<T>) -> String {
     let rows = editor.render_system.compositor.rows();
     let cols = editor.render_system.compositor.cols();
@@ -6518,8 +6390,6 @@ fn compositor_ascii<T: crate::term::TerminalBackend>(editor: &mut Editor<T>) -> 
         .join("\n")
 }
 
-/// A `Key::Paste` event into Insert mode must render the full text in one
-/// shot, with no follow-up render needed to catch up.
 #[test]
 fn bracketed_paste_in_insert_mode_renders_the_full_text_without_a_second_render() {
     use crate::action::{Action, EditorAction};
@@ -6542,7 +6412,6 @@ fn bracketed_paste_in_insert_mode_renders_the_full_text_without_a_second_render(
     );
 }
 
-/// Same paste on a narrow terminal, at the soft-wrap boundary.
 #[test]
 fn bracketed_paste_near_soft_wrap_boundary_renders_the_full_text() {
     use crate::action::{Action, EditorAction};
@@ -6570,7 +6439,6 @@ fn bracketed_paste_near_soft_wrap_boundary_renders_the_full_text() {
     );
 }
 
-/// A `Write` sink with a readable clone, since `ReplayBackend` owns its writer.
 #[cfg(feature = "terminal_emulation")]
 #[derive(Clone, Default)]
 struct SharedBuf(std::sync::Arc<parking_lot::Mutex<Vec<u8>>>);
@@ -6615,8 +6483,6 @@ impl alacritty_terminal::grid::Dimensions for VteDims {
     }
 }
 
-/// End-to-end: drives a real `Editor<ReplayBackend<_>>` (real crossterm ANSI
-/// encoder) through a paste, then parses the output with a real VTE parser.
 #[cfg(feature = "terminal_emulation")]
 #[test]
 fn bracketed_paste_reproduced_through_a_real_vte_parser() {
@@ -6672,8 +6538,6 @@ fn bracketed_paste_reproduced_through_a_real_vte_parser() {
     );
 }
 
-/// Wraps `MockTerminal`; each queued `Key` gets a following filtered event
-/// (`None`), reproducing Windows' paired press+release `InputRecord`s.
 struct PressReleaseTerminal {
     inner: MockTerminal,
     raw: std::collections::VecDeque<Option<crate::key::Key>>,
@@ -6735,8 +6599,6 @@ impl crate::term::TerminalBackend for PressReleaseTerminal {
     }
 }
 
-/// Regression: a trailing release used to strand the render - the last
-/// press saw it as "more input" and skipped; its own tick skipped the coalescing check too.
 #[test]
 fn paste_burst_with_trailing_release_events_still_renders_without_a_further_key() {
     use crate::action::{Action, EditorAction};
@@ -6764,8 +6626,6 @@ fn paste_burst_with_trailing_release_events_still_renders_without_a_further_key(
     );
 }
 
-/// Diagnostic: a single Insert-mode space, delivered as a press+release
-/// pair (as Windows does for every key), must move the rendered cursor without a further keypress.
 #[test]
 fn single_space_keypress_with_release_moves_the_rendered_cursor() {
     use crate::action::{Action, EditorAction};
@@ -6790,8 +6650,6 @@ fn single_space_keypress_with_release_moves_the_rendered_cursor() {
     );
 }
 
-/// Diagnostic: navigating `k` up into a soft-wrapped row, delivered as a
-/// single press+release pair, must move the rendered cursor without a further keypress.
 #[test]
 fn single_up_keypress_on_soft_wrap_with_release_moves_the_rendered_cursor() {
     use crate::action::{Action, EditorAction};
@@ -6877,7 +6735,6 @@ fn workspace_edit_keeps_same_position_insert_order_and_restores_cursor() {
         .open_file(Some(path.display().to_string()), false)
         .unwrap();
     drain_jobs(&mut editor);
-    // Cursor on line 1, col 2 ("f").
     let _ = editor.active_document().buffer.set_cursor(6);
 
     let uri = crate::lsp::protocol::path_to_uri(&path);
@@ -7027,7 +6884,6 @@ fn published_diagnostic_underlines_exactly_its_range_and_keeps_the_eol_message()
     use crate::lsp::protocol::{LspDiagnostic, LspPosition, LspRange};
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("under.rs");
-    // The astral char is 2 UTF-16 units: a wrong encoding would misplace the span.
     std::fs::write(&path, "let \u{1F980}x = 1;\nok\n").unwrap();
 
     let mut editor = create_editor_sized(6, 40);
@@ -7063,7 +6919,6 @@ fn published_diagnostic_underlines_exactly_its_range_and_keeps_the_eol_message()
     let cells = editor.render_system.compositor.get_composited_slice();
     let row: Vec<char> = (0..cols).map(|c| cells[c].to_char()).collect();
     let underlined: Vec<usize> = (0..cols).filter(|&c| cells[c].attrs.underline).collect();
-    // "let " (4) + crab (2 cells) => 'x' at 6; span `x = 1` covers 5 cells.
     assert_eq!(row[6..11].iter().collect::<String>(), "x = 1");
     assert_eq!(
         underlined,
@@ -7072,7 +6927,6 @@ fn published_diagnostic_underlines_exactly_its_range_and_keeps_the_eol_message()
     );
     assert_eq!(row[11..16].iter().collect::<String>(), "; bad");
 
-    // Typing inside the span keeps the underline attached to the text.
     let doc = editor.active_document();
     doc.buffer.set_cursor(0).ok();
     doc.insert_str("  ").unwrap();
@@ -7093,7 +6947,6 @@ fn dollar_in_normal_mode_rests_on_the_last_character() {
         2,
         "$ lands on 'c', not the newline"
     );
-    // `a` after `$` appends on the same line, not after the line break.
     feed_keys(&mut editor, "a");
     assert_eq!(editor.current_mode, Mode::Insert);
     assert_eq!(editor.active_document().buffer.cursor(), 3);
@@ -7101,19 +6954,15 @@ fn dollar_in_normal_mode_rests_on_the_last_character() {
     feed_keys(&mut editor, "<Esc>");
     assert_eq!(editor.active_document().buffer.to_string(), "abcQ\n\nxyz");
 
-    // An empty line has no last character: stay on its (only) position.
     feed_keys(&mut editor, "j$");
     assert_eq!(editor.active_document().buffer.cursor(), 5);
 
-    // Operators keep the line-break end: `D` still deletes through the last char.
     feed_keys(&mut editor, "j0D");
     assert_eq!(editor.active_document().buffer.to_string(), "abcQ\n\n");
 }
 
 #[test]
 fn exactly_full_wrapped_line_gets_an_eol_row_only_for_its_adornment() {
-    // 20 cols, no gutter: a 20-char line fills its row exactly. Only trailing
-    // virtual text earns it a continuation row, and that row is never blank.
     let mut editor = create_editor_sized(8, 20);
     editor.state.settings.soft_wrap = true;
     editor.state.settings.show_line_numbers = false;
@@ -7128,7 +6977,6 @@ fn exactly_full_wrapped_line_gets_an_eol_row_only_for_its_adornment() {
         "no blank row without an adornment"
     );
 
-    // A diagnostic arriving later must invalidate the cached map.
     editor
         .active_document()
         .annotations
@@ -7143,8 +6991,6 @@ fn exactly_full_wrapped_line_gets_an_eol_row_only_for_its_adornment() {
     );
     assert_eq!(rows[2].trim_end(), "next");
 
-    // Hiding virtual text drops the row again (setting-driven, no edit).
-    // `:set` forces a full redraw on this setting; do the same here.
     editor.state.settings.lsp_virtual_text = false;
     editor.force_full_redraw().unwrap();
     let screen = render_ascii(&mut editor);
@@ -7155,7 +7001,6 @@ fn exactly_full_wrapped_line_gets_an_eol_row_only_for_its_adornment() {
     let rows: Vec<&str> = screen.lines().collect();
     assert_eq!(rows[1].trim_end(), " boom");
 
-    // A publish that clears the diagnostics removes the row on a normal render.
     let doc = editor.active_document();
     doc.annotations
         .replace_lsp_diagnostics(Vec::<crate::annotations::LspDiagnosticSpec>::new());
@@ -7170,13 +7015,11 @@ fn exactly_full_wrapped_line_gets_an_eol_row_only_for_its_adornment() {
         " boom"
     );
 
-    // j from the full line skips the EOL-only row straight to "next".
     feed_keys(&mut editor, "j");
     assert_eq!(editor.active_document().buffer.get_line(), 1);
     feed_keys(&mut editor, "k");
     assert_eq!(editor.active_document().buffer.get_line(), 0);
 
-    // Insert-mode EOL of the full line sits on the continuation row.
     feed_keys(&mut editor, "A");
     editor.update_and_render().unwrap();
     let cursor = editor.active_document().buffer.cursor();

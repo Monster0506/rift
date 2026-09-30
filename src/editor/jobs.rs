@@ -9,15 +9,10 @@ use crate::term::TerminalBackend;
 #[cfg(feature = "treesitter")]
 use std::sync::Arc;
 
-/// Debounce window for backgrounding a syntax parse after a sync attempt
-/// exceeds its time budget;  coalesces rapid keystrokes into one job.
 const SYNTAX_REPARSE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(40);
 
-/// Tracks a document's outstanding background syntax reparse, so a burst of edits debounces
-/// into one job and a stale in-flight job gets cancelled before a fresh one is spawned.
 #[derive(Default)]
 pub(super) struct PendingSyntaxReparse {
-    /// When set, the debounce timer is running; fires once `Instant::now() >= deadline`.
     debounce_deadline: Option<crate::time::Instant>,
     in_flight_job: Option<usize>,
 }
@@ -75,7 +70,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         Some(self.job_manager.spawn_with_token(job, token))
     }
-    /// No-op when tree-sitter is compiled out: there is no syntax state to reparse.
     #[cfg(not(feature = "treesitter"))]
     pub(super) fn spawn_syntax_parse_job(
         &mut self,
@@ -84,15 +78,11 @@ impl<T: TerminalBackend> Editor<T> {
         None
     }
 
-    /// Schedule a background reparse for `doc_id`, debounced so a burst of edits within
-    /// [`SYNTAX_REPARSE_DEBOUNCE`] coalesces into one job (called when a sync parse aborts on its time budget).
     pub(super) fn debounce_syntax_reparse(&mut self, doc_id: DocumentId) {
         let entry = self.pending_syntax_reparse.entry(doc_id).or_default();
         entry.debounce_deadline = Some(crate::time::Instant::now() + SYNTAX_REPARSE_DEBOUNCE);
     }
 
-    /// Cancel any pending/in-flight background reparse for `doc_id` because a
-    /// sync parse just brought it fully up to date.
     pub(super) fn cancel_pending_syntax_reparse(&mut self, doc_id: DocumentId) {
         if let Some(entry) = self.pending_syntax_reparse.remove(&doc_id) {
             if let Some(job_id) = entry.in_flight_job {
@@ -101,8 +91,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Build and attach tree-sitter syntax for `doc_id` from its file path,
-    /// if a grammar is registered for it. Does not spawn a parse.
     pub(super) fn attach_syntax_for_document(&mut self, doc_id: DocumentId) {
         #[cfg(feature = "treesitter")]
         {
@@ -135,8 +123,6 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = doc_id;
     }
 
-    /// Forget a file-load job that will never deliver; drop any goto jump
-    /// waiting on the document it was meant to fill.
     fn on_file_load_failed(&mut self, job_id: usize) {
         let Some(doc_id) = self.file_load_jobs.remove(&job_id) else {
             return;
@@ -149,8 +135,6 @@ impl<T: TerminalBackend> Editor<T> {
         let _ = doc_id;
     }
 
-    /// Spawn a background reparse immediately (bypassing the debounce timer), cancelling any
-    /// job already in flight for this doc. Used for one-shot triggers like undo/redo, not routine typing.
     pub(super) fn spawn_syntax_parse_job_immediate(&mut self, doc_id: DocumentId) {
         if let Some(entry) = self.pending_syntax_reparse.get(&doc_id) {
             if let Some(old_job) = entry.in_flight_job {
@@ -166,8 +150,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Fire any elapsed debounce timers: cancel a stale in-flight job (if any) and spawn a
-    /// fresh one for the document's latest content. Called once per frame from the run loop.
     pub(super) fn poll_pending_syntax_reparse(&mut self) {
         let now = crate::time::Instant::now();
         let due: Vec<DocumentId> = self
@@ -194,8 +176,6 @@ impl<T: TerminalBackend> Editor<T> {
         }
     }
 
-    /// Validates an async token: epoch is current, handle/kind still match,
-    /// and any owning plugin generation is still active.
     fn is_async_token_valid(&self, token: &AsyncToken) -> bool {
         if !self.job_manager.is_token_current(token) {
             return false;
@@ -214,8 +194,6 @@ impl<T: TerminalBackend> Editor<T> {
         true
     }
 
-    /// Resolves a job's token: registered tokens require full staleness
-    /// validation; untracked jobs fall back to a plain document lookup.
     fn resolve_and_validate_token(
         &self,
         job_id: usize,
@@ -241,20 +219,17 @@ impl<T: TerminalBackend> Editor<T> {
         ))
     }
 
-    /// Handle a message from a background job
     pub(super) fn handle_job_message(
         &mut self,
         msg: crate::job_manager::JobMessage,
     ) -> Result<(), RiftError> {
         use crate::job_manager::JobMessage;
-        // Parser import not needed here
 
         for doc in self.document_manager.documents_iter() {
             self.job_manager
                 .register_document_handle(doc.handle(), doc.buffer_kind_id(), None);
         }
 
-        // Update manager state
         self.job_manager.update_job_state(&msg);
         match msg {
             JobMessage::Started(id, silent) => {
@@ -391,7 +366,6 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        // Periodic cleanup of finished jobs
         self.job_manager.cleanup_finished_jobs();
         Ok(())
     }
@@ -407,7 +381,6 @@ impl<T: TerminalBackend> Editor<T> {
 
         let any_payload = payload.into_any();
 
-        // Try DirectoryListing; route to the document by id
         let any_payload = match any_payload
             .downcast::<crate::job_manager::jobs::explorer::DirectoryListing>()
         {
@@ -448,7 +421,6 @@ impl<T: TerminalBackend> Editor<T> {
                     .collect();
                 doc.populate_directory_buffer(entries);
 
-                // Restore cursor to the child entry we navigated away from, if any.
                 if let Some(target_name) = self.pending_cursor_entry.take() {
                     let line_pos = doc
                         .annotations
@@ -479,7 +451,6 @@ impl<T: TerminalBackend> Editor<T> {
             Err(p) => p,
         };
 
-        // Try GitStatusResult; populate the matching git status buffer
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitStatusResult>() {
                 Ok(result) => {
@@ -524,7 +495,6 @@ impl<T: TerminalBackend> Editor<T> {
                 Err(p) => p,
             };
 
-        // Try GitDiffResult; expand the matching hunk block inline
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitDiffResult>() {
                 Ok(result) => {
@@ -561,7 +531,6 @@ impl<T: TerminalBackend> Editor<T> {
                 Err(p) => p,
             };
 
-        // Try GitBlameResult; populate the matching blame buffer
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitBlameResult>() {
                 Ok(result) => {
@@ -598,7 +567,6 @@ impl<T: TerminalBackend> Editor<T> {
                 Err(p) => p,
             };
 
-        // Try GitLogResult; populate the matching log buffer
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitLogResult>() {
                 Ok(result) => {
@@ -659,7 +627,6 @@ impl<T: TerminalBackend> Editor<T> {
                 Err(p) => p,
             };
 
-        // Try GitShowResult; expand the matching commit's body inline
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitShowResult>() {
                 Ok(result) => {
@@ -696,7 +663,6 @@ impl<T: TerminalBackend> Editor<T> {
                 Err(p) => p,
             };
 
-        // Try GitCommandResult; show `:Git <args>` output
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitCommandResult>() {
                 Ok(result) => {
@@ -709,7 +675,6 @@ impl<T: TerminalBackend> Editor<T> {
                 Err(p) => p,
             };
 
-        // Try GitGutterDiffResult; color the gutter for lines that changed
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitGutterDiffResult>() {
                 Ok(result) => {
@@ -745,7 +710,6 @@ impl<T: TerminalBackend> Editor<T> {
                 Err(p) => p,
             };
 
-        // Try UndoTreeRenderResult; populate the matching undotree buffer
         let any_payload = match any_payload
             .downcast::<crate::job_manager::jobs::undotree::UndoTreeRenderResult>()
         {
@@ -778,12 +742,10 @@ impl<T: TerminalBackend> Editor<T> {
             Err(p) => p,
         };
 
-        // Try ExplorerPreviewResult; populate the preview pane
         let any_payload = match any_payload
             .downcast::<crate::job_manager::jobs::explorer_preview::ExplorerPreviewResult>(
         ) {
             Ok(res) => {
-                // Clear in-flight tracking for this job regardless of staleness.
                 if self
                     .pending_explorer_preview
                     .as_ref()
@@ -803,8 +765,6 @@ impl<T: TerminalBackend> Editor<T> {
                     return Ok(());
                 };
 
-                // Discard stale results: the cursor may have moved to a different
-                // entry since this job was spawned.
                 let current_target = self.current_explorer_target_path();
                 if current_target.as_deref() != Some(res.path.as_path()) {
                     self.job_manager
@@ -816,7 +776,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let preview_doc_id = res.right_doc_id;
                 let preview_path = res.path.clone();
                 #[cfg_attr(not(feature = "treesitter"), allow(unused_variables))]
-                let is_file_preview = res.dir_entries.is_none();
+                let is_file_preview = res.dir_entries.is_none() && res.undo_file.is_none();
                 let Some(doc) = self
                     .document_manager
                     .get_document_by_handle_mut(token.handle)
@@ -833,6 +793,10 @@ impl<T: TerminalBackend> Editor<T> {
                     doc.convert_to_directory(res.path.clone());
                     doc.set_directory_show_hidden(false);
                     doc.populate_directory_buffer(entries);
+                } else if let Some(parsed) = res.undo_file {
+                    doc.convert_to_undo_file_view();
+                    doc.set_path(&preview_path);
+                    doc.populate_undo_file_view(&parsed);
                 } else if let Some(text) = res.file_text {
                     doc.convert_to_file();
                     doc.set_path(&preview_path);
@@ -859,8 +823,6 @@ impl<T: TerminalBackend> Editor<T> {
                                 .get_document_by_handle_mut(token.handle)
                             {
                                 doc.set_syntax(syntax);
-                                // Synchronously parse so highlights are ready for the
-                                // immediately following render (no async timing gap).
                                 if doc.buffer.byte_len() <= super::SYNC_PARSE_MAX_BYTES {
                                     let source = doc.buffer.to_logical_bytes();
                                     if let Some(s) = &mut doc.syntax {
@@ -882,7 +844,6 @@ impl<T: TerminalBackend> Editor<T> {
             Err(p) => p,
         };
 
-        // Try FileSaveResult
         let any_payload = match any_payload
             .downcast::<crate::job_manager::jobs::file_operations::FileSaveResult>()
         {
@@ -910,6 +871,7 @@ impl<T: TerminalBackend> Editor<T> {
                 doc.set_path(res.path.clone());
 
                 let display_name = doc.display_name().to_string();
+                self.persist_undo_after_save(res.document_id, res.content_hash);
                 self.state.update_filename(display_name);
 
                 self.state.notify(
@@ -941,7 +903,6 @@ impl<T: TerminalBackend> Editor<T> {
             Err(p) => p,
         };
 
-        // Try FileLoadResult
         let any_payload = match any_payload
             .downcast::<crate::job_manager::jobs::file_operations::FileLoadResult>()
         {
@@ -974,6 +935,7 @@ impl<T: TerminalBackend> Editor<T> {
                 let revision = doc.buffer.revision;
                 let path = doc.path().map(|p| p.to_path_buf());
                 let filetype = doc.syntax.as_ref().map(|s| s.language_name.clone());
+                self.restore_persisted_undo(res.document_id, res.content_hash);
 
                 self.attach_syntax_for_document(res.document_id);
                 self.spawn_syntax_parse_job(res.document_id);
@@ -1117,7 +1079,6 @@ impl<T: TerminalBackend> Editor<T> {
                 return Ok(());
             }
             Err(any_payload) => {
-                // Try CompletionPayload
                 let any_payload = match any_payload
                     .downcast::<crate::job_manager::jobs::completion::CompletionPayload>(
                 ) {
@@ -1128,7 +1089,6 @@ impl<T: TerminalBackend> Editor<T> {
                     Err(p) => p,
                 };
 
-                // Try ByteLineMap (CacheWarmingJob)
                 if let Ok(map) = any_payload.downcast::<crate::buffer::byte_map::ByteLineMap>() {
                     if let Some(doc) = self.document_manager.active_document_mut() {
                         if doc.buffer.revision == map.revision {
@@ -1145,11 +1105,8 @@ impl<T: TerminalBackend> Editor<T> {
             }
         }
 
-        // Without tree-sitter, no job ever produces a SyntaxParseResult;
-        // go straight to the rest of the downcast chain.
         #[cfg(not(feature = "treesitter"))]
         {
-            // Try CompletionPayload
             let any_payload = match any_payload
                 .downcast::<crate::job_manager::jobs::completion::CompletionPayload>(
             ) {
@@ -1160,7 +1117,6 @@ impl<T: TerminalBackend> Editor<T> {
                 Err(p) => p,
             };
 
-            // Try ByteLineMap (CacheWarmingJob)
             if let Ok(map) = any_payload.downcast::<crate::buffer::byte_map::ByteLineMap>() {
                 if let Some(doc) = self.document_manager.active_document_mut() {
                     if doc.buffer.revision == map.revision {
