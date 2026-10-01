@@ -843,5 +843,4 @@ fn combine_insert_run(
 }
 
 #[cfg(test)]
-#[path = "tests.rs"]
 mod tests;
