@@ -53,12 +53,10 @@ where
                             range: match_start..match_start + pattern_len,
                         });
                     }
-                } else {
-                    if check_match_slow(view, match_start, &pattern_chars) {
-                        return Some(SearchMatch {
-                            range: match_start..match_start + pattern_len,
-                        });
-                    }
+                } else if check_match_slow(view, match_start, &pattern_chars) {
+                    return Some(SearchMatch {
+                        range: match_start..match_start + pattern_len,
+                    });
                 }
             }
         }

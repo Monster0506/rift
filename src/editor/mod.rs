@@ -35,7 +35,6 @@ mod text_object_input;
 mod undo_persist;
 
 #[cfg(test)]
-#[path = "tests.rs"]
 mod tests;
 
 #[cfg(test)]

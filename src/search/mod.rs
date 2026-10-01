@@ -76,12 +76,10 @@ pub fn find_all(
                 if check_anchor {
                     let is_start = if m.range.start == 0 {
                         true
+                    } else if let Some(c) = buffer.iter_at(m.range.start - 1).next() {
+                        c.to_char_lossy() == '\n'
                     } else {
-                        if let Some(c) = buffer.iter_at(m.range.start - 1).next() {
-                            c.to_char_lossy() == '\n'
-                        } else {
-                            false
-                        }
+                        false
                     };
 
                     if !is_start {
@@ -175,12 +173,10 @@ fn classify_query(query: &str) -> SearchTier {
         SearchTier::Literal
     } else if is_line_scoped(&pattern) {
         SearchTier::LineScoped
+    } else if check_complexity(&pattern) {
+        SearchTier::Incremental
     } else {
-        if check_complexity(&pattern) {
-            SearchTier::Incremental
-        } else {
-            SearchTier::Full
-        }
+        SearchTier::Full
     }
 }
 
