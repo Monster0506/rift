@@ -2,7 +2,7 @@ use super::*;
 #[test]
 fn ddmin_finds_the_minimal_cause_in_a_haystack() {
     let keys: Vec<Key> = "ab13x94zqw".chars().map(Key::Char).collect();
-    let reproduces = |ks: &[Key]| ks.iter().any(|k| *k == Key::Char('x'));
+    let reproduces = |ks: &[Key]| ks.contains(&Key::Char('x'));
     let minimal = ddmin(keys, reproduces);
     assert_eq!(minimal, vec![Key::Char('x')]);
 }
