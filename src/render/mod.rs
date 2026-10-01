@@ -1432,5 +1432,4 @@ pub(crate) fn highlight_focused_window_border(
 }
 
 #[cfg(test)]
-#[path = "tests.rs"]
 mod tests;
