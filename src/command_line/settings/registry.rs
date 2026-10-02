@@ -1,11 +1,23 @@
 use super::descriptor::{SettingDescriptor, SettingError, SettingType, SettingValue};
 use crate::command_line::commands::{CommandDef, CommandRegistry, ExecutionResult, MatchResult};
 use crate::error::{ErrorSeverity, ErrorType, RiftError};
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex};
 
-#[derive(Clone, Copy)]
+static OPTION_REGISTRY_CACHE: LazyLock<Mutex<HashMap<usize, Arc<CommandRegistry>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
 pub struct SettingsRegistry<T: 'static> {
     settings: &'static [SettingDescriptor<T>],
 }
+
+impl<T> Clone for SettingsRegistry<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for SettingsRegistry<T> {}
 
 impl<T> SettingsRegistry<T> {
     #[must_use]
@@ -21,15 +33,43 @@ impl<T> SettingsRegistry<T> {
 
     #[must_use]
     pub fn build_option_registry(&self) -> CommandRegistry {
-        let mut registry = CommandRegistry::new();
-        for desc in self.settings {
-            let mut cmd_def = CommandDef::new(desc.name);
-            for alias in desc.aliases {
-                cmd_def = cmd_def.with_alias(*alias);
-            }
-            registry = registry.register(cmd_def);
-        }
-        registry
+        (*self.cached_option_registry()).clone()
+    }
+
+    fn cached_option_registry(&self) -> Arc<CommandRegistry> {
+        let key = self.settings.as_ptr() as usize;
+        let mut cache = OPTION_REGISTRY_CACHE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        cache
+            .entry(key)
+            .or_insert_with(|| {
+                let mut registry = CommandRegistry::new();
+                for desc in self.settings {
+                    let mut cmd_def = CommandDef::new(desc.name);
+                    for alias in desc.aliases {
+                        cmd_def = cmd_def.with_alias(*alias);
+                    }
+                    registry = registry.register(cmd_def);
+                }
+                Arc::new(registry)
+            })
+            .clone()
+    }
+
+    #[must_use]
+    pub fn find_descriptor(&self, name: &str) -> Option<&SettingDescriptor<T>> {
+        let matched_name = match self.cached_option_registry().match_command(name) {
+            MatchResult::Exact(n) | MatchResult::Prefix(n) => n,
+            MatchResult::Ambiguous { .. } | MatchResult::Unknown(_) => return None,
+        };
+        self.settings.iter().find(|d| d.name == matched_name)
+    }
+
+    #[must_use]
+    pub fn get_setting(&self, name: &str, target: &T) -> Option<SettingValue> {
+        let desc = self.find_descriptor(name)?;
+        desc.get.map(|getter| getter(target))
     }
 
     pub(crate) fn parse_value(ty: &SettingType, value: &str) -> Result<SettingValue, SettingError> {
@@ -223,9 +263,7 @@ impl<T> SettingsRegistry<T> {
         target: &mut T,
         error_handler: &mut dyn FnMut(RiftError),
     ) -> ExecutionResult {
-        let registry = self.build_option_registry();
-
-        let matched_name = match registry.match_command(name) {
+        let matched_name = match self.cached_option_registry().match_command(name) {
             MatchResult::Exact(n) | MatchResult::Prefix(n) => n,
             MatchResult::Ambiguous { prefix, matches } => {
                 let matches_str = matches.join(", ");

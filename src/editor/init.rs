@@ -63,7 +63,7 @@ impl<T: TerminalBackend> Editor<T> {
             crate::render::RenderSystem::new(size.rows as usize, size.cols as usize);
 
         let settings_registry = create_settings_registry();
-        let command_parser = CommandParser::new(settings_registry.clone());
+        let command_parser = CommandParser::new(settings_registry);
 
         let mut state = State::new();
         state.set_file_path(file_path.clone());
