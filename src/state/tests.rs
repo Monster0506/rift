@@ -208,18 +208,6 @@ fn test_state_with_custom_settings() {
 }
 
 #[test]
-fn test_set_expand_tabs() {
-    let mut state = State::new();
-    assert!(state.settings.expand_tabs);
-
-    state.set_expand_tabs(false);
-    assert!(!state.settings.expand_tabs);
-
-    state.set_expand_tabs(true);
-    assert!(state.settings.expand_tabs);
-}
-
-#[test]
 fn test_set_default_border_chars() {
     use crate::floating_window::BorderChars;
 

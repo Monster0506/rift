@@ -295,14 +295,6 @@ impl State {
         self.settings.default_border_chars = border_chars;
     }
 
-    pub fn set_expand_tabs(&mut self, expand: bool) {
-        self.settings.expand_tabs = expand;
-    }
-
-    pub fn set_tab_width(&mut self, width: usize) {
-        self.settings.tab_width = width;
-    }
-
     pub fn set_file_path(&mut self, path: Option<String>) {
         self.file_path = path;
     }
