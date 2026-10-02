@@ -1034,6 +1034,8 @@ impl PluginHost {
             u64,
             std::collections::HashMap<String, crate::annotations::Value>,
         >,
+        doc_options: crate::document::definitions::DocumentOptions,
+        user_settings: crate::state::UserSettings,
     ) {
         if let Some(lua) = &self.lua {
             lua.update_state(
@@ -1059,6 +1061,8 @@ impl PluginHost {
                 previous_win_id,
                 lsp_diagnostics,
                 buffer_vars,
+                doc_options,
+                user_settings,
             );
         }
     }

@@ -10,8 +10,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
         crate::perf_span!("lua_state_sync", crate::perf::PerfFields::default());
 
-        let tab_width = self.state.settings.tab_width;
-        let expand_tabs = self.state.settings.expand_tabs;
+        let user_settings = self.state.settings.clone();
         let mode = self.current_mode.as_str();
 
         let (
@@ -25,6 +24,7 @@ impl<T: TerminalBackend> Editor<T> {
             can_redo,
             is_dirty,
             line_ending,
+            doc_options,
         ) = if let Some(doc) = self.document_manager.active_document() {
             let buf_id = doc.id as usize;
             let buf_kind = doc.kind.kind_str().to_string();
@@ -58,6 +58,7 @@ impl<T: TerminalBackend> Editor<T> {
                 crate::document::LineEnding::LF => "lf",
                 crate::document::LineEnding::CRLF => "crlf",
             };
+            let doc_options = doc.options.clone();
             (
                 buf_id,
                 buf_kind,
@@ -69,6 +70,7 @@ impl<T: TerminalBackend> Editor<T> {
                 can_redo,
                 is_dirty,
                 line_ending,
+                doc_options,
             )
         } else {
             self.plugin_host.clear_synced_buf();
@@ -83,8 +85,11 @@ impl<T: TerminalBackend> Editor<T> {
                 false,
                 false,
                 "lf",
+                crate::document::definitions::DocumentOptions::default(),
             )
         };
+        let tab_width = doc_options.tab_width;
+        let expand_tabs = doc_options.expand_tabs;
 
         let buf_list: Vec<BufEntry> = self
             .document_manager
@@ -210,6 +215,8 @@ impl<T: TerminalBackend> Editor<T> {
             previous_win_id,
             lsp_diagnostics,
             buffer_vars,
+            doc_options,
+            user_settings,
         );
         use crate::annotations::Anchor;
         use crate::plugin::lua_host::AnnotationView;
@@ -503,25 +510,33 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 }
                 PluginMutation::SetOption { name, value } => {
-                    if let Some(doc) = self.document_manager.active_document_mut() {
-                        match name.as_str() {
-                            "tab_width" | "tabwidth" => {
-                                if let Ok(n) = value.parse::<usize>() {
-                                    if n > 0 {
-                                        doc.options.tab_width = n;
-                                    }
-                                }
-                            }
-                            "expand_tabs" | "expandtabs" => {
-                                doc.options.expand_tabs =
-                                    matches!(value.as_str(), "true" | "1" | "yes");
-                            }
-                            "show_line_numbers" | "number" => {
-                                doc.options.show_line_numbers =
-                                    matches!(value.as_str(), "true" | "1" | "yes");
-                            }
-                            _ => {}
+                    let mut errors = Vec::new();
+                    let mut error_handler = |e: crate::error::RiftError| errors.push(e);
+                    match self.document_manager.active_document_mut() {
+                        Some(doc) => {
+                            let resolver = crate::command_line::settings::SettingsResolver::new(
+                                self.document_settings_registry,
+                                self.settings_registry,
+                            );
+                            resolver.set(
+                                &name,
+                                Some(value),
+                                &mut doc.options,
+                                &mut self.state.settings,
+                                &mut error_handler,
+                            );
                         }
+                        None => {
+                            self.settings_registry.execute_setting(
+                                &name,
+                                Some(value),
+                                &mut self.state.settings,
+                                &mut error_handler,
+                            );
+                        }
+                    }
+                    for err in errors {
+                        self.state.handle_error(err);
                     }
                 }
                 PluginMutation::SaveBuffer => {

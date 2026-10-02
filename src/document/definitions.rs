@@ -54,8 +54,12 @@ impl Default for DocumentOptions {
     }
 }
 
-fn get_tab_width(options: &DocumentOptions) -> String {
-    options.tab_width.to_string()
+fn get_tab_width(options: &DocumentOptions) -> SettingValue {
+    SettingValue::Integer(options.tab_width)
+}
+
+fn get_expand_tabs(options: &DocumentOptions) -> SettingValue {
+    SettingValue::Bool(options.expand_tabs)
 }
 
 fn set_tab_width(options: &mut DocumentOptions, value: SettingValue) -> Result<(), SettingError> {
@@ -120,10 +124,14 @@ fn set_line_ending(options: &mut DocumentOptions, value: SettingValue) -> Result
     }
 }
 
-fn get_wrap(options: &DocumentOptions) -> String {
-    match &options.wrap {
-        None | Some(WrapMode::Off) => "0".to_string(),
-        Some(WrapMode::Expr(s)) => s.clone(),
+fn get_wrap(options: &DocumentOptions) -> SettingValue {
+    let expr = match &options.wrap {
+        None | Some(WrapMode::Off) => return SettingValue::Integer(0),
+        Some(WrapMode::Expr(s)) => s,
+    };
+    match expr.trim().parse::<usize>() {
+        Ok(n) => SettingValue::Integer(n),
+        Err(_) => SettingValue::Enum(expr.clone()),
     }
 }
 
@@ -150,7 +158,7 @@ fn set_wrap(options: &mut DocumentOptions, value: SettingValue) -> Result<(), Se
 const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
     SettingDescriptor {
         name: "number",
-        aliases: &["nu"],
+        aliases: &["nu", "show_line_numbers"],
         description: "Show line numbers",
         ty: SettingType::Boolean,
         set: set_number,
@@ -170,16 +178,16 @@ const DOCUMENT_SETTINGS: &[SettingDescriptor<DocumentOptions>] = &[
     },
     SettingDescriptor {
         name: "expandtabs",
-        aliases: &["et"],
+        aliases: &["et", "expand_tabs"],
         description: "Use spaces instead of tabs",
         ty: SettingType::Boolean,
         set: set_expand_tabs,
-        get: None,
+        get: Some(get_expand_tabs),
         needs_full_redraw: true,
     },
     SettingDescriptor {
         name: "tabwidth",
-        aliases: &["tw"],
+        aliases: &["tw", "tab_width"],
         description: "Number of spaces per tab",
         ty: SettingType::Integer {
             min: Some(1),

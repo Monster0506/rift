@@ -24,6 +24,116 @@ fn test_new_succeeds() {
 }
 
 #[test]
+fn test_set_option_queues_mutation_with_string_value() {
+    let host = make_host();
+    assert!(host.exec("rift.set_option('ghostcut', true)").is_none());
+    let mutations = host.drain_mutations();
+    assert_eq!(mutations.len(), 1);
+    match &mutations[0] {
+        PluginMutation::SetOption { name, value } => {
+            assert_eq!(name, "ghostcut");
+            assert_eq!(value, "true");
+        }
+        _ => panic!("expected SetOption"),
+    }
+}
+
+#[test]
+fn test_get_option_reads_document_local_setting_via_alias() {
+    let host = make_host();
+    let doc_options = crate::document::definitions::DocumentOptions {
+        tab_width: 8,
+        ..Default::default()
+    };
+    host.update_state(
+        1,
+        "file".to_string(),
+        BufSourceUpdate::Cleared,
+        (0, 0),
+        4,
+        true,
+        "normal",
+        None,
+        None,
+        vec![],
+        (0, 0),
+        false,
+        false,
+        false,
+        (0, 0),
+        "lf",
+        vec![],
+        vec![],
+        0,
+        None,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+        doc_options,
+        crate::state::UserSettings::new(),
+    );
+    assert!(host
+        .exec(
+            "rift.notify('info', type(rift.get_option('tab_width')) \
+             .. ':' .. tostring(rift.get_option('tab_width')))"
+        )
+        .is_none());
+    let mutations = host.drain_mutations();
+    match &mutations[0] {
+        PluginMutation::Notify { message, .. } => assert_eq!(message, "number:8"),
+        _ => panic!("expected Notify"),
+    }
+}
+
+#[test]
+fn test_get_option_falls_back_to_global_setting() {
+    let host = make_host();
+    let mut user_settings = crate::state::UserSettings::new();
+    user_settings.clipboard_ring_size = 42;
+    host.update_state(
+        1,
+        "file".to_string(),
+        BufSourceUpdate::Cleared,
+        (0, 0),
+        4,
+        true,
+        "normal",
+        None,
+        None,
+        vec![],
+        (0, 0),
+        false,
+        false,
+        false,
+        (0, 0),
+        "lf",
+        vec![],
+        vec![],
+        0,
+        None,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+        crate::document::definitions::DocumentOptions::default(),
+        user_settings,
+    );
+    assert!(host
+        .exec("rift.notify('info', tostring(rift.get_option('clipboard.size')))")
+        .is_none());
+    let mutations = host.drain_mutations();
+    match &mutations[0] {
+        PluginMutation::Notify { message, .. } => assert_eq!(message, "42"),
+        _ => panic!("expected Notify"),
+    }
+}
+
+#[test]
+fn test_get_option_unknown_name_returns_nil() {
+    let host = make_host();
+    assert!(host
+        .exec("assert(rift.get_option('not_a_real_setting') == nil)")
+        .is_none());
+}
+
+#[test]
 fn test_notify_queues_mutation() {
     let host = make_host();
     assert!(host.exec("rift.notify('info', 'hello')").is_none());
@@ -395,6 +505,8 @@ fn test_get_lines_returns_correct_lines() {
         None,
         std::collections::HashMap::new(),
         std::collections::HashMap::new(),
+        crate::document::definitions::DocumentOptions::default(),
+        crate::state::UserSettings::new(),
     );
     assert!(host.exec("_lines = rift.get_lines(1, -1)").is_none());
     assert!(host.exec("rift.notify('info', _lines[2])").is_none());
@@ -431,6 +543,8 @@ fn test_line_count_and_find_materialize_from_deferred_source() {
         None,
         std::collections::HashMap::new(),
         std::collections::HashMap::new(),
+        crate::document::definitions::DocumentOptions::default(),
+        crate::state::UserSettings::new(),
     );
     // get_line_count is served from the cheap scalar without materializing.
     assert!(host
@@ -477,6 +591,8 @@ fn test_get_cursor_returns_1indexed_row() {
         None,
         std::collections::HashMap::new(),
         std::collections::HashMap::new(),
+        crate::document::definitions::DocumentOptions::default(),
+        crate::state::UserSettings::new(),
     );
     assert!(host
         .exec("local r, c = rift.get_cursor(); rift.notify('info', tostring(r))")
@@ -514,6 +630,8 @@ fn test_current_buf_returns_id() {
         None,
         std::collections::HashMap::new(),
         std::collections::HashMap::new(),
+        crate::document::definitions::DocumentOptions::default(),
+        crate::state::UserSettings::new(),
     );
     assert!(host
         .exec("rift.notify('info', tostring(rift.current_buf()))")

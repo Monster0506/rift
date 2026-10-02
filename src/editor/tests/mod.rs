@@ -12,6 +12,7 @@ mod explorer_preview_tests;
 mod ghost_cut_tests;
 mod motion_tests;
 mod plugin_highlight_tests;
+mod plugin_settings_tests;
 mod region_bank_ops_tests;
 mod region_bank_selection_tests;
 mod scroll_blit_tests;

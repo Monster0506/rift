@@ -69,6 +69,21 @@ fn build_presentation(opts: &LuaTable) -> LuaResult<Option<crate::annotations::P
     Ok(Some(pres))
 }
 
+fn setting_value_to_lua(
+    lua: &Lua,
+    value: &crate::command_line::settings::SettingValue,
+) -> LuaResult<LuaValue> {
+    use crate::command_line::settings::SettingValue;
+    Ok(match value {
+        SettingValue::Bool(b) => LuaValue::Boolean(*b),
+        SettingValue::Integer(n) => LuaValue::Integer(*n as i64),
+        SettingValue::Float(f) => LuaValue::Number(*f),
+        SettingValue::Enum(_) | SettingValue::Color(_) | SettingValue::Path(_) => {
+            LuaValue::String(lua.create_string(value.to_display_string())?)
+        }
+    })
+}
+
 #[cfg(feature = "lsp")]
 fn lua_to_json(v: LuaValue) -> Result<serde_json::Value, String> {
     match v {
@@ -197,6 +212,8 @@ struct LuaSharedState {
         u64,
         std::collections::HashMap<String, crate::annotations::Value>,
     >,
+    doc_options: crate::document::definitions::DocumentOptions,
+    user_settings: crate::state::UserSettings,
 }
 
 impl LuaSharedState {
@@ -258,6 +275,8 @@ impl Default for LuaSharedState {
             pending_shell_events: Vec::new(),
             is_active: true,
             buffer_vars: std::collections::HashMap::new(),
+            doc_options: crate::document::definitions::DocumentOptions::default(),
+            user_settings: crate::state::UserSettings::new(),
         }
     }
 }
@@ -1103,8 +1122,6 @@ impl LuaHost {
             api.set("set_cursor_hold_delay", f)?;
         }
 
-        // rift.set_option(name, value) - set a document option
-        // Supported: "tab_width", "expand_tabs", "show_line_numbers"
         {
             let sh = Arc::clone(&shared);
             let f = lua.create_function(move |_, (name, value): (String, LuaValue)| {
@@ -1126,16 +1143,17 @@ impl LuaHost {
             api.set("set_option", f)?;
         }
 
-        // rift.get_option(name) - read a document option from the current snapshot
-        // Returns: tab_width (int), expand_tabs (bool), show_line_numbers (bool)
         {
             let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_lua, name: String| {
+            let f = lua.create_function(move |lua, name: String| {
                 let s = sh.lock().unwrap_or_else(|e| e.into_inner());
-                match name.as_str() {
-                    "tab_width" | "tabwidth" => Ok(LuaValue::Integer(s.tab_width as i64)),
-                    "expand_tabs" | "expandtabs" => Ok(LuaValue::Boolean(s.expand_tabs)),
-                    _ => Ok(LuaValue::Nil),
+                let resolver = crate::command_line::settings::SettingsResolver::new(
+                    crate::document::definitions::create_document_settings_registry(),
+                    crate::command_line::settings::create_settings_registry(),
+                );
+                match resolver.get(&name, &s.doc_options, &s.user_settings) {
+                    Some(value) => setting_value_to_lua(lua, &value),
+                    None => Ok(LuaValue::Nil),
                 }
             })?;
             api.set("get_option", f)?;
@@ -2598,6 +2616,8 @@ end
             u64,
             std::collections::HashMap<String, crate::annotations::Value>,
         >,
+        doc_options: crate::document::definitions::DocumentOptions,
+        user_settings: crate::state::UserSettings,
     ) {
         let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
         s.buf_id = buf_id;
@@ -2626,6 +2646,8 @@ end
         s.previous_win_id = previous_win_id;
         s.lsp_diagnostics = lsp_diagnostics;
         s.buffer_vars = buffer_vars;
+        s.doc_options = doc_options;
+        s.user_settings = user_settings;
     }
 
     /// Budget for one automatic (non-user-initiated) Lua call - event
