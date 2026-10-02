@@ -935,6 +935,52 @@ fn reword_via_pre_edited_message_applies_without_pausing() {
 }
 
 #[test]
+fn reword_via_a_real_edit_closes_the_message_buffer() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join("repo");
+    std::fs::create_dir(&dir).unwrap();
+    init_repo_with_three_commits_ahead_of_upstream(&dir);
+
+    let mut editor = create_editor();
+    editor
+        .open_file(Some(dir.join("c.txt").display().to_string()), false)
+        .unwrap();
+    editor.open_git_rebase(dir.clone());
+    let doc_id = editor.active_document_id();
+
+    {
+        let doc = editor.document_manager.active_document_mut().unwrap();
+        let start = doc.buffer.line_index.get_start(0).unwrap();
+        let _ = doc.buffer.set_cursor(start);
+    }
+    editor.git_rebase_open_message_editor();
+    let msg_doc_id = editor.active_document_id();
+    {
+        let doc = editor.document_manager.active_document_mut().unwrap();
+        let len = doc.buffer.len();
+        doc.buffer.set_cursor(len).unwrap();
+        doc.insert_str(" reworded").unwrap();
+    }
+    editor.apply_git_commit_message();
+
+    assert!(
+        editor.document_manager.get_document(msg_doc_id).is_none(),
+        "a real history-tracked edit must still let the message buffer close"
+    );
+
+    editor.apply_git_rebase_todo();
+
+    assert!(
+        editor.document_manager.get_document(doc_id).is_none(),
+        "a pre-edited pick/reword completes in one pass, no pause"
+    );
+    assert_eq!(
+        subjects(&dir, "origin/main..main"),
+        vec!["add a reworded", "add b", "add c"]
+    );
+}
+
+#[test]
 fn squash_with_a_pre_edited_message_uses_it_as_the_incoming_half() {
     let root = tempfile::tempdir().unwrap();
     let dir = root.path().join("repo");

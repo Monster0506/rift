@@ -599,6 +599,9 @@ impl<T: TerminalBackend> Editor<T> {
 
         if let GitCommitTarget::RebasePlanReword { rebase_doc_id, sha } = target {
             self.state.clear_command_line();
+            if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                doc.history.mark_saved();
+            }
             if let Err(e) = self.remove_document(doc_id) {
                 self.state.handle_error(e);
                 return;
@@ -642,6 +645,9 @@ impl<T: TerminalBackend> Editor<T> {
         match result {
             Ok(_) => {
                 self.state.clear_command_line();
+                if let Some(doc) = self.document_manager.get_document_mut(doc_id) {
+                    doc.history.mark_saved();
+                }
                 if let Err(e) = self.remove_document(doc_id) {
                     self.state.handle_error(e);
                     return;
