@@ -412,7 +412,7 @@ pub fn complete_setting_value<T: 'static>(
                 .collect();
             if let (Some(getter), Some(val)) = (desc.get, current) {
                 candidates.push(CompletionCandidate {
-                    text: getter(val),
+                    text: getter(val).to_display_string(),
                     description: "current value".into(),
                     is_directory: false,
                 });
@@ -424,7 +424,7 @@ pub fn complete_setting_value<T: 'static>(
         | SettingType::Color
         | SettingType::Path => match (desc.get, current) {
             (Some(getter), Some(val)) => vec![CompletionCandidate {
-                text: getter(val),
+                text: getter(val).to_display_string(),
                 description: "current value".into(),
                 is_directory: false,
             }],

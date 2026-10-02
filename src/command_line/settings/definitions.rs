@@ -6,30 +6,6 @@ use crate::command_line::settings::registry::SettingsRegistry;
 use crate::floating_window::BorderChars;
 use crate::state::UserSettings;
 
-fn format_color(color: Option<Color>) -> String {
-    match color {
-        None | Some(Color::Reset) => "none".to_string(),
-        Some(Color::Black) => "black".to_string(),
-        Some(Color::DarkGrey) => "darkgrey".to_string(),
-        Some(Color::Red) => "red".to_string(),
-        Some(Color::DarkRed) => "darkred".to_string(),
-        Some(Color::Green) => "green".to_string(),
-        Some(Color::DarkGreen) => "darkgreen".to_string(),
-        Some(Color::Yellow) => "yellow".to_string(),
-        Some(Color::DarkYellow) => "darkyellow".to_string(),
-        Some(Color::Blue) => "blue".to_string(),
-        Some(Color::DarkBlue) => "darkblue".to_string(),
-        Some(Color::Magenta) => "magenta".to_string(),
-        Some(Color::DarkMagenta) => "darkmagenta".to_string(),
-        Some(Color::Cyan) => "cyan".to_string(),
-        Some(Color::DarkCyan) => "darkcyan".to_string(),
-        Some(Color::White) => "white".to_string(),
-        Some(Color::Grey) => "grey".to_string(),
-        Some(Color::Ansi256(n)) => format!("ansi256({n})"),
-        Some(Color::Rgb { r, g, b }) => format!("#{r:02x}{g:02x}{b:02x}"),
-    }
-}
-
 fn create_unicode_border() -> BorderChars {
     BorderChars {
         top_left: '╭',
@@ -117,8 +93,8 @@ fn set_clipboard_size(
     }
 }
 
-fn get_clipboard_size(s: &UserSettings) -> String {
-    s.clipboard_ring_size.to_string()
+fn get_clipboard_size(s: &UserSettings) -> SettingValue {
+    SettingValue::Integer(s.clipboard_ring_size)
 }
 
 fn set_poll_rate(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
@@ -303,28 +279,28 @@ fn set_show_status_line(
     }
 }
 
-fn get_cmd_window_width_ratio(s: &UserSettings) -> String {
-    s.command_line_window.width_ratio.to_string()
+fn get_cmd_window_width_ratio(s: &UserSettings) -> SettingValue {
+    SettingValue::Float(s.command_line_window.width_ratio)
 }
 
-fn get_cmd_window_min_width(s: &UserSettings) -> String {
-    s.command_line_window.min_width.to_string()
+fn get_cmd_window_min_width(s: &UserSettings) -> SettingValue {
+    SettingValue::Integer(s.command_line_window.min_width)
 }
 
-fn get_cmd_window_height(s: &UserSettings) -> String {
-    s.command_line_window.height.to_string()
+fn get_cmd_window_height(s: &UserSettings) -> SettingValue {
+    SettingValue::Integer(s.command_line_window.height)
 }
 
-fn get_poll_rate(s: &UserSettings) -> String {
-    s.poll_timeout_ms.to_string()
+fn get_poll_rate(s: &UserSettings) -> SettingValue {
+    SettingValue::Integer(s.poll_timeout_ms as usize)
 }
 
-fn get_editor_bg(s: &UserSettings) -> String {
-    format_color(s.editor_bg)
+fn get_editor_bg(s: &UserSettings) -> SettingValue {
+    SettingValue::Color(s.editor_bg.unwrap_or(Color::Reset))
 }
 
-fn get_editor_fg(s: &UserSettings) -> String {
-    format_color(s.editor_fg)
+fn get_editor_fg(s: &UserSettings) -> SettingValue {
+    SettingValue::Color(s.editor_fg.unwrap_or(Color::Reset))
 }
 
 fn set_cursor_color(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
@@ -341,8 +317,8 @@ fn set_cursor_color(settings: &mut UserSettings, value: SettingValue) -> Result<
     }
 }
 
-fn get_cursor_color(s: &UserSettings) -> String {
-    format_color(s.cursor_color)
+fn get_cursor_color(s: &UserSettings) -> SettingValue {
+    SettingValue::Color(s.cursor_color.unwrap_or(Color::Reset))
 }
 
 fn set_cursor_speed(settings: &mut UserSettings, value: SettingValue) -> Result<(), SettingError> {
@@ -355,8 +331,8 @@ fn set_cursor_speed(settings: &mut UserSettings, value: SettingValue) -> Result<
     }
 }
 
-fn get_cursor_speed(s: &UserSettings) -> String {
-    s.cursor_speed.to_string()
+fn get_cursor_speed(s: &UserSettings) -> SettingValue {
+    SettingValue::Float(s.cursor_speed)
 }
 
 fn set_equalize_proportional(
@@ -458,11 +434,13 @@ fn set_undo_dir(settings: &mut UserSettings, value: SettingValue) -> Result<(), 
     }
 }
 
-fn get_undo_dir(s: &UserSettings) -> String {
-    s.undo_dir
-        .as_deref()
-        .map(|p| p.display().to_string())
-        .unwrap_or_default()
+fn get_undo_dir(s: &UserSettings) -> SettingValue {
+    SettingValue::Path(
+        s.undo_dir
+            .as_deref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default(),
+    )
 }
 
 pub const SETTINGS: &[SettingDescriptor<UserSettings>] = &[
