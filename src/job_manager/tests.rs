@@ -255,7 +255,7 @@ fn test_completion_job_name() {
 #[test]
 fn test_directory_list_job_name() {
     use crate::job_manager::jobs::explorer::DirectoryListJob;
-    let job = DirectoryListJob::new(1, std::path::PathBuf::from("/tmp"), false);
+    let job = DirectoryListJob::new(crate::document::DocumentId::new(1), std::path::PathBuf::from("/tmp"), false);
     assert_eq!(job.name(), "directory-list");
     assert!(job.is_silent());
 }
@@ -391,7 +391,7 @@ fn test_panicking_job_reaches_terminal_state() {
 #[test]
 fn test_async_token_advances_epoch_and_invalidates_older() {
     let mut manager = JobManager::new();
-    let handle = DocumentHandle::new(1, 1);
+    let handle = DocumentHandle::new(crate::document::DocumentId::new(1), 1);
     let kind = BufferKindId::FILE;
     let domain = AsyncOpDomain::FileLoad;
 
@@ -409,7 +409,7 @@ fn test_async_token_advances_epoch_and_invalidates_older() {
 #[test]
 fn test_domain_isolation_for_epochs() {
     let mut manager = JobManager::new();
-    let handle = DocumentHandle::new(1, 1);
+    let handle = DocumentHandle::new(crate::document::DocumentId::new(1), 1);
     let kind = BufferKindId::FILE;
 
     let token_load = manager.next_token(handle, kind, AsyncOpDomain::FileLoad);
@@ -431,8 +431,8 @@ fn test_domain_isolation_for_epochs() {
 #[test]
 fn test_cancel_jobs_for_handle_purges_tokens_and_epochs() {
     let mut manager = JobManager::new();
-    let handle1 = DocumentHandle::new(1, 1);
-    let handle2 = DocumentHandle::new(2, 1);
+    let handle1 = DocumentHandle::new(crate::document::DocumentId::new(1), 1);
+    let handle2 = DocumentHandle::new(crate::document::DocumentId::new(2), 1);
     let kind = BufferKindId::FILE;
 
     let token1 = manager.next_token(handle1, kind, AsyncOpDomain::FileLoad);
@@ -469,11 +469,11 @@ fn test_cancel_jobs_for_handle_purges_tokens_and_epochs() {
 #[test]
 fn test_spawn_document_job_auto_generates_token() {
     let mut manager = JobManager::new();
-    let handle = DocumentHandle::new(10, 1);
+    let handle = DocumentHandle::new(crate::document::DocumentId::new(10), 1);
     manager.register_document_handle(handle, BufferKindId::DIRECTORY, None);
 
     let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
-        10,
+        crate::document::DocumentId::new(10),
         std::path::PathBuf::from("/tmp"),
         false,
     );
@@ -489,7 +489,7 @@ fn test_spawn_document_job_auto_generates_token() {
 
     // Spawning a newer request for the same document and domain advances the epoch
     let job2 = crate::job_manager::jobs::explorer::DirectoryListJob::new(
-        10,
+        crate::document::DocumentId::new(10),
         std::path::PathBuf::from("/tmp"),
         false,
     );

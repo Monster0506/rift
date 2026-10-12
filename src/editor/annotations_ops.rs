@@ -131,13 +131,13 @@ impl<T: TerminalBackend> Editor<T> {
                         .map(|a| a.params.clone())
                         .unwrap_or(crate::annotations::Value::Null);
                     crate::plugin::AnnotationActionCtx {
-                        annotation_id: ann_id,
+                        annotation_id: ann_id.get(),
                         kind: kind.as_str().to_string(),
                         verb,
                         payload: ann.payload.clone(),
                         params,
                         position,
-                        buffer,
+                        buffer: buffer.get(),
                     }
                 };
                 let ran = self.plugin_host.invoke_annotation_action(&ctx);
@@ -210,15 +210,15 @@ impl<T: TerminalBackend> Editor<T> {
         self.hovered_annotation = current;
 
         // Build a hover ctx for an annotation id, if it still exists.
-        let make_ctx = |s: &Self, id: u64| -> Option<crate::plugin::AnnotationHoverCtx> {
+        let make_ctx = |s: &Self, id: crate::annotations::AnnotationId| -> Option<crate::plugin::AnnotationHoverCtx> {
             let doc = s.document_manager.active_document()?;
             let ann = doc.annotations.get(id)?;
             Some(crate::plugin::AnnotationHoverCtx {
-                annotation_id: id,
+                annotation_id: id.get(),
                 kind: ann.kind.as_str().to_string(),
                 payload: ann.payload.clone(),
                 position: doc.buffer.cursor(),
-                buffer: doc.id,
+                buffer: doc.id.get(),
             })
         };
 

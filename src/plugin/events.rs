@@ -131,7 +131,7 @@ impl EditorEvent {
                 path,
                 filetype,
             } => {
-                t.set("buf", *buf as i64)?;
+                t.set("buf", buf.get() as i64)?;
                 if let Some(p) = path {
                     t.set("path", p.to_string_lossy().as_ref())?;
                 }
@@ -140,35 +140,35 @@ impl EditorEvent {
                 }
             }
             EditorEvent::BufClose { buf } => {
-                t.set("buf", *buf as i64)?;
+                t.set("buf", buf.get() as i64)?;
             }
             EditorEvent::BufEnter { buf } => {
-                t.set("buf", *buf as i64)?;
+                t.set("buf", buf.get() as i64)?;
             }
             EditorEvent::BufLeave { buf } => {
-                t.set("buf", *buf as i64)?;
+                t.set("buf", buf.get() as i64)?;
             }
             EditorEvent::BufSavePre { buf, path } => {
-                t.set("buf", *buf as i64)?;
+                t.set("buf", buf.get() as i64)?;
                 t.set("path", path.to_string_lossy().as_ref())?;
             }
             EditorEvent::BufSavePost { buf, path } => {
-                t.set("buf", *buf as i64)?;
+                t.set("buf", buf.get() as i64)?;
                 t.set("path", path.to_string_lossy().as_ref())?;
             }
             EditorEvent::BufReload { buf } => {
-                t.set("buf", *buf as i64)?;
+                t.set("buf", buf.get() as i64)?;
             }
             EditorEvent::TextChangedCoarse { buf } => {
-                t.set("buf", *buf as i64)?;
+                t.set("buf", buf.get() as i64)?;
             }
             EditorEvent::CursorMoved { buf, row, col } => {
-                t.set("buf", *buf as i64)?;
+                t.set("buf", buf.get() as i64)?;
                 t.set("row", *row as i64 + 1)?; // 1-indexed for Lua
                 t.set("col", *col as i64)?;
             }
             EditorEvent::CursorHold { buf, row, col } => {
-                t.set("buf", *buf as i64)?;
+                t.set("buf", buf.get() as i64)?;
                 t.set("row", *row as i64 + 1)?;
                 t.set("col", *col as i64)?;
             }
@@ -216,11 +216,11 @@ impl EditorEvent {
             EditorEvent::EditorStart | EditorEvent::EditorQuit => {}
             EditorEvent::WinEnter { win, buf } => {
                 t.set("win", *win as i64)?;
-                t.set("buf", *buf as i64)?;
+                t.set("buf", buf.get() as i64)?;
             }
             EditorEvent::WinLeave { win, buf } => {
                 t.set("win", *win as i64)?;
-                t.set("buf", *buf as i64)?;
+                t.set("buf", buf.get() as i64)?;
             }
             EditorEvent::WinMoved { win } => {
                 t.set("win", *win as i64)?;

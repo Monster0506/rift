@@ -4,7 +4,7 @@ use crate::color::Color;
 
 #[test]
 fn test_populate_undotree_stores_text() {
-    let mut doc = Document::new_undotree(1, 42).unwrap();
+    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(42)).unwrap();
     let text = "* [1] edit\n* [0] root".to_string();
     let seqs = vec![1u64, 0u64];
     let highlights = vec![];
@@ -14,7 +14,7 @@ fn test_populate_undotree_stores_text() {
 
 #[test]
 fn test_populate_undotree_stores_sequences() {
-    let mut doc = Document::new_undotree(1, 42).unwrap();
+    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(42)).unwrap();
     let seqs = vec![5u64, 3u64, 1u64];
     doc.populate_undotree_buffer("text".to_string(), seqs.clone(), vec![]);
     assert_eq!(doc.undotree_sequences(), Some(seqs.as_slice()));
@@ -22,7 +22,7 @@ fn test_populate_undotree_stores_sequences() {
 
 #[test]
 fn test_populate_undotree_stores_highlights() {
-    let mut doc = Document::new_undotree(1, 42).unwrap();
+    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(42)).unwrap();
     let highlights = vec![(0..2, Color::Magenta), (3..5, Color::Cyan)];
     doc.populate_undotree_buffer("ab cd".to_string(), vec![], highlights.clone());
     assert_eq!(doc.custom_highlights.len(), 2);
@@ -32,28 +32,28 @@ fn test_populate_undotree_stores_highlights() {
 
 #[test]
 fn test_populate_undotree_preserves_linked_doc_id() {
-    let mut doc = Document::new_undotree(1, 99).unwrap();
+    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(99)).unwrap();
     doc.populate_undotree_buffer("x".to_string(), vec![], vec![]);
-    assert_eq!(doc.undotree_linked_doc_id(), Some(99));
+    assert_eq!(doc.undotree_linked_doc_id(), Some(crate::document::DocumentId::new(99)));
 }
 
 #[test]
 fn test_populate_undotree_noop_on_wrong_kind() {
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.populate_undotree_buffer("text".to_string(), vec![1], vec![]);
     assert_eq!(doc.buffer.to_string(), "");
 }
 
 #[test]
 fn test_populate_undotree_marks_saved() {
-    let mut doc = Document::new_undotree(1, 42).unwrap();
+    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(42)).unwrap();
     doc.populate_undotree_buffer("text".to_string(), vec![], vec![]);
     assert!(!doc.is_dirty());
 }
 
 #[test]
 fn test_populate_undotree_replaces_old_highlights() {
-    let mut doc = Document::new_undotree(1, 42).unwrap();
+    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(42)).unwrap();
     doc.populate_undotree_buffer("ab".to_string(), vec![], vec![(0..2, Color::Red)]);
     assert_eq!(doc.custom_highlights.len(), 1);
 
@@ -73,24 +73,24 @@ fn test_populate_undotree_replaces_old_highlights() {
 #[test]
 fn test_remove_directory_buffer_without_dirty_check() {
     let mut manager = create_manager();
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let _ = doc.buffer.insert_str("some edit");
     manager.add_document(doc);
 
-    assert!(manager.remove_document(1).is_ok());
+    assert!(manager.remove_document(crate::document::DocumentId::new(1)).is_ok());
 }
 
 #[test]
 fn test_remove_undotree_buffer_without_dirty_check() {
     let mut manager = create_manager();
-    let doc = Document::new_undotree(2, 1).unwrap();
+    let doc = Document::new_undotree(crate::document::DocumentId::new(2), crate::document::DocumentId::new(1)).unwrap();
     manager.add_document(doc);
-    assert!(manager.remove_document(2).is_ok());
+    assert!(manager.remove_document(crate::document::DocumentId::new(2)).is_ok());
 }
 
 #[test]
 fn test_populate_undotree_increments_revision() {
-    let mut doc = Document::new_undotree(1, 2).unwrap();
+    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(2)).unwrap();
     let rev0 = doc.buffer.revision;
     doc.populate_undotree_buffer("text".to_string(), vec![], vec![]);
     assert!(
@@ -104,7 +104,7 @@ fn sync_selection_annotations_creates_one_entry_per_banked_region_plus_active() 
     use crate::selection::Region;
     use crate::wrap::RangeKind;
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.buffer.insert_str("hello world").unwrap();
 
     let banked = vec![Region::new(0, 2, RangeKind::Charwise)];
@@ -120,7 +120,7 @@ fn sync_selection_annotations_active_region_uses_a_visible_contrasting_blue() {
     use crate::selection::Region;
     use crate::wrap::RangeKind;
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.buffer.insert_str("hello world").unwrap();
 
     doc.sync_selection_annotations(Some(Region::new(0, 2, RangeKind::Charwise)), &[]);
@@ -153,7 +153,7 @@ fn sync_selection_annotations_banked_regions_all_share_the_same_blue_as_active()
     use crate::selection::Region;
     use crate::wrap::RangeKind;
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.buffer.insert_str("0123456789").unwrap();
 
     let banked = vec![
@@ -181,7 +181,7 @@ fn sync_selection_annotations_replaces_previous_call() {
     use crate::selection::Region;
     use crate::wrap::RangeKind;
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.buffer.insert_str("hello world").unwrap();
 
     doc.sync_selection_annotations(None, &[Region::new(0, 2, RangeKind::Charwise)]);
@@ -203,7 +203,7 @@ fn populate_regions_buffer_writes_one_line_per_region() {
         Region::new(6, 10, RangeKind::Charwise), // "world"
     ];
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.populate_regions_buffer(&source, &regions);
 
     let content = doc.buffer.to_string();
@@ -222,7 +222,7 @@ fn populate_regions_buffer_writes_one_line_per_region() {
 #[test]
 fn populate_regions_buffer_with_no_regions_shows_empty_placeholder() {
     let source = TextBuffer::new(10).unwrap();
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.populate_regions_buffer(&source, &[]);
 
     assert_eq!(doc.buffer.to_string(), "(empty)");

@@ -1247,7 +1247,7 @@ fn test_dispatch_event_aborts_a_runaway_handler_past_its_time_budget() {
         .is_none());
 
     let started = std::time::Instant::now();
-    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse { buf: 1 });
+    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse { buf: crate::document::DocumentId::new(1) });
     let elapsed = started.elapsed();
 
     assert!(
@@ -1276,7 +1276,7 @@ fn test_dispatch_event_does_not_abort_a_fast_handler() {
         )
         .is_none());
 
-    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse { buf: 1 });
+    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse { buf: crate::document::DocumentId::new(1) });
     assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
     let mutations = host.drain_mutations();
     assert_eq!(mutations.len(), 1);

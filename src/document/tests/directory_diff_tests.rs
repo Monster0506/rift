@@ -99,7 +99,7 @@ fn test_parse_diff_one_entry_replaced_is_rename() {
 
 #[test]
 fn test_parse_diff_noop_on_non_directory_doc() {
-    let doc = Document::new(1).unwrap();
+    let doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let diff = doc.parse_directory_diff();
     assert!(diff.deletes.is_empty());
     assert!(diff.creates.is_empty());

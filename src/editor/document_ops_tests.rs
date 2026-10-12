@@ -271,7 +271,7 @@ fn reload_on_a_buffer_list_panel_refreshes_listing() {
         .to_string();
     assert!(!text_before.contains("[3]"));
 
-    let new_doc = crate::document::Document::new(99).unwrap();
+    let new_doc = crate::document::Document::new(crate::document::DocumentId::new(99)).unwrap();
     editor.document_manager.add_document_inactive(new_doc);
 
     editor.open_file(None, false).unwrap();

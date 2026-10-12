@@ -3,7 +3,7 @@ use super::*;
 #[cfg(feature = "lsp")]
 #[test]
 fn test_lsp_char_offset_handles_astral_and_non_ascii() {
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let _ = doc.insert_str("a🦀é-end");
 
     use crate::lsp::protocol::PositionEncoding;
@@ -29,7 +29,7 @@ fn test_lsp_char_offset_handles_astral_and_non_ascii() {
 #[test]
 fn test_lsp_position_units_differ_by_negotiated_encoding() {
     use crate::lsp::protocol::PositionEncoding;
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let _ = doc.insert_str("a🦀é-end");
 
     assert_eq!(
@@ -52,7 +52,7 @@ fn test_lsp_position_units_differ_by_negotiated_encoding() {
 #[test]
 fn test_incremental_lsp_change_for_single_char_insert() {
     use crate::lsp::protocol::PositionEncoding;
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let _ = doc.insert_str("ac");
     let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
     let _ = doc.buffer.set_cursor(1);
@@ -72,7 +72,7 @@ fn test_incremental_lsp_change_for_single_char_insert() {
 #[test]
 fn test_incremental_lsp_change_for_single_char_delete() {
     use crate::lsp::protocol::PositionEncoding;
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let _ = doc.insert_str("abc");
     let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
     let _ = doc.buffer.set_cursor(2);
@@ -95,7 +95,7 @@ fn test_incremental_lsp_change_for_single_char_delete() {
 #[test]
 fn test_incremental_lsp_change_positions_a_non_bmp_char_correctly() {
     use crate::lsp::protocol::PositionEncoding;
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let _ = doc.insert_str("🦀x");
     let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
     let _ = doc.buffer.set_cursor(2);
@@ -113,7 +113,7 @@ fn test_incremental_lsp_change_positions_a_non_bmp_char_correctly() {
 #[test]
 fn test_incremental_lsp_change_combines_chaining_inserts() {
     use crate::lsp::protocol::PositionEncoding;
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let _ = doc.insert_str("a");
     let _ = doc.insert_str("b");
 
@@ -134,7 +134,7 @@ fn test_incremental_lsp_change_combines_chaining_inserts() {
 #[test]
 fn test_incremental_lsp_change_combines_three_chaining_inserts() {
     use crate::lsp::protocol::PositionEncoding;
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let _ = doc.insert_str("a");
     let _ = doc.insert_str("b");
     let _ = doc.insert_str("c");
@@ -151,7 +151,7 @@ fn test_incremental_lsp_change_combines_three_chaining_inserts() {
 #[test]
 fn test_incremental_lsp_change_combines_insert_run_spanning_a_newline() {
     use crate::lsp::protocol::PositionEncoding;
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let _ = doc.insert_str("x\n");
     let _ = doc.insert_str("y");
 
@@ -169,7 +169,7 @@ fn test_incremental_lsp_change_combines_insert_run_spanning_a_newline() {
 #[test]
 fn test_incremental_lsp_change_falls_back_when_inserts_are_not_adjacent() {
     use crate::lsp::protocol::PositionEncoding;
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let _ = doc.insert_str("aaaa");
     let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
 
@@ -189,7 +189,7 @@ fn test_incremental_lsp_change_falls_back_when_inserts_are_not_adjacent() {
 #[test]
 fn test_incremental_lsp_change_falls_back_for_mixed_insert_and_delete() {
     use crate::lsp::protocol::PositionEncoding;
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let _ = doc.insert_str("ab");
     let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
 
@@ -207,7 +207,7 @@ fn test_incremental_lsp_change_falls_back_for_mixed_insert_and_delete() {
 #[test]
 fn test_incremental_lsp_change_falls_back_for_multiple_deletes() {
     use crate::lsp::protocol::PositionEncoding;
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let _ = doc.insert_str("abc");
     let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
 
@@ -225,7 +225,7 @@ fn test_incremental_lsp_change_falls_back_for_multiple_deletes() {
 #[test]
 fn test_incremental_lsp_change_falls_back_for_multiline_delete() {
     use crate::lsp::protocol::PositionEncoding;
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let _ = doc.insert_str("ab\ncd");
     let _ = doc.take_incremental_lsp_changes(PositionEncoding::Utf16); // drain setup
     let _ = doc.buffer.set_cursor(0);
@@ -241,7 +241,7 @@ fn test_incremental_lsp_change_falls_back_for_multiline_delete() {
 #[test]
 fn test_undo_redo_keep_current_lsp_diagnostics() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("aaa\nbbb\nccc").unwrap();
     let user = doc.annotations.add(Annotation::new(
         Kind::new("ui.link"),

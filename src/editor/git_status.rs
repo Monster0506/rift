@@ -143,7 +143,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
         self.split_tree.set_focused_document(id);
 
-        let job = crate::job_manager::jobs::git::GitStatusJob::new(id as usize, repo_root);
+        let job = crate::job_manager::jobs::git::GitStatusJob::new(id, repo_root);
         self.job_manager.spawn(job);
 
         self.sync_state_with_active_document();
@@ -183,7 +183,7 @@ impl<T: TerminalBackend> Editor<T> {
             .collect();
         for path in paths {
             let job = crate::job_manager::jobs::git::GitDiffJob::new(
-                doc_id as usize,
+                doc_id,
                 repo_root.clone(),
                 path,
                 staged_side,
@@ -204,7 +204,7 @@ impl<T: TerminalBackend> Editor<T> {
             .collect();
         for doc_id in doc_ids {
             let job = crate::job_manager::jobs::git::GitStatusJob::new(
-                doc_id as usize,
+                doc_id,
                 repo_root.to_path_buf(),
             );
             self.job_manager.spawn(job);
@@ -379,7 +379,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let job = crate::job_manager::jobs::git::GitDiffJob::new(
-            doc_id as usize,
+            doc_id,
             repo_root,
             path,
             staged_side,
@@ -738,7 +738,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
         let origin_doc_id = self.active_document_id();
         let job = crate::job_manager::jobs::git::GitCommandJob::new(
-            origin_doc_id as usize,
+            origin_doc_id,
             repo_root,
             args,
         );

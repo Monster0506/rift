@@ -511,7 +511,7 @@ struct CursorHoldState {
 impl CursorHoldState {
     fn new(threshold_polls: u32) -> Self {
         Self {
-            last_pos: (0, 0, 0),
+            last_pos: (DocumentId::new(0), 0, 0),
             idle_polls: 0,
             threshold_polls,
             fired: false,
@@ -1137,7 +1137,7 @@ impl PluginHost {
                 if !self.is_generation_active(lua.generation()) {
                     return false;
                 }
-                lua.invoke_buffer_action(buf_id, kind, action)
+                lua.invoke_buffer_action(buf_id.get(), kind, action)
             }
             None => false,
         }
@@ -1150,7 +1150,7 @@ impl PluginHost {
                 if !self.is_generation_active(lua.generation()) {
                     return false;
                 }
-                lua.invoke_buffer_save(buf_id, kind)
+                lua.invoke_buffer_save(buf_id.get(), kind)
             }
             None => false,
         }
@@ -1163,7 +1163,7 @@ impl PluginHost {
                 if !self.is_generation_active(lua.generation()) {
                     return false;
                 }
-                lua.invoke_buffer_close(buf_id, kind)
+                lua.invoke_buffer_close(buf_id.get(), kind)
             }
             None => false,
         }

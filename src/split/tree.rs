@@ -37,7 +37,7 @@ pub struct SplitTree {
 
 impl SplitTree {
     pub fn new(doc_id: DocumentId, viewport_rows: usize, viewport_cols: usize) -> Self {
-        let window_id = 1;
+        let window_id = WindowId::new(1);
         let window = Window::new(window_id, doc_id, viewport_rows, viewport_cols);
         let mut windows = HashMap::new();
         windows.insert(window_id, window);
@@ -47,7 +47,7 @@ impl SplitTree {
             windows,
             focused_window: window_id,
             previous_window: None,
-            next_window_id: 2,
+            next_window_id: WindowId::new(2),
         }
     }
 
@@ -129,7 +129,7 @@ impl SplitTree {
         }
 
         let new_id = self.next_window_id;
-        self.next_window_id += 1;
+        self.next_window_id = self.next_window_id.next();
 
         let cursor_pos = self
             .windows
@@ -148,7 +148,7 @@ impl SplitTree {
         self.windows.insert(new_id, new_window);
 
         self.root = Self::replace_leaf(
-            std::mem::replace(&mut self.root, SplitNode::Leaf(0)),
+            std::mem::replace(&mut self.root, SplitNode::Leaf(WindowId::new(0))),
             target_id,
             direction,
             new_id,
@@ -227,7 +227,7 @@ impl SplitTree {
         let promoted_focus = Self::sibling_first_leaf(&self.root, id);
 
         self.windows.remove(&id);
-        self.root = Self::remove_leaf(std::mem::replace(&mut self.root, SplitNode::Leaf(0)), id);
+        self.root = Self::remove_leaf(std::mem::replace(&mut self.root, SplitNode::Leaf(WindowId::new(0))), id);
 
         if self.focused_window == id {
             self.focused_window =
@@ -333,11 +333,11 @@ impl SplitTree {
         if let Some(nid) = neighbor_id {
             let insert_is_first = matches!(direction, Direction::Left);
             self.root = Self::remove_leaf(
-                std::mem::replace(&mut self.root, SplitNode::Leaf(0)),
+                std::mem::replace(&mut self.root, SplitNode::Leaf(WindowId::new(0))),
                 focused_id,
             );
             self.root = Self::insert_adjacent(
-                std::mem::replace(&mut self.root, SplitNode::Leaf(0)),
+                std::mem::replace(&mut self.root, SplitNode::Leaf(WindowId::new(0))),
                 nid,
                 SplitDirection::Vertical,
                 focused_id,
@@ -366,10 +366,10 @@ impl SplitTree {
             };
 
             self.root = Self::remove_leaf(
-                std::mem::replace(&mut self.root, SplitNode::Leaf(0)),
+                std::mem::replace(&mut self.root, SplitNode::Leaf(WindowId::new(0))),
                 focused_id,
             );
-            let old_root = std::mem::replace(&mut self.root, SplitNode::Leaf(0));
+            let old_root = std::mem::replace(&mut self.root, SplitNode::Leaf(WindowId::new(0)));
             self.root = if focused_is_first {
                 SplitNode::Split {
                     direction: split_dir,

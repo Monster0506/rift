@@ -13,7 +13,7 @@ fn test_create_directory_entry_assigns_unique_ids() {
     let id1 = store.create_directory_entry(1, 10);
     let id2 = store.create_directory_entry(2, 20);
     assert_ne!(id1, id2);
-    assert!(id1 > 0);
+    assert!(id1 > crate::annotations::AnnotationId::new(0));
     assert!(id2 > id1);
 }
 
@@ -25,22 +25,22 @@ fn test_add_with_id_keeps_next_id_ahead() {
         Anchor::point(0),
         AnnotationOwner::User,
     ));
-    assert_eq!(a, 1);
-    assert_eq!(store.peek_next_id(), 2);
+    assert_eq!(a, crate::annotations::AnnotationId::new(1));
+    assert_eq!(store.peek_next_id(), crate::annotations::AnnotationId::new(2));
     // Insert under a pre-claimed higher id; next_id jumps past it.
     store.add_with_id(
-        7,
+        crate::annotations::AnnotationId::new(7),
         Annotation::new(Kind::new("a.y"), Anchor::point(1), AnnotationOwner::User),
     );
-    assert_eq!(store.peek_next_id(), 8);
-    assert!(store.get(7).is_some());
+    assert_eq!(store.peek_next_id(), crate::annotations::AnnotationId::new(8));
+    assert!(store.get(crate::annotations::AnnotationId::new(7)).is_some());
     // A later auto-allocated id does not collide with the pre-claimed one.
     let c = store.add(Annotation::new(
         Kind::new("a.z"),
         Anchor::point(2),
         AnnotationOwner::User,
     ));
-    assert_eq!(c, 8);
+    assert_eq!(c, crate::annotations::AnnotationId::new(8));
 }
 
 #[test]
@@ -905,7 +905,7 @@ fn test_revision_unchanged_on_true_noop_calls() {
     store.on_line_inserted(100);
     store.undo_line_inserted(100);
     store.on_edit(3, 3, 3);
-    store.update(999, |a| a.visible = false); // no such id
+    store.update(crate::annotations::AnnotationId::new(999), |a| a.visible = false); // no such id
 
     assert_eq!(
         store.revision(),

@@ -70,7 +70,7 @@ impl<T: TerminalBackend> Editor<T> {
         };
 
         let job = crate::job_manager::jobs::git::GitGutterDiffJob::new(
-            doc_id as usize,
+            doc_id,
             revision,
             repo_root,
             rel_path,

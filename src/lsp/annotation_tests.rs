@@ -4,7 +4,7 @@ use crate::annotations::{payload, Anchor, AnnotationOwner, AnnotationStore};
 fn create_lsp_diagnostic_stores_annotation() {
     let mut store = AnnotationStore::new();
     let id = store.create_lsp_diagnostic(5, "[error] type mismatch".into());
-    assert!(id > 0);
+    assert!(id > crate::annotations::AnnotationId::new(0));
 
     let diags: Vec<_> = store.lsp_diagnostics().collect();
     assert_eq!(diags.len(), 1);

@@ -16,7 +16,7 @@ fn test_execute_setlocal_line_ending() {
     };
 
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     // Verify default
     use crate::document::LineEnding;
@@ -36,7 +36,7 @@ fn test_execute_setlocal_line_ending() {
 fn set_wrap(value: &str) -> (ExecutionResult, DocumentOptions) {
     let registry = create_document_settings_registry();
     let mut state = State::new();
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let cmd = ParsedCommand::SetLocal {
         option: "wrap".to_string(),
         value: Some(value.to_string()),

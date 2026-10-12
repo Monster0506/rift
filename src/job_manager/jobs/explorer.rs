@@ -1,3 +1,4 @@
+use crate::document::DocumentId;
 use crate::job_manager::{CancellationSignal, Job, JobMessage};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
@@ -12,7 +13,7 @@ pub struct FileEntry {
 
 #[derive(Debug)]
 pub struct DirectoryListing {
-    pub doc_id: usize,
+    pub doc_id: DocumentId,
     pub path: PathBuf,
     pub entries: Vec<FileEntry>,
 }
@@ -21,14 +22,14 @@ crate::impl_job_payload!(DirectoryListing);
 
 #[derive(Debug)]
 pub struct DirectoryListJob {
-    doc_id: usize,
+    doc_id: DocumentId,
     path: PathBuf,
     show_hidden: bool,
     token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl DirectoryListJob {
-    pub fn new(doc_id: usize, path: PathBuf, show_hidden: bool) -> Self {
+    pub fn new(doc_id: DocumentId, path: PathBuf, show_hidden: bool) -> Self {
         Self {
             doc_id,
             path,
@@ -53,7 +54,7 @@ impl Job for DirectoryListJob {
     }
 
     fn target_document_id(&self) -> Option<crate::document::DocumentId> {
-        Some(self.doc_id as crate::document::DocumentId)
+        Some(self.doc_id)
     }
 
     fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {

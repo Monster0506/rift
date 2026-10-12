@@ -42,7 +42,7 @@ impl<T: TerminalBackend> Editor<T> {
         if let Some(ref path) = file_path {
             document_manager.open_file(Some(path.clone()), false)?;
         } else {
-            let new_doc = Document::new(1).map_err(|e| {
+            let new_doc = Document::new(crate::document::DocumentId::new(1)).map_err(|e| {
                 RiftError::new(
                     ErrorType::Internal,
                     crate::constants::errors::INTERNAL_ERROR,
@@ -239,7 +239,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.plugin_host
             .dispatch(&crate::plugin::EditorEvent::WinLeave {
-                win: old_win_id,
+                win: old_win_id.get(),
                 buf: old_doc_id,
             });
         self.apply_plugin_mutations();
@@ -257,7 +257,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         self.plugin_host
             .dispatch(&crate::plugin::EditorEvent::WinEnter {
-                win: target_id,
+                win: target_id.get(),
                 buf: new_doc_id,
             });
         self.apply_plugin_mutations();

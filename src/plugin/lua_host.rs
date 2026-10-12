@@ -1230,7 +1230,7 @@ impl LuaHost {
                 sh.lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .mutations
-                    .push(PluginMutation::SwitchToBuffer(id));
+                    .push(PluginMutation::SwitchToBuffer(crate::document::DocumentId::new(id)));
                 Ok(())
             })?;
             api.set("switch_buf", f)?;
@@ -2232,7 +2232,7 @@ impl LuaHost {
                         .or_default()
                         .insert(key.clone(), val.clone());
                     s.mutations.push(PluginMutation::SetBufferVar {
-                        buf_id,
+                        buf_id: buf_id.map(crate::document::DocumentId::new),
                         key,
                         value: val,
                     });

@@ -98,8 +98,8 @@ fn prepare_removal_last_tab_prepares_replacement_before_commit() {
 fn creation_reservation_and_draft_commit() {
     let mut mgr = DocumentManager::new();
     let res = mgr.reserve_creation();
-    assert_eq!(res.id(), 1);
-    assert_eq!(res.handle().doc_id(), 1);
+    assert_eq!(res.id(), crate::document::DocumentId::new(1));
+    assert_eq!(res.handle().doc_id(), crate::document::DocumentId::new(1));
 
     let doc = Document::new(res.id()).unwrap();
     let draft = DocumentDraft::new(res, doc).unwrap();

@@ -41,7 +41,29 @@ fn adornment_color(
         .unwrap_or(crate::color::Color::DarkGrey)
 }
 
-pub type AnnotationId = u64;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AnnotationId(u64);
+
+impl AnnotationId {
+    pub const fn new(id: u64) -> Self {
+        AnnotationId(id)
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
+    pub(crate) fn next(self) -> Self {
+        AnnotationId(self.0 + 1)
+    }
+}
+
+impl std::fmt::Display for AnnotationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AnnotationOwner {
@@ -116,7 +138,7 @@ pub struct Annotation {
 impl Annotation {
     pub fn new(kind: Kind, anchor: Anchor, owner: AnnotationOwner) -> Self {
         Annotation {
-            id: 0,
+            id: AnnotationId::new(0),
             anchor,
             kind,
             owner,
@@ -220,7 +242,7 @@ impl AnnotationStore {
     pub fn new() -> Self {
         Self {
             annotations: Vec::new(),
-            next_id: 1,
+            next_id: AnnotationId::new(1),
             index: std::cell::RefCell::new(None),
             by_id: std::cell::RefCell::new(std::collections::HashMap::new()),
             interactive_starts: std::cell::RefCell::new(Vec::new()),
@@ -308,7 +330,7 @@ impl AnnotationStore {
 
     pub fn add(&mut self, mut annotation: Annotation) -> AnnotationId {
         let id = self.next_id;
-        self.next_id += 1;
+        self.next_id = self.next_id.next();
         annotation.id = id;
         self.annotations.push(annotation);
         self.invalidate_index();
@@ -322,7 +344,7 @@ impl AnnotationStore {
     pub fn add_with_id(&mut self, id: AnnotationId, mut annotation: Annotation) -> AnnotationId {
         annotation.id = id;
         self.annotations.push(annotation);
-        self.next_id = self.next_id.max(id + 1);
+        self.next_id = self.next_id.max(id.next());
         self.invalidate_index();
         id
     }
@@ -799,7 +821,7 @@ impl AnnotationStore {
         for (line, bytes, severity, message) in diags {
             let mut annotation = Self::build_diagnostic(line, bytes, severity, message);
             annotation.id = self.next_id;
-            self.next_id += 1;
+            self.next_id = self.next_id.next();
             self.annotations.push(annotation);
         }
         self.invalidate_index();
@@ -885,9 +907,9 @@ impl AnnotationStore {
         )
     }
 
-    pub fn create_buffer_entry(&mut self, line: usize, doc_id: u64) -> AnnotationId {
+    pub fn create_buffer_entry(&mut self, line: usize, doc_id: crate::document::DocumentId) -> AnnotationId {
         let mut payload = Value::map();
-        payload.set("doc_id", Value::Int(doc_id as i64));
+        payload.set("doc_id", Value::Int(doc_id.get() as i64));
         self.add(
             Annotation::new(
                 Kind::new(well_known::BUFFER_ENTRY),

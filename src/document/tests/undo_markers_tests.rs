@@ -3,7 +3,7 @@ use super::*;
 
 #[test]
 fn test_undo_binary_data() {
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let binary_char = crate::character::Character::Byte(0xFF);
     doc.buffer.insert_character(binary_char).unwrap();
 
@@ -24,7 +24,7 @@ fn test_undo_binary_data() {
 fn test_undo_with_stale_position_panics_in_debug_instead_of_silently_corrupting() {
     use crate::history::{EditOperation, EditTransaction, Position, Range};
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello").unwrap();
 
     let mut tx = EditTransaction::new("bogus");
@@ -39,7 +39,7 @@ fn test_undo_with_stale_position_panics_in_debug_instead_of_silently_corrupting(
 
 #[test]
 fn test_undo_of_non_transactional_delete_restores_cursor_onto_deleted_char() {
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello world").unwrap();
     doc.buffer.set_cursor(0).unwrap();
 
@@ -57,7 +57,7 @@ fn test_undo_of_non_transactional_delete_restores_cursor_onto_deleted_char() {
 
 #[test]
 fn test_redo_of_non_transactional_insert_restores_cursor_after_inserted_text() {
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello").unwrap();
     doc.buffer.set_cursor(0).unwrap();
     doc.insert_str("XY").unwrap();
@@ -78,7 +78,7 @@ fn test_redo_of_non_transactional_insert_restores_cursor_after_inserted_text() {
 
 #[test]
 fn test_get_changed_line_for_seq() {
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     assert_eq!(doc.get_changed_line_for_seq(0), None);
 
@@ -105,7 +105,7 @@ fn test_get_changed_line_for_seq() {
 #[test]
 fn test_undo_redo_restores_annotation_marker_positions() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello world").unwrap();
     let id = doc.annotations.add(Annotation::new(
         Kind::new("ui.link"),
@@ -131,7 +131,7 @@ fn test_undo_redo_restores_annotation_marker_positions() {
 fn test_goto_seq_restores_correctly_via_checkpoint_snapshot() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello world").unwrap();
     doc.annotations.add(Annotation::new(
         Kind::new("ui.link"),
@@ -159,7 +159,7 @@ fn test_goto_seq_restores_correctly_via_checkpoint_snapshot() {
 #[test]
 fn test_goto_seq_keeps_annotation_stacks_in_sync() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello world").unwrap();
     let seq_after_first_edit = doc.history.current_seq();
 
@@ -241,7 +241,7 @@ fn test_diff_undo_matches_snapshot_for_insertions() {
     ];
 
     for case in cases {
-        let mut doc = Document::new(1).unwrap();
+        let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
         seed(&mut doc);
         let before = doc.annotations.snapshot();
         case(&mut doc);
@@ -268,7 +268,7 @@ fn test_diff_undo_matches_snapshot_for_insertions() {
 fn test_diff_undo_interleaves_with_delete_snapshot_path() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello world").unwrap();
     let id = doc.annotations.add(Annotation::new(
         Kind::new("ui.range"),
@@ -306,7 +306,7 @@ fn test_diff_undo_interleaves_with_delete_snapshot_path() {
 #[test]
 fn test_line_anchor_tracks_newline_edits_in_normal_buffer() {
     use crate::annotations::Anchor;
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("line0\nline1\nline2").unwrap();
     doc.annotations.create_diagnostic(2, 1, "err");
 
@@ -328,7 +328,7 @@ fn test_line_anchor_tracks_newline_edits_in_normal_buffer() {
 #[test]
 fn test_range_anchor_markers_track_edits() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello world here").unwrap();
     let id = doc.annotations.add(Annotation::new(
         Kind::new("ui.link"),
@@ -360,7 +360,7 @@ fn test_range_anchor_markers_track_edits() {
 #[test]
 fn test_range_anchor_delete_stickiness_removes_annotation() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("abcdefgh").unwrap();
     let id = doc.annotations.add(Annotation::new(
         Kind::new("ui.link"),
@@ -373,7 +373,7 @@ fn test_range_anchor_delete_stickiness_removes_annotation() {
 
 #[test]
 fn test_document_version_increments_per_edit() {
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     assert_eq!(doc.version(), 0);
     doc.insert_str("a").unwrap();
     let v1 = doc.version();
@@ -385,7 +385,7 @@ fn test_document_version_increments_per_edit() {
 #[test]
 fn test_delete_range_mid_line_merges_line_anchors_into_start_line() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Stickiness};
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("aaa\nbbb\nccc\nddd").unwrap();
     let persist = |line| {
         Annotation::new(
@@ -407,7 +407,7 @@ fn test_delete_range_mid_line_merges_line_anchors_into_start_line() {
 #[test]
 fn test_delete_range_at_column_zero_removes_whole_line() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Stickiness};
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("aaa\nbbb\nccc").unwrap();
     let gone = doc.annotations.add(
         Annotation::new(Kind::new("a.del"), Anchor::Line(1), AnnotationOwner::User)
@@ -426,7 +426,7 @@ fn test_delete_range_at_column_zero_removes_whole_line() {
 
 #[test]
 fn test_get_edit_points_matches_individual_calls_col0() {
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.buffer.insert_str("hello\nworld\n").unwrap();
 
     let offset = 0;
@@ -440,7 +440,7 @@ fn test_get_edit_points_matches_individual_calls_col0() {
 
 #[test]
 fn test_get_edit_points_matches_individual_calls_midline() {
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.buffer.insert_str("hello\nworld\n").unwrap();
 
     let offset = 3;
@@ -454,7 +454,7 @@ fn test_get_edit_points_matches_individual_calls_midline() {
 
 #[test]
 fn test_get_edit_points_matches_individual_calls_second_line() {
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.buffer.insert_str("hello\nworld\n").unwrap();
 
     let offset = 6;
@@ -468,7 +468,7 @@ fn test_get_edit_points_matches_individual_calls_second_line() {
 
 #[test]
 fn test_get_edit_points_multibyte_prefix_diverges_byte_and_char_columns() {
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.buffer.insert_str("e\u{301}llo\nworld\n").unwrap();
 
     let world_char_start = 6;
@@ -485,7 +485,7 @@ fn test_get_edit_points_multibyte_prefix_diverges_byte_and_char_columns() {
 fn test_insert_char_after_multibyte_prefix_shifts_annotation_by_bytes() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind, Marker};
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("e\u{301}llo world").unwrap();
 
     let id = doc.annotations.add(Annotation::new(
@@ -512,7 +512,7 @@ fn test_insert_char_after_multibyte_prefix_shifts_annotation_by_bytes() {
 fn test_delete_backward_after_multibyte_prefix_shifts_annotation_by_bytes() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("e\u{301}llo world").unwrap();
 
     let world_byte_start = doc.buffer.char_to_byte(6);
@@ -540,7 +540,7 @@ fn test_delete_backward_after_multibyte_prefix_shifts_annotation_by_bytes() {
 fn test_delete_forward_after_multibyte_prefix_shifts_annotation_by_bytes() {
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("e\u{301}llo world").unwrap();
 
     let world_byte_start = doc.buffer.char_to_byte(6);
@@ -569,7 +569,7 @@ fn test_line_adornment_resolves_correct_line_past_multibyte_prefix() {
     use crate::annotations::presentation::{Adornment, Placement, Presentation};
     use crate::annotations::{Anchor, Annotation, AnnotationOwner, Kind};
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("ab\u{2014}\nab\u{2014}\nab\u{2014}\n---\nzzzzz\n")
         .unwrap();
 
@@ -609,7 +609,7 @@ fn undo_clears_selection_set() {
     use crate::selection::Region;
     use crate::wrap::RangeKind;
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.buffer.insert_str("hello world").unwrap();
     doc.selection_set
         .bank(Region::new(0, 4, RangeKind::Charwise));
@@ -629,7 +629,7 @@ fn redo_clears_selection_set() {
     use crate::selection::Region;
     use crate::wrap::RangeKind;
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.insert_str("hello world").unwrap();
     assert!(doc.undo());
     doc.selection_set

@@ -311,7 +311,7 @@ fn test_large_file_search_performance_with_cache() {
     use crate::buffer::byte_map::ByteLineMap;
     use crate::document::Document;
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     let line = "This is a line of text to simulate a file content.\n";
     let mut large_text = String::with_capacity(1_000_000);
@@ -420,7 +420,7 @@ fn test_complex_find_all_within_time_budget() {
     use crate::document::Document;
     use std::time::Duration;
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let line = "This is a line of text to simulate a file content.\n";
     let mut text = String::with_capacity(1_000_000);
     for _ in 0..20_000 {
@@ -526,7 +526,7 @@ fn test_smartcase_uppercase_no_hang_with_document() {
     let (tx, rx) = mpsc::channel();
 
     let handle = std::thread::spawn(move || {
-        let mut doc = Document::new(1).unwrap();
+        let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
         doc.insert_str("a").unwrap();
 
         let result = doc.perform_search("A", SearchDirection::Forward, false);
@@ -558,7 +558,7 @@ fn test_smartcase_coding_no_hang_with_document() {
     let (tx, rx) = mpsc::channel();
 
     let handle = std::thread::spawn(move || {
-        let mut doc = Document::new(1).unwrap();
+        let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
         doc.insert_str("some text content here\n").unwrap();
 
         let result = doc.perform_search("Coding", SearchDirection::Forward, false);

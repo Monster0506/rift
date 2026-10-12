@@ -5,7 +5,7 @@ fn save_as_uses_tilde_suffix_for_temp_file() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("note.txt");
 
-    let mut doc = Document::new(1).unwrap();
+    let mut doc = Document::new(crate::document::DocumentId::new(1)).unwrap();
     doc.save_as(&path).unwrap();
 
     assert!(path.exists());

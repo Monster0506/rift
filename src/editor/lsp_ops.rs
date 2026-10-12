@@ -1049,7 +1049,7 @@ impl<T: TerminalBackend> Editor<T> {
             .document_manager
             .active_document()
             .map(|d| d.id)
-            .unwrap_or(0);
+            .unwrap_or(crate::document::DocumentId::new(0));
 
         // Create the location list document.
         let loc_doc_id = self.document_manager.next_id();

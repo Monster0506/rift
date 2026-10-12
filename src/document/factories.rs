@@ -12,6 +12,7 @@ use crate::annotations::AnnotationStore;
 use crate::buffer::TextBuffer;
 use crate::error::{ErrorType, RiftError};
 use crate::history::UndoTree;
+use crate::split::window::WindowId;
 use crate::term::{Terminal, TerminalEvent};
 use definitions::DocumentOptions;
 use std::io;
@@ -376,7 +377,7 @@ impl Document {
             GitBlameState {
                 repo_root,
                 linked_doc_id,
-                linked_window_id: 0,
+                linked_window_id: WindowId::new(0),
                 path,
                 at_commit,
                 history: Vec::new(),

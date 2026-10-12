@@ -1,5 +1,6 @@
-//! Background jobs for git status/diff, following the `DirectoryListJob` template (`job_manager::jobs::explorer`): construct with a `doc_id` cast to `usize`, `run()` shells out and sends a `Custom` payload back.
+//! Background jobs for git status/diff, following the `DirectoryListJob` template (`job_manager::jobs::explorer`): construct with a `doc_id`, `run()` shells out and sends a `Custom` payload back.
 
+use crate::document::DocumentId;
 use crate::job_manager::{CancellationSignal, Job, JobMessage};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
@@ -7,7 +8,7 @@ use std::sync::mpsc::Sender;
 /// Result of a `GitStatusJob`: a freshly parsed status snapshot for `doc_id`.
 #[derive(Debug)]
 pub struct GitStatusResult {
-    pub doc_id: usize,
+    pub doc_id: DocumentId,
     pub repo_root: PathBuf,
     pub snapshot: crate::git::status::StatusSnapshot,
     /// HEAD's subject line, for the status header's `HEAD <sha> <subject>` summary (Enter on it opens the Log browser). `None` on an unborn branch with no commits yet.
@@ -18,13 +19,13 @@ crate::impl_job_payload!(GitStatusResult);
 /// Runs `git status --porcelain=v2 --branch --untracked-files=all` and parses it.
 #[derive(Debug)]
 pub struct GitStatusJob {
-    doc_id: usize,
+    doc_id: DocumentId,
     repo_root: PathBuf,
     token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl GitStatusJob {
-    pub fn new(doc_id: usize, repo_root: PathBuf) -> Self {
+    pub fn new(doc_id: DocumentId, repo_root: PathBuf) -> Self {
         Self {
             doc_id,
             repo_root,
@@ -48,7 +49,7 @@ impl Job for GitStatusJob {
     }
 
     fn target_document_id(&self) -> Option<crate::document::DocumentId> {
-        Some(self.doc_id as crate::document::DocumentId)
+        Some(self.doc_id)
     }
 
     fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
@@ -101,7 +102,7 @@ impl Job for GitStatusJob {
 /// under its entry in a status buffer.
 #[derive(Debug)]
 pub struct GitDiffResult {
-    pub doc_id: usize,
+    pub doc_id: DocumentId,
     pub path: PathBuf,
     /// `true` = this came from `git diff --cached` (the staged side).
     pub staged_side: bool,
@@ -113,7 +114,7 @@ crate::impl_job_payload!(GitDiffResult);
 /// parses it, for status-buffer hunk expansion (`=`).
 #[derive(Debug)]
 pub struct GitDiffJob {
-    doc_id: usize,
+    doc_id: DocumentId,
     repo_root: PathBuf,
     path: PathBuf,
     staged_side: bool,
@@ -124,7 +125,7 @@ pub struct GitDiffJob {
 
 impl GitDiffJob {
     pub fn new(
-        doc_id: usize,
+        doc_id: DocumentId,
         repo_root: PathBuf,
         path: PathBuf,
         staged_side: bool,
@@ -156,7 +157,7 @@ impl Job for GitDiffJob {
     }
 
     fn target_document_id(&self) -> Option<crate::document::DocumentId> {
-        Some(self.doc_id as crate::document::DocumentId)
+        Some(self.doc_id)
     }
 
     fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
@@ -231,7 +232,7 @@ impl Job for GitDiffJob {
 /// Result of a `GitBlameJob`: a freshly parsed blame listing for `doc_id`.
 #[derive(Debug)]
 pub struct GitBlameResult {
-    pub doc_id: usize,
+    pub doc_id: DocumentId,
     pub lines: Vec<crate::git::blame::BlameLine>,
 }
 crate::impl_job_payload!(GitBlameResult);
@@ -239,7 +240,7 @@ crate::impl_job_payload!(GitBlameResult);
 /// Runs `git blame --porcelain [<commit>] -- <path>` and parses it.
 #[derive(Debug)]
 pub struct GitBlameJob {
-    doc_id: usize,
+    doc_id: DocumentId,
     repo_root: PathBuf,
     path: PathBuf,
     at_commit: Option<String>,
@@ -248,7 +249,7 @@ pub struct GitBlameJob {
 
 impl GitBlameJob {
     pub fn new(
-        doc_id: usize,
+        doc_id: DocumentId,
         repo_root: PathBuf,
         path: PathBuf,
         at_commit: Option<String>,
@@ -278,7 +279,7 @@ impl Job for GitBlameJob {
     }
 
     fn target_document_id(&self) -> Option<crate::document::DocumentId> {
-        Some(self.doc_id as crate::document::DocumentId)
+        Some(self.doc_id)
     }
 
     fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
@@ -324,7 +325,7 @@ impl Job for GitBlameJob {
 /// Result of a `GitLogJob`: a freshly parsed commit listing for `doc_id`.
 #[derive(Debug)]
 pub struct GitLogResult {
-    pub doc_id: usize,
+    pub doc_id: DocumentId,
     pub commits: Vec<crate::git::log::CommitSummary>,
 }
 crate::impl_job_payload!(GitLogResult);
@@ -332,14 +333,14 @@ crate::impl_job_payload!(GitLogResult);
 /// Runs `git log --format=<LOG_FORMAT> [-- <path>]` and parses it.
 #[derive(Debug)]
 pub struct GitLogJob {
-    doc_id: usize,
+    doc_id: DocumentId,
     repo_root: PathBuf,
     path: Option<PathBuf>,
     token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl GitLogJob {
-    pub fn new(doc_id: usize, repo_root: PathBuf, path: Option<PathBuf>) -> Self {
+    pub fn new(doc_id: DocumentId, repo_root: PathBuf, path: Option<PathBuf>) -> Self {
         Self {
             doc_id,
             repo_root,
@@ -364,7 +365,7 @@ impl Job for GitLogJob {
     }
 
     fn target_document_id(&self) -> Option<crate::document::DocumentId> {
-        Some(self.doc_id as crate::document::DocumentId)
+        Some(self.doc_id)
     }
 
     fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
@@ -410,7 +411,7 @@ impl Job for GitLogJob {
 /// expand inline under it in a log buffer. Opaque text, not reparsed.
 #[derive(Debug)]
 pub struct GitShowResult {
-    pub doc_id: usize,
+    pub doc_id: DocumentId,
     pub sha: String,
     pub body: String,
 }
@@ -419,14 +420,14 @@ crate::impl_job_payload!(GitShowResult);
 /// Runs `git show <sha>` for view-only output and honors a configured `diff.external`.
 #[derive(Debug)]
 pub struct GitShowJob {
-    doc_id: usize,
+    doc_id: DocumentId,
     repo_root: PathBuf,
     sha: String,
     token: Option<crate::job_manager::AsyncToken>,
 }
 
 impl GitShowJob {
-    pub fn new(doc_id: usize, repo_root: PathBuf, sha: String) -> Self {
+    pub fn new(doc_id: DocumentId, repo_root: PathBuf, sha: String) -> Self {
         Self {
             doc_id,
             repo_root,
@@ -451,7 +452,7 @@ impl Job for GitShowJob {
     }
 
     fn target_document_id(&self) -> Option<crate::document::DocumentId> {
-        Some(self.doc_id as crate::document::DocumentId)
+        Some(self.doc_id)
     }
 
     fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {
@@ -490,7 +491,7 @@ impl Job for GitShowJob {
 #[derive(Debug)]
 pub struct GitCommandResult {
     /// The active document at the time `:Git` was run, so the editor can return focus there after showing output (not otherwise used for staleness checks; this job is one-shot, not tied to a specific buffer).
-    pub origin_doc_id: usize,
+    pub origin_doc_id: DocumentId,
     pub repo_root: PathBuf,
     pub args: String,
     pub output: String,
@@ -501,13 +502,13 @@ crate::impl_job_payload!(GitCommandResult);
 /// Runs `git <args>` with whitespace splitting and captures stdout plus stderr for display.
 #[derive(Debug)]
 pub struct GitCommandJob {
-    origin_doc_id: usize,
+    origin_doc_id: DocumentId,
     repo_root: PathBuf,
     args: String,
 }
 
 impl GitCommandJob {
-    pub fn new(origin_doc_id: usize, repo_root: PathBuf, args: String) -> Self {
+    pub fn new(origin_doc_id: DocumentId, repo_root: PathBuf, args: String) -> Self {
         Self {
             origin_doc_id,
             repo_root,
@@ -558,7 +559,7 @@ impl Job for GitCommandJob {
 /// Result of a `GitGutterDiffJob`: fresh gutter signs for `doc_id`, tagged with the buffer revision they were computed from so a stale result (the buffer changed again while this job was running) can be discarded.
 #[derive(Debug)]
 pub struct GitGutterDiffResult {
-    pub doc_id: usize,
+    pub doc_id: DocumentId,
     pub revision: u64,
     pub signs: Vec<(usize, crate::git::diff::GutterSignKind)>,
 }
@@ -567,7 +568,7 @@ crate::impl_job_payload!(GitGutterDiffResult);
 /// Diffs a `File` buffer's live (possibly unsaved) content against its git index version, for gutter-diff signs. Writes both sides to temp files and shells `git diff --no-ext-diff --no-index -U0`, since there's no `git` plumbing that diffs an index blob against arbitrary in-memory text directly..
 #[derive(Debug)]
 pub struct GitGutterDiffJob {
-    doc_id: usize,
+    doc_id: DocumentId,
     revision: u64,
     repo_root: PathBuf,
     rel_path: PathBuf,
@@ -577,7 +578,7 @@ pub struct GitGutterDiffJob {
 
 impl GitGutterDiffJob {
     pub fn new(
-        doc_id: usize,
+        doc_id: DocumentId,
         revision: u64,
         repo_root: PathBuf,
         rel_path: PathBuf,
@@ -609,7 +610,7 @@ impl Job for GitGutterDiffJob {
     }
 
     fn target_document_id(&self) -> Option<crate::document::DocumentId> {
-        Some(self.doc_id as crate::document::DocumentId)
+        Some(self.doc_id)
     }
 
     fn target_domain(&self) -> Option<crate::job_manager::AsyncOpDomain> {

@@ -9,7 +9,7 @@ fn make_signal() -> CancellationSignal {
 
 fn run_load_job(path: PathBuf) -> FileLoadResult {
     let (tx, rx) = mpsc::channel();
-    let doc_id: crate::document::DocumentId = 42;
+    let doc_id: crate::document::DocumentId = crate::document::DocumentId::new(42);
     let job = Box::new(FileLoadJob::new(doc_id, path));
     job.run(1, tx, make_signal());
 
@@ -35,7 +35,7 @@ fn run_save_job(path: PathBuf, content: &str) -> bool {
     let chars: Vec<Character> = content.chars().map(Character::Unicode).collect();
     let piece_table = crate::buffer::rope::PieceTable::new(chars);
     let job = Box::new(FileSaveJob::new(
-        1,
+        crate::document::DocumentId::new(1),
         piece_table,
         path,
         crate::document::LineEnding::LF,

@@ -43,7 +43,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
         self.split_tree.set_focused_document(id);
 
-        let job = crate::job_manager::jobs::git::GitLogJob::new(id as usize, repo_root, path);
+        let job = crate::job_manager::jobs::git::GitLogJob::new(id, repo_root, path);
         self.job_manager.spawn(job);
 
         self.sync_state_with_active_document();
@@ -81,7 +81,7 @@ impl<T: TerminalBackend> Editor<T> {
             return;
         }
 
-        let job = crate::job_manager::jobs::git::GitShowJob::new(doc_id as usize, repo_root, sha);
+        let job = crate::job_manager::jobs::git::GitShowJob::new(doc_id, repo_root, sha);
         self.job_manager.spawn(job);
     }
 

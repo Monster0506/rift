@@ -4,7 +4,7 @@ use crate::color::Color;
 
 #[test]
 fn test_populate_directory_first_line_is_parent_nav() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     doc.populate_directory_buffer(vec![]);
     let text = doc.buffer.to_string();
     assert_eq!(text.lines().next().unwrap(), "../");
@@ -12,7 +12,7 @@ fn test_populate_directory_first_line_is_parent_nav() {
 
 #[test]
 fn test_populate_directory_file_entry_no_slash() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("hello.txt", false)], "/tmp");
     doc.populate_directory_buffer(entries);
     let text = doc.buffer.to_string();
@@ -22,7 +22,7 @@ fn test_populate_directory_file_entry_no_slash() {
 
 #[test]
 fn test_populate_directory_dir_entry_has_trailing_slash() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("subdir", true)], "/tmp");
     doc.populate_directory_buffer(entries);
     let text = doc.buffer.to_string();
@@ -32,7 +32,7 @@ fn test_populate_directory_dir_entry_has_trailing_slash() {
 
 #[test]
 fn test_populate_directory_no_ids_in_output() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("file.rs", false), ("src", true)], "/tmp");
     doc.populate_directory_buffer(entries);
     let text = doc.buffer.to_string();
@@ -48,7 +48,7 @@ fn test_populate_directory_no_ids_in_output() {
 
 #[test]
 fn test_populate_directory_multiple_entries_order() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("a.txt", false), ("b.txt", false), ("c", true)], "/tmp");
     doc.populate_directory_buffer(entries);
     let text = doc.buffer.to_string();
@@ -61,7 +61,7 @@ fn test_populate_directory_multiple_entries_order() {
 
 #[test]
 fn test_populate_directory_no_trailing_newline() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("file.txt", false)], "/tmp");
     doc.populate_directory_buffer(entries);
     let text = doc.buffer.to_string();
@@ -70,7 +70,7 @@ fn test_populate_directory_no_trailing_newline() {
 
 #[test]
 fn test_populate_directory_empty_dir_just_parent_nav() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     doc.populate_directory_buffer(vec![]);
     let text = doc.buffer.to_string();
     assert_eq!(text, "../");
@@ -78,7 +78,7 @@ fn test_populate_directory_empty_dir_just_parent_nav() {
 
 #[test]
 fn test_populate_directory_updates_entries_snapshot() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("file.txt", false)], "/tmp");
     doc.populate_directory_buffer(entries);
     assert_eq!(doc.directory_entries().map(<[DirEntry]>::len), Some(1));
@@ -86,14 +86,14 @@ fn test_populate_directory_updates_entries_snapshot() {
 
 #[test]
 fn test_populate_directory_marks_saved() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     doc.populate_directory_buffer(vec![]);
     assert!(!doc.is_dirty());
 }
 
 #[test]
 fn test_populate_directory_highlights_non_empty() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("file.txt", false)], "/tmp");
     doc.populate_directory_buffer(entries);
     assert!(!doc.custom_highlights.is_empty());
@@ -101,7 +101,7 @@ fn test_populate_directory_highlights_non_empty() {
 
 #[test]
 fn test_populate_directory_parent_nav_is_blue() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     doc.populate_directory_buffer(vec![]);
     let parent_range = 0..3; // "../" is 3 bytes
     let covered = doc.custom_highlights.iter().any(|(r, c)| {
@@ -116,7 +116,7 @@ fn test_populate_directory_parent_nav_is_blue() {
 
 #[test]
 fn test_populate_directory_file_entry_is_white() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("readme.txt", false)], "/tmp");
     doc.populate_directory_buffer(entries);
     let _text = doc.buffer.to_string();
@@ -135,7 +135,7 @@ fn test_populate_directory_file_entry_is_white() {
 
 #[test]
 fn test_populate_directory_dir_entry_is_blue() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("subdir", true)], "/tmp");
     doc.populate_directory_buffer(entries);
     let start = 4;
@@ -153,7 +153,7 @@ fn test_populate_directory_dir_entry_is_blue() {
 
 #[test]
 fn test_populate_directory_clears_old_highlights_on_repopulate() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("a.txt", false), ("b.txt", false)], "/tmp");
     doc.populate_directory_buffer(entries);
     let first_count = doc.custom_highlights.len();
@@ -170,7 +170,7 @@ fn test_populate_directory_clears_old_highlights_on_repopulate() {
 
 #[test]
 fn test_populate_directory_no_overlapping_highlight_ranges() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("a.txt", false), ("b", true), ("c.rs", false)], "/tmp");
     doc.populate_directory_buffer(entries);
     let highlights = &doc.custom_highlights;
@@ -208,7 +208,7 @@ fn test_dir_entry_directory() {
 
 #[test]
 fn test_populate_directory_increments_revision() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let rev0 = doc.buffer.revision;
     doc.populate_directory_buffer(vec![]);
     assert!(
@@ -219,7 +219,7 @@ fn test_populate_directory_increments_revision() {
 
 #[test]
 fn test_populate_directory_creates_annotations_in_store() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("a.txt", false), ("b.txt", false)], "/tmp");
     doc.populate_directory_buffer(entries);
     assert_eq!(doc.annotations.directory_entry_id_at_line(0), None);
@@ -229,7 +229,7 @@ fn test_populate_directory_creates_annotations_in_store() {
 
 #[test]
 fn test_populate_directory_entries_are_interactive_at_their_line() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     doc.populate_directory_buffer(make_dir_entries(&[("a.txt", false), ("sub", true)], "/tmp"));
     let a = doc.annotations.interactive_at_line(1).unwrap();
     assert_eq!(a.kind.as_str(), "fs.entry");
@@ -240,7 +240,7 @@ fn test_populate_directory_entries_are_interactive_at_their_line() {
 
 #[test]
 fn test_populate_directory_stores_name_and_is_dir_in_payload() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     let entries = make_dir_entries(&[("a.txt", false), ("sub", true)], "/tmp");
     doc.populate_directory_buffer(entries);
     assert_eq!(
@@ -256,7 +256,7 @@ fn test_populate_directory_stores_name_and_is_dir_in_payload() {
 
 #[test]
 fn test_populate_directory_clears_previous_annotations_on_repopulate() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     doc.populate_directory_buffer(make_dir_entries(
         &[("a.txt", false), ("b.txt", false)],
         "/tmp",
@@ -268,7 +268,7 @@ fn test_populate_directory_clears_previous_annotations_on_repopulate() {
 
 #[test]
 fn test_annotation_store_line_insert_shifts_entries() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     doc.populate_directory_buffer(make_dir_entries(
         &[("a.txt", false), ("b.txt", false)],
         "/tmp",
@@ -281,7 +281,7 @@ fn test_annotation_store_line_insert_shifts_entries() {
 
 #[test]
 fn test_annotation_store_line_delete_removes_entry() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     doc.populate_directory_buffer(make_dir_entries(
         &[("a.txt", false), ("b.txt", false), ("c.txt", false)],
         "/tmp",
@@ -294,7 +294,7 @@ fn test_annotation_store_line_delete_removes_entry() {
 
 #[test]
 fn test_buffer_text_has_no_annotation_prefix_after_populate() {
-    let mut doc = Document::new_directory(1, PathBuf::from("/tmp")).unwrap();
+    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
     doc.populate_directory_buffer(make_dir_entries(&[("readme.md", false)], "/tmp"));
     let text = doc.buffer.to_string();
     for line in text.lines() {

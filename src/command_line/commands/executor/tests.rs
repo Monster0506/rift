@@ -13,7 +13,7 @@ fn test_execute_quit() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -37,7 +37,7 @@ fn test_execute_set_number_true() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -62,7 +62,7 @@ fn test_execute_set_number_false() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -86,7 +86,7 @@ fn test_execute_set_min_width_alias() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -110,7 +110,7 @@ fn test_execute_set_number_boolean_variants() {
     };
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -129,7 +129,7 @@ fn test_execute_set_number_boolean_variants() {
     };
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -148,7 +148,7 @@ fn test_execute_set_number_boolean_variants() {
     };
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -167,7 +167,7 @@ fn test_execute_set_number_boolean_variants() {
     };
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -186,7 +186,7 @@ fn test_execute_set_number_boolean_variants() {
     };
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -205,7 +205,7 @@ fn test_execute_set_number_boolean_variants() {
     };
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -229,7 +229,7 @@ fn test_execute_set_number_case_insensitive() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -253,7 +253,7 @@ fn test_execute_set_min_width() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -279,7 +279,7 @@ fn test_execute_set_min_width_various_values() {
 
         let settings_registry = create_settings_registry();
         let document_settings_registry = create_document_settings_registry();
-        let mut document = Document::new(1).unwrap();
+        let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
         let result = CommandExecutor::execute(
             command,
             &mut state,
@@ -305,7 +305,7 @@ fn test_execute_set_min_width_zero_error() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -337,7 +337,7 @@ fn test_execute_set_min_width_invalid_number() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -372,7 +372,7 @@ fn test_execute_set_number_invalid_boolean() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -403,7 +403,7 @@ fn test_execute_set_number_missing_value() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -438,7 +438,7 @@ fn test_execute_set_unknown_option() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -474,7 +474,7 @@ fn test_execute_unknown_command() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -507,7 +507,7 @@ fn test_execute_ambiguous_command() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -554,7 +554,7 @@ fn test_execute_set_multiple_options() {
     };
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -573,7 +573,7 @@ fn test_execute_set_multiple_options() {
     };
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -592,7 +592,7 @@ fn test_execute_set_multiple_options() {
     };
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -620,7 +620,7 @@ fn test_execute_set_min_width_large_value() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -646,7 +646,7 @@ fn test_execute_set_min_width_negative_error() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -694,7 +694,7 @@ fn test_execute_set_number_empty_string() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -740,7 +740,7 @@ fn test_execute_set_case_insensitive_option_names() {
 
         let settings_registry = create_settings_registry();
         let document_settings_registry = create_document_settings_registry();
-        let mut document = Document::new(1).unwrap();
+        let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
         let result = CommandExecutor::execute(
             command,
             &mut state,
@@ -774,7 +774,7 @@ fn test_execute_set_min_width_float_error() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -819,7 +819,7 @@ fn test_execute_write_no_path() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -841,7 +841,7 @@ fn test_execute_write_with_path() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -866,7 +866,7 @@ fn test_execute_write_updates_path() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.set_path("old.txt");
     let result = CommandExecutor::execute(
         command,
@@ -890,7 +890,7 @@ fn test_execute_write_quit_no_path() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -912,7 +912,7 @@ fn test_execute_write_quit_with_path() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -937,7 +937,7 @@ fn test_execute_write_quit_updates_path() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.set_path("old.txt");
     let result = CommandExecutor::execute(
         command,
@@ -956,7 +956,7 @@ fn test_substitute_current_line() {
     let mut state = State::new();
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.buffer.insert_str("foo bar foo").unwrap();
     // Cursor at 0
     document.buffer.set_cursor(0).unwrap();
@@ -986,7 +986,7 @@ fn test_substitute_global_line() {
     let mut state = State::new();
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.buffer.insert_str("foo bar foo").unwrap();
     document.buffer.set_cursor(0).unwrap();
 
@@ -1015,7 +1015,7 @@ fn test_substitute_whole_file() {
     let mut state = State::new();
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.buffer.insert_str("foo\nbar\nfoo").unwrap();
     document.buffer.set_cursor(0).unwrap();
 
@@ -1045,7 +1045,7 @@ fn test_substitute_case_insensitive() {
     let mut state = State::new();
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.buffer.insert_str("Foo bar foo").unwrap();
     document.buffer.set_cursor(0).unwrap();
 
@@ -1075,7 +1075,7 @@ fn test_substitute_no_match() {
     let mut state = State::new();
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.buffer.insert_str("hello world").unwrap();
 
     let command = ParsedCommand::Substitute {
@@ -1199,7 +1199,7 @@ fn test_substitute_undo_redo() {
     let mut state = State::new();
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     // Initial content
     document.buffer.insert_str("foo bar foo").unwrap();
@@ -1244,7 +1244,7 @@ fn test_substitute_whole_file_undo() {
     let mut state = State::new();
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     // Initial content with multiple lines
     document
@@ -1290,7 +1290,7 @@ fn substitute_with_nonempty_set_scopes_to_banked_regions_only() {
     let mut state = State::new();
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     document.buffer.insert_str("foo bar foo baz foo").unwrap();
     // Bank the first and third "foo" (char spans 0..3, 16..19); middle (8..11)
     // is left out. Region::span() is inclusive of cursor, so end = cursor + 1.
@@ -1333,7 +1333,7 @@ fn test_execute_undotree() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -1364,7 +1364,7 @@ fn test_execute_edit_directory_fails() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -1393,7 +1393,7 @@ fn test_execute_edit_missing_parent_dir_fails() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -1422,7 +1422,7 @@ fn test_execute_edit_nonexistent_file_in_existing_dir_succeeds() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -1444,7 +1444,7 @@ fn test_execute_file() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -1474,7 +1474,7 @@ fn test_execute_file_path_fails() {
 
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
     let result = CommandExecutor::execute(
         command,
         &mut state,
@@ -1499,7 +1499,7 @@ fn test_execute_split() {
     let mut state = State::new();
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     let result = CommandExecutor::execute(
         ParsedCommand::Split {
@@ -1528,7 +1528,7 @@ fn test_execute_vsplit_file() {
     let mut state = State::new();
     let settings_registry = create_settings_registry();
     let document_settings_registry = create_document_settings_registry();
-    let mut document = Document::new(1).unwrap();
+    let mut document = Document::new(crate::document::DocumentId::new(1)).unwrap();
 
     let result = CommandExecutor::execute(
         ParsedCommand::VSplit {

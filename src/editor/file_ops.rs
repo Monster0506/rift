@@ -112,7 +112,7 @@ fn reload_git_log<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), Rift
     }) else {
         return Ok(());
     };
-    let job = crate::job_manager::jobs::git::GitLogJob::new(doc_id as usize, repo_root, path);
+    let job = crate::job_manager::jobs::git::GitLogJob::new(doc_id, repo_root, path);
     editor.job_manager.spawn(job);
     Ok(())
 }
@@ -130,7 +130,7 @@ fn reload_git_blame<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), Ri
         return Ok(());
     };
     let job = crate::job_manager::jobs::git::GitBlameJob::new(
-        doc_id as usize,
+        doc_id,
         repo_root,
         path,
         at_commit,
@@ -711,7 +711,7 @@ impl<T: TerminalBackend> Editor<T> {
                 if self.split_tree.move_window(dir, &layouts) {
                     self.render_system.viewport.mark_needs_full_redraw();
                     self.plugin_host
-                        .dispatch(&crate::plugin::EditorEvent::WinMoved { win: moved_id });
+                        .dispatch(&crate::plugin::EditorEvent::WinMoved { win: moved_id.get() });
                     self.apply_plugin_mutations();
                 }
             }
@@ -734,8 +734,8 @@ impl<T: TerminalBackend> Editor<T> {
                         self.render_system.viewport.mark_needs_full_redraw();
                         self.plugin_host
                             .dispatch(&crate::plugin::EditorEvent::WinSwapped {
-                                win1: focused_id,
-                                win2: prev_id,
+                                win1: focused_id.get(),
+                                win2: prev_id.get(),
                             });
                         self.apply_plugin_mutations();
                     }

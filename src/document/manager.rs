@@ -154,7 +154,7 @@ impl DocumentManager {
             documents: HashMap::new(),
             tab_order: Vec::new(),
             current_tab: 0,
-            next_document_id: 1,
+            next_document_id: DocumentId::new(1),
             private_document_ids: HashSet::new(),
             most_recent_ghost_doc: None,
             next_instance: 1,
@@ -197,7 +197,7 @@ impl DocumentManager {
 
     pub fn reserve_creation(&mut self) -> CreationReservation {
         let id = self.next_document_id;
-        self.next_document_id += 1;
+        self.next_document_id = self.next_document_id.next();
         let instance = self.next_instance;
         self.next_instance += 1;
         let handle = DocumentHandle::new(id, instance);
@@ -242,7 +242,7 @@ impl DocumentManager {
     pub fn add_document(&mut self, mut document: Document) {
         let id = document.id;
         if id >= self.next_document_id {
-            self.next_document_id = id + 1;
+            self.next_document_id = id.next();
         }
         let handle = if let Some(&handle) = self.handles.get(&id) {
             handle
@@ -262,7 +262,7 @@ impl DocumentManager {
     pub fn add_document_inactive(&mut self, mut document: Document) {
         let id = document.id;
         if id >= self.next_document_id {
-            self.next_document_id = id + 1;
+            self.next_document_id = id.next();
         }
         let handle = if let Some(&handle) = self.handles.get(&id) {
             handle
@@ -358,7 +358,7 @@ impl DocumentManager {
             }
         }
 
-        let max_id = self.documents.keys().copied().max().unwrap_or(0);
+        let max_id = self.documents.keys().copied().max().unwrap_or(DocumentId::new(0));
         if !self.documents.is_empty() && self.next_document_id <= max_id {
             out.push(format!(
                 "next_document_id {} <= max existing document id {max_id}",
@@ -728,7 +728,7 @@ impl DocumentManager {
     pub fn add_private_document(&mut self, mut doc: Document) -> DocumentId {
         let id = doc.id;
         if id >= self.next_document_id {
-            self.next_document_id = id + 1;
+            self.next_document_id = id.next();
         }
         let handle = if let Some(&handle) = self.handles.get(&id) {
             handle

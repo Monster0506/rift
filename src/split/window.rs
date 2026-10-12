@@ -1,7 +1,28 @@
 use crate::document::DocumentId;
 use crate::viewport::Viewport;
 
-pub type WindowId = u64;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct WindowId(u64);
+
+impl WindowId {
+    pub const fn new(id: u64) -> Self {
+        WindowId(id)
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
+    pub(crate) fn next(self) -> Self {
+        WindowId(self.0 + 1)
+    }
+}
+
+impl std::fmt::Display for WindowId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 pub struct Window {
     pub id: WindowId,

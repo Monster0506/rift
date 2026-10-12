@@ -9,7 +9,7 @@ fn make_signal(cancelled: bool) -> CancellationSignal {
 #[test]
 fn test_explorer_preview_result_job_payload() {
     let r = ExplorerPreviewResult {
-        right_doc_id: 5,
+        right_doc_id: crate::document::DocumentId::new(5),
         path: PathBuf::from("/tmp"),
         dir_entries: Some(vec![]),
         file_text: None,
@@ -24,14 +24,14 @@ fn test_explorer_preview_result_job_payload() {
 
 #[test]
 fn test_explorer_preview_job_is_silent() {
-    let job = ExplorerPreviewJob::new(1, PathBuf::from("/tmp"), false);
+    let job = ExplorerPreviewJob::new(crate::document::DocumentId::new(1), PathBuf::from("/tmp"), false);
     assert!(job.is_silent());
 }
 
 #[test]
 fn test_explorer_preview_dir_returns_entries() {
     let tmp = std::env::temp_dir();
-    let job = Box::new(ExplorerPreviewJob::new(42, tmp.clone(), false));
+    let job = Box::new(ExplorerPreviewJob::new(crate::document::DocumentId::new(42), tmp.clone(), false));
     let (tx, rx) = mpsc::channel();
     job.run(1, tx, make_signal(false));
 
@@ -39,7 +39,7 @@ fn test_explorer_preview_dir_returns_entries() {
         crate::job_manager::jobs::test_support::recv_custom_payload::<ExplorerPreviewResult>(&rx)
             .expect("should have Custom message");
 
-    assert_eq!(result.right_doc_id, 42);
+    assert_eq!(result.right_doc_id, crate::document::DocumentId::new(42));
     assert_eq!(result.path, tmp);
     assert!(
         result.dir_entries.is_some(),
@@ -51,7 +51,7 @@ fn test_explorer_preview_dir_returns_entries() {
 #[test]
 fn test_explorer_preview_nonexistent_file_returns_placeholder() {
     let path = PathBuf::from("/nonexistent_path_xyz_rift_test/file.txt");
-    let job = Box::new(ExplorerPreviewJob::new(1, path, false));
+    let job = Box::new(ExplorerPreviewJob::new(crate::document::DocumentId::new(1), path, false));
     let (tx, rx) = mpsc::channel();
     job.run(1, tx, make_signal(false));
 
@@ -71,7 +71,7 @@ fn test_explorer_preview_nonexistent_file_returns_placeholder() {
 
 #[test]
 fn test_explorer_preview_cancelled_before_run() {
-    let job = Box::new(ExplorerPreviewJob::new(1, std::env::temp_dir(), false));
+    let job = Box::new(ExplorerPreviewJob::new(crate::document::DocumentId::new(1), std::env::temp_dir(), false));
     let (tx, rx) = mpsc::channel();
     job.run(1, tx, make_signal(true));
     let msgs: Vec<JobMessage> = rx.try_iter().collect();
@@ -81,7 +81,7 @@ fn test_explorer_preview_cancelled_before_run() {
 #[test]
 fn test_explorer_preview_dir_entries_sorted_dirs_first() {
     let dir = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
-    let job = Box::new(ExplorerPreviewJob::new(1, dir, true));
+    let job = Box::new(ExplorerPreviewJob::new(crate::document::DocumentId::new(1), dir, true));
     let (tx, rx) = mpsc::channel();
     job.run(1, tx, make_signal(false));
 
@@ -103,7 +103,7 @@ fn test_explorer_preview_dir_entries_sorted_dirs_first() {
 
 #[test]
 fn test_explorer_preview_finished_message_is_sent() {
-    let job = Box::new(ExplorerPreviewJob::new(1, std::env::temp_dir(), false));
+    let job = Box::new(ExplorerPreviewJob::new(crate::document::DocumentId::new(1), std::env::temp_dir(), false));
     let (tx, rx) = mpsc::channel();
     job.run(1, tx, make_signal(false));
     let msgs: Vec<JobMessage> = rx.try_iter().collect();
@@ -128,7 +128,7 @@ fn test_explorer_preview_valid_utf8_split_at_boundary_is_not_binary() {
     ));
     std::fs::write(&path, &content).unwrap();
 
-    let job = Box::new(ExplorerPreviewJob::new(1, path.clone(), false));
+    let job = Box::new(ExplorerPreviewJob::new(crate::document::DocumentId::new(1), path.clone(), false));
     let (tx, rx) = mpsc::channel();
     job.run(1, tx, make_signal(false));
     let result =
@@ -175,7 +175,7 @@ fn test_explorer_preview_recognizes_a_persisted_undo_file() {
     crate::history::persist::save(&undo_dir, &source_path, &tree, hash).unwrap();
     let undo_file_path = crate::history::persist::undo_file_path(&undo_dir, &source_path);
 
-    let job = Box::new(ExplorerPreviewJob::new(1, undo_file_path.clone(), false));
+    let job = Box::new(ExplorerPreviewJob::new(crate::document::DocumentId::new(1), undo_file_path.clone(), false));
     let (tx_chan, rx) = mpsc::channel();
     job.run(1, tx_chan, make_signal(false));
     let result =

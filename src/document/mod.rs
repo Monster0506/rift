@@ -47,7 +47,28 @@ pub use runtime::{
 use std::path::{Path, PathBuf};
 pub use syntax_sync::SyntaxSync;
 
-pub type DocumentId = u64;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct DocumentId(u64);
+
+impl DocumentId {
+    pub const fn new(id: u64) -> Self {
+        DocumentId(id)
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
+    pub(crate) fn next(self) -> Self {
+        DocumentId(self.0 + 1)
+    }
+}
+
+impl std::fmt::Display for DocumentId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 enum AnnotationUndo {
     Insertion {

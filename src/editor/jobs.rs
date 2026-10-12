@@ -385,7 +385,7 @@ impl<T: TerminalBackend> Editor<T> {
             .downcast::<crate::job_manager::jobs::explorer::DirectoryListing>()
         {
             Ok(listing) => {
-                let doc_id = listing.doc_id as crate::document::DocumentId;
+                let doc_id = listing.doc_id;
                 let Some(token) = self.resolve_and_validate_token(
                     id,
                     token,
@@ -454,7 +454,7 @@ impl<T: TerminalBackend> Editor<T> {
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitStatusResult>() {
                 Ok(result) => {
-                    let doc_id = result.doc_id as crate::document::DocumentId;
+                    let doc_id = result.doc_id;
                     let Some(token) = self.resolve_and_validate_token(
                         id,
                         token,
@@ -498,7 +498,7 @@ impl<T: TerminalBackend> Editor<T> {
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitDiffResult>() {
                 Ok(result) => {
-                    let doc_id = result.doc_id as crate::document::DocumentId;
+                    let doc_id = result.doc_id;
                     let Some(token) = self.resolve_and_validate_token(
                         id,
                         token,
@@ -534,7 +534,7 @@ impl<T: TerminalBackend> Editor<T> {
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitBlameResult>() {
                 Ok(result) => {
-                    let doc_id = result.doc_id as crate::document::DocumentId;
+                    let doc_id = result.doc_id;
                     let Some(token) = self.resolve_and_validate_token(
                         id,
                         token,
@@ -570,7 +570,7 @@ impl<T: TerminalBackend> Editor<T> {
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitLogResult>() {
                 Ok(result) => {
-                    let doc_id = result.doc_id as crate::document::DocumentId;
+                    let doc_id = result.doc_id;
                     let Some(token) = self.resolve_and_validate_token(
                         id,
                         token,
@@ -608,7 +608,7 @@ impl<T: TerminalBackend> Editor<T> {
                                 crate::job_manager::AsyncOpDomain::GitShow,
                             );
                             let job = crate::job_manager::jobs::git::GitShowJob::new(
-                                doc_id as usize,
+                                doc_id,
                                 repo_root,
                                 sha,
                             )
@@ -630,7 +630,7 @@ impl<T: TerminalBackend> Editor<T> {
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitShowResult>() {
                 Ok(result) => {
-                    let doc_id = result.doc_id as crate::document::DocumentId;
+                    let doc_id = result.doc_id;
                     let Some(token) = self.resolve_and_validate_token(
                         id,
                         token,
@@ -678,7 +678,7 @@ impl<T: TerminalBackend> Editor<T> {
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitGutterDiffResult>() {
                 Ok(result) => {
-                    let doc_id = result.doc_id as crate::document::DocumentId;
+                    let doc_id = result.doc_id;
                     let Some(token) = self.resolve_and_validate_token(
                         id,
                         token,

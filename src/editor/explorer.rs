@@ -27,7 +27,7 @@ impl<T: TerminalBackend> Editor<T> {
             doc.replace_buffer_content("");
         }
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
-            doc_id as usize,
+            doc_id,
             new_path,
             show_hidden,
         );
@@ -206,7 +206,7 @@ impl<T: TerminalBackend> Editor<T> {
         });
 
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
-            dir_doc_id as usize,
+            dir_doc_id,
             dir,
             false, /* new explorer always starts with hidden off */
         );
@@ -1085,7 +1085,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
-            dir_doc_id as usize,
+            dir_doc_id,
             path,
             new_show_hidden,
         );
@@ -1129,7 +1129,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
-            dir_doc_id as usize,
+            dir_doc_id,
             path,
             show_hidden,
         );
@@ -1181,7 +1181,7 @@ impl<T: TerminalBackend> Editor<T> {
 
         // Re-read the current directory now that all operations are complete.
         let reload = crate::job_manager::jobs::explorer::DirectoryListJob::new(
-            dir_doc_id as usize,
+            dir_doc_id,
             dir_path,
             dir_show_hidden,
         );

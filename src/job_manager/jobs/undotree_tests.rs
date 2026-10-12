@@ -19,7 +19,7 @@ fn make_test_tree() -> UndoTree {
 #[test]
 fn test_undotree_render_result_implements_job_payload() {
     let result = UndoTreeRenderResult {
-        ut_doc_id: 1,
+        ut_doc_id: crate::document::DocumentId::new(1),
         text: "* [1] edit1\n* [0] root".to_string(),
         sequences: vec![1, 0],
         highlights: vec![(0..1, Color::Magenta)],
@@ -38,7 +38,7 @@ fn test_undotree_render_job_produces_result() {
     use std::sync::mpsc;
 
     let tree = make_test_tree();
-    let job = Box::new(UndoTreeRenderJob::new(42, tree));
+    let job = Box::new(UndoTreeRenderJob::new(crate::document::DocumentId::new(42), tree));
     let (tx, rx) = mpsc::channel();
     let signal = CancellationSignal::new(false);
 
@@ -62,7 +62,7 @@ fn test_undotree_render_job_result_content() {
     use std::sync::mpsc;
 
     let tree = make_test_tree();
-    let job = Box::new(UndoTreeRenderJob::new(7, tree));
+    let job = Box::new(UndoTreeRenderJob::new(crate::document::DocumentId::new(7), tree));
     let (tx, rx) = mpsc::channel();
     let signal = CancellationSignal::new(false);
 
@@ -71,7 +71,7 @@ fn test_undotree_render_job_result_content() {
     let result =
         crate::job_manager::jobs::test_support::recv_custom_payload::<UndoTreeRenderResult>(&rx)
             .expect("no Custom message received");
-    assert_eq!(result.ut_doc_id, 7);
+    assert_eq!(result.ut_doc_id, crate::document::DocumentId::new(7));
     assert!(!result.text.is_empty());
     assert!(!result.sequences.is_empty());
     // sequences count must match line count
@@ -84,7 +84,7 @@ fn test_undotree_render_job_cancelled_before_run() {
     use std::sync::mpsc;
 
     let tree = make_test_tree();
-    let job = Box::new(UndoTreeRenderJob::new(1, tree));
+    let job = Box::new(UndoTreeRenderJob::new(crate::document::DocumentId::new(1), tree));
     let (tx, rx) = mpsc::channel();
     let signal = CancellationSignal::new(true); // pre-cancelled
 
@@ -100,6 +100,6 @@ fn test_undotree_render_job_cancelled_before_run() {
 #[test]
 fn test_undotree_render_job_is_silent() {
     let tree = make_test_tree();
-    let job = UndoTreeRenderJob::new(1, tree);
+    let job = UndoTreeRenderJob::new(crate::document::DocumentId::new(1), tree);
     assert!(job.is_silent());
 }

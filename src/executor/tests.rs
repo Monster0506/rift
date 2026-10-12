@@ -6,7 +6,7 @@ use crate::document::Document;
 use crate::executor::execute_command;
 
 fn create_doc() -> Document {
-    Document::new(1).unwrap()
+    Document::new(crate::document::DocumentId::new(1)).unwrap()
 }
 
 #[test]

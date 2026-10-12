@@ -26,15 +26,15 @@ impl<T: TerminalBackend> Editor<T> {
             line_ending,
             doc_options,
         ) = if let Some(doc) = self.document_manager.active_document() {
-            let buf_id = doc.id as usize;
+            let buf_id = doc.id.get() as usize;
             let buf_kind = doc.kind.kind_str().to_string();
             let source = if self
                 .plugin_host
-                .synced_buf_matches(doc.id, doc.buffer.revision)
+                .synced_buf_matches(doc.id.get(), doc.buffer.revision)
             {
                 crate::plugin::lua_host::BufSourceUpdate::Unchanged
             } else {
-                self.plugin_host.set_synced_buf(doc.id, doc.buffer.revision);
+                self.plugin_host.set_synced_buf(doc.id.get(), doc.buffer.revision);
                 crate::plugin::lua_host::BufSourceUpdate::Set(Box::new(
                     crate::plugin::lua_host::BufLinesSource {
                         revision: doc.buffer.revision,
@@ -98,7 +98,7 @@ impl<T: TerminalBackend> Editor<T> {
             .filter_map(|b| {
                 let doc = self.document_manager.get_document(b.id)?;
                 Some(BufEntry {
-                    id: b.id as usize,
+                    id: b.id.get() as usize,
                     name: b.name,
                     is_dirty: b.is_dirty,
                     is_current: b.is_current,
@@ -133,10 +133,10 @@ impl<T: TerminalBackend> Editor<T> {
                 let buf = self
                     .split_tree
                     .get_window(l.window_id)
-                    .map(|w| w.document_id as usize)
+                    .map(|w| w.document_id.get() as usize)
                     .unwrap_or(0);
                 crate::plugin::lua_host::WinEntry {
-                    id: l.window_id,
+                    id: l.window_id.get(),
                     buf,
                     row: l.row,
                     col: l.col,
@@ -145,8 +145,8 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             })
             .collect();
-        let focused_win_id = self.split_tree.focused_window_id();
-        let previous_win_id = self.split_tree.previous_window;
+        let focused_win_id = self.split_tree.focused_window_id().get();
+        let previous_win_id = self.split_tree.previous_window.map(|w| w.get());
 
         #[cfg(feature = "lsp")]
         let lsp_diagnostics: std::collections::HashMap<
@@ -189,7 +189,7 @@ impl<T: TerminalBackend> Editor<T> {
         > = self
             .document_manager
             .documents_iter()
-            .map(|doc| (doc.id, doc.vars.clone()))
+            .map(|doc| (doc.id.get(), doc.vars.clone()))
             .collect();
 
         self.plugin_host.lua_update_state(
@@ -222,10 +222,10 @@ impl<T: TerminalBackend> Editor<T> {
         use crate::plugin::lua_host::AnnotationView;
         if let Some(doc) = self.document_manager.active_document() {
             let revision = doc.annotations.revision();
-            if self.plugin_host.synced_annotations_match(doc.id, revision) {
+            if self.plugin_host.synced_annotations_match(doc.id.get(), revision) {
                 return;
             }
-            self.plugin_host.set_synced_annotations(doc.id, revision);
+            self.plugin_host.set_synced_annotations(doc.id.get(), revision);
             let views = doc
                 .annotations
                 .iter()
@@ -236,7 +236,7 @@ impl<T: TerminalBackend> Editor<T> {
                         Anchor::Line(l) => ("line", l, l),
                     };
                     AnnotationView {
-                        id: a.id,
+                        id: a.id.get(),
                         kind: a.kind.as_arc(),
                         owner: a.owner.as_str(),
                         anchor,
@@ -249,7 +249,7 @@ impl<T: TerminalBackend> Editor<T> {
                 })
                 .collect();
             let next_id = doc.annotations.peek_next_id();
-            self.plugin_host.lua_set_annotations(views, next_id);
+            self.plugin_host.lua_set_annotations(views, next_id.get());
         } else {
             self.plugin_host.clear_synced_annotations();
             self.plugin_host.lua_set_annotations(Vec::new(), 1);
@@ -352,7 +352,8 @@ impl<T: TerminalBackend> Editor<T> {
                         ann = ann.with_presentation(pres);
                     }
                     if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.annotations.add_with_id(id, ann);
+                        doc.annotations
+                            .add_with_id(crate::annotations::AnnotationId::new(id), ann);
                     }
                 }
                 PluginMutation::UpdateAnnotation {
@@ -362,7 +363,8 @@ impl<T: TerminalBackend> Editor<T> {
                     presentation,
                 } => {
                     if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.annotations.update(id, |a| {
+                        doc.annotations
+                            .update(crate::annotations::AnnotationId::new(id), |a| {
                             if let Some(p) = payload {
                                 a.payload = p;
                             }
@@ -377,7 +379,8 @@ impl<T: TerminalBackend> Editor<T> {
                 }
                 PluginMutation::RemoveAnnotation(id) => {
                     if let Some(doc) = self.document_manager.active_document_mut() {
-                        doc.annotations.remove(id);
+                        doc.annotations
+                            .remove(crate::annotations::AnnotationId::new(id));
                     }
                 }
                 PluginMutation::ClearAnnotations { kind_prefix } => {
@@ -895,7 +898,7 @@ impl<T: TerminalBackend> Editor<T> {
                     if self.split_tree.move_window(direction, &layouts) {
                         self.render_system.viewport.mark_needs_full_redraw();
                         self.plugin_host
-                            .dispatch(&crate::plugin::EditorEvent::WinMoved { win: moved_id });
+                            .dispatch(&crate::plugin::EditorEvent::WinMoved { win: moved_id.get() });
                     }
                 }
                 PluginMutation::SwapWindows => {
@@ -912,8 +915,8 @@ impl<T: TerminalBackend> Editor<T> {
                             self.render_system.viewport.mark_needs_full_redraw();
                             self.plugin_host
                                 .dispatch(&crate::plugin::EditorEvent::WinSwapped {
-                                    win1: focused_id,
-                                    win2: prev_id,
+                                    win1: focused_id.get(),
+                                    win2: prev_id.get(),
                                 });
                         }
                     }

@@ -69,7 +69,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
 
         let job = crate::job_manager::jobs::git::GitBlameJob::new(
-            blame_doc_id as usize,
+            blame_doc_id,
             repo_root,
             path,
             None,
@@ -133,7 +133,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
         self.job_manager
             .spawn(crate::job_manager::jobs::git::GitBlameJob::new(
-                doc_id as usize,
+                doc_id,
                 repo_root,
                 path,
                 Some(parent_commit),
@@ -178,7 +178,7 @@ impl<T: TerminalBackend> Editor<T> {
         }
         self.job_manager
             .spawn(crate::job_manager::jobs::git::GitBlameJob::new(
-                doc_id as usize,
+                doc_id,
                 repo_root,
                 path,
                 previous,
