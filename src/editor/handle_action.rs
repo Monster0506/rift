@@ -654,14 +654,13 @@ impl<T: TerminalBackend> Editor<T> {
                     return true;
                 }
                 if self.current_mode == Mode::OperatorPending {
-                    if let Some(pending) = self.pending_operator {
+                    if let Some(super::PendingOperator::Op(pending)) = self.pending_operator {
                         if pending == *op {
                             return self.execute_operator_linewise(pending);
                         }
                     }
                 }
-                self.pending_surround_add = None;
-                self.pending_operator = Some(*op);
+                self.pending_operator = Some(super::PendingOperator::Op(*op));
                 self.set_mode(Mode::OperatorPending);
                 true
             }
@@ -1046,7 +1045,9 @@ impl<T: TerminalBackend> Editor<T> {
             }
             EditorAction::SurroundGiveLine => {
                 use crate::text_objects::{Direction, Modifier, ObjectKind, TextObjectSpec};
-                let Some(delim_count) = self.pending_surround_add.take() else {
+                let Some(super::PendingOperator::SurroundAdd(delim_count)) =
+                    self.pending_operator.take()
+                else {
                     self.pending_operator = None;
                     self.set_mode(Mode::Normal);
                     self.pending_count = 0;

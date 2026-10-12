@@ -25,11 +25,11 @@ fn with_count_override(cmd: Command, count: usize) -> Option<Command> {
 impl<T: TerminalBackend> Editor<T> {
     pub(super) fn execute_operator(
         &mut self,
-        op: crate::action::OperatorType,
+        op: super::PendingOperator,
         motion: Motion,
     ) -> bool {
-        if let Some(delim_count) = self.pending_surround_add.take() {
-            if op == crate::action::OperatorType::Yank {
+        let op = match op {
+            super::PendingOperator::SurroundAdd(delim_count) => {
                 let count = self
                     .pending_operator_count
                     .max(1)
@@ -44,7 +44,8 @@ impl<T: TerminalBackend> Editor<T> {
                 self.set_mode(Mode::Normal);
                 return true;
             }
-        }
+            super::PendingOperator::Op(op) => op,
+        };
         let count = self
             .pending_operator_count
             .max(1)
@@ -162,7 +163,6 @@ impl<T: TerminalBackend> Editor<T> {
 
     pub(super) fn execute_operator_linewise(&mut self, op: crate::action::OperatorType) -> bool {
         self.pending_operator = None;
-        self.pending_surround_add = None;
         let count = self
             .pending_operator_count
             .max(1)

@@ -102,7 +102,6 @@ impl<T: TerminalBackend> Editor<T> {
             pending_operator: None,
             pending_grammar: None,
             pending_keys_started_at: None,
-            pending_surround_add: None,
             visual_anchor: None,
             pending_multi_insert_anchors: Vec::new(),
             region_build_recording: Vec::new(),

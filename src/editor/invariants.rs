@@ -69,13 +69,6 @@ impl<T: TerminalBackend> Editor<T> {
             ));
         }
 
-        if self.pending_surround_add.is_some() && mode != Mode::OperatorPending {
-            out.push(Violation::new(
-                "editor.pending_surround_add",
-                format!("pending_surround_add is set but mode={mode:?}, not OperatorPending"),
-            ));
-        }
-
         if !self.pending_multi_insert_anchors.is_empty()
             && !matches!(mode, Mode::Insert | Mode::Replace)
         {

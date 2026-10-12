@@ -115,14 +115,14 @@ fn surround_add_wraps_inner_word_with_padding() {
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('g'));
-    assert_eq!(editor.pending_surround_add, Some(1));
+    assert_eq!(editor.pending_operator, Some(PendingOperator::SurroundAdd(1)));
 
     editor.pending_grammar = Some(pending_grammar::PendingGrammar::TextObject(
         text_object_input::PendingTextObject::new(Modifier::Inner),
     ));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('w'));
-    assert_eq!(editor.pending_surround_add, None);
+    assert!(!matches!(editor.pending_operator, Some(PendingOperator::SurroundAdd(_))));
 
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('('));
@@ -194,7 +194,7 @@ fn surround_escape_cancels_pending_grammar() {
     editor.set_mode(Mode::Normal);
     editor.pending_count = 0;
     editor.pending_grammar = None;
-    editor.pending_surround_add = None;
+    editor.pending_operator = None;
 
     assert!(editor.pending_grammar.is_none());
     let grammar = editor.pending_grammar.take();
@@ -300,11 +300,11 @@ fn surround_interrupted_sg_does_not_corrupt_later_yank() {
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
     editor.advance_pending_grammar(grammar, Key::Char('g'));
-    assert!(editor.pending_surround_add.is_some());
+    assert!(matches!(editor.pending_operator, Some(PendingOperator::SurroundAdd(_))));
     editor.handle_action(&Action::Editor(EditorAction::Operator(
         OperatorType::Delete,
     )));
-    assert_eq!(editor.pending_surround_add, None);
+    assert!(!matches!(editor.pending_operator, Some(PendingOperator::SurroundAdd(_))));
 
     editor.set_mode(Mode::Normal);
     editor.pending_operator = None;

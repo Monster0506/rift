@@ -350,7 +350,6 @@ impl<T: TerminalBackend> Editor<T> {
         if mode != Mode::OperatorPending {
             self.pending_operator = None;
             self.pending_operator_count = 0;
-            self.pending_surround_add = None;
         }
 
         match mode {

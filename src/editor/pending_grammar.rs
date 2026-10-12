@@ -103,8 +103,7 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                     Key::Char('g') => {
                         let delim_count = if count > 0 { count } else { 1 };
-                        self.pending_operator = Some(crate::action::OperatorType::Yank);
-                        self.pending_surround_add = Some(delim_count);
+                        self.pending_operator = Some(super::PendingOperator::SurroundAdd(delim_count));
                         self.set_mode(Mode::OperatorPending);
                     }
                     _ => {
