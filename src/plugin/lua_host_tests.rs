@@ -1060,7 +1060,7 @@ fn test_shelldone_fanout_does_not_invoke_handlers_registered_during_same_pass() 
     "#
         )
         .is_none());
-    host.shared.lock().unwrap().pending_shell_events.push((
+    host.shared.borrow_mut().pending_shell_events.push((
         "tag1".to_string(),
         true,
         "out".to_string(),
@@ -1138,7 +1138,7 @@ fn test_shell_done_handler_error_surfaces_as_notification() {
         )
         .is_none());
 
-    host.shared.lock().unwrap().pending_shell_events.push((
+    host.shared.borrow_mut().pending_shell_events.push((
         "mytag".to_string(),
         true,
         "output".to_string(),
@@ -1159,6 +1159,40 @@ fn test_shell_done_handler_error_surfaces_as_notification() {
         "expected an error notification from the failing ShellDone handler, got: {:?}",
         mutations
     );
+}
+
+#[test]
+fn test_spawn_shell_delivers_result_from_background_thread() {
+    // Exercises the real std::thread::spawn path (not the pending_shell_events
+    // injection used by the tests above), proving the mpsc channel correctly
+    // hands a background command's result back to the single-threaded Lua VM.
+    let host = make_host();
+    assert!(host
+        .exec(
+            r#"
+        _G.got = nil
+        rift.on('UserEvent', function(ev)
+            if ev.name == 'ShellDone' then
+                _G.got = ev.tag
+            end
+        end)
+        rift.spawn_shell('echo hello', 'mytag')
+    "#
+        )
+        .is_none());
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let _ = host.drain_mutations();
+        if host.exec("assert(_G.got == 'mytag')").is_none() {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "background shell command never delivered its ShellDone event"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 }
 
 #[test]
@@ -1247,7 +1281,9 @@ fn test_dispatch_event_aborts_a_runaway_handler_past_its_time_budget() {
         .is_none());
 
     let started = std::time::Instant::now();
-    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse { buf: crate::document::DocumentId::new(1) });
+    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse {
+        buf: crate::document::DocumentId::new(1),
+    });
     let elapsed = started.elapsed();
 
     assert!(
@@ -1276,7 +1312,9 @@ fn test_dispatch_event_does_not_abort_a_fast_handler() {
         )
         .is_none());
 
-    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse { buf: crate::document::DocumentId::new(1) });
+    let errors = host.dispatch_event(&EditorEvent::TextChangedCoarse {
+        buf: crate::document::DocumentId::new(1),
+    });
     assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
     let mutations = host.drain_mutations();
     assert_eq!(mutations.len(), 1);

@@ -6,7 +6,9 @@ pub use crate::plugin::lua_state::{AnnotationView, BufEntry, BufLinesSource, Win
 use crate::plugin::lua_value::{value_from_lua, value_from_lua_table, value_into_lua};
 use crate::plugin::{PluginFloat, PluginMutation};
 use mlua::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
 
 /// Parse a `{ fg, bg, bold, italic, underline, strike, reverse }` style subtable.
 fn parse_style(st: &LuaTable) -> LuaResult<crate::annotations::StyleOverride> {
@@ -147,7 +149,9 @@ pub enum BufSourceUpdate {
 }
 
 /// State shared between Lua API closures and the host.
-/// Stored behind `Arc<Mutex>` so closures can be `'static`.
+/// Stored behind `Rc<RefCell>` so closures can be `'static`; the mlua VM and
+/// its registered closures all run on one thread, so no real synchronization
+/// is needed, just a lifetime-extending shared owner.
 struct LuaSharedState {
     /// Mutations queued by Lua plugin calls; drained by `PluginHost`.
     mutations: Vec<PluginMutation>,
@@ -284,12 +288,18 @@ impl Default for LuaSharedState {
 /// Owns the Lua VM and registers the `rift.*` API.
 pub struct LuaHost {
     lua: Lua,
-    shared: Arc<Mutex<LuaSharedState>>,
+    shared: Rc<RefCell<LuaSharedState>>,
     /// Absolute deadline for the in-flight Lua call, checked by a VM
     /// instruction hook so a runaway handler aborts instead of freezing.
-    hook_deadline: Arc<Mutex<Option<std::time::Instant>>>,
+    hook_deadline: Rc<RefCell<Option<std::time::Instant>>>,
+    /// Receives completed `rift.spawn`/`rift.spawn_shell` results from their
+    /// background OS threads; drained into `shared` on the main thread.
+    shell_result_rx: std::sync::mpsc::Receiver<ShellResult>,
     generation: crate::plugin::PluginGeneration,
 }
+
+/// Tag, success, and combined stdout+stderr output of a finished background command.
+type ShellResult = (String, bool, String);
 
 impl LuaHost {
     /// Create a new Lua VM with a fresh generation and register the full `rift` API table.
@@ -307,18 +317,18 @@ impl LuaHost {
             is_active: true,
             ..Default::default()
         };
-        let shared = Arc::new(Mutex::new(shared_state));
-        let hook_deadline: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
+        let shared = Rc::new(RefCell::new(shared_state));
+        let hook_deadline: Rc<RefCell<Option<std::time::Instant>>> = Rc::new(RefCell::new(None));
+        let (shell_result_tx, shell_result_rx) = std::sync::mpsc::channel::<ShellResult>();
         {
-            let deadline = Arc::clone(&hook_deadline);
+            let deadline = Rc::clone(&hook_deadline);
             // Checked every 100k VM instructions - cheap enough to run continuously,
             // frequent enough to abort a runaway handler well under a second.
             let _ = lua.set_hook(
                 mlua::HookTriggers::new().every_nth_instruction(100_000),
                 move |_lua, _debug| {
                     let past_deadline = deadline
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                        .borrow_mut()
                         .is_some_and(|dl| std::time::Instant::now() >= dl);
                     if past_deadline {
                         return Err(mlua::Error::RuntimeError(
@@ -371,11 +381,11 @@ impl LuaHost {
         // rift.on(event_name, handler_fn) -> handle (integer)
         // Returns a handle that can be passed to rift.off() to unregister.
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let on_fn =
                 lua.create_function(move |lua, (event_name, callback): (String, LuaFunction)| {
                     let (slot_id, plugin_name) = {
-                        let mut s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut s = sh.borrow_mut();
                         let id = s.next_slot;
                         s.next_slot += 1;
                         (id, s.current_plugin.clone())
@@ -450,7 +460,7 @@ impl LuaHost {
         // rift.notify(level, message)
         // level: "info" | "warn" | "error" | "success"
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, (level, message): (String, String)| {
                 let level = match level.as_str() {
                     "warn" | "warning" => NotificationType::Warning,
@@ -458,8 +468,7 @@ impl LuaHost {
                     "success" => NotificationType::Success,
                     _ => NotificationType::Info,
                 };
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::Notify { message, level });
                 Ok(())
@@ -469,14 +478,13 @@ impl LuaHost {
 
         // rift.append_lines(lines)  - appends a Lua sequence of strings to the active buffer
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, lines: LuaTable| {
                 let mut v = Vec::new();
                 for s in lines.sequence_values::<String>() {
                     v.push(s?);
                 }
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::AppendLines(v));
                 Ok(())
@@ -486,14 +494,13 @@ impl LuaHost {
 
         // rift.open_float(title, lines)
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, (title, lines): (String, LuaTable)| {
                 let mut v = Vec::new();
                 for s in lines.sequence_values::<String>() {
                     v.push(s?);
                 }
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::OpenFloat(PluginFloat::new(title, v)));
                 Ok(())
@@ -503,12 +510,9 @@ impl LuaHost {
 
         // rift.close_float()
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .mutations
-                    .push(PluginMutation::CloseFloat);
+                sh.borrow_mut().mutations.push(PluginMutation::CloseFloat);
                 Ok(())
             })?;
             api.set("close_float", f)?;
@@ -520,7 +524,7 @@ impl LuaHost {
 
             // rift.annotations.add{ kind, line|point|range, payload, face, actions }
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, opts: LuaTable| {
                     let kind: String = opts.get("kind")?;
                     let line: Option<i64> = opts.get("line")?;
@@ -561,7 +565,7 @@ impl LuaHost {
                     let owner: Option<String> = opts.get("owner")?;
                     // Pre-claim the id so add{} can return it synchronously.
                     let id = {
-                        let mut s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut s = sh.borrow_mut();
                         let id = s.next_annotation_id;
                         s.next_annotation_id += 1;
                         s.mutations.push(PluginMutation::AddAnnotation {
@@ -584,10 +588,9 @@ impl LuaHost {
 
             // rift.annotations.remove(id)
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, id: u64| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::RemoveAnnotation(id));
                     Ok(())
@@ -598,7 +601,7 @@ impl LuaHost {
             // rift.annotations.update(id, { payload=, visible=, style/face/... }):
             // unset fields are left as-is; presentation rebuilds only if any given.
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, (id, opts): (u64, LuaTable)| {
                     let payload = match opts.get::<LuaValue>("payload")? {
                         LuaValue::Table(t) => Some(value_from_lua_table(&t)?),
@@ -606,14 +609,14 @@ impl LuaHost {
                     };
                     let visible: Option<bool> = opts.get("visible")?;
                     let presentation = build_presentation(&opts)?;
-                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                        PluginMutation::UpdateAnnotation {
+                    sh.borrow_mut()
+                        .mutations
+                        .push(PluginMutation::UpdateAnnotation {
                             id,
                             payload,
                             visible,
                             presentation,
-                        },
-                    );
+                        });
                     Ok(())
                 })?;
                 annotations.set("update", f)?;
@@ -624,9 +627,9 @@ impl LuaHost {
 
             // rift.annotations.get(id) -> table | nil
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |lua, id: u64| {
-                    let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                    let s = sh.borrow_mut();
                     match s.annotations.iter().find(|v| v.id == id) {
                         Some(v) => Ok(Some(annotation_view_to_table(lua, v)?)),
                         None => Ok(None),
@@ -637,10 +640,10 @@ impl LuaHost {
 
             // rift.annotations.at(byte_offset) -> array of tables
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |lua, offset: i64| {
                     let off = offset.max(0) as usize;
-                    let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                    let s = sh.borrow_mut();
                     let out = lua.create_table()?;
                     let mut i = 1;
                     for v in s.annotations.iter() {
@@ -661,11 +664,11 @@ impl LuaHost {
 
             // rift.annotations.in_range(start, end) -> array of tables
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |lua, (start, end_): (i64, i64)| {
                     let s0 = start.max(0) as usize;
                     let e0 = (end_.max(start)) as usize;
-                    let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                    let s = sh.borrow_mut();
                     let out = lua.create_table()?;
                     let mut i = 1;
                     for v in s.annotations.iter() {
@@ -686,9 +689,9 @@ impl LuaHost {
 
             // rift.annotations.by_kind(prefix) -> array of tables (kind starts_with)
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |lua, prefix: String| {
-                    let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                    let s = sh.borrow_mut();
                     let out = lua.create_table()?;
                     let mut i = 1;
                     for v in s.annotations.iter().filter(|v| v.kind.starts_with(&prefix)) {
@@ -703,13 +706,13 @@ impl LuaHost {
             // rift.annotations.clear(kind_prefix) - drop every annotation whose
             // kind starts with the prefix (e.g. a plugin clearing its own "md.").
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, prefix: String| {
-                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                        PluginMutation::ClearAnnotations {
+                    sh.borrow_mut()
+                        .mutations
+                        .push(PluginMutation::ClearAnnotations {
                             kind_prefix: prefix,
-                        },
-                    );
+                        });
                     Ok(())
                 })?;
                 annotations.set("clear", f)?;
@@ -717,19 +720,19 @@ impl LuaHost {
 
             // rift.annotations.on_action(kind, verb, fn(ctx))
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(
                     move |lua, (kind, verb, handler): (String, String, mlua::Function)| {
                         let key = format!("{}\u{0}{}", kind, verb);
                         let handlers: LuaTable = lua.globals().get("_rift_action_handlers")?;
                         handlers.set(key, handler)?;
-                        sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                            PluginMutation::RegisterAnnotationAction {
+                        sh.borrow_mut()
+                            .mutations
+                            .push(PluginMutation::RegisterAnnotationAction {
                                 kind,
                                 verb,
                                 command: None,
-                            },
-                        );
+                            });
                         Ok(())
                     },
                 )?;
@@ -738,16 +741,16 @@ impl LuaHost {
 
             // rift.annotations.bind_command(kind, verb, ex_command)
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(
                     move |_, (kind, verb, command): (String, String, String)| {
-                        sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                            PluginMutation::RegisterAnnotationAction {
+                        sh.borrow_mut()
+                            .mutations
+                            .push(PluginMutation::RegisterAnnotationAction {
                                 kind,
                                 verb,
                                 command: Some(command),
-                            },
-                        );
+                            });
                         Ok(())
                     },
                 )?;
@@ -757,17 +760,17 @@ impl LuaHost {
             // rift.annotations.register_kind(kind, { face/style/adornment,
             // description }) - per-kind render/hover defaults (sec 4).
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, (kind, opts): (String, LuaTable)| {
                     let presentation = build_presentation(&opts)?;
                     let description: Option<String> = opts.get("description").ok().flatten();
-                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                        PluginMutation::RegisterKindDefaults {
+                    sh.borrow_mut()
+                        .mutations
+                        .push(PluginMutation::RegisterKindDefaults {
                             kind,
                             presentation,
                             description,
-                        },
-                    );
+                        });
                     Ok(())
                 })?;
                 annotations.set("register_kind", f)?;
@@ -793,18 +796,16 @@ impl LuaHost {
 
         // rift.current_buf() -> integer buffer id
         {
-            let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap_or_else(|e| e.into_inner()).buf_id as i64)
-            })?;
+            let sh = Rc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.borrow_mut().buf_id as i64))?;
             api.set("current_buf", f)?;
         }
 
         // rift.get_cursor() -> row (1-indexed), col (0-indexed)
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
-                let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                let s = sh.borrow_mut();
                 Ok((s.cursor.0 as i64 + 1, s.cursor.1 as i64))
             })?;
             api.set("get_cursor", f)?;
@@ -813,9 +814,9 @@ impl LuaHost {
         // rift.get_lines(start, end) -> sequence of strings
         // start/end are 1-indexed; end = -1 means last line
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |lua, (start, end_): (i64, i64)| {
-                let lines = sh.lock().unwrap_or_else(|e| e.into_inner()).lines();
+                let lines = sh.borrow_mut().lines();
                 let len = lines.len() as i64;
                 let start = (start - 1).max(0) as usize;
                 let end_ = if end_ < 0 {
@@ -835,7 +836,7 @@ impl LuaHost {
         // rift.register_command(name, fn [, description [, arg_type]])
         // arg_type drives argument completion: "file", "dir"
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(
                 move |lua,
                       (name, callback, desc, arg_type): (
@@ -844,11 +845,7 @@ impl LuaHost {
                     Option<String>,
                     Option<String>,
                 )| {
-                    let plugin_name = sh
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .current_plugin
-                        .clone();
+                    let plugin_name = sh.borrow_mut().current_plugin.clone();
                     let cmds: LuaTable = lua.globals().get("_rift_commands")?;
                     let entry = lua.create_table()?;
                     entry.set("fn", callback)?;
@@ -869,13 +866,9 @@ impl LuaHost {
 
         // rift.register_action(id, fn)  - register a keymap action handler
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |lua, (id, callback): (String, LuaFunction)| {
-                let plugin_name = sh
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .current_plugin
-                    .clone();
+                let plugin_name = sh.borrow_mut().current_plugin.clone();
                 let actions: LuaTable = lua.globals().get("_rift_actions")?;
                 let entry = lua.create_table()?;
                 entry.set("fn", callback)?;
@@ -892,7 +885,7 @@ impl LuaHost {
         // rift.emit(event_name [, payload])  - fire a UserEvent to all registered handlers
         // Optional payload table keys are merged into the event table alongside `name`.
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f =
                 lua.create_function(move |lua, (name, payload): (String, Option<LuaTable>)| {
                     let handlers: LuaTable = lua.globals().get("_rift_handlers")?;
@@ -917,13 +910,13 @@ impl LuaHost {
                             // Tag this handler's slot, then restore the caller's slot
                             // afterward so reentrant emit() doesn't corrupt ownership.
                             let prev_slot = {
-                                let mut s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                                let mut s = sh.borrow_mut();
                                 let prev = s.current_slot;
                                 s.current_slot = slot_id;
                                 prev
                             };
                             let result = f.call::<()>(ev.clone());
-                            sh.lock().unwrap_or_else(|e| e.into_inner()).current_slot = prev_slot;
+                            sh.borrow_mut().current_slot = prev_slot;
                             result?;
                         }
                     }
@@ -935,9 +928,9 @@ impl LuaHost {
         // rift.spawn_shell(cmd, tag): runs asynchronously; on completion fires a
         // UserEvent name="ShellDone", tag=<tag>, success=<bool>, output=<string>.
         {
-            let sh = Arc::clone(&shared);
+            let tx = shell_result_tx.clone();
             let f = lua.create_function(move |_, (cmd, tag): (String, String)| {
-                let sh = Arc::clone(&sh);
+                let tx = tx.clone();
                 std::thread::spawn(move || {
                     let result = if cfg!(windows) {
                         std::process::Command::new("cmd")
@@ -954,10 +947,7 @@ impl LuaHost {
                         }
                         Err(e) => (false, e.to_string()),
                     };
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .pending_shell_events
-                        .push((tag, success, out_text));
+                    let _ = tx.send((tag, success, out_text));
                 });
                 Ok(())
             })?;
@@ -967,10 +957,10 @@ impl LuaHost {
         // rift.spawn(prog, args, tag): run a program directly (no shell), one
         // OS arg per list element. Fires the same ShellDone UserEvent as spawn_shell.
         {
-            let sh = Arc::clone(&shared);
+            let tx = shell_result_tx.clone();
             let f =
                 lua.create_function(move |_, (prog, args, tag): (String, Vec<String>, String)| {
-                    let sh = Arc::clone(&sh);
+                    let tx = tx.clone();
                     std::thread::spawn(move || {
                         let result = std::process::Command::new(&prog).args(&args).output();
                         let (success, out_text) = match result {
@@ -981,10 +971,7 @@ impl LuaHost {
                             }
                             Err(e) => (false, e.to_string()),
                         };
-                        sh.lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .pending_shell_events
-                            .push((tag, success, out_text));
+                        let _ = tx.send((tag, success, out_text));
                     });
                     Ok(())
                 })?;
@@ -993,10 +980,9 @@ impl LuaHost {
 
         // rift.insert(text) - insert text at the current cursor position
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, text: String| {
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::InsertAtCursor(text));
                 Ok(())
@@ -1006,11 +992,10 @@ impl LuaHost {
 
         // rift.delete_before(n) - delete n chars immediately before the cursor
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, n: i64| {
                 if n > 0 {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::DeleteBefore(n as usize));
                 }
@@ -1021,11 +1006,10 @@ impl LuaHost {
 
         // rift.delete_forward(n) - delete n chars immediately after the cursor
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, n: i64| {
                 if n > 0 {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::DeleteForward(n as usize));
                 }
@@ -1036,15 +1020,13 @@ impl LuaHost {
 
         // rift.set_cursor(row, col) - move cursor (row 1-indexed, col 0-indexed)
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, (row, col): (i64, i64)| {
                 if row >= 1 {
-                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                        PluginMutation::SetCursor {
-                            row: row as usize,
-                            col: col.max(0) as usize,
-                        },
-                    );
+                    sh.borrow_mut().mutations.push(PluginMutation::SetCursor {
+                        row: row as usize,
+                        col: col.max(0) as usize,
+                    });
                 }
                 Ok(())
             })?;
@@ -1053,20 +1035,20 @@ impl LuaHost {
 
         // rift.replace_lines(start, end, lines) - replace 1-indexed inclusive line range
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, (start, end_, lines): (i64, i64, LuaTable)| {
                 let mut v = Vec::new();
                 for s in lines.sequence_values::<String>() {
                     v.push(s?);
                 }
                 if start >= 1 && end_ >= start {
-                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                        PluginMutation::ReplaceLines {
+                    sh.borrow_mut()
+                        .mutations
+                        .push(PluginMutation::ReplaceLines {
                             start: start as usize,
                             end: end_ as usize,
                             lines: v,
-                        },
-                    );
+                        });
                 }
                 Ok(())
             })?;
@@ -1076,11 +1058,11 @@ impl LuaHost {
         // rift.add_highlight(start_line, start_col, end_line, end_col, color)
         // lines are 1-indexed, columns 0-indexed; color is named or hex ("#rrggbb")
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(
                 move |_, (sl, sc, el, ec, color): (i64, i64, i64, i64, String)| {
                     if sl >= 1 && el >= sl {
-                        let mut s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut s = sh.borrow_mut();
                         let slot = s.current_slot;
                         s.mutations.push(PluginMutation::AddHighlight {
                             slot,
@@ -1099,9 +1081,9 @@ impl LuaHost {
 
         // rift.clear_highlights() - remove this handler's highlights from the active buffer
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
-                let mut s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                let mut s = sh.borrow_mut();
                 let slot = s.current_slot;
                 s.mutations.push(PluginMutation::ClearHighlights { slot });
                 Ok(())
@@ -1111,10 +1093,9 @@ impl LuaHost {
 
         // rift.set_cursor_hold_delay(ms) - set the CursorHold idle threshold in milliseconds
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, ms: u32| {
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::SetCursorHoldDelay(ms));
                 Ok(())
@@ -1123,7 +1104,7 @@ impl LuaHost {
         }
 
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, (name, value): (String, LuaValue)| {
                 let value_str = match &value {
                     LuaValue::Boolean(b) => b.to_string(),
@@ -1132,21 +1113,19 @@ impl LuaHost {
                     LuaValue::String(s) => s.to_str()?.to_string(),
                     _ => return Ok(()),
                 };
-                sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                    PluginMutation::SetOption {
-                        name,
-                        value: value_str,
-                    },
-                );
+                sh.borrow_mut().mutations.push(PluginMutation::SetOption {
+                    name,
+                    value: value_str,
+                });
                 Ok(())
             })?;
             api.set("set_option", f)?;
         }
 
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |lua, name: String| {
-                let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                let s = sh.borrow_mut();
                 let resolver = crate::command_line::settings::SettingsResolver::new(
                     crate::document::definitions::create_document_settings_registry(),
                     crate::command_line::settings::create_settings_registry(),
@@ -1161,9 +1140,9 @@ impl LuaHost {
 
         // rift.get_filetype() -> string or nil
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |lua, ()| {
-                let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                let s = sh.borrow_mut();
                 match &s.filetype {
                     Some(ft) => Ok(LuaValue::String(lua.create_string(ft)?)),
                     None => Ok(LuaValue::Nil),
@@ -1174,9 +1153,9 @@ impl LuaHost {
 
         // rift.get_filepath() -> string or nil
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |lua, ()| {
-                let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                let s = sh.borrow_mut();
                 match &s.file_path {
                     Some(p) => Ok(LuaValue::String(lua.create_string(p)?)),
                     None => Ok(LuaValue::Nil),
@@ -1187,9 +1166,9 @@ impl LuaHost {
 
         // rift.get_buf_list() -> sequence of { id, name, is_dirty, is_current, kind, path, line_count, is_read_only }
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |lua, ()| {
-                let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                let s = sh.borrow_mut();
                 let result = lua.create_table()?;
                 for (i, b) in s.buf_list.iter().enumerate() {
                     let entry = lua.create_table()?;
@@ -1212,25 +1191,20 @@ impl LuaHost {
 
         // rift.buf_kind() -> "file" | "terminal" | "directory" | "undotree" | "messages" | ,
         {
-            let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .buf_kind
-                    .clone())
-            })?;
+            let sh = Rc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.borrow_mut().buf_kind.clone()))?;
             api.set("buf_kind", f)?;
         }
 
         // rift.switch_buf(buf_id) - switch the active buffer to the given ID
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, id: u64| {
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                sh.borrow_mut()
                     .mutations
-                    .push(PluginMutation::SwitchToBuffer(crate::document::DocumentId::new(id)));
+                    .push(PluginMutation::SwitchToBuffer(
+                        crate::document::DocumentId::new(id),
+                    ));
                 Ok(())
             })?;
             api.set("switch_buf", f)?;
@@ -1238,14 +1212,12 @@ impl LuaHost {
 
         // rift.open_file(path [, force]) - open a file, optionally discarding unsaved changes
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, (path, force): (String, Option<bool>)| {
-                sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                    PluginMutation::OpenFile {
-                        path,
-                        force: force.unwrap_or(false),
-                    },
-                );
+                sh.borrow_mut().mutations.push(PluginMutation::OpenFile {
+                    path,
+                    force: force.unwrap_or(false),
+                });
                 Ok(())
             })?;
             api.set("open_file", f)?;
@@ -1253,13 +1225,11 @@ impl LuaHost {
 
         // rift.close_buf([force]) - close the current buffer, optionally discarding changes
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, force: Option<bool>| {
-                sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                    PluginMutation::CloseBuffer {
-                        force: force.unwrap_or(false),
-                    },
-                );
+                sh.borrow_mut().mutations.push(PluginMutation::CloseBuffer {
+                    force: force.unwrap_or(false),
+                });
                 Ok(())
             })?;
             api.set("close_buf", f)?;
@@ -1267,14 +1237,13 @@ impl LuaHost {
 
         // rift.create_scratch_buf(name, lines) - create an in-memory buffer
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, (name, lines): (String, LuaTable)| {
                 let mut v = Vec::new();
                 for s in lines.sequence_values::<String>() {
                     v.push(s?);
                 }
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::CreateScratchBuf { name, lines: v });
                 Ok(())
@@ -1284,13 +1253,13 @@ impl LuaHost {
 
         // rift.reload_buf([force]) - reload the active buffer's content from disk, discarding in-memory edits if `force`.
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, force: Option<bool>| {
-                sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                    PluginMutation::ReloadBuffer {
+                sh.borrow_mut()
+                    .mutations
+                    .push(PluginMutation::ReloadBuffer {
                         force: force.unwrap_or(false),
-                    },
-                );
+                    });
                 Ok(())
             })?;
             api.set("reload_buf", f)?;
@@ -1299,9 +1268,9 @@ impl LuaHost {
         // rift.get_commands() -> sequence of { name, description }
         // Returns all registered plugin commands (both Rust and Lua).
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |lua, ()| {
-                let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                let s = sh.borrow_mut();
                 let result = lua.create_table()?;
                 for (i, (name, desc)) in s.commands.iter().enumerate() {
                     let entry = lua.create_table()?;
@@ -1316,12 +1285,9 @@ impl LuaHost {
 
         // rift.save() - request a save of the active buffer to disk
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .mutations
-                    .push(PluginMutation::SaveBuffer);
+                sh.borrow_mut().mutations.push(PluginMutation::SaveBuffer);
                 Ok(())
             })?;
             api.set("save", f)?;
@@ -1329,72 +1295,58 @@ impl LuaHost {
 
         // rift.get_tab_width() -> integer
         {
-            let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap_or_else(|e| e.into_inner()).tab_width as i64)
-            })?;
+            let sh = Rc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.borrow_mut().tab_width as i64))?;
             api.set("get_tab_width", f)?;
         }
 
         // rift.get_expand_tabs() -> boolean
         {
-            let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap_or_else(|e| e.into_inner()).expand_tabs)
-            })?;
+            let sh = Rc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.borrow_mut().expand_tabs))?;
             api.set("get_expand_tabs", f)?;
         }
 
         // rift.get_mode() -> "normal" | "insert" | "command" | "search"
         {
-            let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap_or_else(|e| e.into_inner()).mode.clone())
-            })?;
+            let sh = Rc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.borrow_mut().mode.clone()))?;
             api.set("get_mode", f)?;
         }
 
         // rift.get_line_count() -> integer
         {
-            let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap_or_else(|e| e.into_inner()).line_count() as i64)
-            })?;
+            let sh = Rc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.borrow_mut().line_count() as i64))?;
             api.set("get_line_count", f)?;
         }
 
         // rift.can_undo() -> bool
         {
-            let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap_or_else(|e| e.into_inner()).can_undo)
-            })?;
+            let sh = Rc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.borrow_mut().can_undo))?;
             api.set("can_undo", f)?;
         }
 
         // rift.can_redo() -> bool
         {
-            let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap_or_else(|e| e.into_inner()).can_redo)
-            })?;
+            let sh = Rc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.borrow_mut().can_redo))?;
             api.set("can_redo", f)?;
         }
 
         // rift.is_dirty() -> bool
         {
-            let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh.lock().unwrap_or_else(|e| e.into_inner()).is_dirty)
-            })?;
+            let sh = Rc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.borrow_mut().is_dirty))?;
             api.set("is_dirty", f)?;
         }
 
         // rift.get_scroll() -> top_line, left_col
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
-                let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                let s = sh.borrow_mut();
                 Ok((s.scroll.0 as i64, s.scroll.1 as i64))
             })?;
             api.set("get_scroll", f)?;
@@ -1402,10 +1354,9 @@ impl LuaHost {
 
         // rift.set_scroll(top_line, left_col)
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, (top, left): (usize, usize)| {
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::SetScroll(top, left));
                 Ok(())
@@ -1415,23 +1366,16 @@ impl LuaHost {
 
         // rift.get_line_ending() -> "lf" | "crlf"
         {
-            let sh = Arc::clone(&shared);
-            let f = lua.create_function(move |_, ()| {
-                Ok(sh
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .line_ending
-                    .clone())
-            })?;
+            let sh = Rc::clone(&shared);
+            let f = lua.create_function(move |_, ()| Ok(sh.borrow_mut().line_ending.clone()))?;
             api.set("get_line_ending", f)?;
         }
 
         // rift.set_line_ending(type) - "lf" | "crlf"
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, ending: String| {
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::SetLineEnding(ending));
                 Ok(())
@@ -1442,14 +1386,14 @@ impl LuaHost {
         // rift.search(needle [, opts]) -> array of {row, col_start, col_end}
         // Literal search, 1-indexed rows/0-indexed cols; opts.whole_word restricts to word boundaries.
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f =
                 lua.create_function(move |lua, (needle, opts): (String, Option<LuaTable>)| {
                     let whole_word = opts
                         .as_ref()
                         .and_then(|t| t.get::<bool>("whole_word").ok())
                         .unwrap_or(false);
-                    let lines = sh.lock().unwrap_or_else(|e| e.into_inner()).lines();
+                    let lines = sh.borrow_mut().lines();
                     let results = lua.create_table()?;
                     if needle.is_empty() {
                         return Ok(results);
@@ -1487,9 +1431,9 @@ impl LuaHost {
 
         // rift.get_window_size() -> rows, cols
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, ()| {
-                let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                let s = sh.borrow_mut();
                 Ok((s.window_size.0 as i64, s.window_size.1 as i64))
             })?;
             api.set("get_window_size", f)?;
@@ -1497,10 +1441,9 @@ impl LuaHost {
 
         // rift.exec_action(action_string) - fire a built-in editor action by name
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, action: String| {
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::ExecAction(action));
                 Ok(())
@@ -1511,21 +1454,15 @@ impl LuaHost {
         // rift.map(mode, keys, action) - register a key binding.
         // mode: "n"|"i"|"c"|"s"|"g"; keys: vim notation e.g. "<C-p>"; action: action string or plugin action id.
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f =
                 lua.create_function(move |lua, (mode, keys, action): (String, String, String)| {
-                    let plugin_name = sh
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .current_plugin
-                        .clone();
-                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                        PluginMutation::MapKey {
-                            mode: mode.clone(),
-                            keys: keys.clone(),
-                            action,
-                        },
-                    );
+                    let plugin_name = sh.borrow_mut().current_plugin.clone();
+                    sh.borrow_mut().mutations.push(PluginMutation::MapKey {
+                        mode: mode.clone(),
+                        keys: keys.clone(),
+                        action,
+                    });
                     if let Some(ref name) = plugin_name {
                         let plugin_keymaps: LuaTable = lua.globals().get("_rift_plugin_keymaps")?;
                         let list: Option<LuaTable> = plugin_keymaps.get(name.as_str())?;
@@ -1549,10 +1486,9 @@ impl LuaHost {
 
         // rift.center_on_line(n) - move cursor to line n (1-indexed) and center it in viewport
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, row: usize| {
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::CenterOnLine(row));
                 Ok(())
@@ -1562,10 +1498,9 @@ impl LuaHost {
 
         // rift.unmap(mode, keys) - remove a key binding
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, (mode, keys): (String, String)| {
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::UnmapKey { mode, keys });
                 Ok(())
@@ -1580,7 +1515,7 @@ impl LuaHost {
             // rift.windows.move(direction) - move focused window in a direction
             // direction: "left" | "right" | "up" | "down"
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, dir: String| {
                     use crate::split::navigation::Direction;
                     let direction = match dir.as_str() {
@@ -1594,8 +1529,7 @@ impl LuaHost {
                             )))
                         }
                     };
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::MoveWindow { direction });
                     Ok(())
@@ -1605,12 +1539,9 @@ impl LuaHost {
 
             // rift.windows.exchange() - swap focused window contents with previously focused window
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .mutations
-                        .push(PluginMutation::SwapWindows);
+                    sh.borrow_mut().mutations.push(PluginMutation::SwapWindows);
                     Ok(())
                 })?;
                 windows.set("exchange", f)?;
@@ -1618,10 +1549,9 @@ impl LuaHost {
 
             // rift.windows.focus_prev() - focus the previously focused window
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::FocusPreviousWindow);
                     Ok(())
@@ -1631,9 +1561,9 @@ impl LuaHost {
 
             // rift.windows.list() -> array of { id, buf, row, col, rows, cols }
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |lua, ()| {
-                    let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                    let s = sh.borrow_mut();
                     let t = lua.create_table()?;
                     for (i, w) in s.win_list.iter().enumerate() {
                         let entry = lua.create_table()?;
@@ -1652,22 +1582,17 @@ impl LuaHost {
 
             // rift.windows.current() -> integer window id of the focused window
             {
-                let sh = Arc::clone(&shared);
-                let f = lua.create_function(move |_, ()| {
-                    Ok(sh.lock().unwrap_or_else(|e| e.into_inner()).focused_win_id as i64)
-                })?;
+                let sh = Rc::clone(&shared);
+                let f =
+                    lua.create_function(move |_, ()| Ok(sh.borrow_mut().focused_win_id as i64))?;
                 windows.set("current", f)?;
             }
 
             // rift.windows.previous() -> integer window id of the previously focused window, or nil
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
-                    Ok(sh
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .previous_win_id
-                        .map(|id| id as i64))
+                    Ok(sh.borrow_mut().previous_win_id.map(|id| id as i64))
                 })?;
                 windows.set("previous", f)?;
             }
@@ -1675,7 +1600,7 @@ impl LuaHost {
             // rift.windows.navigate(direction) - move focus to adjacent window
             // direction: "left" | "right" | "up" | "down"
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, dir: String| {
                     let cmd = match dir.as_str() {
                         "left" => ":split :l",
@@ -1688,8 +1613,7 @@ impl LuaHost {
                             )))
                         }
                     };
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::ExecAction(cmd.to_string()));
                     Ok(())
@@ -1702,10 +1626,9 @@ impl LuaHost {
 
         // rift.register_filetype(ext, lang_name) - map a file extension to a language name
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, (ext, lang_name): (String, String)| {
-                sh.lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                sh.borrow_mut()
                     .mutations
                     .push(PluginMutation::RegisterFiletype { ext, lang_name });
                 Ok(())
@@ -1715,14 +1638,14 @@ impl LuaHost {
 
         // rift.register_language_query(lang_name, query_src) - override highlights query
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, (lang_name, query_src): (String, String)| {
-                sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                    PluginMutation::RegisterLanguageQuery {
+                sh.borrow_mut()
+                    .mutations
+                    .push(PluginMutation::RegisterLanguageQuery {
                         lang_name,
                         query_src,
-                    },
-                );
+                    });
                 Ok(())
             })?;
             api.set("register_language_query", f)?;
@@ -1730,30 +1653,30 @@ impl LuaHost {
 
         // rift.register_injections_query(lang_name, query_src) - set injections query
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(move |_, (lang_name, query_src): (String, String)| {
-                sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                    PluginMutation::RegisterInjectionsQuery {
+                sh.borrow_mut()
+                    .mutations
+                    .push(PluginMutation::RegisterInjectionsQuery {
                         lang_name,
                         query_src,
-                    },
-                );
+                    });
                 Ok(())
             })?;
             api.set("register_injections_query", f)?;
         }
 
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let f = lua.create_function(
                 move |_, (lang_name, so_path, fn_name): (String, String, String)| {
-                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                        PluginMutation::RegisterGrammar {
+                    sh.borrow_mut()
+                        .mutations
+                        .push(PluginMutation::RegisterGrammar {
                             lang_name,
                             so_path,
                             fn_name,
-                        },
-                    );
+                        });
                     Ok(())
                 },
             )?;
@@ -1767,7 +1690,7 @@ impl LuaHost {
 
             // rift.lsp.register({ language, command, args?, extensions?, root_markers?, capabilities? })
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, tbl: LuaTable| {
                     let language: String = tbl.get("language")?;
                     let command: String = tbl.get("command")?;
@@ -1808,8 +1731,9 @@ impl LuaHost {
                         .get::<Option<LuaValue>>("initialization_options")?
                         .and_then(|v| lua_to_json(v).ok());
                     let keep_alive = tbl.get::<Option<bool>>("keep_alive")?.unwrap_or(true);
-                    sh.lock().unwrap_or_else(|e| e.into_inner()).mutations.push(
-                        PluginMutation::LspRegisterServer {
+                    sh.borrow_mut()
+                        .mutations
+                        .push(PluginMutation::LspRegisterServer {
                             language,
                             config: crate::lsp::config::LspServerConfig {
                                 command,
@@ -1820,8 +1744,7 @@ impl LuaHost {
                                 initialization_options,
                                 keep_alive,
                             },
-                        },
-                    );
+                        });
                     Ok(())
                 })?;
                 lsp.set("register", f)?;
@@ -1829,10 +1752,9 @@ impl LuaHost {
 
             // rift.lsp.goto_definition()
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::LspGotoDefinition);
                     Ok(())
@@ -1842,10 +1764,9 @@ impl LuaHost {
 
             // rift.lsp.references()
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::LspReferences);
                     Ok(())
@@ -1855,12 +1776,9 @@ impl LuaHost {
 
             // rift.lsp.hover()
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .mutations
-                        .push(PluginMutation::LspHover);
+                    sh.borrow_mut().mutations.push(PluginMutation::LspHover);
                     Ok(())
                 })?;
                 lsp.set("hover", f)?;
@@ -1868,10 +1786,9 @@ impl LuaHost {
 
             // rift.lsp.rename(new_name)
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, new_name: String| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::LspRename { new_name });
                     Ok(())
@@ -1881,10 +1798,9 @@ impl LuaHost {
 
             // rift.lsp.rename_dialog()
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::LspRenameDialog);
                     Ok(())
@@ -1894,10 +1810,9 @@ impl LuaHost {
 
             // rift.lsp.diagnostics_panel()
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::LspDiagnosticsPanel);
                     Ok(())
@@ -1907,12 +1822,9 @@ impl LuaHost {
 
             // rift.lsp.format()
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .mutations
-                        .push(PluginMutation::LspFormat);
+                    sh.borrow_mut().mutations.push(PluginMutation::LspFormat);
                     Ok(())
                 })?;
                 lsp.set("format", f)?;
@@ -1920,10 +1832,9 @@ impl LuaHost {
 
             // rift.lsp.code_action()
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::LspCodeAction);
                     Ok(())
@@ -1933,10 +1844,9 @@ impl LuaHost {
 
             // rift.lsp.diagnostic_next()
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::LspDiagnosticNext);
                     Ok(())
@@ -1946,10 +1856,9 @@ impl LuaHost {
 
             // rift.lsp.diagnostic_prev()
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |_, ()| {
-                    sh.lock()
-                        .unwrap_or_else(|e| e.into_inner())
+                    sh.borrow_mut()
                         .mutations
                         .push(PluginMutation::LspDiagnosticPrev);
                     Ok(())
@@ -1960,9 +1869,9 @@ impl LuaHost {
             // rift.lsp.get_diagnostics([uri]) -> array of {line, col, severity, message}
             // uri defaults to the active file; severity: 1=error, 2=warning, 3=info, 4=hint
             {
-                let sh = Arc::clone(&shared);
+                let sh = Rc::clone(&shared);
                 let f = lua.create_function(move |lua, uri: Option<String>| {
-                    let s = sh.lock().unwrap_or_else(|e| e.into_inner());
+                    let s = sh.borrow_mut();
                     let result = lua.create_table()?;
                     let lookup_key = if let Some(u) = uri {
                         Some(u)
@@ -2031,9 +1940,9 @@ impl LuaHost {
         }
 
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let register = lua.create_function(move |lua, (name, opts): (String, LuaTable)| {
-                let mut s = sh.lock().unwrap_or_else(|error| error.into_inner());
+                let mut s = sh.borrow_mut();
                 if !s.is_active {
                     return Err(LuaError::RuntimeError(
                         "cannot register buffer kind: plugin generation is retired".to_string(),
@@ -2111,7 +2020,7 @@ impl LuaHost {
             api.set("register_buffer_kind", register)?;
         }
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let create =
                 lua.create_function(move |_, (kind, opts): (String, Option<LuaTable>)| {
                     let opts = opts;
@@ -2137,7 +2046,7 @@ impl LuaHost {
                             vars.push((key, value_from_lua(&value)?));
                         }
                     }
-                    let mut s = sh.lock().unwrap_or_else(|error| error.into_inner());
+                    let mut s = sh.borrow_mut();
                     if !s.is_active {
                         return Err(LuaError::RuntimeError(
                             "cannot create buffer: plugin generation is retired".to_string(),
@@ -2155,10 +2064,10 @@ impl LuaHost {
         }
 
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let map = lua.create_function(
                 move |_, (kind, mode, keys, action): (String, String, String, String)| {
-                    let mut s = sh.lock().unwrap_or_else(|error| error.into_inner());
+                    let mut s = sh.borrow_mut();
                     if !s.is_active {
                         return Err(LuaError::RuntimeError(
                             "cannot map buffer kind: plugin generation is retired".to_string(),
@@ -2177,10 +2086,10 @@ impl LuaHost {
         }
 
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let unmap =
                 lua.create_function(move |_, (kind, mode, keys): (String, String, String)| {
-                    let mut s = sh.lock().unwrap_or_else(|error| error.into_inner());
+                    let mut s = sh.borrow_mut();
                     if !s.is_active {
                         return Err(LuaError::RuntimeError(
                             "cannot unmap buffer kind: plugin generation is retired".to_string(),
@@ -2193,10 +2102,10 @@ impl LuaHost {
             api.set("unmap_buffer_kind", unmap)?;
         }
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let get_var =
                 lua.create_function(move |lua, (buf_id, key): (Option<u64>, String)| {
-                    let s = sh.lock().unwrap_or_else(|error| error.into_inner());
+                    let s = sh.borrow_mut();
                     if !s.is_active {
                         return Ok(LuaValue::Nil);
                     }
@@ -2216,10 +2125,10 @@ impl LuaHost {
         }
 
         {
-            let sh = Arc::clone(&shared);
+            let sh = Rc::clone(&shared);
             let set_var = lua.create_function(
                 move |_, (buf_id, key, value): (Option<u64>, String, LuaValue)| {
-                    let mut s = sh.lock().unwrap_or_else(|error| error.into_inner());
+                    let mut s = sh.borrow_mut();
                     if !s.is_active {
                         return Err(LuaError::RuntimeError(
                             "cannot set buffer var: plugin generation is retired".to_string(),
@@ -2563,6 +2472,7 @@ end
             lua,
             shared,
             hook_deadline,
+            shell_result_rx,
             generation,
         })
     }
@@ -2574,14 +2484,14 @@ end
 
     /// Mark this Lua host as retiring, rejecting new mutations.
     pub fn mark_retiring(&self) {
-        let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+        let mut s = self.shared.borrow_mut();
         s.is_active = false;
     }
 
     /// Refresh the annotation query snapshot and the id the next `add{}` claims.
     /// Call alongside `update_state` before dispatching.
     pub fn set_annotations(&self, views: Vec<AnnotationView>, next_id: u64) {
-        let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+        let mut s = self.shared.borrow_mut();
         s.annotations = Arc::new(views);
         s.next_annotation_id = next_id;
     }
@@ -2619,7 +2529,7 @@ end
         doc_options: crate::document::definitions::DocumentOptions,
         user_settings: crate::state::UserSettings,
     ) {
-        let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+        let mut s = self.shared.borrow_mut();
         s.buf_id = buf_id;
         s.buf_kind = buf_kind;
         match source {
@@ -2658,13 +2568,9 @@ end
     /// budget. Saves/restores the prior deadline for reentrant dispatch.
     fn call_budgeted<T>(&self, f: impl FnOnce() -> LuaResult<T>) -> LuaResult<T> {
         let deadline = std::time::Instant::now() + Self::AUTO_DISPATCH_BUDGET;
-        let prev = self
-            .hook_deadline
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .replace(deadline);
+        let prev = self.hook_deadline.borrow_mut().replace(deadline);
         let result = f();
-        *self.hook_deadline.lock().unwrap_or_else(|e| e.into_inner()) = prev;
+        *self.hook_deadline.borrow_mut() = prev;
         result
     }
 
@@ -2712,16 +2618,13 @@ end
                     // Tag current_slot for this handler's mutations, then restore the
                     // prior value so reentrant dispatch (e.g. rift.emit) doesn't corrupt it.
                     let prev_slot = {
-                        let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut s = self.shared.borrow_mut();
                         let prev = s.current_slot;
                         s.current_slot = slot_id;
                         prev
                     };
                     let call_result = self.call_budgeted(|| f.call::<()>(ev_table.clone()));
-                    self.shared
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .current_slot = prev_slot;
+                    self.shared.borrow_mut().current_slot = prev_slot;
                     if let Err(e) = call_result {
                         errors.push(format!("[lua:{}] {}", event.name(), e));
                     }
@@ -2741,7 +2644,7 @@ end
         action: Option<&str>,
     ) -> bool {
         {
-            let s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+            let s = self.shared.borrow_mut();
             if !s.is_active {
                 return false;
             }
@@ -2775,8 +2678,7 @@ end
             Ok(()) => true,
             Err(error) => {
                 self.shared
-                    .lock()
-                    .unwrap_or_else(|poison| poison.into_inner())
+                    .borrow_mut()
                     .mutations
                     .push(PluginMutation::Notify {
                         message: format!("[lua:{kind}.{field}] {error}"),
@@ -2890,8 +2792,7 @@ end
         }
         if let Err(e) = handler.call::<()>(args_table) {
             self.shared
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .borrow_mut()
                 .mutations
                 .push(PluginMutation::Notify {
                     message: format!("[lua:{}] {}", name, e),
@@ -2937,8 +2838,7 @@ end
         };
         if let Err(e) = handler.call::<()>(()) {
             self.shared
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .borrow_mut()
                 .mutations
                 .push(PluginMutation::Notify {
                     message: format!("[lua:{}] {}", id, e),
@@ -2982,10 +2882,7 @@ end
             Err(e) => return Some(format!("lua: failed to read {}: {}", path.display(), e)),
         };
         let name = path.to_string_lossy().replace('\\', "/");
-        self.shared
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .current_plugin = Some(name.clone());
+        self.shared.borrow_mut().current_plugin = Some(name.clone());
         let _ = self
             .lua
             .globals()
@@ -2997,10 +2894,7 @@ end
             .exec()
             .err()
             .map(|e| format!("lua: {}: {}", path.display(), e));
-        self.shared
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .current_plugin = None;
+        self.shared.borrow_mut().current_plugin = None;
         let _ = self
             .lua
             .globals()
@@ -3012,7 +2906,10 @@ end
     /// events as Lua UserEvents first, so their handlers can queue further mutations.
     pub fn drain_mutations(&self) -> Vec<PluginMutation> {
         let pending = {
-            let mut s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+            let mut s = self.shared.borrow_mut();
+            while let Ok(result) = self.shell_result_rx.try_recv() {
+                s.pending_shell_events.push(result);
+            }
             std::mem::take(&mut s.pending_shell_events)
         };
         for (tag, success, output) in pending {
@@ -3034,8 +2931,7 @@ end
                         let f: LuaFunction = entry.get("fn")?;
                         if let Err(e) = self.call_budgeted(|| f.call::<()>(ev.clone())) {
                             self.shared
-                                .lock()
-                                .unwrap_or_else(|e| e.into_inner())
+                                .borrow_mut()
                                 .mutations
                                 .push(PluginMutation::Notify {
                                     message: format!("[lua:ShellDone] {}", e),
@@ -3047,13 +2943,7 @@ end
                 Ok(())
             })();
         }
-        std::mem::take(
-            &mut self
-                .shared
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .mutations,
-        )
+        std::mem::take(&mut self.shared.borrow_mut().mutations)
     }
 
     /// Execute a string of Lua code. Returns an error string on failure.
