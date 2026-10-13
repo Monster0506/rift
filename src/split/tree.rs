@@ -227,7 +227,10 @@ impl SplitTree {
         let promoted_focus = Self::sibling_first_leaf(&self.root, id);
 
         self.windows.remove(&id);
-        self.root = Self::remove_leaf(std::mem::replace(&mut self.root, SplitNode::Leaf(WindowId::new(0))), id);
+        self.root = Self::remove_leaf(
+            std::mem::replace(&mut self.root, SplitNode::Leaf(WindowId::new(0))),
+            id,
+        );
 
         if self.focused_window == id {
             self.focused_window =

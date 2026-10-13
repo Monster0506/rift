@@ -8,7 +8,10 @@ use super::tree::{SplitDirection, SplitTree};
 fn single_window_tree() {
     let tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     assert_eq!(tree.window_count(), 1);
-    assert_eq!(tree.focused_window().document_id, crate::document::DocumentId::new(1));
+    assert_eq!(
+        tree.focused_window().document_id,
+        crate::document::DocumentId::new(1)
+    );
     assert_eq!(tree.focused_window().cursor_position, 0);
 }
 
@@ -17,7 +20,13 @@ fn split_horizontal_creates_two_windows() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let focused = tree.focused_window_id();
     let new_id = tree
-        .split(SplitDirection::Horizontal, focused, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            focused,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
 
     assert_eq!(tree.window_count(), 2);
@@ -30,11 +39,20 @@ fn split_vertical_creates_two_windows() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let focused = tree.focused_window_id();
     let new_id = tree
-        .split(SplitDirection::Vertical, focused, crate::document::DocumentId::new(2), 24, 40)
+        .split(
+            SplitDirection::Vertical,
+            focused,
+            crate::document::DocumentId::new(2),
+            24,
+            40,
+        )
         .unwrap();
 
     assert_eq!(tree.window_count(), 2);
-    assert_eq!(tree.get_window(new_id).unwrap().document_id, crate::document::DocumentId::new(2));
+    assert_eq!(
+        tree.get_window(new_id).unwrap().document_id,
+        crate::document::DocumentId::new(2)
+    );
 }
 
 #[test]
@@ -43,7 +61,13 @@ fn split_invalid_target_does_not_leak_window() {
     let bogus_id = crate::split::window::WindowId::new(999);
 
     assert_eq!(
-        tree.split(SplitDirection::Horizontal, bogus_id, crate::document::DocumentId::new(1), 12, 80),
+        tree.split(
+            SplitDirection::Horizontal,
+            bogus_id,
+            crate::document::DocumentId::new(1),
+            12,
+            80
+        ),
         None
     );
 
@@ -56,9 +80,23 @@ fn split_three_windows() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
-    let w3 = tree.split(SplitDirection::Vertical, w2, crate::document::DocumentId::new(2), 12, 40).unwrap();
+    let w3 = tree
+        .split(
+            SplitDirection::Vertical,
+            w2,
+            crate::document::DocumentId::new(2),
+            12,
+            40,
+        )
+        .unwrap();
 
     assert_eq!(tree.window_count(), 3);
     assert!(tree.get_window(w1).is_some());
@@ -71,7 +109,13 @@ fn close_window_reduces_count() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
 
     assert_eq!(tree.window_count(), 2);
@@ -92,7 +136,13 @@ fn close_focused_window_moves_focus() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let _w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
 
     tree.set_focus(w1);
@@ -106,10 +156,22 @@ fn close_middle_window_in_three() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
     let w3 = tree
-        .split(SplitDirection::Horizontal, w2, crate::document::DocumentId::new(1), 6, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w2,
+            crate::document::DocumentId::new(1),
+            6,
+            80,
+        )
         .unwrap();
 
     assert_eq!(tree.window_count(), 3);
@@ -126,25 +188,67 @@ fn close_focused_window_focuses_sibling_not_arbitrary_window() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(2), 3, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(2),
+            3,
+            80,
+        )
         .unwrap();
     let w3 = tree
-        .split(SplitDirection::Horizontal, w2, crate::document::DocumentId::new(3), 3, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w2,
+            crate::document::DocumentId::new(3),
+            3,
+            80,
+        )
         .unwrap();
     let w4 = tree
-        .split(SplitDirection::Horizontal, w3, crate::document::DocumentId::new(4), 3, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w3,
+            crate::document::DocumentId::new(4),
+            3,
+            80,
+        )
         .unwrap();
     let w5 = tree
-        .split(SplitDirection::Horizontal, w4, crate::document::DocumentId::new(5), 3, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w4,
+            crate::document::DocumentId::new(5),
+            3,
+            80,
+        )
         .unwrap();
     let w6 = tree
-        .split(SplitDirection::Horizontal, w5, crate::document::DocumentId::new(6), 3, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w5,
+            crate::document::DocumentId::new(6),
+            3,
+            80,
+        )
         .unwrap();
     let w7 = tree
-        .split(SplitDirection::Horizontal, w6, crate::document::DocumentId::new(7), 3, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w6,
+            crate::document::DocumentId::new(7),
+            3,
+            80,
+        )
         .unwrap();
     let _w8 = tree
-        .split(SplitDirection::Horizontal, w7, crate::document::DocumentId::new(8), 3, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w7,
+            crate::document::DocumentId::new(8),
+            3,
+            80,
+        )
         .unwrap();
 
     tree.set_focus(w1);
@@ -163,7 +267,13 @@ fn set_focus_works() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
 
     assert_eq!(tree.focused_window_id(), w1);
@@ -184,15 +294,37 @@ fn windows_for_document() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
-    let _w3 = tree.split(SplitDirection::Vertical, w2, crate::document::DocumentId::new(2), 12, 40).unwrap();
+    let _w3 = tree
+        .split(
+            SplitDirection::Vertical,
+            w2,
+            crate::document::DocumentId::new(2),
+            12,
+            40,
+        )
+        .unwrap();
 
     let mut doc1_windows = tree.windows_for_document(crate::document::DocumentId::new(1));
     doc1_windows.sort();
     assert_eq!(doc1_windows.len(), 2);
-    assert_eq!(tree.windows_for_document(crate::document::DocumentId::new(2)).len(), 1);
-    assert_eq!(tree.windows_for_document(crate::document::DocumentId::new(999)).len(), 0);
+    assert_eq!(
+        tree.windows_for_document(crate::document::DocumentId::new(2))
+            .len(),
+        1
+    );
+    assert_eq!(
+        tree.windows_for_document(crate::document::DocumentId::new(999))
+            .len(),
+        0
+    );
 }
 
 #[test]
@@ -200,9 +332,23 @@ fn all_window_ids_returns_all() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
-    let w3 = tree.split(SplitDirection::Vertical, w2, crate::document::DocumentId::new(2), 12, 40).unwrap();
+    let w3 = tree
+        .split(
+            SplitDirection::Vertical,
+            w2,
+            crate::document::DocumentId::new(2),
+            12,
+            40,
+        )
+        .unwrap();
 
     let mut ids = tree.all_window_ids();
     ids.sort();
@@ -219,7 +365,13 @@ fn new_split_copies_cursor_for_same_doc() {
     tree.get_window_mut(w1).unwrap().cursor_position = 42;
 
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
     assert_eq!(tree.get_window(w2).unwrap().cursor_position, 42);
 }
@@ -232,7 +384,13 @@ fn new_split_zero_cursor_for_different_doc() {
     tree.get_window_mut(w1).unwrap().cursor_position = 42;
 
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(2), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(2),
+            12,
+            80,
+        )
         .unwrap();
     assert_eq!(tree.get_window(w2).unwrap().cursor_position, 0);
 }
@@ -242,7 +400,13 @@ fn independent_cursor_positions() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
 
     tree.get_window_mut(w1).unwrap().cursor_position = 10;
@@ -276,7 +440,13 @@ fn two_windows_hsplit_50() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
 
     let layouts = tree.compute_layout(25, 80);
@@ -295,7 +465,15 @@ fn two_windows_hsplit_50() {
 fn two_windows_vsplit_50() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
-    let w2 = tree.split(SplitDirection::Vertical, w1, crate::document::DocumentId::new(2), 24, 40).unwrap();
+    let w2 = tree
+        .split(
+            SplitDirection::Vertical,
+            w1,
+            crate::document::DocumentId::new(2),
+            24,
+            40,
+        )
+        .unwrap();
 
     let layouts = tree.compute_layout(24, 81);
     let l1 = layouts.iter().find(|l| l.window_id == w1).unwrap();
@@ -313,9 +491,23 @@ fn two_windows_vsplit_50() {
 fn three_windows_nested_layout() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
-    let w2 = tree.split(SplitDirection::Vertical, w1, crate::document::DocumentId::new(2), 24, 40).unwrap();
+    let w2 = tree
+        .split(
+            SplitDirection::Vertical,
+            w1,
+            crate::document::DocumentId::new(2),
+            24,
+            40,
+        )
+        .unwrap();
     let w3 = tree
-        .split(SplitDirection::Horizontal, w2, crate::document::DocumentId::new(3), 12, 40)
+        .split(
+            SplitDirection::Horizontal,
+            w2,
+            crate::document::DocumentId::new(3),
+            12,
+            40,
+        )
         .unwrap();
 
     let layouts = tree.compute_layout(24, 81);
@@ -341,7 +533,13 @@ fn hsplit_30_70_ratio() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
     let resize_layouts = tree.compute_layout(21, 80);
     tree.resize_focused(SplitDirection::Horizontal, -4.0, &resize_layouts);
@@ -358,7 +556,15 @@ fn hsplit_30_70_ratio() {
 fn vsplit_60_40_ratio() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
-    let w2 = tree.split(SplitDirection::Vertical, w1, crate::document::DocumentId::new(2), 24, 40).unwrap();
+    let w2 = tree
+        .split(
+            SplitDirection::Vertical,
+            w1,
+            crate::document::DocumentId::new(2),
+            24,
+            40,
+        )
+        .unwrap();
     let resize_layouts = tree.compute_layout(24, 81);
     tree.resize_focused(SplitDirection::Vertical, 8.0, &resize_layouts);
 
@@ -375,7 +581,13 @@ fn layout_enforces_minimum_rows() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
     let resize_layouts = tree.compute_layout(9, 80);
     tree.resize_focused(SplitDirection::Horizontal, 10.0, &resize_layouts);
@@ -392,7 +604,15 @@ fn layout_enforces_minimum_rows() {
 fn layout_enforces_minimum_cols() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
-    let w2 = tree.split(SplitDirection::Vertical, w1, crate::document::DocumentId::new(2), 24, 40).unwrap();
+    let w2 = tree
+        .split(
+            SplitDirection::Vertical,
+            w1,
+            crate::document::DocumentId::new(2),
+            24,
+            40,
+        )
+        .unwrap();
     let resize_layouts = tree.compute_layout(24, 25);
     tree.resize_focused(SplitDirection::Vertical, 10.0, &resize_layouts);
 
@@ -411,7 +631,13 @@ fn layout_no_degenerate_pane_when_available_below_two_min() {
     let mut htree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let hw1 = htree.focused_window_id();
     let hw2 = htree
-        .split(SplitDirection::Horizontal, hw1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            hw1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
 
     let total_rows = 2 * MIN_WINDOW_ROWS - 1;
@@ -426,7 +652,13 @@ fn layout_no_degenerate_pane_when_available_below_two_min() {
     let mut vtree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let vw1 = vtree.focused_window_id();
     let vw2 = vtree
-        .split(SplitDirection::Vertical, vw1, crate::document::DocumentId::new(2), 24, 40)
+        .split(
+            SplitDirection::Vertical,
+            vw1,
+            crate::document::DocumentId::new(2),
+            24,
+            40,
+        )
         .unwrap();
 
     let total_cols = 2 * MIN_WINDOW_COLS - 1;
@@ -444,7 +676,13 @@ fn layout_rows_cols_sum_to_total() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
 
     for total_rows in [7, 11, 25, 50] {
@@ -462,7 +700,13 @@ fn navigate_hsplit_up_down() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
 
     let layouts = tree.compute_layout(25, 80);
@@ -481,7 +725,15 @@ fn navigate_hsplit_up_down() {
 fn navigate_vsplit_left_right() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
-    let w2 = tree.split(SplitDirection::Vertical, w1, crate::document::DocumentId::new(2), 24, 40).unwrap();
+    let w2 = tree
+        .split(
+            SplitDirection::Vertical,
+            w1,
+            crate::document::DocumentId::new(2),
+            24,
+            40,
+        )
+        .unwrap();
 
     let layouts = tree.compute_layout(24, 81);
 
@@ -500,11 +752,31 @@ fn navigate_four_windows() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w_bottom = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
-    let w2 = tree.split(SplitDirection::Vertical, w1, crate::document::DocumentId::new(1), 12, 40).unwrap();
+    let w2 = tree
+        .split(
+            SplitDirection::Vertical,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            40,
+        )
+        .unwrap();
     let w4 = tree
-        .split(SplitDirection::Vertical, w_bottom, crate::document::DocumentId::new(1), 12, 40)
+        .split(
+            SplitDirection::Vertical,
+            w_bottom,
+            crate::document::DocumentId::new(1),
+            12,
+            40,
+        )
         .unwrap();
 
     let layouts = tree.compute_layout(25, 81);
@@ -527,7 +799,13 @@ fn resize_hsplit() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let _w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
 
     let layouts = tree.compute_layout(25, 80);
@@ -542,7 +820,13 @@ fn resize_wrong_direction_returns_false() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let _w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
 
     let layouts = tree.compute_layout(25, 80);
@@ -558,10 +842,22 @@ fn navigate_l_shaped_layout() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w_bottom = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
     let w3 = tree
-        .split(SplitDirection::Vertical, w_bottom, crate::document::DocumentId::new(1), 12, 40)
+        .split(
+            SplitDirection::Vertical,
+            w_bottom,
+            crate::document::DocumentId::new(1),
+            12,
+            40,
+        )
         .unwrap();
 
     let layouts = tree.compute_layout(25, 81);
@@ -585,7 +881,13 @@ fn resize_changes_ratio() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
 
     let before = tree.compute_layout(25, 80);
@@ -607,7 +909,13 @@ fn resize_clamps_at_bounds() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let _w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(1), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(1),
+            12,
+            80,
+        )
         .unwrap();
 
     tree.set_focus(w1);
@@ -631,7 +939,13 @@ fn set_focus_tracks_previous() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(2), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(2),
+            12,
+            80,
+        )
         .unwrap();
 
     assert!(tree.set_focus(w2));
@@ -644,7 +958,13 @@ fn focus_previous_toggles() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(2), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(2),
+            12,
+            80,
+        )
         .unwrap();
 
     tree.set_focus(w2);
@@ -669,7 +989,13 @@ fn exchange_windows_swaps_documents() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(2), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(2),
+            12,
+            80,
+        )
         .unwrap();
 
     tree.get_window_mut(w1).unwrap().cursor_position = 10;
@@ -677,9 +1003,15 @@ fn exchange_windows_swaps_documents() {
 
     assert!(tree.exchange_windows(w1, w2));
 
-    assert_eq!(tree.get_window(w1).unwrap().document_id, crate::document::DocumentId::new(2));
+    assert_eq!(
+        tree.get_window(w1).unwrap().document_id,
+        crate::document::DocumentId::new(2)
+    );
     assert_eq!(tree.get_window(w1).unwrap().cursor_position, 20);
-    assert_eq!(tree.get_window(w2).unwrap().document_id, crate::document::DocumentId::new(1));
+    assert_eq!(
+        tree.get_window(w2).unwrap().document_id,
+        crate::document::DocumentId::new(1)
+    );
     assert_eq!(tree.get_window(w2).unwrap().cursor_position, 10);
 }
 
@@ -708,7 +1040,13 @@ fn move_window_no_neighbor_flips_parent_direction() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(2), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(2),
+            12,
+            80,
+        )
         .unwrap();
 
     tree.set_focus(w2);
@@ -734,7 +1072,13 @@ fn move_window_no_neighbor_flip_left_swaps_children() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(2), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(2),
+            12,
+            80,
+        )
         .unwrap();
 
     tree.set_focus(w2);
@@ -756,7 +1100,13 @@ fn move_window_no_neighbor_preserves_ratio() {
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
     let w2 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(2), 12, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(2),
+            12,
+            80,
+        )
         .unwrap();
     let resize_layouts = tree.compute_layout(25, 80);
     tree.resize_focused(SplitDirection::Horizontal, 5.0, &resize_layouts);
@@ -790,7 +1140,15 @@ fn move_window_toward_neighbor() {
     // VSplit(w1(focused), w2); w1 presses Right -> w1 lands to the right of w2.
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
-    let w2 = tree.split(SplitDirection::Vertical, w1, crate::document::DocumentId::new(2), 24, 40).unwrap();
+    let w2 = tree
+        .split(
+            SplitDirection::Vertical,
+            w1,
+            crate::document::DocumentId::new(2),
+            24,
+            40,
+        )
+        .unwrap();
 
     let layouts = tree.compute_layout(24, 81);
     assert!(tree.move_window(Direction::Right, &layouts));
@@ -808,7 +1166,15 @@ fn move_window_preserves_size_when_has_neighbor() {
     // w1 should still occupy ~40 cols (half) in the new split.
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 24, 80);
     let w1 = tree.focused_window_id();
-    let _w2 = tree.split(SplitDirection::Vertical, w1, crate::document::DocumentId::new(2), 24, 40).unwrap();
+    let _w2 = tree
+        .split(
+            SplitDirection::Vertical,
+            w1,
+            crate::document::DocumentId::new(2),
+            24,
+            40,
+        )
+        .unwrap();
 
     let layouts = tree.compute_layout(24, 81);
     let w1_cols_before = layouts.iter().find(|l| l.window_id == w1).unwrap().cols;
@@ -835,9 +1201,23 @@ fn three_window_tree() -> (
     let mut tree = SplitTree::new(crate::document::DocumentId::new(1), 48, 80);
     let w1 = tree.focused_window_id();
     let w3 = tree
-        .split(SplitDirection::Horizontal, w1, crate::document::DocumentId::new(3), 24, 80)
+        .split(
+            SplitDirection::Horizontal,
+            w1,
+            crate::document::DocumentId::new(3),
+            24,
+            80,
+        )
         .unwrap(); // H(w1, w3)
-    let w2 = tree.split(SplitDirection::Vertical, w1, crate::document::DocumentId::new(2), 24, 40).unwrap(); // H(V(w1,w2), w3)
+    let w2 = tree
+        .split(
+            SplitDirection::Vertical,
+            w1,
+            crate::document::DocumentId::new(2),
+            24,
+            40,
+        )
+        .unwrap(); // H(V(w1,w2), w3)
     (tree, w1, w2, w3)
 }
 

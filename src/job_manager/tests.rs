@@ -255,7 +255,11 @@ fn test_completion_job_name() {
 #[test]
 fn test_directory_list_job_name() {
     use crate::job_manager::jobs::explorer::DirectoryListJob;
-    let job = DirectoryListJob::new(crate::document::DocumentId::new(1), std::path::PathBuf::from("/tmp"), false);
+    let job = DirectoryListJob::new(
+        crate::document::DocumentId::new(1),
+        std::path::PathBuf::from("/tmp"),
+        false,
+    );
     assert_eq!(job.name(), "directory-list");
     assert!(job.is_silent());
 }

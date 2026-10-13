@@ -907,7 +907,11 @@ impl AnnotationStore {
         )
     }
 
-    pub fn create_buffer_entry(&mut self, line: usize, doc_id: crate::document::DocumentId) -> AnnotationId {
+    pub fn create_buffer_entry(
+        &mut self,
+        line: usize,
+        doc_id: crate::document::DocumentId,
+    ) -> AnnotationId {
         let mut payload = Value::map();
         payload.set("doc_id", Value::Int(doc_id.get() as i64));
         self.add(

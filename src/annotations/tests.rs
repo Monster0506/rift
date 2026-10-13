@@ -26,14 +26,22 @@ fn test_add_with_id_keeps_next_id_ahead() {
         AnnotationOwner::User,
     ));
     assert_eq!(a, crate::annotations::AnnotationId::new(1));
-    assert_eq!(store.peek_next_id(), crate::annotations::AnnotationId::new(2));
+    assert_eq!(
+        store.peek_next_id(),
+        crate::annotations::AnnotationId::new(2)
+    );
     // Insert under a pre-claimed higher id; next_id jumps past it.
     store.add_with_id(
         crate::annotations::AnnotationId::new(7),
         Annotation::new(Kind::new("a.y"), Anchor::point(1), AnnotationOwner::User),
     );
-    assert_eq!(store.peek_next_id(), crate::annotations::AnnotationId::new(8));
-    assert!(store.get(crate::annotations::AnnotationId::new(7)).is_some());
+    assert_eq!(
+        store.peek_next_id(),
+        crate::annotations::AnnotationId::new(8)
+    );
+    assert!(store
+        .get(crate::annotations::AnnotationId::new(7))
+        .is_some());
     // A later auto-allocated id does not collide with the pre-claimed one.
     let c = store.add(Annotation::new(
         Kind::new("a.z"),
@@ -905,7 +913,9 @@ fn test_revision_unchanged_on_true_noop_calls() {
     store.on_line_inserted(100);
     store.undo_line_inserted(100);
     store.on_edit(3, 3, 3);
-    store.update(crate::annotations::AnnotationId::new(999), |a| a.visible = false); // no such id
+    store.update(crate::annotations::AnnotationId::new(999), |a| {
+        a.visible = false
+    }); // no such id
 
     assert_eq!(
         store.revision(),

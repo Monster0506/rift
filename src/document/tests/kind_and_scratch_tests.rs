@@ -32,7 +32,11 @@ fn test_is_special_false_for_file() {
 
 #[test]
 fn test_new_directory_kind() {
-    let doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp/test")).unwrap();
+    let doc = Document::new_directory(
+        crate::document::DocumentId::new(1),
+        PathBuf::from("/tmp/test"),
+    )
+    .unwrap();
     assert!(doc.is_directory());
     assert!(!doc.is_terminal());
     assert!(!doc.is_undotree());
@@ -41,14 +45,23 @@ fn test_new_directory_kind() {
 
 #[test]
 fn test_new_directory_show_hidden_defaults_false() {
-    let doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp/test")).unwrap();
+    let doc = Document::new_directory(
+        crate::document::DocumentId::new(1),
+        PathBuf::from("/tmp/test"),
+    )
+    .unwrap();
     assert_eq!(doc.directory_show_hidden(), Some(false));
 }
 
 #[test]
 fn test_new_scratch_has_no_path() {
     let lines = vec!["one".to_string(), "two".to_string(), "three".to_string()];
-    let doc = Document::new_scratch(crate::document::DocumentId::new(1), "[Scratch] test".to_string(), &lines).unwrap();
+    let doc = Document::new_scratch(
+        crate::document::DocumentId::new(1),
+        "[Scratch] test".to_string(),
+        &lines,
+    )
+    .unwrap();
     assert!(doc.path().is_none());
     assert_eq!(doc.display_name(), "[Scratch] test");
     assert_eq!(doc.kind.kind_str(), "scratch");
@@ -58,7 +71,12 @@ fn test_new_scratch_has_no_path() {
 fn test_new_scratch_content_joins_lines_with_newline() {
     use crate::buffer::api::BufferView;
     let lines = vec!["one".to_string(), "two".to_string(), "three".to_string()];
-    let doc = Document::new_scratch(crate::document::DocumentId::new(1), "scratch".to_string(), &lines).unwrap();
+    let doc = Document::new_scratch(
+        crate::document::DocumentId::new(1),
+        "scratch".to_string(),
+        &lines,
+    )
+    .unwrap();
     let text: String = doc
         .buffer
         .chars(0..doc.buffer.len())
@@ -69,13 +87,22 @@ fn test_new_scratch_content_joins_lines_with_newline() {
 
 #[test]
 fn test_new_scratch_empty_lines() {
-    let doc = Document::new_scratch(crate::document::DocumentId::new(1), "scratch".to_string(), &[]).unwrap();
+    let doc = Document::new_scratch(
+        crate::document::DocumentId::new(1),
+        "scratch".to_string(),
+        &[],
+    )
+    .unwrap();
     assert_eq!(doc.buffer.len(), 0);
 }
 
 #[test]
 fn test_new_undotree_kind() {
-    let doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(42)).unwrap();
+    let doc = Document::new_undotree(
+        crate::document::DocumentId::new(1),
+        crate::document::DocumentId::new(42),
+    )
+    .unwrap();
     assert!(doc.is_undotree());
     assert!(!doc.is_terminal());
     assert!(!doc.is_directory());
@@ -84,20 +111,32 @@ fn test_new_undotree_kind() {
 
 #[test]
 fn test_new_undotree_is_read_only() {
-    let doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(42)).unwrap();
+    let doc = Document::new_undotree(
+        crate::document::DocumentId::new(1),
+        crate::document::DocumentId::new(42),
+    )
+    .unwrap();
     assert!(doc.is_read_only());
 }
 
 #[test]
 fn test_new_directory_not_read_only() {
-    let doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
+    let doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp"))
+        .unwrap();
     assert!(!doc.is_read_only());
 }
 
 #[test]
 fn test_new_undotree_stores_linked_doc_id() {
-    let doc = Document::new_undotree(crate::document::DocumentId::new(5), crate::document::DocumentId::new(99)).unwrap();
-    assert_eq!(doc.undotree_linked_doc_id(), Some(crate::document::DocumentId::new(99)));
+    let doc = Document::new_undotree(
+        crate::document::DocumentId::new(5),
+        crate::document::DocumentId::new(99),
+    )
+    .unwrap();
+    assert_eq!(
+        doc.undotree_linked_doc_id(),
+        Some(crate::document::DocumentId::new(99))
+    );
 }
 
 #[test]
@@ -109,13 +148,18 @@ fn test_new_directory_stores_path() {
 
 #[test]
 fn test_new_directory_entries_empty() {
-    let doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
+    let doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp"))
+        .unwrap();
     assert!(doc.directory_entries().is_some_and(<[DirEntry]>::is_empty));
 }
 
 #[test]
 fn test_new_undotree_sequences_empty() {
-    let doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(42)).unwrap();
+    let doc = Document::new_undotree(
+        crate::document::DocumentId::new(1),
+        crate::document::DocumentId::new(42),
+    )
+    .unwrap();
     assert!(doc
         .undotree_sequences()
         .is_some_and(<[crate::history::EditSeq]>::is_empty));
@@ -129,13 +173,18 @@ fn test_custom_highlights_empty_for_new_file() {
 
 #[test]
 fn test_custom_highlights_empty_for_new_directory() {
-    let doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
+    let doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp"))
+        .unwrap();
     assert!(doc.custom_highlights.is_empty());
 }
 
 #[test]
 fn test_custom_highlights_empty_for_new_undotree() {
-    let doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(2)).unwrap();
+    let doc = Document::new_undotree(
+        crate::document::DocumentId::new(1),
+        crate::document::DocumentId::new(2),
+    )
+    .unwrap();
     assert!(doc.custom_highlights.is_empty());
 }
 
@@ -147,7 +196,11 @@ fn test_directory_path_returns_none_for_file() {
 
 #[test]
 fn test_directory_path_returns_none_for_undotree() {
-    let doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(2)).unwrap();
+    let doc = Document::new_undotree(
+        crate::document::DocumentId::new(1),
+        crate::document::DocumentId::new(2),
+    )
+    .unwrap();
     assert!(doc.directory_path().is_none());
 }
 

@@ -34,7 +34,8 @@ impl<T: TerminalBackend> Editor<T> {
             {
                 crate::plugin::lua_host::BufSourceUpdate::Unchanged
             } else {
-                self.plugin_host.set_synced_buf(doc.id.get(), doc.buffer.revision);
+                self.plugin_host
+                    .set_synced_buf(doc.id.get(), doc.buffer.revision);
                 crate::plugin::lua_host::BufSourceUpdate::Set(Box::new(
                     crate::plugin::lua_host::BufLinesSource {
                         revision: doc.buffer.revision,
@@ -222,10 +223,14 @@ impl<T: TerminalBackend> Editor<T> {
         use crate::plugin::lua_host::AnnotationView;
         if let Some(doc) = self.document_manager.active_document() {
             let revision = doc.annotations.revision();
-            if self.plugin_host.synced_annotations_match(doc.id.get(), revision) {
+            if self
+                .plugin_host
+                .synced_annotations_match(doc.id.get(), revision)
+            {
                 return;
             }
-            self.plugin_host.set_synced_annotations(doc.id.get(), revision);
+            self.plugin_host
+                .set_synced_annotations(doc.id.get(), revision);
             let views = doc
                 .annotations
                 .iter()
@@ -365,16 +370,16 @@ impl<T: TerminalBackend> Editor<T> {
                     if let Some(doc) = self.document_manager.active_document_mut() {
                         doc.annotations
                             .update(crate::annotations::AnnotationId::new(id), |a| {
-                            if let Some(p) = payload {
-                                a.payload = p;
-                            }
-                            if let Some(v) = visible {
-                                a.visible = v;
-                            }
-                            if let Some(pres) = presentation {
-                                a.presentation = Some(pres);
-                            }
-                        });
+                                if let Some(p) = payload {
+                                    a.payload = p;
+                                }
+                                if let Some(v) = visible {
+                                    a.visible = v;
+                                }
+                                if let Some(pres) = presentation {
+                                    a.presentation = Some(pres);
+                                }
+                            });
                     }
                 }
                 PluginMutation::RemoveAnnotation(id) => {
@@ -890,7 +895,10 @@ impl<T: TerminalBackend> Editor<T> {
                     let _ = self.open_file(None, force);
                 }
                 PluginMutation::MoveWindow { direction } => {
-                    let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+                    let size = self
+                        .term
+                        .get_size()
+                        .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
                     let layouts = self
                         .split_tree
                         .compute_layout(size.rows as usize, size.cols as usize);
@@ -898,7 +906,9 @@ impl<T: TerminalBackend> Editor<T> {
                     if self.split_tree.move_window(direction, &layouts) {
                         self.render_system.viewport.mark_needs_full_redraw();
                         self.plugin_host
-                            .dispatch(&crate::plugin::EditorEvent::WinMoved { win: moved_id.get() });
+                            .dispatch(&crate::plugin::EditorEvent::WinMoved {
+                                win: moved_id.get(),
+                            });
                     }
                 }
                 PluginMutation::SwapWindows => {

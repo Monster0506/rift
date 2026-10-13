@@ -358,7 +358,12 @@ impl DocumentManager {
             }
         }
 
-        let max_id = self.documents.keys().copied().max().unwrap_or(DocumentId::new(0));
+        let max_id = self
+            .documents
+            .keys()
+            .copied()
+            .max()
+            .unwrap_or(DocumentId::new(0));
         if !self.documents.is_empty() && self.next_document_id <= max_id {
             out.push(format!(
                 "next_document_id {} <= max existing document id {max_id}",

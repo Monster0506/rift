@@ -567,65 +567,63 @@ impl<T: TerminalBackend> Editor<T> {
                 Err(p) => p,
             };
 
-        let any_payload =
-            match any_payload.downcast::<crate::job_manager::jobs::git::GitLogResult>() {
-                Ok(result) => {
-                    let doc_id = result.doc_id;
-                    let Some(token) = self.resolve_and_validate_token(
-                        id,
-                        token,
-                        doc_id,
-                        crate::job_manager::AsyncOpDomain::GitLog,
-                    ) else {
-                        self.job_manager
-                            .update_job_state(&JobMessage::Finished(id, true));
-                        return Ok(());
-                    };
-                    let Some(doc) = self
-                        .document_manager
-                        .get_document_by_handle_mut(token.handle)
-                    else {
-                        self.job_manager
-                            .update_job_state(&JobMessage::Finished(id, true));
-                        return Ok(());
-                    };
-                    if doc.is_git_log() {
-                        doc.populate_git_log_buffer(result.commits);
-                    }
-                    if self.pending_git_log_expand_head.remove(&doc_id) {
-                        let head = if doc.is_git_log() {
-                            doc.git_repo_root().map(|r| r.to_path_buf()).zip(
-                                doc.git_log_commits()
-                                    .and_then(|c| c.first().map(|c| c.sha.clone())),
-                            )
-                        } else {
-                            None
-                        };
-                        if let Some((repo_root, sha)) = head {
-                            let show_token = self.job_manager.next_token(
-                                token.handle,
-                                token.expected_kind,
-                                crate::job_manager::AsyncOpDomain::GitShow,
-                            );
-                            let job = crate::job_manager::jobs::git::GitShowJob::new(
-                                doc_id,
-                                repo_root,
-                                sha,
-                            )
-                            .with_token(show_token);
-                            self.job_manager.spawn_with_token(job, show_token);
-                        }
-                    }
-                    if self.active_document_id() == doc_id {
-                        self.sync_state_with_active_document();
-                        let _ = self.force_full_redraw();
-                    }
+        let any_payload = match any_payload
+            .downcast::<crate::job_manager::jobs::git::GitLogResult>()
+        {
+            Ok(result) => {
+                let doc_id = result.doc_id;
+                let Some(token) = self.resolve_and_validate_token(
+                    id,
+                    token,
+                    doc_id,
+                    crate::job_manager::AsyncOpDomain::GitLog,
+                ) else {
                     self.job_manager
                         .update_job_state(&JobMessage::Finished(id, true));
                     return Ok(());
+                };
+                let Some(doc) = self
+                    .document_manager
+                    .get_document_by_handle_mut(token.handle)
+                else {
+                    self.job_manager
+                        .update_job_state(&JobMessage::Finished(id, true));
+                    return Ok(());
+                };
+                if doc.is_git_log() {
+                    doc.populate_git_log_buffer(result.commits);
                 }
-                Err(p) => p,
-            };
+                if self.pending_git_log_expand_head.remove(&doc_id) {
+                    let head = if doc.is_git_log() {
+                        doc.git_repo_root().map(|r| r.to_path_buf()).zip(
+                            doc.git_log_commits()
+                                .and_then(|c| c.first().map(|c| c.sha.clone())),
+                        )
+                    } else {
+                        None
+                    };
+                    if let Some((repo_root, sha)) = head {
+                        let show_token = self.job_manager.next_token(
+                            token.handle,
+                            token.expected_kind,
+                            crate::job_manager::AsyncOpDomain::GitShow,
+                        );
+                        let job =
+                            crate::job_manager::jobs::git::GitShowJob::new(doc_id, repo_root, sha)
+                                .with_token(show_token);
+                        self.job_manager.spawn_with_token(job, show_token);
+                    }
+                }
+                if self.active_document_id() == doc_id {
+                    self.sync_state_with_active_document();
+                    let _ = self.force_full_redraw();
+                }
+                self.job_manager
+                    .update_job_state(&JobMessage::Finished(id, true));
+                return Ok(());
+            }
+            Err(p) => p,
+        };
 
         let any_payload =
             match any_payload.downcast::<crate::job_manager::jobs::git::GitShowResult>() {

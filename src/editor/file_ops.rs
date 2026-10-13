@@ -129,12 +129,7 @@ fn reload_git_blame<T: TerminalBackend>(editor: &mut Editor<T>) -> Result<(), Ri
     else {
         return Ok(());
     };
-    let job = crate::job_manager::jobs::git::GitBlameJob::new(
-        doc_id,
-        repo_root,
-        path,
-        at_commit,
-    );
+    let job = crate::job_manager::jobs::git::GitBlameJob::new(doc_id, repo_root, path, at_commit);
     editor.job_manager.spawn(job);
     Ok(())
 }
@@ -638,7 +633,10 @@ impl<T: TerminalBackend> Editor<T> {
             SplitSubcommand::Current => {
                 let doc_id = self.active_document_id();
                 let focused_id = self.split_tree.focused_window_id();
-                let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+                let size = self
+                    .term
+                    .get_size()
+                    .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
                 let new_id = self.split_tree.split(
                     direction,
                     focused_id,
@@ -680,7 +678,10 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 };
                 let focused_id = self.split_tree.focused_window_id();
-                let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+                let size = self
+                    .term
+                    .get_size()
+                    .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
                 let new_id = self.split_tree.split(
                     direction,
                     focused_id,
@@ -693,7 +694,10 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             SplitSubcommand::Navigate(dir) => {
-                let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+                let size = self
+                    .term
+                    .get_size()
+                    .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
                 let layouts = self
                     .split_tree
                     .compute_layout(size.rows as usize, size.cols as usize);
@@ -702,7 +706,10 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             SplitSubcommand::Resize(delta) => {
-                let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+                let size = self
+                    .term
+                    .get_size()
+                    .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
                 let layouts = self
                     .split_tree
                     .compute_layout(size.rows as usize, size.cols as usize);
@@ -711,7 +718,10 @@ impl<T: TerminalBackend> Editor<T> {
                 self.render_system.viewport.mark_needs_full_redraw();
             }
             SplitSubcommand::Move(dir) => {
-                let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
+                let size = self
+                    .term
+                    .get_size()
+                    .unwrap_or(crate::term::Size { rows: 24, cols: 80 });
                 let layouts = self
                     .split_tree
                     .compute_layout(size.rows as usize, size.cols as usize);
@@ -719,7 +729,9 @@ impl<T: TerminalBackend> Editor<T> {
                 if self.split_tree.move_window(dir, &layouts) {
                     self.render_system.viewport.mark_needs_full_redraw();
                     self.plugin_host
-                        .dispatch(&crate::plugin::EditorEvent::WinMoved { win: moved_id.get() });
+                        .dispatch(&crate::plugin::EditorEvent::WinMoved {
+                            win: moved_id.get(),
+                        });
                     self.apply_plugin_mutations();
                 }
             }

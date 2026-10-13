@@ -203,10 +203,8 @@ impl<T: TerminalBackend> Editor<T> {
             .map(|d| d.id)
             .collect();
         for doc_id in doc_ids {
-            let job = crate::job_manager::jobs::git::GitStatusJob::new(
-                doc_id,
-                repo_root.to_path_buf(),
-            );
+            let job =
+                crate::job_manager::jobs::git::GitStatusJob::new(doc_id, repo_root.to_path_buf());
             self.job_manager.spawn(job);
         }
     }
@@ -737,11 +735,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
         };
         let origin_doc_id = self.active_document_id();
-        let job = crate::job_manager::jobs::git::GitCommandJob::new(
-            origin_doc_id,
-            repo_root,
-            args,
-        );
+        let job = crate::job_manager::jobs::git::GitCommandJob::new(origin_doc_id, repo_root, args);
         self.job_manager.spawn(job);
     }
 

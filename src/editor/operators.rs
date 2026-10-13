@@ -23,11 +23,7 @@ fn with_count_override(cmd: Command, count: usize) -> Option<Command> {
 }
 
 impl<T: TerminalBackend> Editor<T> {
-    pub(super) fn execute_operator(
-        &mut self,
-        op: super::PendingOperator,
-        motion: Motion,
-    ) -> bool {
+    pub(super) fn execute_operator(&mut self, op: super::PendingOperator, motion: Motion) -> bool {
         let op = match op {
             super::PendingOperator::SurroundAdd(delim_count) => {
                 let count = self

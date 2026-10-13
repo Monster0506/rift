@@ -38,7 +38,10 @@ fn test_undotree_render_job_produces_result() {
     use std::sync::mpsc;
 
     let tree = make_test_tree();
-    let job = Box::new(UndoTreeRenderJob::new(crate::document::DocumentId::new(42), tree));
+    let job = Box::new(UndoTreeRenderJob::new(
+        crate::document::DocumentId::new(42),
+        tree,
+    ));
     let (tx, rx) = mpsc::channel();
     let signal = CancellationSignal::new(false);
 
@@ -62,7 +65,10 @@ fn test_undotree_render_job_result_content() {
     use std::sync::mpsc;
 
     let tree = make_test_tree();
-    let job = Box::new(UndoTreeRenderJob::new(crate::document::DocumentId::new(7), tree));
+    let job = Box::new(UndoTreeRenderJob::new(
+        crate::document::DocumentId::new(7),
+        tree,
+    ));
     let (tx, rx) = mpsc::channel();
     let signal = CancellationSignal::new(false);
 
@@ -84,7 +90,10 @@ fn test_undotree_render_job_cancelled_before_run() {
     use std::sync::mpsc;
 
     let tree = make_test_tree();
-    let job = Box::new(UndoTreeRenderJob::new(crate::document::DocumentId::new(1), tree));
+    let job = Box::new(UndoTreeRenderJob::new(
+        crate::document::DocumentId::new(1),
+        tree,
+    ));
     let (tx, rx) = mpsc::channel();
     let signal = CancellationSignal::new(true); // pre-cancelled
 

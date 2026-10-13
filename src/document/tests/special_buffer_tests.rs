@@ -4,7 +4,11 @@ use crate::color::Color;
 
 #[test]
 fn test_populate_undotree_stores_text() {
-    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(42)).unwrap();
+    let mut doc = Document::new_undotree(
+        crate::document::DocumentId::new(1),
+        crate::document::DocumentId::new(42),
+    )
+    .unwrap();
     let text = "* [1] edit\n* [0] root".to_string();
     let seqs = vec![1u64, 0u64];
     let highlights = vec![];
@@ -14,7 +18,11 @@ fn test_populate_undotree_stores_text() {
 
 #[test]
 fn test_populate_undotree_stores_sequences() {
-    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(42)).unwrap();
+    let mut doc = Document::new_undotree(
+        crate::document::DocumentId::new(1),
+        crate::document::DocumentId::new(42),
+    )
+    .unwrap();
     let seqs = vec![5u64, 3u64, 1u64];
     doc.populate_undotree_buffer("text".to_string(), seqs.clone(), vec![]);
     assert_eq!(doc.undotree_sequences(), Some(seqs.as_slice()));
@@ -22,7 +30,11 @@ fn test_populate_undotree_stores_sequences() {
 
 #[test]
 fn test_populate_undotree_stores_highlights() {
-    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(42)).unwrap();
+    let mut doc = Document::new_undotree(
+        crate::document::DocumentId::new(1),
+        crate::document::DocumentId::new(42),
+    )
+    .unwrap();
     let highlights = vec![(0..2, Color::Magenta), (3..5, Color::Cyan)];
     doc.populate_undotree_buffer("ab cd".to_string(), vec![], highlights.clone());
     assert_eq!(doc.custom_highlights.len(), 2);
@@ -32,9 +44,16 @@ fn test_populate_undotree_stores_highlights() {
 
 #[test]
 fn test_populate_undotree_preserves_linked_doc_id() {
-    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(99)).unwrap();
+    let mut doc = Document::new_undotree(
+        crate::document::DocumentId::new(1),
+        crate::document::DocumentId::new(99),
+    )
+    .unwrap();
     doc.populate_undotree_buffer("x".to_string(), vec![], vec![]);
-    assert_eq!(doc.undotree_linked_doc_id(), Some(crate::document::DocumentId::new(99)));
+    assert_eq!(
+        doc.undotree_linked_doc_id(),
+        Some(crate::document::DocumentId::new(99))
+    );
 }
 
 #[test]
@@ -46,14 +65,22 @@ fn test_populate_undotree_noop_on_wrong_kind() {
 
 #[test]
 fn test_populate_undotree_marks_saved() {
-    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(42)).unwrap();
+    let mut doc = Document::new_undotree(
+        crate::document::DocumentId::new(1),
+        crate::document::DocumentId::new(42),
+    )
+    .unwrap();
     doc.populate_undotree_buffer("text".to_string(), vec![], vec![]);
     assert!(!doc.is_dirty());
 }
 
 #[test]
 fn test_populate_undotree_replaces_old_highlights() {
-    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(42)).unwrap();
+    let mut doc = Document::new_undotree(
+        crate::document::DocumentId::new(1),
+        crate::document::DocumentId::new(42),
+    )
+    .unwrap();
     doc.populate_undotree_buffer("ab".to_string(), vec![], vec![(0..2, Color::Red)]);
     assert_eq!(doc.custom_highlights.len(), 1);
 
@@ -73,24 +100,38 @@ fn test_populate_undotree_replaces_old_highlights() {
 #[test]
 fn test_remove_directory_buffer_without_dirty_check() {
     let mut manager = create_manager();
-    let mut doc = Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp")).unwrap();
+    let mut doc =
+        Document::new_directory(crate::document::DocumentId::new(1), PathBuf::from("/tmp"))
+            .unwrap();
     let _ = doc.buffer.insert_str("some edit");
     manager.add_document(doc);
 
-    assert!(manager.remove_document(crate::document::DocumentId::new(1)).is_ok());
+    assert!(manager
+        .remove_document(crate::document::DocumentId::new(1))
+        .is_ok());
 }
 
 #[test]
 fn test_remove_undotree_buffer_without_dirty_check() {
     let mut manager = create_manager();
-    let doc = Document::new_undotree(crate::document::DocumentId::new(2), crate::document::DocumentId::new(1)).unwrap();
+    let doc = Document::new_undotree(
+        crate::document::DocumentId::new(2),
+        crate::document::DocumentId::new(1),
+    )
+    .unwrap();
     manager.add_document(doc);
-    assert!(manager.remove_document(crate::document::DocumentId::new(2)).is_ok());
+    assert!(manager
+        .remove_document(crate::document::DocumentId::new(2))
+        .is_ok());
 }
 
 #[test]
 fn test_populate_undotree_increments_revision() {
-    let mut doc = Document::new_undotree(crate::document::DocumentId::new(1), crate::document::DocumentId::new(2)).unwrap();
+    let mut doc = Document::new_undotree(
+        crate::document::DocumentId::new(1),
+        crate::document::DocumentId::new(2),
+    )
+    .unwrap();
     let rev0 = doc.buffer.revision;
     doc.populate_undotree_buffer("text".to_string(), vec![], vec![]);
     assert!(

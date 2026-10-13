@@ -35,7 +35,8 @@ fn test_from_bytes_matches_from_file() {
     std::fs::write(&path, &content).unwrap();
 
     let from_file = Document::from_file(crate::document::DocumentId::new(1), &path).unwrap();
-    let from_bytes = Document::from_bytes(crate::document::DocumentId::new(2), Some(&path), content).unwrap();
+    let from_bytes =
+        Document::from_bytes(crate::document::DocumentId::new(2), Some(&path), content).unwrap();
 
     assert_eq!(from_bytes.buffer.to_string(), from_file.buffer.to_string());
     assert_eq!(
@@ -47,7 +48,8 @@ fn test_from_bytes_matches_from_file() {
 
 #[test]
 fn test_from_bytes_without_path_has_no_file_path() {
-    let doc = Document::from_bytes(crate::document::DocumentId::new(1), None, b"hello".to_vec()).unwrap();
+    let doc =
+        Document::from_bytes(crate::document::DocumentId::new(1), None, b"hello".to_vec()).unwrap();
     assert_eq!(doc.buffer.to_string(), "hello");
     assert_eq!(doc.file_path, None);
 }

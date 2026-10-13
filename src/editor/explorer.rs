@@ -206,9 +206,7 @@ impl<T: TerminalBackend> Editor<T> {
         });
 
         let job = crate::job_manager::jobs::explorer::DirectoryListJob::new(
-            dir_doc_id,
-            dir,
-            false, /* new explorer always starts with hidden off */
+            dir_doc_id, dir, false, /* new explorer always starts with hidden off */
         );
         self.job_manager.spawn(job);
 

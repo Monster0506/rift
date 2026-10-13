@@ -210,7 +210,9 @@ impl<T: TerminalBackend> Editor<T> {
         self.hovered_annotation = current;
 
         // Build a hover ctx for an annotation id, if it still exists.
-        let make_ctx = |s: &Self, id: crate::annotations::AnnotationId| -> Option<crate::plugin::AnnotationHoverCtx> {
+        let make_ctx = |s: &Self,
+                        id: crate::annotations::AnnotationId|
+         -> Option<crate::plugin::AnnotationHoverCtx> {
             let doc = s.document_manager.active_document()?;
             let ann = doc.annotations.get(id)?;
             Some(crate::plugin::AnnotationHoverCtx {
