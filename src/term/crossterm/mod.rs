@@ -12,6 +12,7 @@ use crossterm::{
 use std::io::{stdout, BufWriter, Write};
 
 use crate::color::Color;
+use crate::error::RiftError;
 use crate::key::Key;
 use crate::screen_buffer::{AttrKind, StyleOp};
 use crate::term::{ColorTerminal, Size, TerminalBackend};
@@ -87,7 +88,7 @@ fn crossterm_attr(kind: AttrKind, on: bool) -> crossterm::style::Attribute {
 
 /// Serialize a terminal-agnostic `StyleOp` sequence into ANSI escape bytes.
 /// The one place `screen_buffer`'s diff output meets crossterm's encoder.
-pub fn encode_style_ops(ops: &[StyleOp], buf: &mut Vec<u8>) -> Result<(), String> {
+pub fn encode_style_ops(ops: &[StyleOp], buf: &mut Vec<u8>) -> Result<(), RiftError> {
     use crossterm::style::{Attribute, SetAttribute};
 
     for op in ops {
@@ -156,7 +157,7 @@ impl<W: Write> Drop for CrosstermBackend<W> {
 }
 
 impl<W: Write> TerminalBackend for CrosstermBackend<W> {
-    fn init(&mut self) -> Result<(), String> {
+    fn init(&mut self) -> Result<(), RiftError> {
         // Enable alternate screen buffer (prevents scrolling in main buffer)
         execute!(self.writer, terminal::EnterAlternateScreen)
             .map_err(|e| format!("Failed to enter alternate screen: {e}"))?;
@@ -200,11 +201,11 @@ impl<W: Write> TerminalBackend for CrosstermBackend<W> {
         let _ = self.writer.flush();
     }
 
-    fn poll(&mut self, duration: std::time::Duration) -> Result<bool, String> {
-        event::poll(duration).map_err(|e| format!("Failed to poll event: {e}"))
+    fn poll(&mut self, duration: std::time::Duration) -> Result<bool, RiftError> {
+        event::poll(duration).map_err(|e| format!("Failed to poll event: {e}").into())
     }
 
-    fn read_key(&mut self) -> Result<Option<Key>, String> {
+    fn read_key(&mut self) -> Result<Option<Key>, RiftError> {
         match event::read().map_err(|e| format!("Failed to read event: {e}"))? {
             Event::Key(key_event) => {
                 if key_event.kind == event::KeyEventKind::Press {
@@ -219,26 +220,26 @@ impl<W: Write> TerminalBackend for CrosstermBackend<W> {
         }
     }
 
-    fn write(&mut self, bytes: &[u8]) -> Result<(), String> {
+    fn write(&mut self, bytes: &[u8]) -> Result<(), RiftError> {
         self.writer
             .write_all(bytes)
             .map_err(|e| format!("Write failed: {e}"))?;
         Ok(())
     }
 
-    fn flush(&mut self) -> Result<(), String> {
+    fn flush(&mut self) -> Result<(), RiftError> {
         self.writer
             .flush()
-            .map_err(|e| format!("Flush failed: {e}"))
+            .map_err(|e| format!("Flush failed: {e}").into())
     }
 
-    fn get_size(&self) -> Result<Size, String> {
+    fn get_size(&self) -> Result<Size, RiftError> {
         let (cols, rows) =
             terminal::size().map_err(|e| format!("Failed to get terminal size: {e}"))?;
         Ok(Size { rows, cols })
     }
 
-    fn clear_screen(&mut self) -> Result<(), String> {
+    fn clear_screen(&mut self) -> Result<(), RiftError> {
         execute!(self.writer, terminal::Clear(ClearType::All))
             .map_err(|e| format!("Failed to clear screen: {e}"))?;
         execute!(self.writer, cursor::MoveTo(0, 0))
@@ -246,29 +247,29 @@ impl<W: Write> TerminalBackend for CrosstermBackend<W> {
         Ok(())
     }
 
-    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), String> {
+    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), RiftError> {
         queue!(self.writer, cursor::MoveTo(col, row))
             .map_err(|e| format!("Failed to move cursor: {e}"))?;
         Ok(())
     }
 
-    fn hide_cursor(&mut self) -> Result<(), String> {
+    fn hide_cursor(&mut self) -> Result<(), RiftError> {
         queue!(self.writer, cursor::Hide).map_err(|e| format!("Failed to hide cursor: {e}"))?;
         Ok(())
     }
 
-    fn show_cursor(&mut self) -> Result<(), String> {
+    fn show_cursor(&mut self) -> Result<(), RiftError> {
         queue!(self.writer, cursor::Show).map_err(|e| format!("Failed to show cursor: {e}"))?;
         Ok(())
     }
 
-    fn clear_to_end_of_line(&mut self) -> Result<(), String> {
+    fn clear_to_end_of_line(&mut self) -> Result<(), RiftError> {
         execute!(self.writer, terminal::Clear(ClearType::UntilNewLine))
             .map_err(|e| format!("Failed to clear to end of line: {e}"))?;
         Ok(())
     }
 
-    fn set_cursor_shape(&mut self, shape: CursorShape) -> Result<(), String> {
+    fn set_cursor_shape(&mut self, shape: CursorShape) -> Result<(), RiftError> {
         let style = match shape {
             CursorShape::SteadyBlock => cursor::SetCursorStyle::SteadyBlock,
             CursorShape::SteadyBar => cursor::SetCursorStyle::SteadyBar,

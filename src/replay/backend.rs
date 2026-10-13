@@ -1,6 +1,7 @@
 //! A `TerminalBackend` that serves keys from a script queue and encodes
 //! output through the real `CrosstermBackend` path, without a live TTY.
 
+use crate::error::RiftError;
 use crate::key::Key;
 use crate::term::crossterm::CrosstermBackend;
 use crate::term::{CursorShape, Size, TerminalBackend};
@@ -29,53 +30,53 @@ impl<W: Write> ReplayBackend<W> {
 }
 
 impl<W: Write> TerminalBackend for ReplayBackend<W> {
-    fn init(&mut self) -> Result<(), String> {
+    fn init(&mut self) -> Result<(), RiftError> {
         Ok(())
     }
 
     fn deinit(&mut self) {}
 
-    fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, String> {
+    fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, RiftError> {
         Ok(!self.pending.is_empty())
     }
 
-    fn read_key(&mut self) -> Result<Option<Key>, String> {
+    fn read_key(&mut self) -> Result<Option<Key>, RiftError> {
         Ok(self.pending.pop_front())
     }
 
-    fn write(&mut self, bytes: &[u8]) -> Result<(), String> {
+    fn write(&mut self, bytes: &[u8]) -> Result<(), RiftError> {
         self.output.write(bytes)
     }
 
-    fn flush(&mut self) -> Result<(), String> {
+    fn flush(&mut self) -> Result<(), RiftError> {
         self.output.flush()
     }
 
-    fn get_size(&self) -> Result<Size, String> {
+    fn get_size(&self) -> Result<Size, RiftError> {
         Ok(self.size)
     }
 
-    fn clear_screen(&mut self) -> Result<(), String> {
+    fn clear_screen(&mut self) -> Result<(), RiftError> {
         self.output.clear_screen()
     }
 
-    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), String> {
+    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), RiftError> {
         self.output.move_cursor(row, col)
     }
 
-    fn hide_cursor(&mut self) -> Result<(), String> {
+    fn hide_cursor(&mut self) -> Result<(), RiftError> {
         self.output.hide_cursor()
     }
 
-    fn show_cursor(&mut self) -> Result<(), String> {
+    fn show_cursor(&mut self) -> Result<(), RiftError> {
         self.output.show_cursor()
     }
 
-    fn clear_to_end_of_line(&mut self) -> Result<(), String> {
+    fn clear_to_end_of_line(&mut self) -> Result<(), RiftError> {
         self.output.clear_to_end_of_line()
     }
 
-    fn set_cursor_shape(&mut self, shape: CursorShape) -> Result<(), String> {
+    fn set_cursor_shape(&mut self, shape: CursorShape) -> Result<(), RiftError> {
         self.output.set_cursor_shape(shape)
     }
 }

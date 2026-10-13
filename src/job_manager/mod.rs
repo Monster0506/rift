@@ -1,4 +1,5 @@
 use crate::document::{BufferKindId, DocumentHandle, DocumentId};
+use crate::error::RiftError;
 use crate::plugin::PluginGeneration;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -168,7 +169,7 @@ pub enum JobMessage {
     /// Job finished successfully with ID and silent flag
     Finished(usize, bool),
     /// Job failed with error message
-    Error(usize, String),
+    Error(usize, RiftError),
     /// Job cancelled (terminal state)
     Cancelled(usize),
     /// Custom payload for job-specific results
@@ -410,8 +411,10 @@ impl JobManager {
                     }));
                     if let Err(payload) = result {
                         let details = panic_payload_to_string(&payload);
-                        let _ =
-                            sender.send(JobMessage::Error(id, format!("job panicked: {details}")));
+                        let _ = sender.send(JobMessage::Error(
+                            id,
+                            format!("job panicked: {details}").into(),
+                        ));
                     }
                 }
                 limiter.release();

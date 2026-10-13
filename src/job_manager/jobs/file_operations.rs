@@ -149,7 +149,7 @@ impl Job for FileSaveJob {
             }
             Err(e) => {
                 let _ = fs::remove_file(&temp_path);
-                let _ = sender.send(JobMessage::Error(id, e.to_string()));
+                let _ = sender.send(JobMessage::Error(id, e.into()));
             }
         }
     }
@@ -269,7 +269,7 @@ impl Job for FileLoadJob {
                 if e.code == "CANCELLED" {
                     let _ = sender.send(JobMessage::Cancelled(id));
                 } else {
-                    let _ = sender.send(JobMessage::Error(id, e.message));
+                    let _ = sender.send(JobMessage::Error(id, e));
                 }
             }
         }

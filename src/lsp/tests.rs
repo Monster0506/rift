@@ -452,6 +452,35 @@ fn shutdown_all_clears_clients_and_kills_the_process() {
 }
 
 #[test]
+fn did_open_logs_when_the_server_command_fails_to_spawn() {
+    use config::LspServerConfig;
+
+    let mut mgr = LspManager::new(None);
+    mgr.register_server(
+        "fake".to_string(),
+        LspServerConfig {
+            command: "this-binary-does-not-exist-rift-test".to_string(),
+            args: vec![],
+            extensions: vec![],
+            root_markers: vec![],
+            capabilities: vec![],
+            initialization_options: None,
+            keep_alive: false,
+        },
+    );
+    mgr.did_open(Path::new("/tmp/fake.rs"), "fake", "content");
+    assert!(
+        !mgr.clients.contains_key("fake"),
+        "spawn should have failed, no client registered"
+    );
+
+    let got_log = mgr.poll().into_iter().any(|msg| {
+        matches!(msg, LspMessage::Log { message } if message.contains("failed to start server"))
+    });
+    assert!(got_log, "expected a log message about the failed spawn");
+}
+
+#[test]
 fn a_server_that_exits_is_forgotten_and_respawn_stops_after_the_budget() {
     use config::LspServerConfig;
 

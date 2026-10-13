@@ -17,43 +17,46 @@ impl ScriptedTerminal {
 }
 
 impl crate::term::TerminalBackend for ScriptedTerminal {
-    fn init(&mut self) -> Result<(), String> {
+    fn init(&mut self) -> Result<(), crate::error::RiftError> {
         self.inner.init()
     }
     fn deinit(&mut self) {
         self.inner.deinit()
     }
-    fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, String> {
+    fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, crate::error::RiftError> {
         Ok(!self.queue.is_empty())
     }
-    fn read_key(&mut self) -> Result<Option<crate::key::Key>, String> {
+    fn read_key(&mut self) -> Result<Option<crate::key::Key>, crate::error::RiftError> {
         Ok(self.queue.pop_front())
     }
-    fn write(&mut self, bytes: &[u8]) -> Result<(), String> {
+    fn write(&mut self, bytes: &[u8]) -> Result<(), crate::error::RiftError> {
         self.inner.write(bytes)
     }
-    fn flush(&mut self) -> Result<(), String> {
+    fn flush(&mut self) -> Result<(), crate::error::RiftError> {
         self.inner.flush()
     }
-    fn get_size(&self) -> Result<crate::term::Size, String> {
+    fn get_size(&self) -> Result<crate::term::Size, crate::error::RiftError> {
         self.inner.get_size()
     }
-    fn clear_screen(&mut self) -> Result<(), String> {
+    fn clear_screen(&mut self) -> Result<(), crate::error::RiftError> {
         self.inner.clear_screen()
     }
-    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), String> {
+    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), crate::error::RiftError> {
         self.inner.move_cursor(row, col)
     }
-    fn hide_cursor(&mut self) -> Result<(), String> {
+    fn hide_cursor(&mut self) -> Result<(), crate::error::RiftError> {
         self.inner.hide_cursor()
     }
-    fn show_cursor(&mut self) -> Result<(), String> {
+    fn show_cursor(&mut self) -> Result<(), crate::error::RiftError> {
         self.inner.show_cursor()
     }
-    fn clear_to_end_of_line(&mut self) -> Result<(), String> {
+    fn clear_to_end_of_line(&mut self) -> Result<(), crate::error::RiftError> {
         self.inner.clear_to_end_of_line()
     }
-    fn set_cursor_shape(&mut self, shape: crate::term::CursorShape) -> Result<(), String> {
+    fn set_cursor_shape(
+        &mut self,
+        shape: crate::term::CursorShape,
+    ) -> Result<(), crate::error::RiftError> {
         self.inner.set_cursor_shape(shape)
     }
 }
@@ -265,43 +268,46 @@ impl PressReleaseTerminal {
 }
 
 impl crate::term::TerminalBackend for PressReleaseTerminal {
-    fn init(&mut self) -> Result<(), String> {
+    fn init(&mut self) -> Result<(), crate::error::RiftError> {
         self.inner.init()
     }
     fn deinit(&mut self) {
         self.inner.deinit()
     }
-    fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, String> {
+    fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, crate::error::RiftError> {
         Ok(!self.raw.is_empty())
     }
-    fn read_key(&mut self) -> Result<Option<crate::key::Key>, String> {
+    fn read_key(&mut self) -> Result<Option<crate::key::Key>, crate::error::RiftError> {
         Ok(self.raw.pop_front().flatten())
     }
-    fn write(&mut self, bytes: &[u8]) -> Result<(), String> {
+    fn write(&mut self, bytes: &[u8]) -> Result<(), crate::error::RiftError> {
         self.inner.write(bytes)
     }
-    fn flush(&mut self) -> Result<(), String> {
+    fn flush(&mut self) -> Result<(), crate::error::RiftError> {
         self.inner.flush()
     }
-    fn get_size(&self) -> Result<crate::term::Size, String> {
+    fn get_size(&self) -> Result<crate::term::Size, crate::error::RiftError> {
         self.inner.get_size()
     }
-    fn clear_screen(&mut self) -> Result<(), String> {
+    fn clear_screen(&mut self) -> Result<(), crate::error::RiftError> {
         self.inner.clear_screen()
     }
-    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), String> {
+    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), crate::error::RiftError> {
         self.inner.move_cursor(row, col)
     }
-    fn hide_cursor(&mut self) -> Result<(), String> {
+    fn hide_cursor(&mut self) -> Result<(), crate::error::RiftError> {
         self.inner.hide_cursor()
     }
-    fn show_cursor(&mut self) -> Result<(), String> {
+    fn show_cursor(&mut self) -> Result<(), crate::error::RiftError> {
         self.inner.show_cursor()
     }
-    fn clear_to_end_of_line(&mut self) -> Result<(), String> {
+    fn clear_to_end_of_line(&mut self) -> Result<(), crate::error::RiftError> {
         self.inner.clear_to_end_of_line()
     }
-    fn set_cursor_shape(&mut self, shape: crate::term::CursorShape) -> Result<(), String> {
+    fn set_cursor_shape(
+        &mut self,
+        shape: crate::term::CursorShape,
+    ) -> Result<(), crate::error::RiftError> {
         self.inner.set_cursor_shape(shape)
     }
 }

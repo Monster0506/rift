@@ -466,7 +466,7 @@ impl<T: TerminalBackend> Editor<T> {
                 RiftError::new(
                     ErrorType::Internal,
                     crate::constants::errors::RENDER_FAILED,
-                    e,
+                    e.to_string(),
                 )
             })?;
         self.term.show_cursor()?;
@@ -979,7 +979,7 @@ impl<T: TerminalBackend> Editor<T> {
         let size = self
             .term
             .get_size()
-            .map_err(|e| RiftError::new(ErrorType::Internal, "TERM_SIZE", e))?;
+            .map_err(|e| RiftError::new(ErrorType::Internal, "TERM_SIZE", e.to_string()))?;
         let total_rows = size.rows as usize;
         let total_cols = size.cols as usize;
         let content_rows = total_rows.saturating_sub(1);

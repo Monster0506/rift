@@ -21,44 +21,47 @@ impl QueueTerminal {
 }
 
 impl TerminalBackend for QueueTerminal {
-    fn init(&mut self) -> Result<(), String> {
+    fn init(&mut self) -> Result<(), crate::error::RiftError> {
         Ok(())
     }
     fn deinit(&mut self) {}
-    fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, String> {
+    fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, crate::error::RiftError> {
         Ok(!self.keys.is_empty())
     }
-    fn read_key(&mut self) -> Result<Option<Key>, String> {
+    fn read_key(&mut self) -> Result<Option<Key>, crate::error::RiftError> {
         Ok(self.keys.pop_front())
     }
-    fn write(&mut self, _bytes: &[u8]) -> Result<(), String> {
+    fn write(&mut self, _bytes: &[u8]) -> Result<(), crate::error::RiftError> {
         Ok(())
     }
-    fn flush(&mut self) -> Result<(), String> {
+    fn flush(&mut self) -> Result<(), crate::error::RiftError> {
         Ok(())
     }
-    fn get_size(&self) -> Result<Size, String> {
+    fn get_size(&self) -> Result<Size, crate::error::RiftError> {
         Ok(Size {
             rows: self.size.0,
             cols: self.size.1,
         })
     }
-    fn clear_screen(&mut self) -> Result<(), String> {
+    fn clear_screen(&mut self) -> Result<(), crate::error::RiftError> {
         Ok(())
     }
-    fn move_cursor(&mut self, _row: u16, _col: u16) -> Result<(), String> {
+    fn move_cursor(&mut self, _row: u16, _col: u16) -> Result<(), crate::error::RiftError> {
         Ok(())
     }
-    fn hide_cursor(&mut self) -> Result<(), String> {
+    fn hide_cursor(&mut self) -> Result<(), crate::error::RiftError> {
         Ok(())
     }
-    fn show_cursor(&mut self) -> Result<(), String> {
+    fn show_cursor(&mut self) -> Result<(), crate::error::RiftError> {
         Ok(())
     }
-    fn clear_to_end_of_line(&mut self) -> Result<(), String> {
+    fn clear_to_end_of_line(&mut self) -> Result<(), crate::error::RiftError> {
         Ok(())
     }
-    fn set_cursor_shape(&mut self, _shape: crate::term::CursorShape) -> Result<(), String> {
+    fn set_cursor_shape(
+        &mut self,
+        _shape: crate::term::CursorShape,
+    ) -> Result<(), crate::error::RiftError> {
         Ok(())
     }
 }

@@ -3,6 +3,7 @@
 
 /// Terminal handling is isolated behind a strict abstraction boundary with no
 /// dependency on editor internals; state is restored on normal exit and panic.
+use crate::error::RiftError;
 use crate::key::Key;
 
 /// Terminal size information
@@ -22,44 +23,44 @@ pub enum CursorShape {
 /// All terminal backends must implement these operations
 pub trait TerminalBackend {
     /// Initialize terminal and enter raw mode
-    fn init(&mut self) -> Result<(), String>;
+    fn init(&mut self) -> Result<(), RiftError>;
 
     /// Restore terminal to original state
     fn deinit(&mut self);
 
     /// Check if a key is available within the given duration
-    fn poll(&mut self, duration: std::time::Duration) -> Result<bool, String>;
+    fn poll(&mut self, duration: std::time::Duration) -> Result<bool, RiftError>;
 
     /// Read and decode a single keypress
     /// Returns None if the event was ignored (e.g. key release)
-    fn read_key(&mut self) -> Result<Option<Key>, String>;
+    fn read_key(&mut self) -> Result<Option<Key>, RiftError>;
 
     /// Write bytes to stdout
-    fn write(&mut self, bytes: &[u8]) -> Result<(), String>;
+    fn write(&mut self, bytes: &[u8]) -> Result<(), RiftError>;
 
     /// Flush output buffer
-    fn flush(&mut self) -> Result<(), String>;
+    fn flush(&mut self) -> Result<(), RiftError>;
 
     /// Get terminal dimensions
-    fn get_size(&self) -> Result<Size, String>;
+    fn get_size(&self) -> Result<Size, RiftError>;
 
     /// Clear entire screen
-    fn clear_screen(&mut self) -> Result<(), String>;
+    fn clear_screen(&mut self) -> Result<(), RiftError>;
 
     /// Move cursor to specified position (0-indexed)
-    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), String>;
+    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), RiftError>;
 
     /// Hide cursor
-    fn hide_cursor(&mut self) -> Result<(), String>;
+    fn hide_cursor(&mut self) -> Result<(), RiftError>;
 
     /// Show cursor
-    fn show_cursor(&mut self) -> Result<(), String>;
+    fn show_cursor(&mut self) -> Result<(), RiftError>;
 
     /// Clear from cursor to end of line
-    fn clear_to_end_of_line(&mut self) -> Result<(), String>;
+    fn clear_to_end_of_line(&mut self) -> Result<(), RiftError>;
 
     /// Change the terminal cursor shape (DECSCUSR).
-    fn set_cursor_shape(&mut self, shape: CursorShape) -> Result<(), String>;
+    fn set_cursor_shape(&mut self, shape: CursorShape) -> Result<(), RiftError>;
 
     /// Signal that the client should detach without killing the editor.
     /// Only meaningful for IPC backends; default is a no-op.

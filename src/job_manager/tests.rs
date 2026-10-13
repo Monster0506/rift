@@ -48,7 +48,7 @@ impl Job for TestJob {
         if self.succeed {
             let _ = sender.send(JobMessage::Finished(id, false));
         } else {
-            let _ = sender.send(JobMessage::Error(id, "Failed artificially".to_string()));
+            let _ = sender.send(JobMessage::Error(id, "Failed artificially".into()));
         }
     }
 }

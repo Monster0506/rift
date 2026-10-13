@@ -725,7 +725,13 @@ impl RenderSystem {
 
         self.compositor
             .render_to_terminal(term, ctx.needs_clear, scroll_hint)
-            .map_err(|e| RiftError::new(crate::error::ErrorType::Renderer, "RENDER_FAILED", e))?;
+            .map_err(|e| {
+                RiftError::new(
+                    crate::error::ErrorType::Renderer,
+                    "RENDER_FAILED",
+                    e.to_string(),
+                )
+            })?;
 
         if !software {
             let desired_shape = CursorShape::SteadyBar;

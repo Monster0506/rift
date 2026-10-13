@@ -324,13 +324,21 @@ impl LspManager {
             };
             let mut client = match keepalive {
                 Some(c) => c,
-                None => LspClient::start(
+                None => match LspClient::start(
                     language.to_string(),
                     &server.command,
                     &server.args,
                     root_uri.clone(),
-                )
-                .ok()?,
+                ) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        self.pending_logs.push(format!(
+                            "LSP [{}]: failed to start server ({})",
+                            language, e
+                        ));
+                        return None;
+                    }
+                },
             };
 
             // Send initialize

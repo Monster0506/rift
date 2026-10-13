@@ -94,7 +94,7 @@ impl<T: TerminalBackend> Editor<T> {
                 RiftError::new(
                     ErrorType::Internal,
                     crate::constants::errors::POLL_FAILED,
-                    e,
+                    e.to_string(),
                 )
             })?
         {

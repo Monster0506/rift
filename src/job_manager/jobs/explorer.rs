@@ -104,7 +104,7 @@ impl Job for DirectoryListJob {
                 } else {
                     let _ = sender.send(JobMessage::Custom(id, result));
                 }
-                let _ = sender.send(JobMessage::Error(id, e.message));
+                let _ = sender.send(JobMessage::Error(id, e));
             }
         }
     }

@@ -282,7 +282,7 @@ impl<T: TerminalBackend> Editor<T> {
         let size = self
             .term
             .get_size()
-            .map_err(|e| RiftError::new(ErrorType::Internal, "TERM_SIZE", e))?;
+            .map_err(|e| RiftError::new(ErrorType::Internal, "TERM_SIZE", e.to_string()))?;
 
         let id = self.document_manager.next_id();
         let terminal_rows = (size.rows as usize).saturating_sub(1).max(1);

@@ -3,6 +3,7 @@
 
 use crate::character::Character;
 use crate::color::Color;
+use crate::error::RiftError;
 use crate::screen_buffer::{DoubleBuffer, FrameStats};
 use std::collections::BTreeMap;
 
@@ -668,7 +669,7 @@ impl LayerCompositor {
         term: &mut T,
         needs_clear: bool,
         scroll_hint: Option<(usize, usize, isize)>,
-    ) -> Result<FrameStats, String> {
+    ) -> Result<FrameStats, RiftError> {
         // Composite if needed
         if self.has_dirty() {
             self.composite();

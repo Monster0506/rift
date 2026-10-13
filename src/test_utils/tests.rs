@@ -103,7 +103,7 @@ fn test_mock_terminal_read_key_not_implemented() {
     let mut term = MockTerminal::new(10, 80);
     let result = term.read_key();
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Not implemented"));
+    assert!(result.unwrap_err().contains_msg("Not implemented"));
 }
 
 #[test]

@@ -88,7 +88,7 @@ impl Job for GitStatusJob {
                 }
             }
             Err(e) => {
-                let _ = sender.send(JobMessage::Error(id, e.message));
+                let _ = sender.send(JobMessage::Error(id, e));
             }
         }
     }
@@ -185,7 +185,7 @@ impl Job for GitDiffJob {
             match crate::git::run(&self.repo_root, &args) {
                 Ok(out) => out.stdout,
                 Err(e) => {
-                    let _ = sender.send(JobMessage::Error(id, e.message));
+                    let _ = sender.send(JobMessage::Error(id, e));
                     return;
                 }
             }
@@ -199,7 +199,7 @@ impl Job for GitDiffJob {
             match crate::git::run_checked(&self.repo_root, &args) {
                 Ok(stdout) => stdout,
                 Err(e) => {
-                    let _ = sender.send(JobMessage::Error(id, e.message));
+                    let _ = sender.send(JobMessage::Error(id, e));
                     return;
                 }
             }
@@ -312,7 +312,7 @@ impl Job for GitBlameJob {
                 }
             }
             Err(e) => {
-                let _ = sender.send(JobMessage::Error(id, e.message));
+                let _ = sender.send(JobMessage::Error(id, e));
             }
         }
     }
@@ -397,7 +397,7 @@ impl Job for GitLogJob {
                 }
             }
             Err(e) => {
-                let _ = sender.send(JobMessage::Error(id, e.message));
+                let _ = sender.send(JobMessage::Error(id, e));
             }
         }
     }
@@ -476,7 +476,7 @@ impl Job for GitShowJob {
                 }
             }
             Err(e) => {
-                let _ = sender.send(JobMessage::Error(id, e.message));
+                let _ = sender.send(JobMessage::Error(id, e));
             }
         }
     }
@@ -684,7 +684,7 @@ impl Job for GitGutterDiffJob {
         let stdout = match diff_out {
             Ok(out) => out.stdout,
             Err(e) => {
-                let _ = sender.send(JobMessage::Error(id, e.message));
+                let _ = sender.send(JobMessage::Error(id, e));
                 return;
             }
         };
@@ -712,7 +712,7 @@ impl Job for GitGutterDiffJob {
 }
 
 /// Write `content` to a fresh temp file, returning its path. Named oddly-but-clearly `tempfile_write` to avoid confusion with the `tempfile` dev-dependency crate (unavailable in non-test builds; this is hand-rolled).
-fn tempfile_write(content: &str) -> Result<PathBuf, String> {
+fn tempfile_write(content: &str) -> Result<PathBuf, crate::error::RiftError> {
     let dir = std::env::temp_dir();
     let unique = format!(
         "rift-gutter-diff-{}-{}.tmp",
@@ -723,6 +723,6 @@ fn tempfile_write(content: &str) -> Result<PathBuf, String> {
             .unwrap_or(0)
     );
     let path = dir.join(unique);
-    std::fs::write(&path, content).map_err(|e| e.to_string())?;
+    std::fs::write(&path, content)?;
     Ok(path)
 }

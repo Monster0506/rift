@@ -67,7 +67,8 @@ fn attach<T: TerminalBackend>(config: AttachConfig, mut terminal: T) -> anyhow::
         },
     });
     write_framed(&mut stream, &init_msg)?;
-    let _init_response = read_one_frame(&mut stream)?;
+    let init_response = read_one_frame(&mut stream)?;
+    check_handshake_response(&init_response)?;
 
     terminal.init().map_err(|e| anyhow::anyhow!(e))?;
     let result = event_loop(&mut terminal, stream);
@@ -148,6 +149,21 @@ fn free_port() -> anyhow::Result<u16> {
 /// Single-quote escape a string for POSIX shell (bash -lc "...").
 fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Reject a handshake response carrying a JSON-RPC `error` field (e.g. bad
+/// token, daemon version mismatch) instead of silently proceeding as if the
+/// daemon had accepted the connection.
+fn check_handshake_response(bytes: &[u8]) -> anyhow::Result<()> {
+    let response: serde_json::Value = serde_json::from_slice(bytes)?;
+    if let Some(error) = response.get("error") {
+        let message = error
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("handshake rejected");
+        anyhow::bail!("daemon rejected handshake: {message}");
+    }
+    Ok(())
 }
 
 fn read_one_frame(stream: &mut impl Read) -> anyhow::Result<Vec<u8>> {

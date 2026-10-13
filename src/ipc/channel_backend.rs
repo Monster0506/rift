@@ -1,6 +1,7 @@
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, SyncSender};
 use std::time::Duration;
 
+use crate::error::RiftError;
 use crate::key::Key;
 use crate::term::{CursorShape, Size, TerminalBackend};
 
@@ -32,13 +33,13 @@ impl ChannelBackend {
 }
 
 impl TerminalBackend for ChannelBackend {
-    fn init(&mut self) -> Result<(), String> {
+    fn init(&mut self) -> Result<(), RiftError> {
         Ok(())
     }
 
     fn deinit(&mut self) {}
 
-    fn poll(&mut self, duration: Duration) -> Result<bool, String> {
+    fn poll(&mut self, duration: Duration) -> Result<bool, RiftError> {
         match self.input_rx.recv_timeout(duration) {
             Ok(Key::Resize(cols, rows)) => {
                 self.size = Size { rows, cols };
@@ -54,16 +55,16 @@ impl TerminalBackend for ChannelBackend {
         }
     }
 
-    fn read_key(&mut self) -> Result<Option<Key>, String> {
+    fn read_key(&mut self) -> Result<Option<Key>, RiftError> {
         Ok(self.pending_key.take())
     }
 
-    fn write(&mut self, bytes: &[u8]) -> Result<(), String> {
+    fn write(&mut self, bytes: &[u8]) -> Result<(), RiftError> {
         self.render_buf.extend_from_slice(bytes);
         Ok(())
     }
 
-    fn flush(&mut self) -> Result<(), String> {
+    fn flush(&mut self) -> Result<(), RiftError> {
         if self.render_buf.is_empty() {
             return Ok(());
         }
@@ -73,36 +74,36 @@ impl TerminalBackend for ChannelBackend {
             .map_err(|_| "output channel disconnected".into())
     }
 
-    fn get_size(&self) -> Result<Size, String> {
+    fn get_size(&self) -> Result<Size, RiftError> {
         Ok(self.size)
     }
 
-    fn clear_screen(&mut self) -> Result<(), String> {
+    fn clear_screen(&mut self) -> Result<(), RiftError> {
         self.render_buf.extend_from_slice(b"\x1b[2J");
         Ok(())
     }
 
-    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), String> {
+    fn move_cursor(&mut self, row: u16, col: u16) -> Result<(), RiftError> {
         use std::io::Write;
-        write!(self.render_buf, "\x1b[{};{}H", row + 1, col + 1).map_err(|e| e.to_string())
+        write!(self.render_buf, "\x1b[{};{}H", row + 1, col + 1).map_err(|e| e.to_string().into())
     }
 
-    fn hide_cursor(&mut self) -> Result<(), String> {
+    fn hide_cursor(&mut self) -> Result<(), RiftError> {
         self.render_buf.extend_from_slice(b"\x1b[?25l");
         Ok(())
     }
 
-    fn show_cursor(&mut self) -> Result<(), String> {
+    fn show_cursor(&mut self) -> Result<(), RiftError> {
         self.render_buf.extend_from_slice(b"\x1b[?25h");
         Ok(())
     }
 
-    fn clear_to_end_of_line(&mut self) -> Result<(), String> {
+    fn clear_to_end_of_line(&mut self) -> Result<(), RiftError> {
         self.render_buf.extend_from_slice(b"\x1b[K");
         Ok(())
     }
 
-    fn set_cursor_shape(&mut self, shape: CursorShape) -> Result<(), String> {
+    fn set_cursor_shape(&mut self, shape: CursorShape) -> Result<(), RiftError> {
         let seq = match shape {
             CursorShape::SteadyBlock => b"\x1b[2 q" as &[u8],
             CursorShape::SteadyBar => b"\x1b[6 q",

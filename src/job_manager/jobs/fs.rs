@@ -124,7 +124,7 @@ impl Job for FsCopyJob {
                 let _ = sender.send(JobMessage::Finished(id, false));
             }
             Err(e) => {
-                let _ = sender.send(JobMessage::Error(id, e.to_string()));
+                let _ = sender.send(JobMessage::Error(id, e.into()));
             }
         }
     }
@@ -167,7 +167,7 @@ impl Job for FsMoveJob {
 
         if let Some(parent) = self.destination.parent() {
             if let Err(e) = fs::create_dir_all(parent) {
-                let _ = sender.send(JobMessage::Error(id, e.to_string()));
+                let _ = sender.send(JobMessage::Error(id, e.into()));
                 return;
             }
         }
@@ -188,12 +188,12 @@ impl Job for FsMoveJob {
                             let _ = sender.send(JobMessage::Finished(id, false));
                         }
                         Err(e) => {
-                            let _ = sender.send(JobMessage::Error(id, e.to_string()));
+                            let _ = sender.send(JobMessage::Error(id, e.into()));
                         }
                     }
                 }
                 Err(e) => {
-                    let _ = sender.send(JobMessage::Error(id, e.to_string()));
+                    let _ = sender.send(JobMessage::Error(id, e.into()));
                 }
             },
         }
@@ -238,7 +238,7 @@ impl Job for FsDeleteJob {
                 let _ = sender.send(JobMessage::Finished(id, false));
             }
             Err(e) => {
-                let _ = sender.send(JobMessage::Error(id, e.to_string()));
+                let _ = sender.send(JobMessage::Error(id, e.into()));
             }
         }
     }
@@ -272,7 +272,7 @@ impl Job for FsCreateJob {
         } else {
             if let Some(parent) = self.path.parent() {
                 if let Err(e) = fs::create_dir_all(parent) {
-                    let _ = sender.send(JobMessage::Error(id, e.to_string()));
+                    let _ = sender.send(JobMessage::Error(id, e.into()));
                     return;
                 }
             }
@@ -284,7 +284,7 @@ impl Job for FsCreateJob {
                 let _ = sender.send(JobMessage::Finished(id, false));
             }
             Err(e) => {
-                let _ = sender.send(JobMessage::Error(id, e.to_string()));
+                let _ = sender.send(JobMessage::Error(id, e.into()));
             }
         }
     }
@@ -338,7 +338,7 @@ impl Job for FsBatchDeleteJob {
             if let Err(e) = result {
                 let _ = sender.send(JobMessage::Error(
                     id,
-                    format!("Failed to delete {:?}: {}", path, e),
+                    format!("Failed to delete {:?}: {}", path, e).into(),
                 ));
             }
         }

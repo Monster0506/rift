@@ -3,6 +3,7 @@
 
 use crate::character::Character;
 use crate::color::Color;
+use crate::error::RiftError;
 use crate::layer::{Cell, Rect};
 
 /// A single text attribute toggled by a `StyleOp::SetAttr`.
@@ -410,7 +411,7 @@ impl DoubleBuffer {
         top: usize,
         bottom: usize,
         delta: isize,
-    ) -> Result<bool, String> {
+    ) -> Result<bool, RiftError> {
         let k = delta.unsigned_abs();
         if self.force_full_redraw
             || delta == 0
@@ -489,11 +490,8 @@ impl DoubleBuffer {
     }
 
     /// Clear the current buffer (fill with empty cells)
-    pub fn clear(&mut self) -> Result<(), String> {
-        Err(
-            "Use clear_cell or specialized method. clear() ambiguous on buffering strategy"
-                .to_string(),
-        )
+    pub fn clear(&mut self) -> Result<(), RiftError> {
+        Err("Use clear_cell or specialized method. clear() ambiguous on buffering strategy".into())
     }
 
     /// Clear content (fill with empty)
@@ -535,7 +533,7 @@ impl DoubleBuffer {
     pub fn render_to_terminal<T: crate::term::TerminalBackend>(
         &mut self,
         term: &mut T,
-    ) -> Result<FrameStats, String> {
+    ) -> Result<FrameStats, RiftError> {
         // Taken out (not borrowed) so get_batched_changes's &self borrow never
         // overlaps a &mut self.scratch_* access; put back before returning.
         let mut output = std::mem::take(&mut self.scratch_output);
@@ -566,7 +564,7 @@ impl DoubleBuffer {
         let mut current_attrs = crate::layer::CellAttrs::default();
         let mut last_cursor_pos: Option<(usize, usize)> = None;
 
-        let result = (|| -> Result<(), String> {
+        let result = (|| -> Result<(), RiftError> {
             for mut batch in batches {
                 Self::flush_cell_batch(
                     term,
@@ -620,7 +618,7 @@ impl DoubleBuffer {
         output: &mut String,
         cmd_buf: &mut Vec<u8>,
         ops: &mut Vec<StyleOp>,
-    ) -> Result<(), String> {
+    ) -> Result<(), RiftError> {
         if batch.cells.is_empty() {
             return Ok(());
         }

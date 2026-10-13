@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use monster_rift::buffer::TextBuffer;
+use monster_rift::error::RiftError;
 use monster_rift::mode::Mode;
 use monster_rift::render::{RenderState, RenderSystem};
 use monster_rift::state::State;
@@ -19,56 +20,59 @@ impl MockTerminal {
 }
 
 impl TerminalBackend for MockTerminal {
-    fn init(&mut self) -> Result<(), String> {
+    fn init(&mut self) -> Result<(), RiftError> {
         Ok(())
     }
 
     fn deinit(&mut self) {}
 
-    fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, String> {
+    fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, RiftError> {
         Ok(false)
     }
 
-    fn read_key(&mut self) -> Result<Option<monster_rift::key::Key>, String> {
+    fn read_key(&mut self) -> Result<Option<monster_rift::key::Key>, RiftError> {
         Ok(None)
     }
 
-    fn write(&mut self, _bytes: &[u8]) -> Result<(), String> {
+    fn write(&mut self, _bytes: &[u8]) -> Result<(), RiftError> {
         Ok(())
     }
 
-    fn flush(&mut self) -> Result<(), String> {
+    fn flush(&mut self) -> Result<(), RiftError> {
         Ok(())
     }
 
-    fn get_size(&self) -> Result<monster_rift::term::Size, String> {
+    fn get_size(&self) -> Result<monster_rift::term::Size, RiftError> {
         Ok(monster_rift::term::Size {
             rows: self.rows,
             cols: self.cols,
         })
     }
 
-    fn clear_screen(&mut self) -> Result<(), String> {
+    fn clear_screen(&mut self) -> Result<(), RiftError> {
         Ok(())
     }
 
-    fn move_cursor(&mut self, _row: u16, _col: u16) -> Result<(), String> {
+    fn move_cursor(&mut self, _row: u16, _col: u16) -> Result<(), RiftError> {
         Ok(())
     }
 
-    fn hide_cursor(&mut self) -> Result<(), String> {
+    fn hide_cursor(&mut self) -> Result<(), RiftError> {
         Ok(())
     }
 
-    fn show_cursor(&mut self) -> Result<(), String> {
+    fn show_cursor(&mut self) -> Result<(), RiftError> {
         Ok(())
     }
 
-    fn clear_to_end_of_line(&mut self) -> Result<(), String> {
+    fn clear_to_end_of_line(&mut self) -> Result<(), RiftError> {
         Ok(())
     }
 
-    fn set_cursor_shape(&mut self, _shape: monster_rift::term::CursorShape) -> Result<(), String> {
+    fn set_cursor_shape(
+        &mut self,
+        _shape: monster_rift::term::CursorShape,
+    ) -> Result<(), RiftError> {
         Ok(())
     }
 }
