@@ -107,7 +107,7 @@ fn test_scoped_highlights_match_full_recompute_after_single_edit() {
         Some(old_tree_edited),
         Some(query.clone()),
         "rust".to_string(),
-        1,
+        crate::document::DocumentId::new(1),
         buffer2.revision,
     )
     .with_highlights_context(
@@ -206,7 +206,7 @@ fn test_scoped_highlights_do_not_recolor_unrelated_token_on_same_line() {
         Some(old_tree_edited),
         Some(query.clone()),
         "rust".to_string(),
-        1,
+        crate::document::DocumentId::new(1),
         buffer2.revision,
     )
     .with_highlights_context(
@@ -289,7 +289,7 @@ fn test_scoped_highlights_real_file_diagnostics_panel_line() {
         Some(old_tree_edited),
         Some(query.clone()),
         "rust".to_string(),
-        1,
+        crate::document::DocumentId::new(1),
         buffer2.revision,
     )
     .with_highlights_context(
@@ -389,7 +389,7 @@ fn test_scoped_highlights_stay_correct_across_many_sequential_edits() {
             Some(tree.clone()),
             Some(query.clone()),
             "rust".to_string(),
-            1,
+            crate::document::DocumentId::new(1),
             buffer.revision,
         )
         .with_highlights_context(highlights.clone().into(), std::slice::from_ref(&edit));
@@ -446,7 +446,7 @@ fn patch_path_matches_full_rebuild_end_to_end() {
         syntax.tree.clone(),
         None,
         "rust".to_string(),
-        0,
+        crate::document::DocumentId::new(0),
         buffer.revision,
     );
     let result1 = run_job(job1);
@@ -481,7 +481,7 @@ fn patch_path_matches_full_rebuild_end_to_end() {
         syntax.tree.clone(),
         None,
         "rust".to_string(),
-        0,
+        crate::document::DocumentId::new(0),
         buffer.revision,
     )
     .with_incremental_bytes(cached_logical_bytes, single_edit);

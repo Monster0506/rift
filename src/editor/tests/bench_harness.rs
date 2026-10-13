@@ -81,7 +81,9 @@ fn ttfp_open_huge_treesitter_annotation_doc() {
     let annotated_paint = t.elapsed();
 
     let t = Instant::now();
-    let doc2 = crate::document::Document::from_file(9_999, &path_str).unwrap();
+    let doc2 =
+        crate::document::Document::from_file(crate::document::DocumentId::new(9_999), &path_str)
+            .unwrap();
     let file_load = t.elapsed();
     drop(doc2);
 

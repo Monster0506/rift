@@ -1,4 +1,5 @@
 use crate::buffer::TextBuffer;
+use crate::document::DocumentId;
 use crate::job_manager::{CancellationSignal, Job, JobMessage};
 use crate::syntax::interval_tree::IntervalTree;
 use crate::syntax::loader::RawLib;
@@ -12,7 +13,7 @@ pub struct SyntaxParseResult {
     pub tree: Option<Tree>,
     pub highlights: IntervalTree<u32>,
     pub language_name: String,
-    pub document_id: u64,
+    pub document_id: DocumentId,
     /// Buffer revision at spawn time; the caller must discard this result if
     /// the live revision has since moved on, or a stale parse can clobber newer state.
     pub revision: u64,
@@ -30,7 +31,7 @@ pub struct SyntaxParseJob {
     old_tree: Option<Tree>,
     highlights_query: Option<std::sync::Arc<Query>>,
     language_name: String,
-    document_id: u64,
+    document_id: DocumentId,
     revision: u64,
     /// Prior logical-bytes buffer and the single edit since it was captured.
     /// Lets `run()` patch instead of rebuilding the logical bytes.
@@ -66,7 +67,7 @@ impl SyntaxParseJob {
         old_tree: Option<Tree>,
         highlights_query: Option<std::sync::Arc<Query>>,
         language_name: String,
-        document_id: u64,
+        document_id: DocumentId,
         revision: u64,
     ) -> Self {
         Self {
