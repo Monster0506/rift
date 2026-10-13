@@ -127,11 +127,10 @@ fn non_wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_at_every_step() {
 
     let mut lines: Vec<String> = Vec::new();
     lines.push("fn build() -> i32 {".to_string());
-    for i in 0..20 {}
-    for _ in 0..40 {
-        lines.push(String::new());
+    for i in 0..40 {
+        lines.push(format!("    let x{i} = {i};"));
     }
-    lines.push(format!("A".repeat(150)));
+    lines.push("A".repeat(150));
     lines.push("    x0 + x1".to_string());
     lines.push("}".to_string());
     let text = lines.join("\n") + "\n";
@@ -243,18 +242,18 @@ fn wrap_dirty_row_scroll_blit_matches_a_fresh_full_render_on_densely_highlighted
         "impl Cache {".to_string(),
     ];
     for i in 0..12 {
-        lines.push(format!());
+        lines.push(String::new());
         lines.push(format!(
             "    pub fn insert_{i}(&mut self, key: u32, value: String) -> bool {{"
         ));
-        lines.push(format!());
+        lines.push(String::new());
         lines.push("        }".to_string());
-        lines.push(format!());
+        lines.push(String::new());
         lines.push("        true".to_string());
         lines.push("    }".to_string());
         lines.push(String::new());
     }
-    lines.push(format!("x".repeat(150)));
+    lines.push("x".repeat(150));
     lines.push("}".to_string());
     let text = lines.join("\n") + "\n";
 
@@ -360,7 +359,7 @@ fn scroll_blit_repaints_when_annotations_or_theme_change_mid_scroll() {
 
     let mut lines: Vec<String> = Vec::new();
     for i in 0..60 {
-        lines.push(format!());
+        lines.push(format!("    value_{i}: {i},"));
     }
     let text = lines.join("\n") + "\n";
     let style_anchor = text.find("value_5:").expect("marker line present");

@@ -1,5 +1,4 @@
 use super::common::*;
-use super::*;
 
 #[cfg(feature = "treesitter")]
 #[test]
@@ -67,6 +66,7 @@ fn stale_syntax_job_result_does_not_clobber_newer_state() {
 #[cfg(feature = "treesitter")]
 #[test]
 fn undo_keeps_syntax_tree_for_incremental_reuse() {
+    use crate::action::{Action, EditorAction};
     use crate::syntax::build_syntax;
     use std::sync::Arc;
 
@@ -84,6 +84,9 @@ fn undo_keeps_syntax_tree_for_incremental_reuse() {
     editor.active_document().set_syntax(syntax);
     editor.do_incremental_syntax_parse();
 
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertModeAtLineEnd));
+    editor.handle_action(&Action::Editor(EditorAction::InsertChar(';')));
+    editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     editor.do_incremental_syntax_parse();
     assert!(editor
         .active_document()
