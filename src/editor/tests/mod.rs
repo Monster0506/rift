@@ -5,6 +5,7 @@ pub(super) mod common;
 #[cfg(feature = "treesitter")]
 mod bench_harness;
 mod buffer_nav_tests;
+mod directory_target_tests;
 mod display_map_tests;
 mod editor_lsp_tests;
 mod editor_paste_tests;

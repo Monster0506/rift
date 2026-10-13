@@ -1163,9 +1163,6 @@ fn test_shell_done_handler_error_surfaces_as_notification() {
 
 #[test]
 fn test_spawn_shell_delivers_result_from_background_thread() {
-    // Exercises the real std::thread::spawn path (not the pending_shell_events
-    // injection used by the tests above), proving the mpsc channel correctly
-    // hands a background command's result back to the single-threaded Lua VM.
     let host = make_host();
     assert!(host
         .exec(

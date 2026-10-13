@@ -39,8 +39,19 @@ impl<T: TerminalBackend> Editor<T> {
 
         let mut document_manager = crate::document::DocumentManager::new();
 
-        if let Some(ref path) = file_path {
-            document_manager.open_file(Some(path.clone()), false)?;
+        let target_dir = file_path
+            .as_deref()
+            .map(std::path::Path::new)
+            .filter(|p| p.is_dir())
+            .map(|p| p.to_path_buf());
+        let effective_file_path = if target_dir.is_some() {
+            None
+        } else {
+            file_path.as_deref()
+        };
+
+        if let Some(path) = effective_file_path {
+            document_manager.open_file(Some(path.to_string()), false)?;
         } else {
             let new_doc = Document::new(crate::document::DocumentId::new(1)).map_err(|e| {
                 RiftError::new(
@@ -66,7 +77,7 @@ impl<T: TerminalBackend> Editor<T> {
         let command_parser = CommandParser::new(settings_registry);
 
         let mut state = State::new();
-        state.set_file_path(file_path.clone());
+        state.set_file_path(effective_file_path.map(str::to_string));
         if let Some(doc) = document_manager.active_document() {
             state.update_filename(doc.display_name().to_string());
         }
@@ -153,7 +164,7 @@ impl<T: TerminalBackend> Editor<T> {
                 .notify(crate::notification::NotificationType::Error, e.to_string())
         }
 
-        if file_path.is_some() {
+        if effective_file_path.is_some() {
             if let Some(hash) = editor
                 .document_manager
                 .get_document(initial_doc_id)
@@ -213,6 +224,10 @@ impl<T: TerminalBackend> Editor<T> {
             .plugin_host
             .dispatch(&crate::plugin::EditorEvent::EditorStart);
         editor.apply_plugin_mutations();
+
+        if let Some(dir) = target_dir {
+            editor.open_explorer(dir);
+        }
 
         Ok(editor)
     }

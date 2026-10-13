@@ -1,11 +1,6 @@
 use super::common::*;
 use crate::plugin::PluginMutation;
 
-/// A `BufSavePre` hook that closes the buffer being saved (e.g. "close scratch
-/// buffers before save") must not cause `do_save` to write some *other*
-/// document's content to the original file path. Regression test for a bug
-/// where `do_save` re-fetched "whichever document is active now" after
-/// running plugin mutations instead of the document it started saving.
 #[test]
 fn save_does_not_write_another_buffers_content_when_a_bufsavepre_hook_closes_the_target() {
     let dir = tempfile::tempdir().unwrap();

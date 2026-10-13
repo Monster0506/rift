@@ -224,10 +224,6 @@ struct PostPasteState {
     original_cursor: usize,
 }
 
-/// The operator (if any) waiting for a motion/text-object in `OperatorPending`
-/// mode. `SurroundAdd` represents the `sg<motion><ch>` flow, which borrows
-/// operator-pending motion composition to resolve its target range before
-/// handing off to `pending_grammar` for the delimiter keypress.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PendingOperator {
     Op(crate::action::OperatorType),

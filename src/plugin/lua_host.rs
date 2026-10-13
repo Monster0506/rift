@@ -149,9 +149,7 @@ pub enum BufSourceUpdate {
 }
 
 /// State shared between Lua API closures and the host.
-/// Stored behind `Rc<RefCell>` so closures can be `'static`; the mlua VM and
-/// its registered closures all run on one thread, so no real synchronization
-/// is needed, just a lifetime-extending shared owner.
+/// Stored behind `Rc<RefCell>` so closures can be `'static`.
 struct LuaSharedState {
     /// Mutations queued by Lua plugin calls; drained by `PluginHost`.
     mutations: Vec<PluginMutation>,
@@ -292,13 +290,10 @@ pub struct LuaHost {
     /// Absolute deadline for the in-flight Lua call, checked by a VM
     /// instruction hook so a runaway handler aborts instead of freezing.
     hook_deadline: Rc<RefCell<Option<std::time::Instant>>>,
-    /// Receives completed `rift.spawn`/`rift.spawn_shell` results from their
-    /// background OS threads; drained into `shared` on the main thread.
     shell_result_rx: std::sync::mpsc::Receiver<ShellResult>,
     generation: crate::plugin::PluginGeneration,
 }
 
-/// Tag, success, and combined stdout+stderr output of a finished background command.
 type ShellResult = (String, bool, String);
 
 impl LuaHost {

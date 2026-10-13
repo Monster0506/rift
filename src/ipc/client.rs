@@ -151,9 +151,6 @@ fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Reject a handshake response carrying a JSON-RPC `error` field (e.g. bad
-/// token, daemon version mismatch) instead of silently proceeding as if the
-/// daemon had accepted the connection.
 fn check_handshake_response(bytes: &[u8]) -> anyhow::Result<()> {
     let response: serde_json::Value = serde_json::from_slice(bytes)?;
     if let Some(error) = response.get("error") {
