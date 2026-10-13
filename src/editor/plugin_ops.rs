@@ -890,7 +890,7 @@ impl<T: TerminalBackend> Editor<T> {
                     let _ = self.open_file(None, force);
                 }
                 PluginMutation::MoveWindow { direction } => {
-                    let size = self.term.get_size().unwrap();
+                    let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
                     let layouts = self
                         .split_tree
                         .compute_layout(size.rows as usize, size.cols as usize);

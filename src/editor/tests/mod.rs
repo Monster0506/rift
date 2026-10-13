@@ -15,6 +15,7 @@ mod plugin_highlight_tests;
 mod plugin_settings_tests;
 mod region_bank_ops_tests;
 mod region_bank_selection_tests;
+mod save_tests;
 mod scroll_blit_tests;
 mod surround_tests;
 #[cfg(feature = "treesitter")]

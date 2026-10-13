@@ -273,7 +273,15 @@ impl<T: TerminalBackend> Editor<T> {
                         path: path.clone(),
                     });
                 self.apply_plugin_mutations();
-                let document = self.document_manager.active_document_mut().unwrap();
+                let Some(document) = self.document_manager.get_document_mut(buf_id) else {
+                    self.state.handle_error(RiftError::new(
+                        ErrorType::Io,
+                        "SAVE_TARGET_CLOSED",
+                        "Buffer was closed by a plugin hook before it could be saved",
+                    ));
+                    self.state.clear_command_line();
+                    return;
+                };
                 let job = crate::job_manager::jobs::file_operations::FileSaveJob::new(
                     document.id,
                     document.buffer.line_index.table.clone(),
@@ -630,7 +638,7 @@ impl<T: TerminalBackend> Editor<T> {
             SplitSubcommand::Current => {
                 let doc_id = self.active_document_id();
                 let focused_id = self.split_tree.focused_window_id();
-                let size = self.term.get_size().unwrap();
+                let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
                 let new_id = self.split_tree.split(
                     direction,
                     focused_id,
@@ -672,7 +680,7 @@ impl<T: TerminalBackend> Editor<T> {
                     }
                 };
                 let focused_id = self.split_tree.focused_window_id();
-                let size = self.term.get_size().unwrap();
+                let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
                 let new_id = self.split_tree.split(
                     direction,
                     focused_id,
@@ -685,7 +693,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             SplitSubcommand::Navigate(dir) => {
-                let size = self.term.get_size().unwrap();
+                let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
                 let layouts = self
                     .split_tree
                     .compute_layout(size.rows as usize, size.cols as usize);
@@ -694,7 +702,7 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             }
             SplitSubcommand::Resize(delta) => {
-                let size = self.term.get_size().unwrap();
+                let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
                 let layouts = self
                     .split_tree
                     .compute_layout(size.rows as usize, size.cols as usize);
@@ -703,7 +711,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.render_system.viewport.mark_needs_full_redraw();
             }
             SplitSubcommand::Move(dir) => {
-                let size = self.term.get_size().unwrap();
+                let size = self.term.get_size().unwrap_or(crate::term::Size { rows: 24, cols: 80 });
                 let layouts = self
                     .split_tree
                     .compute_layout(size.rows as usize, size.cols as usize);
