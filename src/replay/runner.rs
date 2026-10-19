@@ -156,7 +156,7 @@ pub fn run<W: Write>(ops: &[ScriptOp], writer: W) -> Result<RunReport, RiftError
                     let started = Instant::now();
                     ed.tick()?;
                     report.ticks.push(TickTiming {
-                        key: key.clone(),
+                        key: *key,
                         duration: started.elapsed(),
                     });
                 }

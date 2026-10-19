@@ -272,9 +272,9 @@ impl RenderSystem {
 
         let status_state = StatusDrawState {
             mode: ctx.current_mode,
-            pending_key: ctx.pending_key.clone(),
+            pending_key: ctx.pending_key,
             pending_count: ctx.pending_count,
-            last_keypress: ctx.state.last_keypress.clone(),
+            last_keypress: ctx.state.last_keypress,
             file_name: crate::perf_clone!(ctx.state.file_name.clone()),
             is_dirty: ctx.state.is_dirty,
             cursor: crate::render::CursorInfo {

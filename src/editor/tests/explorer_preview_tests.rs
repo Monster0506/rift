@@ -272,7 +272,7 @@ fn test_explorer_preview_updates_on_real_j_keypress_navigation() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
 
-    editor.term.push_keys([crate::key::Key::Char('j')]);
+    editor.term.push_keys([crate::key::Key::char('j')]);
     editor.tick().unwrap();
     for _ in 0..100 {
         editor.tick().unwrap();

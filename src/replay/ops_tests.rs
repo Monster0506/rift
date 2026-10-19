@@ -32,8 +32,8 @@ fn keys_parse_vim_notation() {
     let ScriptOp::Keys(keys) = &ops[0] else {
         panic!("expected Keys op");
     };
-    assert_eq!(keys.first(), Some(&Key::Char('i')));
-    assert_eq!(keys.last(), Some(&Key::Escape));
+    assert_eq!(keys.first(), Some(&Key::char('i')));
+    assert_eq!(keys.last(), Some(&Key::ESC));
 }
 
 #[test]

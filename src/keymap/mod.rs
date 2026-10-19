@@ -1,7 +1,7 @@
 pub mod defaults;
 pub mod trie;
 
-pub use self::trie::{MatchResult, TrieNode};
+pub use self::trie::{MatchResult, Strictness, TrieNode};
 use crate::action::Action;
 use crate::document::BufferKindId;
 use crate::key::Key;
@@ -287,6 +287,9 @@ impl KeyMap {
 
     /// Looks up a sequence via the fallback chain; `resolve_parent` overrides
     /// buffer-context parents, built-in contexts keep their static fallback.
+    ///
+    /// Exact keys win across the whole chain; only then are modifiers with
+    /// no text meaning stripped (`Key::fallback`) and the chain retried.
     pub fn lookup_with_parent<'a, R: ParentResolver>(
         &'a self,
         context: KeyContext,
@@ -294,11 +297,30 @@ impl KeyMap {
         mut resolve_parent: R,
     ) -> MatchResult<'a> {
         crate::perf_span!("keymap_lookup", crate::perf::PerfFields::default());
+        let exact = self.lookup_chain(context, keys, Strictness::Exact, &mut resolve_parent);
+        if exact != MatchResult::None || keys.iter().all(|key| key.fallback().is_none()) {
+            return exact;
+        }
+        self.lookup_chain(
+            context,
+            keys,
+            Strictness::StripModifiers,
+            &mut resolve_parent,
+        )
+    }
+
+    fn lookup_chain<'a, R: ParentResolver>(
+        &'a self,
+        context: KeyContext,
+        keys: &[Key],
+        strictness: Strictness,
+        resolve_parent: &mut R,
+    ) -> MatchResult<'a> {
         let mut ctx = context;
         let mut depth = 0;
         loop {
             if let Some(trie) = self.mappings.get(&ctx) {
-                match trie.lookup(keys) {
+                match trie.lookup(keys, strictness) {
                     MatchResult::None => {}
                     match_result => return match_result,
                 }

@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::command_line::commands::SplitSubcommand;
-use crate::key::Key;
+use crate::key::{InputEvent, Key, KeyCode, Mods};
 use crate::split::tree::SplitDirection;
 use crate::split::window::WindowId;
 use crate::term::{Size, TerminalBackend};
@@ -25,7 +25,7 @@ impl QueueTerminal {
     }
 
     fn push_chord(&mut self, keys: &[Key]) {
-        self.keys.extend(keys.iter().cloned());
+        self.keys.extend(keys.iter().copied());
     }
 }
 
@@ -37,8 +37,8 @@ impl TerminalBackend for QueueTerminal {
     fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, crate::error::RiftError> {
         Ok(!self.keys.is_empty())
     }
-    fn read_key(&mut self) -> Result<Option<Key>, crate::error::RiftError> {
-        Ok(self.keys.pop_front())
+    fn read_event(&mut self) -> Result<Option<InputEvent>, crate::error::RiftError> {
+        Ok(self.keys.pop_front().map(InputEvent::Key))
     }
     fn write(&mut self, _bytes: &[u8]) -> Result<(), crate::error::RiftError> {
         Ok(())
@@ -99,7 +99,10 @@ fn drain(editor: &mut Editor<QueueTerminal>) {
     }
 }
 
-const WW: Key = Key::Ctrl(b'w');
+const WW: Key = Key {
+    code: KeyCode::Char('w'),
+    mods: Mods::CTRL,
+};
 
 /// A|B side by side, focus starts on A. Returns the backing `TempDir` too,
 /// so callers keep it alive (and get cleanup) for the test's duration.
@@ -182,11 +185,11 @@ fn rapid_ctrl_w_hjkl_toggle_matches_ctrl_held_form() {
         // Alternate which of the two equivalent chord forms fires each round,
         // so the burst genuinely exercises both bindings under load.
         if i % 2 == 0 {
-            editor.term.push_chord(&[WW, Key::Char('l')]);
-            editor.term.push_chord(&[WW, Key::Char('h')]);
+            editor.term.push_chord(&[WW, Key::char('l')]);
+            editor.term.push_chord(&[WW, Key::char('h')]);
         } else {
-            editor.term.push_chord(&[WW, Key::Ctrl(b'l')]);
-            editor.term.push_chord(&[WW, Key::Ctrl(b'h')]);
+            editor.term.push_chord(&[WW, Key::ctrl('l')]);
+            editor.term.push_chord(&[WW, Key::ctrl('h')]);
         }
     }
 
@@ -224,16 +227,16 @@ fn rapid_ctrl_w_four_pane_survives_random_walk_without_corruption() {
     // ctrl-held, all 4 directions), less structured than the round-trip test above.
     const STEPS: usize = 5_000;
     let plain = [
-        Key::Char('h'),
-        Key::Char('j'),
-        Key::Char('k'),
-        Key::Char('l'),
+        Key::char('h'),
+        Key::char('j'),
+        Key::char('k'),
+        Key::char('l'),
     ];
     let held = [
-        Key::Ctrl(b'h'),
-        Key::Ctrl(b'j'),
-        Key::Ctrl(b'k'),
-        Key::Ctrl(b'l'),
+        Key::ctrl('h'),
+        Key::ctrl('j'),
+        Key::ctrl('k'),
+        Key::ctrl('l'),
     ];
     let mut seed: u64 = 0x9E3779B97F4A7C15;
     for _ in 0..STEPS {
@@ -243,9 +246,9 @@ fn rapid_ctrl_w_four_pane_survives_random_walk_without_corruption() {
         seed ^= seed << 17;
         let dir_idx = (seed % 4) as usize;
         let second = if (seed >> 4).is_multiple_of(2) {
-            plain[dir_idx].clone()
+            plain[dir_idx]
         } else {
-            held[dir_idx].clone()
+            held[dir_idx]
         };
         editor.term.push_chord(&[WW, second]);
     }

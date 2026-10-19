@@ -1,34 +1,34 @@
 use crate::action::{Action, EditorAction, Motion};
 use crate::command::Command;
 use crate::document::BufferKindId;
-use crate::key::Key;
+use crate::key::{Key, Mods};
 use crate::keymap::{KeyContext, KeyMap};
 /// Register default keybindings
 pub fn register_defaults(keymap: &mut KeyMap) {
     // Terminal mode Defaults
     keymap.register(
         KeyContext::Terminal,
-        Key::Ctrl(92),
+        Key::ctrl('\\'),
         Action::Editor(EditorAction::ExitTerminalMode),
     );
     keymap.register(
         KeyContext::Terminal,
-        Key::Ctrl(b'u'),
+        Key::ctrl('u'),
         Action::Editor(EditorAction::TerminalScrollback(10)),
     );
     keymap.register(
         KeyContext::Terminal,
-        Key::Ctrl(b'd'),
+        Key::ctrl('d'),
         Action::Editor(EditorAction::TerminalScrollback(-10)),
     );
     keymap.register(
         KeyContext::TerminalNormal,
-        Key::Ctrl(b'u'),
+        Key::ctrl('u'),
         Action::Editor(EditorAction::TerminalScrollback(10)),
     );
     keymap.register(
         KeyContext::TerminalNormal,
-        Key::Ctrl(b'd'),
+        Key::ctrl('d'),
         Action::Editor(EditorAction::TerminalScrollback(-10)),
     );
 
@@ -36,27 +36,27 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     // via the fallback chain; only directory-specific bindings are registered here.
     keymap.register(
         KeyContext::Buffer(BufferKindId::DIRECTORY),
-        Key::Enter,
+        Key::ENTER,
         Action::Buffer("explorer:select".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::DIRECTORY),
-        Key::Char('-'),
+        Key::char('-'),
         Action::Buffer("explorer:parent".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::DIRECTORY),
-        Key::Backspace,
+        Key::BACKSPACE,
         Action::Buffer("explorer:parent".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::DIRECTORY),
-        Key::Escape,
+        Key::ESC,
         Action::Buffer("explorer:close".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::DIRECTORY),
-        Key::Char('H'),
+        Key::char('H'),
         Action::Editor(EditorAction::ExplorerToggleHidden),
     );
 
@@ -64,175 +64,175 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     // Normal motions fall through to KeyContext::Normal via the fallback chain.
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        Key::Enter,
+        Key::ENTER,
         Action::Buffer("git_status:select".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        Key::Char('s'),
+        Key::char('s'),
         Action::Buffer("git_status:stage".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        Key::Char('u'),
+        Key::char('u'),
         Action::Buffer("git_status:unstage".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        Key::Char('-'),
+        Key::char('-'),
         Action::Buffer("git_status:toggle_stage".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        Key::Char('X'),
+        Key::char('X'),
         Action::Buffer("git_status:discard".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        Key::Char('='),
+        Key::char('='),
         Action::Buffer("git_status:toggle_expand".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        Key::Char('b'),
+        Key::char('b'),
         Action::Buffer("git_status:blame".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        Key::Char('r'),
+        Key::char('r'),
         Action::Buffer("git_status:rebase".to_string()),
     );
     keymap.register_sequence(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        vec![Key::Char(']'), Key::Char('c')],
+        vec![Key::char(']'), Key::char('c')],
         Action::Buffer("git_status:next_hunk".to_string()),
     );
     keymap.register_sequence(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        vec![Key::Char('['), Key::Char('c')],
+        vec![Key::char('['), Key::char('c')],
         Action::Buffer("git_status:prev_hunk".to_string()),
     );
     keymap.register_sequence(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        vec![Key::Char('c'), Key::Char('c')],
+        vec![Key::char('c'), Key::char('c')],
         Action::Editor(EditorAction::GitCommitNew),
     );
     keymap.register_sequence(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        vec![Key::Char('c'), Key::Char('a')],
+        vec![Key::char('c'), Key::char('a')],
         Action::Editor(EditorAction::GitCommitAmend),
     );
     keymap.register_sequence(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        vec![Key::Char('c'), Key::Char('w')],
+        vec![Key::char('c'), Key::char('w')],
         Action::Editor(EditorAction::GitCommitAmend),
     );
     keymap.register_sequence(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        vec![Key::Char('c'), Key::Char('f')],
+        vec![Key::char('c'), Key::char('f')],
         Action::Editor(EditorAction::GitCommitFixup),
     );
     keymap.register_sequence(
         KeyContext::Buffer(BufferKindId::GIT_STATUS),
-        vec![Key::Char('g'), Key::Char('?')],
+        vec![Key::char('g'), Key::char('?')],
         Action::Editor(EditorAction::GitHelp),
     );
     // UndoTree buffer Defaults
     // j/k are overridden to skip connector lines; <CR> selects the node.
     keymap.register(
         KeyContext::Buffer(BufferKindId::UNDO_TREE),
-        Key::Char('j'),
+        Key::char('j'),
         Action::Buffer("undotree:next".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::UNDO_TREE),
-        Key::Char('k'),
+        Key::char('k'),
         Action::Buffer("undotree:prev".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::UNDO_TREE),
-        Key::Enter,
+        Key::ENTER,
         Action::Buffer("undotree:select".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::UNDO_TREE),
-        Key::Escape,
+        Key::ESC,
         Action::Buffer("undotree:close".to_string()),
     );
 
     // Clipboard index buffer Defaults
     keymap.register(
         KeyContext::Buffer(BufferKindId::CLIPBOARD),
-        Key::Enter,
+        Key::ENTER,
         Action::Buffer("clipboard:select".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::CLIPBOARD),
-        Key::Escape,
+        Key::ESC,
         Action::Buffer("clipboard:close".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::CLIPBOARD),
-        Key::Char('n'),
+        Key::char('n'),
         Action::Buffer("clipboard:new".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::CLIPBOARD),
-        Key::Char('r'),
+        Key::char('r'),
         Action::Buffer("clipboard:refresh".to_string()),
     );
     // ClipboardEntry scratch buffer: Escape returns focus to index pane
     keymap.register(
         KeyContext::Buffer(BufferKindId::CLIPBOARD_ENTRY),
-        Key::Escape,
+        Key::ESC,
         Action::Buffer("clipboard:entry:close".to_string()),
     );
     // Normal Mode Defaults
     // '-' opens the file-explorer buffer for the current file's parent directory
     keymap.register(
         KeyContext::Normal,
-        Key::Char('-'),
+        Key::char('-'),
         Action::Editor(EditorAction::OpenExplorer),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('h'),
+        Key::char('h'),
         Action::Editor(EditorAction::Move(Motion::Left)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('j'),
+        Key::char('j'),
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('k'),
+        Key::char('k'),
         Action::Editor(EditorAction::Move(Motion::Up)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('l'),
+        Key::char('l'),
         Action::Editor(EditorAction::Move(Motion::Right)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('q'),
+        Key::char('q'),
         Action::Editor(EditorAction::QuitForce),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('n'),
+        Key::char('n'),
         Action::Editor(EditorAction::Move(Motion::RepeatFindForward)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('N'),
+        Key::char('N'),
         Action::Editor(EditorAction::Move(Motion::RepeatFindBackward)),
     );
     // Find-char motion (f / F) and till motion (t / T)
     keymap.register(
         KeyContext::Normal,
-        Key::Char('f'),
+        Key::char('f'),
         Action::Editor(EditorAction::FindCharPending {
             forward: true,
             till: false,
@@ -240,7 +240,7 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('F'),
+        Key::char('F'),
         Action::Editor(EditorAction::FindCharPending {
             forward: false,
             till: false,
@@ -248,7 +248,7 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('t'),
+        Key::char('t'),
         Action::Editor(EditorAction::FindCharPending {
             forward: true,
             till: true,
@@ -256,7 +256,7 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('T'),
+        Key::char('T'),
         Action::Editor(EditorAction::FindCharPending {
             forward: false,
             till: true,
@@ -265,530 +265,530 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     // Replace (r = single char pending, R = stream replace mode)
     keymap.register(
         KeyContext::Normal,
-        Key::Char('r'),
+        Key::char('r'),
         Action::Editor(EditorAction::ReplaceCharPending),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('R'),
+        Key::char('R'),
         Action::Editor(EditorAction::EnterReplaceMode),
     );
     // Word Motion
     keymap.register(
         KeyContext::Normal,
-        Key::Char('w'),
+        Key::char('w'),
         Action::Editor(EditorAction::Move(Motion::NextWord)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('b'),
+        Key::char('b'),
         Action::Editor(EditorAction::Move(Motion::PreviousWord)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('e'),
+        Key::char('e'),
         Action::Editor(EditorAction::Move(Motion::WordEnd)),
     );
     // Line Motion
     keymap.register(
         KeyContext::Normal,
-        Key::Char('0'),
+        Key::char('0'),
         Action::Editor(EditorAction::Move(Motion::StartOfLine)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('$'),
+        Key::char('$'),
         Action::Editor(EditorAction::Move(Motion::EndOfLine)),
     );
     // Paragraph Motion
     keymap.register(
         KeyContext::Normal,
-        Key::Char('}'),
+        Key::char('}'),
         Action::Editor(EditorAction::Move(Motion::NextParagraph)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('{'),
+        Key::char('{'),
         Action::Editor(EditorAction::Move(Motion::PreviousParagraph)),
     );
     // Sentence Motion
     keymap.register(
         KeyContext::Normal,
-        Key::Char(')'),
+        Key::char(')'),
         Action::Editor(EditorAction::Move(Motion::NextSentence)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('('),
+        Key::char('('),
         Action::Editor(EditorAction::Move(Motion::PreviousSentence)),
     );
     // Page Motion
     keymap.register(
         KeyContext::Normal,
-        Key::PageUp,
+        Key::PAGE_UP,
         Action::Editor(EditorAction::Move(Motion::PageUp)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::PageDown,
+        Key::PAGE_DOWN,
         Action::Editor(EditorAction::Move(Motion::PageDown)),
     );
     // Undo/Redo
     keymap.register(
         KeyContext::Normal,
-        Key::Char('u'),
+        Key::char('u'),
         Action::Editor(EditorAction::Undo),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Ctrl(b'r'),
+        Key::ctrl('r'),
         Action::Editor(EditorAction::Redo),
     );
     // Modes
     keymap.register(
         KeyContext::Normal,
-        Key::Char('i'),
+        Key::char('i'),
         Action::Editor(EditorAction::EnterInsertMode),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char(':'),
+        Key::char(':'),
         Action::Editor(EditorAction::EnterCommandMode),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('/'),
+        Key::char('/'),
         Action::Editor(EditorAction::EnterSearchMode),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('a'),
+        Key::char('a'),
         Action::Editor(EditorAction::EnterInsertModeAfter),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('I'),
+        Key::char('I'),
         Action::Editor(EditorAction::EnterInsertModeAtLineStart),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('A'),
+        Key::char('A'),
         Action::Editor(EditorAction::EnterInsertModeAtLineEnd),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('o'),
+        Key::char('o'),
         Action::Editor(EditorAction::OpenLineBelow),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('O'),
+        Key::char('O'),
         Action::Editor(EditorAction::OpenLineAbove),
     );
     // Normal Mode Arrows/Home/End
     keymap.register(
         KeyContext::Normal,
-        Key::ArrowLeft,
+        Key::LEFT,
         Action::Editor(EditorAction::Move(Motion::Left)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::ArrowRight,
+        Key::RIGHT,
         Action::Editor(EditorAction::Move(Motion::Right)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::ArrowUp,
+        Key::UP,
         Action::Editor(EditorAction::Move(Motion::Up)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::ArrowDown,
+        Key::DOWN,
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Home,
+        Key::HOME,
         Action::Editor(EditorAction::Move(Motion::StartOfLine)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::End,
+        Key::END,
         Action::Editor(EditorAction::Move(Motion::EndOfLine)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::CtrlArrowLeft,
+        Key::LEFT.with(Mods::CTRL),
         Action::Editor(EditorAction::Move(Motion::PreviousWord)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::CtrlArrowRight,
+        Key::RIGHT.with(Mods::CTRL),
         Action::Editor(EditorAction::Move(Motion::NextWord)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::CtrlArrowUp,
+        Key::UP.with(Mods::CTRL),
         Action::Editor(EditorAction::Move(Motion::PreviousParagraph)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::CtrlArrowDown,
+        Key::DOWN.with(Mods::CTRL),
         Action::Editor(EditorAction::Move(Motion::NextParagraph)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::CtrlHome,
+        Key::HOME.with(Mods::CTRL),
         Action::Editor(EditorAction::Move(Motion::StartOfFile)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::CtrlEnd,
+        Key::END.with(Mods::CTRL),
         Action::Editor(EditorAction::Move(Motion::EndOfFile)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('x'),
+        Key::char('x'),
         Action::Editor(EditorAction::Delete(Motion::Right)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('.'),
+        Key::char('.'),
         Action::Editor(EditorAction::DotRepeat),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('?'),
+        Key::char('?'),
         Action::Editor(EditorAction::ToggleDebug),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Escape,
+        Key::ESC,
         Action::Editor(EditorAction::EnterNormalMode),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::Escape,
+        Key::ESC,
         Action::Editor(EditorAction::EnterNormalMode),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::ArrowLeft,
+        Key::LEFT,
         Action::Editor(EditorAction::Move(Motion::Left)),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::ArrowRight,
+        Key::RIGHT,
         Action::Editor(EditorAction::Move(Motion::Right)),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::ArrowUp,
+        Key::UP,
         Action::Editor(EditorAction::Move(Motion::Up)),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::ArrowDown,
+        Key::DOWN,
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::Home,
+        Key::HOME,
         Action::Editor(EditorAction::Move(Motion::StartOfLine)),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::End,
+        Key::END,
         Action::Editor(EditorAction::Move(Motion::EndOfLine)),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::Backspace,
+        Key::BACKSPACE,
         Action::Editor(EditorAction::Delete(Motion::Left)),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::Delete,
+        Key::DELETE,
         Action::Editor(EditorAction::Delete(Motion::Right)),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::Enter,
+        Key::ENTER,
         Action::Editor(EditorAction::InsertChar('\n')),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::Tab,
+        Key::TAB,
         Action::Editor(EditorAction::InsertChar('\t')),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::PageUp,
+        Key::PAGE_UP,
         Action::Editor(EditorAction::Move(Motion::PageUp)),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::PageDown,
+        Key::PAGE_DOWN,
         Action::Editor(EditorAction::Move(Motion::PageDown)),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::CtrlArrowLeft,
+        Key::LEFT.with(Mods::CTRL),
         Action::Editor(EditorAction::Move(Motion::PreviousWord)),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::CtrlArrowRight,
+        Key::RIGHT.with(Mods::CTRL),
         Action::Editor(EditorAction::Move(Motion::NextWord)),
     );
     keymap.register(
         KeyContext::Insert,
-        Key::Ctrl(b'w'),
+        Key::ctrl('w'),
         Action::Editor(EditorAction::Delete(Motion::PreviousWord)),
     );
     keymap.register(
         KeyContext::Command,
-        Key::Escape,
+        Key::ESC,
         Action::Editor(EditorAction::EnterNormalMode),
     );
     keymap.register(
         KeyContext::Search,
-        Key::Escape,
+        Key::ESC,
         Action::Editor(EditorAction::EnterNormalMode),
     );
     // Submit
     keymap.register(
         KeyContext::Command,
-        Key::Enter,
+        Key::ENTER,
         Action::Editor(EditorAction::Submit),
     );
     keymap.register(
         KeyContext::Search,
-        Key::Enter,
+        Key::ENTER,
         Action::Editor(EditorAction::Submit),
     );
     // Backspace
     keymap.register(
         KeyContext::Command,
-        Key::Backspace,
+        Key::BACKSPACE,
         Action::Editor(EditorAction::Delete(Motion::Left)),
     );
     keymap.register(
         KeyContext::Search,
-        Key::Backspace,
+        Key::BACKSPACE,
         Action::Editor(EditorAction::Delete(Motion::Left)),
     );
     keymap.register(
         KeyContext::Command,
-        Key::Delete,
+        Key::DELETE,
         Action::Editor(EditorAction::Delete(Motion::Right)),
     );
     keymap.register(
         KeyContext::Search,
-        Key::Delete,
+        Key::DELETE,
         Action::Editor(EditorAction::Delete(Motion::Right)),
     );
     keymap.register(
         KeyContext::Command,
-        Key::ArrowLeft,
+        Key::LEFT,
         Action::Editor(EditorAction::Move(Motion::Left)),
     );
     keymap.register(
         KeyContext::Search,
-        Key::ArrowLeft,
+        Key::LEFT,
         Action::Editor(EditorAction::Move(Motion::Left)),
     );
     keymap.register(
         KeyContext::Command,
-        Key::ArrowRight,
+        Key::RIGHT,
         Action::Editor(EditorAction::Move(Motion::Right)),
     );
     keymap.register(
         KeyContext::Search,
-        Key::ArrowRight,
+        Key::RIGHT,
         Action::Editor(EditorAction::Move(Motion::Right)),
     );
     keymap.register(
         KeyContext::Command,
-        Key::Home,
+        Key::HOME,
         Action::Editor(EditorAction::Move(Motion::StartOfLine)),
     );
     keymap.register(
         KeyContext::Search,
-        Key::Home,
+        Key::HOME,
         Action::Editor(EditorAction::Move(Motion::StartOfLine)),
     );
     keymap.register(
         KeyContext::Command,
-        Key::End,
+        Key::END,
         Action::Editor(EditorAction::Move(Motion::EndOfLine)),
     );
     keymap.register(
         KeyContext::Search,
-        Key::End,
+        Key::END,
         Action::Editor(EditorAction::Move(Motion::EndOfLine)),
     );
     keymap.register(
         KeyContext::Command,
-        Key::CtrlArrowLeft,
+        Key::LEFT.with(Mods::CTRL),
         Action::Editor(EditorAction::Move(Motion::PreviousWord)),
     );
     keymap.register(
         KeyContext::Search,
-        Key::CtrlArrowLeft,
+        Key::LEFT.with(Mods::CTRL),
         Action::Editor(EditorAction::Move(Motion::PreviousWord)),
     );
     keymap.register(
         KeyContext::Command,
-        Key::CtrlArrowRight,
+        Key::RIGHT.with(Mods::CTRL),
         Action::Editor(EditorAction::Move(Motion::NextWord)),
     );
     keymap.register(
         KeyContext::Search,
-        Key::CtrlArrowRight,
+        Key::RIGHT.with(Mods::CTRL),
         Action::Editor(EditorAction::Move(Motion::NextWord)),
     );
     keymap.register(
         KeyContext::Command,
-        Key::Ctrl(b'w'),
+        Key::ctrl('w'),
         Action::Editor(EditorAction::Delete(Motion::PreviousWord)),
     );
     keymap.register(
         KeyContext::Search,
-        Key::Ctrl(b'w'),
+        Key::ctrl('w'),
         Action::Editor(EditorAction::Delete(Motion::PreviousWord)),
     );
     // History navigation
     keymap.register(
         KeyContext::Command,
-        Key::ArrowUp,
+        Key::UP,
         Action::Editor(EditorAction::HistoryUp),
     );
     keymap.register(
         KeyContext::Search,
-        Key::ArrowUp,
-        Action::Editor(EditorAction::HistoryUp),
-    );
-    keymap.register(
-        KeyContext::Command,
-        Key::ArrowDown,
-        Action::Editor(EditorAction::HistoryDown),
-    );
-    keymap.register(
-        KeyContext::Search,
-        Key::ArrowDown,
-        Action::Editor(EditorAction::HistoryDown),
-    );
-    keymap.register(
-        KeyContext::Command,
-        Key::Ctrl(b'p'),
-        Action::Editor(EditorAction::HistoryUp),
-    );
-    keymap.register(
-        KeyContext::Search,
-        Key::Ctrl(b'p'),
+        Key::UP,
         Action::Editor(EditorAction::HistoryUp),
     );
     keymap.register(
         KeyContext::Command,
-        Key::Ctrl(b'n'),
+        Key::DOWN,
         Action::Editor(EditorAction::HistoryDown),
     );
     keymap.register(
         KeyContext::Search,
-        Key::Ctrl(b'n'),
+        Key::DOWN,
+        Action::Editor(EditorAction::HistoryDown),
+    );
+    keymap.register(
+        KeyContext::Command,
+        Key::ctrl('p'),
+        Action::Editor(EditorAction::HistoryUp),
+    );
+    keymap.register(
+        KeyContext::Search,
+        Key::ctrl('p'),
+        Action::Editor(EditorAction::HistoryUp),
+    );
+    keymap.register(
+        KeyContext::Command,
+        Key::ctrl('n'),
+        Action::Editor(EditorAction::HistoryDown),
+    );
+    keymap.register(
+        KeyContext::Search,
+        Key::ctrl('n'),
         Action::Editor(EditorAction::HistoryDown),
     );
 
     // Operators
     keymap.register(
         KeyContext::Normal,
-        Key::Char('d'),
+        Key::char('d'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Delete)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('c'),
+        Key::char('c'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Change)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('y'),
+        Key::char('y'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('s'),
+        Key::char('s'),
         Action::Editor(EditorAction::SurroundStart),
     );
     keymap.register(
         KeyContext::OperatorPending,
-        Key::Char('g'),
+        Key::char('g'),
         Action::Editor(EditorAction::SurroundGiveLine),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('v'),
+        Key::char('v'),
         Action::Editor(EditorAction::EnterVisualChar),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('V'),
+        Key::char('V'),
         Action::Editor(EditorAction::EnterVisualLine),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Ctrl(b'v'),
+        Key::ctrl('v'),
         Action::Editor(EditorAction::EnterVisualBlock),
     );
     keymap.register(
         KeyContext::Visual,
-        Key::Char('o'),
+        Key::char('o'),
         Action::Editor(EditorAction::VisualSwapEnds),
     );
     keymap.register(
         KeyContext::Visual,
-        Key::Char('O'),
+        Key::char('O'),
         Action::Editor(EditorAction::VisualSwapEnds),
     );
     keymap.register(
         KeyContext::Visual,
-        Key::Char('d'),
+        Key::char('d'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Delete)),
     );
     keymap.register(
         KeyContext::Visual,
-        Key::Char('c'),
+        Key::char('c'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Change)),
     );
     keymap.register(
         KeyContext::Visual,
-        Key::Char('y'),
+        Key::char('y'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
     );
     keymap.register(
         KeyContext::Visual,
-        Key::Char(' '),
+        Key::char(' '),
         Action::Editor(EditorAction::ExpandRegion),
     );
     keymap.register(
         KeyContext::Visual,
-        Key::ShiftSpace,
+        Key::SHIFT_SPACE,
         Action::Editor(EditorAction::ShrinkRegion),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('m'),
+        Key::char('m'),
         Action::Editor(EditorAction::RegionBankOccurrenceNext),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('M'),
+        Key::char('M'),
         Action::Editor(EditorAction::RegionBankOccurrencePrev),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('C'),
+        Key::char('C'),
         Action::Editor(EditorAction::Command(Box::new(Command::Change(
             Motion::EndOfLine,
             1,
@@ -796,14 +796,14 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('D'),
+        Key::char('D'),
         Action::Editor(EditorAction::Command(Box::new(Command::Delete(
             Motion::EndOfLine,
             1,
         )))),
     );
 
-    let ww = Key::Ctrl(b'w');
+    let ww = Key::ctrl('w');
     for (ch, cmd) in [
         ('h', ":split :l"),
         ('j', ":split :d"),
@@ -823,328 +823,323 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     ] {
         keymap.register_sequence(
             KeyContext::Normal,
-            vec![ww.clone(), Key::Char(ch)],
+            vec![ww, Key::char(ch)],
             Action::Editor(EditorAction::RunCommand(cmd.to_string())),
         );
     }
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![ww.clone(), Key::Ctrl(b'w')],
+        vec![ww, Key::ctrl('w')],
         Action::Editor(EditorAction::RunCommand(":split :w".to_string())),
     );
     for (ch, cmd) in [
-        (b'h', ":split :l"),
-        (b'j', ":split :d"),
-        (b'k', ":split :u"),
-        (b'l', ":split :r"),
+        ('h', ":split :l"),
+        ('j', ":split :d"),
+        ('k', ":split :u"),
+        ('l', ":split :r"),
     ] {
         keymap.register_sequence(
             KeyContext::Normal,
-            vec![ww.clone(), Key::Ctrl(ch)],
-            Action::Editor(EditorAction::RunCommand(cmd.to_string())),
-        );
-        keymap.register_sequence(
-            KeyContext::Normal,
-            vec![ww.clone(), Key::CtrlShift(ch)],
+            vec![ww, Key::ctrl(ch)],
             Action::Editor(EditorAction::RunCommand(cmd.to_string())),
         );
     }
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char('g'), Key::Char('g')],
+        vec![Key::char('g'), Key::char('g')],
         Action::Editor(EditorAction::Move(Motion::StartOfFile)),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('G'),
+        Key::char('G'),
         Action::Editor(EditorAction::GotoLine(0)),
     );
     // <Space>pd: open the demo floating window
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char(' '), Key::Char('p'), Key::Char('d')],
+        vec![Key::char(' '), Key::char('p'), Key::char('d')],
         Action::Editor(EditorAction::PluginAction("demo:window".to_string())),
     );
     // <Space>pi: insert demo text into the buffer
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char(' '), Key::Char('p'), Key::Char('i')],
+        vec![Key::char(' '), Key::char('p'), Key::char('i')],
         Action::Editor(EditorAction::PluginAction("demo:insert".to_string())),
     );
 
     // Clipboard ring
     keymap.register(
         KeyContext::Normal,
-        Key::Char('p'),
+        Key::char('p'),
         Action::Editor(EditorAction::Put { before: false }),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('P'),
+        Key::char('P'),
         Action::Editor(EditorAction::Put { before: true }),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Ctrl(b'n'),
+        Key::ctrl('n'),
         Action::Editor(EditorAction::CyclePaste { forward: true }),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Ctrl(b'p'),
+        Key::ctrl('p'),
         Action::Editor(EditorAction::CyclePaste { forward: false }),
     );
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char('g'), Key::Char('p')],
+        vec![Key::char('g'), Key::char('p')],
         Action::Editor(EditorAction::PutSystemClipboard { before: false }),
     );
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char('g'), Key::Char('P')],
+        vec![Key::char('g'), Key::char('P')],
         Action::Editor(EditorAction::PutSystemClipboard { before: true }),
     );
 
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char('g'), Key::Char('d')],
+        vec![Key::char('g'), Key::char('d')],
         Action::Editor(EditorAction::LspGotoDefinition),
     );
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char('g'), Key::Char('r')],
+        vec![Key::char('g'), Key::char('r')],
         Action::Editor(EditorAction::LspReferences),
     );
     keymap.register(
         KeyContext::Normal,
-        Key::Char('K'),
+        Key::char('K'),
         Action::Editor(EditorAction::LspHover),
     );
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char(']'), Key::Char('d')],
+        vec![Key::char(']'), Key::char('d')],
         Action::Editor(EditorAction::LspDiagnosticNext),
     );
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char('['), Key::Char('d')],
+        vec![Key::char('['), Key::char('d')],
         Action::Editor(EditorAction::LspDiagnosticPrev),
     );
     // Interactive annotation navigation + activation.
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char(']'), Key::Char('a')],
+        vec![Key::char(']'), Key::char('a')],
         Action::Editor(EditorAction::NextInteractiveAnnotation),
     );
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char('['), Key::Char('a')],
+        vec![Key::char('['), Key::char('a')],
         Action::Editor(EditorAction::PrevInteractiveAnnotation),
     );
     // Enter activates the interactive annotation under the cursor (rebindable
     // via `annotation:activate`; it is otherwise unbound in Normal mode).
     keymap.register(
         KeyContext::Normal,
-        Key::Enter,
+        Key::ENTER,
         Action::Editor(EditorAction::ActivateAnnotation),
     );
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char(' '), Key::Char('f')],
+        vec![Key::char(' '), Key::char('f')],
         Action::Editor(EditorAction::LspFormat),
     );
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char(' '), Key::Char('c'), Key::Char('a')],
+        vec![Key::char(' '), Key::char('c'), Key::char('a')],
         Action::Editor(EditorAction::LspCodeAction),
     );
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char(' '), Key::Char('r'), Key::Char('n')],
+        vec![Key::char(' '), Key::char('r'), Key::char('n')],
         Action::Editor(EditorAction::LspRename),
     );
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char(' '), Key::Char('e')],
+        vec![Key::char(' '), Key::char('e')],
         Action::Editor(EditorAction::LspDiagnosticsPanel),
     );
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char(' '), Key::Char('g')],
+        vec![Key::char(' '), Key::char('g')],
         Action::Editor(EditorAction::GitStatus),
     );
 
     // GitRebaseTodo buffer Defaults
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
-        Key::Char('X'),
+        Key::char('X'),
         Action::Editor(EditorAction::GitRebaseAbort),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
-        Key::Char('K'),
+        Key::char('K'),
         Action::Editor(EditorAction::GitRebaseMoveUp),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
-        Key::Char('J'),
+        Key::char('J'),
         Action::Editor(EditorAction::GitRebaseMoveDown),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
-        Key::Char('p'),
+        Key::char('p'),
         Action::Editor(EditorAction::GitRebaseSetPick),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
-        Key::Char('s'),
+        Key::char('s'),
         Action::Editor(EditorAction::GitRebaseSetSquash),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
-        Key::Char('f'),
+        Key::char('f'),
         Action::Editor(EditorAction::GitRebaseSetFixup),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
-        Key::Char('e'),
+        Key::char('e'),
         Action::Editor(EditorAction::GitRebaseSetEdit),
     );
     keymap.register_sequence(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
-        vec![Key::Char('d'), Key::Char('d')],
+        vec![Key::char('d'), Key::char('d')],
         Action::Editor(EditorAction::GitRebaseDrop),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
-        Key::Enter,
+        Key::ENTER,
         Action::Editor(EditorAction::GitRebaseToggleFold),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
-        Key::Char('='),
+        Key::char('='),
         Action::Editor(EditorAction::GitRebaseToggleFold),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
-        Key::Char('c'),
+        Key::char('c'),
         Action::Editor(EditorAction::GitRebaseOpenMessage),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
-        Key::Char('r'),
+        Key::char('r'),
         Action::Editor(EditorAction::GitRebaseOpenMessage),
     );
     keymap.register_sequence(
         KeyContext::Buffer(BufferKindId::GIT_REBASE_TODO),
-        vec![Key::Char('g'), Key::Char('?')],
+        vec![Key::char('g'), Key::char('?')],
         Action::Editor(EditorAction::GitHelp),
     );
 
     // GitBlame buffer Defaults
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_BLAME),
-        Key::Enter,
+        Key::ENTER,
         Action::Buffer("git_blame:walk_back".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_BLAME),
-        Key::Backspace,
+        Key::BACKSPACE,
         Action::Buffer("git_blame:walk_forward".to_string()),
     );
     keymap.register_sequence(
         KeyContext::Buffer(BufferKindId::GIT_BLAME),
-        vec![Key::Char('g'), Key::Char('?')],
+        vec![Key::char('g'), Key::char('?')],
         Action::Editor(EditorAction::GitHelp),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_BLAME),
-        Key::Escape,
+        Key::ESC,
         Action::Buffer("git_blame:close".to_string()),
     );
 
     // GitLog buffer Defaults
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_LOG),
-        Key::Enter,
+        Key::ENTER,
         Action::Buffer("git_log:select".to_string()),
     );
     keymap.register_sequence(
         KeyContext::Buffer(BufferKindId::GIT_LOG),
-        vec![Key::Char('g'), Key::Char('?')],
+        vec![Key::char('g'), Key::char('?')],
         Action::Editor(EditorAction::GitHelp),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_LOG),
-        Key::Char('='),
+        Key::char('='),
         Action::Buffer("git_log:toggle_expand".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::GIT_LOG),
-        Key::Char('r'),
+        Key::char('r'),
         Action::Editor(EditorAction::GitRebaseFromLogCommit),
     );
 
     // Location list panel bindings (diagnostics / references)
     keymap.register(
         KeyContext::Buffer(BufferKindId::LOCATION_LIST),
-        Key::Enter,
+        Key::ENTER,
         Action::Buffer("location_list:select".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::LOCATION_LIST),
-        Key::Char('q'),
+        Key::char('q'),
         Action::Buffer("location_list:close".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::LOCATION_LIST),
-        Key::Char(' '),
+        Key::char(' '),
         Action::Buffer("location_list:code_action".to_string()),
     );
 
     // `gv` regions list window.
     keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char('g'), Key::Char('v')],
+        vec![Key::char('g'), Key::char('v')],
         Action::Editor(EditorAction::ToggleRegionsWindow),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::REGIONS),
-        Key::Char('j'),
+        Key::char('j'),
         Action::Editor(EditorAction::RegionsListDown),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::REGIONS),
-        Key::Char('k'),
+        Key::char('k'),
         Action::Editor(EditorAction::RegionsListUp),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::REGIONS),
-        Key::Enter,
+        Key::ENTER,
         Action::Editor(EditorAction::RegionsListSelect),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::REGIONS),
-        Key::Char('x'),
+        Key::char('x'),
         Action::Editor(EditorAction::RegionsListDrop),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::REGIONS),
-        Key::Char('q'),
+        Key::char('q'),
         Action::Buffer("regions:close".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::REGIONS),
-        Key::Char('d'),
+        Key::char('d'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Delete)),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::REGIONS),
-        Key::Char('c'),
+        Key::char('c'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Change)),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::REGIONS),
-        Key::Char('y'),
+        Key::char('y'),
         Action::Editor(EditorAction::Operator(crate::action::OperatorType::Yank)),
     );
 
@@ -1152,12 +1147,12 @@ pub fn register_defaults(keymap: &mut KeyMap) {
     // are bound here.
     keymap.register(
         KeyContext::Buffer(BufferKindId::BUFFER_LIST),
-        Key::Enter,
+        Key::ENTER,
         Action::Buffer("buffer_list:select".to_string()),
     );
     keymap.register(
         KeyContext::Buffer(BufferKindId::BUFFER_LIST),
-        Key::Escape,
+        Key::ESC,
         Action::Buffer("buffer_list:close".to_string()),
     );
 

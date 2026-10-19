@@ -1,197 +1,220 @@
 //! Key representation for editor input
 
-/// Represents a key press event
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Key {
-    /// Printable character
+mod notation;
+mod vt100;
+
+pub use notation::{format_key, parse_key, parse_key_sequence};
+
+use std::ops::BitOr;
+
+/// Modifier bitset carried by a [`Key`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct Mods(u8);
+
+impl Mods {
+    pub const NONE: Mods = Mods(0);
+    pub const SHIFT: Mods = Mods(1);
+    pub const CTRL: Mods = Mods(2);
+    pub const ALT: Mods = Mods(4);
+
+    #[must_use]
+    pub const fn contains(self, other: Mods) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    #[must_use]
+    pub const fn without(self, other: Mods) -> Mods {
+        Mods(self.0 & !other.0)
+    }
+}
+
+impl BitOr for Mods {
+    type Output = Mods;
+
+    fn bitor(self, rhs: Mods) -> Mods {
+        Mods(self.0 | rhs.0)
+    }
+}
+
+/// The key itself, independent of modifiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KeyCode {
     Char(char),
-    /// Control key combination (e.g., Ctrl+A)
-    Ctrl(u8),
-    /// Control+Shift combination (e.g., Ctrl+Shift+S)
-    CtrlShift(u8),
-    /// Alt key combination (e.g., Alt+A)
-    Alt(u8),
-    /// Alt+Shift combination (e.g., Alt+Shift+S)
-    AltShift(u8),
-    /// Arrow keys
-    ArrowUp,
-    ArrowDown,
-    ArrowLeft,
-    ArrowRight,
-    CtrlArrowUp,
-    CtrlArrowDown,
-    CtrlArrowLeft,
-    CtrlArrowRight,
-    /// Navigation keys
-    Home,
-    End,
-    CtrlHome,
-    CtrlEnd,
-    PageUp,
-    PageDown,
-    /// Editing keys
+    F(u8),
+    Insert,
+    Enter,
+    Esc,
+    Tab,
     Backspace,
     Delete,
-    Enter,
-    Escape,
-    Tab,
-    ShiftTab,
-    /// Space pressed with the Shift modifier
-    ShiftSpace,
-    /// System events
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+/// A key press. Build through [`Key::new`] (or the helpers) so the canonical
+/// form holds: `Char` carries SHIFT only for Space or alongside CTRL/ALT,
+/// CTRL/ALT letters are lowercase, and Ctrl+I/M/[ are Tab/Enter/Esc.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Key {
+    pub code: KeyCode,
+    pub mods: Mods,
+}
+
+impl Key {
+    pub const ENTER: Key = Key::plain(KeyCode::Enter);
+    pub const ESC: Key = Key::plain(KeyCode::Esc);
+    pub const TAB: Key = Key::plain(KeyCode::Tab);
+    pub const BACKSPACE: Key = Key::plain(KeyCode::Backspace);
+    pub const DELETE: Key = Key::plain(KeyCode::Delete);
+    pub const INSERT: Key = Key::plain(KeyCode::Insert);
+    pub const HOME: Key = Key::plain(KeyCode::Home);
+    pub const END: Key = Key::plain(KeyCode::End);
+    pub const PAGE_UP: Key = Key::plain(KeyCode::PageUp);
+    pub const PAGE_DOWN: Key = Key::plain(KeyCode::PageDown);
+    pub const UP: Key = Key::plain(KeyCode::Up);
+    pub const DOWN: Key = Key::plain(KeyCode::Down);
+    pub const LEFT: Key = Key::plain(KeyCode::Left);
+    pub const RIGHT: Key = Key::plain(KeyCode::Right);
+    pub const SPACE: Key = Key::char(' ');
+    pub const SHIFT_TAB: Key = Key {
+        code: KeyCode::Tab,
+        mods: Mods::SHIFT,
+    };
+    pub const SHIFT_SPACE: Key = Key {
+        code: KeyCode::Char(' '),
+        mods: Mods::SHIFT,
+    };
+
+    const fn plain(code: KeyCode) -> Key {
+        Key {
+            code,
+            mods: Mods::NONE,
+        }
+    }
+
+    /// Plain character key, no modifiers.
+    #[must_use]
+    pub const fn char(c: char) -> Key {
+        Key::plain(KeyCode::Char(c))
+    }
+
+    #[must_use]
+    pub fn ctrl(c: char) -> Key {
+        Key::new(KeyCode::Char(c), Mods::CTRL)
+    }
+
+    #[must_use]
+    pub fn alt(c: char) -> Key {
+        Key::new(KeyCode::Char(c), Mods::ALT)
+    }
+
+    #[must_use]
+    pub fn f(n: u8) -> Key {
+        Key::plain(KeyCode::F(n))
+    }
+
+    /// Build a key in canonical form.
+    #[must_use]
+    pub fn new(code: KeyCode, mods: Mods) -> Key {
+        let KeyCode::Char(c) = code else {
+            return Key { code, mods };
+        };
+
+        let held = mods.contains(Mods::CTRL) || mods.contains(Mods::ALT);
+        if !held {
+            if mods.contains(Mods::SHIFT) && c.is_ascii_lowercase() {
+                return Key::char(c.to_ascii_uppercase());
+            }
+            let mods = if c == ' ' { mods } else { Mods::NONE };
+            return Key { code, mods };
+        }
+
+        let c = c.to_ascii_lowercase();
+        if mods == Mods::CTRL {
+            match c {
+                'i' => return Key::TAB,
+                'm' => return Key::ENTER,
+                '[' => return Key::ESC,
+                _ => {}
+            }
+        }
+        Key {
+            code: KeyCode::Char(c),
+            mods,
+        }
+    }
+
+    /// The same key with extra modifiers, re-canonicalized.
+    #[must_use]
+    pub fn with(self, mods: Mods) -> Key {
+        Key::new(self.code, self.mods | mods)
+    }
+
+    /// The character this key types, if it types one.
+    #[must_use]
+    pub fn text(&self) -> Option<char> {
+        match self.code {
+            KeyCode::Char(c) if self.mods.without(Mods::SHIFT).is_empty() && !c.is_control() => {
+                Some(c)
+            }
+            _ => None,
+        }
+    }
+
+    /// The key with modifiers that carry no text meaning removed (SHIFT on
+    /// characters, every modifier on non-character keys). `None` when
+    /// nothing would change.
+    #[must_use]
+    pub fn fallback(&self) -> Option<Key> {
+        let stripped = match self.code {
+            KeyCode::Char(_) => Key {
+                code: self.code,
+                mods: self.mods.without(Mods::SHIFT),
+            },
+            code => Key::plain(code),
+        };
+        (stripped != *self).then_some(stripped)
+    }
+
+    /// Whether this key is `base`, or `base` plus modifiers that carry no
+    /// text meaning (the same equivalence keymap lookup falls back on).
+    #[must_use]
+    pub fn is(&self, base: Key) -> bool {
+        *self == base || self.fallback() == Some(base)
+    }
+
+    /// Convert key to xterm byte sequence for PTY input.
+    #[must_use]
+    pub fn to_vt100_bytes(&self) -> Vec<u8> {
+        vt100::encode(*self)
+    }
+}
+
+/// Everything the terminal can deliver to the editor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InputEvent {
+    Key(Key),
     Resize(u16, u16),
     /// A terminal bracketed-paste block: the whole clipboard payload as one
     /// event, so it never gets decomposed into individual command keys.
     Paste(String),
 }
 
-impl Key {
-    /// Convert key to VT100/xterm byte sequence for PTY input, following the
-    /// CSI convention (cursor keys, modified keys, tilde keys, or a single byte).
-    pub fn to_vt100_bytes(&self) -> Vec<u8> {
-        match self {
-            // Printable character -> UTF-8 encoding
-            Key::Char(c) => {
-                let mut buf = [0; 4];
-                c.encode_utf8(&mut buf).as_bytes().to_vec()
-            }
-
-            // Ctrl+key masks to the control range (0x00..=0x1F).
-            Key::Ctrl(c) => vec![c & 0x1f],
-
-            // Ctrl+Shift+key
-            Key::CtrlShift(c) => vec![c & 0x1f],
-
-            // Alt+key -> ESC prefix followed by the character
-            Key::Alt(c) => vec![0x1b, *c],
-            Key::AltShift(c) => vec![0x1b, *c],
-
-            // Single-byte control characters
-            Key::Backspace => vec![0x7f],
-            Key::Enter => vec![b'\r'],
-            Key::Escape => vec![0x1b],
-            Key::Tab => vec![b'\t'],
-            Key::ShiftTab => vec![0x1b, b'[', b'Z'],
-            Key::ShiftSpace => vec![b' '],
-
-            // CSI cursor keys: ESC [ {suffix}
-            Key::ArrowUp => csi(b'A', None),
-            Key::ArrowDown => csi(b'B', None),
-            Key::ArrowRight => csi(b'C', None),
-            Key::ArrowLeft => csi(b'D', None),
-            Key::Home => csi(b'H', None),
-            Key::End => csi(b'F', None),
-
-            // CSI cursor keys with Ctrl modifier (5)
-            Key::CtrlArrowUp => csi(b'A', Some(5)),
-            Key::CtrlArrowDown => csi(b'B', Some(5)),
-            Key::CtrlArrowRight => csi(b'C', Some(5)),
-            Key::CtrlArrowLeft => csi(b'D', Some(5)),
-            Key::CtrlHome => csi(b'H', Some(5)),
-            Key::CtrlEnd => csi(b'F', Some(5)),
-
-            // CSI tilde keys: ESC [ {num} ~
-            Key::Delete => csi_tilde(3),
-            Key::PageUp => csi_tilde(5),
-            Key::PageDown => csi_tilde(6),
-
-            // Pass pasted text through as literal terminal input.
-            Key::Paste(text) => text.as_bytes().to_vec(),
-
-            // Non-input events produce no bytes
-            Key::Resize(..) => vec![],
-        }
+impl From<Key> for InputEvent {
+    fn from(key: Key) -> Self {
+        InputEvent::Key(key)
     }
-}
-
-/// Parse Vim key notation into a key sequence. Use `<lt>` for a literal `<`.
-/// Returns None if any token is unrecognised.
-pub fn parse_key_sequence(s: &str) -> Option<Vec<Key>> {
-    let mut keys = Vec::new();
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '<' {
-            let mut token = String::new();
-            loop {
-                match chars.next() {
-                    Some('>') => break,
-                    Some(ch) => token.push(ch),
-                    None => return None,
-                }
-            }
-            let low = token.to_lowercase();
-            let key = if low == "esc" || low == "escape" {
-                Key::Escape
-            } else if low == "cr" || low == "enter" || low == "return" {
-                Key::Enter
-            } else if low == "bs" || low == "backspace" {
-                Key::Backspace
-            } else if low == "tab" {
-                Key::Tab
-            } else if low == "s-tab" || low == "shifttab" {
-                Key::ShiftTab
-            } else if low == "del" || low == "delete" {
-                Key::Delete
-            } else if low == "up" {
-                Key::ArrowUp
-            } else if low == "down" {
-                Key::ArrowDown
-            } else if low == "left" {
-                Key::ArrowLeft
-            } else if low == "right" {
-                Key::ArrowRight
-            } else if low == "home" {
-                Key::Home
-            } else if low == "end" {
-                Key::End
-            } else if low == "pageup" {
-                Key::PageUp
-            } else if low == "pagedown" {
-                Key::PageDown
-            } else if low == "space" {
-                Key::Char(' ')
-            } else if low == "s-space" || low == "shiftspace" {
-                Key::ShiftSpace
-            } else if low == "lt" {
-                Key::Char('<')
-            } else if low.starts_with("c-s-") && low.len() == 5 {
-                let ch = low.chars().nth(4)?;
-                Key::CtrlShift(ch as u8)
-            } else if low.starts_with("c-") && low.len() == 3 {
-                let ch = low.chars().nth(2)?;
-                Key::Ctrl(ch as u8)
-            } else if low.starts_with("a-s-") && low.len() == 5 {
-                let ch = low.chars().nth(4)?;
-                Key::AltShift(ch as u8)
-            } else if low.starts_with("a-") && low.len() == 3 {
-                let ch = low.chars().nth(2)?;
-                Key::Alt(ch as u8)
-            } else {
-                return None;
-            };
-            keys.push(key);
-        } else {
-            keys.push(Key::Char(c));
-        }
-    }
-    if keys.is_empty() {
-        None
-    } else {
-        Some(keys)
-    }
-}
-
-/// Build a CSI sequence: `ESC [ {suffix}` or `ESC [ 1 ; {modifier} {suffix}`
-fn csi(suffix: u8, modifier: Option<u8>) -> Vec<u8> {
-    match modifier {
-        None => vec![0x1b, b'[', suffix],
-        Some(m) => vec![0x1b, b'[', b'1', b';', b'0' + m, suffix],
-    }
-}
-
-/// Build a CSI tilde sequence: `ESC [ {num} ~`
-fn csi_tilde(num: u8) -> Vec<u8> {
-    vec![0x1b, b'[', b'0' + num, b'~']
 }
 
 #[cfg(test)]

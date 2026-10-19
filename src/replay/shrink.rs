@@ -1,8 +1,7 @@
 use super::backend::ReplayBackend;
 use crate::editor::Editor;
 use crate::invariants::InvariantTier;
-use crate::ipc::key_notation::vim_to_key;
-use crate::key::Key;
+use crate::key::{format_key, Key};
 
 pub fn reproduces_area(keys: &[Key], target_area: &'static str) -> bool {
     let backend = ReplayBackend::new(std::io::sink(), 24, 80);
@@ -11,7 +10,7 @@ pub fn reproduces_area(keys: &[Key], target_area: &'static str) -> bool {
     };
 
     for key in keys {
-        ed.term.push_keys(std::iter::once(key.clone()));
+        ed.term.push_keys(std::iter::once(*key));
         if ed.tick().is_err() {
             return false;
         }
@@ -84,13 +83,13 @@ pub fn ddmin(mut keys: Vec<Key>, reproduces: impl Fn(&[Key]) -> bool) -> Vec<Key
 }
 
 pub fn format_keys(keys: &[Key]) -> (String, String) {
-    let notation: String = keys.iter().cloned().map(vim_to_key).collect();
+    let notation: String = keys.iter().copied().map(format_key).collect();
     let literal = format!("{keys:?}");
     (notation, literal)
 }
 
 pub fn bracket_list(keys: &[Key]) -> String {
-    let tokens: Vec<String> = keys.iter().cloned().map(vim_to_key).collect();
+    let tokens: Vec<String> = keys.iter().copied().map(format_key).collect();
     format!("[{}]", tokens.join(", "))
 }
 

@@ -1,4 +1,5 @@
 use super::*;
+use crate::key::Key;
 use std::sync::mpsc::{channel, sync_channel};
 
 fn make_backend(
@@ -6,11 +7,11 @@ fn make_backend(
     cols: u16,
 ) -> (
     ChannelBackend,
-    std::sync::mpsc::SyncSender<Key>,
+    std::sync::mpsc::SyncSender<InputEvent>,
     std::sync::mpsc::Receiver<Vec<u8>>,
     std::sync::mpsc::Receiver<()>,
 ) {
-    let (input_tx, input_rx) = sync_channel::<Key>(8);
+    let (input_tx, input_rx) = sync_channel::<InputEvent>(8);
     let (output_tx, output_rx) = channel::<Vec<u8>>();
     let (detach_tx, detach_rx) = sync_channel::<()>(1);
     let backend = ChannelBackend::new(input_rx, output_tx, detach_tx, Size { rows, cols });
@@ -28,7 +29,7 @@ fn get_size_returns_initial_size() {
 #[test]
 fn poll_returns_true_on_key() {
     let (mut backend, input_tx, _, _) = make_backend(24, 80);
-    input_tx.send(Key::Char('x')).unwrap();
+    input_tx.send(InputEvent::Key(Key::char('x'))).unwrap();
     assert!(backend.poll(Duration::from_millis(100)).unwrap());
 }
 
@@ -41,7 +42,7 @@ fn poll_returns_false_on_timeout() {
 #[test]
 fn poll_updates_size_on_resize() {
     let (mut backend, input_tx, _, _) = make_backend(24, 80);
-    input_tx.send(Key::Resize(100, 50)).unwrap();
+    input_tx.send(InputEvent::Resize(100, 50)).unwrap();
     backend.poll(Duration::from_millis(100)).unwrap();
     let size = backend.get_size().unwrap();
     assert_eq!(size.cols, 100);
@@ -49,12 +50,15 @@ fn poll_updates_size_on_resize() {
 }
 
 #[test]
-fn read_key_returns_pending_and_clears() {
+fn read_event_returns_pending_and_clears() {
     let (mut backend, input_tx, _, _) = make_backend(24, 80);
-    input_tx.send(Key::Char('a')).unwrap();
+    input_tx.send(InputEvent::Key(Key::char('a'))).unwrap();
     backend.poll(Duration::from_millis(100)).unwrap();
-    assert_eq!(backend.read_key().unwrap(), Some(Key::Char('a')));
-    assert_eq!(backend.read_key().unwrap(), None);
+    assert_eq!(
+        backend.read_event().unwrap(),
+        Some(InputEvent::Key(Key::char('a')))
+    );
+    assert_eq!(backend.read_event().unwrap(), None);
 }
 
 #[test]

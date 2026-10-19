@@ -30,7 +30,7 @@ fn test_render_status_bar_insert_mode_layer() {
 fn test_render_status_bar_pending_key_layer() {
     let mut layer = Layer::new(LayerPriority::STATUS_BAR, 10, 80);
     let mut statusdrawstate = create_default_statusdrawstate();
-    statusdrawstate.pending_key = Some(Key::Ctrl(b'd'));
+    statusdrawstate.pending_key = Some(Key::ctrl('d'));
 
     let mut paint_frame = crate::paint::PaintFrame::new(0);
     StatusBar::render_to_layer(&mut layer, &statusdrawstate, &mut paint_frame);

@@ -2,7 +2,7 @@
 //! output through the real `CrosstermBackend` path, without a live TTY.
 
 use crate::error::RiftError;
-use crate::key::Key;
+use crate::key::{InputEvent, Key};
 use crate::term::crossterm::CrosstermBackend;
 use crate::term::{CursorShape, Size, TerminalBackend};
 use std::collections::VecDeque;
@@ -11,7 +11,7 @@ use std::io::Write;
 pub struct ReplayBackend<W: Write> {
     output: CrosstermBackend<W>,
     size: Size,
-    pending: VecDeque<Key>,
+    pending: VecDeque<InputEvent>,
 }
 
 impl<W: Write> ReplayBackend<W> {
@@ -23,9 +23,14 @@ impl<W: Write> ReplayBackend<W> {
         }
     }
 
-    /// Queue keys for future `read_key()` calls, oldest first.
+    /// Queue keys for future `read_event()` calls, oldest first.
     pub fn push_keys(&mut self, keys: impl IntoIterator<Item = Key>) {
-        self.pending.extend(keys);
+        self.pending.extend(keys.into_iter().map(InputEvent::Key));
+    }
+
+    /// Queue non-key events (resize, paste), oldest first.
+    pub fn push_events(&mut self, events: impl IntoIterator<Item = InputEvent>) {
+        self.pending.extend(events);
     }
 }
 
@@ -40,7 +45,7 @@ impl<W: Write> TerminalBackend for ReplayBackend<W> {
         Ok(!self.pending.is_empty())
     }
 
-    fn read_key(&mut self) -> Result<Option<Key>, RiftError> {
+    fn read_event(&mut self) -> Result<Option<InputEvent>, RiftError> {
         Ok(self.pending.pop_front())
     }
 

@@ -99,9 +99,9 @@ fn test_mock_terminal_init_deinit() {
 }
 
 #[test]
-fn test_mock_terminal_read_key_not_implemented() {
+fn test_mock_terminal_read_event_not_implemented() {
     let mut term = MockTerminal::new(10, 80);
-    let result = term.read_key();
+    let result = term.read_event();
     assert!(result.is_err());
     assert!(result.unwrap_err().contains_msg("Not implemented"));
 }

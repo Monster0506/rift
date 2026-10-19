@@ -1447,7 +1447,8 @@ impl LuaHost {
         }
 
         // rift.map(mode, keys, action) - register a key binding.
-        // mode: "n"|"i"|"c"|"s"|"g"; keys: vim notation e.g. "<C-p>"; action: action string or plugin action id.
+        // mode: "n"|"i"|"c"|"s"|"g"; keys: key notation e.g. "<C-p>", "<C-S-Left>", "<F5>", "<Space>g";
+        // action: action string or plugin action id.
         {
             let sh = Rc::clone(&shared);
             let f =

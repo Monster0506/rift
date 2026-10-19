@@ -78,6 +78,13 @@ Todo:
 - quote text objects (`i"`/`a"` etc.) used a "nearest enclosing, doubled-quote" pairing rule that diverges from real vim; switching to vim's sequential pairing broke that nesting behavior, so quote/character disambiguation now only kicks in when the cursor sits exactly on a quote char
 - a leading count before an operator (e.g. `2dw`) was captured eagerly and cleared the count text objects rely on later, breaking text-object grammar; the count is now captured lazily on the first digit typed after entering operator-pending mode
 - deleting a surround pair shared between multiple selected regions could shift a sibling region onto the wrong (inner) pair after the first deletion; fixed by tracking already-consumed coordinate ranges and skipping any region whose anchor falls inside one, instead of shifting positions
+- Shift+Space dropped in insert, command, search, replace and `r`/`f`/surround prompts
+- unmapped keys (F-keys, Insert) inserted NUL characters
+- AltGr characters (`@`, `\u20ac`, `{`) arrived as Ctrl bindings on Windows
+- non-ASCII under Ctrl/Alt was truncated to a wrong ASCII key
+- modifiers on arrows, Backspace, Delete, PageUp/Down, Enter, Tab were dropped; keys are now `Key { code, mods }` with one notation (`<C-S-A-Left>`, `<F5>`, `<Space>`) shared by plugin `map`, IPC, replay scripts and the status bar
+- terminal buffers sent wrong bytes for modified keys; now generic xterm encoding
+- Ctrl+I/M/[ now always mean Tab/Enter/Esc on every platform
 
 
 ## Install

@@ -155,16 +155,13 @@ pub(super) fn feed_keys(editor: &mut Editor<MockTerminal>, seq: &str) {
     let keys = crate::key::parse_key_sequence(seq).expect("valid key sequence");
     for key in keys {
         if matches!(editor.current_mode, Mode::Search | Mode::Command) {
-            match key {
-                Key::Char(c) => {
-                    editor.state.append_to_command_line(c);
-                    continue;
-                }
-                Key::Enter => {
-                    editor.handle_action(&Action::Editor(EditorAction::Submit));
-                    continue;
-                }
-                _ => {}
+            if let Some(c) = key.text() {
+                editor.state.append_to_command_line(c);
+                continue;
+            }
+            if key == Key::ENTER {
+                editor.handle_action(&Action::Editor(EditorAction::Submit));
+                continue;
             }
         }
 
@@ -203,7 +200,7 @@ pub(super) fn measure_type(editor: &mut Editor<MockTerminal>, label: &str, n: us
 }
 
 pub(super) fn chars_of(s: &str) -> Vec<crate::key::Key> {
-    s.chars().map(crate::key::Key::Char).collect()
+    s.chars().map(crate::key::Key::char).collect()
 }
 
 pub(super) fn compositor_ascii<T: crate::term::TerminalBackend>(editor: &mut Editor<T>) -> String {

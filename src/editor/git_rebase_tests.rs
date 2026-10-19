@@ -615,16 +615,16 @@ fn rebase_todo_key_bindings_resolve_to_the_new_actions() {
 
     let editor = create_editor();
     let cases: &[(Key, EditorAction)] = &[
-        (Key::Char('K'), EditorAction::GitRebaseMoveUp),
-        (Key::Char('J'), EditorAction::GitRebaseMoveDown),
-        (Key::Char('p'), EditorAction::GitRebaseSetPick),
-        (Key::Char('s'), EditorAction::GitRebaseSetSquash),
-        (Key::Char('f'), EditorAction::GitRebaseSetFixup),
-        (Key::Char('e'), EditorAction::GitRebaseSetEdit),
-        (Key::Char('c'), EditorAction::GitRebaseOpenMessage),
-        (Key::Char('r'), EditorAction::GitRebaseOpenMessage),
-        (Key::Char('='), EditorAction::GitRebaseToggleFold),
-        (Key::Enter, EditorAction::GitRebaseToggleFold),
+        (Key::char('K'), EditorAction::GitRebaseMoveUp),
+        (Key::char('J'), EditorAction::GitRebaseMoveDown),
+        (Key::char('p'), EditorAction::GitRebaseSetPick),
+        (Key::char('s'), EditorAction::GitRebaseSetSquash),
+        (Key::char('f'), EditorAction::GitRebaseSetFixup),
+        (Key::char('e'), EditorAction::GitRebaseSetEdit),
+        (Key::char('c'), EditorAction::GitRebaseOpenMessage),
+        (Key::char('r'), EditorAction::GitRebaseOpenMessage),
+        (Key::char('='), EditorAction::GitRebaseToggleFold),
+        (Key::ENTER, EditorAction::GitRebaseToggleFold),
     ];
     for (key, expected) in cases {
         let result = editor.keymap.lookup(
@@ -640,7 +640,7 @@ fn rebase_todo_key_bindings_resolve_to_the_new_actions() {
     }
     let dd = editor.keymap.lookup(
         KeyContext::Buffer(crate::document::BufferKindId::GIT_REBASE_TODO),
-        &[Key::Char('d'), Key::Char('d')],
+        &[Key::char('d'), Key::char('d')],
     );
     match dd {
         MatchResult::Exact(Action::Editor(EditorAction::GitRebaseDrop)) => {}

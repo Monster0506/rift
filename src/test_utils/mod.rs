@@ -4,7 +4,7 @@
 /// Test utilities introduce no production-only behavior; tests assert
 /// invariants, not implementation details.
 use crate::error::RiftError;
-use crate::key::Key;
+use crate::key::InputEvent;
 use crate::term::{CursorShape, Size, TerminalBackend};
 
 /// Mock `TerminalBackend` for testing; records writes, cursor moves, and
@@ -56,7 +56,7 @@ impl TerminalBackend for MockTerminal {
         Ok(false)
     }
 
-    fn read_key(&mut self) -> Result<Option<Key>, RiftError> {
+    fn read_event(&mut self) -> Result<Option<InputEvent>, RiftError> {
         Err("Not implemented in mock".into())
     }
 

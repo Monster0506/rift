@@ -30,7 +30,7 @@ impl TerminalBackend for MockTerminal {
         Ok(false)
     }
 
-    fn read_key(&mut self) -> Result<Option<monster_rift::key::Key>, RiftError> {
+    fn read_event(&mut self) -> Result<Option<monster_rift::key::InputEvent>, RiftError> {
         Ok(None)
     }
 

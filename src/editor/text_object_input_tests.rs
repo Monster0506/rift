@@ -6,7 +6,7 @@ fn finalize(keys: &str, modifier: Modifier) -> TextObjectSpec {
     let mut keys = keys.chars().peekable();
     loop {
         let ch = keys.next().expect("ran out of keys before Finalize");
-        match pending.advance(Key::Char(ch)) {
+        match pending.advance(Key::char(ch)) {
             TextObjectStep::Continue => continue,
             TextObjectStep::Finalize(spec) => return spec,
             TextObjectStep::Cancel => panic!("unexpected cancel on key '{ch}'"),
@@ -54,7 +54,7 @@ fn leading_zero_is_not_a_count_digit() {
     // of line" convention) and isn't an object key either, so it cancels.
     let mut pending = PendingTextObject::new(Modifier::Inner);
     assert!(matches!(
-        pending.advance(Key::Char('0')),
+        pending.advance(Key::char('0')),
         TextObjectStep::Cancel
     ));
 }
@@ -63,7 +63,7 @@ fn leading_zero_is_not_a_count_digit() {
 fn unknown_object_key_cancels() {
     let mut pending = PendingTextObject::new(Modifier::Inner);
     assert!(matches!(
-        pending.advance(Key::Char('z')),
+        pending.advance(Key::char('z')),
         TextObjectStep::Cancel
     ));
 }
@@ -71,8 +71,5 @@ fn unknown_object_key_cancels() {
 #[test]
 fn non_char_key_cancels() {
     let mut pending = PendingTextObject::new(Modifier::Inner);
-    assert!(matches!(
-        pending.advance(Key::Escape),
-        TextObjectStep::Cancel
-    ));
+    assert!(matches!(pending.advance(Key::ESC), TextObjectStep::Cancel));
 }

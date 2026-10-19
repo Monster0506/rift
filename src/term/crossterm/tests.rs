@@ -47,178 +47,97 @@ fn test_get_size() {
     assert!(size_result.is_ok() || size_result.is_err());
 }
 
+fn translate(code: crossterm::event::KeyCode, mods: crossterm::event::KeyModifiers) -> Option<Key> {
+    super::translate_key_event(crossterm::event::KeyEvent::new(code, mods))
+}
+
 #[test]
-fn test_translate_key_event() {
-    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+fn translator_table() {
+    use crate::key::{KeyCode as K, Mods as M};
+    use crossterm::event::{KeyCode as C, KeyModifiers as CM};
 
-    // Test basic character
-    let key_event = KeyEvent {
-        code: KeyCode::Char('a'),
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::Char('a')));
+    let altgr = CM::CONTROL | CM::ALT;
+    let all = CM::CONTROL | CM::SHIFT | CM::ALT;
+    let cases: Vec<(C, CM, Option<Key>)> = vec![
+        (C::Char('a'), CM::NONE, Some(Key::char('a'))),
+        (C::Char('A'), CM::SHIFT, Some(Key::char('A'))),
+        (C::Char('\u{1f980}'), CM::NONE, Some(Key::char('\u{1f980}'))),
+        (C::Char(' '), CM::NONE, Some(Key::SPACE)),
+        (C::Char(' '), CM::SHIFT, Some(Key::SHIFT_SPACE)),
+        (C::Char(' '), CM::CONTROL, Some(Key::ctrl(' '))),
+        (C::Char('\n'), CM::NONE, Some(Key::ENTER)),
+        (C::Char('\r'), CM::NONE, Some(Key::ENTER)),
+        (C::Char('\u{17}'), CM::NONE, Some(Key::ctrl('w'))),
+        (C::Char('\u{1b}'), CM::NONE, None),
+        (C::Char('H'), CM::CONTROL, Some(Key::ctrl('h'))),
+        (
+            C::Char('H'),
+            CM::CONTROL | CM::SHIFT,
+            Some(Key::new(K::Char('h'), M::CTRL | M::SHIFT)),
+        ),
+        (C::Char('H'), CM::ALT, Some(Key::alt('h'))),
+        (
+            C::Char('H'),
+            CM::ALT | CM::SHIFT,
+            Some(Key::new(K::Char('h'), M::ALT | M::SHIFT)),
+        ),
+        (C::Char('i'), CM::CONTROL, Some(Key::TAB)),
+        (C::Char('m'), CM::CONTROL, Some(Key::ENTER)),
+        (C::Char('['), CM::CONTROL, Some(Key::ESC)),
+        (C::Char('@'), altgr, Some(Key::char('@'))),
+        (C::Char('\u{20ac}'), altgr, Some(Key::char('\u{20ac}'))),
+        (C::Char('\u{142}'), CM::ALT, Some(Key::char('\u{142}'))),
+        (
+            C::Char('\u{20ac}'),
+            CM::CONTROL,
+            Some(Key::char('\u{20ac}')),
+        ),
+        (C::Enter, CM::NONE, Some(Key::ENTER)),
+        (C::Enter, CM::CONTROL, Some(Key::ENTER.with(M::CTRL))),
+        (C::Esc, CM::NONE, Some(Key::ESC)),
+        (C::Esc, CM::ALT, Some(Key::ESC.with(M::ALT))),
+        (C::Tab, CM::NONE, Some(Key::TAB)),
+        (C::Tab, CM::SHIFT, Some(Key::SHIFT_TAB)),
+        (C::Tab, CM::CONTROL, Some(Key::TAB.with(M::CTRL))),
+        (C::BackTab, CM::SHIFT, Some(Key::SHIFT_TAB)),
+        (C::BackTab, CM::NONE, Some(Key::SHIFT_TAB)),
+        (C::Backspace, CM::NONE, Some(Key::BACKSPACE)),
+        (
+            C::Backspace,
+            CM::CONTROL,
+            Some(Key::BACKSPACE.with(M::CTRL)),
+        ),
+        (C::Delete, CM::NONE, Some(Key::DELETE)),
+        (C::Delete, CM::CONTROL, Some(Key::DELETE.with(M::CTRL))),
+        (C::Insert, CM::NONE, Some(Key::INSERT)),
+        (C::Home, CM::NONE, Some(Key::HOME)),
+        (C::Home, CM::CONTROL, Some(Key::HOME.with(M::CTRL))),
+        (C::End, CM::NONE, Some(Key::END)),
+        (C::PageUp, CM::NONE, Some(Key::PAGE_UP)),
+        (C::PageUp, CM::CONTROL, Some(Key::PAGE_UP.with(M::CTRL))),
+        (C::PageDown, CM::NONE, Some(Key::PAGE_DOWN)),
+        (C::Up, CM::NONE, Some(Key::UP)),
+        (C::Down, CM::NONE, Some(Key::DOWN)),
+        (C::Left, CM::NONE, Some(Key::LEFT)),
+        (C::Left, CM::SHIFT, Some(Key::LEFT.with(M::SHIFT))),
+        (C::Left, CM::ALT, Some(Key::LEFT.with(M::ALT))),
+        (C::Right, CM::CONTROL, Some(Key::RIGHT.with(M::CTRL))),
+        (C::Up, all, Some(Key::UP.with(M::CTRL | M::SHIFT | M::ALT))),
+        (C::F(5), CM::NONE, Some(Key::f(5))),
+        (C::F(12), CM::SHIFT, Some(Key::f(12).with(M::SHIFT))),
+        (C::Null, CM::NONE, None),
+        (C::CapsLock, CM::NONE, None),
+        (C::Menu, CM::NONE, None),
+        (
+            C::Modifier(crossterm::event::ModifierKeyCode::LeftShift),
+            CM::NONE,
+            None,
+        ),
+    ];
 
-    // Test Unicode character
-    let key_event = KeyEvent {
-        code: KeyCode::Char('🦀'),
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::Char('🦀')));
-
-    // Test Ctrl+Char
-    let key_event = KeyEvent {
-        code: KeyCode::Char('c'),
-        modifiers: KeyModifiers::CONTROL,
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::Ctrl(b'c')));
-
-    // Test arrow keys
-    let key_event = KeyEvent {
-        code: KeyCode::Up,
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::ArrowUp));
-
-    let key_event = KeyEvent {
-        code: KeyCode::Down,
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::ArrowDown));
-
-    let key_event = KeyEvent {
-        code: KeyCode::Left,
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::ArrowLeft));
-
-    let key_event = KeyEvent {
-        code: KeyCode::Right,
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::ArrowRight));
-
-    // Test special keys
-    let key_event = KeyEvent {
-        code: KeyCode::Backspace,
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::Backspace));
-
-    let key_event = KeyEvent {
-        code: KeyCode::Enter,
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::Enter));
-
-    // Test Enter as character '\r' (some terminals send this)
-    let key_event = KeyEvent {
-        code: KeyCode::Char('\r'),
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::Enter));
-
-    // Test Enter as character '\n' (some terminals send this)
-    let key_event = KeyEvent {
-        code: KeyCode::Char('\n'),
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::Enter));
-
-    let key_event = KeyEvent {
-        code: KeyCode::Esc,
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::Escape));
-
-    let key_event = KeyEvent {
-        code: KeyCode::Tab,
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::Tab));
-
-    let key_event = KeyEvent {
-        code: KeyCode::Home,
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::Home));
-
-    let key_event = KeyEvent {
-        code: KeyCode::End,
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::End));
-
-    let key_event = KeyEvent {
-        code: KeyCode::PageUp,
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::PageUp));
-
-    let key_event = KeyEvent {
-        code: KeyCode::PageDown,
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::PageDown));
-
-    let key_event = KeyEvent {
-        code: KeyCode::Delete,
-        modifiers: KeyModifiers::empty(),
-        kind: KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::empty(),
-    };
-    let key = super::translate_key_event(key_event);
-    assert_eq!(key, Some(Key::Delete));
+    for (code, mods, expected) in cases {
+        assert_eq!(translate(code, mods), expected, "{code:?} + {mods:?}");
+    }
 }
 
 #[test]
@@ -236,100 +155,4 @@ fn drop_restores_raw_mode_and_alternate_screen_without_explicit_deinit() {
     }
     assert!(!wrapped.raw_mode_enabled);
     assert!(!wrapped.alternate_screen_enabled);
-}
-
-#[test]
-fn shift_space_translates_to_key_shift_space() {
-    use crate::term::crossterm::translate_key_event;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-    let event = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::SHIFT);
-    assert_eq!(
-        translate_key_event(event),
-        Some(crate::key::Key::ShiftSpace)
-    );
-}
-
-#[test]
-fn ctrl_shift_char_produces_ctrl_shift_with_lowercase_byte() {
-    use crate::term::crossterm::translate_key_event;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-    let event = KeyEvent::new(
-        KeyCode::Char('H'),
-        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-    );
-    assert_eq!(
-        translate_key_event(event),
-        Some(crate::key::Key::CtrlShift(b'h'))
-    );
-}
-
-#[test]
-fn plain_ctrl_char_still_normalizes_case_without_shift() {
-    use crate::term::crossterm::translate_key_event;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-    let event = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::CONTROL);
-    assert_eq!(
-        translate_key_event(event),
-        Some(crate::key::Key::Ctrl(b'h'))
-    );
-}
-
-#[test]
-fn alt_shift_char_produces_alt_shift_with_lowercase_byte() {
-    use crate::term::crossterm::translate_key_event;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-    let event = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::ALT | KeyModifiers::SHIFT);
-    assert_eq!(
-        translate_key_event(event),
-        Some(crate::key::Key::AltShift(b'h'))
-    );
-}
-
-#[test]
-fn plain_alt_char_normalizes_case_without_shift() {
-    use crate::term::crossterm::translate_key_event;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-    let event = KeyEvent::new(KeyCode::Char('H'), KeyModifiers::ALT);
-    assert_eq!(translate_key_event(event), Some(crate::key::Key::Alt(b'h')));
-}
-
-fn press(code: crossterm::event::KeyCode, mods: crossterm::event::KeyModifiers) -> Option<Key> {
-    super::translate_key_event(crossterm::event::KeyEvent::new(code, mods))
-}
-
-#[test]
-fn unmapped_keys_translate_to_none() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
-    assert_eq!(press(KeyCode::F(5), KeyModifiers::NONE), None);
-    assert_eq!(press(KeyCode::Insert, KeyModifiers::NONE), None);
-    assert_eq!(press(KeyCode::Null, KeyModifiers::NONE), None);
-}
-
-#[test]
-fn altgr_printable_translates_to_plain_char() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
-    let altgr = KeyModifiers::CONTROL | KeyModifiers::ALT;
-    assert_eq!(press(KeyCode::Char('@'), altgr), Some(Key::Char('@')));
-    assert_eq!(press(KeyCode::Char('€'), altgr), Some(Key::Char('€')));
-}
-
-#[test]
-fn non_ascii_under_ctrl_or_alt_translates_to_plain_char() {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
-    assert_eq!(
-        press(KeyCode::Char('ł'), KeyModifiers::ALT),
-        Some(Key::Char('ł'))
-    );
-    assert_eq!(
-        press(KeyCode::Char('€'), KeyModifiers::CONTROL),
-        Some(Key::Char('€'))
-    );
 }

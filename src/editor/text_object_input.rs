@@ -32,7 +32,7 @@ impl PendingTextObject {
     }
 
     pub(super) fn advance(&mut self, key: Key) -> TextObjectStep {
-        let Key::Char(ch) = key else {
+        let Some(ch) = key.text() else {
             return TextObjectStep::Cancel;
         };
 

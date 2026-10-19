@@ -11,6 +11,7 @@ mod editor_lsp_tests;
 mod editor_paste_tests;
 mod explorer_preview_tests;
 mod ghost_cut_tests;
+mod key_input_tests;
 mod motion_tests;
 mod plugin_highlight_tests;
 mod plugin_settings_tests;

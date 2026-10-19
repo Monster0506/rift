@@ -49,7 +49,7 @@ impl<T: TerminalBackend> Editor<T> {
     pub(super) fn advance_pending_grammar(&mut self, grammar: PendingGrammar, key: Key) {
         match grammar {
             PendingGrammar::ReplaceChar => {
-                if let Key::Char(ch) = key {
+                if let Some(ch) = key.text() {
                     if !self.try_run_set_aware_replace_char(ch) {
                         let count = if self.pending_count > 0 {
                             self.pending_count
@@ -70,7 +70,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.pending_count = 0;
             }
             PendingGrammar::FindChar { forward, till } => {
-                if let Key::Char(ch) = key {
+                if let Some(ch) = key.text() {
                     let motion = match (forward, till) {
                         (true, false) => Motion::FindCharForward(ch),
                         (true, true) => Motion::TillCharForward(ch),
@@ -92,16 +92,16 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             },
             PendingGrammar::SurroundVerb { count } => {
-                match key {
-                    Key::Char('d') => {
+                match key.text() {
+                    Some('d') => {
                         let count = if count > 0 { count } else { 1 };
                         self.pending_grammar = Some(PendingGrammar::DeleteSurround { count });
                     }
-                    Key::Char('c') => {
+                    Some('c') => {
                         let count = if count > 0 { count } else { 1 };
                         self.pending_grammar = Some(PendingGrammar::ChangeSurroundFrom { count });
                     }
-                    Key::Char('g') => {
+                    Some('g') => {
                         let delim_count = if count > 0 { count } else { 1 };
                         self.pending_operator =
                             Some(super::PendingOperator::SurroundAdd(delim_count));
@@ -115,7 +115,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             PendingGrammar::DeleteSurround { count } => {
                 self.set_mode(Mode::Normal);
-                if let Key::Char(ch) = key {
+                if let Some(ch) = key.text() {
                     if !self.try_run_set_aware_delete_surround(ch, count) {
                         let command = Command::DeleteSurround(ch, count);
                         let result = self.execute_buffer_command(command);
@@ -129,7 +129,7 @@ impl<T: TerminalBackend> Editor<T> {
                 self.pending_count = 0;
             }
             PendingGrammar::ChangeSurroundFrom { count } => {
-                if let Key::Char(from) = key {
+                if let Some(from) = key.text() {
                     self.pending_grammar = Some(PendingGrammar::ChangeSurroundTo { from, count });
                 } else {
                     self.set_mode(Mode::Normal);
@@ -138,7 +138,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
             PendingGrammar::ChangeSurroundTo { from, count } => {
                 self.set_mode(Mode::Normal);
-                if let Key::Char(to) = key {
+                if let Some(to) = key.text() {
                     if !self.try_run_set_aware_change_surround(from, to, count) {
                         let command = Command::ChangeSurround(from, to, count);
                         let result = self.execute_buffer_command(command);
@@ -157,7 +157,7 @@ impl<T: TerminalBackend> Editor<T> {
                 delim_count,
             } => {
                 self.set_mode(Mode::Normal);
-                if let Key::Char(ch) = key {
+                if let Some(ch) = key.text() {
                     if !self.try_run_set_aware_add_surround(ch, delim_count) {
                         let command = Command::AddSurround(motion, count, ch, delim_count);
                         let result = self.execute_buffer_command(command);

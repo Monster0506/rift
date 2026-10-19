@@ -46,17 +46,17 @@ fn test_update_keypress() {
     let mut state = State::new();
     assert_eq!(state.last_keypress, None);
 
-    state.update_keypress(Key::Char('a'));
-    assert_eq!(state.last_keypress, Some(Key::Char('a')));
+    state.update_keypress(Key::char('a'));
+    assert_eq!(state.last_keypress, Some(Key::char('a')));
 
-    state.update_keypress(Key::Char('b'));
-    assert_eq!(state.last_keypress, Some(Key::Char('b')));
+    state.update_keypress(Key::char('b'));
+    assert_eq!(state.last_keypress, Some(Key::char('b')));
 
-    state.update_keypress(Key::ArrowUp);
-    assert_eq!(state.last_keypress, Some(Key::ArrowUp));
+    state.update_keypress(Key::UP);
+    assert_eq!(state.last_keypress, Some(Key::UP));
 
-    state.update_keypress(Key::Ctrl(b'c'));
-    assert_eq!(state.last_keypress, Some(Key::Ctrl(b'c')));
+    state.update_keypress(Key::ctrl('c'));
+    assert_eq!(state.last_keypress, Some(Key::ctrl('c')));
 }
 
 #[test]
@@ -97,11 +97,11 @@ fn test_update_buffer_stats() {
 fn test_state_operations_together() {
     let mut state = State::new();
 
-    state.update_keypress(Key::Char('h'));
+    state.update_keypress(Key::char('h'));
     state.update_cursor(2, 5);
     state.update_buffer_stats(3, 100, crate::document::LineEnding::LF);
     assert!(!state.debug_mode);
-    assert_eq!(state.last_keypress, Some(Key::Char('h')));
+    assert_eq!(state.last_keypress, Some(Key::char('h')));
     assert_eq!(state.cursor_pos, (2, 5));
     assert_eq!(state.total_lines, 3);
     assert_eq!(state.buffer_size, 100);
@@ -109,12 +109,12 @@ fn test_state_operations_together() {
     state.toggle_debug();
     assert!(state.debug_mode);
 
-    state.update_keypress(Key::ArrowDown);
+    state.update_keypress(Key::DOWN);
     state.update_cursor(10, 20);
     state.update_buffer_stats(15, 200, crate::document::LineEnding::LF);
 
     assert!(state.debug_mode);
-    assert_eq!(state.last_keypress, Some(Key::ArrowDown));
+    assert_eq!(state.last_keypress, Some(Key::DOWN));
     assert_eq!(state.cursor_pos, (10, 20));
     assert_eq!(state.total_lines, 15);
     assert_eq!(state.buffer_size, 200);
@@ -126,13 +126,13 @@ fn test_multiple_keypress_updates() {
 
     // Simulate a sequence of keypresses
     let keys = vec![
-        Key::Char('i'),
-        Key::Char('n'),
-        Key::Char('s'),
-        Key::Char('e'),
-        Key::Char('r'),
-        Key::Char('t'),
-        Key::Escape,
+        Key::char('i'),
+        Key::char('n'),
+        Key::char('s'),
+        Key::char('e'),
+        Key::char('r'),
+        Key::char('t'),
+        Key::ESC,
     ];
 
     for key in keys {
@@ -140,7 +140,7 @@ fn test_multiple_keypress_updates() {
     }
 
     // Last keypress should be Escape
-    assert_eq!(state.last_keypress, Some(Key::Escape));
+    assert_eq!(state.last_keypress, Some(Key::ESC));
 }
 
 #[test]

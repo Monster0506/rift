@@ -4,7 +4,7 @@
 /// Terminal handling is isolated behind a strict abstraction boundary with no
 /// dependency on editor internals; state is restored on normal exit and panic.
 use crate::error::RiftError;
-use crate::key::Key;
+use crate::key::InputEvent;
 
 /// Terminal size information
 #[derive(Debug, Clone, Copy)]
@@ -31,9 +31,9 @@ pub trait TerminalBackend {
     /// Check if a key is available within the given duration
     fn poll(&mut self, duration: std::time::Duration) -> Result<bool, RiftError>;
 
-    /// Read and decode a single keypress
+    /// Read and decode a single input event
     /// Returns None if the event was ignored (e.g. key release)
-    fn read_key(&mut self) -> Result<Option<Key>, RiftError>;
+    fn read_event(&mut self) -> Result<Option<InputEvent>, RiftError>;
 
     /// Write bytes to stdout
     fn write(&mut self, bytes: &[u8]) -> Result<(), RiftError>;

@@ -539,7 +539,7 @@ fn set_aware_replace_char_fills_each_region_to_its_own_length() {
 
     editor.handle_action(&Action::Editor(EditorAction::ReplaceCharPending));
     let grammar = editor.pending_grammar.take().unwrap();
-    editor.advance_pending_grammar(grammar, Key::Char('x'));
+    editor.advance_pending_grammar(grammar, Key::char('x'));
 
     assert_eq!(editor.active_document().buffer.to_string(), "xx234xxxx9");
     assert!(editor.active_document().selection_set.is_empty());
@@ -565,9 +565,9 @@ fn set_aware_sd_strips_surrounding_parens_from_every_region() {
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
-    editor.advance_pending_grammar(grammar, Key::Char('d'));
+    editor.advance_pending_grammar(grammar, Key::char('d'));
     let grammar = editor.pending_grammar.take().unwrap();
-    editor.advance_pending_grammar(grammar, Key::Char('('));
+    editor.advance_pending_grammar(grammar, Key::char('('));
 
     assert_eq!(editor.active_document().buffer.to_string(), "a b");
     assert!(editor.active_document().selection_set.is_empty());
@@ -598,14 +598,14 @@ fn set_aware_sg_wraps_each_region_independently() {
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
-    editor.advance_pending_grammar(grammar, Key::Char('g'));
+    editor.advance_pending_grammar(grammar, Key::char('g'));
     editor.pending_grammar = Some(pending_grammar::PendingGrammar::AddSurroundChar {
         motion: Motion::NextWord,
         count: 1,
         delim_count: 1,
     });
     let grammar = editor.pending_grammar.take().unwrap();
-    editor.advance_pending_grammar(grammar, Key::Char('"'));
+    editor.advance_pending_grammar(grammar, Key::char('"'));
 
     assert_eq!(
         editor.active_document().buffer.to_string(),
@@ -921,14 +921,14 @@ fn dot_repeat_sg_fully_replays_using_addsurroundtoset() {
 
     editor.handle_action(&Action::Editor(EditorAction::SurroundStart));
     let grammar = editor.pending_grammar.take().unwrap();
-    editor.advance_pending_grammar(grammar, crate::key::Key::Char('g'));
+    editor.advance_pending_grammar(grammar, crate::key::Key::char('g'));
     editor.pending_grammar = Some(pending_grammar::PendingGrammar::AddSurroundChar {
         motion: Motion::NextWord,
         count: 1,
         delim_count: 1,
     });
     let grammar = editor.pending_grammar.take().unwrap();
-    editor.advance_pending_grammar(grammar, crate::key::Key::Char('"'));
+    editor.advance_pending_grammar(grammar, crate::key::Key::char('"'));
 
     assert_eq!(editor.active_document().buffer.to_string(), "\"foo\"\nbar");
 

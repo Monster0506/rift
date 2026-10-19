@@ -60,35 +60,6 @@ fn test_format_mode() {
 }
 
 #[test]
-fn test_format_key_char() {
-    assert_eq!(StatusBar::format_key(Key::Char('a')), "a");
-    assert_eq!(StatusBar::format_key(Key::Char('Z')), "Z");
-    assert_eq!(StatusBar::format_key(Key::Char(' ')), " ");
-}
-
-#[test]
-fn test_format_key_ctrl() {
-    assert_eq!(StatusBar::format_key(Key::Ctrl(b'a')), "Ctrl+A");
-    assert_eq!(StatusBar::format_key(Key::Ctrl(b'c')), "Ctrl+C");
-}
-
-#[test]
-fn test_format_key_arrows() {
-    assert_eq!(StatusBar::format_key(Key::ArrowUp), "Up");
-    assert_eq!(StatusBar::format_key(Key::ArrowDown), "Down");
-    assert_eq!(StatusBar::format_key(Key::ArrowLeft), "Left");
-    assert_eq!(StatusBar::format_key(Key::ArrowRight), "Right");
-}
-
-#[test]
-fn test_format_key_special() {
-    assert_eq!(StatusBar::format_key(Key::Backspace), "Backspace");
-    assert_eq!(StatusBar::format_key(Key::Delete), "Delete");
-    assert_eq!(StatusBar::format_key(Key::Enter), "Enter");
-    assert_eq!(StatusBar::format_key(Key::Escape), "Esc");
-}
-
-#[test]
 fn test_status_bar_render_command_mode() {
     let mut state = default_state();
     state.mode = Mode::Command;
@@ -118,7 +89,7 @@ fn test_status_bar_debug_truncation_does_not_panic_on_multibyte() {
 fn test_status_bar_render_debug_mode() {
     let mut state = default_state();
     state.debug_mode = true;
-    state.last_keypress = Some(Key::Char('a'));
+    state.last_keypress = Some(Key::char('a'));
     state.cursor = CursorInfo { row: 5, col: 10 };
     state.total_lines = 10;
 
@@ -132,13 +103,13 @@ fn test_status_bar_render_debug_mode() {
 fn test_status_bar_render_debug_with_pending() {
     let mut state = default_state();
     state.debug_mode = true;
-    state.last_keypress = Some(Key::ArrowUp);
-    state.pending_key = Some(Key::Char('d'));
+    state.last_keypress = Some(Key::UP);
+    state.pending_key = Some(Key::char('d'));
 
     let written = render_row_text(&state, 10, 80);
     assert!(written.contains("NORMAL"));
     assert!(written.contains("[d]"));
-    assert!(written.contains("Last: Up"));
+    assert!(written.contains("Last: <Up>"));
 }
 
 #[test]
@@ -186,7 +157,7 @@ fn test_status_bar_debug_truncation() {
     let mut state = default_state();
     state.cols = 20; // Narrow viewport
     state.debug_mode = true;
-    state.last_keypress = Some(Key::Char('a'));
+    state.last_keypress = Some(Key::char('a'));
     state.cursor = CursorInfo { row: 100, col: 200 };
     state.total_lines = 1000;
 
@@ -197,7 +168,7 @@ fn test_status_bar_debug_truncation() {
 
 #[test]
 fn test_status_bar_various_keys() {
-    let keys = vec![Key::Char('a'), Key::ArrowUp, Key::Ctrl(b'c'), Key::Escape];
+    let keys = vec![Key::char('a'), Key::UP, Key::ctrl('c'), Key::ESC];
 
     for key in keys {
         let mut state = default_state();

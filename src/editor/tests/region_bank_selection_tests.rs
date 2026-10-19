@@ -642,8 +642,8 @@ fn real_keymap_v_then_l_renders_a_visible_highlight_in_the_composited_cells() {
         }
     };
 
-    feed_key(&mut editor, Key::Char('v'));
-    feed_key(&mut editor, Key::Char('l'));
+    feed_key(&mut editor, Key::char('v'));
+    feed_key(&mut editor, Key::char('l'));
 
     editor.update_and_render().unwrap();
 
@@ -694,8 +694,8 @@ fn visual_highlight_redraws_on_a_frame_after_the_initial_one() {
         }
     };
 
-    feed_key(&mut editor, Key::Char('v'));
-    feed_key(&mut editor, Key::Char('l'));
+    feed_key(&mut editor, Key::char('v'));
+    feed_key(&mut editor, Key::char('l'));
 
     editor.update_and_render().unwrap();
 

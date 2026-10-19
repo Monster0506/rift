@@ -34,8 +34,8 @@ fn do_handshake_client(client: &mut TcpStream, token: &str, rows: u16, cols: u16
 }
 
 type Channels = (
-    SyncSender<Key>,
-    Receiver<Key>,
+    SyncSender<InputEvent>,
+    Receiver<InputEvent>,
     std::sync::mpsc::Sender<Vec<u8>>,
     Receiver<Vec<u8>>,
     SyncSender<()>,
@@ -43,7 +43,7 @@ type Channels = (
 );
 
 fn make_channels() -> Channels {
-    let (input_tx, input_rx) = sync_channel::<Key>(64);
+    let (input_tx, input_rx) = sync_channel::<InputEvent>(64);
     let (output_tx, output_rx) = channel::<Vec<u8>>();
     let (detach_tx, detach_rx) = sync_channel::<()>(1);
     (
@@ -72,12 +72,12 @@ fn flag_is_published_before_os_handler_is_installed() {
 
 #[test]
 fn forward_key_blocks_instead_of_dropping_under_burst() {
-    let (input_tx, input_rx) = sync_channel::<Key>(64);
+    let (input_tx, input_rx) = sync_channel::<InputEvent>(64);
     const TOTAL: usize = 100;
     let sender = std::thread::spawn(move || {
         for i in 0..TOTAL {
             let c = char::from_u32('a' as u32 + (i % 26) as u32).unwrap();
-            assert!(forward_key(&input_tx, Key::Char(c)));
+            assert!(forward_key(&input_tx, Key::char(c)));
         }
     });
     let mut received = 0;
@@ -98,21 +98,21 @@ fn forward_key_blocks_instead_of_dropping_under_burst() {
 fn resize_params_wrapping_value_clamped_not_wrapped() {
     let params = serde_json::json!({"cols": 65536, "rows": 65616});
     let key = parse_resize_params(&params);
-    assert_eq!(key, Key::Resize(80, 24));
+    assert_eq!(key, InputEvent::Resize(80, 24));
 }
 
 #[test]
 fn resize_params_zero_clamped_to_default() {
     let params = serde_json::json!({"cols": 0, "rows": 0});
     let key = parse_resize_params(&params);
-    assert_eq!(key, Key::Resize(80, 24));
+    assert_eq!(key, InputEvent::Resize(80, 24));
 }
 
 #[test]
 fn resize_params_valid_value_passed_through() {
     let params = serde_json::json!({"cols": 120, "rows": 40});
     let key = parse_resize_params(&params);
-    assert_eq!(key, Key::Resize(120, 40));
+    assert_eq!(key, InputEvent::Resize(120, 40));
 }
 
 // --- do_handshake tests ---
@@ -288,7 +288,7 @@ fn serve_input_key_routes_to_editor() {
     std::thread::sleep(Duration::from_millis(20));
     let mut got_char_a = false;
     while let Ok(k) = input_rx.try_recv() {
-        if k == Key::Char('a') {
+        if k == InputEvent::Key(Key::char('a')) {
             got_char_a = true;
         }
     }
@@ -326,7 +326,7 @@ fn serve_resize_routes_to_editor() {
     std::thread::sleep(Duration::from_millis(20));
     let mut got_resize = false;
     while let Ok(k) = input_rx.try_recv() {
-        if k == Key::Resize(100, 50) {
+        if k == InputEvent::Resize(100, 50) {
             got_resize = true;
         }
     }

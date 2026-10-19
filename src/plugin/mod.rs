@@ -275,7 +275,8 @@ pub enum PluginMutation {
     /// Execute an editor action by its string name (e.g. `"editor:save"`, `"mode:normal"`).
     ExecAction(String),
     /// Register a key binding. `mode` is "n", "i", "c", "s", or "g".
-    /// `keys` is vim notation (e.g. `"<C-p>"`, `"gg"`). `action` is an action string.
+    /// `keys` is key notation (e.g. `"<C-p>"`, `"<C-S-Left>"`, `"<F5>"`, `"gg"`; see
+    /// `crate::key::parse_key_sequence`). `action` is an action string.
     MapKey {
         mode: String,
         keys: String,

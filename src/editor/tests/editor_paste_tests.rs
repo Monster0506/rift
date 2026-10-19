@@ -26,8 +26,8 @@ impl crate::term::TerminalBackend for ScriptedTerminal {
     fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, crate::error::RiftError> {
         Ok(!self.queue.is_empty())
     }
-    fn read_key(&mut self) -> Result<Option<crate::key::Key>, crate::error::RiftError> {
-        Ok(self.queue.pop_front())
+    fn read_event(&mut self) -> Result<Option<crate::key::InputEvent>, crate::error::RiftError> {
+        Ok(self.queue.pop_front().map(crate::key::InputEvent::Key))
     }
     fn write(&mut self, bytes: &[u8]) -> Result<(), crate::error::RiftError> {
         self.inner.write(bytes)
@@ -63,7 +63,7 @@ impl crate::term::TerminalBackend for ScriptedTerminal {
 
 #[test]
 fn pasting_a_shell_command_into_insert_mode_inserts_every_character() {
-    let mut keys = vec![crate::key::Key::Char('i')];
+    let mut keys = vec![crate::key::Key::char('i')];
     keys.extend(chars_of(" 1 npm install -g @openai/codex"));
     let mut editor = Editor::new(ScriptedTerminal::new(24, 80, keys)).unwrap();
 
@@ -197,7 +197,7 @@ impl alacritty_terminal::grid::Dimensions for VteDims {
 #[test]
 fn bracketed_paste_reproduced_through_a_real_vte_parser() {
     use crate::action::{Action, EditorAction};
-    use crate::key::Key;
+    use crate::key::InputEvent;
     use crate::replay::ReplayBackend;
 
     let sink = SharedBuf::default();
@@ -214,7 +214,7 @@ fn bracketed_paste_reproduced_through_a_real_vte_parser() {
 
     editor
         .term
-        .push_keys([Key::Paste(" 4 CS Classes to Visit".to_string())]);
+        .push_events([InputEvent::Paste(" 4 CS Classes to Visit".to_string())]);
     editor.tick().unwrap();
 
     let bytes = sink.0.lock().clone();
@@ -277,8 +277,12 @@ impl crate::term::TerminalBackend for PressReleaseTerminal {
     fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, crate::error::RiftError> {
         Ok(!self.raw.is_empty())
     }
-    fn read_key(&mut self) -> Result<Option<crate::key::Key>, crate::error::RiftError> {
-        Ok(self.raw.pop_front().flatten())
+    fn read_event(&mut self) -> Result<Option<crate::key::InputEvent>, crate::error::RiftError> {
+        Ok(self
+            .raw
+            .pop_front()
+            .flatten()
+            .map(crate::key::InputEvent::Key))
     }
     fn write(&mut self, bytes: &[u8]) -> Result<(), crate::error::RiftError> {
         self.inner.write(bytes)
@@ -317,7 +321,7 @@ fn paste_burst_with_trailing_release_events_still_renders_without_a_further_key(
     use crate::action::{Action, EditorAction};
 
     let pasted = " 4 CS Classes to Visit";
-    let keys: Vec<crate::key::Key> = pasted.chars().map(crate::key::Key::Char).collect();
+    let keys: Vec<crate::key::Key> = pasted.chars().map(crate::key::Key::char).collect();
     let mut editor = Editor::new(PressReleaseTerminal::new(24, 80, keys)).unwrap();
     editor.update_and_render().unwrap();
     editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
@@ -349,7 +353,7 @@ fn single_space_keypress_with_release_moves_the_rendered_cursor() {
     editor.update_and_render().unwrap();
     let before = editor.term.inner.cursor_moves.last().copied();
 
-    editor.term.raw.push_back(Some(crate::key::Key::Char(' ')));
+    editor.term.raw.push_back(Some(crate::key::Key::char(' ')));
     editor.term.raw.push_back(None);
     while editor.term.poll(std::time::Duration::ZERO).unwrap() {
         editor.tick().unwrap();
@@ -376,7 +380,7 @@ fn single_up_keypress_on_soft_wrap_with_release_moves_the_rendered_cursor() {
     editor.update_and_render().unwrap();
     let before = editor.term.inner.cursor_moves.last().copied();
 
-    editor.term.raw.push_back(Some(crate::key::Key::Char('k')));
+    editor.term.raw.push_back(Some(crate::key::Key::char('k')));
     editor.term.raw.push_back(None);
     while editor.term.poll(std::time::Duration::ZERO).unwrap() {
         editor.tick().unwrap();
@@ -387,25 +391,4 @@ fn single_up_keypress_on_soft_wrap_with_release_moves_the_rendered_cursor() {
         after, before,
         "the rendered cursor must move up a soft-wrapped row without a further keypress"
     );
-}
-
-#[test]
-fn unmapped_function_key_in_insert_mode_leaves_buffer_unchanged() {
-    use crate::action::{Action, EditorAction};
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-    let mut editor = Editor::new(PressReleaseTerminal::new(24, 80, vec![])).unwrap();
-    editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
-    editor.execute_buffer_command(crate::command::Command::InsertChar('a'));
-
-    let f5 = crate::term::crossterm::translate_key_event(KeyEvent::new(
-        KeyCode::F(5),
-        KeyModifiers::NONE,
-    ));
-    editor.term.raw.push_back(f5);
-    while editor.term.poll(std::time::Duration::ZERO).unwrap() {
-        editor.tick().unwrap();
-    }
-
-    assert_eq!(editor.active_document().buffer.to_string(), "a");
 }

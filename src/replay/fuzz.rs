@@ -39,18 +39,18 @@ const CTRL_BYTES: &[u8] = b"vwraeudfboinp";
 
 fn random_key(rng: &mut Rng) -> Key {
     match rng.below(20) {
-        0..=13 => Key::Char(KEY_CHARS[rng.below(KEY_CHARS.len())]),
-        14 => Key::Escape,
-        15 => Key::Enter,
-        16 => Key::Backspace,
-        17 => Key::Ctrl(CTRL_BYTES[rng.below(CTRL_BYTES.len())]),
+        0..=13 => Key::char(KEY_CHARS[rng.below(KEY_CHARS.len())]),
+        14 => Key::ESC,
+        15 => Key::ENTER,
+        16 => Key::BACKSPACE,
+        17 => Key::ctrl(CTRL_BYTES[rng.below(CTRL_BYTES.len())] as char),
         18 => match rng.below(4) {
-            0 => Key::ArrowUp,
-            1 => Key::ArrowDown,
-            2 => Key::ArrowLeft,
-            _ => Key::ArrowRight,
+            0 => Key::UP,
+            1 => Key::DOWN,
+            2 => Key::LEFT,
+            _ => Key::RIGHT,
         },
-        _ => Key::Tab,
+        _ => Key::TAB,
     }
 }
 
@@ -96,7 +96,7 @@ pub fn run(config: &FuzzConfig) -> Result<usize, FuzzFailure> {
         if trace {
             eprintln!("step={step} key={key:?}");
         }
-        keys.push(key.clone());
+        keys.push(key);
         ed.term.push_keys(std::iter::once(key));
 
         if let Err(tick_error) = ed.tick() {

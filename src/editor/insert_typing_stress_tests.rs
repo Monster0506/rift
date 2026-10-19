@@ -2,7 +2,7 @@
 //! looks identical to this) against a realistic multi-thousand-line buffer.
 
 use super::*;
-use crate::key::Key;
+use crate::key::{InputEvent, Key};
 use crate::term::{Size, TerminalBackend};
 use std::collections::VecDeque;
 
@@ -28,8 +28,8 @@ impl TerminalBackend for QueueTerminal {
     fn poll(&mut self, _duration: std::time::Duration) -> Result<bool, crate::error::RiftError> {
         Ok(!self.keys.is_empty())
     }
-    fn read_key(&mut self) -> Result<Option<Key>, crate::error::RiftError> {
-        Ok(self.keys.pop_front())
+    fn read_event(&mut self) -> Result<Option<InputEvent>, crate::error::RiftError> {
+        Ok(self.keys.pop_front().map(InputEvent::Key))
     }
     fn write(&mut self, _bytes: &[u8]) -> Result<(), crate::error::RiftError> {
         Ok(())
@@ -121,12 +121,12 @@ fn rapid_insert_mode_typing_keeps_up_on_a_large_file() {
 
     // 'i' enters Insert mode; the rest is a burst of plain letters, exactly
     // how a real fast typist's keystrokes arrive through the terminal.
-    editor.term.keys.push_back(Key::Char('i'));
+    editor.term.keys.push_back(Key::char('i'));
     const CHARS: usize = 5_000;
     let alphabet = "abcdefghijklmnopqrstuvwxyz";
     for i in 0..CHARS {
         let ch = alphabet.as_bytes()[i % alphabet.len()] as char;
-        editor.term.keys.push_back(Key::Char(ch));
+        editor.term.keys.push_back(Key::char(ch));
     }
 
     let start = std::time::Instant::now();

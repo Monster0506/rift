@@ -3,12 +3,11 @@ use std::net::TcpStream;
 use std::sync::mpsc::TryRecvError;
 use std::time::Duration;
 
-use crate::ipc::key_notation::vim_to_key_sendable;
 use crate::ipc::protocol::{
     b64_decode, InitializeParams, InputKeyParams, RenderUpdateParams, ResizeParams,
     SessionEndingParams, Viewport,
 };
-use crate::key::Key;
+use crate::key::{format_key, InputEvent, Key};
 use crate::term::TerminalBackend;
 use crate::transport::{read_framed, write_framed};
 
@@ -198,6 +197,16 @@ fn read_one_frame(stream: &mut impl Read) -> anyhow::Result<Vec<u8>> {
     Ok(body)
 }
 
+fn send_key(stream: &mut TcpStream, key: Key, seq: u64) -> anyhow::Result<()> {
+    let msg = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "input.key",
+        "params": InputKeyParams { key: format_key(key), seq },
+    });
+    write_framed(stream, &msg)?;
+    Ok(())
+}
+
 fn event_loop<T: TerminalBackend>(local_term: &mut T, stream: TcpStream) -> anyhow::Result<()> {
     let mut write_stream = stream.try_clone()?;
     let (frame_tx, frame_rx) = std::sync::mpsc::channel::<std::io::Result<Vec<u8>>>();
@@ -223,9 +232,9 @@ fn event_loop<T: TerminalBackend>(local_term: &mut T, stream: TcpStream) -> anyh
 
     loop {
         if local_term.poll(one_ms).map_err(|e| anyhow::anyhow!(e))? {
-            if let Some(key) = local_term.read_key().map_err(|e| anyhow::anyhow!(e))? {
-                match key {
-                    Key::Resize(cols, rows) => {
+            if let Some(event) = local_term.read_event().map_err(|e| anyhow::anyhow!(e))? {
+                match event {
+                    InputEvent::Resize(cols, rows) => {
                         let msg = serde_json::json!({
                             "jsonrpc": "2.0",
                             "method": "resize",
@@ -235,29 +244,15 @@ fn event_loop<T: TerminalBackend>(local_term: &mut T, stream: TcpStream) -> anyh
                     }
                     // The wire protocol has no paste token, so decompose
                     // into per-char sends (the un-bracketed local fallback).
-                    Key::Paste(text) => {
+                    InputEvent::Paste(text) => {
                         for ch in text.chars() {
-                            if let Some(notation) = vim_to_key_sendable(Key::Char(ch)) {
-                                seq += 1;
-                                let msg = serde_json::json!({
-                                    "jsonrpc": "2.0",
-                                    "method": "input.key",
-                                    "params": InputKeyParams { key: notation, seq },
-                                });
-                                write_framed(&mut write_stream, &msg)?;
-                            }
+                            seq += 1;
+                            send_key(&mut write_stream, Key::char(ch), seq)?;
                         }
                     }
-                    other => {
-                        if let Some(notation) = vim_to_key_sendable(other) {
-                            seq += 1;
-                            let msg = serde_json::json!({
-                                "jsonrpc": "2.0",
-                                "method": "input.key",
-                                "params": InputKeyParams { key: notation, seq },
-                            });
-                            write_framed(&mut write_stream, &msg)?;
-                        }
+                    InputEvent::Key(key) => {
+                        seq += 1;
+                        send_key(&mut write_stream, key, seq)?;
                     }
                 }
             }

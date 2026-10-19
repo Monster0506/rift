@@ -1,5 +1,6 @@
 use super::*;
 use crate::action::{EditorAction, Motion};
+use crate::key::Mods;
 use crate::keymap::defaults::register_defaults;
 
 #[test]
@@ -7,15 +8,15 @@ fn test_register_and_get() {
     let mut map = KeyMap::new();
     map.register(
         KeyContext::Global,
-        Key::Char('j'),
+        Key::char('j'),
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
 
     assert_eq!(
-        map.get_action(KeyContext::Global, Key::Char('j')),
+        map.get_action(KeyContext::Global, Key::char('j')),
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
-    assert_eq!(map.get_action(KeyContext::Global, Key::Char('k')), None);
+    assert_eq!(map.get_action(KeyContext::Global, Key::char('k')), None);
 }
 
 #[test]
@@ -23,25 +24,25 @@ fn test_sequence() {
     let mut map = KeyMap::new();
     map.register_sequence(
         KeyContext::Global,
-        vec![Key::Char('d'), Key::Char('d')],
+        vec![Key::char('d'), Key::char('d')],
         Action::Editor(EditorAction::DeleteLine),
     );
 
     // Partial match
     assert_eq!(
-        map.lookup(KeyContext::Global, &[Key::Char('d')]),
+        map.lookup(KeyContext::Global, &[Key::char('d')]),
         MatchResult::Prefix
     );
 
     // Exact match
     assert_eq!(
-        map.lookup(KeyContext::Global, &[Key::Char('d'), Key::Char('d')]),
+        map.lookup(KeyContext::Global, &[Key::char('d'), Key::char('d')]),
         MatchResult::Exact(&Action::Editor(EditorAction::DeleteLine))
     );
 
     // No match
     assert_eq!(
-        map.lookup(KeyContext::Global, &[Key::Char('x')]),
+        map.lookup(KeyContext::Global, &[Key::char('x')]),
         MatchResult::None
     );
 }
@@ -52,37 +53,37 @@ fn test_context_fallback() {
     // Global binding
     map.register(
         KeyContext::Global,
-        Key::Char('q'),
+        Key::char('q'),
         Action::Editor(EditorAction::Quit),
     );
 
     // Specific binding
     map.register(
         KeyContext::Visual,
-        Key::Char('j'),
+        Key::char('j'),
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
 
     // Test specific context finding specific binding
     assert_eq!(
-        map.get_action(KeyContext::Visual, Key::Char('j')),
+        map.get_action(KeyContext::Visual, Key::char('j')),
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
 
     // Test specific context falling back to global
     assert_eq!(
-        map.get_action(KeyContext::Visual, Key::Char('q')),
+        map.get_action(KeyContext::Visual, Key::char('q')),
         Some(&Action::Editor(EditorAction::Quit))
     );
 
     // Test global context finding global binding
     assert_eq!(
-        map.get_action(KeyContext::Global, Key::Char('q')),
+        map.get_action(KeyContext::Global, Key::char('q')),
         Some(&Action::Editor(EditorAction::Quit))
     );
 
     // Test global context NOT finding specific binding
-    assert_eq!(map.get_action(KeyContext::Global, Key::Char('j')), None);
+    assert_eq!(map.get_action(KeyContext::Global, Key::char('j')), None);
 }
 
 #[test]
@@ -90,17 +91,17 @@ fn test_overwrite() {
     let mut map = KeyMap::new();
     map.register(
         KeyContext::Global,
-        Key::Char('j'),
+        Key::char('j'),
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
     assert_eq!(
-        map.get_action(KeyContext::Global, Key::Char('j')),
+        map.get_action(KeyContext::Global, Key::char('j')),
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
 
-    map.register(KeyContext::Global, Key::Char('j'), Action::Noop);
+    map.register(KeyContext::Global, Key::char('j'), Action::Noop);
     assert_eq!(
-        map.get_action(KeyContext::Global, Key::Char('j')),
+        map.get_action(KeyContext::Global, Key::char('j')),
         Some(&Action::Noop)
     );
 }
@@ -112,13 +113,13 @@ fn test_file_explorer_buffer_falls_back_to_normal() {
     let mut map = KeyMap::new();
     map.register(
         KeyContext::Normal,
-        Key::Char('j'),
+        Key::char('j'),
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
 
     let ctx = KeyContext::Buffer(BufferKindId::DIRECTORY);
     assert_eq!(
-        map.get_action_with_parent(ctx, Key::Char('j'), |c| (c == ctx)
+        map.get_action_with_parent(ctx, Key::char('j'), |c| (c == ctx)
             .then_some(KeyContext::Normal)),
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
@@ -129,13 +130,13 @@ fn test_file_explorer_buffer_falls_back_to_global_via_normal() {
     let mut map = KeyMap::new();
     map.register(
         KeyContext::Global,
-        Key::Char('q'),
+        Key::char('q'),
         Action::Editor(EditorAction::Quit),
     );
 
     let ctx = KeyContext::Buffer(BufferKindId::DIRECTORY);
     assert_eq!(
-        map.get_action_with_parent(ctx, Key::Char('q'), |c| (c == ctx)
+        map.get_action_with_parent(ctx, Key::char('q'), |c| (c == ctx)
             .then_some(KeyContext::Normal)),
         Some(&Action::Editor(EditorAction::Quit))
     );
@@ -146,23 +147,23 @@ fn test_file_explorer_buffer_override_shadows_normal() {
     let mut map = KeyMap::new();
     map.register(
         KeyContext::Normal,
-        Key::Char('k'),
+        Key::char('k'),
         Action::Editor(EditorAction::Move(Motion::Up)),
     );
     let ctx = KeyContext::Buffer(BufferKindId::DIRECTORY);
     map.register(
         ctx,
-        Key::Char('k'),
+        Key::char('k'),
         Action::Editor(EditorAction::Move(Motion::PageUp)),
     );
 
     assert_eq!(
-        map.get_action_with_parent(ctx, Key::Char('k'), |c| (c == ctx)
+        map.get_action_with_parent(ctx, Key::char('k'), |c| (c == ctx)
             .then_some(KeyContext::Normal)),
         Some(&Action::Editor(EditorAction::Move(Motion::PageUp)))
     );
     assert_eq!(
-        map.get_action(KeyContext::Normal, Key::Char('k')),
+        map.get_action(KeyContext::Normal, Key::char('k')),
         Some(&Action::Editor(EditorAction::Move(Motion::Up)))
     );
 }
@@ -172,13 +173,13 @@ fn test_undotree_falls_back_to_normal() {
     let mut map = KeyMap::new();
     map.register(
         KeyContext::Normal,
-        Key::Char('j'),
+        Key::char('j'),
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
 
     let ctx = KeyContext::Buffer(BufferKindId::UNDO_TREE);
     assert_eq!(
-        map.get_action_with_parent(ctx, Key::Char('j'), |c| (c == ctx)
+        map.get_action_with_parent(ctx, Key::char('j'), |c| (c == ctx)
             .then_some(KeyContext::Normal)),
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
@@ -189,14 +190,13 @@ fn test_undotree_falls_back_to_global_via_normal() {
     let mut map = KeyMap::new();
     map.register(
         KeyContext::Global,
-        Key::Escape,
+        Key::ESC,
         Action::Editor(EditorAction::EnterNormalMode),
     );
 
     let ctx = KeyContext::Buffer(BufferKindId::UNDO_TREE);
     assert_eq!(
-        map.get_action_with_parent(ctx, Key::Escape, |c| (c == ctx)
-            .then_some(KeyContext::Normal)),
+        map.get_action_with_parent(ctx, Key::ESC, |c| (c == ctx).then_some(KeyContext::Normal)),
         Some(&Action::Editor(EditorAction::EnterNormalMode))
     );
 }
@@ -204,16 +204,16 @@ fn test_undotree_falls_back_to_global_via_normal() {
 #[test]
 fn test_undotree_override_shadows_normal() {
     let mut map = KeyMap::new();
-    map.register(KeyContext::Normal, Key::Enter, Action::Noop);
+    map.register(KeyContext::Normal, Key::ENTER, Action::Noop);
     let ctx = KeyContext::Buffer(BufferKindId::UNDO_TREE);
     map.register(
         ctx,
-        Key::Enter,
+        Key::ENTER,
         Action::Buffer("undotree:select".to_string()),
     );
 
     assert_eq!(
-        map.get_action_with_parent(ctx, Key::Enter, |c| (c == ctx)
+        map.get_action_with_parent(ctx, Key::ENTER, |c| (c == ctx)
             .then_some(KeyContext::Normal)),
         Some(&Action::Buffer("undotree:select".to_string()))
     );
@@ -225,11 +225,11 @@ fn test_normal_does_not_see_file_explorer_buffer_bindings() {
     let ctx = KeyContext::Buffer(BufferKindId::DIRECTORY);
     map.register(
         ctx,
-        Key::Enter,
+        Key::ENTER,
         Action::Buffer("explorer:select".to_string()),
     );
 
-    assert_eq!(map.get_action(KeyContext::Normal, Key::Enter), None);
+    assert_eq!(map.get_action(KeyContext::Normal, Key::ENTER), None);
 }
 
 #[test]
@@ -238,26 +238,26 @@ fn test_normal_does_not_see_undotree_bindings() {
     let ctx = KeyContext::Buffer(BufferKindId::UNDO_TREE);
     map.register(
         ctx,
-        Key::Enter,
+        Key::ENTER,
         Action::Buffer("undotree:select".to_string()),
     );
 
-    assert_eq!(map.get_action(KeyContext::Normal, Key::Enter), None);
+    assert_eq!(map.get_action(KeyContext::Normal, Key::ENTER), None);
 }
 
 #[test]
 fn test_file_explorer_buffer_all_normal_motions_accessible() {
     let mut map = KeyMap::new();
     let motions = vec![
-        (Key::Char('h'), Motion::Left),
-        (Key::Char('j'), Motion::Down),
-        (Key::Char('k'), Motion::Up),
-        (Key::Char('l'), Motion::Right),
+        (Key::char('h'), Motion::Left),
+        (Key::char('j'), Motion::Down),
+        (Key::char('k'), Motion::Up),
+        (Key::char('l'), Motion::Right),
     ];
     for (key, motion) in &motions {
         map.register(
             KeyContext::Normal,
-            key.clone(),
+            *key,
             Action::Editor(EditorAction::Move(*motion)),
         );
     }
@@ -265,8 +265,7 @@ fn test_file_explorer_buffer_all_normal_motions_accessible() {
     let ctx = KeyContext::Buffer(BufferKindId::DIRECTORY);
     for (key, motion) in &motions {
         assert_eq!(
-            map.get_action_with_parent(ctx, key.clone(), |c| (c == ctx)
-                .then_some(KeyContext::Normal)),
+            map.get_action_with_parent(ctx, *key, |c| (c == ctx).then_some(KeyContext::Normal)),
             Some(&Action::Editor(EditorAction::Move(*motion))),
             "Directory should inherit {:?} from Normal",
             key
@@ -278,15 +277,15 @@ fn test_file_explorer_buffer_all_normal_motions_accessible() {
 fn test_undotree_all_normal_motions_accessible() {
     let mut map = KeyMap::new();
     let motions = vec![
-        (Key::Char('h'), Motion::Left),
-        (Key::Char('j'), Motion::Down),
-        (Key::Char('k'), Motion::Up),
-        (Key::Char('l'), Motion::Right),
+        (Key::char('h'), Motion::Left),
+        (Key::char('j'), Motion::Down),
+        (Key::char('k'), Motion::Up),
+        (Key::char('l'), Motion::Right),
     ];
     for (key, motion) in &motions {
         map.register(
             KeyContext::Normal,
-            key.clone(),
+            *key,
             Action::Editor(EditorAction::Move(*motion)),
         );
     }
@@ -294,8 +293,7 @@ fn test_undotree_all_normal_motions_accessible() {
     let ctx = KeyContext::Buffer(BufferKindId::UNDO_TREE);
     for (key, motion) in &motions {
         assert_eq!(
-            map.get_action_with_parent(ctx, key.clone(), |c| (c == ctx)
-                .then_some(KeyContext::Normal)),
+            map.get_action_with_parent(ctx, *key, |c| (c == ctx).then_some(KeyContext::Normal)),
             Some(&Action::Editor(EditorAction::Move(*motion))),
             "UndoTree should inherit {:?} from Normal",
             key
@@ -308,13 +306,13 @@ fn test_sequence_fallback_through_normal_to_global() {
     let mut map = KeyMap::new();
     map.register_sequence(
         KeyContext::Global,
-        vec![Key::Char('g'), Key::Char('g')],
+        vec![Key::char('g'), Key::char('g')],
         Action::Editor(EditorAction::Move(Motion::StartOfFile)),
     );
 
     let ctx = KeyContext::Buffer(BufferKindId::DIRECTORY);
     assert_eq!(
-        map.lookup_with_parent(ctx, &[Key::Char('g'), Key::Char('g')], |c| (c == ctx)
+        map.lookup_with_parent(ctx, &[Key::char('g'), Key::char('g')], |c| (c == ctx)
             .then_some(KeyContext::Normal)),
         MatchResult::Exact(&Action::Editor(EditorAction::Move(Motion::StartOfFile)))
     );
@@ -325,13 +323,13 @@ fn test_sequence_fallback_undotree_through_normal_to_global() {
     let mut map = KeyMap::new();
     map.register_sequence(
         KeyContext::Global,
-        vec![Key::Char('g'), Key::Char('g')],
+        vec![Key::char('g'), Key::char('g')],
         Action::Editor(EditorAction::Move(Motion::StartOfFile)),
     );
 
     let ctx = KeyContext::Buffer(BufferKindId::UNDO_TREE);
     assert_eq!(
-        map.lookup_with_parent(ctx, &[Key::Char('g'), Key::Char('g')], |c| (c == ctx)
+        map.lookup_with_parent(ctx, &[Key::char('g'), Key::char('g')], |c| (c == ctx)
             .then_some(KeyContext::Normal)),
         MatchResult::Exact(&Action::Editor(EditorAction::Move(Motion::StartOfFile)))
     );
@@ -343,7 +341,7 @@ fn test_default_explorer_toggle_hidden_keybind() {
     register_defaults(&mut map);
 
     assert_eq!(
-        map.get_action(KeyContext::Buffer(BufferKindId::DIRECTORY), Key::Char('H')),
+        map.get_action(KeyContext::Buffer(BufferKindId::DIRECTORY), Key::char('H')),
         Some(&Action::Editor(EditorAction::ExplorerToggleHidden)),
         "Directory 'H' should be bound to ExplorerToggleHidden by default"
     );
@@ -355,7 +353,7 @@ fn test_default_word_end_keybind() {
     register_defaults(&mut map);
 
     assert_eq!(
-        map.get_action(KeyContext::Normal, Key::Char('e')),
+        map.get_action(KeyContext::Normal, Key::char('e')),
         Some(&Action::Editor(EditorAction::Move(Motion::WordEnd))),
         "Normal 'e' should be bound to Motion::WordEnd by default"
     );
@@ -370,15 +368,15 @@ fn test_operator_pending_text_objects_not_in_trie() {
     register_defaults(&mut map);
 
     assert_eq!(
-        map.lookup(KeyContext::OperatorPending, &[Key::Char('i')]),
-        map.lookup(KeyContext::Normal, &[Key::Char('i')]),
+        map.lookup(KeyContext::OperatorPending, &[Key::char('i')]),
+        map.lookup(KeyContext::Normal, &[Key::char('i')]),
         "OperatorPending should fall through to Normal for 'i' (no trie text-object entry)"
     );
 
     // OperatorPending falls through to Normal for regular motions.
     assert!(
         matches!(
-            map.lookup(KeyContext::OperatorPending, &[Key::Char('h')]),
+            map.lookup(KeyContext::OperatorPending, &[Key::char('h')]),
             MatchResult::Exact(_)
         ),
         "'h' should be reachable in OperatorPending via Normal fallthrough"
@@ -389,11 +387,11 @@ fn test_operator_pending_text_objects_not_in_trie() {
 fn test_ctrl_w_ctrl_hjkl_match_ctrl_w_hjkl() {
     let mut map = KeyMap::new();
     register_defaults(&mut map);
-    let ww = Key::Ctrl(b'w');
+    let ww = Key::ctrl('w');
 
     for ch in [b'h', b'j', b'k', b'l'] {
-        let plain = map.lookup(KeyContext::Normal, &[ww.clone(), Key::Char(ch as char)]);
-        let ctrl = map.lookup(KeyContext::Normal, &[ww.clone(), Key::Ctrl(ch)]);
+        let plain = map.lookup(KeyContext::Normal, &[ww, Key::char(ch as char)]);
+        let ctrl = map.lookup(KeyContext::Normal, &[ww, Key::ctrl(ch as char)]);
 
         assert!(
             matches!(plain, MatchResult::Exact(_)),
@@ -410,15 +408,18 @@ fn test_ctrl_w_ctrl_hjkl_match_ctrl_w_hjkl() {
 
 #[test]
 fn test_ctrl_w_ctrl_shift_hjkl_match_ctrl_w_hjkl() {
-    // Backends can emit CtrlShift for fast Ctrl-W chords.
-    // The alias keeps Ctrl-W H/J/K/L navigation available.
+    // Backends can emit Ctrl+Shift for fast Ctrl-W chords; Shift on a
+    // character falls back to the unshifted binding.
     let mut map = KeyMap::new();
     register_defaults(&mut map);
-    let ww = Key::Ctrl(b'w');
+    let ww = Key::ctrl('w');
 
     for ch in [b'h', b'j', b'k', b'l'] {
-        let plain = map.lookup(KeyContext::Normal, &[ww.clone(), Key::Char(ch as char)]);
-        let ctrl_shift = map.lookup(KeyContext::Normal, &[ww.clone(), Key::CtrlShift(ch)]);
+        let plain = map.lookup(KeyContext::Normal, &[ww, Key::char(ch as char)]);
+        let ctrl_shift = map.lookup(
+            KeyContext::Normal,
+            &[ww, Key::ctrl(ch as char).with(Mods::SHIFT)],
+        );
 
         assert_eq!(
             plain, ctrl_shift,
@@ -434,7 +435,7 @@ fn test_ctrl_w_ctrl_h_is_a_prefix_after_just_ctrl_w() {
     register_defaults(&mut map);
 
     assert_eq!(
-        map.lookup(KeyContext::Normal, &[Key::Ctrl(b'w')]),
+        map.lookup(KeyContext::Normal, &[Key::ctrl('w')]),
         MatchResult::Prefix,
         "<C-w> alone should still be a pending prefix, not swallowed by the <C-h/j/k/l> aliases"
     );
@@ -449,24 +450,24 @@ fn test_buffer_context_custom_parent_resolution() {
     // Base normal bindings
     map.register(
         KeyContext::Normal,
-        Key::Char('j'),
+        Key::char('j'),
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
     map.register(
         KeyContext::Normal,
-        Key::Char('q'),
+        Key::char('q'),
         Action::Editor(EditorAction::Move(Motion::Up)),
     );
     // Global binding
     map.register(
         KeyContext::Global,
-        Key::Char('x'),
+        Key::char('x'),
         Action::Editor(EditorAction::Quit),
     );
     // Buffer-specific override
     map.register(
         buffer_ctx,
-        Key::Char('q'),
+        Key::char('q'),
         Action::Buffer("buffer:quit".to_string()),
     );
 
@@ -477,25 +478,25 @@ fn test_buffer_context_custom_parent_resolution() {
 
     // Buffer local binding takes precedence
     assert_eq!(
-        map.get_action_with_parent(buffer_ctx, Key::Char('q'), resolver),
+        map.get_action_with_parent(buffer_ctx, Key::char('q'), resolver),
         Some(&Action::Buffer("buffer:quit".to_string()))
     );
 
     // Buffer falls back to Normal for 'j'
     assert_eq!(
-        map.get_action_with_parent(buffer_ctx, Key::Char('j'), resolver),
+        map.get_action_with_parent(buffer_ctx, Key::char('j'), resolver),
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
 
     // Buffer falls back through Normal to Global for 'x'
     assert_eq!(
-        map.get_action_with_parent(buffer_ctx, Key::Char('x'), resolver),
+        map.get_action_with_parent(buffer_ctx, Key::char('x'), resolver),
         Some(&Action::Editor(EditorAction::Quit))
     );
 
     // Unbound key returns None
     assert_eq!(
-        map.get_action_with_parent(buffer_ctx, Key::Char('z'), resolver),
+        map.get_action_with_parent(buffer_ctx, Key::char('z'), resolver),
         None
     );
 }
@@ -508,12 +509,12 @@ fn test_buffer_context_no_fallback() {
 
     map.register(
         KeyContext::Normal,
-        Key::Char('j'),
+        Key::char('j'),
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
     map.register(
         buffer_ctx,
-        Key::Char('q'),
+        Key::char('q'),
         Action::Buffer("buffer:quit".to_string()),
     );
 
@@ -521,12 +522,12 @@ fn test_buffer_context_no_fallback() {
     let no_fallback = |_ctx: KeyContext| None;
 
     assert_eq!(
-        map.get_action_with_parent(buffer_ctx, Key::Char('q'), no_fallback),
+        map.get_action_with_parent(buffer_ctx, Key::char('q'), no_fallback),
         Some(&Action::Buffer("buffer:quit".to_string()))
     );
     // 'j' exists in Normal, but buffer has no fallback so it must resolve to None
     assert_eq!(
-        map.get_action_with_parent(buffer_ctx, Key::Char('j'), no_fallback),
+        map.get_action_with_parent(buffer_ctx, Key::char('j'), no_fallback),
         None
     );
 }
@@ -539,12 +540,12 @@ fn test_buffer_context_global_fallback() {
 
     map.register(
         KeyContext::Normal,
-        Key::Char('j'),
+        Key::char('j'),
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
     map.register(
         KeyContext::Global,
-        Key::Char('x'),
+        Key::char('x'),
         Action::Editor(EditorAction::Quit),
     );
 
@@ -556,12 +557,12 @@ fn test_buffer_context_global_fallback() {
 
     // Global binding accessible
     assert_eq!(
-        map.get_action_with_parent(buffer_ctx, Key::Char('x'), global_fallback),
+        map.get_action_with_parent(buffer_ctx, Key::char('x'), global_fallback),
         Some(&Action::Editor(EditorAction::Quit))
     );
     // Normal binding skipped
     assert_eq!(
-        map.get_action_with_parent(buffer_ctx, Key::Char('j'), global_fallback),
+        map.get_action_with_parent(buffer_ctx, Key::char('j'), global_fallback),
         None
     );
 }
@@ -571,33 +572,33 @@ fn test_static_contexts_retain_current_fallback() {
     let mut map = KeyMap::new();
     map.register(
         KeyContext::Global,
-        Key::Char('q'),
+        Key::char('q'),
         Action::Editor(EditorAction::Quit),
     );
     map.register(
         KeyContext::Normal,
-        Key::Char('j'),
+        Key::char('j'),
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
 
     // Default lookup preserves Visual -> Normal -> Global
     assert_eq!(
-        map.get_action(KeyContext::Visual, Key::Char('j')),
+        map.get_action(KeyContext::Visual, Key::char('j')),
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
     assert_eq!(
-        map.get_action(KeyContext::Visual, Key::Char('q')),
+        map.get_action(KeyContext::Visual, Key::char('q')),
         Some(&Action::Editor(EditorAction::Quit))
     );
 
     // Custom resolver only handling Buffer still preserves static fallback
     let buffer_only_resolver = |_ctx: KeyContext| None;
     assert_eq!(
-        map.get_action_with_parent(KeyContext::Visual, Key::Char('j'), buffer_only_resolver),
+        map.get_action_with_parent(KeyContext::Visual, Key::char('j'), buffer_only_resolver),
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
     assert_eq!(
-        map.get_action_with_parent(KeyContext::Visual, Key::Char('q'), buffer_only_resolver),
+        map.get_action_with_parent(KeyContext::Visual, Key::char('q'), buffer_only_resolver),
         Some(&Action::Editor(EditorAction::Quit))
     );
 }
@@ -606,28 +607,20 @@ fn test_static_contexts_retain_current_fallback() {
 fn test_layered_registration_and_restoration_by_sequence() {
     let mut map = KeyMap::new();
     let ctx = KeyContext::Normal;
-    let key = Key::Char('j');
+    let key = Key::char('j');
 
     // Layer 1
-    map.register(
-        ctx,
-        key.clone(),
-        Action::Editor(EditorAction::Move(Motion::Down)),
-    );
+    map.register(ctx, key, Action::Editor(EditorAction::Move(Motion::Down)));
     assert_eq!(
-        map.get_action(ctx, key.clone()),
+        map.get_action(ctx, key),
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
     assert_eq!(map.layer_count(ctx, std::slice::from_ref(&key)), 1);
 
     // Layer 2 (overrides layer 1)
-    map.register(
-        ctx,
-        key.clone(),
-        Action::Editor(EditorAction::Move(Motion::Up)),
-    );
+    map.register(ctx, key, Action::Editor(EditorAction::Move(Motion::Up)));
     assert_eq!(
-        map.get_action(ctx, key.clone()),
+        map.get_action(ctx, key),
         Some(&Action::Editor(EditorAction::Move(Motion::Up)))
     );
     assert_eq!(map.layer_count(ctx, std::slice::from_ref(&key)), 2);
@@ -635,14 +628,14 @@ fn test_layered_registration_and_restoration_by_sequence() {
     // Unregister layer 2 -> restores layer 1
     assert!(map.unregister_sequence(ctx, std::slice::from_ref(&key)));
     assert_eq!(
-        map.get_action(ctx, key.clone()),
+        map.get_action(ctx, key),
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
     assert_eq!(map.layer_count(ctx, std::slice::from_ref(&key)), 1);
 
     // Unregister layer 1 -> sequence is completely removed
     assert!(map.unregister_sequence(ctx, std::slice::from_ref(&key)));
-    assert_eq!(map.get_action(ctx, key.clone()), None);
+    assert_eq!(map.get_action(ctx, key), None);
     assert_eq!(map.layer_count(ctx, std::slice::from_ref(&key)), 0);
 
     // Unregister again returns false
@@ -653,7 +646,7 @@ fn test_layered_registration_and_restoration_by_sequence() {
 fn test_layered_registration_and_restoration_by_token() {
     let mut map = KeyMap::new();
     let ctx = KeyContext::Global;
-    let keys = vec![Key::Ctrl(b'x')];
+    let keys = vec![Key::ctrl('x')];
 
     let token1 = KeyBindingToken::new(10);
     let token2 = KeyBindingToken::new(20);
@@ -697,27 +690,23 @@ fn test_layered_registration_and_restoration_by_token() {
 fn test_layered_registration_and_restoration_by_owner() {
     let mut map = KeyMap::new();
     let ctx = KeyContext::Normal;
-    let key_x = Key::Char('x');
-    let key_y = Key::Char('y');
+    let key_x = Key::char('x');
+    let key_y = Key::char('y');
 
     // Base layer (no owner)
-    map.register(
-        ctx,
-        key_x.clone(),
-        Action::Editor(EditorAction::Move(Motion::Down)),
-    );
+    map.register(ctx, key_x, Action::Editor(EditorAction::Move(Motion::Down)));
 
     // Plugin owner 1 registers key_x override and key_y
     let plugin_owner = KeyBindingToken::new(1001);
     map.register_with_owner(
         ctx,
-        vec![key_x.clone()],
+        vec![key_x],
         Action::Editor(EditorAction::Move(Motion::Up)),
         plugin_owner,
     );
     map.register_with_owner(
         ctx,
-        vec![key_y.clone()],
+        vec![key_y],
         Action::Editor(EditorAction::Move(Motion::Left)),
         plugin_owner,
     );
@@ -726,18 +715,18 @@ fn test_layered_registration_and_restoration_by_owner() {
     let user_owner = KeyBindingToken::new(2002);
     map.register_with_owner(
         ctx,
-        vec![key_x.clone()],
+        vec![key_x],
         Action::Editor(EditorAction::Move(Motion::Right)),
         user_owner,
     );
 
     // Active action for x is user override (Right)
     assert_eq!(
-        map.get_action(ctx, key_x.clone()),
+        map.get_action(ctx, key_x),
         Some(&Action::Editor(EditorAction::Move(Motion::Right)))
     );
     assert_eq!(
-        map.get_action(ctx, key_y.clone()),
+        map.get_action(ctx, key_y),
         Some(&Action::Editor(EditorAction::Move(Motion::Left)))
     );
 
@@ -746,18 +735,18 @@ fn test_layered_registration_and_restoration_by_owner() {
     assert_eq!(removed_count, 2);
 
     // key_y is gone
-    assert_eq!(map.get_action(ctx, key_y.clone()), None);
+    assert_eq!(map.get_action(ctx, key_y), None);
 
     // key_x still has user override active
     assert_eq!(
-        map.get_action(ctx, key_x.clone()),
+        map.get_action(ctx, key_x),
         Some(&Action::Editor(EditorAction::Move(Motion::Right)))
     );
 
     // Retiring user owner 2 restores the original base layer (Down)
     map.unregister_owner(user_owner);
     assert_eq!(
-        map.get_action(ctx, key_x.clone()),
+        map.get_action(ctx, key_x),
         Some(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
 }
@@ -766,7 +755,7 @@ fn test_layered_registration_and_restoration_by_owner() {
 fn test_multi_key_sequence_layer_restoration() {
     let mut map = KeyMap::new();
     let ctx = KeyContext::Normal;
-    let seq = vec![Key::Char('g'), Key::Char('d')];
+    let seq = vec![Key::char('g'), Key::char('d')];
 
     let token1 = map.register_sequence(
         ctx,
@@ -783,7 +772,7 @@ fn test_multi_key_sequence_layer_restoration() {
         map.lookup(ctx, &seq),
         MatchResult::Exact(&Action::Buffer("custom:definition".to_string()))
     );
-    assert_eq!(map.lookup(ctx, &[Key::Char('g')]), MatchResult::Prefix);
+    assert_eq!(map.lookup(ctx, &[Key::char('g')]), MatchResult::Prefix);
 
     // Remove top layer
     assert!(map.unregister_token(token2));
@@ -791,12 +780,12 @@ fn test_multi_key_sequence_layer_restoration() {
         map.lookup(ctx, &seq),
         MatchResult::Exact(&Action::Editor(EditorAction::Move(Motion::StartOfFile)))
     );
-    assert_eq!(map.lookup(ctx, &[Key::Char('g')]), MatchResult::Prefix);
+    assert_eq!(map.lookup(ctx, &[Key::char('g')]), MatchResult::Prefix);
 
     // Remove base layer
     assert!(map.unregister_token(token1));
     assert_eq!(map.lookup(ctx, &seq), MatchResult::None);
-    assert_eq!(map.lookup(ctx, &[Key::Char('g')]), MatchResult::None);
+    assert_eq!(map.lookup(ctx, &[Key::char('g')]), MatchResult::None);
 }
 
 #[test]
@@ -815,9 +804,109 @@ fn test_cyclic_parent_resolution_terminates() {
     assert_eq!(
         map.lookup_with_parent(
             KeyContext::Buffer(kind_a),
-            &[Key::Char('z')],
+            &[Key::char('z')],
             cyclic_resolver
         ),
+        MatchResult::None
+    );
+}
+
+fn fallback_map() -> KeyMap {
+    let mut map = KeyMap::new();
+    let left = Action::Editor(EditorAction::Move(Motion::Left));
+    let down = Action::Editor(EditorAction::Move(Motion::Down));
+    map.register(KeyContext::Normal, Key::LEFT, left);
+    map.register(KeyContext::Normal, Key::SPACE, down.clone());
+    map.register(
+        KeyContext::Visual,
+        Key::SHIFT_SPACE,
+        Action::Editor(EditorAction::ShrinkRegion),
+    );
+    map.register(
+        KeyContext::Normal,
+        Key::DOWN.with(Mods::SHIFT),
+        Action::Editor(EditorAction::Move(Motion::Up)),
+    );
+    map.register(KeyContext::Normal, Key::DOWN, down);
+    map
+}
+
+#[test]
+fn unbound_shift_arrow_resolves_to_the_arrow() {
+    let map = fallback_map();
+
+    assert_eq!(
+        map.lookup(KeyContext::Normal, &[Key::LEFT.with(Mods::SHIFT)]),
+        map.lookup(KeyContext::Normal, &[Key::LEFT])
+    );
+    assert_eq!(
+        map.lookup(
+            KeyContext::Normal,
+            &[Key::LEFT.with(Mods::CTRL | Mods::ALT)]
+        ),
+        map.lookup(KeyContext::Normal, &[Key::LEFT])
+    );
+}
+
+#[test]
+fn exact_binding_beats_the_stripped_fallback() {
+    let map = fallback_map();
+
+    assert_eq!(
+        map.lookup(KeyContext::Normal, &[Key::DOWN.with(Mods::SHIFT)]),
+        MatchResult::Exact(&Action::Editor(EditorAction::Move(Motion::Up)))
+    );
+    assert_eq!(
+        map.lookup(KeyContext::Normal, &[Key::DOWN]),
+        MatchResult::Exact(&Action::Editor(EditorAction::Move(Motion::Down)))
+    );
+}
+
+#[test]
+fn visual_shift_space_beats_the_space_fallback() {
+    let map = fallback_map();
+
+    assert_eq!(
+        map.lookup(KeyContext::Visual, &[Key::SHIFT_SPACE]),
+        MatchResult::Exact(&Action::Editor(EditorAction::ShrinkRegion))
+    );
+    assert_eq!(
+        map.lookup(KeyContext::Normal, &[Key::SHIFT_SPACE]),
+        map.lookup(KeyContext::Normal, &[Key::SPACE]),
+        "outside Visual, shift+space acts as space"
+    );
+}
+
+#[test]
+fn fallback_applies_to_later_keys_of_a_sequence() {
+    let mut map = KeyMap::new();
+    map.register_sequence(
+        KeyContext::Normal,
+        vec![Key::SPACE, Key::char('g')],
+        Action::Editor(EditorAction::GitStatus),
+    );
+
+    assert_eq!(
+        map.lookup(KeyContext::Normal, &[Key::SHIFT_SPACE, Key::char('g')]),
+        MatchResult::Exact(&Action::Editor(EditorAction::GitStatus))
+    );
+}
+
+#[test]
+fn modifiers_on_characters_do_not_fall_back_to_the_bare_character() {
+    let mut map = KeyMap::new();
+    map.register(
+        KeyContext::Normal,
+        Key::char('x'),
+        Action::Editor(EditorAction::Move(Motion::Left)),
+    );
+
+    assert_eq!(
+        map.lookup(KeyContext::Normal, &[Key::ctrl('x')]),
+        MatchResult::None
+    );
+    assert_eq!(
+        map.lookup(KeyContext::Normal, &[Key::alt('x')]),
         MatchResult::None
     );
 }

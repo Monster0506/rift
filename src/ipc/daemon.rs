@@ -12,7 +12,7 @@ use crate::ipc::protocol::{
     b64_encode, InitializeParams, RenderUpdateParams, SessionEndingParams, ERR_UNAUTHORIZED,
 };
 use crate::ipc::session::{data_dir, generate_token, session_path, SessionInfo};
-use crate::key::Key;
+use crate::key::{InputEvent, Key};
 use crate::term::Size;
 use crate::transport::{read_framed, write_framed};
 
@@ -27,13 +27,13 @@ enum ServeResult {
 
 struct EditorInstance {
     thread: std::thread::JoinHandle<()>,
-    input_tx: SyncSender<Key>,
+    input_tx: SyncSender<InputEvent>,
     output_rx: Receiver<Vec<u8>>,
     detach_rx: Receiver<()>,
 }
 
 fn spawn_editor(file: Option<String>) -> EditorInstance {
-    let (input_tx, input_rx) = std::sync::mpsc::sync_channel::<Key>(64);
+    let (input_tx, input_rx) = std::sync::mpsc::sync_channel::<InputEvent>(64);
     let (output_tx, output_rx) = std::sync::mpsc::channel::<Vec<u8>>();
     let (detach_tx, detach_rx) = std::sync::mpsc::sync_channel::<()>(1);
 
@@ -352,18 +352,18 @@ fn clamp_dimension(value: u64, default: u16) -> u16 {
 
 /// Forward a key, blocking if the channel is full so a burst never drops a
 /// keystroke. Returns false if the receiver (editor thread) has hung up.
-fn forward_key(input_tx: &SyncSender<Key>, key: Key) -> bool {
-    input_tx.send(key).is_ok()
+fn forward_key(input_tx: &SyncSender<InputEvent>, key: Key) -> bool {
+    input_tx.send(InputEvent::Key(key)).is_ok()
 }
 
-fn parse_resize_params(params: &serde_json::Value) -> Key {
+fn parse_resize_params(params: &serde_json::Value) -> InputEvent {
     let cols = params["cols"]
         .as_u64()
         .map_or(80, |v| clamp_dimension(v, 80));
     let rows = params["rows"]
         .as_u64()
         .map_or(24, |v| clamp_dimension(v, 24));
-    Key::Resize(cols, rows)
+    InputEvent::Resize(cols, rows)
 }
 
 /// How often the reader checks `shutdown` between blocking reads. Bounds how
@@ -405,7 +405,7 @@ fn reader_loop(
 fn serve_client(
     mut reader: BufReader<TcpStream>,
     expected_token: &str,
-    input_tx: &SyncSender<Key>,
+    input_tx: &SyncSender<InputEvent>,
     output_rx: &Receiver<Vec<u8>>,
     detach_rx: &Receiver<()>,
 ) -> ServeResult {
@@ -437,7 +437,7 @@ fn serve_client(
     // Drain stale renders and any leftover detach signal, then trigger a fresh draw.
     while output_rx.try_recv().is_ok() {}
     while detach_rx.try_recv().is_ok() {}
-    let _ = input_tx.try_send(Key::Resize(size.cols, size.rows));
+    let _ = input_tx.try_send(InputEvent::Resize(size.cols, size.rows));
 
     // Periodic read timeout lets the reader notice `reader_shutdown` even if
     // the cross-clone socket shutdown below doesn't interrupt it on this platform.
@@ -472,7 +472,7 @@ fn serve_client(
                                 last_seq = seq;
                             }
                             if let Some(key_str) = msg["params"]["key"].as_str() {
-                                if let Some(key) = crate::ipc::key_notation::key_to_vim(key_str) {
+                                if let Some(key) = crate::key::parse_key(key_str) {
                                     if !forward_key(input_tx, key) {
                                         result = ServeResult::EditorExited;
                                         break 'serve;
@@ -482,8 +482,8 @@ fn serve_client(
                         }
                         "resize" => {
                             // Dropping a stale resize is fine; only the latest size matters.
-                            let key = parse_resize_params(&msg["params"]);
-                            if input_tx.try_send(key).is_err() {
+                            let resize = parse_resize_params(&msg["params"]);
+                            if input_tx.try_send(resize).is_err() {
                                 eprintln!("rift: dropped resize message");
                             }
                         }

@@ -1,7 +1,7 @@
 //! Shared input handling logic
 //! translates raw keys into abstract input intents (Type, Move, Delete, etc.)
 
-use crate::key::Key;
+use crate::key::{Key, KeyCode, Mods};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
@@ -57,64 +57,54 @@ pub enum InputIntent {
 
 /// Resolve a key into an input intent
 pub fn resolve_input(key: Key) -> Option<InputIntent> {
-    match key {
-        Key::Char(ch) => {
-            // Handle printable characters and Tab
-            if ch == '\t' || !ch.is_control() {
-                Some(InputIntent::Type(ch))
-            } else {
-                None
-            }
-        }
-        Key::Ctrl(ch) => {
-            let ctrl_char = if ch.is_ascii_lowercase() {
-                (ch - b'a' + 1) as char
-            } else if ch.is_ascii_uppercase() {
-                (ch - b'A' + 1) as char
-            } else {
-                ch as char
-            };
-            Some(InputIntent::Type(ctrl_char))
-        }
+    let ctrl = key.mods.contains(Mods::CTRL);
+    let move_by = |direction, plain, ctrl_unit| {
+        let unit = if ctrl { ctrl_unit } else { plain };
+        Some(InputIntent::Move(direction, unit))
+    };
 
-        Key::Enter => Some(InputIntent::Accept),
-        Key::Tab => Some(InputIntent::Type('\t')), // Treat tab as input char for now
-        Key::Escape => Some(InputIntent::Cancel),
+    match key.code {
+        KeyCode::Char(ch) => resolve_char(key, ch),
+        KeyCode::Enter => Some(InputIntent::Accept),
+        // Shift+Tab is handled before resolve_input in command mode
+        KeyCode::Tab if key.mods.contains(Mods::SHIFT) => None,
+        KeyCode::Tab => Some(InputIntent::Type('\t')),
+        KeyCode::Esc => Some(InputIntent::Cancel),
 
-        // Deletion
-        Key::Backspace => Some(InputIntent::Delete(Direction::Left, Granularity::Character)),
-        Key::Delete => Some(InputIntent::Delete(
+        KeyCode::Backspace => Some(InputIntent::Delete(Direction::Left, Granularity::Character)),
+        KeyCode::Delete => Some(InputIntent::Delete(
             Direction::Right,
             Granularity::Character,
         )),
 
-        // Navigation
-        Key::ArrowLeft => Some(InputIntent::Move(Direction::Left, Granularity::Character)),
-        Key::ArrowRight => Some(InputIntent::Move(Direction::Right, Granularity::Character)),
-        Key::ArrowUp => Some(InputIntent::Move(Direction::Up, Granularity::Character)),
-        Key::ArrowDown => Some(InputIntent::Move(Direction::Down, Granularity::Character)),
+        KeyCode::Left => move_by(Direction::Left, Granularity::Character, Granularity::Word),
+        KeyCode::Right => move_by(Direction::Right, Granularity::Character, Granularity::Word),
+        KeyCode::Up => move_by(Direction::Up, Granularity::Character, Granularity::Word),
+        KeyCode::Down => move_by(Direction::Down, Granularity::Character, Granularity::Word),
 
-        Key::CtrlArrowLeft => Some(InputIntent::Move(Direction::Left, Granularity::Word)),
-        Key::CtrlArrowRight => Some(InputIntent::Move(Direction::Right, Granularity::Word)),
-        Key::CtrlArrowUp => Some(InputIntent::Move(Direction::Up, Granularity::Word)), // Less common but consistent
-        Key::CtrlArrowDown => Some(InputIntent::Move(Direction::Down, Granularity::Word)),
+        KeyCode::Home => move_by(Direction::Left, Granularity::Line, Granularity::Document),
+        KeyCode::End => move_by(Direction::Right, Granularity::Line, Granularity::Document),
+        KeyCode::PageUp => move_by(Direction::Up, Granularity::Page, Granularity::Page),
+        KeyCode::PageDown => move_by(Direction::Down, Granularity::Page, Granularity::Page),
 
-        Key::Home => Some(InputIntent::Move(Direction::Left, Granularity::Line)),
-        Key::End => Some(InputIntent::Move(Direction::Right, Granularity::Line)),
-        Key::PageUp => Some(InputIntent::Move(Direction::Up, Granularity::Page)),
-        Key::PageDown => Some(InputIntent::Move(Direction::Down, Granularity::Page)),
-
-        Key::CtrlHome => Some(InputIntent::Move(Direction::Left, Granularity::Document)),
-        Key::CtrlEnd => Some(InputIntent::Move(Direction::Right, Granularity::Document)),
-
-        Key::Alt(_) => None,       // handled by keymap
-        Key::AltShift(_) => None,  // handled by keymap
-        Key::CtrlShift(_) => None, // handled by keymap
-        Key::Resize(_, _) => None,
-        Key::Paste(_) => None, // bulk text; callers handle Key::Paste before reaching here
-        Key::ShiftTab => None, // handled before resolve_input in command mode
-        Key::ShiftSpace => None, // Visual-mode-only; handled by keymap
+        KeyCode::Insert | KeyCode::F(_) => None,
     }
+}
+
+fn resolve_char(key: Key, ch: char) -> Option<InputIntent> {
+    if let Some(text) = key.text() {
+        return Some(InputIntent::Type(text));
+    }
+    if key.mods != Mods::CTRL {
+        return None; // handled by keymap
+    }
+
+    let ctrl_char = if ch.is_ascii_lowercase() {
+        (ch as u8 - b'a' + 1) as char
+    } else {
+        ch
+    };
+    Some(InputIntent::Type(ctrl_char))
 }
 
 #[cfg(test)]

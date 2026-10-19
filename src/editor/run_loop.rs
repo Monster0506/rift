@@ -2,6 +2,7 @@ use super::{pending_grammar, text_object_input, Editor};
 use crate::action::{Action, EditorAction};
 use crate::command::Command;
 use crate::error::{ErrorType, RiftError};
+use crate::key::{InputEvent, Key};
 use crate::key_handler::KeyAction;
 use crate::mode::Mode;
 use crate::term::TerminalBackend;
@@ -99,8 +100,8 @@ impl<T: TerminalBackend> Editor<T> {
             })?
         {
             // Read key
-            let key_press = match self.term.read_key()? {
-                Some(key) => key,
+            let event = match self.term.read_event()? {
+                Some(event) => event,
                 None => {
                     // A filtered event (e.g. Windows key-release) never
                     // reaches the coalescing check; flush any owed render.
@@ -108,38 +109,40 @@ impl<T: TerminalBackend> Editor<T> {
                 }
             };
 
-            if let Key::Paste(text) = key_press {
-                return self.handle_paste(text);
-            }
+            let key_press = match event {
+                InputEvent::Paste(text) => return self.handle_paste(text),
+                InputEvent::Resize(cols, rows) => {
+                    self.render_system.resize(rows as usize, cols as usize);
+                    self.update_and_render()?;
+                    return Ok(());
+                }
+                InputEvent::Key(key) => key,
+            };
 
             let bytes = key_press.to_vt100_bytes();
 
             // Update debug info
-            self.state.update_keypress(key_press.clone());
+            self.state.update_keypress(key_press);
 
-            use crate::key::Key;
             use crate::keymap::MatchResult;
-
-            // Handle special keys immediately
-            if let Key::Resize(cols, rows) = key_press {
-                self.render_system.resize(rows as usize, cols as usize);
-                self.update_and_render()?;
-                return Ok(());
-            }
 
             // An open plugin float captures Escape (close) and scroll keys.
             if self.plugin_host.has_open_float() {
-                let scroll = match &key_press {
-                    Key::Escape => {
-                        self.plugin_host.close_float();
-                        self.update_and_render()?;
-                        return Ok(());
-                    }
-                    Key::Char('j') | Key::ArrowDown => Some(1),
-                    Key::Char('k') | Key::ArrowUp => Some(-1),
-                    Key::PageDown => Some(10),
-                    Key::PageUp => Some(-10),
-                    _ => None,
+                if key_press.is(Key::ESC) {
+                    self.plugin_host.close_float();
+                    self.update_and_render()?;
+                    return Ok(());
+                }
+                let scroll = if key_press.is(Key::char('j')) || key_press.is(Key::DOWN) {
+                    Some(1)
+                } else if key_press.is(Key::char('k')) || key_press.is(Key::UP) {
+                    Some(-1)
+                } else if key_press.is(Key::PAGE_DOWN) {
+                    Some(10)
+                } else if key_press.is(Key::PAGE_UP) {
+                    Some(-10)
+                } else {
+                    None
                 };
                 if let Some(delta) = scroll {
                     self.plugin_host.scroll_float(delta);
@@ -149,7 +152,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             // Escape always cancels OperatorPending, regardless of keymap overrides.
-            if key_press == Key::Escape && self.current_mode == Mode::OperatorPending {
+            if key_press.is(Key::ESC) && self.current_mode == Mode::OperatorPending {
                 self.set_mode(Mode::Normal);
                 self.pending_keys.clear();
                 self.pending_count = 0;
@@ -200,7 +203,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             if let Some(grammar) = self.pending_grammar.take() {
-                self.advance_pending_grammar(grammar, key_press.clone());
+                self.advance_pending_grammar(grammar, key_press);
                 self.update_state_and_render(
                     key_press,
                     crate::key_handler::KeyAction::Continue,
@@ -211,7 +214,7 @@ impl<T: TerminalBackend> Editor<T> {
 
             // 'i'/'a'/'I'/'A' in OperatorPending start the text-object grammar.
             if self.current_mode == Mode::OperatorPending && self.pending_keys.is_empty() {
-                if let Key::Char(ch) = key_press {
+                if let Some(ch) = key_press.text() {
                     if let Some(modifier) = crate::text_objects::modifier_for_key(ch) {
                         self.pending_grammar = Some(pending_grammar::PendingGrammar::TextObject(
                             text_object_input::PendingTextObject::new(modifier),
@@ -233,7 +236,7 @@ impl<T: TerminalBackend> Editor<T> {
                 && self.current_mode != Mode::Search
                 && self.current_mode != Mode::Rename
             {
-                if let Key::Char(ch) = key_press {
+                if let Some(ch) = key_press.text() {
                     if ch.is_ascii_digit() && (ch != '0' || self.pending_count > 0) {
                         let digit = ch.to_digit(10).unwrap() as usize;
                         if self.current_mode == Mode::OperatorPending
@@ -257,7 +260,7 @@ impl<T: TerminalBackend> Editor<T> {
             }
 
             // Push key to pending buffer
-            self.pending_keys.push(key_press.clone());
+            self.pending_keys.push(key_press);
 
             // Input Processing Loop (allows backtracking)
             loop {
@@ -332,7 +335,7 @@ impl<T: TerminalBackend> Editor<T> {
                                     self.handle_action(&action);
                                     self.pending_count = 0;
 
-                                    self.pending_keys.push(last.clone());
+                                    self.pending_keys.push(last);
                                     if self.current_mode == mode_before {
                                         // Mode unchanged: normal re-dispatch.
                                         continue;
@@ -356,16 +359,16 @@ impl<T: TerminalBackend> Editor<T> {
                                 }
                             }
                         } else if self.current_mode == Mode::Insert {
-                            let k = self.pending_keys[0].clone();
+                            let k = self.pending_keys[0];
                             self.pending_keys.clear();
-                            if let Key::Char(ch) = k {
+                            if let Some(ch) = k.text() {
                                 self.handle_action(&Action::Editor(EditorAction::InsertChar(ch)));
                             }
                             // Else ignore?
                         } else if self.current_mode == Mode::Replace {
-                            let k = self.pending_keys[0].clone();
+                            let k = self.pending_keys[0];
                             self.pending_keys.clear();
-                            if let Key::Char(ch) = k {
+                            if let Some(ch) = k.text() {
                                 if let Some(doc) = self.document_manager.active_document_mut() {
                                     let pos = doc.buffer.cursor();
                                     if pos < doc.buffer.len()
@@ -386,21 +389,14 @@ impl<T: TerminalBackend> Editor<T> {
                             || self.current_mode == Mode::Search
                             || self.current_mode == Mode::Rename
                         {
-                            let k = self.pending_keys[0].clone();
+                            let k = self.pending_keys[0];
                             self.pending_keys.clear();
-                            match k {
-                                Key::Tab => {
-                                    self.handle_mode_management(Command::TabComplete);
-                                }
-                                Key::ShiftTab => {
-                                    self.handle_mode_management(Command::TabCompletePrev);
-                                }
-                                Key::Char(ch) => {
-                                    self.handle_action(&Action::Editor(EditorAction::InsertChar(
-                                        ch,
-                                    )));
-                                }
-                                _ => {}
+                            if k == Key::SHIFT_TAB {
+                                self.handle_mode_management(Command::TabCompletePrev);
+                            } else if k.is(Key::TAB) {
+                                self.handle_mode_management(Command::TabComplete);
+                            } else if let Some(ch) = k.text() {
+                                self.handle_action(&Action::Editor(EditorAction::InsertChar(ch)));
                             }
                         } else {
                             self.pending_keys.clear();

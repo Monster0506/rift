@@ -15,6 +15,15 @@ pub enum MatchResult<'a> {
     None,
 }
 
+/// How a lookup treats modifiers that carry no text meaning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Strictness {
+    /// Only exact keys match.
+    Exact,
+    /// An unbound key retries as `Key::fallback`.
+    StripModifiers,
+}
+
 /// A node in the key sequence trie
 #[derive(Debug, Default, Clone)]
 pub struct TrieNode {
@@ -36,7 +45,7 @@ impl TrieNode {
             return;
         }
 
-        let key = keys[0].clone();
+        let key = keys[0];
         self.children
             .entry(key)
             .or_default()
@@ -50,7 +59,7 @@ impl TrieNode {
             self.action = None;
             return had;
         }
-        let key = keys[0].clone();
+        let key = keys[0];
         if let Some(child) = self.children.get_mut(&key) {
             let removed = child.remove(&keys[1..]);
             if child.action.is_none() && child.children.is_empty() {
@@ -63,7 +72,7 @@ impl TrieNode {
     }
 
     /// Look up a sequence
-    pub fn lookup<'a>(&'a self, keys: &[Key]) -> MatchResult<'a> {
+    pub fn lookup<'a>(&'a self, keys: &[Key], strictness: Strictness) -> MatchResult<'a> {
         if keys.is_empty() {
             // A node with both an action and children is Ambiguous: the caller
             // waits for more keys, then flushes to this action on timeout.
@@ -79,11 +88,19 @@ impl TrieNode {
             return MatchResult::None;
         }
 
-        let key = keys[0].clone();
-        if let Some(child) = self.children.get(&key) {
-            child.lookup(&keys[1..])
-        } else {
-            MatchResult::None
+        match self.child(&keys[0], strictness) {
+            Some(child) => child.lookup(&keys[1..], strictness),
+            None => MatchResult::None,
+        }
+    }
+
+    fn child(&self, key: &Key, strictness: Strictness) -> Option<&TrieNode> {
+        if let Some(child) = self.children.get(key) {
+            return Some(child);
+        }
+        match strictness {
+            Strictness::Exact => None,
+            Strictness::StripModifiers => self.children.get(&key.fallback()?),
         }
     }
 }

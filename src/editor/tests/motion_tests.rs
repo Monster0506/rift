@@ -168,7 +168,7 @@ fn test_f_keybinding_is_registered() {
     use crate::keymap::KeyContext;
 
     let editor = create_editor();
-    let action = editor.keymap.get_action(KeyContext::Normal, Key::Char('f'));
+    let action = editor.keymap.get_action(KeyContext::Normal, Key::char('f'));
     assert!(
         action.is_some(),
         "'f' should have a keybinding in Normal mode"
@@ -181,7 +181,7 @@ fn test_shift_f_keybinding_is_registered() {
     use crate::keymap::KeyContext;
 
     let editor = create_editor();
-    let action = editor.keymap.get_action(KeyContext::Normal, Key::Char('F'));
+    let action = editor.keymap.get_action(KeyContext::Normal, Key::char('F'));
     assert!(
         action.is_some(),
         "'F' should have a keybinding in Normal mode"
@@ -194,7 +194,7 @@ fn test_t_keybinding_is_registered() {
     use crate::keymap::KeyContext;
 
     let editor = create_editor();
-    let action = editor.keymap.get_action(KeyContext::Normal, Key::Char('t'));
+    let action = editor.keymap.get_action(KeyContext::Normal, Key::char('t'));
     assert!(
         action.is_some(),
         "'t' should have a keybinding in Normal mode"
@@ -207,7 +207,7 @@ fn test_shift_t_keybinding_is_registered() {
     use crate::keymap::KeyContext;
 
     let editor = create_editor();
-    let action = editor.keymap.get_action(KeyContext::Normal, Key::Char('T'));
+    let action = editor.keymap.get_action(KeyContext::Normal, Key::char('T'));
     assert!(
         action.is_some(),
         "'T' should have a keybinding in Normal mode"
@@ -623,7 +623,7 @@ fn test_n_keybinding_maps_to_repeat_find_forward() {
     use crate::keymap::KeyContext;
 
     let editor = create_editor();
-    let action = editor.keymap.get_action(KeyContext::Normal, Key::Char('n'));
+    let action = editor.keymap.get_action(KeyContext::Normal, Key::char('n'));
     assert_eq!(
         action,
         Some(&Action::Editor(EditorAction::Move(
@@ -640,7 +640,7 @@ fn test_shift_n_keybinding_maps_to_repeat_find_backward() {
     use crate::keymap::KeyContext;
 
     let editor = create_editor();
-    let action = editor.keymap.get_action(KeyContext::Normal, Key::Char('N'));
+    let action = editor.keymap.get_action(KeyContext::Normal, Key::char('N'));
     assert_eq!(
         action,
         Some(&Action::Editor(EditorAction::Move(
@@ -672,11 +672,11 @@ fn leading_count_composes_with_nest_count_through_full_key_path() {
     ));
 
     let grammar = editor.pending_grammar.take().unwrap();
-    editor.advance_pending_grammar(grammar, Key::Char('2'));
+    editor.advance_pending_grammar(grammar, Key::char('2'));
     assert!(editor.pending_grammar.is_some());
 
     let grammar = editor.pending_grammar.take().unwrap();
-    editor.advance_pending_grammar(grammar, Key::Char('('));
+    editor.advance_pending_grammar(grammar, Key::char('('));
 
     editor.handle_action(&Action::Editor(EditorAction::EnterNormalMode));
     assert_eq!(editor.active_document().buffer.to_string(), "()");
@@ -784,8 +784,8 @@ fn dd_deletes_the_current_line_via_the_operator_doubling_path_not_a_keymap_seque
         other => panic!("key {key:?} did not resolve: {other:?}"),
     };
 
-    feed_key(&mut editor, Key::Char('d'));
-    feed_key(&mut editor, Key::Char('d'));
+    feed_key(&mut editor, Key::char('d'));
+    feed_key(&mut editor, Key::char('d'));
 
     editor.handle_action(&crate::action::Action::Editor(
         crate::action::EditorAction::EnterNormalMode,
@@ -809,21 +809,21 @@ fn ambiguous_non_operator_binding_flushes_to_the_short_action_after_timeout() {
 
     editor.keymap.register(
         KeyContext::Normal,
-        Key::Char('Q'),
+        Key::char('Q'),
         Action::Editor(EditorAction::Move(Motion::Down)),
     );
     editor.keymap.register_sequence(
         KeyContext::Normal,
-        vec![Key::Char('Q'), Key::Char('Q')],
+        vec![Key::char('Q'), Key::char('Q')],
         Action::Editor(EditorAction::Move(Motion::Right)),
     );
 
     assert_eq!(
-        editor.keymap.lookup(KeyContext::Normal, &[Key::Char('Q')]),
+        editor.keymap.lookup(KeyContext::Normal, &[Key::char('Q')]),
         MatchResult::Ambiguous(&Action::Editor(EditorAction::Move(Motion::Down)))
     );
 
-    editor.pending_keys.push(Key::Char('Q'));
+    editor.pending_keys.push(Key::char('Q'));
     editor.pending_keys_started_at =
         Some(std::time::Instant::now() - std::time::Duration::from_millis(1500));
 

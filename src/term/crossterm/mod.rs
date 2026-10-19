@@ -13,7 +13,7 @@ use std::io::{stdout, BufWriter, Write};
 
 use crate::color::Color;
 use crate::error::RiftError;
-use crate::key::Key;
+use crate::key::{InputEvent, Key, KeyCode as RiftCode, Mods};
 use crate::screen_buffer::{AttrKind, StyleOp};
 use crate::term::{ColorTerminal, Size, TerminalBackend};
 
@@ -205,17 +205,17 @@ impl<W: Write> TerminalBackend for CrosstermBackend<W> {
         event::poll(duration).map_err(|e| format!("Failed to poll event: {e}").into())
     }
 
-    fn read_key(&mut self) -> Result<Option<Key>, RiftError> {
+    fn read_event(&mut self) -> Result<Option<InputEvent>, RiftError> {
         match event::read().map_err(|e| format!("Failed to read event: {e}"))? {
             Event::Key(key_event) => {
                 if key_event.kind == event::KeyEventKind::Press {
-                    Ok(translate_key_event(key_event))
+                    Ok(translate_key_event(key_event).map(InputEvent::Key))
                 } else {
                     Ok(None)
                 }
             }
-            Event::Paste(text) => Ok(Some(Key::Paste(text))),
-            Event::Resize(cols, rows) => Ok(Some(Key::Resize(cols, rows))),
+            Event::Paste(text) => Ok(Some(InputEvent::Paste(text))),
+            Event::Resize(cols, rows) => Ok(Some(InputEvent::Resize(cols, rows))),
             _ => Ok(None),
         }
     }
@@ -298,107 +298,73 @@ impl<W: Write> ColorTerminal for CrosstermBackend<W> {
     }
 }
 
-/// Translate crossterm `KeyEvent` to our Key enum. Unmapped codes yield `None`.
+/// Translate crossterm `KeyEvent` to our `Key`. Unmapped codes yield `None`.
 pub(crate) fn translate_key_event(key_event: KeyEvent) -> Option<Key> {
-    let modifiers = key_event.modifiers;
-    let ctrl = modifiers.contains(KeyModifiers::CONTROL);
-    let shift = modifiers.contains(KeyModifiers::SHIFT);
-    let alt = modifiers.contains(KeyModifiers::ALT);
+    let mods = translate_mods(key_event.modifiers);
 
-    let key = match key_event.code {
-        KeyCode::Char(ch) => {
-            // Handle Enter key that comes through as character (some terminals send '\r' or '\n')
-            if ch == '\r' || ch == '\n' {
-                return Some(Key::Enter);
-            }
-            // Windows reports AltGr as Ctrl+Alt; the character is the text.
-            let altgr = ctrl && alt && !ch.is_control();
-            if altgr || !ch.is_ascii() {
-                Key::Char(ch)
-            } else if ctrl && shift {
-                Key::CtrlShift((ch as u8).to_ascii_lowercase())
-            } else if ctrl {
-                Key::Ctrl((ch as u8).to_ascii_lowercase())
-            } else if alt && shift {
-                Key::AltShift((ch as u8).to_ascii_lowercase())
-            } else if alt {
-                Key::Alt((ch as u8).to_ascii_lowercase())
-            } else if ch.is_control()
-                && ch as u8 >= 1
-                && ch as u8 <= 26
-                && ch != '\r'
-                && ch != '\n'
-                && ch != '\t'
-                && ch != '\x08'
-            {
-                // Normalize implicit control characters (e.g. ^W = 23) to Key::Ctrl('w')
-                // 'a' is 97, ^A is 1. Offset is 96.
-                Key::Ctrl((ch as u8) + 96)
-            } else if shift && ch == ' ' {
-                Key::ShiftSpace
-            } else {
-                Key::Char(ch)
-            }
-        }
-        KeyCode::Backspace => Key::Backspace,
-        KeyCode::Enter => Key::Enter,
-        KeyCode::Esc => Key::Escape,
-        KeyCode::BackTab => Key::ShiftTab,
-        KeyCode::Tab => {
-            if shift {
-                Key::ShiftTab
-            } else {
-                Key::Tab
-            }
-        }
-        KeyCode::Up => {
-            if ctrl {
-                Key::CtrlArrowUp
-            } else {
-                Key::ArrowUp
-            }
-        }
-        KeyCode::Down => {
-            if ctrl {
-                Key::CtrlArrowDown
-            } else {
-                Key::ArrowDown
-            }
-        }
-        KeyCode::Left => {
-            if ctrl {
-                Key::CtrlArrowLeft
-            } else {
-                Key::ArrowLeft
-            }
-        }
-        KeyCode::Right => {
-            if ctrl {
-                Key::CtrlArrowRight
-            } else {
-                Key::ArrowRight
-            }
-        }
-        KeyCode::Home => {
-            if ctrl {
-                Key::CtrlHome
-            } else {
-                Key::Home
-            }
-        }
-        KeyCode::End => {
-            if ctrl {
-                Key::CtrlEnd
-            } else {
-                Key::End
-            }
-        }
-        KeyCode::PageUp => Key::PageUp,
-        KeyCode::PageDown => Key::PageDown,
-        KeyCode::Delete => Key::Delete,
+    let code = match key_event.code {
+        KeyCode::Char(ch) => return translate_char(ch, mods),
+        KeyCode::Backspace => RiftCode::Backspace,
+        KeyCode::Enter => RiftCode::Enter,
+        KeyCode::Esc => RiftCode::Esc,
+        KeyCode::Tab => RiftCode::Tab,
+        KeyCode::BackTab => return Some(Key::new(RiftCode::Tab, mods | Mods::SHIFT)),
+        KeyCode::Up => RiftCode::Up,
+        KeyCode::Down => RiftCode::Down,
+        KeyCode::Left => RiftCode::Left,
+        KeyCode::Right => RiftCode::Right,
+        KeyCode::Home => RiftCode::Home,
+        KeyCode::End => RiftCode::End,
+        KeyCode::PageUp => RiftCode::PageUp,
+        KeyCode::PageDown => RiftCode::PageDown,
+        KeyCode::Delete => RiftCode::Delete,
+        KeyCode::Insert => RiftCode::Insert,
+        KeyCode::F(n) => RiftCode::F(n),
         _ => return None,
     };
-    Some(key)
+    Some(Key::new(code, mods))
+}
+
+fn translate_mods(modifiers: KeyModifiers) -> Mods {
+    let mut mods = Mods::NONE;
+    if modifiers.contains(KeyModifiers::SHIFT) {
+        mods = mods | Mods::SHIFT;
+    }
+    if modifiers.contains(KeyModifiers::CONTROL) {
+        mods = mods | Mods::CTRL;
+    }
+    if modifiers.contains(KeyModifiers::ALT) {
+        mods = mods | Mods::ALT;
+    }
+    mods
+}
+
+fn translate_char(ch: char, mods: Mods) -> Option<Key> {
+    // Some terminals send Enter as a character.
+    if ch == '\r' || ch == '\n' {
+        return Some(Key::new(RiftCode::Enter, mods));
+    }
+
+    if ch == '\t' {
+        return Some(Key::new(RiftCode::Tab, mods));
+    }
+
+    // A raw control byte (e.g. ^W) is Ctrl+letter.
+    if ch.is_control() {
+        let letter = match ch {
+            '\u{1}'..='\u{1a}' => (ch as u8 + b'a' - 1) as char,
+            _ => return None,
+        };
+        return Some(Key::new(RiftCode::Char(letter), mods | Mods::CTRL));
+    }
+
+    // Windows reports AltGr as Ctrl+Alt: the character is the text. Non-ASCII
+    // under a single modifier is text too.
+    let altgr = mods.contains(Mods::CTRL) && mods.contains(Mods::ALT);
+    if altgr || !ch.is_ascii() {
+        return Some(Key::char(ch));
+    }
+    Some(Key::new(RiftCode::Char(ch), mods))
 }
 
 #[cfg(test)]

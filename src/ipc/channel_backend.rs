@@ -2,21 +2,21 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, SyncSender};
 use std::time::Duration;
 
 use crate::error::RiftError;
-use crate::key::Key;
+use crate::key::InputEvent;
 use crate::term::{CursorShape, Size, TerminalBackend};
 
 pub struct ChannelBackend {
-    input_rx: Receiver<Key>,
+    input_rx: Receiver<InputEvent>,
     output_tx: Sender<Vec<u8>>,
     detach_tx: Option<SyncSender<()>>,
     size: Size,
     render_buf: Vec<u8>,
-    pending_key: Option<Key>,
+    pending_event: Option<InputEvent>,
 }
 
 impl ChannelBackend {
     pub fn new(
-        input_rx: Receiver<Key>,
+        input_rx: Receiver<InputEvent>,
         output_tx: Sender<Vec<u8>>,
         detach_tx: SyncSender<()>,
         size: Size,
@@ -27,7 +27,7 @@ impl ChannelBackend {
             detach_tx: Some(detach_tx),
             size,
             render_buf: Vec::new(),
-            pending_key: None,
+            pending_event: None,
         }
     }
 }
@@ -41,13 +41,13 @@ impl TerminalBackend for ChannelBackend {
 
     fn poll(&mut self, duration: Duration) -> Result<bool, RiftError> {
         match self.input_rx.recv_timeout(duration) {
-            Ok(Key::Resize(cols, rows)) => {
+            Ok(InputEvent::Resize(cols, rows)) => {
                 self.size = Size { rows, cols };
-                self.pending_key = Some(Key::Resize(cols, rows));
+                self.pending_event = Some(InputEvent::Resize(cols, rows));
                 Ok(true)
             }
-            Ok(key) => {
-                self.pending_key = Some(key);
+            Ok(event) => {
+                self.pending_event = Some(event);
                 Ok(true)
             }
             Err(RecvTimeoutError::Timeout) => Ok(false),
@@ -55,8 +55,8 @@ impl TerminalBackend for ChannelBackend {
         }
     }
 
-    fn read_key(&mut self) -> Result<Option<Key>, RiftError> {
-        Ok(self.pending_key.take())
+    fn read_event(&mut self) -> Result<Option<InputEvent>, RiftError> {
+        Ok(self.pending_event.take())
     }
 
     fn write(&mut self, bytes: &[u8]) -> Result<(), RiftError> {

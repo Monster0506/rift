@@ -3,7 +3,7 @@
 
 use crate::character::Character;
 use crate::color::Color;
-use crate::key::Key;
+use crate::key::{format_key, Key};
 use crate::layer::{Cell, Layer};
 use crate::mode::Mode;
 
@@ -48,49 +48,6 @@ impl StatusBar {
         }
     }
 
-    /// Format key for display
-    #[must_use]
-    pub fn format_key(key: Key) -> String {
-        match key {
-            Key::Char(ch) => {
-                if !ch.is_control() {
-                    format!("{ch}")
-                } else if ch == '\t' {
-                    "Tab".to_string()
-                } else {
-                    format!("\\u{{{:04x}}}", ch as u32)
-                }
-            }
-            Key::Ctrl(ch) => format!("Ctrl+{}", (ch as char).to_uppercase()),
-            Key::CtrlShift(ch) => format!("Ctrl+Shift+{}", (ch as char).to_uppercase()),
-            Key::Alt(ch) => format!("Alt+{}", (ch as char).to_uppercase()),
-            Key::AltShift(ch) => format!("Alt+Shift+{}", (ch as char).to_uppercase()),
-            Key::ArrowUp => "Up".to_string(),
-            Key::ArrowDown => "Down".to_string(),
-            Key::ArrowLeft => "Left".to_string(),
-            Key::ArrowRight => "Right".to_string(),
-            Key::CtrlArrowUp => "Ctrl+Up".to_string(),
-            Key::CtrlArrowDown => "Ctrl+Down".to_string(),
-            Key::CtrlArrowLeft => "Ctrl+Left".to_string(),
-            Key::CtrlArrowRight => "Ctrl+Right".to_string(),
-            Key::Backspace => "Backspace".to_string(),
-            Key::Delete => "Delete".to_string(),
-            Key::Enter => "Enter".to_string(),
-            Key::Escape => "Esc".to_string(),
-            Key::Tab => "Tab".to_string(),
-            Key::ShiftTab => "S-Tab".to_string(),
-            Key::ShiftSpace => "S-Space".to_string(),
-            Key::Home => "Home".to_string(),
-            Key::End => "End".to_string(),
-            Key::CtrlHome => "Ctrl+Home".to_string(),
-            Key::CtrlEnd => "Ctrl+End".to_string(),
-            Key::PageUp => "PageUp".to_string(),
-            Key::PageDown => "PageDown".to_string(),
-            Key::Resize(cols, rows) => format!("Resize({cols}, {rows})"),
-            Key::Paste(text) => format!("Paste({} bytes)", text.len()),
-        }
-    }
-
     /// Format debug information string
     fn format_debug_info_from_state(
         file_name: &str,
@@ -100,7 +57,7 @@ impl StatusBar {
     ) -> String {
         let mut parts = Vec::new();
         if let Some(key) = last_keypress {
-            parts.push(format!("Last: {}", Self::format_key(key)));
+            parts.push(format!("Last: {}", format_key(key)));
         }
         parts.push(format!("Pos: {}:{}", cursor.row + 1, cursor.col + 1));
         parts.push(format!("Lines: {}", total_lines));
@@ -163,8 +120,8 @@ impl StatusBar {
             col += count_str.len();
         }
 
-        if let Some(key) = state.pending_key.clone() {
-            let pending_str = format!(" [{}]", Self::format_key(key));
+        if let Some(key) = state.pending_key {
+            let pending_str = format!(" [{}]", format_key(key));
             frame.write_str_colored(status_row, col, &pending_str, fg, bg);
             col += pending_str.len();
         }
@@ -227,7 +184,7 @@ impl StatusBar {
                 &state.file_name,
                 &state.cursor,
                 state.total_lines,
-                state.last_keypress.clone(),
+                state.last_keypress,
             );
             if !debug_str.is_empty() {
                 let padded_cols = available_cols.saturating_sub(1);

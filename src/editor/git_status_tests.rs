@@ -1435,14 +1435,14 @@ fn space_g_key_resolves_to_git_status_with_no_prefix_ambiguity() {
     let editor = create_editor();
     match editor
         .keymap
-        .lookup(KeyContext::Normal, &[Key::Char(' '), Key::Char('g')])
+        .lookup(KeyContext::Normal, &[Key::char(' '), Key::char('g')])
     {
         MatchResult::Exact(Action::Editor(EditorAction::GitStatus)) => {}
         other => panic!("expected '<Space>g' to resolve to GitStatus, got {other:?}"),
     }
     match editor
         .keymap
-        .lookup(KeyContext::Normal, &[Key::Char('g'), Key::Char('r')])
+        .lookup(KeyContext::Normal, &[Key::char('g'), Key::char('r')])
     {
         MatchResult::Exact(Action::Editor(EditorAction::LspReferences)) => {}
         other => panic!("expected bare 'gr' to still resolve to LspReferences, got {other:?}"),
@@ -1606,7 +1606,7 @@ fn g_question_mark_key_sequence_resolves_to_git_help() {
         KeyContext::Buffer(crate::document::BufferKindId::GIT_LOG),
         KeyContext::Buffer(crate::document::BufferKindId::GIT_REBASE_TODO),
     ] {
-        let result = editor.keymap.lookup(ctx, &[Key::Char('g'), Key::Char('?')]);
+        let result = editor.keymap.lookup(ctx, &[Key::char('g'), Key::char('?')]);
         match result {
             MatchResult::Exact(Action::Editor(EditorAction::GitHelp)) => {}
             other => panic!("expected 'g?' to resolve to GitHelp in {ctx:?}, got {other:?}"),
