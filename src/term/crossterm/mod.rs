@@ -209,7 +209,7 @@ impl<W: Write> TerminalBackend for CrosstermBackend<W> {
         match event::read().map_err(|e| format!("Failed to read event: {e}"))? {
             Event::Key(key_event) => {
                 if key_event.kind == event::KeyEventKind::Press {
-                    Ok(Some(translate_key_event(key_event)))
+                    Ok(translate_key_event(key_event))
                 } else {
                     Ok(None)
                 }
@@ -298,20 +298,24 @@ impl<W: Write> ColorTerminal for CrosstermBackend<W> {
     }
 }
 
-/// Translate crossterm `KeyEvent` to our Key enum
-pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
+/// Translate crossterm `KeyEvent` to our Key enum. Unmapped codes yield `None`.
+pub(crate) fn translate_key_event(key_event: KeyEvent) -> Option<Key> {
     let modifiers = key_event.modifiers;
     let ctrl = modifiers.contains(KeyModifiers::CONTROL);
     let shift = modifiers.contains(KeyModifiers::SHIFT);
     let alt = modifiers.contains(KeyModifiers::ALT);
 
-    match key_event.code {
+    let key = match key_event.code {
         KeyCode::Char(ch) => {
             // Handle Enter key that comes through as character (some terminals send '\r' or '\n')
             if ch == '\r' || ch == '\n' {
-                return Key::Enter;
+                return Some(Key::Enter);
             }
-            if ctrl && shift {
+            // Windows reports AltGr as Ctrl+Alt; the character is the text.
+            let altgr = ctrl && alt && !ch.is_control();
+            if altgr || !ch.is_ascii() {
+                Key::Char(ch)
+            } else if ctrl && shift {
                 Key::CtrlShift((ch as u8).to_ascii_lowercase())
             } else if ctrl {
                 Key::Ctrl((ch as u8).to_ascii_lowercase())
@@ -392,8 +396,9 @@ pub(crate) fn translate_key_event(key_event: KeyEvent) -> Key {
         KeyCode::PageUp => Key::PageUp,
         KeyCode::PageDown => Key::PageDown,
         KeyCode::Delete => Key::Delete,
-        _ => Key::Char('\0'), // Unknown key
-    }
+        _ => return None,
+    };
+    Some(key)
 }
 
 #[cfg(test)]

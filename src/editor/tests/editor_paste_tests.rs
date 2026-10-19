@@ -388,3 +388,24 @@ fn single_up_keypress_on_soft_wrap_with_release_moves_the_rendered_cursor() {
         "the rendered cursor must move up a soft-wrapped row without a further keypress"
     );
 }
+
+#[test]
+fn unmapped_function_key_in_insert_mode_leaves_buffer_unchanged() {
+    use crate::action::{Action, EditorAction};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let mut editor = Editor::new(PressReleaseTerminal::new(24, 80, vec![])).unwrap();
+    editor.handle_action(&Action::Editor(EditorAction::EnterInsertMode));
+    editor.execute_buffer_command(crate::command::Command::InsertChar('a'));
+
+    let f5 = crate::term::crossterm::translate_key_event(KeyEvent::new(
+        KeyCode::F(5),
+        KeyModifiers::NONE,
+    ));
+    editor.term.raw.push_back(f5);
+    while editor.term.poll(std::time::Duration::ZERO).unwrap() {
+        editor.tick().unwrap();
+    }
+
+    assert_eq!(editor.active_document().buffer.to_string(), "a");
+}
